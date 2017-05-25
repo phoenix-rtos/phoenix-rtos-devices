@@ -1,19 +1,13 @@
-/**
- * ttypc - VT220 terminal emulator based on VGA and 101-key US keyboard.
- *
+/*
  * Phoenix-RTOS
  *
  * Operating system kernel
  *
- * @file ttypc.c
- * 
- * Copyright 2012 Phoenix Systems
+ * ttypc - VT220 terminal emulator based on VGA and 101-key US keyboard.
+ *
+ * Copyright 2012, 2017 Phoenix Systems
  * Copyright 2006, 2008 Pawel Pisarczyk
- * 
- * Author Pawel Pisarczyk <pawel.pisarczyk@phoesys.com>
- * @author Pawel Kolodziej <pawel.kolodziej@phoesys.com>
- * @author Janusz Gralak <janusz.gralak@phoesys.com>
- * @author Marcin Stragowski <marcin.stragowski@phoesys.com>
+ * Author: Pawel Pisarczyk, Pawel Kolodziej, Janusz Gralak, Marcin Stragowski
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -21,8 +15,38 @@
  */
 
 
-ttypc_t ttypc_common;
+#define SIZE_TTYPC_RBUFF  128
 
+
+#define VRAM_MONO     (void *)0xb0000    /* VRAM address of mono 80x25 mode */
+#define VRAM_COLOR    (void *)0xb8000    /* VRAM address of color 80x25 mode */
+
+#define CRTC_CURSORH  0x0e               /* cursor address mid */
+#define CRTC_CURSORL  0x0f               /* cursor address low */
+
+
+struct {
+	ttypc_virt_t virtuals[4];
+	ttypc_virt_t *cv;
+
+	int color;
+	unsigned int inp_irq;
+	void *inp_base;
+	void *out_base;
+	void *out_crtc;
+	
+	unsigned char extended;
+	unsigned int lockst;
+	unsigned int shiftst;
+	
+	unsigned char **rbuff;
+	unsigned int rbuffsz;
+	unsigned int rb;
+	unsigned int rp;
+} ttypc_common;
+
+
+#if 0
 
 static int ttypc_read(file_t *file, offs_t offs, char *buff, unsigned int len)
 {
@@ -70,11 +94,26 @@ static int ttypc_select_poll(file_t *file, unsigned *ready)
 	return EOK;
 }
 
+
 static int ttypc_ioctl(file_t *file, unsigned int cmd, unsigned long arg)
 {
 	vnode_t *vnode = file->vnode;
 	unsigned int minor;
 	struct termios *termios_p = (struct termios *)arg;
+
+	struct winsize *ws = (struct winsize*)arg;
+	switch(cmd){
+		case TIOCGWINSZ:
+			ws->ws_row = 24;
+			ws->ws_col = 80;
+			break;
+		default:
+			return -EINVAL;
+	}
+	  
+	return 0;
+
+
 	
 	if ((minor = MINOR(vnode->dev)) >= SIZE_VIRTUALS)
 		return -EINVAL;
@@ -104,28 +143,28 @@ static int ttypc_open(vnode_t *vnode, file_t* file)
 	vnode->flags |= VNODE_TTY;
 	return 0;
 }
+#endif
 
 
-/* Function initializes ttypc */
-void _ttypc_init(void)
+int main(int argc, char *argv[])
 {
 	unsigned int i;
 
-	ph_printf("ttypc: Initializing virtual terminals\n");
+	ph_printf("ttypc: Initializing VGA VT220 terminal emulator\n");
 
 	/* Test monitor type */
-	ttypc_common.color = (hal_inb((void *)MAIN_MISCIN) & 0x01);
+	ttypc_common.color = (inb((void *)0x3cc) & 0x01);
 	
 	ttypc_common.inp_irq = 1;
 	ttypc_common.inp_base = (void *)0x60;
 
-	ttypc_common.out_base = VADDR_KERNEL + (ttypc_common.color ? VRAM_COLOR : VRAM_MONO);
-	ttypc_common.out_crtc = ttypc_common.color ? (void *)CRTR_COLOR : (void *)CRTR_MONO;
-	
+//	ttypc_common.out_base = VADDR_KERNEL + (ttypc_common.color ? VRAM_COLOR : VRAM_MONO);
+	ttypc_common.out_crtc = ttypc_common.color ? (void *)0x3d4 : (void *)0x3b4;
+
 	/* Initialize virutal terminals and register devices */
-	for (i = 0; i < SIZE_VIRTUALS; i++) {
+	for (i = 0; i < sizeof(ttypc_common.virtuals) / sizeof(ttypc_virt_t); i++) {
 		if (_ttypc_virt_init(&ttypc_common, &ttypc_common.virtuals[i]) < 0) {
-			main_printf(ATTR_ERROR, "dev[ttypc]: Can't initialize virtual terminal %d!\n", i);
+			ph_printf("ttypc: Can't initialize virtual terminal %d!\n", i);
 			return;
 		}
 	}
@@ -133,18 +172,12 @@ void _ttypc_init(void)
 	ttypc_common.cv = &ttypc_common.virtuals[0];
 	ttypc_common.cv->vram = ttypc_common.out_base;
 
-	proc_semaphoreCreate(&ttypc_common.mutex, 1);
-
 	_ttypc_vga_cursor(ttypc_common.cv);
 
 	/* Initialize keyboard */
 	_ttypc_kbd_init(&ttypc_common);
 
-	/* Register driver */
-	if (dev_register(MAKEDEV(MAJOR_TTYPC, 0), &ttypc_ops) < 0) {
-		main_printf(ATTR_ERROR, "dev/ttypc: Can't register device for virtual terminal %d!\n", i);
-		return;
-	}
+	ph_register("/dev/ttypc", oid);
 
 	return;
 }
