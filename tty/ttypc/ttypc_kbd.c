@@ -1,11 +1,9 @@
 /*
  * Phoenix-RTOS
  *
- * Operating system kernel
+ * ttypc - keyboard handler (map derived from BSD 4.4 Lite kernel).
  *
- * ttypc keyboard handler (map derived from BSD 4.4 Lite kernel).
- *
- * Copyright 2012 Phoenix Systems
+ * Copyright 2012, 2017 Phoenix Systems
  * Copyright 2001, 2007-2008 Pawel Pisarczyk
  * Author: Pawel Pisarczyk
  *
@@ -14,12 +12,7 @@
  * %LICENSE%
  */
 
-#include <hal/if.h>
-#include <main/if.h>
-#include <vm/if.h>
-#include <proc/if.h>
-
-#include <dev/ttypc/ttypc.h>
+#include <libphoenix.h>
 
 
 /* U.S 101 keys keyboard map */
@@ -315,23 +308,23 @@ static int ttypc_kbd_interrupt(unsigned int n, cpu_context_t *ctx, void *arg)
 	ttypc_t *ttypc = (ttypc_t *)arg;
 	u8 *s;
 
-	if (!(hal_inb(ttypc->inp_base + 4) & 33))
+	if (!(ph_inb(ttypc->inp_base + 4) & 33))
 		return IHRES_IGNORE;
 
 	/* Put characters received from keyboard to fifo */
-	proc_spinlockSet(&ttypc->intrspinlock);	
+	ph_lock(&ttypc->mutex);
 
 	if ((s = _ttypc_kbd_get(ttypc)) != NULL) {
 		ttypc->rbuff[ttypc->rp] = s;
-		ttypc->rp = ((ttypc->rp+1) % ttypc->rbuffsz);
+		ttypc->rp = ((ttypc->rp + 1) % ttypc->rbuffsz);
 
 		if (ttypc->rp == ttypc->rb)
-			ttypc->rb = ((ttypc->rb+1) % ttypc->rbuffsz);
+			ttypc->rb = ((ttypc->rb + 1) % ttypc->rbuffsz);
 
-		proc_threadCondSignal(&ttypc->waitq);
+		ph_signal(&ttypc->cond);
 	}
 
-	proc_spinlockClear(&ttypc->intrspinlock, sopGetCycles);	
+	ph_unlock(&ttypc->lock);	
 	return IHRES_HANDLED;
 }
 

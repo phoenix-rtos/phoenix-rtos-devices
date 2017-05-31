@@ -1,9 +1,9 @@
 /* 
  * Phoenix-RTOS
  *
- * Operating system kernel
- * 
  * ttypc VT220 emulator (based on FreeBSD 4.4 pcvt)
+ *
+ * Virtual consoel implementation
  *
  * Copyright 2006-2008 Pawel Pisarczyk
  * Author: Pawel Pisarczyk
@@ -16,8 +16,7 @@
 #ifndef _TTYPC_VIRT_H_
 #define _TTYPC_VIRT_H_
 
-#include <hal/if.h>
-#include <proc/if.h>
+#include "ttypc.h"
 
 
 /* escape detection state machine */
@@ -31,13 +30,13 @@
 #define STATE_CSIQM  7  /* got ESC [ ? */
 #define STATE_AMPSND 8  /* got ESC & */
 #define STATE_STAR   9  /* got ESC * */
-#define STATE_PLUS	10  /* got ESC + */
+#define STATE_PLUS  10  /* got ESC + */
 #define STATE_DCS   11  /* got ESC P */
 #define STATE_SCA   12  /* got ESC <Ps> " */
 #define STATE_STR   13  /* got ESC ! */
 #define STATE_MINUS 14  /* got ESC - */
 #define STATE_DOT   15  /* got ESC . */
-#define STATE_SLASH	16  /* got ESC / */
+#define STATE_SLASH 16  /* got ESC / */
 
 
 #define MAXTAB   132      /* no of possible tab stops */
@@ -58,7 +57,7 @@ typedef struct _ttypc_virt_t {
 	thq_t waitq;
 
 	page_t *page;
-	u16	*vram;                    /* video page start addr */
+	u16 *vram;                    /* video page start addr */
 	u16 *mem;                     /* malloc'ed memory start address */
 	unsigned int memsz;
 
@@ -85,7 +84,7 @@ typedef struct _ttypc_virt_t {
 	u8 lastrow;                   /* save row, --------- " -----------  */
 	u8 lastchar;                  /* flag, vt100 behaviour of last char */
 
-	u16	cur_offset;               /* current cursor position offset */
+	u16 cur_offset;               /* current cursor position offset */
 
 	u8 cursor_start;              /* Start of cursor */
 	u8 cursor_end;                /* End of cursor */
@@ -131,6 +130,8 @@ typedef struct _ttypc_virt_t {
 
 
 extern u16 csd_ascii[CSSIZE];
+
+
 extern u16 csd_supplemental[CSSIZE];
 
 

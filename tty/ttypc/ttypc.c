@@ -1,18 +1,22 @@
 /*
  * Phoenix-RTOS
  *
- * Operating system kernel
+ * ttypc - VT220 terminal emulator based on VGA and 101-key US keyboard
  *
- * ttypc - VT220 terminal emulator based on VGA and 101-key US keyboard.
+ * Driver initialization
  *
  * Copyright 2012, 2017 Phoenix Systems
  * Copyright 2006, 2008 Pawel Pisarczyk
- * Author: Pawel Pisarczyk, Pawel Kolodziej, Janusz Gralak, Marcin Stragowski
+ * Author: Pawel Pisarczyk, Pawel Kolodziej, Janusz Gralak
  *
  * This file is part of Phoenix-RTOS.
  *
  * %LICENSE%
  */
+
+#include <libphoenix.h>
+
+#include "ttypc_virt.h"
 
 
 #define SIZE_TTYPC_RBUFF  128
@@ -158,14 +162,14 @@ int main(int argc, char *argv[])
 	ttypc_common.inp_irq = 1;
 	ttypc_common.inp_base = (void *)0x60;
 
-//	ttypc_common.out_base = VADDR_KERNEL + (ttypc_common.color ? VRAM_COLOR : VRAM_MONO);
+	ttypc_common.out_base = ttypc_common.color ? VRAM_COLOR : VRAM_MONO);
 	ttypc_common.out_crtc = ttypc_common.color ? (void *)0x3d4 : (void *)0x3b4;
 
 	/* Initialize virutal terminals and register devices */
 	for (i = 0; i < sizeof(ttypc_common.virtuals) / sizeof(ttypc_virt_t); i++) {
 		if (_ttypc_virt_init(&ttypc_common, &ttypc_common.virtuals[i]) < 0) {
 			ph_printf("ttypc: Can't initialize virtual terminal %d!\n", i);
-			return;
+			return -1;
 		}
 	}
 
@@ -179,5 +183,5 @@ int main(int argc, char *argv[])
 
 	ph_register("/dev/ttypc", oid);
 
-	return;
+	return 0;
 }

@@ -1,8 +1,6 @@
 /* 
  * Phoenix-RTOS
  *
- * Operating system kernel
- *
  * PC 101-key keyboard handler derived from the BSD 4.4 Lite kernel.
  *
  * Copyright 2012 Phoenix Systems
