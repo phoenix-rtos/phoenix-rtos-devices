@@ -16,7 +16,6 @@
 #ifndef _TTYPC_VIRT_H_
 #define _TTYPC_VIRT_H_
 
-#include "ttypc.h"
 
 
 /* escape detection state machine */
@@ -52,11 +51,11 @@
 
 
 typedef struct _ttypc_virt_t {
-	struct _ttypc_t *ttypc;
-	semaphore_t mutex;
-	thq_t waitq;
+	char active;
 
-	page_t *page;
+	handle_t mutex;
+	handle_t cond;
+
 	u16 *vram;                    /* video page start addr */
 	u16 *mem;                     /* malloc'ed memory start address */
 	unsigned int memsz;
@@ -147,7 +146,7 @@ extern int ttypc_virt_sget(ttypc_virt_t *virt, char *buff, unsigned int len);
 
 
 /* Function initializes ttypc virtual terminal handler */
-extern int _ttypc_virt_init(struct _ttypc_t *ttypc, ttypc_virt_t *virt);
+extern int _ttypc_virt_init(ttypc_virt_t *virt, size_t rbuffsz);
 
 
 #endif

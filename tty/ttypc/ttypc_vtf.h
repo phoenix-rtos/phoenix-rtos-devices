@@ -19,9 +19,9 @@
 #define _DEV_TTYPC_VTF_H_
 
 
-#include <hal/if.h>
+#include <libphoenix.h>
 
-#include <dev/ttypc/ttypc_virt.h>
+#include "ttypc_virt.h"
 
 
 /* VT220 -> internal color conversion table fields */

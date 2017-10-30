@@ -17,9 +17,9 @@
 #define _DEV_TTYPC_VGA_H_
 
 
-#include <hal/if.h>
+#include <libphoenix.h>
 
-#include <dev/ttypc/ttypc.h>
+#include "ttypc_virt.h"
 
 
 extern void _ttypc_vga_cursor(ttypc_virt_t *virt);

@@ -162,16 +162,19 @@ int main(int argc, char *argv[])
 	ttypc_common.inp_irq = 1;
 	ttypc_common.inp_base = (void *)0x60;
 
-	ttypc_common.out_base = ttypc_common.color ? VRAM_COLOR : VRAM_MONO);
+	ttypc_common.out_base = ttypc_common.color ? VRAM_COLOR : VRAM_MONO;
 	ttypc_common.out_crtc = ttypc_common.color ? (void *)0x3d4 : (void *)0x3b4;
+
 
 	/* Initialize virutal terminals and register devices */
 	for (i = 0; i < sizeof(ttypc_common.virtuals) / sizeof(ttypc_virt_t); i++) {
-		if (_ttypc_virt_init(&ttypc_common, &ttypc_common.virtuals[i]) < 0) {
+		if (_ttypc_virt_init(&ttypc_common.virtuals[i], 128 * 4) < 0) {
 			ph_printf("ttypc: Can't initialize virtual terminal %d!\n", i);
 			return -1;
 		}
 	}
+
+#if 0
 
 	ttypc_common.cv = &ttypc_common.virtuals[0];
 	ttypc_common.cv->vram = ttypc_common.out_base;
@@ -181,7 +184,8 @@ int main(int argc, char *argv[])
 	/* Initialize keyboard */
 	_ttypc_kbd_init(&ttypc_common);
 
-	ph_register("/dev/ttypc", oid);
-
+//	ph_register("/dev/ttypc", oid);
+#endif
+for (;;);
 	return 0;
 }

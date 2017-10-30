@@ -14,12 +14,11 @@
  * %LICENSE%
  */
 
-#include <hal/if.h>
-#include <main/if.h>
-#include <vm/if.h>
-#include <proc/if.h>
+#include <libphoenix.h>
 
-#include <dev/ttypc/ttypc.h>
+#include "ttypc_virt.h"
+#include "ttypc_vtf.h"
+#include "ttypc_vga.h"
 
 
 u16 csd_ascii[CSSIZE] = {
@@ -148,10 +147,9 @@ static void _ttypc_virt_writechar(ttypc_virt_t *virt, u16 attrib, u16 ch)
 /* Emulator main entry */
 void ttypc_virt_sput(ttypc_virt_t *virt, u8 *s, int len)
 {
-	u16	ch;
-	ttypc_t *ttypc = virt->ttypc;
+	u16 ch;
 
-	proc_semaphoreDown(&virt->mutex);
+	ph_lock(virt->mutex);
 
 	while (len-- > 0) {
 		if ((ch = *(s++)) == 0)
@@ -239,12 +237,12 @@ void ttypc_virt_sput(ttypc_virt_t *virt, u8 *s, int len)
 			case 0x19:  /* EM */
 				break;
 
-			case 0x1a:	/* SUB */
+			case 0x1a:  /* SUB */
 				virt->state = STATE_INIT;
 				_ttypc_vtf_clrparms(virt);
 				break;
 
-			case 0x1b:	/* ESC */
+			case 0x1b:  /* ESC */
 				virt->state = STATE_ESC;
 				_ttypc_vtf_clrparms(virt);
 				break;
@@ -278,8 +276,7 @@ void ttypc_virt_sput(ttypc_virt_t *virt, u8 *s, int len)
 				}
 
 				if (virt->m_irm)
-					hal_memcpy(virt->vram + virt->cur_offset + 1, virt->vram + virt->cur_offset,
-						(virt->maxcol - 1 - virt->col) * CHR);
+					memcpy(virt->vram + virt->cur_offset + 1, virt->vram + virt->cur_offset, (virt->maxcol - 1 - virt->col) * CHR);
 
 				_ttypc_virt_writechar(virt, virt->attr, ch);
 				//_ttypc_vtf_selattr(virt);
@@ -507,7 +504,7 @@ void ttypc_virt_sput(ttypc_virt_t *virt, u8 *s, int len)
 				case 'K':                             /* erase line */
 					_ttypc_vtf_clreol(virt);
 					virt->state = STATE_INIT;
-					if (virt->scr_offset > 0 && virt == virt->ttypc->cv)
+					if (virt->scr_offset > 0 && virt->active)
 						virt->scr_offset--;
 					break;
 
@@ -642,12 +639,11 @@ void ttypc_virt_sput(ttypc_virt_t *virt, u8 *s, int len)
 		if (virt->lastchar && (virt->col < (virt->maxcol - 1)))
 			virt->lastchar = 0;
 	}
-	proc_semaphoreUp(&virt->mutex);
 
-	proc_semaphoreDown(&ttypc->mutex);
-	if (virt->ttypc->cv == virt)
+	if (virt->active)
 		_ttypc_vga_cursor(virt);
-	proc_semaphoreUp(&ttypc->mutex);
+
+	ph_unlock(virt->mutex);
 
 	return;
 }
@@ -660,7 +656,7 @@ int ttypc_virt_sadd(ttypc_virt_t *virt, u8 *s, unsigned int len)
 	if (virt->m_echo == 1)
 		ttypc_virt_sput(virt, s, len);
 
-	proc_semaphoreDown(&virt->mutex);
+	ph_lock(virt->mutex);
 	
 	if (virt->rp >= virt->rb)
 		l = virt->rbuffsz - (virt->rp - virt->rb);
@@ -668,7 +664,7 @@ int ttypc_virt_sadd(ttypc_virt_t *virt, u8 *s, unsigned int len)
 		l = virt->rb - virt->rp;
 
 	if (l < len) {
-		proc_semaphoreUp(&virt->mutex);
+		ph_unlock(virt->mutex);
 		return -ENOMEM;
 	}
 
@@ -677,8 +673,8 @@ int ttypc_virt_sadd(ttypc_virt_t *virt, u8 *s, unsigned int len)
 		virt->rp = ( (virt->rp+1) % virt->rbuffsz);
 	}
 
-	proc_threadCondSignal(&virt->waitq);
-	proc_semaphoreUp(&virt->mutex);
+	ph_signal(virt->cond);
+	ph_unlock(virt->mutex);
 	return EOK;
 }
 
@@ -688,10 +684,10 @@ int ttypc_virt_sget(ttypc_virt_t *virt, char *buff, unsigned int len)
 	int err;
 	unsigned int l, cnt;
 
-	proc_semaphoreDown(&virt->mutex);
+	ph_lock(virt->mutex);
 
 	while (virt->rp == virt->rb) {
-		if ((err = proc_condWait(&virt->waitq, &virt->mutex, 0)) < 0)
+		if ((err = ph_wait(virt->cond, virt->mutex, 0)) < 0)
 			return err;
 	}
 
@@ -700,39 +696,36 @@ int ttypc_virt_sget(ttypc_virt_t *virt, char *buff, unsigned int len)
 	else
 		l = min(virt->rbuffsz - virt->rb, len);
 
-	hal_memcpy(buff, &virt->rbuff[virt->rb], l);
+	memcpy(buff, &virt->rbuff[virt->rb], l);
 
 	cnt = l;
 	if ((len > l) && (virt->rp < virt->rb)) {
-		hal_memcpy(buff + l, &virt->rbuff[0], min(len - l, virt->rp));
+		memcpy(buff + l, &virt->rbuff[0], min(len - l, virt->rp));
 		cnt += min(len - l, virt->rp);
 	}
 	virt->rb = ((virt->rb + cnt) % virt->rbuffsz);
 
-	proc_semaphoreUp(&virt->mutex);
+	ph_unlock(virt->mutex);
 	return cnt;
 }
 
 
-int _ttypc_virt_init(ttypc_t *ttypc, ttypc_virt_t *virt)
+int _ttypc_virt_init(ttypc_virt_t *virt, size_t rbuffsz)
 {
 	void *vaddr;
-	virt->ttypc = ttypc;
+
+	virt->active = 0;
 
 	/*
 	 * (MOD) page allocation should be substituted by kmalloc, but kmalloc should
 	 * be able to allocate up to 128 KB of memory
 	 */
-	virt->page = vm_pageAlloc(1, vm_pageAlloc);
-	
-	if (vm_kmap(virt->page, PGHD_PRESENT | PGHD_WRITE, &vaddr) < 0)
-		return -ENOMEM;
 
-	virt->mem = vaddr;	
-	virt->memsz = SIZE_PAGE;
+	virt->mem = ph_mmap(NULL, 4096, /*PROT_READ | PROT_WRITE*/0, 0, 0, 0xb8000);
+	virt->memsz = 4096;
 
 	virt->vram = virt->mem;
-	hal_memset(virt->vram, 0, virt->memsz);
+	memset(virt->vram, 0, virt->memsz);
 
 	virt->rows = 24;
 	virt->maxcol = 80;
@@ -748,14 +741,13 @@ int _ttypc_virt_init(ttypc_t *ttypc, ttypc_virt_t *virt)
 	virt->ss = 0;
 	virt->Gs = NULL;
 
-	proc_semaphoreCreate(&virt->mutex, 1);
-	proc_thqCreate(&virt->waitq);
+	virt->mutex = ph_mutex();
+	virt->cond = ph_cond();
 
 	/* Prepare input buffer */
-	virt->rbuffsz = SIZE_TTYPC_RBUFF * 4;
-	if ((virt->rbuff = (u8 *)vm_kmalloc(virt->rbuffsz)) == NULL) {
-		vm_kunmap(vaddr);
-		vm_pageFree(virt->page);
+	virt->rbuffsz = rbuffsz;
+	if ((virt->rbuff = (u8 *)ph_malloc(virt->rbuffsz)) == NULL) {
+		ph_munmap(vaddr, 4096);
 		return -ENOMEM;
 	}
 	virt->rp = 0;

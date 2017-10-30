@@ -13,7 +13,7 @@ CFLAGS = -c -Wall -O2 -g -I. -I../../../libphoenix/
 LD = i386-pc-phoenix-gcc
 LDFLAGS = -nostartfiles -nostdlib
 
-SRCS = ttypc.c
+SRCS = ttypc.c ttypc_virt.c ttypc_vtf.c
 OBJS = $(SRCS:.c=.o)
 BIN = ttypc
 
@@ -22,9 +22,8 @@ all: ttypc
 .c.o:
 	$(CC) $(CFLAGS) $<
 
-$(OBJS):
 
-meterfs: $(OBJS)
+ttypc: $(OBJS)
 	$(LD) $(LDFLAGS) -o $(BIN) $(OBJS) ../../../libphoenix/libphoenix.a
 
 clean:
