@@ -13,21 +13,30 @@
  * %LICENSE%
  */
 
-#include HAL
+
+#include "stdlib.h"
+#include "stdio.h"
+#include "unistd.h"
+#include "string.h"
+#include "errno.h"
+
 #include "gpiodrv.h"
-#include "proc/threads.h"
-#include "proc/msg.h"
-#include "lib/lib.h"
-
-
-/* Temporary solution */
-unsigned int gpiodrv_id;
+#include "sys/threads.h"
+#include "sys/msg.h"
 
 
 struct {
-	volatile unsigned int *rcc;
-	volatile unsigned int *gpio[8];
+	volatile u32 *rcc;
+	volatile u32 *gpio[8];
+	volatile u32 *exti;
+	volatile u32 *syscfg;
+
+	unsigned int id;
 } gpiodrv_common;
+
+
+static const u8 ix2port[8] = {0, 1, 2, 3, 4, 6, 7, 5};
+static const u8 port2ix[8] = {0, 1, 2, 3, 4, 7, 5, 6};
 
 
 enum { gpio_moder = 0, gpio_otyper, gpio_ospeedr, gpio_pupdr, gpio_idr,
@@ -38,30 +47,20 @@ enum { rcc_cr = 0, rcc_icscr, rcc_cfgr, rcc_cir, rcc_ahbrstr, rcc_apb2rstr, rcc_
 	rcc_ahbenr, rcc_apb2enr, rcc_apb1enr, rcc_ahblpenr, rcc_apb2lpenr, rcc_apb1lpenr, rcc_csr };
 
 
-static void gpiodrv_setPort(int port, unsigned int mask, unsigned int val)
+enum { exti_imr = 0, exti_emr, exti_rtsr, exti_ftsr, exti_swier, exti_pr };
+
+
+enum { syscfg_memrmp = 0, syscfg_pmc, syscfg_exticr };
+
+
+void gpiodrv_config(int port, u8 pin, u8 mode, u8 af, u8 otype, u8 ospeed, u8 pupd)
 {
-	unsigned int t;
+	volatile u32 *base = gpiodrv_common.gpio[port];
+	u32 t;
 
-	t = *(gpiodrv_common.gpio[port & 7] + gpio_odr) & ~(~val & mask);
-	t |= val & mask;
-	*(gpiodrv_common.gpio[port & 7] + gpio_odr) = t & 0xffff;
-}
-
-
-void gpiodrv_configPin(int port, char pin, char mode, char af, char otype, char ospeed, char pupd)
-{
-	volatile unsigned int *base = gpiodrv_common.gpio[port & 7];
-	unsigned int t;
-
-	/* Enable GPIO port's clock */
-	if (port == 5 || port == 6)
-		*(gpiodrv_common.rcc + rcc_ahbenr) |= 1 << (port + 1);
-	else if (port == 7)
-		*(gpiodrv_common.rcc + rcc_ahbenr) |= 1 << 5;
-	else
-		*(gpiodrv_common.rcc + rcc_ahbenr) |= 1 << (port & 7);
-
-	hal_cpuDataBarrier();
+	/* Enable clock */
+	*(gpiodrv_common.rcc + rcc_ahbenr) |= 1 << port2ix[port];
+	__asm__ volatile ("dmb");
 
 	t = *(base + gpio_moder) & ~(0x3 << (pin << 1));
 	*(base + gpio_moder) = t | (mode & 0x3) << (pin << 1);
@@ -78,33 +77,26 @@ void gpiodrv_configPin(int port, char pin, char mode, char af, char otype, char 
 	if (pin < 8) {
 		t = *(base + gpio_afrl) & ~(0xf << (pin << 2));
 		*(base + gpio_afrl) = t | (af & 0xf) << (pin << 2);
-	} else {
+	}
+	else {
 		t = *(base + gpio_afrh) & ~(0xf << ((pin - 8) << 2));
 		*(base + gpio_afrh) = t | (af & 0xf) << ((pin - 8) << 2);
 	}
 }
 
 
-extern void gpiodrv_configInterrupt(int port, char pin, char state, char edge)
+static void gpiodrv_stox(char *buff, unsigned short x)
 {
-	/* enable syscfg clock */
-	*(gpiodrv_common.rcc + rcc_apb2enr) |= 1;
-	hal_interruptsSetGpioInterrupt(port, pin, state, edge);
-}
+	int i;
+	const char hex[] = {'0', '1', '2', '3', '4', '5', '6', '7',
+			    '8', '9', 'a', 'b', 'c', 'd', 'e', 'f' };
 
-
-static void stox(char *buff, unsigned short x)
-{
-	char hex[] = {'0', '1', '2', '3', '4', '5', '6', '7',
-		'8', '9', 'a', 'b', 'c', 'd', 'e', 'f' };
-
-	for (int i = 0; i < 4; ++i) {
+	for (i = 0; i < 4; ++i)
 		buff[i] = hex[(x >> (4 * (3 - i))) & 0xf];
-	}
 }
 
 
-static unsigned short xtos(char **ptr)
+static unsigned short gpiodrv_xtos(char **ptr)
 {
 	unsigned short x = 0;
 
@@ -130,22 +122,9 @@ static unsigned short xtos(char **ptr)
 }
 
 
-static int strcmp(const char *x, const char *y)
+static void gpiodrv_uwait(unsigned time)
 {
-	for (; *x != '\0' && *y != '\0'; ++x, ++y) {
-		if (*x < *y)
-			return -1;
-		else if (*x > *y)
-			return 1;
-	}
-
-	return 0;
-}
-
-
-static void gpiodrv_uwait(int time)
-{
-	volatile int i;
+	volatile unsigned i;
 
 	for (i = 0; i < time; ++i);
 }
@@ -153,169 +132,210 @@ static void gpiodrv_uwait(int time)
 
 static void gpiodrv_thread(void *arg)
 {
+	msghdr_t hdr;
 	union {
 		char buff[41];
 		gpiomsg_t devctl[8];
 		gpiodrv_data_t data;
 	} msg;
 
-	int resps[8];
-	int i, len;
-	unsigned int msgsz;
-	msghdr_t hdr;
+	int resps[8], i, len, err;
+
+	char *tmpptr;
+	unsigned short val, mask;
+	unsigned msgsz, port, pin, mode, af, otype, ospeed, pupd, tmp, state;
+	volatile unsigned *ptr;
 
 	for (;;) {
-		msgsz = proc_recv(gpiodrv_id, &msg, sizeof(msg), &hdr);
+		err = EOK;
+		msgsz = recv(gpiodrv_common.id, &msg, sizeof(msg), &hdr);
+
+		if (hdr.type != NORMAL)
+			continue;
 
 		switch (hdr.op) {
-			case MSG_READ: {
-				for (i = 0; i < 8; ) {
-					stox(&(msg.buff[5 * i]), *(gpiodrv_common.gpio[i] + gpio_idr));
-					msg.buff[(5 * ++i) - 1] = ' ';
-				}
+		case READ: {
+			for (i = 0; i < 8; ++i) {
+				val = *(u16*)(gpiodrv_common.gpio[i] + gpio_idr);
+				gpiodrv_stox(msg.buff + 5 * i, val);
+				msg.buff[5 * i + 4] = ' ';
+			}
 
-				msg.buff[39] = '\n';
-				msg.buff[40] = '\0';
+			msg.buff[39] = '\n';
+			msg.buff[40] = '\0';
 
-				if (hdr.type != MSG_NOTIFY)
-					proc_respond(gpiodrv_id, EOK, msg.buff, 41);
+			respond(gpiodrv_common.id, EOK, msg.buff, 41);
 
+			break;
+		}
+
+		case WRITE: {
+			tmpptr = msg.data.buff;
+
+			for (; *tmpptr == ' ' && *tmpptr != '\0'; ++tmpptr);
+
+			if (*tmpptr == '\0') {
+				respond(gpiodrv_common.id, -EINVAL, NULL, 0);
 				break;
 			}
 
-			case MSG_WRITE: {
-				char *tmpptr = msg.data.buff;
+			if (!strcmp("SET ", tmpptr) || !strcmp("set ", tmpptr)) {
+				tmpptr += 4;
+				port = gpiodrv_xtos(&tmpptr);
+				mask = gpiodrv_xtos(&tmpptr);
+				val = gpiodrv_xtos(&tmpptr);
 
-				for (; *tmpptr == ' ' && *tmpptr != '\0'; ++tmpptr);
+				*(gpiodrv_common.gpio[port & 7] + gpio_bsrr) = ((unsigned)(~val & mask) << 16) | (val & mask);
+			}
+			else if (!strcmp("DEF ", tmpptr) || !strcmp("def ", tmpptr)) {
+				tmpptr += 4;
+				port = gpiodrv_xtos(&tmpptr);
+				pin = gpiodrv_xtos(&tmpptr);
+				mode = gpiodrv_xtos(&tmpptr);
+				af = gpiodrv_xtos(&tmpptr);
+				otype = gpiodrv_xtos(&tmpptr);
+				ospeed = gpiodrv_xtos(&tmpptr);
+				pupd = gpiodrv_xtos(&tmpptr);
 
-				if (*tmpptr == '\0') {
-					if (hdr.type != MSG_NOTIFY)
-						proc_respond(gpiodrv_id, EINVAL, NULL, 0);
+				gpiodrv_config(port, pin, mode, af, otype, ospeed, pupd);
+			}
 
+			respond(gpiodrv_common.id, EOK, NULL, 0);
+			break;
+		}
+
+		case DEVCTL: {
+			if (msgsz < sizeof(gpiomsg_t)) {
+				respond(gpiodrv_common.id, -EINVAL, NULL, 0);
+				break;
+			}
+
+			len = msgsz / sizeof(gpiomsg_t);
+
+			for (i = 0; i < len && err == EOK; ++i) {
+				resps[i] = 0;
+				port = msg.devctl[i].port;
+
+				if (port > 7) {
+					err = -EINVAL;
 					break;
 				}
 
-				if (!strcmp("SET ", tmpptr) || !strcmp("set ", tmpptr)) {
-					unsigned int port, mask, val;
+				switch (msg.devctl[i].type) {
+				case GPIO_GET:
+					resps[i] = *(u16*)(gpiodrv_common.gpio[port] + gpio_idr);
+					break;
 
-					tmpptr += 4;
-					port = xtos(&tmpptr);
-					mask = xtos(&tmpptr);
-					val = xtos(&tmpptr);
+				case GPIO_SET:
+					val = msg.devctl[i].set.state;
+					mask = msg.devctl[i].set.mask;
+					*(gpiodrv_common.gpio[port] + gpio_bsrr) = ((unsigned)(~val & mask) << 16) | (val & mask);
+					break;
 
-					gpiodrv_setPort(port, mask, val);
-				}
-				else if (!strcmp("DEF ", tmpptr) || !strcmp("def ", tmpptr)) {
-					unsigned int port, pin, mode, af, otype, ospeed, pupd;
+				case GPIO_CONFIG:
+					gpiodrv_config(port, msg.devctl[i].config.pin, msg.devctl[i].config.mode, msg.devctl[i].config.af, msg.devctl[i].config.otype, msg.devctl[i].config.ospeed, msg.devctl[i].config.pupd);
+					break;
 
-					tmpptr += 4;
-					port = xtos(&tmpptr);
-					pin = xtos(&tmpptr) & 0xf;
-					mode = xtos(&tmpptr) & 0x3;
-					af = xtos(&tmpptr) & 0xf;
-					otype = xtos(&tmpptr) & 0x3;
-					ospeed = xtos(&tmpptr) & 0x3;
-					pupd = xtos(&tmpptr) & 0x3;
+				case GPIO_INTERRUPT:
+					pin = msg.devctl[i].interrupt.pin;
+					state = msg.devctl[i].interrupt.state;
 
-					gpiodrv_configPin(port, pin, mode, af, otype, ospeed, pupd);
-				}
+					/* Enable clock */
+					*(gpiodrv_common.rcc + rcc_ahbenr) |= 1 << port2ix[port];
+					__asm__ volatile ("dmb");
 
-				if (hdr.type != MSG_NOTIFY)
-					proc_respond(gpiodrv_id, EOK, NULL, 0);
+					/* Exti line config */
+					tmp = ((u32)0x0f << (0x04 * (pin & (u8)0x03)));
+					(gpiodrv_common.syscfg + syscfg_exticr)[pin >> 0x02] &= ~tmp;
+					(gpiodrv_common.syscfg + syscfg_exticr)[pin >> 0x02] |= ((u32)port) << (0x04 * (pin & (u8)0x03));
 
-				break;
-			}
+					/* Exti mask interrupt */
+					*(gpiodrv_common.exti + exti_imr) &= ~(!state << pin);
+					*(gpiodrv_common.exti + exti_imr) |= !!state << pin;
 
-			case MSG_DEVCTL: {
-				if (msgsz < sizeof(gpiomsg_t)) {
-					if (hdr.type != MSG_NOTIFY)
-						proc_respond(gpiodrv_id, EINVAL, NULL, 0);
+					/* Exti set trigger */
+					if (msg.devctl[i].interrupt.edge)
+						ptr = gpiodrv_common.exti + exti_rtsr;
+					else
+						ptr = gpiodrv_common.exti + exti_ftsr;
+
+					*ptr &= ~(!state << pin);
+					*ptr |= !!state << pin;
+
+					break;
+
+				case GPIO_DELAY:
+					gpiodrv_uwait(msg.devctl[i].delay.len);
+					break;
+
+				default:
+					err = -EINVAL;
 					break;
 				}
-				else if (msgsz > sizeof(gpiomsg_t)) {
-					len = msgsz / sizeof(gpiomsg_t);
-				}
-				else {
-					len = 1;
-				}
-
-				for (i = 0; i < len; ++i) {
-					switch (msg.devctl[i].type) {
-						case GPIO_GET:
-							resps[i] = *(gpiodrv_common.gpio[msg.devctl[i].port & 7] + gpio_idr) & 0xffff;
-
-							break;
-
-						case GPIO_SET:
-							gpiodrv_setPort(msg.devctl[i].port, msg.devctl[i].set.mask, msg.devctl[i].set.state);
-							resps[i] = 0;
-
-							break;
-
-						case GPIO_CONFIG:
-							gpiodrv_configPin(msg.devctl[i].port, msg.devctl[i].config.pin, msg.devctl[i].config.mode,
-								msg.devctl[i].config.af, msg.devctl[i].config.otype, msg.devctl[i].config.ospeed, msg.devctl[i].config.pupd);
-							resps[i] = 0;
-
-							break;
-
-						case GPIO_INTERRUPT:
-							gpiodrv_configInterrupt(msg.devctl[i].port, msg.devctl[i].interrupt.pin,
-								msg.devctl[i].interrupt.state, msg.devctl[i].interrupt.edge);
-							resps[i] = 0;
-
-							break;
-
-						case GPIO_DELAY:
-							gpiodrv_uwait(msg.devctl[i].delay.len);
-							resps[i] = 0;
-
-							break;
-
-						default:
-							if (hdr.type != MSG_NOTIFY)
-								proc_respond(gpiodrv_id, EINVAL, NULL, 0);
-
-							break;
-					}
-				}
-
-				if (hdr.type != MSG_NOTIFY)
-					proc_respond(gpiodrv_id, EOK, resps, len * sizeof(resps[0]));
-
-				break;
 			}
 
-			default: {
-				if (hdr.type != MSG_NOTIFY)
-					proc_respond(gpiodrv_id, EINVAL, NULL, 0);
+			if (err == EOK)
+				respond(gpiodrv_common.id, EOK, resps, len * sizeof(resps[0]));
+			else
+				respond(gpiodrv_common.id, -EINVAL, NULL, 0);
 
-				break;
-			}
+			break;
+		}
+
+		default:
+			respond(gpiodrv_common.id, -EINVAL, NULL, 0);
+			break;
 		}
 	}
 }
 
 
+void gpiodrv_init(void)
+{
+	int i;
+
+	portCreate(&gpiodrv_common.id);
+	portRegister(gpiodrv_common.id, "/gpiodrv");
+
+	gpiodrv_common.rcc = (void *)0x40023800;
+	gpiodrv_common.exti = (void *)0x40010400;
+	gpiodrv_common.syscfg = (void *)0x40010000;
+
+	for (i = 0; i < 8; ++i)
+		gpiodrv_common.gpio[ix2port[i]] = (void *)(0x40020000 + i * 0x400);
+
+	beginthread(gpiodrv_thread, 0, malloc(1024) + 1024, NULL);
+}
+
+
+int gpio_read(char *resp)
+{
+	return send(gpiodrv_common.id, READ, NULL, 0, NORMAL, resp, 41);
+}
+
+
+int gpio_write(char *msg, unsigned len)
+{
+	return send(gpiodrv_common.id, WRITE, msg, len, NORMAL, NULL, 0);
+}
+
+
 int gpio_sequence(gpiomsg_t *msg, unsigned int len, int *resp)
 {
-	return proc_send(gpiodrv_id, MSG_DEVCTL, msg, len * sizeof(gpiomsg_t), MSG_NORMAL, resp, len * sizeof(int));
+	return send(gpiodrv_common.id, DEVCTL, msg, len * sizeof(gpiomsg_t), NORMAL, resp, len * sizeof(int));
 }
 
 
 int gpio_setPort(int port, int mask, int state)
 {
 	gpiomsg_t gpio;
-	int resp;
 
 	gpio.port = port;
 	gpio.type = GPIO_SET;
 	gpio.set.mask = mask;
 	gpio.set.state = state;
 
-	resp = proc_send(gpiodrv_id, MSG_DEVCTL, &gpio, sizeof(gpio), MSG_NORMAL, NULL, 0);
-
-	return resp < 0 ? resp : 0;
+	return send(gpiodrv_common.id, DEVCTL, &gpio, sizeof(gpio), NORMAL, NULL, 0);
 }
 
 
@@ -326,7 +346,7 @@ int gpio_getPort(int port)
 
 	gpio.port = port;
 	gpio.type = GPIO_GET;
-	proc_send(gpiodrv_id, MSG_DEVCTL, &gpio, sizeof(gpio), MSG_NORMAL, &resp, sizeof(resp));
+	send(gpiodrv_common.id, DEVCTL, &gpio, sizeof(gpio), NORMAL, &resp, sizeof(resp));
 
 	return resp;
 }
@@ -335,7 +355,6 @@ int gpio_getPort(int port)
 int gpio_configPin(int port, char pin, char mode, char af, char ospeed, char otype, char pupd)
 {
 	gpiomsg_t gpio;
-	int resp;
 
 	gpio.port = port;
 	gpio.type = GPIO_CONFIG;
@@ -346,27 +365,5 @@ int gpio_configPin(int port, char pin, char mode, char af, char ospeed, char oty
 	gpio.config.otype = otype;
 	gpio.config.pupd = pupd;
 
-	resp = proc_send(gpiodrv_id, MSG_DEVCTL, &gpio, sizeof(gpio), MSG_NORMAL, NULL, 0);
-
-	return resp < 0 ? resp : 0;
-}
-
-
-void gpiodrv_init(void)
-{
-	gpiodrv_common.gpio[0] = (void *)0x40020000;
-	gpiodrv_common.gpio[1] = (void *)0x40020400;
-	gpiodrv_common.gpio[2] = (void *)0x40020800;
-	gpiodrv_common.gpio[3] = (void *)0x40020c00;
-	gpiodrv_common.gpio[4] = (void *)0x40021000;
-	gpiodrv_common.gpio[5] = (void *)0x40021800;
-	gpiodrv_common.gpio[6] = (void *)0x40021c00;
-	gpiodrv_common.gpio[7] = (void *)0x40021400;
-
-	gpiodrv_common.rcc = (void *)0x40023800;
-
-	proc_portCreate(&gpiodrv_id);
-	proc_portRegister(gpiodrv_id, "/gpiodrv");
-
-	proc_threadCreate(NULL, gpiodrv_thread, 0, 1024, NULL, NULL);
+	return send(gpiodrv_common.id, DEVCTL, &gpio, sizeof(gpio), NORMAL, NULL, 0);
 }

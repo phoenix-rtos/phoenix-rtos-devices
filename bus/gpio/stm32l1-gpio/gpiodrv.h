@@ -16,11 +16,6 @@
 #ifndef _GPIODRV_H_
 #define _GPIODRV_H_
 
-#include HAL
-
-/* Temporary solution */
-extern unsigned int gpiodrv_id;
-
 
 enum { GPIO_CONFIG, GPIO_INTERRUPT, GPIO_GET, GPIO_SET, GPIO_DELAY };
 
