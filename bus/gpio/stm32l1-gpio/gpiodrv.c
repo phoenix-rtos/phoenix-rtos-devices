@@ -14,15 +14,16 @@
  */
 
 
-#include "stdlib.h"
-#include "stdio.h"
-#include "unistd.h"
-#include "string.h"
-#include "errno.h"
+#include <stdlib.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <string.h>
+#include <errno.h>
+
+#include <sys/threads.h>
+#include <sys/msg.h>
 
 #include "gpiodrv.h"
-#include "sys/threads.h"
-#include "sys/msg.h"
 
 
 struct {
@@ -35,8 +36,8 @@ struct {
 } gpiodrv_common;
 
 
-static const u8 ix2port[8] = {0, 1, 2, 3, 4, 6, 7, 5};
-static const u8 port2ix[8] = {0, 1, 2, 3, 4, 7, 5, 6};
+static const u8 port2ix[8] = {0, 1, 2, 3, 4, 6, 7, 5};
+static const u8 ix2port[8] = {GPIOA, GPIOB, GPIOC, GPIOD, GPIOE, GPIOH, GPIOF, GPIOG};
 
 
 enum { gpio_moder = 0, gpio_otyper, gpio_ospeedr, gpio_pupdr, gpio_idr,
