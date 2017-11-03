@@ -13,42 +13,38 @@
  * %LICENSE%
  */
 
-#include HAL
-#include "uartdrv.h"
+#include <stdlib.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <string.h>
+#include <errno.h>
+
+#include <sys/threads.h>
+#include <sys/msg.h>
+#include <sys/interrupt.h>
+
 #include "gpiodrv.h"
-#include "proc/threads.h"
-#include "proc/msg.h"
-#include "../include/errno.h"
+#include "uartdrv.h"
 
 /* Need getter for CPU clock. Temporary solution */
 #define F_OSC 2097152
 
 
-/* Temporary solution */
-unsigned int uartdrv_id[3];
-
-
-struct {
+typedef struct {
 	volatile unsigned int *base;
-	volatile unsigned int *rcc;
-	unsigned int *port;
+	unsigned int port;
 
-	volatile char txdfifo[32];
-	volatile unsigned int txdr;
-	volatile unsigned int txdw;
+	volatile char *txbeg, *txend;
 
 	volatile char rxdfifo[32];
 	volatile unsigned int rxdr;
 	volatile unsigned int rxdw;
+	volatile char *rxbeg, *rxend;
+	volatile unsigned int read;
 
-	thread_t *txdEv;
-	thread_t *rxdEv;
-
-	spinlock_t txdSp;
-	spinlock_t rxdSp;
-
-	intr_handler_t irqHandler;
-} uartdrv_common[3];
+	handle_t cond;
+	handle_t mutex;
+} uart_t;
 
 
 enum { sr = 0, dr, brr, cr1, cr2, cr3, gtpr };
@@ -58,88 +54,105 @@ enum { rcc_cr = 0, rcc_icscr, rcc_cfgr, rcc_cir, rcc_ahbrstr, rcc_apb2rstr, rcc_
 	rcc_ahbenr, rcc_apb2enr, rcc_apb1enr, rcc_ahblpenr, rcc_apb2lpenr, rcc_apb1lpenr, rcc_csr };
 
 
-static int uartdrv_irqHandler(unsigned int n, cpu_context_t *context, void *arg)
+static int uartdrv_irqHandler(unsigned int n, void *arg)
 {
-	if ((*(uartdrv_common[(int)arg].base + sr) & (1 << 7))) { /* Txd buffer empty */
-		if (uartdrv_common[(int)arg].txdr != uartdrv_common[(int)arg].txdw) {
-			*(uartdrv_common[(int)arg].base + dr) = uartdrv_common[(int)arg].txdfifo[uartdrv_common[(int)arg].txdr];
-			uartdrv_common[(int)arg].txdr = (uartdrv_common[(int)arg].txdr + 1) % sizeof(uartdrv_common[(int)arg].txdfifo);
-		}
-		else
-			*(uartdrv_common[(int)arg].base + cr1) &= ~(1 << 7);
+	uart_t *uart = arg;
+	handle_t release = 0;
 
-		proc_threadWakeup(&uartdrv_common[(int)arg].txdEv);
+	if ((*(uart->base + sr) & (1 << 7))) {
+		/* Txd buffer empty */
+		if (uart->txbeg != uart->txend) {
+			*(uart->base + dr) = *(uart->txbeg++);
+		}
+		else {
+			*(uart->base + cr1) &= ~(1 << 7);
+			release = uart->cond;
+		}
 	}
 
-	if (*(uartdrv_common[(int)arg].base + sr) & ((1 << 5) | (1 << 3))) { /* Rxd buffer not empty */
-		char rxd = *(uartdrv_common[(int)arg].base + dr);
+	if (*(uart->base + sr) & ((1 << 5) | (1 << 3))) {
+		/* Rxd buffer not empty */
+		uart->rxdfifo[uart->rxdw++] = *(uart->base + dr);
+		uart->rxdw %= sizeof(uart->rxdfifo);
 
-		if (uartdrv_common[(int)arg].rxdr != ((uartdrv_common[(int)arg].rxdw + 1) % sizeof(uartdrv_common[(int)arg].rxdfifo))) {
-			uartdrv_common[(int)arg].rxdfifo[uartdrv_common[(int)arg].rxdw] = rxd;
-			uartdrv_common[(int)arg].rxdw = ((uartdrv_common[(int)arg].rxdw + 1) % sizeof(uartdrv_common[(int)arg].rxdfifo));
-		}
-
-		proc_threadWakeup(&uartdrv_common[(int)arg].rxdEv);
+		if (uart->rxdr == uart->rxdw)
+			uart->rxdr = (uart->rxdr + 1) % sizeof(uart->rxdfifo);
 	}
 
-	return 0;
+	if (uart->rxbeg != NULL) {
+		while (uart->rxdr != uart->rxdw && uart->rxbeg != uart->rxend) {
+			*(uart->rxbeg++) = uart->rxdfifo[uart->rxdr++];
+			uart->rxdr %= sizeof(uart->rxdfifo);
+			uart->read++;
+		}
+
+		release = uart->cond;
+	}
+
+	return release;
 }
 
 
-static int uartdrv_write(void* buff, unsigned int bufflen, int uart)
+static int uartdrv_write(void* buff, unsigned int bufflen, uart_t *uart)
 {
-	int i;
+	int timeout = 1, err;
 
-	for (i = 0; i < bufflen; ++i) {
-		hal_spinlockSet(&uartdrv_common[uart].txdSp);
-		while (uartdrv_common[uart].txdr == ((uartdrv_common[uart].txdw + 1) % sizeof(uartdrv_common[uart].txdfifo)))
-			proc_threadWait(&uartdrv_common[uart].txdEv, &uartdrv_common[uart].txdSp, 0);
+	uart->txbeg = buff;
+	uart->txend = buff + bufflen;
 
-		uartdrv_common[uart].txdfifo[uartdrv_common[uart].txdw] = ((char *)buff)[i];
-		uartdrv_common[uart].txdw = (uartdrv_common[uart].txdw + 1) % sizeof(uartdrv_common[uart].txdfifo);
-		*(uartdrv_common[uart].base + cr1) |= 1 << 7;
-		hal_spinlockClear(&uartdrv_common[uart].txdSp);
+	*(uart->base + cr1) |= 1 << 7;
+
+	while (uart->txbeg != uart->txend) {
+		mutexLock(uart->mutex);
+		err = condWait(uart->cond, uart->mutex, timeout);
+
+		if (err == -ETIME)
+			timeout *= 2;
 	}
 
-	return i;
+	uart->txbeg = NULL;
+	uart->txend = NULL;
+
+	return bufflen;
 }
 
 
-static int uartdrv_read(void* buff, unsigned int count, int uart, char mode, unsigned int timeout)
+static int uartdrv_read(void* buff, unsigned int count, uart_t *uart, char mode, unsigned int timeout)
 {
-	int i, err;
+	unsigned backoff = 1;
+	int i, err, read;
 
-	if (mode == UARTDRV_MNBLOCK)
-		timeout = 0;
+	uart->read = 0;
+	uart->rxend = buff + count;
+	uart->rxbeg = buff;
 
-	for (i = 0; i < count; ++i) {
-		hal_spinlockSet(&uartdrv_common[uart].rxdSp);
+	/* Provoke UART exception to fire so that existing data from
+	 * rxdfifo is copied into buff. The handler will clear this
+	 * bit. */
 
-		if (mode == UARTDRV_MNBLOCK && uartdrv_common[uart].rxdr == uartdrv_common[uart].rxdw) {
-			hal_spinlockClear(&uartdrv_common[uart].rxdSp);
+	*(uart->base + cr1) |= 1 << 7;
+
+	while (mode != UARTDRV_MNBLOCK && uart->rxbeg != uart->rxend) {
+		mutexLock(uart->mutex);
+		err = condWait(uart->cond, uart->mutex, timeout ? timeout : backoff);
+
+		if (timeout && err == -ETIME)
 			break;
-		}
+		else if (err == -ETIME)
+			backoff *= 2;
+	}
 
-		err = 0;
-		while (uartdrv_common[uart].rxdr == uartdrv_common[uart].rxdw && !err)
-			err = proc_threadWait(&uartdrv_common[uart].rxdEv, &uartdrv_common[uart].rxdSp, timeout);
+	uart->rxbeg = NULL;
+	__asm__ volatile ("dmb");
+	uart->rxend = NULL;
 
-		if (uartdrv_common[uart].rxdr == uartdrv_common[uart].rxdw && err == -ETIME) {
-			hal_spinlockClear(&uartdrv_common[uart].rxdSp);
-			break;
-		}
-
-		((char *)buff)[i] = uartdrv_common[uart].rxdfifo[uartdrv_common[uart].rxdr];
-
-		if (!(*(uartdrv_common[uart].base + cr1) & (1 << 12)) && (*(uartdrv_common[uart].base + cr1) & (1 << 10)))
+	read = uart->read;
+	if (!(*(uart->base + cr1) & (1 << 12)) && (*(uart->base + cr1) & (1 << 10))) {
+		for (i = 0; i < read; ++i)
 			((char *)buff)[i] &= 0x7f;
-
-		uartdrv_common[uart].rxdr = (uartdrv_common[uart].rxdr + 1) % sizeof(uartdrv_common[uart].rxdfifo);
-
-		hal_spinlockClear(&uartdrv_common[uart].rxdSp);
 	}
 
-	return i;
+	return read;
 }
 
 
@@ -152,100 +165,100 @@ static void uartdrv_thread(void *arg)
 	uartdrv_data_t *data = (uartdrv_data_t *)buff;
 	uartdrv_devctl_t *devclt = (uartdrv_devctl_t *)buff;
 	size_t size;
+	uart_t *uart = arg;
 
 	for (;;) {
-		tmp = proc_recv(*uartdrv_common[(int)arg].port, buff, sizeof(buff), &hdr);
-
+		tmp = recv(uart->port, buff, sizeof(buff), &hdr);
 		size = min(sizeof(buff), hdr.rsize);
 
 		switch (hdr.op) {
-		case MSG_READ:
-			if (*(uartdrv_common[(int)arg].base + cr1) & (1 << 13)) {
-				tmp = uartdrv_read(buff, size, (int)arg, UARTDRV_MNORMAL, 0);
-				if (hdr.type == MSG_NORMAL)
-					proc_respond(*uartdrv_common[(int)arg].port, EOK, buff, tmp);
+		case READ:
+			if (*(uart->base + cr1) & (1 << 13)) {
+				tmp = uartdrv_read(buff, size, uart, UARTDRV_MNORMAL, 0);
+				if (hdr.type == NORMAL)
+					respond(uart->port, EOK, buff, tmp);
 			}
-			else if (hdr.type == MSG_NORMAL) {
-					proc_respond(*uartdrv_common[(int)arg].port, EINVAL, NULL, 0);
-			}
-
-			break;
-
-		case MSG_WRITE:
-			if (*(uartdrv_common[(int)arg].base + cr1) & (1 << 13)) {
-				tmp = uartdrv_write(data->buff, tmp - sizeof(data->off), (int)arg);
-				if (hdr.type == MSG_NORMAL)
-					proc_respond(*uartdrv_common[(int)arg].port, EOK, &tmp, sizeof(tmp));
-			}
-			else if (hdr.type == MSG_NORMAL) {
-				proc_respond(*uartdrv_common[(int)arg].port, EINVAL, NULL, 0);
+			else if (hdr.type == NORMAL) {
+				respond(uart->port, EINVAL, NULL, 0);
 			}
 
 			break;
 
-		case MSG_DEVCTL: {
+		case WRITE:
+			if (*(uart->base + cr1) & (1 << 13)) {
+				tmp = uartdrv_write(data->buff, tmp - sizeof(data->off), uart);
+				if (hdr.type == NORMAL)
+					respond(uart->port, EOK, &tmp, sizeof(tmp));
+			}
+			else if (hdr.type == NORMAL) {
+				respond(uart->port, EINVAL, NULL, 0);
+			}
+
+			break;
+
+		case DEVCTL: {
 			switch (devclt->type) {
 			case UARTDRV_DEF:
 				err = EOK;
-				tmp = *(uartdrv_common[(int)arg].base + cr1) & (1 << 13);
-				*(uartdrv_common[(int)arg].base + cr1) &= ~(1 << 13);
+				tmp = *(uart->base + cr1) & (1 << 13);
+				*(uart->base + cr1) &= ~(1 << 13);
 
 				if ((devclt->def.bits == 8 && devclt->def.parity != UARTDRV_PARNONE))
-					*(uartdrv_common[(int)arg].base + cr1) |= (1 << 12);
+					*(uart->base + cr1) |= (1 << 12);
 				else if ((devclt->def.bits == 7 && devclt->def.parity != UARTDRV_PARNONE) ||
-						(devclt->def.bits == 8 && devclt->def.parity == UARTDRV_PARNONE))
-					*(uartdrv_common[(int)arg].base + cr1) &= ~(1 << 12);
+					 (devclt->def.bits == 8 && devclt->def.parity == UARTDRV_PARNONE))
+					*(uart->base + cr1) &= ~(1 << 12);
 				else
 					err = EINVAL;
 
 				if (err == EOK) {
-					*(uartdrv_common[(int)arg].base + brr) = F_OSC / devclt->def.baud;
+					*(uart->base + brr) = F_OSC / devclt->def.baud;
 
 					if (devclt->def.parity != UARTDRV_PARNONE)
-						*(uartdrv_common[(int)arg].base + cr1) |= (1 << 10);
+						*(uart->base + cr1) |= (1 << 10);
 					else
-						*(uartdrv_common[(int)arg].base + cr1) &= ~(1 << 10);
+						*(uart->base + cr1) &= ~(1 << 10);
 
 					if (devclt->def.parity == UARTDRV_PARODD)
-						*(uartdrv_common[(int)arg].base + cr1) |= (1 << 9);
+						*(uart->base + cr1) |= (1 << 9);
 					else
-						*(uartdrv_common[(int)arg].base + cr1) &= ~(1 << 9);
+						*(uart->base + cr1) &= ~(1 << 9);
 
-					*(uartdrv_common[(int)arg].base + cr1) |= (!!(devclt->def.enable) << 13);
+					*(uart->base + cr1) |= (!!(devclt->def.enable) << 13);
 				}
 				else if (tmp) {
-					*(uartdrv_common[(int)arg].base + cr1) |= (1 << 13);
+					*(uart->base + cr1) |= (1 << 13);
 				}
 
-				if (hdr.type == MSG_NORMAL)
-					proc_respond(*uartdrv_common[(int)arg].port, err, NULL, 0);
+				if (hdr.type == NORMAL)
+					respond(uart->port, err, NULL, 0);
 
 				break;
 
 			case UARTDRV_GET:
-				if (*(uartdrv_common[(int)arg].base + cr1) & (1 << 13)) {
-					tmp = uartdrv_read(buff, size, (int)arg, devclt->get.mode, devclt->get.timeout);
-					if (hdr.type == MSG_NORMAL)
-						proc_respond(*uartdrv_common[(int)arg].port, EOK, buff, tmp);
+				if (*(uart->base + cr1) & (1 << 13)) {
+					tmp = uartdrv_read(buff, size, uart, devclt->get.mode, devclt->get.timeout);
+					if (hdr.type == NORMAL)
+						respond(uart->port, EOK, buff, tmp);
 				}
-				else if (hdr.type == MSG_NORMAL) {
-						proc_respond(*uartdrv_common[(int)arg].port, EINVAL, NULL, 0);
+				else if (hdr.type == NORMAL) {
+					respond(uart->port, EINVAL, NULL, 0);
 				}
 
 				break;
 
 			case UARTDRV_ENABLE:
-				*(uartdrv_common[(int)arg].base + cr1) &= ~(!devclt->enable.state << 13);
-				*(uartdrv_common[(int)arg].base + cr1) |= (!!devclt->enable.state << 13);
+				*(uart->base + cr1) &= ~(!devclt->enable.state << 13);
+				*(uart->base + cr1) |= (!!devclt->enable.state << 13);
 
-				if (hdr.type == MSG_NORMAL)
-					proc_respond(*uartdrv_common[(int)arg].port, EOK, NULL, 0);
+				if (hdr.type == NORMAL)
+					respond(uart->port, EOK, NULL, 0);
 
 				break;
 
 			default:
-				if (hdr.type == MSG_NORMAL)
-					proc_respond(*uartdrv_common[(int)arg].port, EINVAL, NULL, 0);
+				if (hdr.type == NORMAL)
+					respond(uart->port, EINVAL, NULL, 0);
 
 				break;
 			}
@@ -253,8 +266,8 @@ static void uartdrv_thread(void *arg)
 		}
 
 		default:
-			if (hdr.type == MSG_NORMAL) {
-				proc_respond(*uartdrv_common[(int)arg].port, EINVAL, NULL, 0);
+			if (hdr.type == NORMAL) {
+				respond(uart->port, EINVAL, NULL, 0);
 			}
 			break;
 		}
@@ -262,106 +275,85 @@ static void uartdrv_thread(void *arg)
 }
 
 
-int uartdrv_enable(int uart, int state)
+int uartdrv_enable(char *uart, int state)
 {
 	uartdrv_devctl_t devctl;
+	int err;
+	unsigned port;
+
+	if ((err = lookup(uart, &port)) != EOK) {
+		return err;
+	}
 
 	devctl.type = UARTDRV_ENABLE;
 	devctl.enable.state = state;
 
-	return proc_send(uartdrv_id[uart & 1], MSG_DEVCTL, &devctl, sizeof(devctl), MSG_NORMAL, NULL, 0);
+	return send(port, DEVCTL, &devctl, sizeof(devctl), NORMAL, NULL, 0);
 }
 
 
-void uartdrv_init(void)
+void uartdrv_init(unsigned uarts)
 {
 	int i;
 	char name[] = "/uartdrv0";
 
-	uartdrv_common[0].base = (void *)0x40013800;
-	uartdrv_common[1].base = (void *)0x40004c00;
-	uartdrv_common[2].base = (void *)0x40004400;
-	uartdrv_common[0].rcc = (void *)0x40023800;
-	uartdrv_common[1].rcc = (void *)0x40023800;
-	uartdrv_common[2].rcc = (void *)0x40023800;
+	struct {
+		volatile u32 *base;
+		unsigned apbenr;
+		unsigned enableBit;
+		unsigned irq;
+	} info[] = {
+		{ (void *)0x40013800, rcc_apb2enr, 1 << 14, 37 + 16 }, /* USART 1 */
+		{ (void *)0x40004400, rcc_apb1enr, 1 << 17, 38 + 16 }, /* USART 2 */
+		{ (void *)0x40004800, rcc_apb1enr, 1 << 18, 39 + 16 }, /* USART 3 */
+		{ (void *)0x40004c00, rcc_apb1enr, 1 << 19, 48 + 16 }, /* UART 4 */
+		{ (void *)0x40005000, rcc_apb1enr, 1 << 20, 49 + 16 }, /* UART 5 */
+	};
 
-	/* TODO use gpiodrv message interface */
+	volatile u32 *rcc = (void *)0x40023800;
+	uart_t *uartptr;
 
-	/* USART 1 */
-	/* Init tx pin - output, usart1, push-pull, high speed, no pull-up */
-	gpiodrv_configPin(GPIOB, 6, 2, 7, 0, 2, 0);
+	for (i = 0; i < 5; ++i) {
+		if (uarts & (1 << i)) {
+			*(rcc + info[i].apbenr) |= info[i].enableBit;
+			/* Enable low power clock */
+//			*(rcc + info[i].apbenr + 3) |= info[i].enableBit;
 
-	/* Init rxd pin - input, usart1, push-pull, high speed, no pull-up */
-	gpiodrv_configPin(GPIOB, 7, 2, 7, 0, 2, 0);
+			uartptr = malloc(sizeof(uart_t));
 
-	/* Infrared enable pin */
-	gpiodrv_configPin(GPIOB, 5, 1, 0, 0, 2, 0);
+			mutexCreate(&uartptr->mutex);
+			condCreate(&uartptr->cond);
 
-	/* Enable usart1 clock */
-	*(uartdrv_common[0].rcc + rcc_apb2enr) |= 1 << 14;
+			uartptr->base = info[i].base;
 
-	hal_cpuDataBarrier();
+			uartptr->txbeg = NULL;
+			uartptr->txend = NULL;
 
-	/* UART 4 */
-	/* Init tx pin - output, uart4, push-pull, high speed, no pull-up */
-	gpiodrv_configPin(GPIOC, 10, 2, 8, 0, 2, 0);
+			uartptr->rxbeg = NULL;
+			uartptr->rxend = NULL;
+			uartptr->rxdr = 0;
+			uartptr->rxdw = 0;
 
-	/* Init rxd pin - input, uart4, push-pull, high speed, no pull-up */
-	gpiodrv_configPin(GPIOC, 11, 2, 8, 0, 2, 0);
+			/* Set up UART to 9600,8,n,1 16-bit oversampling */
 
-	/* Enable uart4 clock */
-	*(uartdrv_common[1].rcc + rcc_apb1enr) |= 1 << 19;
+			/* disable UART */
+			*(uartptr->base + cr1) &= ~(1 << 13);
+			/* 1 start, 1 stop bit */
+			*(uartptr->base + cr2) = 0;
+			/* enable receiver, enable transmitter, enable rxd irq*/
+			*(uartptr->base + cr1) = 0x2c;
+			/* no aditional settings */
+			*(uartptr->base + cr3) = 0;
 
-	hal_cpuDataBarrier();
+			*(uartptr->base + brr) = F_OSC / 9600;
+			*(uartptr->base + cr1) |= 1 << 13;
 
-	/* USART 2 */
-	/* Init tx pin - output, usart2, push-pull, high speed, no pull-up */
-	gpiodrv_configPin(GPIOD, 5, 2, 7, 0, 2, 0);
+			portCreate(&uartptr->port);
+			portRegister(uartptr->port, name);
+			name[8]++;
 
-	/* Init rxd pin - input, usart2, push-pull, high speed, no pull-up */
-	gpiodrv_configPin(GPIOD, 6, 2, 7, 0, 2, 0);
-
-	/* Enable usart1 clock */
-	*(uartdrv_common[2].rcc + rcc_apb1enr) |= 1 << 17;
-
-	hal_cpuDataBarrier();
-
-	for (i = 0; i < sizeof(uartdrv_common) / sizeof(uartdrv_common[0]); ++i) {
-		hal_spinlockCreate(&uartdrv_common[i].txdSp, "txd spinlock");
-		hal_spinlockCreate(&uartdrv_common[i].rxdSp, "rxd spinlock");
-		uartdrv_common[i].txdEv = NULL;
-		uartdrv_common[i].rxdEv = NULL;
-		uartdrv_common[i].txdr = 0;
-		uartdrv_common[i].txdw = 0;
-		uartdrv_common[i].rxdr = 0;
-		uartdrv_common[i].rxdw = 0;
-
-		/* Set up UART to 9600,8,n,1 16-bit oversampling */
-		*(uartdrv_common[i].base + cr1) &= ~(1 << 13);	/* disable UART */
-		*(uartdrv_common[i].base + cr2) = 0;			/* 1 start, 1 stop bit */
-		*(uartdrv_common[i].base + cr1) = 0x2c;		/* enable receiver, enable transmitter, enable rxd irq*/
-		*(uartdrv_common[i].base + cr3) = 0;			/* no aditional settings */
-		*(uartdrv_common[i].base + brr) = F_OSC / 9600;
-		*(uartdrv_common[i].base + cr1) |= 1 << 13;
-
-		proc_portCreate(&uartdrv_id[i]);
-		name[8] = '0' + i;
-		proc_portRegister(uartdrv_id[i], name);
-
-		uartdrv_common[i].port = &uartdrv_id[i];
-
-		uartdrv_common[i].irqHandler.next = NULL;
-		uartdrv_common[i].irqHandler.prev = NULL;
-		uartdrv_common[i].irqHandler.f = uartdrv_irqHandler;
-		uartdrv_common[i].irqHandler.data = (void *)i;
-		uartdrv_common[i].irqHandler.pmap = NULL;
+			interrupt(info[i].irq, uartdrv_irqHandler, uartptr);
+			beginthread(uartdrv_thread, 0, malloc(512) + 512, (void *)uartptr);
+		}
 	}
-
-	hal_interruptsSetHandler(53, &uartdrv_common[0].irqHandler);
-	hal_interruptsSetHandler(64, &uartdrv_common[1].irqHandler);
-	hal_interruptsSetHandler(54, &uartdrv_common[1].irqHandler);
-
-	proc_threadCreate(0, uartdrv_thread, 2, 512, 0, (void *)0);
-	proc_threadCreate(0, uartdrv_thread, 2, 512, 0, (void *)1);
-	proc_threadCreate(0, uartdrv_thread, 2, 512, 0, (void *)2);
 }

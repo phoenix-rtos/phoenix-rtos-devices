@@ -17,6 +17,13 @@
 #define UARTDRV_H_
 
 
+enum { UART1_BIT = 1 << 0,
+       UART2_BIT = 1 << 1,
+       UART3_BIT = 1 << 2,
+       UART4_BIT = 1 << 3,
+       UART5_BIT = 1 << 4 };
+
+
 enum { UARTDRV_DEF = 0, UARTDRV_GET, UARTDRV_ENABLE };
 
 
@@ -54,14 +61,11 @@ typedef struct {
 	};
 } __attribute__((packed)) uartdrv_devctl_t;
 
-/* Temporary solution */
-extern unsigned int uartdrv_id[3];
+
+extern int uartdrv_enable(char *uart, int state);
 
 
-extern int uartdrv_enable(int uart, int state);
-
-
-extern void uartdrv_init(void);
+extern void uartdrv_init(unsigned uarts);
 
 
 #endif
