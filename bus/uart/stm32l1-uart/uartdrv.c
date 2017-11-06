@@ -168,7 +168,7 @@ static void uartdrv_thread(void *arg)
 	uart_t *uart = arg;
 
 	for (;;) {
-		tmp = recv(uart->port, buff, sizeof(buff), &hdr);
+		tmp = recv(uart->port, buff, sizeof(buff), &hdr, 0);
 		size = min(sizeof(buff), hdr.rsize);
 
 		switch (hdr.op) {
@@ -353,7 +353,7 @@ void uartdrv_init(unsigned uarts)
 			name[8]++;
 
 			interrupt(info[i].irq, uartdrv_irqHandler, uartptr);
-			beginthread(uartdrv_thread, 0, malloc(512) + 512, (void *)uartptr);
+			beginthread(uartdrv_thread, 0, malloc(512), 512, (void *)uartptr);
 		}
 	}
 }

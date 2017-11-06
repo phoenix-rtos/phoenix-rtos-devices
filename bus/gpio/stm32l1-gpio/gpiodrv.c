@@ -149,7 +149,7 @@ static void gpiodrv_thread(void *arg)
 
 	for (;;) {
 		err = EOK;
-		msgsz = recv(gpiodrv_common.id, &msg, sizeof(msg), &hdr);
+		msgsz = recv(gpiodrv_common.id, &msg, sizeof(msg), &hdr, 0);
 
 		if (hdr.type != NORMAL)
 			continue;
@@ -305,7 +305,7 @@ void gpiodrv_init(void)
 	for (i = 0; i < 8; ++i)
 		gpiodrv_common.gpio[ix2port[i]] = (void *)(0x40020000 + i * 0x400);
 
-	beginthread(gpiodrv_thread, 0, malloc(1024) + 1024, NULL);
+	beginthread(gpiodrv_thread, 0, malloc(1024), 1024, NULL);
 }
 
 
