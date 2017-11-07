@@ -54,7 +54,7 @@ enum { exti_imr = 0, exti_emr, exti_rtsr, exti_ftsr, exti_swier, exti_pr };
 enum { syscfg_memrmp = 0, syscfg_pmc, syscfg_exticr };
 
 
-void gpiodrv_config(int port, u8 pin, u8 mode, u8 af, u8 otype, u8 ospeed, u8 pupd)
+static void gpiodrv_config(int port, u8 pin, u8 mode, u8 af, u8 otype, u8 ospeed, u8 pupd)
 {
 	volatile u32 *base = gpiodrv_common.gpio[port];
 	u32 t;
@@ -131,7 +131,7 @@ static void gpiodrv_uwait(unsigned time)
 }
 
 
-static void gpiodrv_thread(void *arg)
+int main(void)
 {
 	msghdr_t hdr;
 	union {
@@ -146,6 +146,16 @@ static void gpiodrv_thread(void *arg)
 	unsigned short val, mask;
 	unsigned msgsz, port, pin, mode, af, otype, ospeed, pupd, tmp, state;
 	volatile unsigned *ptr;
+
+	portCreate(&gpiodrv_common.id);
+	portRegister(gpiodrv_common.id, "/gpiodrv");
+
+	gpiodrv_common.rcc = (void *)0x40023800;
+	gpiodrv_common.exti = (void *)0x40010400;
+	gpiodrv_common.syscfg = (void *)0x40010000;
+
+	for (i = 0; i < 8; ++i)
+		gpiodrv_common.gpio[ix2port[i]] = (void *)(0x40020000 + i * 0x400);
 
 	for (;;) {
 		err = EOK;
@@ -288,83 +298,4 @@ static void gpiodrv_thread(void *arg)
 			break;
 		}
 	}
-}
-
-
-void gpiodrv_init(void)
-{
-	int i;
-
-	portCreate(&gpiodrv_common.id);
-	portRegister(gpiodrv_common.id, "/gpiodrv");
-
-	gpiodrv_common.rcc = (void *)0x40023800;
-	gpiodrv_common.exti = (void *)0x40010400;
-	gpiodrv_common.syscfg = (void *)0x40010000;
-
-	for (i = 0; i < 8; ++i)
-		gpiodrv_common.gpio[ix2port[i]] = (void *)(0x40020000 + i * 0x400);
-
-	beginthread(gpiodrv_thread, 0, malloc(1024), 1024, NULL);
-}
-
-
-int gpio_read(char *resp)
-{
-	return send(gpiodrv_common.id, READ, NULL, 0, NORMAL, resp, 41);
-}
-
-
-int gpio_write(char *msg, unsigned len)
-{
-	return send(gpiodrv_common.id, WRITE, msg, len, NORMAL, NULL, 0);
-}
-
-
-int gpio_sequence(gpiomsg_t *msg, unsigned int len, int *resp)
-{
-	return send(gpiodrv_common.id, DEVCTL, msg, len * sizeof(gpiomsg_t), NORMAL, resp, len * sizeof(int));
-}
-
-
-int gpio_setPort(int port, int mask, int state)
-{
-	gpiomsg_t gpio;
-
-	gpio.port = port;
-	gpio.type = GPIO_SET;
-	gpio.set.mask = mask;
-	gpio.set.state = state;
-
-	return send(gpiodrv_common.id, DEVCTL, &gpio, sizeof(gpio), NORMAL, NULL, 0);
-}
-
-
-int gpio_getPort(int port)
-{
-	gpiomsg_t gpio;
-	int resp;
-
-	gpio.port = port;
-	gpio.type = GPIO_GET;
-	send(gpiodrv_common.id, DEVCTL, &gpio, sizeof(gpio), NORMAL, &resp, sizeof(resp));
-
-	return resp;
-}
-
-
-int gpio_configPin(int port, char pin, char mode, char af, char ospeed, char otype, char pupd)
-{
-	gpiomsg_t gpio;
-
-	gpio.port = port;
-	gpio.type = GPIO_CONFIG;
-	gpio.config.pin = pin;
-	gpio.config.mode = mode;
-	gpio.config.af = af;
-	gpio.config.ospeed = ospeed;
-	gpio.config.otype = otype;
-	gpio.config.pupd = pupd;
-
-	return send(gpiodrv_common.id, DEVCTL, &gpio, sizeof(gpio), NORMAL, NULL, 0);
 }

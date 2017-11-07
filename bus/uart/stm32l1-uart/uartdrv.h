@@ -62,10 +62,4 @@ typedef struct {
 } __attribute__((packed)) uartdrv_devctl_t;
 
 
-extern int uartdrv_enable(char *uart, int state);
-
-
-extern void uartdrv_init(unsigned uarts);
-
-
 #endif

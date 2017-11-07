@@ -22,8 +22,8 @@
 #include <sys/threads.h>
 #include <sys/msg.h>
 #include <sys/interrupt.h>
+#include <sys/pwman.h>
 
-#include "gpiodrv.h"
 #include "uartdrv.h"
 
 /* Need getter for CPU clock. Temporary solution */
@@ -98,6 +98,7 @@ static int uartdrv_write(void* buff, unsigned int bufflen, uart_t *uart)
 	int timeout = 10;
 
 	mutexLock(uart->mutex);
+	keepidle(1);
 
 	uart->txbeg = buff;
 	uart->txend = buff + bufflen;
@@ -110,6 +111,7 @@ static int uartdrv_write(void* buff, unsigned int bufflen, uart_t *uart)
 	uart->txbeg = NULL;
 	uart->txend = NULL;
 
+	keepidle(0);
 	mutexUnlock(uart->mutex);
 
 	return bufflen;
@@ -121,6 +123,7 @@ static int uartdrv_read(void* buff, unsigned int count, uart_t *uart, char mode,
 	int i, err, read;
 
 	mutexLock(uart->mutex);
+	keepidle(1);
 
 	uart->read = 0;
 	uart->rxend = buff + count;
@@ -149,6 +152,7 @@ static int uartdrv_read(void* buff, unsigned int count, uart_t *uart, char mode,
 			((char *)buff)[i] &= 0x7f;
 	}
 
+	keepidle(0);
 	mutexUnlock(uart->mutex);
 
 	return read;
@@ -274,25 +278,13 @@ static void uartdrv_thread(void *arg)
 }
 
 
-int uartdrv_enable(char *uart, int state)
+int main(void)
 {
-	uartdrv_devctl_t devctl;
-	int err;
-	unsigned port;
+	printf("uartdrv started\n");
+	for (;;) ;
 
-	if ((err = lookup(uart, &port)) != EOK) {
-		return err;
-	}
+	unsigned uarts = UART2_BIT | UART3_BIT;
 
-	devctl.type = UARTDRV_ENABLE;
-	devctl.enable.state = state;
-
-	return send(port, DEVCTL, &devctl, sizeof(devctl), NORMAL, NULL, 0);
-}
-
-
-void uartdrv_init(unsigned uarts)
-{
 	int i;
 	char name[] = "/uartdrv0";
 
@@ -311,6 +303,7 @@ void uartdrv_init(unsigned uarts)
 
 	volatile u32 *rcc = (void *)0x40023800;
 	uart_t *uartptr;
+	uart_t *uartmain = NULL;
 
 	for (i = 0; i < 5; ++i) {
 		if (uarts & (1 << i)) {
@@ -347,12 +340,21 @@ void uartdrv_init(unsigned uarts)
 			*(uartptr->base + brr) = F_OSC / 9600;
 			*(uartptr->base + cr1) |= 1 << 13;
 
+			name[8] = '1' + i;
+
 			portCreate(&uartptr->port);
 			portRegister(uartptr->port, name);
-			name[8]++;
 
 			interrupt(info[i].irq, uartdrv_irqHandler, uartptr);
-			beginthread(uartdrv_thread, 0, malloc(512), 512, (void *)uartptr);
+
+			if (uartmain != NULL)
+				beginthread(uartdrv_thread, 1, malloc(512), 512, (void *)uartptr);
+			else
+				uartmain = uartptr;
 		}
 	}
+
+	uartdrv_thread((void *)uartmain);
+
+	return 0;
 }

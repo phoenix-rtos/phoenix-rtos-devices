@@ -148,7 +148,7 @@ static unsigned short adcdrv_conversion(char channel)
 }
 
 
-static void adcdrv_thread(void *arg)
+static void adcdrv_thread(void)
 {
 	unsigned int msgsz;
 	int err;
@@ -181,16 +181,7 @@ static void adcdrv_thread(void *arg)
 }
 
 
-int adc_get(int channel, unsigned short *result)
-{
-	adcdrv_devctl_t adcdevctl;
-	adcdevctl.type = ADCDRV_GET;
-	adcdevctl.channel = channel;
-	return send(adcdrv_common.port, DEVCTL, &adcdevctl, sizeof(adcdevctl), NORMAL, result, sizeof(*result));
-}
-
-
-void adcdrv_init(void)
+int main(void)
 {
 	adcdrv_common.base = (void *)0x40012400;
 	adcdrv_common.rcc = (void *)0x40023800;
@@ -237,5 +228,8 @@ void adcdrv_init(void)
 
 	interrupt(34, &adcdrv_irqEndOfConversion, NULL);
 	interrupt(21, &adcdrv_irqHsiReady, NULL);
-	beginthread(adcdrv_thread, 2, malloc(256), 256, NULL);
+
+	adcdrv_thread();
+
+	return 0;
 }

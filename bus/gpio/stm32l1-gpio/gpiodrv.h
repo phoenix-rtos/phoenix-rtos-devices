@@ -73,23 +73,4 @@ typedef struct {
 } __attribute__((packed)) gpiodrv_data_t;
 
 
-extern int gpio_sequence(gpiomsg_t *msg, unsigned int len, int *resp);
-
-
-extern int gpio_setPort(int port, int mask, int state);
-
-
-extern int gpio_getPort(int port);
-
-
-extern int gpio_configPin(int port, char pin, char mode, char af, char otype, char ospeed, char pupd);
-
-
-/* TODO: remove below functions */
-extern void gpiodrv_configPin(int port, char pin, char mode, char af, char otype, char ospeed, char pupd);
-
-
-extern void gpiodrv_init(void);
-
-
 #endif
