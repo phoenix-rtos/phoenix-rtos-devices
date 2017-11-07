@@ -280,9 +280,6 @@ static void uartdrv_thread(void *arg)
 
 int main(void)
 {
-	printf("uartdrv started\n");
-	for (;;) ;
-
 	unsigned uarts = UART2_BIT | UART3_BIT;
 
 	int i;
