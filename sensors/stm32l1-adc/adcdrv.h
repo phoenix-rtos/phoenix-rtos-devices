@@ -32,14 +32,10 @@ typedef struct {
 } __attribute__((packed)) adcdrv_devctl_t;
 
 
-/* Temporary solution */
-extern unsigned int adcdrv_id;
-
-
-extern int adcdrv_gpio2chan(char port, char pin);
-
-
 extern void adcdrv_init(void);
+
+
+extern int adc_get(int channel, unsigned short *result);
 
 
 #endif

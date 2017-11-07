@@ -13,27 +13,30 @@
  * %LICENSE%
  */
 
-#include HAL
+#include ARCH
+
+#include <errno.h>
+
+#include <stdlib.h>
+
+#include <sys/threads.h>
+#include <sys/msg.h>
+#include <sys/pwman.h>
+#include <sys/interrupt.h>
+
 #include "adcdrv.h"
-#include "proc/threads.h"
-#include "proc/msg.h"
 
-
-/* Temporary solution */
-unsigned int adcdrv_id;
 
 struct {
+	unsigned int port;
+
 	volatile unsigned int *base;
 	volatile unsigned int *rcc;
 
-	thread_t *eocEv;
-	thread_t *hsiEv;
+	volatile unsigned int done;
 
-	spinlock_t eocSp;
-	spinlock_t hsiSp;
-
-	intr_handler_t EndOfConversionHandler;
-	intr_handler_t HsiReadyHandler;
+	handle_t cond;
+	handle_t mutex;
 } adcdrv_common;
 
 
@@ -46,28 +49,29 @@ enum { adc_sr = 0, adc_cr1, adc_cr2, adc_smpr1, adc_smpr2, adc_smpr3, adc_jofr1,
 	adc_jsqr, adc_jdr1, adc_jdr2, adc_jdr3, adc_jdr4, adc_dr, adc_smpr0, adc_csr = 192, adc_ccr };
 
 
-static int adcdrv_irqEndOfConversion(unsigned int n, cpu_context_t *context, void *arg)
+static int adcdrv_irqEndOfConversion(unsigned int n, void *arg)
 {
 	/* Clear IRQ */
 	*(adcdrv_common.base + adc_sr) &= ~((1 << 2) | (1 << 1));
+	adcdrv_common.done = 1;
 
-	proc_threadWakeup(&adcdrv_common.eocEv);
-
-	return 0;
+	return adcdrv_common.cond;
 }
 
 
-static int adcdrv_irqHsiReady(unsigned int n, cpu_context_t *context, void *arg)
+static int adcdrv_irqHsiReady(unsigned int n, void *arg)
 {
+	int release = 0;
+
 	if ((*(adcdrv_common.rcc + rcc_cr) & 3) == 3) {
 		/* Clear IRQ */
 		*(adcdrv_common.rcc + rcc_cir) |= 1 << 18;
-		hal_cpuDataBarrier();
+		__asm__ volatile ("dmb");
 
-		proc_threadWakeup(&adcdrv_common.hsiEv);
+		release = adcdrv_common.cond;
 	}
 
-	return 0;
+	return release;
 }
 
 
@@ -77,22 +81,22 @@ static unsigned short adcdrv_conversion(char channel)
 	unsigned int t;
 
 	/* Start HSI clock */
-	hal_spinlockSet(&adcdrv_common.hsiSp);
-	hal_cpuSetDevBusy(1);
+	mutexLock(adcdrv_common.mutex);
+	keepidle(1);
 	if (!(*(adcdrv_common.rcc + rcc_cr) & 2)) {
 		/* Enable HSI ready interrupt */
 		*(adcdrv_common.rcc + rcc_cir) |= 1 << 10;
-		hal_cpuDataBarrier();
+		__asm__ volatile ("dmb");
 
 		/* Enable HSI clock */
 		*(adcdrv_common.rcc + rcc_cr) |= 1;
-		hal_cpuDataBarrier();
+		__asm__ volatile ("dmb");
 
 		/* Wait for clock to stabilize */
 		while (!(*(adcdrv_common.rcc + rcc_cr) & 2))
-			proc_threadWait(&adcdrv_common.hsiEv, &adcdrv_common.hsiSp, 0);
+			condWait(adcdrv_common.cond, adcdrv_common.mutex, 10);
 	}
-	hal_spinlockClear(&adcdrv_common.hsiSp);
+	mutexUnlock(adcdrv_common.mutex);
 
 	/* Enable ADC */
 	*(adcdrv_common.base + adc_cr2) |= 1;
@@ -112,12 +116,16 @@ static unsigned short adcdrv_conversion(char channel)
 	t = *(adcdrv_common.base + adc_sqr5) & 0xc0000000;
 	*(adcdrv_common.base + adc_sqr5) = t | (channel & 0x1f);
 
-	hal_spinlockSet(&adcdrv_common.eocSp);
+	mutexLock(adcdrv_common.mutex);
 	/* Start conversion */
-	*(adcdrv_common.base + adc_cr2) |= 1 << 30;
-	hal_cpuDataBarrier();
+	adcdrv_common.done = 0;
+	__asm__ volatile ("dmb");
 
-	proc_threadWait(&adcdrv_common.eocEv, &adcdrv_common.eocSp, 0);
+	*(adcdrv_common.base + adc_cr2) |= 1 << 30;
+	__asm__ volatile ("dmb"); /* Necessary? */
+
+	while (!adcdrv_common.done)
+		condWait(adcdrv_common.cond, adcdrv_common.mutex, 10);
 
 	/* Read result */
 	conv = *(adcdrv_common.base + adc_dr) & 0xffff;
@@ -127,16 +135,14 @@ static unsigned short adcdrv_conversion(char channel)
 
 	/* Turn off everything */
 	*(adcdrv_common.base + adc_cr2) &= ~1;
-	hal_spinlockClear(&adcdrv_common.eocSp);
 
-	hal_spinlockSet(&adcdrv_common.hsiSp);
 	/* Disable HSI clock */
 	*(adcdrv_common.rcc + rcc_cr) &= ~1;
 
-	hal_cpuDataBarrier();
+	__asm__ volatile ("dmb");
 
-	hal_cpuSetDevBusy(0);
-	hal_spinlockClear(&adcdrv_common.hsiSp);
+	keepidle(0);
+	mutexUnlock(adcdrv_common.mutex);
 
 	return conv;
 }
@@ -153,71 +159,34 @@ static void adcdrv_thread(void *arg)
 	for (;;) {
 		err = EINVAL;
 		resp = 0;
-		msgsz = proc_recv(adcdrv_id, &devctl, sizeof(devctl), &hdr);
+		msgsz = recv(adcdrv_common.port, &devctl, sizeof(devctl), &hdr, 0);
 
 		switch (hdr.op) {
-			case MSG_DEVCTL:
+			case DEVCTL:
 				if (msgsz == sizeof(devctl) && devctl.type == ADCDRV_GET) {
 					resp = adcdrv_conversion(devctl.channel);
 					err = EOK;
 				}
 				break;
 
-			case MSG_READ:
-			case MSG_WRITE:
+			case READ:
+			case WRITE:
 			default:
 				break;
 		}
 
-		if (hdr.type == MSG_NORMAL)
-			proc_respond(adcdrv_id, err, &resp, sizeof(resp));
+		if (hdr.type == NORMAL)
+			respond(adcdrv_common.port, err, &resp, sizeof(resp));
 	}
 }
 
 
-int adcdrv_gpio2chan(char port, char pin)
+int adc_get(int channel, unsigned short *result)
 {
-	switch (port) {
-	case 0: /* PORT A */
-		if (pin >= 0 && pin <= 7)
-			return pin;
-		break;
-
-	case 1: /* PORT B */
-		if (pin >= 0 && pin <= 1)
-			return pin + 8;
-		else if (pin == 2)
-			return 0x20;
-		else if (pin >= 12 && pin <= 15)
-			return pin + 6;
-		break;
-
-	case 2: /* PORT C */
-		if (pin >= 0 && pin <= 5)
-			return pin + 10;
-		break;
-
-	case 4: /* PORT E */
-		if (pin >= 7 && pin <= 10)
-			return pin + 15;
-		break;
-
-	case 5: /* PORT F */
-		if (pin >= 6 && pin <= 10)
-			return pin + 21;
-		if (pin >= 11 && pin <= 12)
-			return (pin - 10) | 0x20;
-		else if (pin == 15)
-			return 7 | 0x20;
-		break;
-
-	case 6: /* PORT G */
-		if (pin >= 0 && pin <= 4)
-			return (pin + 8) | 0x20;
-		break;
-	}
-
-	return -1;
+	adcdrv_devctl_t adcdevctl;
+	adcdevctl.type = ADCDRV_GET;
+	adcdevctl.channel = channel;
+	return send(adcdrv_common.port, DEVCTL, &adcdevctl, sizeof(adcdevctl), NORMAL, result, sizeof(*result));
 }
 
 
@@ -226,23 +195,20 @@ void adcdrv_init(void)
 	adcdrv_common.base = (void *)0x40012400;
 	adcdrv_common.rcc = (void *)0x40023800;
 
-	adcdrv_common.eocEv = NULL;
-	adcdrv_common.hsiEv = NULL;
-
-	hal_spinlockCreate(&adcdrv_common.eocSp, "ADC EOC");
-	hal_spinlockCreate(&adcdrv_common.hsiSp, "HSI");
+	mutexCreate(&adcdrv_common.mutex);
+	condCreate(&adcdrv_common.cond);
 
 	/* Enable HSI clock */
 	*(adcdrv_common.rcc + rcc_cr) |= 1;
 	while (!(*(adcdrv_common.rcc + rcc_cr) & 2));
 
-	hal_cpuDataBarrier();
+	__asm__ volatile ("dmb");
 
 	/* Enable ADC clock */
 	*(adcdrv_common.rcc + rcc_apb2enr) |= (1 << 9);
 	while (!(*(adcdrv_common.rcc + rcc_apb2enr) & (1 << 9)));
 
-	hal_cpuDataBarrier();
+	__asm__ volatile ("dmb");
 
 	/* 12 bit resolution, power down when idle, interrupts on, */
 	*(adcdrv_common.base + adc_cr1) |= (1 << 17) | (1 << 7) | (1 << 5);
@@ -264,25 +230,12 @@ void adcdrv_init(void)
 	/* Disable HSI clock */
 	*(adcdrv_common.rcc + rcc_cr) &= ~1;
 
-	hal_cpuDataBarrier();
+	__asm__ volatile ("dmb");
 
-	proc_portCreate(&adcdrv_id);
-	proc_portRegister(adcdrv_id, "/adcdrv");
+	portCreate(&adcdrv_common.port);
+	portRegister(adcdrv_common.port, "/adcdrv");
 
-	adcdrv_common.EndOfConversionHandler.next = NULL;
-	adcdrv_common.EndOfConversionHandler.prev = NULL;
-	adcdrv_common.EndOfConversionHandler.f = adcdrv_irqEndOfConversion;
-	adcdrv_common.EndOfConversionHandler.data = NULL;
-	adcdrv_common.EndOfConversionHandler.pmap = NULL;
-
-	adcdrv_common.HsiReadyHandler.next = NULL;
-	adcdrv_common.HsiReadyHandler.prev = NULL;
-	adcdrv_common.HsiReadyHandler.f = adcdrv_irqHsiReady;
-	adcdrv_common.HsiReadyHandler.data = NULL;
-	adcdrv_common.HsiReadyHandler.pmap = NULL;
-
-	hal_interruptsSetHandler(34, &adcdrv_common.EndOfConversionHandler);
-	hal_interruptsSetHandler(21, &adcdrv_common.HsiReadyHandler);
-	proc_threadCreate(0, adcdrv_thread, 2, 512, 0, 0);
+	interrupt(34, &adcdrv_irqEndOfConversion, NULL);
+	interrupt(21, &adcdrv_irqHsiReady, NULL);
+	beginthread(adcdrv_thread, 2, malloc(256), 256, NULL);
 }
-
