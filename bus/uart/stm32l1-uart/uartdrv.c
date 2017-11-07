@@ -95,23 +95,22 @@ static int uartdrv_irqHandler(unsigned int n, void *arg)
 
 static int uartdrv_write(void* buff, unsigned int bufflen, uart_t *uart)
 {
-	int timeout = 1, err;
+	int timeout = 10;
+
+	mutexLock(uart->mutex);
 
 	uart->txbeg = buff;
 	uart->txend = buff + bufflen;
 
 	*(uart->base + cr1) |= 1 << 7;
 
-	while (uart->txbeg != uart->txend) {
-		mutexLock(uart->mutex);
-		err = condWait(uart->cond, uart->mutex, timeout);
-
-		if (err == -ETIME)
-			timeout *= 2;
-	}
+	while (uart->txbeg != uart->txend)
+		condWait(uart->cond, uart->mutex, timeout);
 
 	uart->txbeg = NULL;
 	uart->txend = NULL;
+
+	mutexUnlock(uart->mutex);
 
 	return bufflen;
 }
@@ -119,8 +118,9 @@ static int uartdrv_write(void* buff, unsigned int bufflen, uart_t *uart)
 
 static int uartdrv_read(void* buff, unsigned int count, uart_t *uart, char mode, unsigned int timeout)
 {
-	unsigned backoff = 1;
 	int i, err, read;
+
+	mutexLock(uart->mutex);
 
 	uart->read = 0;
 	uart->rxend = buff + count;
@@ -133,13 +133,10 @@ static int uartdrv_read(void* buff, unsigned int count, uart_t *uart, char mode,
 	*(uart->base + cr1) |= 1 << 7;
 
 	while (mode != UARTDRV_MNBLOCK && uart->rxbeg != uart->rxend) {
-		mutexLock(uart->mutex);
-		err = condWait(uart->cond, uart->mutex, timeout ? timeout : backoff);
+		err = condWait(uart->cond, uart->mutex, timeout ? timeout : 10);
 
 		if (timeout && err == -ETIME)
 			break;
-		else if (err == -ETIME)
-			backoff *= 2;
 	}
 
 	uart->rxbeg = NULL;
@@ -151,6 +148,8 @@ static int uartdrv_read(void* buff, unsigned int count, uart_t *uart, char mode,
 		for (i = 0; i < read; ++i)
 			((char *)buff)[i] &= 0x7f;
 	}
+
+	mutexUnlock(uart->mutex);
 
 	return read;
 }

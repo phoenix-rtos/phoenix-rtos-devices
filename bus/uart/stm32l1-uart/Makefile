@@ -14,7 +14,7 @@ LIBPHOENIX ?= ../../../../libphoenix
 CROSS ?= arm-phoenix-
 
 CC = $(CROSS)gcc
-CFLAGS += -O0 -Wall -Wstrict-prototypes -g -I$(SRCDIR) -I../../gpio/stm32l1-gpio -I$(LIBPHOENIX) -nostartfiles -nostdlib\
+CFLAGS += -O2 -Wall -Wstrict-prototypes -g -I$(SRCDIR) -I../../gpio/stm32l1-gpio -I$(LIBPHOENIX) -nostartfiles -nostdlib\
 	-mcpu=cortex-m3 -mthumb \
 	-fomit-frame-pointer -ffreestanding\
 	-fpic -fpie -msingle-pic-base -mno-pic-data-is-text-relative\
