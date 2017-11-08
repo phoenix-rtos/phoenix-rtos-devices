@@ -55,7 +55,7 @@ static int adcdrv_irqEndOfConversion(unsigned int n, void *arg)
 	*(adcdrv_common.base + adc_sr) &= ~((1 << 2) | (1 << 1));
 	adcdrv_common.done = 1;
 
-	return adcdrv_common.cond;
+	return 1;
 }
 
 
@@ -68,7 +68,7 @@ static int adcdrv_irqHsiReady(unsigned int n, void *arg)
 		*(adcdrv_common.rcc + rcc_cir) |= 1 << 18;
 		__asm__ volatile ("dmb");
 
-		release = adcdrv_common.cond;
+		release = 1;
 	}
 
 	return release;
@@ -226,8 +226,8 @@ int main(void)
 	portCreate(&adcdrv_common.port);
 	portRegister(adcdrv_common.port, "/adcdrv");
 
-	interrupt(34, &adcdrv_irqEndOfConversion, NULL);
-	interrupt(21, &adcdrv_irqHsiReady, NULL);
+	interrupt(34, &adcdrv_irqEndOfConversion, NULL, adcdrv_common.cond);
+	interrupt(21, &adcdrv_irqHsiReady, NULL, adcdrv_common.cond);
 
 	adcdrv_thread();
 

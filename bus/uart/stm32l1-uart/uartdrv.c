@@ -66,7 +66,7 @@ static int uartdrv_irqHandler(unsigned int n, void *arg)
 		}
 		else {
 			*(uart->base + cr1) &= ~(1 << 7);
-			release = uart->cond;
+			release = 1;
 		}
 	}
 
@@ -86,7 +86,7 @@ static int uartdrv_irqHandler(unsigned int n, void *arg)
 			uart->read++;
 		}
 
-		release = uart->cond;
+		release = 1;
 	}
 
 	return release;
@@ -282,8 +282,8 @@ int main(void)
 {
 	unsigned uarts = UART2_BIT | UART3_BIT;
 
-	int i;
-	char name[] = "/uartdrv0";
+	int i, stacksz = 488;
+	char name[] = "/uartdrv0", *stack;
 
 	struct {
 		volatile u32 *base;
@@ -342,12 +342,18 @@ int main(void)
 			portCreate(&uartptr->port);
 			portRegister(uartptr->port, name);
 
-			interrupt(info[i].irq, uartdrv_irqHandler, uartptr);
+			interrupt(info[i].irq, uartdrv_irqHandler, uartptr, uartptr->cond);
 
-			if (uartmain != NULL)
-				beginthread(uartdrv_thread, 1, malloc(512), 512, (void *)uartptr);
-			else
+			if (uartmain != NULL) {
+				if ((stack = malloc(stacksz)) == NULL || beginthread(uartdrv_thread, 1, stack, stacksz, (void *)uartptr) == -ENOMEM) {
+					printf("uartdrv: not enough memory to start uart%d!\n", i + 1);
+					free(stack);
+				}
+
+			}
+			else {
 				uartmain = uartptr;
+			}
 		}
 	}
 
