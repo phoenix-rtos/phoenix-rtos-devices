@@ -12,7 +12,14 @@
  * %LICENSE%
  */
 
-#include <libphoenix.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/threads.h>
+#include <sys/interrupt.h>
+
+#include "ttypc.h"
+#include "ttypc_kbd.h"
+#include "ttypc_vga.h"
 
 
 /* U.S 101 keys keyboard map */
@@ -155,7 +162,7 @@ u8 *_ttypc_kbd_get(ttypc_t *ttypc)
 	u8 dt;
 	char *more = NULL;
 
-	dt = hal_inb(ttypc->inp_base);
+	dt = inb(ttypc->inp_base);
 
 	/* Key is released */
 	if (dt & 0x80) {
@@ -230,7 +237,7 @@ u8 *_ttypc_kbd_get(ttypc_t *ttypc)
 		
 		/* Regular ASCII */
 		case KB_ASCII:
-			
+
 			/* Control is pressed */
 			if (ttypc->shiftst & KB_CTL)
 				more = scan_codes[dt].ctl;
@@ -303,105 +310,83 @@ u8 *_ttypc_kbd_get(ttypc_t *ttypc)
 
 
 /* Keyboard interrupt handler */
-static int ttypc_kbd_interrupt(unsigned int n, cpu_context_t *ctx, void *arg)
+
+
+static int ttypc_kbd_interrupt(unsigned int n, void *arg)
 {
 	ttypc_t *ttypc = (ttypc_t *)arg;
-	u8 *s;
 
-	if (!(ph_inb(ttypc->inp_base + 4) & 33))
-		return IHRES_IGNORE;
-
-	/* Put characters received from keyboard to fifo */
-	ph_lock(&ttypc->mutex);
-
-	if ((s = _ttypc_kbd_get(ttypc)) != NULL) {
-		ttypc->rbuff[ttypc->rp] = s;
-		ttypc->rp = ((ttypc->rp + 1) % ttypc->rbuffsz);
-
-		if (ttypc->rp == ttypc->rb)
-			ttypc->rb = ((ttypc->rb + 1) % ttypc->rbuffsz);
-
-		ph_signal(&ttypc->cond);
-	}
-
-	ph_unlock(&ttypc->lock);	
-	return IHRES_HANDLED;
+	return ttypc->rcond;
 }
 
 
-int ttypc_kbd_ctlthr(void *arg)
+void ttypc_kbd_ctlthr(void *arg)
 {
 	ttypc_t *ttypc = (ttypc_t *)arg;
 	u8 *s;
-	int errfl;
 
 	for (;;) {
+		mutexLock(ttypc->rlock);
 
-		/* Get data from fifo or wait for new characters */
-		proc_spinlockSet(&ttypc->intrspinlock);
-
-		errfl = 0;
-		while (ttypc->rp == ttypc->rb) {
-			if (proc_threadCondWait(&ttypc->waitq, &ttypc->intrspinlock, 0) < 0) {
-				errfl = 1;
-				break;
-			}
+		while (!(inb(ttypc->inp_base + 4) & 33)) {
+			condWait(ttypc->rcond, ttypc->rlock, 0);
 		}
 
-		if (errfl)
+		/* Put characters received from keyboard to fifo */
+		if ((s = _ttypc_kbd_get(ttypc)) == NULL) {
+			mutexUnlock(ttypc->rlock);
 			continue;
+		}
 
-		s = ttypc->rbuff[ttypc->rb];
-		ttypc->rb = ((ttypc->rb+1) % ttypc->rbuffsz);
-
-		proc_spinlockClear(&ttypc->intrspinlock, sopGetCycles);
+		mutexUnlock(ttypc->rlock);
 
 		/* Put data into virtual terminal input buffer */
-		if (s) {
-//main_printf(ATTR_INFO, "s: %s\n", s);
+		if (s != NULL) {
 
-			if (!main_strcmp((char *)s, "\033[k"))
-//			if (!main_strcmp((char *)s, "1"))
+			if (!strcmp((char *)s, "\033[k"))
 				ttypc_vga_switch(&ttypc->virtuals[0]);
-			else if (!main_strcmp((char *)s, "\033[l"))
-//			else if (!main_strcmp((char *)s, "2"))
+			else if (!strcmp((char *)s, "\033[l"))
 				ttypc_vga_switch(&ttypc->virtuals[1]);
-			else if (!main_strcmp((char *)s, "\033[m"))
+			else if (!strcmp((char *)s, "\033[m"))
 				ttypc_vga_switch(&ttypc->virtuals[2]);
-			else if (!main_strcmp((char *)s, "\033[n"))
+			else if (!strcmp((char *)s, "\033[n"))
 				ttypc_vga_switch(&ttypc->virtuals[3]);
-			else {
-			//	ttypc_virt_sput(ttypc->cv, s, main_strlen((char *)s));
-				ttypc_virt_sadd(ttypc->cv, s, main_strlen((char *)s));
-			}
+			else
+				ttypc_virt_sadd(ttypc->cv, s, strlen((char *)s));
 		}
 	}
-	return 0;
+	return;
 }
 
 
 int _ttypc_kbd_init(ttypc_t *ttypc)
 {
+	void *stack;
+
 	ttypc->extended = 0;
 	ttypc->lockst = 0;
 	ttypc->shiftst = 0;
 
-	proc_spinlockCreate(&ttypc->intrspinlock, "ttyp.intrspinlock");
+	mutexCreate(&ttypc->rlock);
+	condCreate(&ttypc->rcond);
 
 	/* Allocate memory for character buffer */
-	if ((ttypc->rbuff = (u8 **)vm_kmalloc(sizeof(u8 *) * SIZE_TTYPC_RBUFF)) == NULL)
+	if ((ttypc->rbuff = (u8 **)malloc(sizeof(u8 *) * 128)) == NULL)
 		return -ENOMEM;
 
-	ttypc->rbuffsz = SIZE_TTYPC_RBUFF;
+	ttypc->rbuffsz = 128;
 	ttypc->rb = 0;
 	ttypc->rp = 0;
-	proc_thqCreate(&ttypc->waitq);
 
-	proc_thread(NULL, ttypc_kbd_ctlthr, NULL, 0, (void *)ttypc, ttRegular);
-	hal_interruptsSetHandler(ttypc->inp_irq, ttypc_kbd_interrupt, ttypc);
+	/* Attach interrupt and launch interrupt thread */
+	if ((stack = malloc(2048)) == NULL)
+		return -ENOMEM;
+	beginthread(ttypc_kbd_ctlthr, 1, stack, 2048, (void *)ttypc);
+
+	interrupt(1, ttypc_kbd_interrupt, ttypc, ttypc->rcond);
 
 	/* Read byte from controller (reset is neccessary) */
-	hal_inb(ttypc->inp_base);
+	inb(ttypc->inp_base);
 
 	return EOK;
 }

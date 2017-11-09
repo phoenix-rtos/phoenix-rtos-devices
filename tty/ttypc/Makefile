@@ -8,13 +8,15 @@
 #
 
 CC = i386-pc-phoenix-gcc
-CFLAGS = -c -Wall -O2 -g -I. -I../../../libphoenix/
+CFLAGS = -c -Wall -O2 -g -I. -I../../../libphoenix/ -DARCH=\"arch/ia32/arch.h\"
 
 LD = i386-pc-phoenix-gcc
 LDFLAGS = -nostartfiles -nostdlib
+#-z max-page-size=0x10000
 
-SRCS = ttypc.c ttypc_virt.c ttypc_vtf.c
+SRCS = ttypc.c ttypc_virt.c ttypc_vtf.c ttypc_vga.c ttypc_kbd.c
 OBJS = $(SRCS:.c=.o)
+GCCLIB := $(shell $(CC) $(CFLAGS) -print-libgcc-file-name)
 BIN = ttypc
 
 all: ttypc
@@ -24,7 +26,7 @@ all: ttypc
 
 
 ttypc: $(OBJS)
-	$(LD) $(LDFLAGS) -o $(BIN) $(OBJS) ../../../libphoenix/libphoenix.a
+	$(LD) $(LDFLAGS) -o $(BIN) $(OBJS) ../../../libphoenix/libphoenix.a $(GCCLIB)
 
 clean:
 	rm -f *.o *~ core

@@ -14,40 +14,19 @@
  * %LICENSE%
  */
 
-#include <libphoenix.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/mman.h>
+#include <sys/threads.h>
 
-#include "ttypc_virt.h"
-
-
-#define SIZE_TTYPC_RBUFF  128
-
-
-#define VRAM_MONO     (void *)0xb0000    /* VRAM address of mono 80x25 mode */
-#define VRAM_COLOR    (void *)0xb8000    /* VRAM address of color 80x25 mode */
-
-#define CRTC_CURSORH  0x0e               /* cursor address mid */
-#define CRTC_CURSORL  0x0f               /* cursor address low */
+#include "ttypc.h"
+#include "ttypc_vga.h"
+#include "ttypc_kbd.h"
 
 
-struct {
-	ttypc_virt_t virtuals[4];
-	ttypc_virt_t *cv;
+ttypc_t ttypc_common;
 
-	int color;
-	unsigned int inp_irq;
-	void *inp_base;
-	void *out_base;
-	void *out_crtc;
-	
-	unsigned char extended;
-	unsigned int lockst;
-	unsigned int shiftst;
-	
-	unsigned char **rbuff;
-	unsigned int rbuffsz;
-	unsigned int rb;
-	unsigned int rp;
-} ttypc_common;
+const u8 pad[1024];
 
 
 #if 0
@@ -154,38 +133,43 @@ int main(int argc, char *argv[])
 {
 	unsigned int i;
 
-	ph_printf("ttypc: Initializing VGA VT220 terminal emulator\n");
+	printf("ttypc: Initializing VGA VT220 terminal emulator %s\n", "");
 
 	/* Test monitor type */
+	memset(&ttypc_common, 0, sizeof(ttypc_t));
 	ttypc_common.color = (inb((void *)0x3cc) & 0x01);
-	
-	ttypc_common.inp_irq = 1;
-	ttypc_common.inp_base = (void *)0x60;
 
-	ttypc_common.out_base = ttypc_common.color ? VRAM_COLOR : VRAM_MONO;
+	ttypc_common.out_base = mmap(NULL, 0x1000, 0, 0, OID_PHYSMEM, ttypc_common.color ? 0xb8000 : 0xb0000);
+	memsetw(ttypc_common.out_base, 0x0700, 2000);
+
 	ttypc_common.out_crtc = ttypc_common.color ? (void *)0x3d4 : (void *)0x3b4;
-
 
 	/* Initialize virutal terminals and register devices */
 	for (i = 0; i < sizeof(ttypc_common.virtuals) / sizeof(ttypc_virt_t); i++) {
-		if (_ttypc_virt_init(&ttypc_common.virtuals[i], 128 * 4) < 0) {
-			ph_printf("ttypc: Can't initialize virtual terminal %d!\n", i);
+		if (_ttypc_virt_init(&ttypc_common.virtuals[i], 128 * 4, &ttypc_common) < 0) {
+			printf("ttypc: Can't initialize virtual terminal %d!\n", i);
 			return -1;
 		}
 	}
-
-#if 0
-
+	ttypc_common.virtuals[0].active = 1;
 	ttypc_common.cv = &ttypc_common.virtuals[0];
 	ttypc_common.cv->vram = ttypc_common.out_base;
 
 	_ttypc_vga_cursor(ttypc_common.cv);
 
+	ttypc_common.inp_irq = 1;
+	ttypc_common.inp_base = (void *)0x60;
+
 	/* Initialize keyboard */
 	_ttypc_kbd_init(&ttypc_common);
 
+
+	for (;;)
+		usleep(1000);
+
+#if 0
 //	ph_register("/dev/ttypc", oid);
 #endif
-for (;;);
+
 	return 0;
 }

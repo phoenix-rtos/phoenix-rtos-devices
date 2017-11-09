@@ -13,11 +13,8 @@
  * %LICENSE%
  */
 
-#ifndef _DEV_TTYPC_VGA_H_
-#define _DEV_TTYPC_VGA_H_
-
-
-#include <libphoenix.h>
+#ifndef _TTYPC_VGA_H_
+#define _TTYPC_VGA_H_
 
 #include "ttypc_virt.h"
 

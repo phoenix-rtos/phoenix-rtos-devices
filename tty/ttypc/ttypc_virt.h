@@ -16,6 +16,9 @@
 #ifndef _TTYPC_VIRT_H_
 #define _TTYPC_VIRT_H_
 
+#include <stdio.h>
+
+#include "ttypc.h"
 
 
 /* escape detection state machine */
@@ -125,6 +128,8 @@ typedef struct _ttypc_virt_t {
 	unsigned int rbuffsz;
 	unsigned int rb;
 	unsigned int rp;
+
+	struct _ttypc_t *ttypc;
 } ttypc_virt_t;
 
 
@@ -146,7 +151,7 @@ extern int ttypc_virt_sget(ttypc_virt_t *virt, char *buff, unsigned int len);
 
 
 /* Function initializes ttypc virtual terminal handler */
-extern int _ttypc_virt_init(ttypc_virt_t *virt, size_t rbuffsz);
+extern int _ttypc_virt_init(ttypc_virt_t *virt, size_t rbuffsz, struct _ttypc_t *ttypc);
 
 
 #endif

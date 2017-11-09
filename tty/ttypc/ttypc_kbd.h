@@ -14,12 +14,8 @@
  * %LICENSE%
  */
 
-#ifndef _DEV_TTYPC_KBD_H_
-#define _DEV_TTYPC_KBD_H_
-
-#include <hal/if.h>
-
-#include <dev/ttypc/ttypc.h>
+#ifndef _TTYPC_KBD_H_
+#define _TTYPC_KBD_H_
 
 
 #define KB_NONE    1

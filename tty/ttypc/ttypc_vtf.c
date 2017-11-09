@@ -12,10 +12,12 @@
  * %LICENSE%
  */
 
-#include <hal/if.h>
+#include <stdio.h>
+#include <string.h>
 
-#include <dev/ttypc/ttypc.h>
-#include <main/if.h>
+#include "ttypc.h"
+#include "ttypc_vtf.h"
+#include "ttypc_vga.h"
 
 
 /* Color attributes for foreground text */
@@ -188,6 +190,7 @@ void _ttypc_vtf_str(ttypc_virt_t *virt)
 	virt->GR = &virt->G2;
 
 	virt->vtsgr = VT_NORMAL;
+
 	if (ttypc->color)
 		virt->attr = ((sgr_tab_color[virt->vtsgr]) << 8);
 	else
@@ -338,15 +341,15 @@ void _ttypc_vtf_clreos(ttypc_virt_t *virt)
 {
 	switch (virt->parms[0]) {
 	case 0:
-		hal_memsetw(virt->vram + virt->cur_offset, ' ' | virt->attr, virt->maxcol * virt->rows - virt->cur_offset);
+		memsetw(virt->vram + virt->cur_offset, ' ' | virt->attr, virt->maxcol * virt->rows - virt->cur_offset);
 		break;
 
 	case 1:
-		hal_memsetw(virt->vram, ' ' | virt->attr, virt->cur_offset + 1);
+		memsetw(virt->vram, ' ' | virt->attr, virt->cur_offset + 1);
 		break;
 
 	case 2:
-		hal_memsetw(virt->vram, ' ' | virt->attr, virt->maxcol * virt->rows);
+		memsetw(virt->vram, ' ' | virt->attr, virt->maxcol * virt->rows);
 		break;
 	}
 }
@@ -357,15 +360,15 @@ void _ttypc_vtf_clreol(ttypc_virt_t *virt)
 {
 	switch (virt->parms[0]) {
 	case 0:
-		hal_memsetw(virt->vram + virt->cur_offset, ' ' | virt->attr, virt->maxcol - virt->col);
+		memsetw(virt->vram + virt->cur_offset, ' ' | virt->attr, virt->maxcol - virt->col);
 		break;
 
 	case 1:
-		hal_memsetw(virt->vram + virt->cur_offset - virt->col, ' ' | virt->attr, virt->col + 1);
+		memsetw(virt->vram + virt->cur_offset - virt->col, ' ' | virt->attr, virt->col + 1);
 		break;
 
 	case 2:
-		hal_memsetw(virt->vram + virt->cur_offset - virt->col, ' ' | virt->attr, virt->maxcol);
+		memsetw(virt->vram + virt->cur_offset - virt->col, ' ' | virt->attr, virt->maxcol);
 		break;
 	}
 }
@@ -413,10 +416,10 @@ void _ttypc_vtf_il(ttypc_virt_t *virt)
 		if (virt->row == virt->scrr_beg)
 			_ttypc_vga_rolldown(virt, p);
 		else {
-			hal_memcpy(virt->vram + virt->cur_offset + p * virt->maxcol, virt->vram + virt->cur_offset,
+			memcpy(virt->vram + virt->cur_offset + p * virt->maxcol, virt->vram + virt->cur_offset,
 				virt->maxcol * (virt->scrr_end - virt->row + 1 - p) * CHR);
 
-			hal_memsetw(virt->vram + virt->cur_offset, ' ' | virt->attr, p * virt->maxcol);
+			memsetw(virt->vram + virt->cur_offset, ' ' | virt->attr, p * virt->maxcol);
 		}
 	}
 }
@@ -432,8 +435,8 @@ void _ttypc_vtf_ic(ttypc_virt_t *virt)
 	else if (p > virt->maxcol - virt->col)
 		p = virt->maxcol - virt->col;
 
-	hal_memcpy(virt->vram + virt->cur_offset + p, virt->vram + virt->cur_offset, virt->maxcol - p - virt->col);
-	hal_memsetw(virt->vram + virt->cur_offset, ' ' | virt->attr, p);
+	memcpy(virt->vram + virt->cur_offset + p, virt->vram + virt->cur_offset, virt->maxcol - p - virt->col);
+	memsetw(virt->vram + virt->cur_offset, ' ' | virt->attr, p);
 }
 
 
@@ -455,10 +458,10 @@ void _ttypc_vtf_dl(ttypc_virt_t *virt)
 			_ttypc_vga_rollup(virt, p);
 		}
 		else {
-			hal_memcpy(virt->vram + virt->cur_offset, virt->vram + virt->cur_offset + p * virt->maxcol,
+			memcpy(virt->vram + virt->cur_offset, virt->vram + virt->cur_offset + p * virt->maxcol,
 			  virt->maxcol * (virt->scrr_end - virt->row + 1 - p) * CHR);
 
-			hal_memsetw(virt->vram + (virt->scrr_end - p + 1) * virt->maxcol, ' ' | virt->attr, p * virt->maxcol);
+			memsetw(virt->vram + (virt->scrr_end - p + 1) * virt->maxcol, ' ' | virt->attr, p * virt->maxcol);
 		}
 	}
 }
@@ -474,8 +477,8 @@ void _ttypc_vtf_dch(ttypc_virt_t *virt)
 
 	p = min(p, virt->maxcol - virt->col);
 	
-	hal_memcpy(virt->vram + virt->cur_offset, virt->vram + virt->cur_offset + p, (virt->maxcol - p - virt->col) * CHR);
-	hal_memsetw(virt->vram + virt->cur_offset + virt->maxcol - p, ' ' | virt->attr, p);	
+	memcpy(virt->vram + virt->cur_offset, virt->vram + virt->cur_offset + p, (virt->maxcol - p - virt->col) * CHR);
+	memsetw(virt->vram + virt->cur_offset + virt->maxcol - p, ' ' | virt->attr, p);	
 }
 
 
@@ -537,7 +540,7 @@ void _ttypc_vtf_ris(ttypc_virt_t *virt)
 	virt->row = 0;
 	virt->m_lnm = 0;
 
-	hal_memsetw(virt->vram + virt->cur_offset, ' ' | virt->attr, virt->maxcol * virt->rows);
+	memsetw(virt->vram + virt->cur_offset, ' ' | virt->attr, virt->maxcol * virt->rows);
 
 	_ttypc_vtf_str(virt);
 }
@@ -553,7 +556,7 @@ void _ttypc_vtf_ech(ttypc_virt_t *virt)
 	else if (p > virt->maxcol - virt->col)
 		p = virt->maxcol - virt->col;
 
-	hal_memsetw(virt->vram + virt->cur_offset, ' ' | virt->attr, p);
+	memsetw(virt->vram + virt->cur_offset, ' ' | virt->attr, p);
 }
 
 

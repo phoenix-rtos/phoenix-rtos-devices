@@ -14,8 +14,11 @@
  * %LICENSE%
  */
 
-#include <libphoenix.h>
+#include <sys/threads.h>
+#include <sys/mman.h>
+#include <stdlib.h>
 
+#include "ttypc.h"
 #include "ttypc_virt.h"
 #include "ttypc_vtf.h"
 #include "ttypc_vga.h"
@@ -149,7 +152,7 @@ void ttypc_virt_sput(ttypc_virt_t *virt, u8 *s, int len)
 {
 	u16 ch;
 
-	ph_lock(virt->mutex);
+	mutexLock(virt->mutex);
 
 	while (len-- > 0) {
 		if ((ch = *(s++)) == 0)
@@ -643,7 +646,7 @@ void ttypc_virt_sput(ttypc_virt_t *virt, u8 *s, int len)
 	if (virt->active)
 		_ttypc_vga_cursor(virt);
 
-	ph_unlock(virt->mutex);
+	mutexUnlock(virt->mutex);
 
 	return;
 }
@@ -656,7 +659,7 @@ int ttypc_virt_sadd(ttypc_virt_t *virt, u8 *s, unsigned int len)
 	if (virt->m_echo == 1)
 		ttypc_virt_sput(virt, s, len);
 
-	ph_lock(virt->mutex);
+	mutexLock(virt->mutex);
 	
 	if (virt->rp >= virt->rb)
 		l = virt->rbuffsz - (virt->rp - virt->rb);
@@ -664,17 +667,17 @@ int ttypc_virt_sadd(ttypc_virt_t *virt, u8 *s, unsigned int len)
 		l = virt->rb - virt->rp;
 
 	if (l < len) {
-		ph_unlock(virt->mutex);
+		mutexUnlock(virt->mutex);
 		return -ENOMEM;
 	}
 
 	for (i = 0; i < len; i++) {
 		virt->rbuff[virt->rp] = *(s + i);
-		virt->rp = ( (virt->rp+1) % virt->rbuffsz);
+		virt->rp = ((virt->rp + 1) % virt->rbuffsz);
 	}
 
-	ph_signal(virt->cond);
-	ph_unlock(virt->mutex);
+	condSignal(virt->cond);
+	mutexUnlock(virt->mutex);
 	return EOK;
 }
 
@@ -684,10 +687,10 @@ int ttypc_virt_sget(ttypc_virt_t *virt, char *buff, unsigned int len)
 	int err;
 	unsigned int l, cnt;
 
-	ph_lock(virt->mutex);
+	mutexLock(virt->mutex);
 
 	while (virt->rp == virt->rb) {
-		if ((err = ph_wait(virt->cond, virt->mutex, 0)) < 0)
+		if ((err = condWait(virt->cond, virt->mutex, 0)) < 0)
 			return err;
 	}
 
@@ -705,29 +708,28 @@ int ttypc_virt_sget(ttypc_virt_t *virt, char *buff, unsigned int len)
 	}
 	virt->rb = ((virt->rb + cnt) % virt->rbuffsz);
 
-	ph_unlock(virt->mutex);
+	mutexUnlock(virt->mutex);
 	return cnt;
 }
 
 
-int _ttypc_virt_init(ttypc_virt_t *virt, size_t rbuffsz)
+int _ttypc_virt_init(ttypc_virt_t *virt, size_t rbuffsz, ttypc_t *ttypc)
 {
-	void *vaddr;
-
 	virt->active = 0;
 
 	/*
 	 * (MOD) page allocation should be substituted by kmalloc, but kmalloc should
 	 * be able to allocate up to 128 KB of memory
 	 */
-
-	virt->mem = ph_mmap(NULL, 4096, /*PROT_READ | PROT_WRITE*/0, 0, 0, 0xb8000);
+	virt->ttypc = ttypc;
+	virt->mem = mmap(NULL, 4096, /*PROT_READ | PROT_WRITE*/0, 0, NULL, 0);
 	virt->memsz = 4096;
+	virt->attr = 0x7 << 8;
 
 	virt->vram = virt->mem;
-	memset(virt->vram, 0, virt->memsz);
+	memsetw(virt->vram, ' ' | virt->attr, virt->memsz / 2);
 
-	virt->rows = 24;
+	virt->rows = 25;
 	virt->maxcol = 80;
 
 	virt->m_ckm = 1;   /* normal cursor key mode */
@@ -741,13 +743,13 @@ int _ttypc_virt_init(ttypc_virt_t *virt, size_t rbuffsz)
 	virt->ss = 0;
 	virt->Gs = NULL;
 
-	virt->mutex = ph_mutex();
-	virt->cond = ph_cond();
+	mutexCreate(&virt->mutex);
+	condCreate(&virt->cond);
 
 	/* Prepare input buffer */
 	virt->rbuffsz = rbuffsz;
-	if ((virt->rbuff = (u8 *)ph_malloc(virt->rbuffsz)) == NULL) {
-		ph_munmap(vaddr, 4096);
+	if ((virt->rbuff = (u8 *)malloc(virt->rbuffsz)) == NULL) {
+		munmap(virt->mem, 4096);
 		return -ENOMEM;
 	}
 	virt->rp = 0;

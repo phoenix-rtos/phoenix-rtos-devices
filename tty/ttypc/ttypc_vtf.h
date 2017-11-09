@@ -19,8 +19,6 @@
 #define _DEV_TTYPC_VTF_H_
 
 
-#include <libphoenix.h>
-
 #include "ttypc_virt.h"
 
 
