@@ -17,15 +17,14 @@ LDFLAGS = -nostartfiles -nostdlib
 SRCS = ttypc.c ttypc_virt.c ttypc_vtf.c ttypc_vga.c ttypc_kbd.c
 OBJS = $(SRCS:.c=.o)
 GCCLIB := $(shell $(CC) $(CFLAGS) -print-libgcc-file-name)
-BIN = ttypc
+BIN = pc-tty
 
-all: ttypc
+all: pc-tty
 
 .c.o:
 	$(CC) $(CFLAGS) $<
 
-
-ttypc: $(OBJS)
+pc-tty: $(OBJS)
 	$(LD) $(LDFLAGS) -o $(BIN) $(OBJS) ../../../libphoenix/libphoenix.a $(GCCLIB)
 
 clean:

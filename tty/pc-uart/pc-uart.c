@@ -3,7 +3,7 @@
  *
  * Operating system kernel
  *
- * UART 16550 driver
+ * UART 16550 driver for PC
  *
  * Copyright 2012-2015 Phoenix Systems
  * Copyright 2001, 2008 Pawel Pisarczyk
@@ -12,14 +12,9 @@
  * %LICENSE%
  */
 
-#include <hal/if.h>
-#include <main/if.h>
-#include <vm/if.h>
-#include <proc/if.h>
-#include <fs/if.h>
-#include <dev/if.h>
+#include <stdio.h>
 
-#include <dev/serial/uart16550/uart16550.h>
+#include "pc-uart.h"
 
 
 typedef struct {
@@ -265,21 +260,19 @@ static int uart16550_ioctl(file_t *file, unsigned int cmd, unsigned long arg)
 
 
 /* (MOD) modify memory allocation - kmalloc should be used instead of pageAlloc */
-int _uart16550_detect(void *base, unsigned int irq, unsigned int speed, uart16550_t **serial)
+int _uart_detect(void *base, unsigned int irq, unsigned int speed, uart16550_t **serial)
 {
-	page_t *page;
-	void *vaddr;
-	
 	/* Test if device exist */
-	if (hal_inb(base + REG_IIR) == 0xff)
+	if (inb(base + REG_IIR) == 0xff)
 		return ERR_DEV_DETECT;
 
-	main_printf(ATTR_DEV, "dev: [uart ] Detected interface on 0x%x irq=%d\n", (u32)base, irq);
+	printf("uart16550: Detected interface on 0x%x irq=%d\n", (u32)base, irq);
 
 	/* Allocate and map memory for driver structures */
 	if ((*serial = vm_kmalloc(sizeof(uart16550_t))) == NULL)
 		return -ENOMEM;	
 
+	if ((serial->rbuff = (u8 *)malloc(256)) == NULL) {
 	if ((page = vm_pageAlloc(1, vm_pageAlloc)) == NULL) {
 		vm_kfree(*serial);
 		return -ENOMEM;
@@ -331,17 +324,12 @@ int _uart16550_detect(void *base, unsigned int irq, unsigned int speed, uart1655
 }
 
 
-void _uart16550_init(unsigned int speed)
+int main(void)
 {
-	static const file_ops_t uart16550_ops = {
-		.read = uart16550_read,
-		.write = uart16550_write,
-		.poll = uart16550_poll,
-		.ioctl = uart16550_ioctl,
-	};
+	void *base= (void *)0x3f8;
+	unsigned int interrupt = 4;
 
 	_uart16550_detect((void *)0x3f8, 4, speed, &serials[0]);
-	_uart16550_detect((void *)0x2f8, 3, speed, &serials[1]);
 
 	if (dev_register(MAKEDEV(MAJOR_SERIAL, 0), &uart16550_ops) < 0) {
 		main_printf(ATTR_ERROR, "dev[uart16550]: Can't register serial device!\n");
