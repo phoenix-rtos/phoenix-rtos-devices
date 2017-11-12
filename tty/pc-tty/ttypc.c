@@ -133,7 +133,7 @@ int main(int argc, char *argv[])
 {
 	unsigned int i;
 
-	printf("ttypc: Initializing VGA VT220 terminal emulator %s\n", "");
+	printf("pc-tty: Initializing VGA VT220 terminal emulator %s\n", "");
 
 	/* Test monitor type */
 	memset(&ttypc_common, 0, sizeof(ttypc_t));

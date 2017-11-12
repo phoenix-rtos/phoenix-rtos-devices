@@ -13,6 +13,11 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <sys/threads.h>
+#include <sys/interrupt.h>
+#include <unistd.h>
+#include <sys/msg.h>
 
 #include "pc-uart.h"
 
@@ -21,71 +26,25 @@ typedef struct {
 	void *base;
 	unsigned int irq;
 
-	u8 *rbuff;
+	u8 rbuff[256];
 	unsigned int rbuffsz;
 	unsigned int rb;
 	unsigned int rp;
+	handle_t rcond;
 
-	u8 *sbuff;
+	u8 sbuff[256];
 	unsigned int sbuffsz;
 	unsigned int sp;
 	unsigned int se;
 
-	semaphore_t mutex;
-	spinlock_t spinlock;
-	thq_t waitq;
-} uart16550_t;
+	handle_t mutex;
+	handle_t intcond;
+} uart_t;
 
 
-static uart16550_t *serials[SIZE_SERIALS];
+static uart_t *uarts[4];
 
-
-static int uart16550_interrupt(unsigned int n, cpu_context_t *ctx, void *arg)
-{
-	uart16550_t *serial = (uart16550_t *)arg;
-	u8 iir;
-
-	if ((iir = hal_inb(serial->base + REG_IIR)) & IIR_IRQPEND)
-		return IHRES_IGNORE;
-
-	proc_spinlockSet(&serial->spinlock);
-
-	/* Receive */
-	if ((iir & IIR_DR) == IIR_DR) {
-		u8 lsr;
-		
-		while (1) {
-			lsr = hal_inb(serial->base + REG_LSR);
-			
-			/*if (lsr & 2)
-				over = 1;*/
-
-			if ((lsr & 1) == 0)
-				break;
-				
-			serial->rbuff[serial->rp] = hal_inb(serial->base + REG_RBR);
-			serial->rp = ( (serial->rp+1) % serial->rbuffsz);
-
-			if (serial->rp == serial->rb)
-				serial->rb = ( (serial->rb+1) % serial->rbuffsz);
-		}
-
-		proc_threadCondSignal(&serial->waitq);
-	}
-
-	/* Transmit */
-	if ((iir & IIR_THRE) == IIR_THRE) {
-		serial->sp = ( (serial->sp+1) % serial->sbuffsz);
-		if (serial->sp != serial->se) {
-			hal_outb(serial->base + REG_THR, serial->sbuff[serial->sp]);
-		}
-	}
-
-	proc_spinlockClear(&serial->spinlock, sopGetCycles);
-	return IHRES_HANDLED;
-}
-
-
+#if 0
 int uart16550_readchunk(uart16550_t *serial, char *buff, unsigned int len, int *repfl)
 {
 	unsigned int l, cnt, bytes;
@@ -160,55 +119,6 @@ static int uart16550_read(file_t *file, offs_t offs, char *buff, unsigned int le
 }
 
 
-static int uart16550_write(file_t *file, offs_t offs, char *buff, unsigned int len)
-{
-	vnode_t *vnode = file->vnode;
-	uart16550_t *serial;
-	unsigned int sp, se;
-	unsigned int l;
-	unsigned int cnt;
-
-	if (MINOR(vnode->dev) >= SIZE_SERIALS)
-		return -EINVAL;
-
-	if ((serial = serials[MINOR(vnode->dev)]) == NULL)
-		return -EINVAL;
-
-	proc_semaphoreDown(&serial->mutex);
-
-	proc_spinlockSet(&serial->spinlock);
-	sp = serial->sp;
-	se = serial->se;	
-	proc_spinlockClear(&serial->spinlock, sopGetCycles);
-
-	if (sp > se)
-		l = min(sp - se, len);
-	else
-		l = min(serial->sbuffsz - se, len);
-
-	/* It is assumed that send buffer and its size are constant after initialization */
-	hal_memcpy(&serial->sbuff[se], buff, l);
-
-	cnt = l;
-	if ((len > l) && (se >= sp)) {
-		hal_memcpy(serial->sbuff, buff + l, min(len - l, sp));
-		cnt += min(len - l, sp);
-	}
-
-	/* Initialize sending process */
-	proc_spinlockSet(&serial->spinlock);
-	if (serial->se == serial->sp)
-		hal_outb(serial->base, serial->sbuff[serial->sp]);
-	
-	serial->se = ((serial->se + cnt) % serial->sbuffsz);
-	proc_spinlockClear(&serial->spinlock, sopGetCycles);
-
-	proc_semaphoreUp(&serial->mutex);
-
-	return cnt;
-}
-
-
 static int uart16550_poll(file_t *file, ktime_t timeout, int op)
 {
 	vnode_t *vnode = file->vnode;
@@ -258,83 +168,190 @@ static int uart16550_ioctl(file_t *file, unsigned int cmd, unsigned long arg)
 	return -ENOENT;
 }
 
+#endif
 
-/* (MOD) modify memory allocation - kmalloc should be used instead of pageAlloc */
-int _uart_detect(void *base, unsigned int irq, unsigned int speed, uart16550_t **serial)
+
+static int uart_interrupt(unsigned int n, void *arg)
+{
+	uart_t *uart = (uart_t *)arg;
+	u8 iir;
+
+//	if ((iir = inb(uart->base + REG_IIR)) & IIR_IRQPEND)
+//		return 0;
+
+	return uart->intcond;
+}
+
+
+void uart_intthr(void *arg)
+{
+	uart_t *uart = (uart_t *)arg;
+	u8 iir, lsr;
+
+	for (;;) {
+		mutexLock(uart->mutex);
+
+		while ((iir = inb(uart->base + REG_IIR)) & IIR_IRQPEND)
+			condWait(uart->intcond, uart->mutex, 0);
+
+		/* Receive */
+		if ((iir & IIR_DR) == IIR_DR) {
+printf("DR %d\n", uart->rp);
+			while (1) {
+				lsr = inb(uart->base + REG_LSR);
+				/*if (lsr & 2)
+					over = 1;*/
+
+				if ((lsr & 1) == 0)
+					break;
+				
+				uart->rbuff[uart->rp] = inb(uart->base + REG_RBR);
+				uart->rp = ( (uart->rp + 1) % uart->rbuffsz);
+
+				if (uart->rp == uart->rb)
+					uart->rb = ((uart->rb+1) % uart->rbuffsz);
+			}
+
+			condSignal(uart->rcond);
+		}
+
+		/* Transmit */
+		if ((iir & IIR_THRE) == IIR_THRE) {
+			uart->sp = ((uart->sp+1) % uart->sbuffsz);
+			if (uart->sp != uart->se) {
+				outb(uart->base + REG_THR, uart->sbuff[uart->sp]);
+			}
+		}
+
+		mutexUnlock(uart->mutex);
+	}
+
+	return;
+}
+
+
+int _uart_init(void *base, unsigned int irq, unsigned int speed, uart_t **uart)
 {
 	/* Test if device exist */
 	if (inb(base + REG_IIR) == 0xff)
-		return ERR_DEV_DETECT;
+		return -ENOENT;
 
-	printf("uart16550: Detected interface on 0x%x irq=%d\n", (u32)base, irq);
+	printf("pc-uart: Detected interface on 0x%x irq=%d\n", (u32)base, irq);
 
 	/* Allocate and map memory for driver structures */
-	if ((*serial = vm_kmalloc(sizeof(uart16550_t))) == NULL)
+	if ((*uart = malloc(sizeof(uart_t))) == NULL)
 		return -ENOMEM;	
 
-	if ((serial->rbuff = (u8 *)malloc(256)) == NULL) {
-	if ((page = vm_pageAlloc(1, vm_pageAlloc)) == NULL) {
-		vm_kfree(*serial);
-		return -ENOMEM;
-	}
+	(*uart)->base = base;
+	(*uart)->irq = irq;
 
-	if (vm_kmap(page, PGHD_WRITE | PGHD_PRESENT, &vaddr) < 0) {
-		vm_kfree(*serial);
-		vm_pageFree(page);
-		return -ENOMEM;
-	}
+	(*uart)->rbuffsz = sizeof((*uart)->rbuff);
+	(*uart)->rb = (*uart)->rp = 0;
 
-	(*serial)->rbuff = (u8 *)vaddr;
-	(*serial)->base = base;
-	(*serial)->irq = irq;
-	(*serial)->rbuffsz = SIZE_PAGE / 2;
-	(*serial)->rb = 0;
-	(*serial)->rp = 0;
-	
-	(*serial)->sbuff = (*serial)->rbuff + (*serial)->rbuffsz;
-	(*serial)->sbuffsz = SIZE_PAGE - (*serial)->rbuffsz;	
-	(*serial)->sp = (unsigned int)-1;
-	(*serial)->se = 0;
-	
-	proc_thqCreate(&(*serial)->waitq);
+	(*uart)->sbuffsz = sizeof((*uart)->sbuff);
+	(*uart)->sp = (unsigned int)-1;
+	(*uart)->se = 0;
 
-	proc_spinlockCreate(&((*serial)->spinlock), "serial.spinlock");
-	hal_interruptsSetHandler(irq, uart16550_interrupt, (*serial));
+	condCreate(&(*uart)->intcond);
+	mutexCreate(&(*uart)->mutex);
 
-	proc_semaphoreCreate(&(*serial)->mutex, 1);
+	interrupt(irq, uart_interrupt, (*uart), (*uart)->intcond);
+
+	u8 *stack;
+	stack = (u8 *)malloc(2048);
+
+	condCreate(&(*uart)->rcond);
+
+	beginthread(uart_intthr, 1, stack, 2048, (void *)*uart);
 
 	/* Set speed (MOD) */
-	hal_outb(base + REG_LCR, LCR_DLAB);
-	hal_outb(base + REG_LSB, speed);
-	hal_outb(base + REG_MSB, 0);
+	outb(base + REG_LCR, LCR_DLAB);
+	outb(base + REG_LSB, speed);
+	outb(base + REG_MSB, 0);
 
 	/* Set data format (MOD) */
-	hal_outb(base + REG_LCR, LCR_D8N1);
+	outb(base + REG_LCR, LCR_D8N1);
 
 	/* Enable FIFO - this is required for Transmeta Crusoe (MOD) */
-	hal_outb(base + 2, 0x01);
+	outb(base + 2, 0x01);
 
 	/* Enable hardware interrupts */
-	hal_outb(base + REG_MCR, MCR_OUT2);
+	outb(base + REG_MCR, MCR_OUT2);
 
 	/* Set interrupt mask */
-	hal_outb(base + REG_IMR, IMR_THRE | IMR_DR);
+	outb(base + REG_IMR, IMR_THRE | IMR_DR);
 	
 	return EOK;
 }
 
 
-int main(void)
+#if 0
+static int uart_write(offs_t offs, char *buff, unsigned int len)
 {
-	void *base= (void *)0x3f8;
-	unsigned int interrupt = 4;
+	uart_t *serial;
+	unsigned int sp, se;
+	unsigned int l;
+	unsigned int cnt;
 
-	_uart16550_detect((void *)0x3f8, 4, speed, &serials[0]);
+	mutexLock(
+	proc_spinlockSet(&serial->spinlock);
+	sp = serial->sp;
+	se = serial->se;	
+	proc_spinlockClear(&serial->spinlock, sopGetCycles);
 
-	if (dev_register(MAKEDEV(MAJOR_SERIAL, 0), &uart16550_ops) < 0) {
-		main_printf(ATTR_ERROR, "dev[uart16550]: Can't register serial device!\n");
-		return;
+	if (sp > se)
+		l = min(sp - se, len);
+	else
+		l = min(serial->sbuffsz - se, len);
+
+	/* It is assumed that send buffer and its size are constant after initialization */
+	hal_memcpy(&serial->sbuff[se], buff, l);
+
+	cnt = l;
+	if ((len > l) && (se >= sp)) {
+		hal_memcpy(serial->sbuff, buff + l, min(len - l, sp));
+		cnt += min(len - l, sp);
 	}
 
-	return;
+	/* Initialize sending process */
+	proc_spinlockSet(&serial->spinlock);
+	if (serial->se == serial->sp)
+		hal_outb(serial->base, serial->sbuff[serial->sp]);
+	
+	serial->se = ((serial->se + cnt) % serial->sbuffsz);
+	proc_spinlockClear(&serial->spinlock, sopGetCycles);
+
+	proc_semaphoreUp(&serial->mutex);
+
+	return cnt;
+}
+#endif
+
+
+int main(void)
+{
+	void *base = (void *)0x3f8;
+	unsigned int n = 4;
+	u32 port;
+//	msghdr_t hdr;
+
+	printf("pc-uart: Initializing UART 16550 driver %s\n", "");
+
+	_uart_init(base, n, BPS_115200, &uarts[0]);
+
+	portCreate(&port);
+	if (portRegister(port, "/dev/ttyS0") < 0) {
+		printf("Can't register port %d\n", port);
+		return -1;
+	}
+
+	for (;;) {
+//		recv(port, data, size, &hdr, 0);
+
+//sys/msg.h:extern int respond(u32 port, int err, void *data, size_t size);
+
+		usleep(100);
+	}
+
+	return 0;
 }

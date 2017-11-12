@@ -23,7 +23,7 @@ all: pc-uart
 .c.o:
 	$(CC) $(CFLAGS) $<
 
-ttypc: $(OBJS)
+pc-uart: $(OBJS)
 	$(LD) $(LDFLAGS) -o $(BIN) $(OBJS) ../../../libphoenix/libphoenix.a $(GCCLIB)
 
 clean:
