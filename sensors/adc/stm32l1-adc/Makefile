@@ -9,13 +9,13 @@
 SIL ?= @
 
 SRCDIR=$(CURDIR)
-LIBPHOENIX ?= ../../../libphoenix
+LIBPHOENIX ?= ../../../../libphoenix
 LIB = $(LIBPHOENIX)/libphoenix.a
 
 CROSS ?= arm-phoenix-
 
 CC = $(CROSS)gcc
-CFLAGS += -O2 -Wall -Wstrict-prototypes -g -I$(SRCDIR) -I../../bus/gpio/stm32l1-gpio -I$(LIBPHOENIX) -nostartfiles -nostdlib\
+CFLAGS += -O2 -Wall -Wstrict-prototypes -g -I$(SRCDIR) -I../../../bus/gpio/stm32l1-gpio -I$(LIBPHOENIX) -nostartfiles -nostdlib\
 	-mcpu=cortex-m3 -mthumb \
 	-fomit-frame-pointer -ffreestanding\
 	-fpic -fpie -msingle-pic-base -mno-pic-data-is-text-relative\

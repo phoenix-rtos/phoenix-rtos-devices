@@ -9,7 +9,7 @@
 SIL ?= @
 
 SRCDIR=$(CURDIR)
-LIBPHOENIX ?= ../../../../libphoenix
+LIBPHOENIX ?= ../../../libphoenix
 LIB = $(LIBPHOENIX)/libphoenix.a
 
 CROSS ?= arm-phoenix-
