@@ -40,7 +40,7 @@ struct {
 	char str[sizeof(((lcddrv_msg_t*)NULL)->str)];
 	char str_small[sizeof(((lcddrv_msg_t*)NULL)->str_small)];
 
-	unsigned char on, backlight;
+	unsigned char on;
 
 	u64 sym_state;
 } lcd_common;
@@ -51,19 +51,19 @@ enum lcd_registers {
 };
 
 
-typedef enum _lcd_coms_t {
+enum lcd_coms {
 	COM0 = 2 * 3,
 	COM1 = 2 * 0,
 	COM2 = 2 * 1,
 	COM3 = 2 * 2
-} lcd_coms_t;
+};
 
 
-enum { SEGA = 0, SEGF, SEGE, SEGD, SEGB, SEGG, SEGC, SEGP };
+enum lcd_segments { SEGA = 0, SEGF, SEGE, SEGD, SEGB, SEGG, SEGC, SEGP };
 
 
 /*
- * SmartEMU LCD Segments are mapped like this:
+ * LCD Segments are mapped like this:
  *   --A--
  *  |     |
  *  F     B
@@ -128,7 +128,6 @@ void lcddrv_setRamSegment(unsigned int position, unsigned int segment, unsigned 
 	static const char routes[36] = {
 		2, 3, 4, 22, 23, 5, 6, 10, 11, 12, 13, 14, 15, 30, 31, 32, 33, 34, 35,
 		24, 25, 26, 27, 17, 16, 9, 8, 7, 36, 37, 38, 39, 40, 41, 42, 43 };
-//		24, 25, 26, 27, 17, 40, 41, 42, 43, 7, 8, 9, 16, 36, 37, 38, 39 };
 
 	static const char coms[4] = { COM3, COM2, COM1, COM0 };
 
@@ -296,7 +295,6 @@ static void lcddrv_mainThread(void)
 			memcpy(msg.str, lcd_common.str, sizeof(lcd_common.str));
 			memcpy(msg.str_small, lcd_common.str_small, sizeof(lcd_common.str_small));
 			msg.sym_mask = lcd_common.sym_state;
-			msg.backlight = lcd_common.backlight;
 			msg.on = lcd_common.on;
 			respond(lcd_common.port, EOK, &msg, sizeof(msg));
 			break;
@@ -312,7 +310,6 @@ void main(void)
 	lcd_common.base = (void *)0x40002400;
 	lcd_common.str[0] = 0;
 	lcd_common.sym_state = 0;
-	lcd_common.backlight = 0;
 	lcd_common.on = 0;
 
 	/* mask all needed registers */

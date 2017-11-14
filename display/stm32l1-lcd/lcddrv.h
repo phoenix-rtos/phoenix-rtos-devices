@@ -75,7 +75,7 @@ typedef struct _lcddrv_msg_t {
 	u64 sym_state;
 	u64 sym_mask;
 
-	char backlight, on;
+	char on;
 } __attribute__((packed)) lcddrv_msg_t;
 
 
