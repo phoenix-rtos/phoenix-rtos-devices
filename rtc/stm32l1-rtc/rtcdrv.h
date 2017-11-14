@@ -32,13 +32,4 @@ typedef struct {
 } __attribute__((packed)) rtctimestamp_t;
 
 
-extern int rtc_timestampGet(rtctimestamp_t *timestamp);
-
-
-extern int rtc_timestampSet(rtctimestamp_t timestamp);
-
-
-extern void rtc_init(void);
-
-
 #endif

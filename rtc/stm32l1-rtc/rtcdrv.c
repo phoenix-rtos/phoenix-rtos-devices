@@ -13,17 +13,23 @@
  * %LICENSE%
  */
 
+#include <errno.h>
+
+#include <sys/threads.h>
+#include <sys/msg.h>
+
 #include "rtcdrv.h"
-#include "proc/threads.h"
-#include "proc/msg.h"
 
 
-struct {
+static const struct {
 	volatile unsigned int *pwr;
 	volatile unsigned int *rcc;
 	volatile unsigned int *rtc;
-	unsigned int port;
-} rtc_common;
+} rtc_common = {
+	(void *) 0x40007000,
+	(void *) 0x40023800,
+	(void *) 0x40002800,
+};
 
 
 enum { pwr_cr = 0, pwr_csr };
@@ -43,7 +49,7 @@ static void rtc_lockRegs(void)
 	/* Reset DBP bit */
 	*(rtc_common.pwr + pwr_cr) &= ~(1 << 8);
 
-	hal_cpuDataBarrier();
+	__asm__ volatile ("dmb");
 }
 
 
@@ -56,7 +62,7 @@ static void rtc_unlockRegs(void)
 	*(rtc_common.rtc + rtc_wpr) = 0xca;
 	*(rtc_common.rtc + rtc_wpr) = 0x53;
 
-	hal_cpuDataBarrier();
+	__asm__ volatile ("dmb");
 }
 
 
@@ -138,51 +144,11 @@ static void rtc_setTimestamp(rtctimestamp_t *timestamp)
 }
 
 
-static void rtc_thread(void *arg)
+void main(void)
 {
 	rtctimestamp_t timestamp;
 	msghdr_t hdr;
-
-	for (;;) {
-		proc_recv(rtc_common.port, &timestamp, sizeof(timestamp), &hdr);
-		if (hdr.type == MSG_NOTIFY)
-			continue;
-
-		if (hdr.op == MSG_READ) {
-			rtc_getTimestamp(&timestamp);
-			proc_respond(rtc_common.port, EOK, &timestamp, sizeof(timestamp));
-		}
-		else if (hdr.op == MSG_WRITE) {
-			rtc_setTimestamp(&timestamp);
-			proc_respond(rtc_common.port, EOK, NULL, 0);
-		}
-	}
-}
-
-
-int rtc_timestampGet(rtctimestamp_t *timestamp)
-{
-	int ret = proc_send(rtc_common.port, MSG_READ, NULL, 0, MSG_NORMAL, timestamp, sizeof(rtctimestamp_t));
-
-	timestamp->year += 2000;
-	return ret;
-
-}
-
-
-int rtc_timestampSet(rtctimestamp_t timestamp)
-{
-	timestamp.year -= 2000;
-
-	return proc_send(rtc_common.port, MSG_WRITE, &timestamp, sizeof(timestamp), MSG_NORMAL, NULL, 0);
-}
-
-
-void rtc_init(void)
-{
-	rtc_common.pwr = (void *) 0x40007000;
-	rtc_common.rcc = (void *) 0x40023800;
-	rtc_common.rtc = (void *) 0x40002800;
+	unsigned int port;
 
 	rtc_unlockRegs();
 
@@ -192,12 +158,25 @@ void rtc_init(void)
 	/* Enable RTC clock. */
 	*(rtc_common.rcc + rcc_csr) |= (1 << 22);
 
-	hal_cpuDataBarrier();
+	__asm__ volatile ("dmb");
 
 	rtc_lockRegs();
 
-	proc_portCreate(&rtc_common.port);
-	proc_portRegister(rtc_common.port, "/rtcdrv");
+	portCreate(&port);
+	portRegister(port, "/rtcdrv");
 
-	proc_threadCreate(NULL, rtc_thread, 2, 512, NULL, NULL);
+	for (;;) {
+		recv(port, &timestamp, sizeof(timestamp), &hdr, 0);
+		if (hdr.type == NOTIFY)
+			continue;
+
+		if (hdr.op == READ) {
+			rtc_getTimestamp(&timestamp);
+			respond(port, EOK, &timestamp, sizeof(timestamp));
+		}
+		else if (hdr.op == WRITE) {
+			rtc_setTimestamp(&timestamp);
+			respond(port, EOK, NULL, 0);
+		}
+	}
 }
