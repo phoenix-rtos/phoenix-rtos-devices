@@ -17,55 +17,66 @@
 
 #define LCDDRV_CHAR_DEGREE 0xf8
 
-extern unsigned int lcddrv_port;
+#define LCDSYM_SMALL_DOT0  (1 <<  0)
+#define LCDSYM_SMALL_DOT1  (1 <<  1)
+#define LCDSYM_SMALL_DOT2  (1 <<  2)
+#define LCDSYM_SMALL_DOT3  (1 <<  3)
+#define LCDSYM_SMALL_DOT4  (1 <<  4)
+#define LCDSYM_PLUS_Q      (1 <<  5)
+#define LCDSYM_PLUS_P      (1 <<  6)
+#define LCDSYM_MINUS_Q     (1 <<  7)
+#define LCDSYM_MINUS_P     (1 <<  8)
+#define LCDSYM_DOT0        (1 <<  9)
+#define LCDSYM_DOT1        (1 << 10)
+#define LCDSYM_TRIANGLE8   (1 << 11)
+#define LCDSYM_DOT3        (1 << 12)
+#define LCDSYM_TRIANGLE9   (1 << 13)
+#define LCDSYM_DOT2_CENTER (1 << 14)
+#define LCDSYM_DOT2        (1 << 15)
+#define LCDSYM_LETTER_A    (1 << 16)
+#define LCDSYM_LETTER_B    (1 << 17)
+#define LCDSYM_LETTER_C    (1 << 18)
+#define LCDSYM_LETTER_D    (1 << 19)
+#define LCDSYM_SWITCH      (1 << 20)
+#define LCDSYM_Hz          (1 << 21)
+#define LCDSYM_TRIANGLE2   (1 << 22)
+#define LCDSYM_TRIANGLE3   (1 << 23)
+#define LCDSYM_TRIANGLE4   (1 << 24)
+#define LCDSYM_TRIANGLE5   (1 << 25)
+#define LCDSYM_TRIANGLE6   (1 << 26)
+#define LCDSYM_TRIANGLE7   (1 << 27)
+#define LCDSYM_TRIANGLE0   (1 << 28)
+#define LCDSYM_TRIANGLE1   (1 << 29)
+#define LCDSYM_ARROWS      (1 << 30)
+#define LCDSYM_BAT         (1 << 31)
+#define LCDSYM_L1     ((u64)1 << 32)
+#define LCDSYM_L2     ((u64)1 << 33)
+#define LCDSYM_L3     ((u64)1 << 34)
+#define LCDSYM_N      ((u64)1 << 35)
+#define LCDSYM_k      ((u64)1 << 36)
+#define LCDSYM_M      ((u64)1 << 37)
+#define LCDSYM_r_TO_h ((u64)1 << 38)
+#define LCDSYM_OO     ((u64)1 << 39)
+#define LCDSYM_A      ((u64)1 << 40)
+#define LCDSYM_V      ((u64)1 << 41)
+#define LCDSYM_V_TO_W ((u64)1 << 42)
+#define LCDSYM_Err    ((u64)1 << 43)
+#define LCDSYM_h      ((u64)1 << 44)
+#define LCDSYM_r      ((u64)1 << 45)
 
-typedef enum _lcd_symbols_t {
-	LCDSYM_SMALL_ONE	= 1 << 0,
-	LCDSYM_CLOCK		= 1 << 1,
-	LCDSYM_DATE			= 1 << 2,
-	LCDSYM_WARN			= 1 << 3,
-	LCDSYM_BATT			= 1 << 4,
-	LCDSYM_LOWBATT		= 1 << 5,
-	LCDSYM_NOBATT		= 1 << 6,
-	LCDSYM_LOCK			= 1 << 7,
-	LCDYSM_FACTORY		= 1 << 8,
-	LCDSYM_FIRE			= 1 << 9,
-	LCDSYM_COM			= 1 << 10,
-	LCDSYM_POUND		= 1 << 11,
-	LCDSYM_EUR			= 1 << 12,
-	LCDSYM_M3			= 1 << 13,
-	LCDSYM_SLASH_TOP	= 1 << 14,
-	LCDSYM_H_TOP		= 1 << 15,
-	LCDSYM_H_BOT		= 1 << 16,
-	LCDSYM_K			= 1 << 17,
-	LCDSYM_W			= 1 << 18,
-	LCDSYM_FRAME 		= 1 << 19,
-	LCDSYM_FRAME_SMALL	= 1 << 20,
-	LCDSYM_BAR0 		= 1 << 21,
-	LCDSYM_BAR1			= 1 << 22,
-	LCDSYM_BAR2			= 1 << 23,
-	LCDSYM_DOT1_BOT		= 1 << 24,
-	LCDSYM_DOT2_TOP		= 1 << 25,
-	LCDSYM_DOT2_BOT 	= 1 << 26,
-	LCDSYM_DOT3_BOT		= 1 << 27,
-	LCDSYM_DOT4_TOP		= 1 << 28,
-	LCDSYM_DOT4_BOT		= 1 << 29,
-	LCDSYM_TOTAL 		= 30
-} lcd_symbols_t;
+#define LCDSYM_ALL    ((u64)0x3FFFFFFFFFFF)
+#define LCDSYM_TOTAL  (14 + 4 * 8)
 
 typedef struct _lcddrv_msg_t {
-	enum { GET, SET, CONF } type;
+	enum { LCD_GET, LCD_SET } type;
 
-	char str[10];
-	char str_small[2];
-	unsigned int sym_mask;
-	unsigned char state;
-	int backlight;
-	int on;
+	char str[8], str_small[6];
+
+	u64 sym_state;
+	u64 sym_mask;
+
+	char backlight, on;
 } __attribute__((packed)) lcddrv_msg_t;
-
-void lcddrv_init(void);
 
 
 #endif
-
