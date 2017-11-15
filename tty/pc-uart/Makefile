@@ -7,11 +7,12 @@
 # Author: Pawel Pisarczyk
 #
 
-CC = i386-pc-phoenix-gcc
-CFLAGS = -c -Wall -O2 -g -I. -I../../../libphoenix/ -DARCH=\"arch/ia32/arch.h\"
+CC ?= i386-pc-phoenix-gcc
+CFLAGS = -m32 -fstack-protector -c -Wall -O2 -g -I. -I../../../libphoenix/ -DARCH=\"arch/ia32/arch.h\"
 
-LD = i386-pc-phoenix-gcc
-LDFLAGS = -nostartfiles -nostdlib
+LD ?= i386-pc-phoenix-gcc
+LDFLAGS = -m elf_i386 -nostdlib
+#-nostartfiles
 
 SRCS = pc-uart.c
 OBJS = $(SRCS:.c=.o)

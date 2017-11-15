@@ -14,12 +14,12 @@
  * %LICENSE%
  */
 
-#include <hal/if.h>
-#include <vm/if.h>
-#include <proc/if.h>
-#include <main/if.h>
+#include "hal_if.h"
+#include "vm_if.h"
+#include "proc_if.h"
+//#include "main_if.h"
 
-#include <dev/pci/pci.h>
+#include "pc-pci.h"
 
 
 struct {
