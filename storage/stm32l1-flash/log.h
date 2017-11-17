@@ -16,7 +16,7 @@
 #ifndef _FLASHDRV_LOG_H_
 #define _FLASHDRV_LOG_H_
 
-#include HAL
+#include ARCH
 #include "flashdrv.h"
 #include "flashdrv_priv.h"
 

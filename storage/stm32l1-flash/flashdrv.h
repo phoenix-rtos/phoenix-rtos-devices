@@ -16,16 +16,16 @@
 #ifndef _FLASHDRV_H_
 #define _FLASHDRV_H_
 
-#include HAL
-#include "../rtcdrv.h"
+#include ARCH
+#include "rtcdrv.h"
 
 #define FLASH_PAGE_SIZE         256
 #define FLASH_PROGRAM_1_ADDR    0x08000000
 #define FLASH_PROGRAM_2_ADDR    0x08030000
-#define FLASH_PROGRAM_SIZE      (192 * 1024)
+#define FLASH_PROGRAM_SIZE      (256 * 1024)
 #define FLASH_EEPROM_1_ADDR     0x08080000
 #define FLASH_EEPROM_2_ADDR     0x08081800
-#define FLASH_EEPROM_SIZE       (6 * 1024)
+#define FLASH_EEPROM_SIZE       (8 * 1024)
 #define FLASH_OB_1_ADDR         0x1ff80000
 #define FLASH_OB_2_ADDR         0x1ff80080
 #define FLASH_OB_SIZE           32
@@ -62,46 +62,15 @@ typedef struct {
 
 static inline int flash_activeBank(void)
 {
-	u32 pc = hal_cpuGetPC();
+	void *pc;
 
-	if (pc < FLASH_PROGRAM_1_ADDR)
+	__asm__ volatile ("mov %0, pc" : "=r" (pc));
+
+	if ((u32)pc < FLASH_PROGRAM_1_ADDR)
 		pc += FLASH_PROGRAM_1_ADDR;
 
-	return !(pc < FLASH_PROGRAM_2_ADDR);
+	return !((u32)pc < FLASH_PROGRAM_2_ADDR);
 }
-
-
-extern int flash_eventRead(int idx, flashevent_t *event);
-
-
-extern int flash_eventWrite(flashevent_t *event);
-
-
-extern int flash_logRead(flashlog_t *log);
-
-
-extern int flash_logWrite(flashlog_t *log);
-
-
-extern int flash_read(void *buff, size_t size, u32 addr);
-
-
-extern int flash_write(void *buff, size_t size, u32 addr);
-
-
-extern int flash_eepromInfo(unsigned int *addr, size_t *size);
-
-
-extern int flash_getActiveBank(int *bank);
-
-
-extern int flash_breakActiveBank(void);
-
-
-extern int flash_atomCopy(u32 dest, u32 src, size_t len);
-
-
-extern void flash_init(void);
 
 
 #endif
