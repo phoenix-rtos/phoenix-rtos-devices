@@ -115,11 +115,15 @@ void eeprom_init(void)
 	int i, j;
 	u64 id;
 
+#if 0
 	/* Use eeprom from diffrent bank than flash we're executing from */
 	if (!flash_activeBank())
 		base = FLASH_EEPROM_2_ADDR;
 	else
 		base = FLASH_EEPROM_1_ADDR;
+#endif
+
+	base = FLASH_EEPROM_1_ADDR;
 
 	log_common.area[EVENTS].addr = base;
 	log_common.area[EVENTS].entrySize = sizeof(flashevent_t);
