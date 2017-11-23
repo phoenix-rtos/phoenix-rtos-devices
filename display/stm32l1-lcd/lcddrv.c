@@ -273,7 +273,7 @@ static void lcddrv_mainThread(void)
 	lcddrv_msg_t msg;
 
 	for (;;) {
-		recv(lcd_common.port, &msg, sizeof(msg), &hdr, 0);
+		recv(lcd_common.port, &msg, sizeof(msg), &hdr);
 
 		if (hdr.op != DEVCTL)
 			continue;

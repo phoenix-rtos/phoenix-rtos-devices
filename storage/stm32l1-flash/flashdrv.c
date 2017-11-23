@@ -488,7 +488,7 @@ static void flash_thread(void *arg)
 	eeprom_init();
 
 	for (;;) {
-		int size = recv(flash_common.port, msg, sizeof(msg), &hdr, 0);
+		int size = recv(flash_common.port, msg, sizeof(msg), &hdr);
 		if (hdr.type == NOTIFY)
 			continue;
 

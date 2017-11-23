@@ -23,11 +23,9 @@
 #include <sys/msg.h>
 #include <sys/interrupt.h>
 #include <sys/pwman.h>
+#include <sys/platform.h>
 
 #include "uartdrv.h"
-
-/* Need getter for CPU clock. Temporary solution */
-#define F_OSC 2097152
 
 
 typedef struct {
@@ -52,6 +50,22 @@ enum { sr = 0, dr, brr, cr1, cr2, cr3, gtpr };
 
 enum { rcc_cr = 0, rcc_icscr, rcc_cfgr, rcc_cir, rcc_ahbrstr, rcc_apb2rstr, rcc_apb1rstr,
 	rcc_ahbenr, rcc_apb2enr, rcc_apb1enr, rcc_ahblpenr, rcc_apb2lpenr, rcc_apb1lpenr, rcc_csr };
+
+
+typedef struct {
+	enum { PLATCTL_SET = 0, PLATCTL_GET } action;
+	enum { PLATCTL_DEVCLOCK = 0, PLATCTL_CPUCLOCK } type;
+
+	union {
+		struct {
+			unsigned dev, state;
+		} devclock;
+
+		struct {
+			unsigned hz;
+		} cpuclock;
+	};
+} __attribute__((packed)) platformctl_t;
 
 
 static int uartdrv_irqHandler(unsigned int n, void *arg)
@@ -95,8 +109,6 @@ static int uartdrv_irqHandler(unsigned int n, void *arg)
 
 static int uartdrv_write(void* buff, unsigned int bufflen, uart_t *uart)
 {
-	int timeout = 10;
-
 	mutexLock(uart->mutex);
 	keepidle(1);
 
@@ -106,7 +118,7 @@ static int uartdrv_write(void* buff, unsigned int bufflen, uart_t *uart)
 	*(uart->base + cr1) |= 1 << 7;
 
 	while (uart->txbeg != uart->txend)
-		condWait(uart->cond, uart->mutex, timeout);
+		condWait(uart->cond, uart->mutex, 0);
 
 	uart->txbeg = NULL;
 	uart->txend = NULL;
@@ -136,7 +148,7 @@ static int uartdrv_read(void* buff, unsigned int count, uart_t *uart, char mode,
 	*(uart->base + cr1) |= 1 << 7;
 
 	while (mode != UARTDRV_MNBLOCK && uart->rxbeg != uart->rxend) {
-		err = condWait(uart->cond, uart->mutex, timeout ? timeout : 10);
+		err = condWait(uart->cond, uart->mutex, timeout);
 
 		if (timeout && err == -ETIME)
 			break;
@@ -170,9 +182,27 @@ static void uartdrv_thread(void *arg)
 	size_t size;
 	uart_t *uart = arg;
 
+	unsigned cpufreq = 0;
+
+	platformctl_t pctl;
+	pctl.action = PLATCTL_GET;
+	pctl.type = PLATCTL_CPUCLOCK;
+
 	for (;;) {
-		tmp = recv(uart->port, buff, sizeof(buff), &hdr, 0);
+		tmp = recv(uart->port, buff, sizeof(buff), &hdr);
 		size = min(sizeof(buff), hdr.rsize);
+
+		platformctl(&pctl);
+
+		if (cpufreq != pctl.cpuclock.hz) {
+			/* Adjust to new clock frequency */
+
+			cpufreq = pctl.cpuclock.hz;
+
+			*(uart->base + cr1) &= ~(1 << 13);
+			*(uart->base + brr) = cpufreq / 9600;
+			*(uart->base + cr1) |= 1 << 13;
+		}
 
 		switch (hdr.op) {
 		case READ:
@@ -215,7 +245,7 @@ static void uartdrv_thread(void *arg)
 					err = EINVAL;
 
 				if (err == EOK) {
-					*(uart->base + brr) = F_OSC / devclt->def.baud;
+					*(uart->base + brr) = cpufreq / devclt->def.baud;
 
 					if (devclt->def.parity != UARTDRV_PARNONE)
 						*(uart->base + cr1) |= (1 << 10);
@@ -282,7 +312,7 @@ int main(void)
 {
 	unsigned uarts = UART2_BIT | UART3_BIT;
 
-	int i, stacksz = 488;
+	int i, stacksz = 1024 - 32;
 	char name[] = "/uartdrv0", *stack;
 
 	struct {
@@ -305,6 +335,9 @@ int main(void)
 	for (i = 0; i < 5; ++i) {
 		if (uarts & (1 << i)) {
 			*(rcc + info[i].apbenr) |= info[i].enableBit;
+
+			__asm__ volatile ("dmb");
+
 			/* Enable low power clock */
 //			*(rcc + info[i].apbenr + 3) |= info[i].enableBit;
 
@@ -333,8 +366,6 @@ int main(void)
 			*(uartptr->base + cr1) = 0x2c;
 			/* no aditional settings */
 			*(uartptr->base + cr3) = 0;
-
-			*(uartptr->base + brr) = F_OSC / 9600;
 			*(uartptr->base + cr1) |= 1 << 13;
 
 			name[8] = '1' + i;

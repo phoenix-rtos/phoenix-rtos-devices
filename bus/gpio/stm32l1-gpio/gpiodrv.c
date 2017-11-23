@@ -159,7 +159,7 @@ int main(void)
 
 	for (;;) {
 		err = EOK;
-		msgsz = recv(gpiodrv_common.id, &msg, sizeof(msg), &hdr, 0);
+		msgsz = recv(gpiodrv_common.id, &msg, sizeof(msg), &hdr);
 
 		if (hdr.type != NORMAL)
 			continue;

@@ -106,7 +106,7 @@ static unsigned char spi_readwrite(unsigned char txd)
 	*(spi_common.base + cr2) |= 1 << 7;
 
 	while (!spi_common.spi_ready)
-		condWait(spi_common.cond, spi_common.mutex, 1);
+		condWait(spi_common.cond, spi_common.mutex, 0);
 
 	rxd = *(spi_common.base + dr);
 	mutexUnlock(spi_common.mutex);
@@ -206,7 +206,7 @@ void main(void)
 	spi_init();
 
 	for (;;) {
-		recv(spi_common.port, &msg, sizeof(msg), &hdr, 0);
+		recv(spi_common.port, &msg, sizeof(msg), &hdr);
 
 		if (hdr.op != DEVCTL)
 			continue;
