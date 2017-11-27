@@ -30,7 +30,7 @@
 
 typedef struct {
 	volatile unsigned int *base;
-	unsigned int port;
+	unsigned int port, baud;
 
 	volatile char *txbeg, *txend;
 
@@ -178,7 +178,7 @@ static void uartdrv_thread(void *arg)
 	unsigned int tmp;
 	msghdr_t hdr;
 	uartdrv_data_t *data = (uartdrv_data_t *)buff;
-	uartdrv_devctl_t *devclt = (uartdrv_devctl_t *)buff;
+	uartdrv_devctl_t *devctl = (uartdrv_devctl_t *)buff;
 	size_t size;
 	uart_t *uart = arg;
 
@@ -187,6 +187,7 @@ static void uartdrv_thread(void *arg)
 	platformctl_t pctl;
 	pctl.action = PLATCTL_GET;
 	pctl.type = PLATCTL_CPUCLOCK;
+
 
 	for (;;) {
 		tmp = recv(uart->port, buff, sizeof(buff), &hdr);
@@ -200,7 +201,7 @@ static void uartdrv_thread(void *arg)
 			cpufreq = pctl.cpuclock.hz;
 
 			*(uart->base + cr1) &= ~(1 << 13);
-			*(uart->base + brr) = cpufreq / 9600;
+			*(uart->base + brr) = cpufreq / uart->baud;
 			*(uart->base + cr1) |= 1 << 13;
 		}
 
@@ -230,34 +231,35 @@ static void uartdrv_thread(void *arg)
 			break;
 
 		case DEVCTL: {
-			switch (devclt->type) {
+			switch (devctl->type) {
 			case UARTDRV_DEF:
 				err = EOK;
 				tmp = *(uart->base + cr1) & (1 << 13);
 				*(uart->base + cr1) &= ~(1 << 13);
 
-				if ((devclt->def.bits == 8 && devclt->def.parity != UARTDRV_PARNONE))
+				if ((devctl->def.bits == 8 && devctl->def.parity != UARTDRV_PARNONE))
 					*(uart->base + cr1) |= (1 << 12);
-				else if ((devclt->def.bits == 7 && devclt->def.parity != UARTDRV_PARNONE) ||
-					 (devclt->def.bits == 8 && devclt->def.parity == UARTDRV_PARNONE))
+				else if ((devctl->def.bits == 7 && devctl->def.parity != UARTDRV_PARNONE) ||
+					 (devctl->def.bits == 8 && devctl->def.parity == UARTDRV_PARNONE))
 					*(uart->base + cr1) &= ~(1 << 12);
 				else
 					err = EINVAL;
 
 				if (err == EOK) {
-					*(uart->base + brr) = cpufreq / devclt->def.baud;
+					uart->baud = devctl->def.baud;
+					*(uart->base + brr) = cpufreq / uart->baud;
 
-					if (devclt->def.parity != UARTDRV_PARNONE)
+					if (devctl->def.parity != UARTDRV_PARNONE)
 						*(uart->base + cr1) |= (1 << 10);
 					else
 						*(uart->base + cr1) &= ~(1 << 10);
 
-					if (devclt->def.parity == UARTDRV_PARODD)
+					if (devctl->def.parity == UARTDRV_PARODD)
 						*(uart->base + cr1) |= (1 << 9);
 					else
 						*(uart->base + cr1) &= ~(1 << 9);
 
-					*(uart->base + cr1) |= (!!(devclt->def.enable) << 13);
+					*(uart->base + cr1) |= (!!(devctl->def.enable) << 13);
 				}
 				else if (tmp) {
 					*(uart->base + cr1) |= (1 << 13);
@@ -270,7 +272,7 @@ static void uartdrv_thread(void *arg)
 
 			case UARTDRV_GET:
 				if (*(uart->base + cr1) & (1 << 13)) {
-					tmp = uartdrv_read(buff, size, uart, devclt->get.mode, devclt->get.timeout);
+					tmp = uartdrv_read(buff, size, uart, devctl->get.mode, devctl->get.timeout);
 					if (hdr.type == NORMAL)
 						respond(uart->port, EOK, buff, tmp);
 				}
@@ -281,8 +283,8 @@ static void uartdrv_thread(void *arg)
 				break;
 
 			case UARTDRV_ENABLE:
-				*(uart->base + cr1) &= ~(!devclt->enable.state << 13);
-				*(uart->base + cr1) |= (!!devclt->enable.state << 13);
+				*(uart->base + cr1) &= ~(!devctl->enable.state << 13);
+				*(uart->base + cr1) |= (!!devctl->enable.state << 13);
 
 				if (hdr.type == NORMAL)
 					respond(uart->port, EOK, NULL, 0);
@@ -308,14 +310,15 @@ static void uartdrv_thread(void *arg)
 }
 
 
-int main(void)
+void main(void)
 {
-	unsigned uarts = UART2_BIT | UART3_BIT;
+	unsigned uarts = UART2_BIT;
 
+	uart_t *uartmain = NULL;
 	int i, stacksz = 1024 - 32;
 	char name[] = "/uartdrv0", *stack;
 
-	struct {
+	const struct {
 		volatile u32 *base;
 		unsigned apbenr;
 		unsigned enableBit;
@@ -330,7 +333,6 @@ int main(void)
 
 	volatile u32 *rcc = (void *)0x40023800;
 	uart_t *uartptr;
-	uart_t *uartmain = NULL;
 
 	for (i = 0; i < 5; ++i) {
 		if (uarts & (1 << i)) {
@@ -339,7 +341,7 @@ int main(void)
 			__asm__ volatile ("dmb");
 
 			/* Enable low power clock */
-//			*(rcc + info[i].apbenr + 3) |= info[i].enableBit;
+			*(rcc + info[i].apbenr + 3) |= info[i].enableBit;
 
 			uartptr = malloc(sizeof(uart_t));
 
@@ -368,6 +370,8 @@ int main(void)
 			*(uartptr->base + cr3) = 0;
 			*(uartptr->base + cr1) |= 1 << 13;
 
+			uartptr->baud = 9600;
+
 			name[8] = '1' + i;
 
 			portCreate(&uartptr->port);
@@ -379,8 +383,8 @@ int main(void)
 				if ((stack = malloc(stacksz)) == NULL || beginthread(uartdrv_thread, 1, stack, stacksz, (void *)uartptr) == -ENOMEM) {
 					printf("uartdrv: not enough memory to start uart%d!\n", i + 1);
 					free(stack);
+					free(uartptr);
 				}
-
 			}
 			else {
 				uartmain = uartptr;
@@ -388,7 +392,5 @@ int main(void)
 		}
 	}
 
-	uartdrv_thread((void *)uartmain);
-
-	return 0;
+	uartdrv_thread(uartmain);
 }
