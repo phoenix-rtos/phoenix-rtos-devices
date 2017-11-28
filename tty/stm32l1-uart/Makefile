@@ -25,6 +25,11 @@ LD = $(CROSS)ld
 LDFLAGS = -nostdlib -e _start --section-start .text=0 -Tbss=20000000 -z max-page-size=0x10
 GCCLIB := $(shell $(CC) $(CFLAGS) -print-libgcc-file-name)
 
+ifeq ($(USE_OPTO),1)
+CFLAGS += -DUARTS="UART3_BIT"
+else
+CFLAGS += -DUARTS="UART2_BIT"
+endif
 
 all: uartdrv.elf
 

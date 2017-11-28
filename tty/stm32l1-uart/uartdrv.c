@@ -171,39 +171,47 @@ static int uartdrv_read(void* buff, unsigned int count, uart_t *uart, char mode,
 }
 
 
+static int uartdrv_adjustBaud(uart_t *uart, int cpufreq)
+{
+	platformctl_t pctl;
+	pctl.action = PLATCTL_GET;
+	pctl.type = PLATCTL_CPUCLOCK;
+
+	platformctl(&pctl);
+
+	if (cpufreq != pctl.cpuclock.hz) {
+		/* Adjust to new clock frequency */
+
+		cpufreq = pctl.cpuclock.hz;
+
+		*(uart->base + cr1) &= ~(1 << 13);
+		*(uart->base + brr) = cpufreq / uart->baud;
+		*(uart->base + cr1) |= 1 << 13;
+	}
+
+	return cpufreq;
+}
+
+
 static void uartdrv_thread(void *arg)
 {
-	char buff[64];
 	int err;
 	unsigned int tmp;
+	char buff[64];
 	msghdr_t hdr;
 	uartdrv_data_t *data = (uartdrv_data_t *)buff;
 	uartdrv_devctl_t *devctl = (uartdrv_devctl_t *)buff;
 	size_t size;
 	uart_t *uart = arg;
 
-	unsigned cpufreq = 0;
-
-	platformctl_t pctl;
-	pctl.action = PLATCTL_GET;
-	pctl.type = PLATCTL_CPUCLOCK;
+	int cpufreq = 0;
 
 
 	for (;;) {
 		tmp = recv(uart->port, buff, sizeof(buff), &hdr);
 		size = min(sizeof(buff), hdr.rsize);
 
-		platformctl(&pctl);
-
-		if (cpufreq != pctl.cpuclock.hz) {
-			/* Adjust to new clock frequency */
-
-			cpufreq = pctl.cpuclock.hz;
-
-			*(uart->base + cr1) &= ~(1 << 13);
-			*(uart->base + brr) = cpufreq / uart->baud;
-			*(uart->base + cr1) |= 1 << 13;
-		}
+		cpufreq = uartdrv_adjustBaud(uart, cpufreq);
 
 		switch (hdr.op) {
 		case READ:
@@ -312,7 +320,7 @@ static void uartdrv_thread(void *arg)
 
 void main(void)
 {
-	unsigned uarts = UART2_BIT;
+	unsigned uarts = UARTS;
 
 	uart_t *uartmain = NULL;
 	int i, stacksz = 1024 - 32;
