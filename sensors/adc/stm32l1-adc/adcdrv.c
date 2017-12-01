@@ -24,6 +24,7 @@
 #include <sys/msg.h>
 #include <sys/pwman.h>
 #include <sys/interrupt.h>
+#include <sys/platform.h>
 
 #include "adcdrv.h"
 
@@ -57,6 +58,26 @@ enum { ri_icr = 0, ri_ascr1, ri_ascr2, ri_hyscr1, ri_hyscr2, ri_hyscr3, ri_hyscr
        ri_cmr4, ri_cicr4, ri_asmr5, ri_cmr5, ri_cicr5 };
 
 
+/* STM32 peripherals */
+enum { msi = 97, hsi };
+
+
+typedef struct {
+	enum { PLATCTL_SET = 0, PLATCTL_GET } action;
+	enum { PLATCTL_DEVCLOCK = 0, PLATCTL_CPUCLOCK } type;
+
+	union {
+		struct {
+			unsigned dev, state;
+		} devclock;
+
+		struct {
+			unsigned hz;
+		} cpuclock;
+	};
+} __attribute__((packed)) platformctl_t;
+
+
 static int adcdrv_irqEndOfConversion(unsigned int n, void *arg)
 {
 	/* Clear IRQ */
@@ -87,25 +108,17 @@ static unsigned short adcdrv_conversion(char channel)
 {
 	unsigned short conv;
 	unsigned int t;
+	platformctl_t pctl;
 
-	mutexLock(adcdrv_common.mutex);
+	pctl.action = PLATCTL_SET;
+	pctl.type = PLATCTL_DEVCLOCK;
+	pctl.devclock.dev = hsi;
+
 	keepidle(1);
 
-	if (!(*(adcdrv_common.rcc + rcc_cr) & 2)) {
-		/* Enable HSI ready interrupt */
-		*(adcdrv_common.rcc + rcc_cir) |= 1 << 10;
-		__asm__ volatile ("dmb");
-
-		/* Enable HSI clock */
-		*(adcdrv_common.rcc + rcc_cr) |= 1;
-		__asm__ volatile ("dmb");
-
-		/* Wait for clock to stabilize */
-		while (!(*(adcdrv_common.rcc + rcc_cr) & 2))
-			condWait(adcdrv_common.cond, adcdrv_common.mutex, 10);
-	}
-
-	mutexUnlock(adcdrv_common.mutex);
+	/* Enable HSI clock */
+	pctl.devclock.state = 1;
+	platformctl(&pctl);
 
 	/* Enable ADC */
 	*(adcdrv_common.base + adc_cr2) |= 1;
@@ -126,6 +139,7 @@ static unsigned short adcdrv_conversion(char channel)
 	*(adcdrv_common.base + adc_sqr5) = t | (channel & 0x1f);
 
 	mutexLock(adcdrv_common.mutex);
+
 	/* Start conversion */
 	adcdrv_common.done = 0;
 	__asm__ volatile ("dmb");
@@ -146,7 +160,8 @@ static unsigned short adcdrv_conversion(char channel)
 	*(adcdrv_common.base + adc_cr2) &= ~1;
 
 	/* Disable HSI clock */
-	*(adcdrv_common.rcc + rcc_cr) &= ~1;
+	pctl.devclock.state = 0;
+	platformctl(&pctl);
 
 	__asm__ volatile ("dmb");
 
@@ -240,6 +255,12 @@ static void adcdrv_thread(void)
 
 int main(void)
 {
+	platformctl_t pctl;
+
+	pctl.action = PLATCTL_SET;
+	pctl.type = PLATCTL_DEVCLOCK;
+	pctl.devclock.dev = hsi;
+
 	adcdrv_common.base = (void *)0x40012400;
 	adcdrv_common.rcc = (void *)0x40023800;
 	adcdrv_common.comp = (void *)0x40007c00;
@@ -249,10 +270,8 @@ int main(void)
 	condCreate(&adcdrv_common.cond);
 
 	/* Enable HSI clock */
-	*(adcdrv_common.rcc + rcc_cr) |= 1;
-	while (!(*(adcdrv_common.rcc + rcc_cr) & 2));
-
-	__asm__ volatile ("dmb");
+	pctl.devclock.state = 1;
+	platformctl(&pctl);
 
 	/* Enable ADC clock */
 	*(adcdrv_common.rcc + rcc_apb2enr) |= (1 << 9);
@@ -278,9 +297,8 @@ int main(void)
 	while (*(adcdrv_common.base + adc_sr) & (1 << 6));
 
 	/* Disable HSI clock */
-	*(adcdrv_common.rcc + rcc_cr) &= ~1;
-
-	__asm__ volatile ("dmb");
+	pctl.devclock.state = 0;
+	platformctl(&pctl);
 
 	portCreate(&adcdrv_common.port);
 	portRegister(adcdrv_common.port, "/adcdrv");
