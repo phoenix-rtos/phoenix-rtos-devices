@@ -16,7 +16,6 @@
 #ifndef _DEV_PCI_H_
 #define _DEV_PCI_H_
 
-
 #define PCI_ANY            0
 #define PCI_VENDOR_INTEL   0x8086
 

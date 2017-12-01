@@ -14,16 +14,21 @@
  * %LICENSE%
  */
 
-#include "hal_if.h"
-#include "vm_if.h"
-#include "proc_if.h"
-//#include "main_if.h"
+#include <stdio.h>
+#include <stdlib.h>
+
+#include <hal/ia32/cpu.h>
+#include <sys/threads.h>
+#include <sys/interrupt.h>
+
+#include <unistd.h>
+#include <sys/msg.h>
 
 #include "pc-pci.h"
 
 
 struct {
-	semaphore_t mutex;
+	handle_t mutex;
 	pci_device_t *devices;
 } pci_common;
 
@@ -46,7 +51,6 @@ static u32 _pci_set(u8 bus, u8 dev, u8 func, u8 reg, u32 v)
 	hal_outl((void *)0xcfc, v);
 	return v;
 }
-
 
 /* Function inserts PCI device descriptor */
 static int _pci_insert(pci_device_t *prev, pci_device_t *dev)
@@ -89,14 +93,17 @@ static int _pci_remove(pci_device_t **list, pci_device_t *dev)
 }
 #endif
 
-
+/*
+* function available for other processess
+* allocating device on the pci bus
+*/
 int dev_pciAlloc(const pci_id_t *id, pci_device_t **adev)
 {
 	pci_device_t *dev;
   
-	proc_semaphoreDown(&pci_common.mutex);
+	mutexLock(pci_common.mutex);
 	if (!pci_common.devices) {
-		proc_semaphoreUp(&pci_common.mutex);
+		mutexUnlock(pci_common.mutex);
 		return -ENOMEM;
 	}
 
@@ -117,16 +124,18 @@ int dev_pciAlloc(const pci_id_t *id, pci_device_t **adev)
 		dev = dev->next;    
 	} while (dev != pci_common.devices);
   
-	proc_semaphoreUp(&pci_common.mutex);
+	mutexUnlock(pci_common.mutex);
 	return EOK;
 }
 
-
+/*
+* function available for other processess
+* setting device as a master on the bus
+*/
 void dev_setBusmaster(pci_device_t *dev, u8 enable) 
 {
 	u32 dv;
 	dv = _pci_get(dev->b, dev->d, dev->f, 1);
-
 	if (enable)
 		dv = dv | 1 << 2;
 	else
@@ -137,16 +146,19 @@ void dev_setBusmaster(pci_device_t *dev, u8 enable)
 	dev->command = dv & 0xffff;
 }
 
-
+/*
+* enumaration on the pci bus and creating the the pci process
+*/
 void _pci_init(void)
 {
 	unsigned int b, d, f, i;
 	u32 dv;
 	pci_device_t *dev;
 
-	main_printf(ATTR_DEV, "dev: [pci  ] Enumerating PCI ");
+	/*main_printf(ATTR_DEV, "dev: [pci  ] Enumerating PCI ");*/
+	printf("dev: [pci  ] Enumerating PCI ");
 
-	proc_semaphoreCreate(&pci_common.mutex, 1);	
+	mutexCreate(&pci_common.mutex);	
 	pci_common.devices = NULL;
 
 	for (b = 0; b < 256; b++) {
@@ -157,7 +169,8 @@ void _pci_init(void)
 				if (dv == 0xffffffff)
 					continue;
 
-				if ((dev = vm_kmalloc(sizeof(pci_device_t))) == NULL)
+				/*if ((dev = vm_kmalloc(sizeof(pci_device_t))) == NULL)*/
+				if ((dev = malloc(sizeof(pci_device_t))) == NULL)
 					break;
 
 				dev->usage = 0;
@@ -194,7 +207,11 @@ void _pci_init(void)
 				/* Add device to list */
 				_pci_add(&pci_common.devices, dev);
 				
-				main_printf(ATTR_DEV, ".");
+				/*main_printf(ATTR_DEV, ".");*/
+				//printf(".");
+				printf("\n:%2u:%2u:%2u-->%6u,%6u-->%3u,%3u",
+					dev->b,dev->d,dev->f,dev->device & 0xFFFF,dev->vendor & 0xFFFF,
+					(dev->cl >> 8) & 0xFF,dev->cl & 0xFF);
 
 				if (((dev->type & 0x80) == 0) && f == 0)
 					break; /* not a multifunction device */
@@ -202,7 +219,30 @@ void _pci_init(void)
 		}
 	}
 	
-	main_printf(ATTR_DEV, "\n");
+	/*main_printf(ATTR_DEV, "\n");*/
+	//printf("\n");	
 
 	return;
+}
+
+int main() {
+	u32 port;
+
+	printf("\npci bus: Initializing %s\n","");
+	_pci_init();
+	printf("\npci bus: Initialized %s\n","");
+
+	portCreate(&port);
+	if (portRegister(port, "/dev/pci") < 0) {
+		printf("Can't register port %d\n", port);	
+		return -1;
+	} else {
+		printf("Registered port %d\n", port);
+	}
+
+	for(;;) {
+		
+		usleep(100);
+	}
+	return 0;
 }

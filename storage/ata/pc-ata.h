@@ -16,9 +16,10 @@
 #ifndef _DEV_ATA_GENERIC_H_
 #define _DEV_ATA_GENERIC_H_
 
-#include <dev/pci/pci.h>
-#include <dev/storage/ata/atainfo.h>
-#include "if.h"
+#include <stdint.h>
+#include <pc-pci.h>
+#include "pc-ata_info.h"
+//#include "if.h"
 
 #define ATA_MAX_PIO_DRQ 256
 #define ATA_DEF_SECTOR_SIZE 512
@@ -122,6 +123,12 @@
 #define ATA_READ         0x00
 #define ATA_WRITE        0x01
 
+typedef struct _ata_opt_t {
+	u8 force;	/* force initialize in compatibility mode */
+	u8 use_int; /* use int if possible */
+	u8 use_dma; /* use dma if possible */
+	u8 use_multitransfer; /* makes sense only without dma */
+} ata_opt_t;
 
 struct ata_channel;
 
@@ -177,7 +184,6 @@ struct ata_bus {
 	pci_device_t *dev;
 	struct ata_channel ac[2];
 };
-
 
 // initialize on pci_device as ata bus
 int ata_init_one(pci_device_t *pdev, ata_opt_t *opt);

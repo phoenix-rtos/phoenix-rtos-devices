@@ -15,15 +15,15 @@
 
 #define NO_TRACE 1
 
-#include <hal/if.h>
-#include <fs/if.h>
-#include <vm/if.h>
-#include <proc/if.h>
-#include <main/if.h>
+//#include <hal/if.h>
+//#include <fs/if.h>
+//#include <vm/if.h>
+//#include <proc/if.h>
+//#include <main/if.h>
 
-#include <dev/if.h>
-#include <dev/pci/pci.h>
-#include <dev/storage/ata/ata.h>
+//#include <dev/if.h>
+//#include <dev/pci/pci.h>
+//#include <dev/storage/ata/ata.h>
 
 static int ata_open(vnode_t *vnode, file_t* file);
 static int ata_read(file_t* file, offs_t offs, char *buff, unsigned int len);

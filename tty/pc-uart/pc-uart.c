@@ -56,7 +56,7 @@ int uart16550_readchunk(uart16550_t *serial, char *buff, unsigned int len, int *
 	while (serial->rp == serial->rb) {
 		if ((err = proc_threadCondWait(&serial->waitq, &serial->spinlock, 0)) < 0)
 			return err;
-	}
+	}semaphore
 
 	if (serial->rp > serial->rb) {
 		l = min(serial->rp - serial->rb, len);
@@ -174,7 +174,7 @@ static int uart16550_ioctl(file_t *file, unsigned int cmd, unsigned long arg)
 static int uart_interrupt(unsigned int n, void *arg)
 {
 	uart_t *uart = (uart_t *)arg;
-	u8 iir;
+//	u8 iir;
 
 //	if ((iir = inb(uart->base + REG_IIR)) & IIR_IRQPEND)
 //		return 0;
@@ -196,7 +196,7 @@ void uart_intthr(void *arg)
 
 		/* Receive */
 		if ((iir & IIR_DR) == IIR_DR) {
-printf("DR %d\n", uart->rp);
+			printf("DR %d\n", uart->rp);
 			while (1) {
 				lsr = inb(uart->base + REG_LSR);
 				/*if (lsr & 2)

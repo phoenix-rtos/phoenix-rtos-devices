@@ -1,30 +1,31 @@
 #
 # Phoenix-RTOS
 #
-# pc-uart - PC serial port driver
+# descriptions
 #
 # Copyright 2017 Phoenix Systems
 # Author: Pawel Pisarczyk
 #
 
 CC ?= i386-pc-phoenix-gcc
-CFLAGS = -m32 -fno-pie -fstack-protector -c -Wall -O2 -g -I. -I../../../libphoenix/ -DARCH=\"arch/ia32/arch.h\"
-
+CFLAGS = -m32 -c -Wall -O2 -g -I. -I../../../libphoenix/ -DARCH=\"arch/ia32/arch.h\"\
+			-I../../../phoenix-rtos-kernel/src/ -I../../bus/pci/pc-pci/
 
 LD ?= i386-pc-phoenix-gcc
-LDFLAGS = -m32 -nostdlib -nostartfiles
+LDFLAGS = -m elf_i386 -nostdlib -nostartfiles
+#-z max-page-size=0x10000 
 
-SRCS = pc-uart.c
+SRCS = pc-ata.c
 OBJS = $(SRCS:.c=.o)
 GCCLIB := $(shell $(CC) $(CFLAGS) -print-libgcc-file-name)
-BIN = pc-uart
+BIN = pc-ata
 
-all: pc-uart
+all: pc-ata
 
 .c.o:
 	$(CC) $(CFLAGS) $<
 
-pc-uart: $(OBJS)
+pc-ata: $(OBJS)
 	$(LD) $(LDFLAGS) -o $(BIN) $(OBJS) ../../../libphoenix/libphoenix.a $(GCCLIB)
 
 clean:
