@@ -305,6 +305,8 @@ static void lcddrv_mainThread(void)
 
 void main(void)
 {
+	oid_t oid;
+
 	lcd_common.rcc = (void *)0x40023800;
 
 	lcd_common.base = (void *)0x40002400;
@@ -337,8 +339,10 @@ void main(void)
 	portCreate(&lcd_common.port);
 	portRegister(lcd_common.port, "/lcddrv");
 
-	while (lookup("/gpiodrv", &lcd_common.gpiodrv_id) != EOK)
+	while (lookup("/gpiodrv", &oid) != EOK)
 		usleep(100000);
+
+	lcd_common.gpiodrv_id = oid.port;
 
 	lcddrv_initGpioPins();
 	lcddrv_mainThread();
