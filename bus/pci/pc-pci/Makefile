@@ -9,14 +9,14 @@
 CROSS ?= i386-pc-phoenix-
 
 CC = $(CROSS)gcc
-CFLAGS = -m32 -fno-pie -fstack-protector -c -Wall -O2 -g\
+CFLAGS = -m32 -fstack-protector -c -Wall -O2 -g\
 	 -I. -I../../../../libphoenix/ -I../../../../phoenix-rtos-kernel/src\
 	 -DARCH=\"arch/ia32/arch.h\"\
 	 -DHAL=\"hal//ia32//hal.h\"
 
 
 LD = $(CROSS)gcc
-LDFLAGS = -m32 -nostdlib -nostartfiles
+LDFLAGS = -m32 -nostdlib -nostartfiles -static
 
 SRCS = pc-pci.c
 OBJS = $(SRCS:.c=.o)

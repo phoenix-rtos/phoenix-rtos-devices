@@ -17,7 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include <hal/ia32/cpu.h>
+#include <arch/ia32/io.h>
 #include <sys/threads.h>
 #include <sys/interrupt.h>
 
@@ -38,8 +38,8 @@ static u32 _pci_get(u8 bus, u8 dev, u8 func, u8 reg)
 {
 	u32 v;
 
-	hal_outl((void *)0xcf8, 0x80000000 | ((u32)bus << 16 ) | ((u32)dev << 11) | ((u32)func << 8) | (reg << 2));
-	v = hal_inl((void *)0xcfc);
+	outl((void *)0xcf8, 0x80000000 | ((u32)bus << 16 ) | ((u32)dev << 11) | ((u32)func << 8) | (reg << 2));
+	v = inl((void *)0xcfc);
 	return v;
 }
 
@@ -47,8 +47,8 @@ static u32 _pci_get(u8 bus, u8 dev, u8 func, u8 reg)
 /* Function writes word to PCI configuration space */
 static u32 _pci_set(u8 bus, u8 dev, u8 func, u8 reg, u32 v)
 {
-	hal_outl((void *)0xcf8, 0x80000000 | ((u32)bus << 16 ) | ((u32)dev << 11) | ((u32)func << 8) | (reg << 2));
-	hal_outl((void *)0xcfc, v);
+	outl((void *)0xcf8, 0x80000000 | ((u32)bus << 16 ) | ((u32)dev << 11) | ((u32)func << 8) | (reg << 2));
+	outl((void *)0xcfc, v);
 	return v;
 }
 
@@ -83,12 +83,12 @@ static int _pci_remove(pci_device_t **list, pci_device_t *dev)
 {
 	dev->prev->next = dev->next;
 	dev->next->prev = dev->prev;
-	
+
 	if (dev->next == dev)
 		(*list) = NULL;
 	else if (dev == (*list))
 		(*list) = dev->next;
-	
+
 	return EOK;
 }
 #endif
@@ -100,7 +100,7 @@ static int _pci_remove(pci_device_t **list, pci_device_t *dev)
 int dev_pciAlloc(const pci_id_t *id, pci_device_t **adev)
 {
 	pci_device_t *dev;
-  
+
 	mutexLock(pci_common.mutex);
 	if (!pci_common.devices) {
 		mutexUnlock(pci_common.mutex);
@@ -109,7 +109,7 @@ int dev_pciAlloc(const pci_id_t *id, pci_device_t **adev)
 
 	*adev = NULL;
 	dev = pci_common.devices;
-  
+
 	do {
 		if (!dev->usage) {
 
@@ -121,9 +121,9 @@ int dev_pciAlloc(const pci_id_t *id, pci_device_t **adev)
 						break;
 					}
 		}
-		dev = dev->next;    
+		dev = dev->next;
 	} while (dev != pci_common.devices);
-  
+
 	mutexUnlock(pci_common.mutex);
 	return EOK;
 }
@@ -132,7 +132,7 @@ int dev_pciAlloc(const pci_id_t *id, pci_device_t **adev)
 * function available for other processess
 * setting device as a master on the bus
 */
-void dev_setBusmaster(pci_device_t *dev, u8 enable) 
+void dev_setBusmaster(pci_device_t *dev, u8 enable)
 {
 	u32 dv;
 	dv = _pci_get(dev->b, dev->d, dev->f, 1);
@@ -142,7 +142,7 @@ void dev_setBusmaster(pci_device_t *dev, u8 enable)
 		dv = dv & ~(1 << 2);
 
 	_pci_set(dev->b, dev->d, dev->f, 1, dv);
-	
+
 	dev->command = dv & 0xffff;
 }
 
@@ -158,7 +158,7 @@ void _pci_init(void)
 	/*main_printf(ATTR_DEV, "dev: [pci  ] Enumerating PCI ");*/
 	printf("dev: [pci  ] Enumerating PCI ");
 
-	mutexCreate(&pci_common.mutex);	
+	mutexCreate(&pci_common.mutex);
 	pci_common.devices = NULL;
 
 	for (b = 0; b < 256; b++) {
@@ -177,10 +177,10 @@ void _pci_init(void)
 				dev->b = b;
 				dev->d = d;
 				dev->f = f;
-				
+
 				dev->device = dv >> 16;
 				dev->vendor = dv & 0xffff;
-	
+
 				dv = _pci_get(b, d, f, 1);
 				dev->status = dv >> 16;
 				dev->command = dv & 0xffff;
@@ -191,7 +191,7 @@ void _pci_init(void)
 				dev->revision = _pci_get(b, d, f, 2) & 0xff;
 				dev->type = _pci_get(b, d, f, 3) >> 16 & 0xff;
 				dev->irq = _pci_get(b, d, f, 15) & 0xff;
-      
+
 				/* Get resources */
 				for (i = 0; i < 6; i++) {
 					dev->resources[i].base = _pci_get(b, d, f, 4 + i);
@@ -199,14 +199,28 @@ void _pci_init(void)
 					/* Get resource limit */
 					_pci_set(b, d, f, 4 + i, 0xffffffff);
 					dev->resources[i].limit = _pci_get(b, d, f, 4 + i);
-					dev->resources[i].limit = (1 << hal_cpuGetFirstBit(dev->resources[i].limit & ((dev->resources[i].limit & 1) ? ~0x03 : ~0xf)));
+					u32 tmp = dev->resources[i].limit & ((dev->resources[i].limit & 1) ? ~0x03 : ~0xf);
+					u32 shift;
+
+					__asm__ volatile
+					(" \
+						mov %1, %%eax; \
+						bsfl %%eax, %0; \
+						jnz 1f; \
+						xorl %0, %0; \
+					1:"
+					:"=r" (shift)
+					:"g" (tmp)
+					:"eax");
+
+					dev->resources[i].limit = (1 << shift);
 
 					_pci_set(b, d, f, 4 + i, dev->resources[i].base);
 				}
 
 				/* Add device to list */
 				_pci_add(&pci_common.devices, dev);
-				
+
 				/*main_printf(ATTR_DEV, ".");*/
 				//printf(".");
 				printf("\n:%2u:%2u:%2u-->%6u,%6u-->%3u,%3u",
@@ -218,15 +232,20 @@ void _pci_init(void)
 			}
 		}
 	}
-	
+
 	/*main_printf(ATTR_DEV, "\n");*/
-	//printf("\n");	
+	//printf("\n");
 
 	return;
 }
 
 int main() {
 	u32 port;
+	//int bytes;
+	msghdr_t msghdr;
+	pci_id_t pci_id;
+	pci_device_t *pci_dev;
+
 
 	printf("\npci bus: Initializing %s\n","");
 	_pci_init();
@@ -234,15 +253,28 @@ int main() {
 
 	portCreate(&port);
 	if (portRegister(port, "/dev/pci") < 0) {
-		printf("Can't register port %d\n", port);	
+		printf("pci: Can't register port %d\n", port);
 		return -1;
-	} else {
-		printf("Registered port %d\n", port);
 	}
 
 	for(;;) {
-		
-		usleep(100);
+		recv(port, &pci_id, sizeof(pci_id_t), &msghdr);
+
+		dev_pciAlloc(&pci_id, &pci_dev);
+		if(!pci_dev) {
+			//printf("pci_dev NULL %s\n", "");
+			respond(port, EOK, NULL, 0);
+			continue;
+		}
+		//dev_setBusmaster(pci_dev, 1);
+		printf("pci :%2u:%2u:%2u-->%6u,%6u-->%3u,%3u\n",
+			pci_dev->b,pci_dev->d,pci_dev->f,pci_dev->device & 0xFFFF,
+			pci_dev->vendor & 0xFFFF,
+			(pci_dev->cl >> 8) & 0xFF,pci_dev->cl & 0xFF);
+
+		respond(port, EOK, pci_dev, sizeof(pci_device_t));
+
+		usleep(1000000);
 	}
 	return 0;
 }

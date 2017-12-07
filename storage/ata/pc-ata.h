@@ -1,4 +1,4 @@
-/* 
+/*
  * Phoenix-RTOS
  *
  * Operating system kernel
@@ -17,6 +17,10 @@
 #define _DEV_ATA_GENERIC_H_
 
 #include <stdint.h>
+
+ #include <sys/threads.h>
+ #include ARCH
+
 #include <pc-pci.h>
 #include "pc-ata_info.h"
 //#include "if.h"
@@ -138,7 +142,7 @@ struct ata_dev {
 	u8 drive;              /* 0 (Master Drive) or 1 (Slave Drive) */
 	u8 type;               /* 0: ATA, 1:ATAPI */
 	u8 dma;
-	
+
 	u16 signature;
 	u16 capabilities;
 	u32 command_sets;
@@ -156,7 +160,7 @@ struct ata_channel {
 	u16 ctrl;           // Control Base address.
 	u16 bmide;          // Bus Master IDE address
 	u16 reg_addr[22];
-	u8  irq_reg;
+	unsigned int  irq_reg;
 	u8  no_int;         // No Interrupt;
 
 	u8 status;
@@ -165,10 +169,10 @@ struct ata_channel {
 	u8 bmstatus;
 	u8 bmstatus_irq;
 
-	spinlock_t irq_spin;
+	handle_t irq_spin;
 	volatile u8 irq_invoked;
-	thq_t waitq;
-	
+	handle_t waitq;
+
 	/* for dma */
 	volatile u8 *prd_virt;
 	addr_t prd_phys;
@@ -184,6 +188,15 @@ struct ata_bus {
 	pci_device_t *dev;
 	struct ata_channel ac[2];
 };
+
+typedef struct _ata_msg_t {
+    u16 bus;
+    u16 channel;
+    u16 device;
+    offs_t offset;
+    u16 len;
+    char data[];
+} __attribute__((packed)) ata_msg_t;
 
 // initialize on pci_device as ata bus
 int ata_init_one(pci_device_t *pdev, ata_opt_t *opt);
