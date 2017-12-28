@@ -26,7 +26,7 @@
 
 ttypc_t ttypc_common;
 
-const u8 pad[1024];
+//const u8 pad[1024];
 
 
 #if 0
@@ -133,7 +133,7 @@ int main(int argc, char *argv[])
 {
 	unsigned int i;
 
-	printf("pc-tty: Initializing VGA VT220 terminal emulator %s\n", "");
+	printf("pc-tty: Initializing VGA VT220 terminal emulator (test) %s\n", "");
 
 	/* Test monitor type */
 	memset(&ttypc_common, 0, sizeof(ttypc_t));
