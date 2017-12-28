@@ -13,10 +13,16 @@
  * %LICENSE%
  */
 
+#include <errno.h>
+#include <unistd.h>
+
+#include <sys/msg.h>
+#include <sys/threads.h>
+#include <sys/pwman.h>
+
+#include "log.h"
 #include "flashdrv.h"
 #include "flashdrv_priv.h"
-#include "log.h"
-#include "../proc/proc.h"
 
 
 #define BUFFER_SIZE         128
@@ -27,7 +33,7 @@ struct {
 	volatile unsigned int *flash;
 	volatile unsigned int *iwdg;
 	unsigned int port;
-	lock_t lock;
+	handle_t lock;
 
 	char buff[FLASH_MAX_READ];
 	char page[FLASH_PAGE_SIZE];
@@ -44,9 +50,9 @@ static int flash_wait(void)
 	for (i = 0; i < 10; ++i) {
 		/* Check if flash is busy. */
 		if ((*(flash_common.flash + flash_sr) & 0x1) == 0x1) {
-			hal_cpuSetDevBusy(1);
-			proc_threadSleep(10);
-			hal_cpuSetDevBusy(0);
+			keepidle(1);
+			usleep(10 * 1000);
+			keepidle(0);
 			*flash_common.iwdg = 0xaaaa;
 			continue;
 		}
@@ -77,7 +83,7 @@ static inline int eeprom_isValidAdress(u32 addr)
 static inline void eeprom_lock(void)
 {
 	*(flash_common.flash + flash_pecr) |= (1 << 0);
-	hal_cpuDataBarrier();
+	__asm__ volatile ("dmb");
 }
 
 
@@ -85,9 +91,9 @@ static void eeprom_unlock(void)
 {
 	while (*(flash_common.flash + flash_pecr) & (1 << 0)) {
 		*(flash_common.flash + flash_pekeyr) = 0x89abcdef;
-		hal_cpuDataBarrier();
+		__asm__ volatile ("dmb");
 		*(flash_common.flash + flash_pekeyr) = 0x02030405;
-		hal_cpuDataBarrier();
+		__asm__ volatile ("dmb");
 	}
 }
 
@@ -96,7 +102,7 @@ int eeprom_eraseByte(u32 addr)
 {
 	int err;
 
-	proc_lockSet(&flash_common.lock);
+	mutexLock(flash_common.lock);
 	eeprom_unlock();
 	flash_clearFlags();
 
@@ -104,7 +110,7 @@ int eeprom_eraseByte(u32 addr)
 		*(volatile u8 *) addr = 0x0;
 
 	eeprom_lock();
-	proc_lockClear(&flash_common.lock);
+	mutexUnlock(flash_common.lock);
 	return err;
 }
 
@@ -113,17 +119,17 @@ static int eeprom_writeByte(u32 addr, char value)
 {
 	int err;
 
-	proc_lockSet(&flash_common.lock);
+	mutexLock(flash_common.lock);
 	eeprom_unlock();
 	flash_clearFlags();
 
 	if ((err = flash_wait()) == 0) {
 		*(volatile u8 *) addr = value;
-        err = flash_wait();
+		err = flash_wait();
 	}
 
 	eeprom_lock();
-	proc_lockClear(&flash_common.lock);
+	mutexUnlock(flash_common.lock);
 	return err;
 }
 
@@ -182,9 +188,9 @@ static void ob_unlock(void)
 		eeprom_unlock();
 
 		*(flash_common.flash + flash_oprkeyr) = 0xfbead9c8;
-		hal_cpuDataBarrier();
+		__asm__ volatile ("dmb");
 		*(flash_common.flash + flash_oprkeyr) = 0x24252627;
-		hal_cpuDataBarrier();
+		__asm__ volatile ("dmb");
 	}
 }
 
@@ -195,7 +201,7 @@ static int ob_writeByte(u32 addr, char value)
 	volatile u32 word;
 	volatile u32 *wordAddr = (u32 *) (addr & ~((u32) 0x3));
 
-	proc_lockSet(&flash_common.lock);
+	mutexLock(flash_common.lock);
 	ob_unlock();
 	flash_clearFlags();
 
@@ -218,7 +224,7 @@ static int ob_writeByte(u32 addr, char value)
 	}
 
 	ob_lock();
-	proc_lockClear(&flash_common.lock);
+	mutexUnlock(flash_common.lock);
 	return err;
 }
 
@@ -260,7 +266,7 @@ static inline int program_isValidAddress(u32 addr)
 static inline void program_lock(void)
 {
 	*(flash_common.flash + flash_pecr) |= (1 << 1);
-	hal_cpuDataBarrier();
+	__asm__ volatile ("dmb");
 }
 
 
@@ -271,9 +277,9 @@ static void program_unlock(void)
 		eeprom_unlock();
 
 		*(flash_common.flash + flash_prgkeyr) = 0x8c9daebf;
-		hal_cpuDataBarrier();
+		__asm__ volatile ("dmb");
 		*(flash_common.flash + flash_prgkeyr) = 0x13141516;
-		hal_cpuDataBarrier();
+		__asm__ volatile ("dmb");
 	}
 }
 
@@ -282,7 +288,7 @@ static int program_erasePage(u32 addr)
 {
 	int err;
 
-	proc_lockSet(&flash_common.lock);
+	mutexLock(flash_common.lock);
 	program_unlock();
 	flash_clearFlags();
 
@@ -299,7 +305,7 @@ static int program_erasePage(u32 addr)
 	}
 
 	program_lock();
-	proc_lockClear(&flash_common.lock);
+	mutexUnlock(flash_common.lock);
 	return err;
 }
 
@@ -309,14 +315,14 @@ static int program_writeWord(u32 addr, u32 value)
 	int err;
 	volatile u32 *current = (volatile u32 *) addr;
 
-	proc_lockSet(&flash_common.lock);
+	mutexLock(flash_common.lock);
 	program_unlock();
 	flash_clearFlags();
 
 	if ((err = flash_wait()) == 0)  {
 		if (*current == value) {
 			program_lock();
-			proc_lockClear(&flash_common.lock);
+			mutexUnlock(flash_common.lock);
 			return 0;
 		}
 
@@ -325,7 +331,7 @@ static int program_writeWord(u32 addr, u32 value)
 	}
 
 	program_lock();
-	proc_lockClear(&flash_common.lock);
+	mutexUnlock(flash_common.lock);
 	return err;
 }
 
@@ -423,7 +429,7 @@ size_t flash_writeData(u32 offset, char *buff, size_t size)
 	return 0;
 }
 
-
+#if 0
 void flash_bankBreak(void)
 {
 	spinlock_t spinlock;
@@ -466,7 +472,7 @@ static int _flash_atomCopy(u32 dest, u32 src, size_t len)
 	/* Should never reach here */
 	return 0;
 }
-
+#endif
 
 static void flash_thread(void *arg)
 {
@@ -477,246 +483,110 @@ static void flash_thread(void *arg)
 	flashevent_t event;
 	flashlog_t log;
 	flasheeprominfo_t info;
-	int count, bank, res;
+	int count, bank;
 
 	eeprom_init();
 
 	for (;;) {
-		int size = proc_recv(flash_common.port, msg, sizeof(msg), &hdr);
-		if (hdr.type == MSG_NOTIFY)
+		int size = recv(flash_common.port, msg, sizeof(msg), &hdr);
+		if (hdr.type == NOTIFY)
 			continue;
 
 		switch (hdr.op) {
-			case MSG_READ:
-				if (size != sizeof(msgdata_t)) {
-					proc_respond(flash_common.port, EINVAL, NULL, 0);
-					break;
-				}
+		case READ:
+			if (size != sizeof(msgdata_t)) {
+				respond(flash_common.port, EINVAL, NULL, 0);
+				break;
+			}
 
-				data = (msgdata_t *) msg;
-				size = min(FLASH_MAX_READ, data->size);
+			data = (msgdata_t *) msg;
+			size = min(FLASH_MAX_READ, data->size);
 
-				count = flash_readData(data->offset, flash_common.buff, size);
-				proc_respond(flash_common.port, EOK, flash_common.buff, count);
+			count = flash_readData(data->offset, flash_common.buff, size);
+			respond(flash_common.port, EOK, flash_common.buff, count);
+			break;
+
+		case WRITE:
+			if (size != sizeof(msgdata_t)) {
+				respond(flash_common.port, EINVAL, NULL, 0);
+				break;
+			}
+
+			data = (msgdata_t *) msg;
+			flash_writeData(data->offset, data->buff, data->size);
+			respond(flash_common.port, EOK, NULL, 0);
+			break;
+
+		case DEVCTL:
+			if (size != sizeof(flashdevctl_t)) {
+				respond(flash_common.port, EINVAL, NULL, 0);
+				break;
+			}
+
+			devctl = (flashdevctl_t *) msg;
+			switch (devctl->type) {
+			case FLASH_EVENT_GET:
+				event_read(devctl, &event);
+				respond(flash_common.port, EOK, &event, sizeof(event));
 				break;
 
-			case MSG_WRITE:
-				if (size != sizeof(msgdata_t)) {
-					proc_respond(flash_common.port, EINVAL, NULL, 0);
-					break;
-				}
-
-				data = (msgdata_t *) msg;
-				flash_writeData(data->offset, data->buff, data->size);
-				proc_respond(flash_common.port, EOK, NULL, 0);
+			case FLASH_EVENT_SET:
+				event_write(devctl);
+				respond(flash_common.port, EOK, NULL, 0);
 				break;
 
-			case MSG_DEVCTL:
-				if (size != sizeof(flashdevctl_t)) {
-					proc_respond(flash_common.port, EINVAL, NULL, 0);
-					break;
-				}
-
-				devctl = (flashdevctl_t *) msg;
-				switch (devctl->type) {
-					case FLASH_EVENT_GET:
-						event_read(devctl, &event);
-						proc_respond(flash_common.port, EOK, &event, sizeof(event));
-						break;
-
-					case FLASH_EVENT_SET:
-						event_write(devctl);
-						proc_respond(flash_common.port, EOK, NULL, 0);
-						break;
-
-					case FLASH_LOG_GET:
-						log_read(&log);
-						proc_respond(flash_common.port, EOK, &log, sizeof(log));
-						break;
-
-					case FLASH_LOG_SET:
-						log_write(devctl);
-						proc_respond(flash_common.port, EOK, NULL, 0);
-						break;
-
-					case FLASH_EEPROM_INFO_GET:
-						info.addr = eeprom_freeAddr();
-						info.size = eeprom_freeSize();
-						proc_respond(flash_common.port, EOK, &info, sizeof(info));
-						break;
-
-					case FLASH_BANK_GET:
-						bank = flash_activeBank();
-						proc_respond(flash_common.port, EOK, &bank, sizeof(bank));
-						break;
-
-					case FLASH_BANK_BREAK:
-						flash_bankBreak();
-						proc_respond(flash_common.port, EOK, NULL, 0);
-						break;
-
-					case FLASH_ATOM_COPY:
-						res = _flash_atomCopy(devctl->atomcpy.dest, devctl->atomcpy.src, devctl->atomcpy.len);
-						proc_respond(flash_common.port, res, NULL, 0);
-						break;
-				}
-
+			case FLASH_LOG_GET:
+				log_read(&log);
+				respond(flash_common.port, EOK, &log, sizeof(log));
 				break;
 
-			default:
-				proc_respond(flash_common.port, EINVAL, NULL, 0);
+			case FLASH_LOG_SET:
+				log_write(devctl);
+				respond(flash_common.port, EOK, NULL, 0);
 				break;
+
+			case FLASH_EEPROM_INFO_GET:
+				info.addr = eeprom_freeAddr();
+				info.size = eeprom_freeSize();
+				respond(flash_common.port, EOK, &info, sizeof(info));
+				break;
+
+			case FLASH_BANK_GET:
+				bank = flash_activeBank();
+				respond(flash_common.port, EOK, &bank, sizeof(bank));
+				break;
+			case FLASH_BANK_BREAK:
+				/* flash_bankBreak(); */
+				respond(flash_common.port, EINVAL, NULL, 0);
+				break;
+
+			case FLASH_ATOM_COPY:
+				/* res = _flash_atomCopy(devctl->atomcpy.dest, devctl->atomcpy.src, devctl->atomcpy.len); */
+				respond(flash_common.port, EINVAL, NULL, 0);
+				break;
+			}
+
+			break;
+
+		default:
+			respond(flash_common.port, EINVAL, NULL, 0);
+			break;
 		}
 	}
 }
 
 
-static inline int flash_isValidAddress(u32 addr)
-{
-	if (program_isValidAddress(addr))
-		return 1;
-
-	if (eeprom_isValidAdress(addr))
-		return 1;
-
-	if (ob_isValidAdress(addr))
-		return 1;
-
-	return 0;
-}
-
-
-int flash_eventRead(int idx, flashevent_t *event)
-{
-	flashdevctl_t devctl;
-
-	if (idx < 1 || idx > FLASH_EVENT_COUNT)
-		return -EINVAL;
-
-	devctl.type = FLASH_EVENT_GET;
-	devctl.idx = idx - 1;
-
-	return proc_send(flash_common.port, MSG_DEVCTL, &devctl, sizeof(devctl), MSG_NORMAL, event, sizeof(flashevent_t));
-}
-
-
-int flash_eventWrite(flashevent_t *event)
-{
-	flashdevctl_t devctl;
-	devctl.type = FLASH_EVENT_SET;
-	devctl.event = *event;
-
-	return proc_send(flash_common.port, MSG_DEVCTL, &devctl, sizeof(devctl), MSG_NORMAL, NULL, 0);
-}
-
-
-int flash_logRead(flashlog_t *log)
-{
-	flashdevctl_t devctl;
-	devctl.type = FLASH_LOG_GET;
-
-	return proc_send(flash_common.port, MSG_DEVCTL, &devctl, sizeof(devctl), MSG_NORMAL, log, sizeof(flashlog_t));
-}
-
-
-int flash_logWrite(flashlog_t *log)
-{
-	flashdevctl_t devctl;
-	devctl.type = FLASH_LOG_SET;
-	devctl.log = *log;
-
-	return proc_send(flash_common.port, MSG_DEVCTL, &devctl, sizeof(devctl), MSG_NORMAL, NULL, 0);
-}
-
-
-int flash_eepromInfo(unsigned int *addr, size_t *size)
-{
-	int res;
-	flashdevctl_t devctl;
-	flasheeprominfo_t info;
-
-	devctl.type = FLASH_EEPROM_INFO_GET;
-
-	res = proc_send(flash_common.port, MSG_DEVCTL, &devctl, sizeof(devctl), MSG_NORMAL, &info, sizeof(info));
-	if (res < 0)
-		return res;
-
-	*addr = info.addr;
-	*size = info.size;
-
-	return EOK;
-}
-
-
-int flash_read(void *buff, size_t size, u32 addr)
-{
-	msgdata_t data;
-
-	if (!flash_isValidAddress(addr))
-		return -EINVAL;
-
-	data.offset = addr;
-	data.size = size;
-
-	return proc_send(flash_common.port, MSG_READ, &data, sizeof(data), MSG_NORMAL, buff, size);
-}
-
-
-int flash_write(void *buff, size_t size, u32 addr)
-{
-	msgdata_t data;
-
-	if (!flash_isValidAddress(addr))
-		return -EINVAL;
-
-	data.offset = addr;
-	data.buff = buff;
-	data.size = size;
-
-	return proc_send(flash_common.port, MSG_WRITE, &data, sizeof(data), MSG_NORMAL, NULL, 0);
-}
-
-
-int flash_getActiveBank(int *bank)
-{
-	flashdevctl_t devctl;
-	devctl.type = FLASH_BANK_GET;
-
-	return proc_send(flash_common.port, MSG_DEVCTL, &devctl, sizeof(devctl), MSG_NORMAL, bank, sizeof(int));
-}
-
-int flash_breakActiveBank(void)
-{
-	flashdevctl_t devctl;
-	devctl.type = FLASH_BANK_BREAK;
-
-	return proc_send(flash_common.port, MSG_DEVCTL, &devctl, sizeof(devctl), MSG_NORMAL, NULL, 0);
-}
-
-
-int flash_atomCopy(u32 dest, u32 src, size_t len)
-{
-	flashdevctl_t devctl;
-
-	devctl.type = FLASH_ATOM_COPY;
-	devctl.atomcpy.dest = dest;
-	devctl.atomcpy.src = src;
-	devctl.atomcpy.len = len;
-
-	return proc_send(flash_common.port, MSG_DEVCTL, &devctl, sizeof(devctl), MSG_NORMAL, NULL, 0);
-}
-
-
-void flash_init(void)
+void main(void)
 {
 	flash_common.flash = (void *) 0x40023c00;
 	flash_common.iwdg = (void *)0x40003000;
 
-	proc_lockInit(&flash_common.lock);
+	mutexCreate(&flash_common.lock);
 
 	flash_clearFlags();
 
-	proc_portCreate(&flash_common.port);
-	proc_portRegister(flash_common.port, "/flashdrv");
-	proc_threadCreate(NULL, flash_thread, 2, 1024, NULL, NULL);
+	portCreate(&flash_common.port);
+	portRegister(flash_common.port, "/flashdrv");
+
+	flash_thread(NULL);
 }

@@ -17,7 +17,7 @@
 #define _ADCDRV_H_
 
 
-enum { ADCDRV_DEF = 0, ADCDRV_GET, ADCDRV_SET };
+enum { ADCDRV_DEF = 0, ADCDRV_GET, ADCDRV_SET, ADCDRV_COMP };
 
 
 typedef struct {

@@ -13,8 +13,10 @@
  * %LICENSE%
  */
 
+#include <string.h>
+#include <stdio.h>
+
 #include "log.h"
-#include "../lib/lib.h"
 
 
 #define FLASH_AREA_EVENTS   0
@@ -113,11 +115,15 @@ void eeprom_init(void)
 	int i, j;
 	u64 id;
 
+#if 0
 	/* Use eeprom from diffrent bank than flash we're executing from */
 	if (!flash_activeBank())
 		base = FLASH_EEPROM_2_ADDR;
 	else
 		base = FLASH_EEPROM_1_ADDR;
+#endif
+
+	base = FLASH_EEPROM_1_ADDR;
 
 	log_common.area[EVENTS].addr = base;
 	log_common.area[EVENTS].entrySize = sizeof(flashevent_t);
@@ -130,8 +136,8 @@ void eeprom_init(void)
 		/* Clear area if uninitialized. */
 		flash_readData(log_common.area[i].addr + (log_common.area[i].entryCount * log_common.area[i].entrySize), buff, sizeof(buff));
 
-		if (hal_memcmp(buff, magic, sizeof(magic)) != 0) {
-			lib_printf("flash: Log area magic mismatch [%d], erasing...\n", i);
+		if (memcmp(buff, magic, sizeof(magic)) != 0) {
+			printf("flash: Log area magic mismatch [%d], erasing...\n", i);
 
 			for (j = 0; j < (log_common.area[i].entryCount * log_common.area[i].entrySize) + sizeof(magic); ++j)
 				eeprom_eraseByte(log_common.area[i].addr + j);

@@ -167,19 +167,12 @@ static int uart16550_ioctl(file_t *file, unsigned int cmd, unsigned long arg)
 #endif
 
 
-
-
-
-
-
-
 static int uart_write(u8 d, size_t len, char *buff)
 {
 	uart_t *serial;
 	unsigned int sp, se;
 	unsigned int l;
 	unsigned int cnt;
-
 
 	if (d >= sizeof(uarts) / sizeof(uart_t *))
 		return -EINVAL;

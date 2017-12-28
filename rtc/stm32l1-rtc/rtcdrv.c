@@ -166,7 +166,7 @@ void main(void)
 	portRegister(port, "/rtcdrv");
 
 	for (;;) {
-		recv(port, &timestamp, sizeof(timestamp), &hdr, 0);
+		recv(port, &timestamp, sizeof(timestamp), &hdr);
 		if (hdr.type == NOTIFY)
 			continue;
 

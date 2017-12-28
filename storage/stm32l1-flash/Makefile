@@ -1,57 +1,43 @@
 #
-# Makefile for Phoenix-RTOS kernel (_flashdrv)
+# Makefile for libphoenix
 #
 # Copyright 2017 Phoenix Systems
 #
+# %LICENSE%
+#
 
-SRCS = flashdrv.c log.c
+SIL ?= @
 
-OBJS = $(SRCS:.c=.o)
+SRCDIR=$(CURDIR)
+LIBPHOENIX ?= ../../../libphoenix
+LIB = $(LIBPHOENIX)/libphoenix.a
 
+CROSS ?= arm-phoenix-
 
-all: check $(ARCH)
+CC = $(CROSS)gcc
+CFLAGS += -O2 -Wall -Wstrict-prototypes -g -I../../rtc/stm32l1-rtc -I$(SRCDIR) -I$(LIBPHOENIX) -nostartfiles -nostdlib\
+	-mcpu=cortex-m3 -mthumb \
+	-fomit-frame-pointer -ffreestanding\
+	-fpic -fpie -msingle-pic-base -mno-pic-data-is-text-relative\
+	-DARCH=\"arch/armv7/arch.h\" -DNOMMU
 
+LD = $(CROSS)ld
+LDFLAGS = -nostdlib -e _start --section-start .text=0 -Tbss=20000000 -z max-page-size=0x10
+GCCLIB := $(shell $(CC) $(CFLAGS) -print-libgcc-file-name)
 
-check:
-	@(if test -z "$(ARCH)"; then\
-		echo "Error: Only main Makefile can be used for compilation!";\
-		exit 1;\
-	fi;)
+SRCFILES = $(wildcard *.c)
+OBJECTS = $(SRCFILES:.c=.o)
 
+all: flashdrv.elf
+
+flashdrv.elf: $(OBJECTS)
+	$(SIL)(printf "LD  %-24s  \n" "$(OBJECTS)"; $(LD) $(LDFLAGS) -o $@ $(OBJECTS) $(LIB) $(GCCLIB))
 
 .c.o:
-	@(printf " CC  %-24s  " "$<"; $(CC) -c $(CFLAGS) $<)
+	$(SIL)(printf "CC  %-24s  \n" "$<"; $(CC) -c $(CFLAGS) $<)
 
-	@(file=`echo $< | sed "s/\.c/\.o/"`; \
-	datasz=0;\
-	textsz=0;\
-	rodatasz=0;\
-	for i in `$(OBJDUMP) -t $$file | grep -e " O " | grep -v ".rodata" | awk '{ print $$4 }'`; do \
-		datasz=`echo $$(($$datasz + 0x$$i))`;\
-	done; \
-	for i in `$(OBJDUMP) -t $$file | grep -e " O " | grep ".rodata" | awk '{ print $$5 }'`; do \
-                rodatasz=`echo $$(($$rodatasz + 0x$$i))`;\
-        done; \
-	for i in `$(OBJDUMP) -t $$file | grep -e "F" | awk '{ print $$5 }'`; do \
-		textsz=`echo $$(($$textsz + 0x$$i))`;\
-	done;\
-	printf "data=%-5d  text=%-5d  rodata=%-5d\n" $$datasz $$textsz $$rodatasz)
-
-
--include .depend
-
-
-$(ARCH): $(OBJS)
-	$(SIL)$(AR) $(ARFLAGS) $(ARCH) $(OBJS) 2>/dev/null
-
-
-depend: check
-	$(SIL)$(MKDEP) $(MKDEPFLAGS) $(SRCS) >.depend
-
-
-clean: check
-	$(SIL)rm -f core *.o $(ARCH)
-
+clean:
+	$(SIL)rm -f *.o *.elf
 
 .PHONY: clean
 # DO NOT DELETE
