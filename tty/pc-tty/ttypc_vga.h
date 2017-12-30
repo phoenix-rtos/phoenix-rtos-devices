@@ -22,6 +22,9 @@
 extern void _ttypc_vga_cursor(ttypc_virt_t *virt);
 
 
+extern void _ttypc_vga_getcursor(ttypc_virt_t *virt);
+
+
 extern void ttypc_vga_switch(ttypc_virt_t *virt);
 
 

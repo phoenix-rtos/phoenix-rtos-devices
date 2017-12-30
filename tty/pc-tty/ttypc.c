@@ -18,6 +18,7 @@
 #include <unistd.h>
 #include <sys/mman.h>
 #include <sys/threads.h>
+#include <sys/msg.h>
 
 #include "ttypc.h"
 #include "ttypc_vga.h"
@@ -26,42 +27,29 @@
 
 ttypc_t ttypc_common;
 
-//const u8 pad[1024];
 
-
-#if 0
-
-static int ttypc_read(file_t *file, offs_t offs, char *buff, unsigned int len)
+static int ttypc_read(unsigned int d, offs_t offs, char *buff, unsigned int len)
 {
-	vnode_t *vnode = file->vnode;
-	unsigned int minor;
 	int err = 0;
 
-	if ((minor = MINOR(vnode->dev)) >= SIZE_VIRTUALS)
-		return -EINVAL;
-
-	err = ttypc_virt_sget(&ttypc_common.virtuals[minor], buff, len);
+	err = ttypc_virt_sget(&ttypc_common.virtuals[d], buff, len);
 	return err;
 }
 
 
-static int ttypc_write(file_t *file, offs_t offs, char *buff, unsigned int len)
+static int ttypc_write(unsigned int d, offs_t offs, char *buff, unsigned int len)
 {
-	vnode_t *vnode = file->vnode;
-	unsigned int minor;
-
-	if ((minor = MINOR(vnode->dev)) >= SIZE_VIRTUALS)
-		return -EINVAL;
-
-	ttypc_virt_sput(&ttypc_common.virtuals[minor], (u8 *)buff, len);
+	ttypc_virt_sput(&ttypc_common.virtuals[d], (u8 *)buff, len);
 	return len;
 }
 
 
+#if 0
 static int ttypc_poll(file_t *file, ktime_t timeout, int op)
 {
 	return EOK;
 }
+
 
 static int ttypc_select_poll(file_t *file, unsigned *ready)
 {
@@ -95,8 +83,6 @@ static int ttypc_ioctl(file_t *file, unsigned int cmd, unsigned long arg)
 	}
 	  
 	return 0;
-
-
 	
 	if ((minor = MINOR(vnode->dev)) >= SIZE_VIRTUALS)
 		return -EINVAL;
@@ -132,6 +118,10 @@ static int ttypc_open(vnode_t *vnode, file_t* file)
 int main(int argc, char *argv[])
 {
 	unsigned int i;
+	oid_t toid;
+	u32 port;
+	unsigned int rid;
+	msg_t msg;
 
 	printf("pc-tty: Initializing VGA VT220 terminal emulator (test) %s\n", "");
 
@@ -140,7 +130,7 @@ int main(int argc, char *argv[])
 	ttypc_common.color = (inb((void *)0x3cc) & 0x01);
 
 	ttypc_common.out_base = mmap(NULL, 0x1000, 0, 0, OID_PHYSMEM, ttypc_common.color ? 0xb8000 : 0xb0000);
-	memsetw(ttypc_common.out_base, 0x0700, 2000);
+
 
 	ttypc_common.out_crtc = ttypc_common.color ? (void *)0x3d4 : (void *)0x3b4;
 
@@ -155,7 +145,8 @@ int main(int argc, char *argv[])
 	ttypc_common.cv = &ttypc_common.virtuals[0];
 	ttypc_common.cv->vram = ttypc_common.out_base;
 
-	_ttypc_vga_cursor(ttypc_common.cv);
+	_ttypc_vga_getcursor(ttypc_common.cv);
+	memsetw(ttypc_common.out_base + ttypc_common.cv->cur_offset * 2, 0x0700, 2000 - ttypc_common.cv->cur_offset);
 
 	ttypc_common.inp_irq = 1;
 	ttypc_common.inp_base = (void *)0x60;
@@ -163,13 +154,29 @@ int main(int argc, char *argv[])
 	/* Initialize keyboard */
 	_ttypc_kbd_init(&ttypc_common);
 
+	/* Register port in the namespace */
+	portCreate(&port);
+	if (portRegister(port, "/dev/tty0", &toid) < 0) {
+		printf("Can't register port %d\n", port);
+		return -1;
+	}
 
-	for (;;)
-		usleep(1000);
+	for (;;) {
+		msgRecv(port, &msg, &rid);
 
-#if 0
-//	ph_register("/dev/ttypc", oid);
-#endif
+		switch (msg.type) {
+		case mtWrite:
+			msg.o.io.err = ttypc_write(0, 0, msg.i.data, msg.i.size);
+			break;
+		case mtRead:
+			msg.o.io.err = 0;
+			msg.o.size = 1;
+			msg.o.io.err = ttypc_read(0, 0, msg.o.data, msg.o.size);
+			break;
+		}
+
+		msgRespond(port, rid);
+	}
 
 	return 0;
 }

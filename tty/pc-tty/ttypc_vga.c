@@ -35,6 +35,20 @@ void _ttypc_vga_cursor(ttypc_virt_t *virt)
 }
 
 
+void _ttypc_vga_getcursor(ttypc_virt_t *virt)
+{
+	ttypc_t *ttypc = virt->ttypc;
+
+	outb(ttypc->out_crtc, crtcCursorH);
+	virt->cur_offset = (inb(ttypc->out_crtc + 1) << 8);
+	
+	outb(ttypc->out_crtc, crtcCursorL);
+	virt->cur_offset |= inb(ttypc->out_crtc + 1);
+
+	return;
+}
+
+
 void ttypc_vga_switch(ttypc_virt_t *virt)
 {
 	ttypc_t *ttypc = virt->ttypc;

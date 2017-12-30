@@ -656,8 +656,8 @@ int ttypc_virt_sadd(ttypc_virt_t *virt, u8 *s, unsigned int len)
 {
 	unsigned int l, i;
 
-	if (virt->m_echo == 1)
-		ttypc_virt_sput(virt, s, len);
+//	if (virt->m_echo == 1)
+//		ttypc_virt_sput(virt, s, len);
 
 	mutexLock(virt->mutex);
 	
@@ -718,8 +718,7 @@ int _ttypc_virt_init(ttypc_virt_t *virt, size_t rbuffsz, ttypc_t *ttypc)
 	virt->active = 0;
 
 	/*
-	 * (MOD) page allocation should be substituted by kmalloc, but kmalloc should
-	 * be able to allocate up to 128 KB of memory
+	 * (MOD) add mapping attributes
 	 */
 	virt->ttypc = ttypc;
 	virt->mem = mmap(NULL, 4096, /*PROT_READ | PROT_WRITE*/0, 0, NULL, 0);
