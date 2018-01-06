@@ -385,6 +385,8 @@ int main(void)
 		msgRecv(port, &msg, &rid);
 
 		switch (msg.type) {
+		case mtOpen:
+			break;
 		case mtWrite:
 			msg.o.io.err = uart_write(uart_get(&msg.i.io.oid), msg.i.size, msg.i.data);
 			break;
@@ -393,10 +395,11 @@ int main(void)
 			msg.o.size = 1;
 			msg.o.io.err = uart_read(uart_get(&msg.i.io.oid), msg.o.size, msg.o.data);
 			break;
+		case mtClose:
+			break;
 		}
 
 		msgRespond(port, rid);
-//usleep(1000000);
 	}
 
 	return 0;
