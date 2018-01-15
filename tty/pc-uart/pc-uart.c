@@ -18,6 +18,7 @@
 #include <sys/interrupt.h>
 #include <unistd.h>
 #include <sys/msg.h>
+#include <sys/mman.h>
 
 #include "pc-uart.h"
 
@@ -36,11 +37,14 @@ typedef struct {
 	unsigned int sbuffsz;
 	unsigned int sp;
 	unsigned int se;
+	handle_t scond;
 
 	handle_t mutex;
 	handle_t intcond;
 
 	oid_t oid;
+
+	int ready;
 } uart_t;
 
 
@@ -59,10 +63,16 @@ static int uart_interrupt(unsigned int n, void *arg)
 }
 
 
+//int uart_send(char c)
+//{
+	
+
+
 void uart_intthr(void *arg)
 {
 	uart_t *uart = (uart_t *)arg;
 	u8 iir, lsr;
+	char c;
 
 	for (;;) {
 		mutexLock(uart->mutex);
@@ -77,19 +87,54 @@ void uart_intthr(void *arg)
 				/*if (lsr & 2)
 					over = 1;*/
 
-
-
 				if ((lsr & 1) == 0)
 					break;
 
-				uart->rbuff[uart->rp] = inb(uart->base + REG_RBR);
-				//outb(uart->base + REG_THR, uart->rbuff[uart->rp]);
-				uart->rp = ((uart->rp + 1) % uart->rbuffsz);
+				c = inb(uart->base + REG_RBR);
+				if (c == 0xd) {
+					c = 0xa;
+					uart->ready = 1;
+				}
 
-				if (uart->rp == uart->rb)
-					uart->rb = ((uart->rb + 1) % uart->rbuffsz);
+				if (c ==  0x7f) {
+					c = 0;
+					
+					if (uart->rp != uart->rb) {
+						uart->rp = ((uart->rp - 1) % uart->rbuffsz);
+						c = '\b';
+					}
 
-				
+				}
+				else {
+					uart->rbuff[uart->rp] = c;
+					uart->rp = ((uart->rp + 1) % uart->rbuffsz);
+
+					if (uart->rp == uart->rb)
+						uart->rb = ((uart->rb + 1) % uart->rbuffsz);
+				}
+
+				/* echo */
+				if (c) {
+					if (uart->se == uart->sp)
+						outb(uart->base, c);
+					else
+						uart->sbuff[uart->se] = c;
+					uart->se = ((uart->se + 1) % uart->sbuffsz);
+
+					if (c == '\b') {
+						if (uart->se == uart->sp)
+							outb(uart->base, ' ');
+						else
+							uart->sbuff[uart->se] = ' ';
+						uart->se = ((uart->se + 1) % uart->sbuffsz);
+
+						if (uart->se == uart->sp)
+							outb(uart->base, '\b');
+						else
+							uart->sbuff[uart->se] = '\b';
+						uart->se = ((uart->se + 1) % uart->sbuffsz);
+					}		
+				}
 			}
 
 			condSignal(uart->rcond);
@@ -103,6 +148,8 @@ void uart_intthr(void *arg)
 //for (;;);
 				outb(uart->base + REG_THR, uart->sbuff[uart->sp]);
 			}
+			else
+				condSignal(uart->scond);
 		}
 
 		mutexUnlock(uart->mutex);
@@ -173,6 +220,7 @@ static int uart_write(u8 d, size_t len, char *buff)
 	unsigned int sp, se;
 	unsigned int l;
 	unsigned int cnt;
+	int err;
 
 	if (d >= sizeof(uarts) / sizeof(uart_t *))
 		return -EINVAL;
@@ -180,7 +228,12 @@ static int uart_write(u8 d, size_t len, char *buff)
 	if ((serial = uarts[d]) == NULL)
 		return -ENOENT;
 
+	/* Wait for transmitter */	
 	mutexLock(serial->mutex);
+
+	while (serial->sp != serial->se)
+		if ((err = condWait(serial->scond, serial->mutex, 0)) < 0)
+			return err;
 
 	sp = serial->sp;
 	se = serial->se;	
@@ -221,7 +274,7 @@ int uart_readchunk(uart_t *serial, char *buff, unsigned int len, int *repfl)
 	/* Wait for data or for timeout */
 	mutexLock(serial->mutex);
 
-	while (serial->rp == serial->rb) {
+	while ((serial->rp == serial->rb) || (!serial->ready)) {
 		if ((err = condWait(serial->rcond, serial->mutex, 0)) < 0)
 			return err;
 	}
@@ -249,6 +302,7 @@ int uart_readchunk(uart_t *serial, char *buff, unsigned int len, int *repfl)
 		*repfl = 1;
 	else
 		*repfl = 0;
+
 
 	mutexUnlock(serial->mutex);
 	
@@ -278,6 +332,9 @@ static int uart_read(u8 d, size_t len, char *buff)
 		}
 		l += err;
 	}
+
+	if (repfl == 0)
+		serial->ready = 0;
 
 	return l;
 }
@@ -315,6 +372,8 @@ int _uart_init(void *base, unsigned int irq, unsigned int speed, uart_t **uart)
 	(*uart)->rbuffsz = sizeof((*uart)->rbuff);
 	(*uart)->rb = (*uart)->rp = 0;
 
+	(*uart)->ready = 0;
+
 	(*uart)->sbuffsz = sizeof((*uart)->sbuff);
 	(*uart)->sp = (unsigned int)-1;
 	(*uart)->se = 0;
@@ -325,11 +384,21 @@ int _uart_init(void *base, unsigned int irq, unsigned int speed, uart_t **uart)
 	interrupt(irq, uart_interrupt, (*uart), (*uart)->intcond);
 
 	u8 *stack;
-	stack = (u8 *)malloc(4096);
+//	stack = (u8 *)malloc(4096);
+
+stack = mmap((void *)0, 4096 * 2, 0, 0, NULL, 0);
+stack += 0x10;
 
 	condCreate(&(*uart)->rcond);
+	condCreate(&(*uart)->scond);
+
+//printf("user stack=%p\n", stack);
+
+//for (;;);
 
 	beginthread(uart_intthr, 1, stack, 4096, (void *)*uart);
+
+//for (;;);
 
 	/* Set speed (MOD) */
 	outb(base + REG_LCR, LCR_DLAB);
@@ -391,8 +460,6 @@ int main(void)
 			msg.o.io.err = uart_write(uart_get(&msg.i.io.oid), msg.i.size, msg.i.data);
 			break;
 		case mtRead:
-			msg.o.io.err = 0;
-			msg.o.size = 1;
 			msg.o.io.err = uart_read(uart_get(&msg.i.io.oid), msg.o.size, msg.o.data);
 			break;
 		case mtClose:
