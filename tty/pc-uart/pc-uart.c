@@ -1,4 +1,4 @@
-/* 
+/*
  * Phoenix-RTOS
  *
  * Operating system kernel
@@ -65,7 +65,7 @@ static int uart_interrupt(unsigned int n, void *arg)
 
 //int uart_send(char c)
 //{
-	
+
 
 
 void uart_intthr(void *arg)
@@ -98,7 +98,7 @@ void uart_intthr(void *arg)
 
 				if (c ==  0x7f) {
 					c = 0;
-					
+
 					if (uart->rp != uart->rb) {
 						uart->rp = ((uart->rp - 1) % uart->rbuffsz);
 						c = '\b';
@@ -133,7 +133,7 @@ void uart_intthr(void *arg)
 						else
 							uart->sbuff[uart->se] = '\b';
 						uart->se = ((uart->se + 1) % uart->sbuffsz);
-					}		
+					}
 				}
 			}
 
@@ -188,7 +188,7 @@ static int uart16550_poll(file_t *file, ktime_t timeout, int op)
 		}
 		proc_spinlockClear(&serial->spinlock, sopGetCycles);
 	}
-	
+
 	/* Wait for end of sending process or for timeout */
 	else if (op == POLL_WRITE) {
 		proc_spinlockSet(&serial->spinlock);
@@ -228,7 +228,7 @@ static int uart_write(u8 d, size_t len, char *buff)
 	if ((serial = uarts[d]) == NULL)
 		return -ENOENT;
 
-	/* Wait for transmitter */	
+	/* Wait for transmitter */
 	mutexLock(serial->mutex);
 
 	while (serial->sp != serial->se)
@@ -236,7 +236,7 @@ static int uart_write(u8 d, size_t len, char *buff)
 			return err;
 
 	sp = serial->sp;
-	se = serial->se;	
+	se = serial->se;
 
 	mutexUnlock(serial->mutex);
 
@@ -258,7 +258,7 @@ static int uart_write(u8 d, size_t len, char *buff)
 	mutexLock(serial->mutex);
 	if (serial->se == serial->sp)
 		outb(serial->base, serial->sbuff[serial->sp]);
-	
+
 	serial->se = ((serial->se + cnt) % serial->sbuffsz);
 	mutexUnlock(serial->mutex);
 
@@ -289,7 +289,7 @@ int uart_readchunk(uart_t *serial, char *buff, unsigned int len, int *repfl)
 	}
 
 	memcpy(buff, &serial->rbuff[serial->rb], l);
-	
+
 	cnt = l;
 	if ((len > l) && (serial->rp < serial->rb)) {
 		memcpy(buff + l, &serial->rbuff[0], min(len - l, serial->rp));
@@ -305,7 +305,7 @@ int uart_readchunk(uart_t *serial, char *buff, unsigned int len, int *repfl)
 
 
 	mutexUnlock(serial->mutex);
-	
+
 	return cnt;
 }
 
@@ -362,7 +362,7 @@ int _uart_init(void *base, unsigned int irq, unsigned int speed, uart_t **uart)
 
 	/* Allocate and map memory for driver structures */
 	if ((*uart = malloc(sizeof(uart_t))) == NULL)
-		return -ENOMEM;	
+		return -ENOMEM;
 
 	memset((*uart), 0, sizeof(uart_t));
 
@@ -416,7 +416,7 @@ int _uart_init(void *base, unsigned int irq, unsigned int speed, uart_t **uart)
 
 	/* Set interrupt mask */
 	outb(base + REG_IMR, IMR_THRE | IMR_DR);
-	
+
 	return EOK;
 }
 
