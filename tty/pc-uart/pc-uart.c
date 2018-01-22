@@ -384,10 +384,10 @@ int _uart_init(void *base, unsigned int irq, unsigned int speed, uart_t **uart)
 	interrupt(irq, uart_interrupt, (*uart), (*uart)->intcond);
 
 	u8 *stack;
-//	stack = (u8 *)malloc(4096);
+	stack = (u8 *)malloc(4096);
 
-stack = mmap((void *)0, 4096 * 2, 0, 0, NULL, 0);
-stack += 0x10;
+//stack = mmap((void *)0, 4096 * 2, 0, 0, NULL, 0);
+//stack += 0x10;
 
 	condCreate(&(*uart)->rcond);
 	condCreate(&(*uart)->scond);
@@ -421,34 +421,11 @@ stack += 0x10;
 }
 
 
-int main(void)
+void poolthr(void *arg)
 {
-	void *base = (void *)0x3f8;
-	unsigned int n = 4, rid;
-	u32 port;
+	u32 port = (u32)arg;
 	msg_t msg;
-
-	printf("pc-uart: Initializing UART 16550 driver %s\n", "");
-
-	_uart_init(base, n, BPS_115200, &uarts[0]);
-
-	portCreate(&port);
-	if (portRegister(port, "/dev/ttyS0", &uarts[0]->oid) < 0) {
-		printf("Can't register port %d\n", port);
-		return -1;
-	}
-	if (portRegister(port, "/dev/ttyS1", &uarts[1]->oid) < 0) {
-		printf("Can't register port %d\n", port);
-		return -1;
-	}
-	if (portRegister(port, "/dev/ttyS2", &uarts[2]->oid) < 0) {
-		printf("Can't register port %d\n", port);
-		return -1;
-	}
-	if (portRegister(port, "/dev/ttyS3", &uarts[3]->oid) < 0) {
-		printf("Can't register port %d\n", port);
-		return -1;
-	}
+	unsigned int rid;
 
 	for (;;) {
 		msgRecv(port, &msg, &rid);
@@ -466,8 +443,47 @@ int main(void)
 			break;
 		}
 
-		msgRespond(port, rid);
+		msgRespond(port, &msg, rid);
 	}
+	return;
+}
+
+
+int main(void)
+{
+	void *base = (void *)0x3f8;
+	unsigned int n = 4, rid;
+	u32 port;
+	msg_t msg;
+
+	printf("pc-uart: Initializing UART 16550 driver %s\n", "");
+
+	_uart_init(base, n, BPS_115200, &uarts[0]);
+
+	portCreate(&port);
+	if (portRegister(port, "/dev/ttyS0", &uarts[0]->oid) < 0) {
+		printf("Can't register port %d\n", port);
+//for (;;);
+		return -1;
+	}
+	/*if (portRegister(port, "/dev/ttyS1", &uarts[1]->oid) < 0) {
+		printf("Can't register port %d\n", port);
+		return -1;
+	}
+	if (portRegister(port, "/dev/ttyS2", &uarts[2]->oid) < 0) {
+		printf("Can't register port %d\n", port);
+		return -1;
+	}
+	if (portRegister(port, "/dev/ttyS3", &uarts[3]->oid) < 0) {
+		printf("Can't register port %d\n", port);
+		return -1;
+	}*/
+
+	void *stack = malloc(1024);
+
+	/* Run threads */
+	beginthread(poolthr, 3, stack, 2048, (void *)port);
+	poolthr((void *)port);
 
 	return 0;
 }
