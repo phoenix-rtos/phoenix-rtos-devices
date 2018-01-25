@@ -228,6 +228,9 @@ static int uart_write(u8 d, size_t len, char *buff)
 	if ((serial = uarts[d]) == NULL)
 		return -ENOENT;
 
+	if (!len)
+		return 0;
+
 	/* Wait for transmitter */
 	mutexLock(serial->mutex);
 
@@ -452,9 +455,8 @@ void poolthr(void *arg)
 int main(void)
 {
 	void *base = (void *)0x3f8;
-	unsigned int n = 4, rid;
+	unsigned int n = 4;
 	u32 port;
-	msg_t msg;
 
 	printf("pc-uart: Initializing UART 16550 driver %s\n", "");
 
