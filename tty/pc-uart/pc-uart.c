@@ -431,7 +431,11 @@ void poolthr(void *arg)
 	unsigned int rid;
 
 	for (;;) {
-		msgRecv(port, &msg, &rid);
+		if (msgRecv(port, &msg, &rid) < 0) {
+			memset(&msg, 0, sizeof(msg));
+			msgRespond(port, &msg, rid);
+			continue;
+		}
 
 		switch (msg.type) {
 		case mtOpen:
@@ -481,7 +485,7 @@ int main(void)
 		return -1;
 	}*/
 
-	void *stack = malloc(1024);
+	void *stack = malloc(2048);
 
 	/* Run threads */
 	beginthread(poolthr, 3, stack, 2048, (void *)port);
