@@ -13,6 +13,8 @@ CFLAGS = -c -Wall -O2 -g -I. -I../../../libphoenix/ -DARCH=\"arch/ia32/arch.h\"
 LD = i386-pc-phoenix-gcc
 LDFLAGS = -nostartfiles -nostdlib
 
+STRIP = i386-pc-phoenix-strip
+
 SRCS = pc-uart.c
 OBJS = $(SRCS:.c=.o)
 GCCLIB := $(shell $(CC) $(CFLAGS) -print-libgcc-file-name)
@@ -25,6 +27,7 @@ all: pc-uart
 
 pc-uart: $(OBJS)
 	$(LD) $(LDFLAGS) -o $(BIN) $(OBJS) ../../../libphoenix/libphoenix.a $(GCCLIB)
+	$(STRIP) $(BIN)
 
 clean:
 	rm -f *.o *~ core
