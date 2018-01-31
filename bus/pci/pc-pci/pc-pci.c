@@ -241,29 +241,28 @@ void _pci_init(void)
 
 int main() {
 	u32 port;
-	//int bytes;
-	msghdr_t msghdr;
-	pci_id_t pci_id;
+	oid_t toid;
+	msg_t msg;
 	pci_device_t *pci_dev;
-
-
+	unsigned int rid;
+	usleep(5000000);
 	printf("\npci bus: Initializing %s\n","");
 	_pci_init();
-	printf("\npci bus: Initialized %s\n","");
 
 	portCreate(&port);
-	if (portRegister(port, "/dev/pci") < 0) {
+	if (portRegister(port, "/dev/pci", &toid) < 0) {
 		printf("pci: Can't register port %d\n", port);
 		return -1;
 	}
 
 	for(;;) {
-		recv(port, &pci_id, sizeof(pci_id_t), &msghdr);
+		msgRecv(port, &msg, &rid);
+		pci_dev = msg.o.data;
 
-		dev_pciAlloc(&pci_id, &pci_dev);
-		if(!pci_dev) {
+		dev_pciAlloc(msg.i.data, &pci_dev);
+		if(!msg.o.data) {
 			//printf("pci_dev NULL %s\n", "");
-			respond(port, EOK, NULL, 0);
+			msgRespond(port, &msg, rid);
 			continue;
 		}
 		//dev_setBusmaster(pci_dev, 1);
@@ -272,7 +271,7 @@ int main() {
 			pci_dev->vendor & 0xFFFF,
 			(pci_dev->cl >> 8) & 0xFF,pci_dev->cl & 0xFF);
 
-		respond(port, EOK, pci_dev, sizeof(pci_device_t));
+		msgRespond(port, &msg, rid);
 
 		usleep(1000000);
 	}
