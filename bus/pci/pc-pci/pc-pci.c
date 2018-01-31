@@ -245,7 +245,7 @@ int main() {
 	msg_t msg;
 	pci_device_t *pci_dev;
 	unsigned int rid;
-	usleep(5000000);
+	usleep(1000000);
 	printf("\npci bus: Initializing %s\n","");
 	_pci_init();
 
@@ -257,14 +257,16 @@ int main() {
 
 	for(;;) {
 		msgRecv(port, &msg, &rid);
-		pci_dev = msg.o.data;
 
 		dev_pciAlloc(msg.i.data, &pci_dev);
-		if(!msg.o.data) {
+		if(!pci_dev) {
 			//printf("pci_dev NULL %s\n", "");
+			msg.o.io.err = -ENOENT;
 			msgRespond(port, &msg, rid);
 			continue;
 		}
+		memcpy(msg.o.data, pci_dev, sizeof(pci_device_t));
+		msg.o.io.err = EOK;
 		//dev_setBusmaster(pci_dev, 1);
 		printf("pci :%2u:%2u:%2u-->%6u,%6u-->%3u,%3u\n",
 			pci_dev->b,pci_dev->d,pci_dev->f,pci_dev->device & 0xFFFF,
