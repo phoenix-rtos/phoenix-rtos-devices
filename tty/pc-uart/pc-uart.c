@@ -484,7 +484,7 @@ int main(void)
 	void *stack = malloc(1024);
 
 	/* Run threads */
-	beginthread(poolthr, 3, stack, 2048, (void *)port);
+	beginthread(poolthr, 3, stack, 1024, (void *)port);
 	poolthr((void *)port);
 
 	return 0;
