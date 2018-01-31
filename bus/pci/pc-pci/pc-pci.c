@@ -241,38 +241,39 @@ void _pci_init(void)
 
 int main() {
 	u32 port;
-	//int bytes;
-	msghdr_t msghdr;
-	pci_id_t pci_id;
+	oid_t toid;
+	msg_t msg;
 	pci_device_t *pci_dev;
-
-
+	unsigned int rid;
+	usleep(1000000);
 	printf("\npci bus: Initializing %s\n","");
 	_pci_init();
-	printf("\npci bus: Initialized %s\n","");
 
 	portCreate(&port);
-	if (portRegister(port, "/dev/pci") < 0) {
+	if (portRegister(port, "/dev/pci", &toid) < 0) {
 		printf("pci: Can't register port %d\n", port);
 		return -1;
 	}
 
 	for(;;) {
-		recv(port, &pci_id, sizeof(pci_id_t), &msghdr);
+		msgRecv(port, &msg, &rid);
 
-		dev_pciAlloc(&pci_id, &pci_dev);
+		dev_pciAlloc(msg.i.data, &pci_dev);
 		if(!pci_dev) {
 			//printf("pci_dev NULL %s\n", "");
-			respond(port, EOK, NULL, 0);
+			msg.o.io.err = -ENOENT;
+			msgRespond(port, &msg, rid);
 			continue;
 		}
+		memcpy(msg.o.data, pci_dev, sizeof(pci_device_t));
+		msg.o.io.err = EOK;
 		//dev_setBusmaster(pci_dev, 1);
 		printf("pci :%2u:%2u:%2u-->%6u,%6u-->%3u,%3u\n",
 			pci_dev->b,pci_dev->d,pci_dev->f,pci_dev->device & 0xFFFF,
 			pci_dev->vendor & 0xFFFF,
 			(pci_dev->cl >> 8) & 0xFF,pci_dev->cl & 0xFF);
 
-		respond(port, EOK, pci_dev, sizeof(pci_device_t));
+		msgRespond(port, &msg, rid);
 
 		usleep(1000000);
 	}
