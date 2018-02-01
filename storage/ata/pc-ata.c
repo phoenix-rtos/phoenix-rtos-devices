@@ -198,10 +198,7 @@ int ata_access(u8 direction, struct ata_dev *ad, u32 lba, u8 numsects, void *buf
 	ata_ch_write(ac, ATA_REG_LBA1, lba_io[1]);
 	ata_ch_write(ac, ATA_REG_LBA2, lba_io[2]);
 
-	if (lba_mode == 0 && direction == 0) cmd = ATA_CMD_READ_PIO;
-	if (lba_mode == 1 && direction == 0) cmd = ATA_CMD_READ_PIO;
-	if (lba_mode == 0 && direction == 1) cmd = ATA_CMD_WRITE_PIO;
-	if (lba_mode == 1 && direction == 1) cmd = ATA_CMD_WRITE_PIO;
+	cmd = direction ? ATA_CMD_WRITE_PIO : ATA_CMD_READ_PIO;
 
 	ata_ch_write(ac, ATA_REG_COMMAND, cmd);
 
@@ -225,15 +222,11 @@ int ata_access(u8 direction, struct ata_dev *ad, u32 lba, u8 numsects, void *buf
 				ATA_WASTE400MS(ac);
 			}
 
-			if (ac->status & (ATA_SR_BSY | ATA_SR_DF | ATA_SR_ERR)) {
-				//TRACE("Error");
+			if (ac->status & (ATA_SR_BSY | ATA_SR_DF | ATA_SR_ERR))
 				break;
-			}
 
-			if (!(ac->status & ATA_SR_DRQ)) {
-				//TRACE("Error");
+			if (!(ac->status & ATA_SR_DRQ))
 				break;
-			}
 		}
 	} else {
 		while ((astatus = ac->status = ata_ch_read(ac, ATA_REG_ALTSTATUS)) & ATA_SR_BSY); // Wait for BSY to be zero.
@@ -382,7 +375,7 @@ int ata_init_bus(struct ata_bus *ab)
 
 		condCreate(&(ab->ac[i].waitq));
 
-		ab->ac[i].bmstatus = ata_ch_read(&(ab->ac[i]), ATA_REG_BMSTATUS) & 0x60;
+		//ab->ac[i].bmstatus = ata_ch_read(&(ab->ac[i]), ATA_REG_BMSTATUS) & 0x60;
 
 		for (j = 0; j < 2; j++) {
 			u8 err = 0, status = 0;

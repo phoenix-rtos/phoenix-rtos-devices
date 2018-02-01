@@ -133,48 +133,4 @@ typedef union _atainfo_t {
 
 } atainfo_t;
 
-
-// ata_info.ata.capabilities_1
-#define ATA_INFO_CAPABILITIES_1_DMA 1 << 8
-#define ATA_INFO_CAPABILITIES_1_LBA 1 << 9
-
-// ata_info.ata.commands2_sup
-#define ATA_INFO_COMMANDS_2_LBA48 1 << 10
-
-// ata_info.ata.mdma_support
-#define ATA_INFO_MDMA_SUPPORT_M2SEL 1 << 10
-#define ATA_INFO_MDMA_SUPPORT_M1SEL 1 << 9
-#define ATA_INFO_MDMA_SUPPORT_M0SEL 1 << 8
-#define ATA_INFO_MDMA_SUPPORT_M2SUP 1 << 2
-#define ATA_INFO_MDMA_SUPPORT_M1SUP 1 << 1
-#define ATA_INFO_MDMA_SUPPORT_M0SUP 1 << 0
-
-// ata_info.ata.ver_major 
-#define ATA_INFO_MAJOR_ATA8 1 << 8
-#define ATA_INFO_MAJOR_ATA7 1 << 7
-#define ATA_INFO_MAJOR_ATA6 1 << 6
-#define ATA_INFO_MAJOR_ATA5 1 << 5
-#define ATA_INFO_MAJOR_ATA4 1 << 4
-
-// ata_info.ata.udma_modes
-#define ATA_INFO_UDMA_SEL6 1 << 14
-#define ATA_INFO_UDMA_SEL5 1 << 13
-#define ATA_INFO_UDMA_SEL4 1 << 12
-#define ATA_INFO_UDMA_SEL3 1 << 11
-#define ATA_INFO_UDMA_SEL2 1 << 10
-#define ATA_INFO_UDMA_SEL1 1 << 9
-#define ATA_INFO_UDMA_SEL0 1 << 8
-
-#define ATA_INFO_UDMA_SUP6 1 << 6
-#define ATA_INFO_UDMA_SUP5 1 << 5
-#define ATA_INFO_UDMA_SUP4 1 << 4
-#define ATA_INFO_UDMA_SUP3 1 << 3
-#define ATA_INFO_UDMA_SUP2 1 << 2
-#define ATA_INFO_UDMA_SUP1 1 << 1
-#define ATA_INFO_UDMA_SUP0 1 << 0
-
-/* ata_info.ata.transport_major_ver */
-#define ATA_INFO_TRANSPORT_SERIAL 1 << 12 
-
-
 #endif
