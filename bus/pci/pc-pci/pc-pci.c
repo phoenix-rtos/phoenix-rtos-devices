@@ -155,8 +155,7 @@ void _pci_init(void)
 	u32 dv;
 	pci_device_t *dev;
 
-	/*main_printf(ATTR_DEV, "dev: [pci  ] Enumerating PCI ");*/
-	printf("dev: [pci  ] Enumerating PCI ");
+	printf("pci: Enumerating PCI devices%s\n", "");
 
 	mutexCreate(&pci_common.mutex);
 	pci_common.devices = NULL;
@@ -169,7 +168,6 @@ void _pci_init(void)
 				if (dv == 0xffffffff)
 					continue;
 
-				/*if ((dev = vm_kmalloc(sizeof(pci_device_t))) == NULL)*/
 				if ((dev = malloc(sizeof(pci_device_t))) == NULL)
 					break;
 
@@ -221,9 +219,7 @@ void _pci_init(void)
 				/* Add device to list */
 				_pci_add(&pci_common.devices, dev);
 
-				/*main_printf(ATTR_DEV, ".");*/
-				//printf(".");
-				printf("\n:%2u:%2u:%2u-->%6u,%6u-->%3u,%3u",
+				printf(":%2u:%2u:%2u-->%6u,%6u-->%3u,%3u\n",
 					dev->b,dev->d,dev->f,dev->device & 0xFFFF,dev->vendor & 0xFFFF,
 					(dev->cl >> 8) & 0xFF,dev->cl & 0xFF);
 
@@ -232,9 +228,6 @@ void _pci_init(void)
 			}
 		}
 	}
-
-	/*main_printf(ATTR_DEV, "\n");*/
-	//printf("\n");
 
 	return;
 }
@@ -260,7 +253,6 @@ int main() {
 
 		dev_pciAlloc(msg.i.data, &pci_dev);
 		if(!pci_dev) {
-			//printf("pci_dev NULL %s\n", "");
 			msg.o.io.err = -ENOENT;
 			msgRespond(port, &msg, rid);
 			continue;
@@ -268,7 +260,7 @@ int main() {
 		memcpy(msg.o.data, pci_dev, sizeof(pci_device_t));
 		msg.o.io.err = EOK;
 		//dev_setBusmaster(pci_dev, 1);
-		printf("pci :%2u:%2u:%2u-->%6u,%6u-->%3u,%3u\n",
+		printf("\npci :%2u:%2u:%2u-->%6u,%6u-->%3u,%3u\n",
 			pci_dev->b,pci_dev->d,pci_dev->f,pci_dev->device & 0xFFFF,
 			pci_dev->vendor & 0xFFFF,
 			(pci_dev->cl >> 8) & 0xFF,pci_dev->cl & 0xFF);
