@@ -6,7 +6,7 @@
  * Generic ata devices controller
  *
  * Copyright 2012 Phoenix Systems
- * Author: Marcin Stragowski
+ * Author: Marcin Stragowski, Kamil Amanowicz
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -17,13 +17,9 @@
 #define _DEV_ATA_GENERIC_H_
 
 #include <stdint.h>
+#include <sys/threads.h>
 
- #include <sys/threads.h>
- #include ARCH
-
-#include <pc-pci.h>
 #include "pc-ata_info.h"
-//#include "if.h"
 
 #define ATA_MAX_PIO_DRQ 256
 #define ATA_DEF_SECTOR_SIZE 512
@@ -32,100 +28,46 @@
 
 
 /* Status register bits */
-#define ATA_SR_BSY     0x80
-#define ATA_SR_DRDY    0x40
-#define ATA_SR_DF      0x20
-#define ATA_SR_DSC     0x10
-#define ATA_SR_DRQ     0x08
-#define ATA_SR_CORR    0x04
-#define ATA_SR_IDX     0x02
-#define ATA_SR_ERR     0x01
-
+enum { ATA_SR_BSY = 0x80, ATA_SR_DRDY = 0x40, ATA_SR_DF = 0x20,
+	ATA_SR_DSC = 0x10, ATA_SR_DRQ = 0x08, ATA_SR_CORR = 0x04,
+	ATA_SR_IDX = 0x02, ATA_SR_ERR = 0x01 };
 
 /* Bus master status field masks */
-#define ATA_BMR_STAT_ACT      1
-#define ATA_BMR_STAT_ERR      (1 << 1)
-#define ATA_BMR_STAT_INTR     (1 << 2)
-#define ATA_BMR_STAT_DEV0_DMA (1 << 5)
-#define ATA_BMR_STAT_DEV1_DMA (1 << 6)
-#define ATA_BMR_STAT_SIMPLEX  (1 << 7)
-
+enum { ATA_BMR_STAT_ACT = 1, ATA_BMR_STAT_ERR = (1 << 1),
+	ATA_BMR_STAT_INTR = (1 << 2), ATA_BMR_STAT_DEV0_DMA	= (1 << 5),
+	ATA_BMR_STAT_DEV1_DMA = (1 << 6), ATA_BMR_STAT_SIMPLEX = (1 << 7) };
 
 /* Bus master command field masks */
-#define ATA_BMR_CMD_WRENABLE 0
-#define ATA_BMR_CMD_RDENABLE (1 << 3)
-#define ATA_BMR_CMD_START     1
-#define ATA_BMR_CMD_STOP      0
+enum { ATA_BMR_CMD_WRENABLE = 0, ATA_BMR_CMD_RDENABLE = (1 << 3),
+	ATA_BMR_CMD_START = 1, ATA_BMR_CMD_STOP = 0 };
 
 /* Error status register bits */
-#define ATA_ER_BBK      0x80
-#define ATA_ER_UNC      0x40
-#define ATA_ER_MC       0x20
-#define ATA_ER_IDNF     0x10
-#define ATA_ER_MCR      0x08
-#define ATA_ER_ABRT     0x04
-#define ATA_ER_TK0NF    0x02
-#define ATA_ER_AMNF     0x01
-
-/* Control register */
-#define ATA_CTRL_HOB    0x80
+enum { ATA_ER_BBK = 0x80, ATA_ER_UNC = 0x40, ATA_ER_MC = 0x20,
+	ATA_ER_IDNF	= 0x10, ATA_ER_MCR = 0x08, ATA_ER_ABRT	= 0x04,
+   	ATA_ER_TK0NF = 0x02, ATA_ER_AMNF = 0x01 };
 
 /* ATA commands */
-#define ATA_CMD_READ_PIO          0x20
-#define ATA_CMD_READ_PIO_EXT      0x24
-#define ATA_CMD_READ_DMA          0xC8
-#define ATA_CMD_READ_DMA_EXT      0x25
-#define ATA_CMD_WRITE_PIO         0x30
-#define ATA_CMD_WRITE_PIO_EXT     0x34
-#define ATA_CMD_WRITE_DMA         0xCA
-#define ATA_CMD_WRITE_DMA_EXT     0x35
-#define ATA_CMD_CACHE_FLUSH       0xE7
-#define ATA_CMD_CACHE_FLUSH_EXT   0xEA
-#define ATA_CMD_PACKET            0xA0
-#define ATA_CMD_IDENTIFY_PACKET   0xA1
-#define ATA_CMD_IDENTIFY          0xEC
-
-/* device type */
-#define IDE_ATA        0x00
-#define IDE_ATAPI      0x01
-
+enum { ATA_CMD_READ_PIO = 0x20, ATA_CMD_WRITE_PIO = 0x30,
+   	ATA_CMD_CACHE_FLUSH = 0xE7, ATA_CMD_PACKET = 0xA0,
+	ATA_CMD_IDENTIFY_PACKET = 0xA1, ATA_CMD_IDENTIFY = 0xEC };
 
 /* ATA register definitions */
-#define ATA_REG_DATA        0x00
-#define ATA_REG_ERROR       0x01
-#define ATA_REG_FEATURES    0x01
-#define ATA_REG_SECCOUNT0   0x02
-#define ATA_REG_LBA0        0x03
-#define ATA_REG_LBA1        0x04
-#define ATA_REG_LBA2        0x05
-#define ATA_REG_HDDEVSEL    0x06
-#define ATA_REG_COMMAND     0x07
-#define ATA_REG_STATUS      0x07
-
-/* must enable hob to access theese*/
-#define ATA_REG_SECCOUNT1   0x08
-#define ATA_REG_LBA3        0x09
-#define ATA_REG_LBA4        0x0A
-#define ATA_REG_LBA5        0x0B
+enum { ATA_REG_DATA = 0x00, ATA_REG_ERROR = 0x01, ATA_REG_FEATURES = 0x01,
+	ATA_REG_SECCOUNT0 = 0x02, ATA_REG_LBA0 = 0x03, ATA_REG_LBA1 = 0x04,
+	ATA_REG_LBA2 = 0x05, ATA_REG_HDDEVSEL = 0x06, ATA_REG_COMMAND = 0x07,
+	ATA_REG_STATUS = 0x07 };
 
 /* eo. hob */
-#define ATA_REG_CONTROL     0x0C
-#define ATA_REG_ALTSTATUS   0x0C
-#define ATA_REG_DEVADDRESS  0x0D
-
-#define ATA_REG_BMPRIMARY   0x00
-#define ATA_REG_BMSECONDARY 0x08
-#define ATA_REG_BMCOMMAND   0x0E
-#define ATA_REG_BMSTATUS    0x10
-#define ATA_REG_BMPRD       0x12
+enum { ATA_REG_CONTROL = 0x0C, ATA_REG_ALTSTATUS = 0x0C,
+   	ATA_REG_DEVADDRESS = 0x0D, ATA_REG_BMPRIMARY = 0x00,
+	ATA_REG_BMSECONDARY = 0x08, ATA_REG_BMCOMMAND = 0x0E,
+	ATA_REG_BMSTATUS = 0x10, ATA_REG_BMPRD = 0x12 };
 
 // Channels:
-#define ATA_PRIMARY      0x00
-#define ATA_SECONDARY    0x01
+enum { ATA_PRIMARY = 0x00, ATA_SECONDARY = 0x01 };
 
 // Directions:
-#define ATA_READ         0x00
-#define ATA_WRITE        0x01
+enum { ATA_READ = 0x00, ATA_WRITE = 0x01 };
 
 typedef struct _ata_opt_t {
 	u8 force;	/* force initialize in compatibility mode */
@@ -141,7 +83,6 @@ struct ata_dev {
 	u8 channel;            /* 0 (Primary Channel) or 1 (Secondary Channel) */
 	u8 drive;              /* 0 (Master Drive) or 1 (Slave Drive) */
 	u8 type;               /* 0: ATA, 1:ATAPI */
-	u8 dma;
 
 	u16 signature;
 	u16 capabilities;
@@ -172,11 +113,6 @@ struct ata_channel {
 	handle_t irq_spin;
 	volatile u8 irq_invoked;
 	handle_t waitq;
-
-	/* for dma */
-	volatile u8 *prd_virt;
-	addr_t prd_phys;
-	u32 prd_size;
 
 	struct ata_bus *ab;
 	struct ata_dev devices[2];

@@ -6,14 +6,12 @@
  * Generic ata controller driver
  *
  * Copyright 2012 Phoenix Systems
- * Author: Marcin Stragowski
+ * Author: Marcin Stragowski, Kamil Amanowicz
  *
  * This file is part of Phoenix-RTOS.
  *
  * %LICENSE%
  */
-
-#define NO_TRACE 1
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -28,9 +26,6 @@
 #include <pc-pci.h>
 #include "pc-ata.h"
 
-//static int ata_open(vnode_t *vnode, file_t* file);
-static int ata_read(struct ata_dev *ad, offs_t offs, char *buff, unsigned int len);
-static int ata_write(struct ata_dev *ad, offs_t offs, char *buff, unsigned int len);
 
 static pci_id_t ata_pci_tbl[] = {
 	{ PCI_ANY, PCI_ANY, PCI_ANY, PCI_ANY, 0x0101},
@@ -52,49 +47,15 @@ u32 port;
 
 static int ata_interrupt(unsigned int irq, void *dev_instance);
 
-/* hw access definitions */
-#define ata_inb(xaddr) inb((void*)0 + xaddr)
-#define ata_outb(xaddr, data) outb((void*)0 + xaddr, data)
-#define ata_inw(xaddr) inw((void*)0 + xaddr)
-#define ata_outw(xaddr, data) outw((void*)0 + xaddr, data)
-#define ata_inl(xaddr) inl((void*)0 + xaddr)
-#define ata_outl(xaddr, data) outl((void*)0 + xaddr, data)
-#define ata_insl(base, buff, quads) insl((void*)0 + base, buff, quads)
+#define ata_ch_read(ac, reg) inb((void *)0 + (ac)->reg_addr[(reg)])
+#define ata_ch_write(ac, reg, data) outb((void *)0 + (ac)->reg_addr[(reg)], (data))
+#define ata_ch_read_buffer(ac, reg, buff, quads) insl((void *)0 + (ac)->reg_addr[(reg)], (buff), (quads))
 
-#define ata_ch_read(ac, reg) ata_inb((ac)->reg_addr[(reg)])
-#define ata_ch_write(ac, reg, data) ata_outb((ac)->reg_addr[(reg)], (data))
-#define ata_ch_read_buffer(ac, reg, buff, quads) ata_insl((ac)->reg_addr[(reg)], (buff), (quads))
-#define ata_ch_hob_enable(ac) ata_ch_write((ac), ATA_REG_CONTROL, ATA_CTRL_HOB | (ac)->no_int)
-#define ata_ch_hob_disable(ac) ata_ch_write((ac), ATA_REG_CONTROL, (ac)->no_int)
-
-static void insl(void *addr, void *buffer, u32 quads)\
+static inline void insl(void *addr, void *buffer, u32 quads)\
 {
 	int i;
-	for (i = 0; i < quads; i += 1) {
+	for (i = 0; i < quads; i += 1)
 		*(u32*)(buffer + (i * 4)) = inl(addr);
-	}
-}
-
-
-void print_status(u8 st)
-{
-	if (st & ATA_SR_BSY)
-		printf("BSY, ");
-	if (st & ATA_SR_DRDY)
-		printf("DRDY, ");
-	if (st & ATA_SR_DF)
-		printf("DF, ");
-	if (st & ATA_SR_DSC)
-		printf("DSC, ");
-	if (st & ATA_SR_DRQ)
-		printf("DRQ, ");
-	if (st & ATA_SR_CORR)
-		printf("CORR, ");
-	if (st & ATA_SR_IDX)
-		printf("IDX, ");
-	if (st & ATA_SR_ERR)
-		printf("ERR");
-	printf("\n---- %s\n","");
 }
 
 void ata_chInitRegs(struct ata_channel *ac)
@@ -170,7 +131,6 @@ int ata_wait(struct ata_channel *ac, u8 irq)
 		mutexLock(ac->irq_spin);
 		if (ac->irq_invoked == 0) {
 			if ((err = condWait(ac->waitq, ac->irq_spin, /* 5sec */ 5000)) < 0) {
-				printf("cond timeout %s\n", "");
 				mutexUnlock(ac->irq_spin);
 				return err;
 			}
@@ -189,11 +149,10 @@ int ata_access(u8 direction, struct ata_dev *ad, u32 lba, u8 numsects, void *buf
 	struct ata_channel *ac = ad->ac;
 
 	u8 lba_mode = 0; /* 0: CHS, 1:LBA28, 2: LBA48 */
-	u8 ret = 0;
 	u8 cmd;
 	u8 astatus = 0;
 	u8 slavebit = ad->drive;
-	u8 lba_io[6];
+	u8 lba_io[6] = { 0 };
 	u8 head, sect;
 	u16 bus = ac->base;
 	u16 words = 256;
@@ -211,9 +170,6 @@ int ata_access(u8 direction, struct ata_dev *ad, u32 lba, u8 numsects, void *buf
 		lba_io[0] = (lba & 0x000000FF) >> 0;
 		lba_io[1] = (lba & 0x0000FF00) >> 8;
 		lba_io[2] = (lba & 0x00FF0000) >> 16;
-		lba_io[3] = 0;
-		lba_io[4] = 0;
-		lba_io[5] = 0;
 		head      = (lba & 0x0F000000) >> 24;
 	} else {
 		/* CHS: */
@@ -223,9 +179,6 @@ int ata_access(u8 direction, struct ata_dev *ad, u32 lba, u8 numsects, void *buf
 		lba_io[0] = sect;
 		lba_io[1] = (cyl >> 0) & 0xFF;
 		lba_io[2] = (cyl >> 8) & 0xFF;
-		lba_io[3] = 0;
-		lba_io[4] = 0;
-		lba_io[5] = 0;
 		head      = (lba + 1  - sect) % (16 * 63) / (63); // Head number is written to HDDEVSEL lower 4-bits.
 	}
 
@@ -265,7 +218,7 @@ int ata_access(u8 direction, struct ata_dev *ad, u32 lba, u8 numsects, void *buf
 
 			if ((ac->status & (ATA_SR_BSY | ATA_SR_DRQ)) == ATA_SR_DRQ) {
 				for (b = 0; b < words; b++) {
-					*(u16*)(buffer + (b * 2)) = ata_inw(bus);
+					*(u16*)(buffer + (b * 2)) = inw((void *)0 + bus);
 				}
 				buffer += (words * 2);
 				i++;
@@ -281,21 +234,7 @@ int ata_access(u8 direction, struct ata_dev *ad, u32 lba, u8 numsects, void *buf
 				//TRACE("Error");
 				break;
 			}
-
-			if (numsects - i < 1) {
-				ATA_WASTE100MS(ac);
-				ac->status = ata_ch_read(ac, ATA_REG_STATUS);
-				if (ac->status & ( ATA_SR_BSY | ATA_SR_DF | ATA_SR_DRQ | ATA_SR_ERR )) {
-					printf("Error %s\n", "");
-					print_status(ac->status);
-					break;
-				}
-
-				break;
-			}
 		}
-
-		ret = i;
 	} else {
 		while ((astatus = ac->status = ata_ch_read(ac, ATA_REG_ALTSTATUS)) & ATA_SR_BSY); // Wait for BSY to be zero.
 		// PIO Write.
@@ -305,23 +244,18 @@ int ata_access(u8 direction, struct ata_dev *ad, u32 lba, u8 numsects, void *buf
 
 			if ((ac->status & (ATA_SR_BSY | ATA_SR_DRQ)) == ATA_SR_DRQ ) {
 				for (b = 0; b < words; b++) {
-					ata_outw(bus, *((u16*)(buffer + (b*2))));
+					outw((void *)0 + bus, *((u16*)(buffer + (b*2))));
 				}
 				buffer += (words * 2);
 				i++;
 				ATA_WASTE400MS(ac);
 			}
 
-			if (ac->status & (ATA_SR_BSY | ATA_SR_DF | ATA_SR_ERR)) {
-				print_status(ac->status);
-				printf("Error %s\n", "");
+			if (ac->status & (ATA_SR_BSY | ATA_SR_DF | ATA_SR_ERR))
 				break;
-			}
 
-			if (!(ac->status & ATA_SR_DRQ)) {
-				printf("DRQ Error %s\n", "");
+			if (!(ac->status & ATA_SR_DRQ))
 				break;
-			}
 
 			if ((err = ata_wait(ac, !ac->no_int)) != 0)
 				ata_polling(ac, 1); // Polling.
@@ -332,20 +266,9 @@ int ata_access(u8 direction, struct ata_dev *ad, u32 lba, u8 numsects, void *buf
 			else
 				astatus = ac->status;
 
-			if (numsects - i < 1) {
-				if (astatus & ( ATA_SR_BSY | ATA_SR_DF | ATA_SR_DRQ | ATA_SR_ERR )) {
-					printf("Error %s\n", "");
-					print_status(ac->status);
-					break;
-				}
-				break;
-			}
 		}
 
-		ret = i;
-
-		ata_ch_write(ac, ATA_REG_COMMAND,
-				((char []) { ATA_CMD_CACHE_FLUSH, ATA_CMD_CACHE_FLUSH, ATA_CMD_CACHE_FLUSH_EXT }[lba_mode]));
+		ata_ch_write(ac, ATA_REG_COMMAND, ATA_CMD_CACHE_FLUSH);
 
 		if (!ac->no_int) {
 			if ((err = ata_wait(ac, 1)) != 0) {
@@ -354,49 +277,11 @@ int ata_access(u8 direction, struct ata_dev *ad, u32 lba, u8 numsects, void *buf
 		}
 	}
 
-	return ret;
+	return i;
 }
 
 // TODO: fixme 64 bits
-static int ata_read(struct ata_dev *ad, offs_t offs, char *buff, unsigned int len)
-{
-	u32 begin_lba = 0;
-	u32 sectors = 0;
-	u32 ret = 0;
-
-	if (ad == NULL) {
-		return -EINVAL;
-	}
-
-	if (!ad->reserved)
-		return -ENOENT;
-
-	if (((u32)offs % ad->sector_size) || (len % ad->sector_size)) {
-		printf("panic on the disco sector ");
-		return -EINVAL;
-	}
-
-	begin_lba = (u32)offs / ad->sector_size; // starting sector
-	sectors = len / ad->sector_size;
-
-	for (; sectors >= ATA_MAX_PIO_DRQ; sectors -= ATA_MAX_PIO_DRQ) {
-		// sectors actually read
-		ata_access(ATA_READ, ad, begin_lba, (u8)ATA_MAX_PIO_DRQ, buff); // FIXME: BUG: TODO: ATA_MAX_PIO_DRQ is getting squashed to 8bits here!!!
-
-		begin_lba += ATA_MAX_PIO_DRQ;
-		buff += ATA_MAX_PIO_DRQ * ad->sector_size;
-		ret += ATA_MAX_PIO_DRQ * ad->sector_size;
-	}
-
-	if (sectors) {
-		ata_access(ATA_READ, ad, begin_lba, (u8)sectors, buff);
-		ret += sectors * ad->sector_size;
-	}
-
-	return ret;
-}
-
-static int ata_write(struct ata_dev *ad, offs_t offs, char *buff, unsigned int len)
+static int ata_io(struct ata_dev *ad, offs_t offs, char *buff, unsigned int len, int direction)
 {
 	u32 begin_lba = 0;
 	u32 sectors = 0;
@@ -409,7 +294,7 @@ static int ata_write(struct ata_dev *ad, offs_t offs, char *buff, unsigned int l
 		return -ENOENT;
 
 	if (((u32)offs % ad->sector_size) || (len % ad->sector_size)) {
-		printf("panic on the disco sector ");
+		printf("panic on the disco sector %s\n", "");
 		return -EINVAL;
 	}
 
@@ -417,19 +302,22 @@ static int ata_write(struct ata_dev *ad, offs_t offs, char *buff, unsigned int l
 	sectors = len / ad->sector_size;
 
 	for (; sectors >= ATA_MAX_PIO_DRQ; sectors -= ATA_MAX_PIO_DRQ) {
-		ata_access(ATA_WRITE, ad, begin_lba, (u8)ATA_MAX_PIO_DRQ, buff); // FIXME: BUG: TODO: ATA_MAX_PIO_DRQ is getting squashed to 8bits here!!!
+		// sectors actually read
+		ata_access(direction, ad, begin_lba, (u8)ATA_MAX_PIO_DRQ, buff); // FIXME: BUG: TODO: ATA_MAX_PIO_DRQ is getting squashed to 8bits here!!!
+
 		begin_lba += ATA_MAX_PIO_DRQ;
 		buff += ATA_MAX_PIO_DRQ * ad->sector_size;
 		ret += ATA_MAX_PIO_DRQ * ad->sector_size;
 	}
 
 	if (sectors) {
-		ata_access(ATA_WRITE, ad, begin_lba, (u8)sectors, buff);
+		ata_access(direction, ad, begin_lba, (u8)sectors, buff);
 		ret += sectors * ad->sector_size;
 	}
 
 	return ret;
 }
+
 
 static int ata_interrupt(unsigned int irq, void *dev_instance)
 {
@@ -472,7 +360,7 @@ int ata_init_bus(struct ata_bus *ab)
 	ab->ac[ATA_PRIMARY].ctrl  = (B1 & 0xFFFFFFFC) + 0x3F4 * (!B1);
 
 	ab->ac[ATA_SECONDARY].base  = (B2 & 0xFFFFFFFC) + 0x170 * (!B2);
-	ab->ac[ATA_SECONDARY].ctrl  = (B3 & 0xFFFFFFFC) + 0x374 * (!B3);
+	ab->ac[ATA_SECONDARY].ctrl  = (B3 & 0xFFFFFFFC) + 0x376 * (!B3);
 
 	ab->ac[ATA_PRIMARY  ].bmide = (B4 & 0xFFFFFFFC) + ATA_REG_BMPRIMARY;
 	ab->ac[ATA_SECONDARY].bmide = (B4 & 0xFFFFFFFC) + ATA_REG_BMSECONDARY;
@@ -497,30 +385,25 @@ int ata_init_bus(struct ata_bus *ab)
 		ab->ac[i].bmstatus = ata_ch_read(&(ab->ac[i]), ATA_REG_BMSTATUS) & 0x60;
 
 		for (j = 0; j < 2; j++) {
-			u8 err = 0, type = IDE_ATA, status = 0;
+			u8 err = 0, status = 0;
 
 			ab->ac[i].devices[j].ac = &ab->ac[i];
 			ab->ac[i].devices[j].reserved = 0;
 
-			ata_ch_write(&(ab->ac[i]), ATA_REG_HDDEVSEL, 0xA0 | (j << 4));
-			usleep(1000000);
+			//ata_ch_write(&(ab->ac[i]), ATA_REG_HDDEVSEL, 0xA0 | (j << 4));
 
 			ata_ch_write(&(ab->ac[i]), ATA_REG_COMMAND, ATA_CMD_IDENTIFY);
-			usleep(1000000);
 
-			if (ata_ch_read(&(ab->ac[i]), ATA_REG_STATUS) == 0)
+			if ((status = ata_ch_read(&(ab->ac[i]), ATA_REG_STATUS)) == 0)
 				continue;
 
-			while (1) {
-				status = ata_ch_read(&(ab->ac[i]), ATA_REG_STATUS);
+			while ((status & ATA_SR_BSY) && !(status & ATA_SR_DRQ)) {
 
 				if ((status & ATA_SR_ERR) || (status & ATA_SR_DF)) {
 					err = 1;
 					break;
 				}
-
-				if (!(status & ATA_SR_BSY) && (status & ATA_SR_DRQ))
-					break;
+				status = ata_ch_read(&(ab->ac[i]), ATA_REG_STATUS);
 			}
 
 			/* it's probably atapi device - we do not support it */
@@ -530,7 +413,7 @@ int ata_init_bus(struct ata_bus *ab)
 			ata_ch_read_buffer(&(ab->ac[i]), ATA_REG_DATA, &(ab->ac[i].devices[j].info), 128);
 
 			ab->ac[i].devices[j].reserved = 1;
-			ab->ac[i].devices[j].type = type;
+			ab->ac[i].devices[j].type = 0; /* IDE_ATA */
 			ab->ac[i].devices[j].channel = i;
 			ab->ac[i].devices[j].drive = j;
 			ab->ac[i].devices[j].sector_size  = ab->ac[i].devices[j].info.log_sector_size;
@@ -538,12 +421,8 @@ int ata_init_bus(struct ata_bus *ab)
 			if (!ab->ac[i].devices[j].sector_size)
 				ab->ac[i].devices[j].sector_size = ATA_DEF_SECTOR_SIZE;
 
-			if (ab->ac[i].devices[j].info.commands2_sup & ATA_INFO_COMMANDS_2_LBA48)
-				ab->ac[i].devices[j].size = ab->ac[i].devices[j].info.lba48_totalsectors;
-			else
-				ab->ac[i].devices[j].size = ab->ac[i].devices[j].info.lba28_totalsectors;
+			ab->ac[i].devices[j].size = ab->ac[i].devices[j].info.lba28_totalsectors;
 
-			printf("dev: [ata  ] Found ");
 			printf("[%d:%d] %.5f GiB\n", i, j, (double)ab->ac[i].devices[j].size * ab->ac[i].devices[j].sector_size / 1000 / 1000 / 1000);
 		}
 	}
@@ -582,18 +461,9 @@ int ata_generic_init(ata_opt_t *opt)
 	unsigned int i = 0;
 	int devs_found = 0;
 	oid_t pci;
-	int b = 0;
 	msg_t msg;
 
-	while (lookup("/dev/pci", &pci) < 0) {
-		b++;
-		printf("ata: no pci %s\n", "");
-		usleep(5000000);
-		if (b == 10) {
-			printf("ata: fail to find pci %s\n", "");
-			return 0;
-		}
-	}
+	while (lookup("/dev/pci", &pci) < 0) usleep(3000000);
 
 	buses_cnt = 0;
 	/* iterate through pci to find ata-bus devices */
@@ -628,7 +498,7 @@ int ata_generic_init(ata_opt_t *opt)
 	return devs_found;
 }
 
-static void ata_thread(void *arg)
+static void ata_run(void *arg)
 {
 	msg_t msg;
 	ata_msg_t *atamsg;
@@ -642,24 +512,21 @@ static void ata_thread(void *arg)
 
 		switch (msg.type) {
 			case mtRead:
-				msg.o.io.err = ata_read(&ad, msg.i.io.offs, msg.o.data, msg.o.size);
+				msg.o.io.err = ata_io(&ad, atamsg->offset, msg.o.data, msg.o.size, ATA_READ);
 				break;
 			case mtWrite:
-				msg.o.io.err = ata_write(&ad, atamsg->offset, atamsg->data, atamsg->len);
+				msg.o.io.err = ata_io(&ad, atamsg->offset, atamsg->data, atamsg->len, ATA_WRITE);
 				break;
 			default:
 				break;
 		}
+		msgRespond(port, &msg, rid);
 	}
-	msgRespond(port, &msg, rid);
 }
 
 int main(void)
 {
 	oid_t toid;
-	int stacksz = 2048;
-	char *stack;
-	ata_msg_t *msg;
 
 	printf("ata: Initializing %s\n","");
 	ata_generic_init(NULL);
@@ -668,35 +535,9 @@ int main(void)
 	if (portRegister(port, "/dev/ata", &toid) < 0) {
 		printf("ata: Can't register port %d\n", port);
 		return -1;
-	} else {
-		printf("ata: Registered port %d\n", port);
 	}
 
-	if ((stack = malloc(stacksz)) == NULL || beginthread(ata_thread, 4, stack, stacksz, NULL) != EOK) {
-		printf("ata: not enough memory to start ata thread! %s\n", "");
-		free(stack);
-	}
+	ata_run(NULL);
 
-	msg = malloc(sizeof(ata_msg_t) + 1024);
-	for (;;) {
-		usleep(3000000);
-
-		//msg->channel = 0;
-		//msg->bus = 0;
-		//msg->device = 0;
-		//msg->offset += 1024;
-		//msg->len = 1024;
-		//memset(msg->data, 116, 1024);
-		//printf("bytes %d %d\n", bytes, msg->data[0]);
-		//send(port, WRITE, msg, sizeof(ata_msg_t) + 1024, NORMAL, NULL, 0);
-		//printf("bytes %d %d\n", bytes, msg->data[0]);
-
-		//memset(msg->data, 33, 512);
-		//printf("msg->data[0] = %d\n", msg->data[0]);
-		//send(port, READ, msg, sizeof(ata_msg_t) + 1024, NORMAL, &msg->data, 1024);
-		//printf("recv msg->data[0] = %d\n", msg->data[0]);
-	}
-	free(msg);
-	free(stack);
 	return 0;
 }
