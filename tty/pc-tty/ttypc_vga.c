@@ -53,7 +53,7 @@ void ttypc_vga_switch(ttypc_virt_t *virt)
 {
 	ttypc_t *ttypc = virt->ttypc;
 	ttypc_virt_t *current;
-	
+
 	mutexLock(ttypc->mutex);
 	current = ttypc->cv;
 

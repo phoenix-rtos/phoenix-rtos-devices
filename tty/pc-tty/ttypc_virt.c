@@ -656,8 +656,8 @@ int ttypc_virt_sadd(ttypc_virt_t *virt, u8 *s, unsigned int len)
 {
 	unsigned int l, i;
 
-//	if (virt->m_echo == 1)
-//		ttypc_virt_sput(virt, s, len);
+	if (virt->m_echo == 1)
+		ttypc_virt_sput(virt, s, len);
 
 	mutexLock(virt->mutex);
 	
@@ -721,7 +721,7 @@ int _ttypc_virt_init(ttypc_virt_t *virt, size_t rbuffsz, ttypc_t *ttypc)
 	 * (MOD) add mapping attributes
 	 */
 	virt->ttypc = ttypc;
-	virt->mem = mmap(NULL, 4096, /*PROT_READ | PROT_WRITE*/0, 0, NULL, 0);
+	virt->mem = mmap(NULL, 4096, PROT_READ | PROT_WRITE, 0, NULL, 0);
 	virt->memsz = 4096;
 	virt->attr = 0x7 << 8;
 

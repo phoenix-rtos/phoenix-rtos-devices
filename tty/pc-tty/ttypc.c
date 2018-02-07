@@ -129,8 +129,7 @@ int main(int argc, char *argv[])
 	memset(&ttypc_common, 0, sizeof(ttypc_t));
 	ttypc_common.color = (inb((void *)0x3cc) & 0x01);
 
-	ttypc_common.out_base = mmap(NULL, 0x1000, 0, 0, OID_PHYSMEM, ttypc_common.color ? 0xb8000 : 0xb0000);
-
+	ttypc_common.out_base = mmap(NULL, 0x1000, PROT_READ | PROT_WRITE, 0, OID_PHYSMEM, ttypc_common.color ? 0xb8000 : 0xb0000);
 
 	ttypc_common.out_crtc = ttypc_common.color ? (void *)0x3d4 : (void *)0x3b4;
 
@@ -141,6 +140,7 @@ int main(int argc, char *argv[])
 			return -1;
 		}
 	}
+
 	ttypc_common.virtuals[0].active = 1;
 	ttypc_common.cv = &ttypc_common.virtuals[0];
 	ttypc_common.cv->vram = ttypc_common.out_base;
@@ -151,20 +151,27 @@ int main(int argc, char *argv[])
 	ttypc_common.inp_irq = 1;
 	ttypc_common.inp_base = (void *)0x60;
 
+	mutexCreate(&ttypc_common.mutex);
+
 	/* Initialize keyboard */
 	_ttypc_kbd_init(&ttypc_common);
 
 	/* Register port in the namespace */
+
 	portCreate(&port);
+	toid.port = port;
 	if (portRegister(port, "/dev/tty0", &toid) < 0) {
 		printf("Can't register port %d\n", port);
 		return -1;
 	}
 
+
 	for (;;) {
 		msgRecv(port, &msg, &rid);
 
 		switch (msg.type) {
+		case mtOpen:
+			break;
 		case mtWrite:
 			msg.o.io.err = ttypc_write(0, 0, msg.i.data, msg.i.size);
 			break;
@@ -173,9 +180,11 @@ int main(int argc, char *argv[])
 			msg.o.size = 1;
 			msg.o.io.err = ttypc_read(0, 0, msg.o.data, msg.o.size);
 			break;
+		case mtClose:
+			break;
 		}
 
-		msgRespond(port, rid);
+		msgRespond(port, &msg, rid);
 	}
 
 	return 0;
