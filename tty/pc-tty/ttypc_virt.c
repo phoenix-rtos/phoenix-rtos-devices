@@ -5,7 +5,7 @@
  *
  * ttypc VT220 emulator (based on FreeBSD 4.4 pcvt)
  *
- * Copyright 2012 Phoenix Systems
+ * Copyright 2012, 2018 Phoenix Systems
  * Copyright 2007-2008 Pawel Pisarczyk
  * Author: Pawel Pisarczyk
  *
@@ -721,7 +721,7 @@ int _ttypc_virt_init(ttypc_virt_t *virt, size_t rbuffsz, ttypc_t *ttypc)
 	 * (MOD) add mapping attributes
 	 */
 	virt->ttypc = ttypc;
-	virt->mem = mmap(NULL, 4096, PROT_READ | PROT_WRITE, 0, NULL, 0);
+	virt->mem = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE, NULL, 0);
 	virt->memsz = 4096;
 	virt->attr = 0x7 << 8;
 

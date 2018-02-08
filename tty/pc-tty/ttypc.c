@@ -15,6 +15,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <sys/mman.h>
 #include <sys/threads.h>
@@ -115,13 +116,42 @@ static int ttypc_open(vnode_t *vnode, file_t* file)
 #endif
 
 
+void poolthr(void *arg)
+{
+	u32 port = (u32)arg;
+	msg_t msg;
+	unsigned int rid;
+
+	for (;;) {
+		msgRecv(port, &msg, &rid);
+
+		switch (msg.type) {
+		case mtOpen:
+			break;
+		case mtWrite:
+			msg.o.io.err = ttypc_write(0, 0, msg.i.data, msg.i.size);
+			break;
+		case mtRead:
+			msg.o.io.err = 0;
+			msg.o.size = 1;
+			msg.o.io.err = ttypc_read(0, 0, msg.o.data, msg.o.size);
+			break;
+		case mtClose:
+			break;
+		}
+
+		msgRespond(port, &msg, rid);
+	}
+	return;
+}
+
+
 int main(int argc, char *argv[])
 {
 	unsigned int i;
 	oid_t toid;
 	u32 port;
-	unsigned int rid;
-	msg_t msg;
+	void *stack;
 
 	printf("pc-tty: Initializing VGA VT220 terminal emulator (test) %s\n", "");
 
@@ -130,7 +160,6 @@ int main(int argc, char *argv[])
 	ttypc_common.color = (inb((void *)0x3cc) & 0x01);
 
 	ttypc_common.out_base = mmap(NULL, 0x1000, PROT_READ | PROT_WRITE, 0, OID_PHYSMEM, ttypc_common.color ? 0xb8000 : 0xb0000);
-
 	ttypc_common.out_crtc = ttypc_common.color ? (void *)0x3d4 : (void *)0x3b4;
 
 	/* Initialize virutal terminals and register devices */
@@ -165,27 +194,10 @@ int main(int argc, char *argv[])
 		return -1;
 	}
 
-
-	for (;;) {
-		msgRecv(port, &msg, &rid);
-
-		switch (msg.type) {
-		case mtOpen:
-			break;
-		case mtWrite:
-			msg.o.io.err = ttypc_write(0, 0, msg.i.data, msg.i.size);
-			break;
-		case mtRead:
-			msg.o.io.err = 0;
-			msg.o.size = 1;
-			msg.o.io.err = ttypc_read(0, 0, msg.o.data, msg.o.size);
-			break;
-		case mtClose:
-			break;
-		}
-
-		msgRespond(port, &msg, rid);
-	}
+	/* Run threads */
+	stack = malloc(2048);
+	beginthread(poolthr, 1, stack, 2048, (void *)port);
+	poolthr((void *)port);
 
 	return 0;
 }
