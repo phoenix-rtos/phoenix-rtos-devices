@@ -104,6 +104,7 @@ typedef struct _mod_t {
 	u32 size;
 	void *data;
 	char name[64];
+	char args[128];
 } mod_t;
 
 

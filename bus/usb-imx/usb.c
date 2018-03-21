@@ -98,6 +98,9 @@ static int dc_setup(setup_packet_t *setup)
 				dtd_exec(0, pIN, 0, DIR_IN);
 				strcpy(dc.mods[dc.mods_cnt].name, (const char *)OUT);
 				dc.mods[dc.mods_cnt].size = fsz;
+				OUT[0] = 0;
+				dtd_exec(1, pOUT, 0x80, DIR_OUT);
+				strcpy(dc.mods[dc.mods_cnt].args, (const char *)OUT);
 				dc.op = DC_OP_RECEIVE;
 			}
 			break;
@@ -419,7 +422,7 @@ void init_desc(void *conf)
 	pconf = (va2pa(cfg) & ~0xfff) + ((u32)cfg & 0xfff);
 
 	IN = conf + 0x500;
-	OUT = conf + 0x600;
+	OUT = conf + 0x700;
 
 	pIN = (va2pa((u32)IN) & ~0xfff) + ((u32)IN & 0xfff);
 	pOUT = (va2pa((u32)OUT) & ~0xfff) + ((u32)OUT & 0xfff);
@@ -523,10 +526,10 @@ void printf_mockup(void *arg)
 		if (size > 0) {
 			if (size >= 15) {
 				memcpy(buff, msg.i.data + offs, 15);
-				buff[15] = '\0';
+				buff[15] = 0;
 			} else {
 				memcpy(buff, msg.i.data + offs, size);
-				buff[size] = '\0';
+				buff[size] = 0;
 			}
 			debug(buff);
 			offs += 15;
@@ -544,10 +547,11 @@ int main(void)
 	endpt_init_t bulk_endpt;
 	int res;
 
-
 	oid_t oid;
 	char path[65];
-	char *argv[1] = { 0 };
+	char *arg_tok;
+	char *argv[16] = { 0 };
+	int argc;
 	u32 port;
 	int cnt = 0;
 
@@ -663,6 +667,16 @@ int main(void)
 
 	memcpy(path, "/init/", 6);
 	while (cnt < dc.mods_cnt) {
+		argc = 0;
+
+		arg_tok = strtok(dc.mods[cnt].args, ",");
+
+		while (arg_tok != NULL && argc < 15){
+			argv[argc] = arg_tok;
+			arg_tok = strtok(NULL, ",");
+			argc++;
+		}
+		argv[argc] = NULL;
 
 		memcpy(&path[6], dc.mods[cnt].name, strlen(dc.mods[cnt].name) + 1);
 		if (vfork() == 0) {
@@ -674,7 +688,7 @@ int main(void)
 		//usleep(200000);
 	}
 
-	printf("Bye\n");
+	//printf("Bye\n");
 	while(1) usleep(99999999);
 	return EOK;
 }
