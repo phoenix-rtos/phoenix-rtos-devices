@@ -19,8 +19,11 @@
 #include <sys/threads.h>
 #include <sys/mman.h>
 #include <sys/msg.h>
+#include <sys/debug.h>
+#include <sys/interrupt.h>
 #include <errno.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "usb.h"
 
@@ -40,7 +43,7 @@ u8 *IN;
 u8 *OUT;
 
 
-int dtd_exec(int endpt, u32 paddr, u32 sz, int dir);
+static int dtd_exec(int endpt, u32 paddr, u32 sz, int dir);
 
 
 static int dc_setup(setup_packet_t *setup)
@@ -166,7 +169,7 @@ static int dc_lf_intr(void)
 }
 
 
-int dc_intr(unsigned int intr, void *data)
+static int dc_intr(unsigned int intr, void *data)
 {
 	dc_hf_intr();
 	dc_lf_intr();
@@ -174,7 +177,7 @@ int dc_intr(unsigned int intr, void *data)
 }
 
 
-int ctrlqh_init(void)
+static int ctrlqh_init(void)
 {
 	u32 qh_addr;
 
@@ -186,7 +189,7 @@ int ctrlqh_init(void)
 
 	memset((void *)dc.endptqh, 0, 0x1000);
 
-	qh_addr = va2pa((void *)dc.endptqh) & ~0xfff;
+	qh_addr = ((u32)va2pa((void *)dc.endptqh)) & ~0xfff;
 
 	dc.endptqh[0].caps =  0x40 << 16; /* max 64 bytes */
 	dc.endptqh[0].caps |= 0x1 << 29;
@@ -198,12 +201,12 @@ int ctrlqh_init(void)
 	dc.endptqh[1].caps |=  0x1 << 15;
 	dc.endptqh[1].dtd_next = 1;
 
-	dc.endptqh[0].base = (va2pa(dc.endptqh) & ~0xfff) + (32 * sizeof(dqh_t));
+	dc.endptqh[0].base = (((u32)va2pa(dc.endptqh)) & ~0xfff) + (32 * sizeof(dqh_t));
 	dc.endptqh[0].size = 0x10;
 	dc.endptqh[0].head = (dtd_t *)(dc.endptqh + 32);
 	dc.endptqh[0].tail = (dtd_t *)(dc.endptqh + 32);
 
-	dc.endptqh[1].base = (va2pa(dc.endptqh) & ~0xfff) + (48 * sizeof(dqh_t));
+	dc.endptqh[1].base = (((u32)va2pa(dc.endptqh)) & ~0xfff) + (48 * sizeof(dqh_t));
 	dc.endptqh[1].size = 0x10;
 	dc.endptqh[1].head = (dtd_t *)(dc.endptqh + 48);
 	dc.endptqh[1].tail = (dtd_t *)(dc.endptqh + 48);
@@ -216,7 +219,7 @@ int ctrlqh_init(void)
 }
 
 
-int dtd_init(int endpt)
+static int dtd_init(int endpt)
 {
 	dtd_t *buff;
 	int qh = endpt * 2;
@@ -231,11 +234,11 @@ int dtd_init(int endpt)
 
 	memset(buff, 0, 0x1000);
 
-	dc.endptqh[qh].base = (va2pa(buff) & ~0xfff);
+	dc.endptqh[qh].base = (((u32)va2pa(buff)) & ~0xfff);
 	dc.endptqh[qh].size = 0x40;
 	dc.endptqh[qh].head = buff;
 	dc.endptqh[qh].tail = buff;
-	dc.endptqh[++qh].base = (va2pa(buff) & ~0xfff) + (64 * sizeof(dqh_t));
+	dc.endptqh[++qh].base = (((u32)va2pa(buff)) & ~0xfff) + (64 * sizeof(dqh_t));
 	dc.endptqh[++qh].size = 0x40;
 	dc.endptqh[++qh].head = buff + 64;
 	dc.endptqh[++qh].tail = buff + 64;
@@ -259,7 +262,7 @@ dtd_t *dtd_get(int endpt, int dir)
 }
 
 
-int dtd_build(dtd_t *dtd, u32 paddr, u32 size)
+static int dtd_build(dtd_t *dtd, u32 paddr, u32 size)
 {
 	if (size > 0x1000)
 		return -EINVAL;
@@ -279,7 +282,7 @@ int dtd_build(dtd_t *dtd, u32 paddr, u32 size)
 }
 
 
-int dtd_exec_chain(int endpt, u32 vaddr, int sz, int dir)
+static int dtd_exec_chain(int endpt, u32 vaddr, int sz, int dir)
 {
 	u32 qh, offs, shift;
 	int i, dcnt = 1;
@@ -293,7 +296,7 @@ int dtd_exec_chain(int endpt, u32 vaddr, int sz, int dir)
 		if (prev != NULL) {
 			dcnt++;
 			current = dtd_get(endpt, dir);
-			prev->dtd_next = (u32)(va2pa(current) & ~0xfff) + ((u32)current & 0xffe);
+			prev->dtd_next = (((u32)va2pa(current)) & ~0xfff) + ((u32)current & 0xffe);
 		}
 
 		memset(current, 0, sizeof(dtd_t));
@@ -303,7 +306,7 @@ int dtd_exec_chain(int endpt, u32 vaddr, int sz, int dir)
 		i = 0;
 
 		while (i < 4 && sz > 0) {
-			current->buff_ptr[i] = (va2pa(vaddr) & ~0xfff) + (vaddr & 0xfff);
+			current->buff_ptr[i] = (((u32)va2pa((void *)vaddr)) & ~0xfff) + (vaddr & 0xfff);
 			vaddr = (vaddr & ~0xfff) + 0x1000;
 			i++;
 			sz -= 0x1000;
@@ -334,7 +337,7 @@ int dtd_exec_chain(int endpt, u32 vaddr, int sz, int dir)
 }
 
 
-int dtd_exec(int endpt, u32 paddr, u32 sz, int dir)
+static int dtd_exec(int endpt, u32 paddr, u32 sz, int dir)
 {
 	int shift;
 	u32 offs;
@@ -404,7 +407,7 @@ int endpt_init(int endpt, endpt_init_t *endpt_init)
 }
 
 
-void init_desc(void *conf)
+static void init_desc(void *conf)
 {
 	dev_desc_t *dev;
 	conf_desc_t *cfg;
@@ -418,14 +421,14 @@ void init_desc(void *conf)
 	intf = conf + sizeof(conf_desc_t) + sizeof(dev_desc_t);
 	endpt = conf + sizeof(conf_desc_t) + sizeof(intf_desc_t) + sizeof(dev_desc_t);
 
-	pdev = (va2pa(dev) & ~0xfff) + ((u32)dev & 0xfff);
-	pconf = (va2pa(cfg) & ~0xfff) + ((u32)cfg & 0xfff);
+	pdev = (((u32)va2pa(dev)) & ~0xfff) + ((u32)dev & 0xfff);
+	pconf = (((u32)va2pa(cfg)) & ~0xfff) + ((u32)cfg & 0xfff);
 
 	IN = conf + 0x500;
 	OUT = conf + 0x700;
 
-	pIN = (va2pa((u32)IN) & ~0xfff) + ((u32)IN & 0xfff);
-	pOUT = (va2pa((u32)OUT) & ~0xfff) + ((u32)OUT & 0xfff);
+	pIN = (((u32)va2pa((void *)IN)) & ~0xfff) + ((u32)IN & 0xfff);
+	pOUT = (((u32)va2pa((void *)OUT)) & ~0xfff) + ((u32)OUT & 0xfff);
 
 	dev->len = sizeof(dev_desc_t);
 	dev->desc_type = DESC_DEV;
@@ -471,7 +474,7 @@ void init_desc(void *conf)
 }
 
 
-void mod_lookup(void *arg)
+static void mod_lookup(void *arg)
 {
 	msg_t msg;
 	unsigned int rid;
@@ -512,7 +515,7 @@ void mod_lookup(void *arg)
 }
 
 
-void printf_mockup(void *arg)
+static void printf_mockup(void *arg)
 {
 	msg_t msg;
 	unsigned int rid;
@@ -553,6 +556,7 @@ int main(void)
 	char *argv[16] = { 0 };
 	int argc;
 	u32 port;
+	u32 uart_port;
 	int cnt = 0;
 
 	void *conf = mmap(NULL, 0x1000, PROT_WRITE | PROT_READ, MAP_UNCACHED, OID_NULL, 0);
@@ -623,7 +627,7 @@ int main(void)
 		if (dc.op == DC_OP_RECEIVE) {
 
 			if (dc.mods_cnt >= MOD_MAX) {
-				printf("Maximum modules number reached (%d), stopping usb...\n", MOD_MAX);
+				//printf("Maximum modules number reached (%d), stopping usb...\n", MOD_MAX);
 				break;
 			} else
 				dc.op = DC_OP_NONE;
@@ -637,8 +641,8 @@ int main(void)
 		}
 	}
 
-	if (dc.op == DC_OP_EXIT)
-		printf("Modules transfer done (%d), stopping usb...\n", dc.mods_cnt);
+//	if (dc.op == DC_OP_EXIT)
+//		printf("Modules transfer done (%d), stopping usb...\n", dc.mods_cnt);
 
 	/* stopping device controller */
 	*(dc.base + usbcmd) &= ~1;
@@ -647,25 +651,28 @@ int main(void)
 	munmap((void *)((u32)dc.endptqh[2].head & ~0xfff), 0x1000);
 	munmap((void *)dc.endptqh, 0x1000);
 
-	if (portCreate(&port) != EOK)
+	if (portCreate(&uart_port) != EOK)
 		return 0;
 
-	if (portRegister(port, "/printf", &oid) != EOK)
+	if (portRegister(uart_port, "/p", &oid) != EOK)
 		return 0;
 
 	if (beginthread(printf_mockup, 4, stack0, sizeof(stack0), (void *)port) != EOK)
 		return 0;
 
 	if (portCreate(&port) != EOK)
-			return 0;
+		return 0;
 
 	if (portRegister(port, "/init", &oid) != EOK)
-			return 0;
+		return 0;
 
 	if (beginthread(mod_lookup, 4, stack, sizeof(stack), (void *)port) != EOK)
 		return 0;
 
 	memcpy(path, "/init/", 6);
+
+	portDestroy(uart_port);
+
 	while (cnt < dc.mods_cnt) {
 		argc = 0;
 
@@ -680,9 +687,10 @@ int main(void)
 
 		memcpy(&path[6], dc.mods[cnt].name, strlen(dc.mods[cnt].name) + 1);
 		if (vfork() == 0) {
-			if(execve(path, argv, NULL) != EOK)
-				printf("Failed to start %s\n", &path[6]);
-			return 0;
+			execve(path, argv, NULL);
+			//if(execve(path, argv, NULL) != EOK)
+			//	printf("Failed to start %s\n", &path[6]);
+			//return 0;
 		}
 		cnt++;
 		//usleep(200000);
