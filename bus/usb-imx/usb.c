@@ -138,7 +138,7 @@ static int dc_hf_intr(void)
 		dc.endptqh[1].head = dc.endptqh[1].tail;
 		dc.endptqh[2].head = dc.endptqh[2].tail;
 
-		while(*(dc.base + endptsetupstat) & 1);
+		while (*(dc.base + endptsetupstat) & 1);
 
 		dc_setup(&setup);
 	}
@@ -326,11 +326,11 @@ static int dtd_exec_chain(int endpt, u32 vaddr, int sz, int dir)
 	dc.endptqh[qh].dtd_token &= ~(1 << 7);
 
 	*(dc.base + endptprime) |= 1 << shift;
-	while(!(*(dc.base + endptprime) & (1 << shift)) && (*(dc.base + endptstat) & (1 << shift)));
+	while (!(*(dc.base + endptprime) & (1 << shift)) && (*(dc.base + endptstat) & (1 << shift)));
 
-	while(!(*(dc.base + endptcomplete) & (1 << shift)));
+	while (!(*(dc.base + endptcomplete) & (1 << shift)));
 	*(dc.base + endptcomplete) |= 1 << shift;
-	while(*(dc.base + usbsts) & 1);
+	while (*(dc.base + usbsts) & 1);
 	*(dc.base + usbsts) |= 1;
 	dc.endptqh[qh].head = dc.endptqh[qh].tail;
 	return 0;
@@ -357,11 +357,11 @@ static int dtd_exec(int endpt, u32 paddr, u32 sz, int dir)
 
 	/* prime the endpoint and wait for it to prime */
 	*(dc.base + endptprime) |= 1 << shift;
-	while(!(*(dc.base + endptprime) & (1 << shift)) && (*(dc.base + endptstat) & (1 << shift)));
+	while (!(*(dc.base + endptprime) & (1 << shift)) && (*(dc.base + endptstat) & (1 << shift)));
 
-	while(!(*(dc.base + endptcomplete) & (1 << shift)));
+	while (!(*(dc.base + endptcomplete) & (1 << shift)));
 	*(dc.base + endptcomplete) |= 1 << shift;
-	while(*(dc.base + usbsts) & 1);
+	while (*(dc.base + usbsts) & 1);
 	*(dc.base + usbsts) |= 1;
 	dc.endptqh[qh].head += 1;
 
@@ -522,7 +522,7 @@ static void printf_mockup(void *arg)
 	int offs = 0;
 	int size;
 	char buff[16] = { 0 };
-	while(1) {
+	while (1) {
 		msgRecv(0, &msg, &rid);
 		offs = 0;
 		size = msg.i.size;
@@ -603,7 +603,7 @@ int main(void)
 	*(dc.base + usbcmd) &= ~1;
 	*(dc.base + usbcmd) |= 1 << 1;
 	dc.status = DC_POWERED;
-	while(*(dc.base + usbcmd) & (1 << 1));
+	while (*(dc.base + usbcmd) & (1 << 1));
 
 	/* set usb mode to device */
 	*(dc.base + usbmode) |= 2;
@@ -697,6 +697,6 @@ int main(void)
 	}
 
 	//printf("Bye\n");
-	while(1) usleep(99999999);
+	while (1) usleep(99999999);
 	return EOK;
 }
