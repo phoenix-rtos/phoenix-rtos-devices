@@ -37,10 +37,10 @@ extern flashdrv_dma_t *flashdrv_dmanew(void);
 extern void flashdrv_dmadestroy(flashdrv_dma_t *dma);
 
 
-extern int flashdrv_issue(flashdrv_dma_t *dma, int c, int chip, void *addr, unsigned datasz, void *data);
+extern int flashdrv_issue(flashdrv_dma_t *dma, int c, int chip, void *addr, unsigned datasz, void *data, void *aux);
 
 
-extern int flashdrv_readback(flashdrv_dma_t *dma, int chip, int bufsz, void *buf);
+extern int flashdrv_readback(flashdrv_dma_t *dma, int chip, int bufsz, void *buf, void *aux);
 
 
 extern int flashdrv_wait4ready(flashdrv_dma_t *dma, int chip, int err);
