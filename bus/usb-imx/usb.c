@@ -262,7 +262,7 @@ dtd_t *dtd_get(int endpt, int dir)
 }
 
 
-static int dtd_build(dtd_t *dtd, u32 paddr, u32 size)
+int dtd_build(dtd_t *dtd, u32 paddr, u32 size)
 {
 	if (size > 0x1000)
 		return -EINVAL;
@@ -671,7 +671,7 @@ int main(void)
 
 	memcpy(path, "/init/", 6);
 
-	portDestroy(uart_port);
+//	portDestroy(uart_port);
 
 	while (cnt < dc.mods_cnt) {
 		argc = 0;
