@@ -69,7 +69,7 @@ enum { bch_ctrl = 0, bch_ctrl_set, bch_ctrl_clr, bch_ctrl_tog, bch_status0,
 	bch_mode_clr, bch_mode_tog, bch_encodeptr, bch_encodeptr_set,
 	bch_encodeptr_clr, bch_encodeptr_tog, bch_dataptr, bch_dataptr_set,
 	bch_dataptr_clr, bch_dataptr_tog, bch_metaptr, bch_metaptr_set,
-	bch_metaptr_clr, bch_metaptr_tog, bch_layoutselect = 112,
+	bch_metaptr_clr, bch_metaptr_tog, bch_layoutselect = 28,
 	bch_layoutselect_set, bch_layoutselect_clr, bch_layoutselect_tog,
 	bch_flash0layout0, bch_flash0layout0_set, bch_flash0layout0_clr,
 	bch_flash0layout0_tog, bch_flash0layout1, bch_flash0layout1_set,
@@ -202,8 +202,6 @@ struct {
 	unsigned pagesz, metasz;
 
 	int result, bch_status;
-	int icount;
-
 } flashdrv_common;
 
 
@@ -302,15 +300,15 @@ static int nand_cmdaddr(gpmi_dma3_t *cmd, int chip, void *buffer, u16 addrsz)
 }
 
 
-static int nand_read(gpmi_dma1_t *cmd, int chip, void *buffer, u16 bufsz)
+static int nand_read(gpmi_dma3_t *cmd, int chip, void *buffer, u16 bufsz)
 {
 	memset(cmd, 0, sizeof(*cmd));
 
-	cmd->dma.flags = dma_hot | dma_nandlock | dma_w4endcmd | dma_write | dma_pio(1);
+	cmd->dma.flags = dma_hot | dma_nandlock | dma_w4endcmd | dma_write | dma_pio(3);
 	cmd->dma.bufsz = bufsz;
 	cmd->dma.buffer = (u32)va2pa(buffer);
 
-	cmd->ctrl0 = chip * gpmi_chip | gpmi_read | gpmi_lock_cs | gpmi_data_bytes | gpmi_8bit | cmd->dma.bufsz;
+	cmd->ctrl0 = chip * gpmi_chip | gpmi_read | gpmi_data_bytes | gpmi_8bit | cmd->dma.bufsz;
 
 	return sizeof(*cmd);
 }
@@ -320,9 +318,9 @@ static int nand_readcompare(gpmi_dma3_t *cmd, int chip, u16 mask, u16 value)
 {
 	memset(cmd, 0, sizeof(*cmd));
 
-	cmd->dma.flags = dma_hot | dma_nandlock | dma_w4endcmd | dma_noxfer | dma_pio(1);
+	cmd->dma.flags = dma_hot | dma_nandlock | dma_w4endcmd | dma_noxfer | dma_pio(3);
 
-	cmd->ctrl0 = chip * gpmi_chip | gpmi_read_compare | gpmi_lock_cs | gpmi_data_bytes | gpmi_8bit | 1;
+	cmd->ctrl0 = chip * gpmi_chip | gpmi_read_compare | gpmi_data_bytes | gpmi_8bit | 1;
 	cmd->compare = mask << 16 | value;
 
 	return sizeof(*cmd);
@@ -338,7 +336,7 @@ static int nand_ecread(gpmi_dma6_t *cmd, int chip, void *payload, void *auxiliar
 	cmd->dma.bufsz = 0;
 	cmd->dma.buffer = 0;
 
-	cmd->ctrl0 = chip * gpmi_chip | gpmi_read | gpmi_lock_cs | gpmi_data_bytes | gpmi_8bit | bufsz;
+	cmd->ctrl0 = chip * gpmi_chip | gpmi_read | gpmi_data_bytes | gpmi_8bit | bufsz;
 	cmd->compare = 0;
 	cmd->eccctrl = 1 << 12 | eccmode;
 	cmd->ecccount = bufsz;
@@ -360,11 +358,11 @@ static int nand_disablebch(gpmi_dma3_t *cmd, int chip)
 }
 
 
-static int nand_write(gpmi_dma1_t *cmd, int chip, void *buffer, u16 bufsz)
+static int nand_write(gpmi_dma3_t *cmd, int chip, void *buffer, u16 bufsz)
 {
 	memset(cmd, 0, sizeof(*cmd));
 
-	cmd->dma.flags = dma_hot | dma_nandlock | dma_w4endcmd | dma_read | dma_pio(1);
+	cmd->dma.flags = dma_hot | dma_nandlock | dma_w4endcmd | dma_read | dma_pio(3);
 	cmd->dma.bufsz = bufsz;
 	cmd->dma.buffer = (u32)va2pa(buffer);
 
@@ -398,7 +396,7 @@ static int nand_w4ready(gpmi_dma1_t *cmd, int chip)
 	memset(cmd, 0, sizeof(*cmd));
 
 	cmd->dma.flags = dma_hot | dma_w4endcmd | dma_w4ready | dma_noxfer | dma_pio(1);
-	cmd->ctrl0 = chip * gpmi_chip | gpmi_wait_for_ready | gpmi_8bit | gpmi_lock_cs;
+	cmd->ctrl0 = chip * gpmi_chip | gpmi_wait_for_ready | gpmi_8bit;
 
 	return sizeof(*cmd);
 }
@@ -413,12 +411,6 @@ static void flashdrv_setDevClock(int dev, int state)
 	p.devclock.state = state;
 
 	platformctl(&p);
-}
-
-
-static int flashdrv_overflow(flashdrv_dma_t *dma)
-{
-	return dma->last != NULL && ((void *)dma->last - (void *)dma) > (SIZE_PAGE - 2 * sizeof(gpmi_dma6_t));
 }
 
 
@@ -449,9 +441,6 @@ int flashdrv_wait4ready(flashdrv_dma_t *dma, int chip, int err)
 	else
 		next = dma->buffer;
 
-	if (flashdrv_overflow(dma))
-		return -ENOMEM;
-
 	terminator = next;
 
 	if (err != EOK) {
@@ -466,9 +455,6 @@ int flashdrv_wait4ready(flashdrv_dma_t *dma, int chip, int err)
 
 	if (dma->first == NULL)
 		dma->first = dma->last;
-
-	if (flashdrv_overflow(dma))
-		return -ENOMEM;
 
 	sz = dma_check(next, terminator);
 	dma_sequence(dma->last, next);
@@ -486,9 +472,6 @@ int flashdrv_disablebch(flashdrv_dma_t *dma, int chip)
 		next += dma_size(dma->last);
 	else
 		next = dma->buffer;
-
-	if (flashdrv_overflow(dma))
-		return -ENOMEM;
 
 	nand_disablebch(next, chip);
 	dma_sequence(dma->last, next);
@@ -509,9 +492,6 @@ int flashdrv_finish(flashdrv_dma_t *dma)
 		next += dma_size(dma->last);
 	else
 		next = dma->buffer;
-
-	if (flashdrv_overflow(dma))
-		return -ENOMEM;
 
 	dma_terminate(next, EOK);
 	dma_sequence(dma->last, next);
@@ -543,9 +523,6 @@ int flashdrv_issue(flashdrv_dma_t *dma, int c, int chip, void *addr, unsigned da
 	if (!commands[c].data && datasz)
 		return -EINVAL;
 
-	if (flashdrv_overflow(dma))
-		return -ENOMEM;
-
 	cmdaddr = next;
 	cmdaddr[0] = commands[c].cmd1;
 	memcpy(cmdaddr + 1, addr, commands[c].addrsz);
@@ -561,9 +538,6 @@ int flashdrv_issue(flashdrv_dma_t *dma, int c, int chip, void *addr, unsigned da
 		dma->first = dma->last;
 
 	if (datasz) {
-		if (flashdrv_overflow(dma))
-			return -ENOMEM;
-
 		if (aux == NULL)
 			/* No error correction */
 			sz = nand_write(next, chip, data, datasz);
@@ -576,9 +550,6 @@ int flashdrv_issue(flashdrv_dma_t *dma, int c, int chip, void *addr, unsigned da
 	}
 
 	if (commands[c].cmd2) {
-		if (flashdrv_overflow(dma))
-			return -ENOMEM;
-
 		sz = nand_cmdaddr(next, chip, cmdaddr + 7, 0);
 		dma_sequence(dma->last, next);
 		dma->last = next;
@@ -596,9 +567,6 @@ int flashdrv_readback(flashdrv_dma_t *dma, int chip, int bufsz, void *buf, void 
 		next += dma_size(dma->last);
 	else
 		next = dma->buffer;
-
-	if (flashdrv_overflow(dma))
-		return -ENOMEM;
 
 	if (aux == NULL)
 		/* No error correction */
@@ -626,9 +594,6 @@ int flashdrv_readcompare(flashdrv_dma_t *dma, int chip, u16 mask, u16 value, int
 	else
 		next = dma->buffer;
 
-	if (flashdrv_overflow(dma))
-		return -ENOMEM;
-
 	terminator = next;
 	sz = dma_terminate(terminator, err);
 	next += sz;
@@ -649,9 +614,9 @@ int flashdrv_readcompare(flashdrv_dma_t *dma, int chip, u16 mask, u16 value, int
 }
 
 
-void flashdrv_reset(flashdrv_dma_t *dma)
+int flashdrv_reset(flashdrv_dma_t *dma)
 {
-	int chip = 0, channel = 0;
+	int chip = 0, channel = 0, err;
 	dma->first = NULL;
 	dma->last = NULL;
 
@@ -661,11 +626,14 @@ void flashdrv_reset(flashdrv_dma_t *dma)
 	mutexLock(flashdrv_common.mutex);
 	dma_run((dma_t *)dma->first, channel);
 	condWait(flashdrv_common.dma_cond, flashdrv_common.mutex, 0);
+	err = flashdrv_common.result;
 	mutexUnlock(flashdrv_common.mutex);
+
+	return err;
 }
 
 
-int flashdrv_write(flashdrv_dma_t *dma, u32 paddr, void *data, void *aux)
+int flashdrv_write(flashdrv_dma_t *dma, u32 paddr, void *data, char *aux)
 {
 	int chip = 0, channel = 0;
 	char addr[5] = { 0 };
@@ -692,7 +660,7 @@ int flashdrv_write(flashdrv_dma_t *dma, u32 paddr, void *data, void *aux)
 }
 
 
-int flashdrv_read(flashdrv_dma_t *dma, u32 paddr, void *data, void *aux)
+int flashdrv_read(flashdrv_dma_t *dma, u32 paddr, void *data, flashdrv_meta_t *aux)
 {
 	int chip = 0, channel = 0, sz = 0, result;
 	char addr[5] = { 0 };
@@ -701,7 +669,7 @@ int flashdrv_read(flashdrv_dma_t *dma, u32 paddr, void *data, void *aux)
 	if (aux != NULL)
 		sz = flashdrv_common.pagesz;
 	else
-		sz = flashdrv_common.metasz;
+		sz = 0;
 
 	dma->first = NULL;
 	dma->last = NULL;
@@ -710,8 +678,8 @@ int flashdrv_read(flashdrv_dma_t *dma, u32 paddr, void *data, void *aux)
 	flashdrv_issue(dma, flash_read_page, chip, addr, 0, NULL, NULL);
 	flashdrv_wait4ready(dma, chip, EOK);
 	flashdrv_readback(dma, chip, sz, data, aux);
-	flashdrv_wait4ready(dma, chip, EOK);
 	flashdrv_disablebch(dma, chip);
+	flashdrv_wait4ready(dma, chip, EOK);
 	flashdrv_finish(dma);
 
 	mutexLock(flashdrv_common.mutex);
@@ -733,6 +701,7 @@ int flashdrv_erase(flashdrv_dma_t *dma, u32 paddr)
 
 	flashdrv_wait4ready(dma, chip, EOK);
 	flashdrv_issue(dma, flash_erase_block, chip, &paddr, 0, NULL, NULL);
+	flashdrv_wait4ready(dma, chip, EOK);
 	flashdrv_finish(dma);
 
 	mutexLock(flashdrv_common.mutex);
@@ -742,6 +711,59 @@ int flashdrv_erase(flashdrv_dma_t *dma, u32 paddr)
 	mutexUnlock(flashdrv_common.mutex);
 
 	return result;
+}
+
+
+int flashdrv_writeraw(flashdrv_dma_t *dma, u32 paddr, void *data, int sz)
+{
+	int chip = 0, channel = 0, err;
+	char addr[5] = { 0 };
+	memcpy(addr + 2, &paddr, 3);
+
+	dma->first = NULL;
+	dma->last = NULL;
+
+	flashdrv_wait4ready(dma, chip, EOK);
+	flashdrv_issue(dma, flash_program_page, chip, addr, sz, data, NULL);
+	flashdrv_wait4ready(dma, chip, EOK);
+	flashdrv_issue(dma, flash_read_status, 0, NULL, 0, NULL, NULL);
+	flashdrv_readcompare(dma, 0, 0x3, 0, -1);
+	flashdrv_finish(dma);
+
+	mutexLock(flashdrv_common.mutex);
+	dma_run((dma_t *)dma->first, channel);
+	condWait(flashdrv_common.dma_cond, flashdrv_common.mutex, 0);
+	err = flashdrv_common.result;
+	mutexUnlock(flashdrv_common.mutex);
+
+	return err;
+}
+
+
+int flashdrv_readraw(flashdrv_dma_t *dma, u32 paddr, void *data, int sz)
+{
+	int chip = 0, channel = 0, err;
+	char addr[5] = { 0 };
+	memcpy(addr + 2, &paddr, 3);
+
+	dma->first = NULL;
+	dma->last = NULL;
+
+	flashdrv_wait4ready(dma, chip, EOK);
+	flashdrv_issue(dma, flash_read_page, chip, addr, 0, NULL, NULL);
+	flashdrv_wait4ready(dma, chip, EOK);
+	flashdrv_readback(dma, chip, sz, data, NULL);
+	flashdrv_wait4ready(dma, chip, EOK);
+	// flashdrv_disablebch(dma, chip);
+	flashdrv_finish(dma);
+
+	mutexLock(flashdrv_common.mutex);
+	dma_run((dma_t *)dma->first, channel);
+	condWait(flashdrv_common.dma_cond, flashdrv_common.mutex, 0);
+	err = flashdrv_common.result;
+	mutexUnlock(flashdrv_common.mutex);
+
+	return err;
 }
 
 
@@ -763,8 +785,8 @@ void flashdrv_init(void)
 	flashdrv_common.bch  = mmap(NULL, 4 * SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x1808000);
 	flashdrv_common.mux  = mmap(NULL, 4 * SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x20e0000);
 
-	flashdrv_common.pagesz = 4096 + 218;
-	flashdrv_common.metasz = 36;
+	flashdrv_common.pagesz = 4096 + 224;
+	flashdrv_common.metasz = 16 + 26;
 
 	flashdrv_common.dma_cond = flashdrv_common.bch_cond = flashdrv_common.mutex = 0;
 
@@ -779,13 +801,6 @@ void flashdrv_init(void)
 	flashdrv_setDevClock(rawnand_u_bch_input_apb, 3);
 
 	flashdrv_setDevClock(iomuxc, 3);
-	flashdrv_setDevClock(iomux_ipt_clk_io, 3);
-	flashdrv_setDevClock(iomuxc_gpr, 3);
-	flashdrv_setDevClock(iomuxc_snvs, 3);
-	flashdrv_setDevClock(iomux_snvs_gpr, 3);
-
-	flashdrv_setDevClock(p301_mx6qper1_bch, 3);
-	flashdrv_setDevClock(cxapbsyncbridge_slave, 3);
 
 	*(flashdrv_common.dma + apbh_ctrl0) &= ~(1 << 31 | 1 << 30);
 	*(flashdrv_common.gpmi + gpmi_ctrl0) &= ~(1 << 31 | 1 << 30);
@@ -817,8 +832,8 @@ void flashdrv_init(void)
 	*(flashdrv_common.bch + bch_ctrl_set) = 1 << 8;
 	*(flashdrv_common.bch + bch_layoutselect) = 0;
 
-	/* 8 blocks/page, 10 bytes metadata, ECC16, GF13, 0 word data0 */
-	*(flashdrv_common.bch + bch_flash0layout0) = 8 << 24 | 10 << 16 | 8 << 11 | 0 << 10 | 0;
+	/* 8 blocks/page, 16 bytes metadata, ECC16, GF13, 0 word data0 */
+	*(flashdrv_common.bch + bch_flash0layout0) = 8 << 24 | 16 << 16 | 8 << 11 | 0 << 10 | 0;
 
 	/* 4096 + 218 page size, ECC14, GF13, 128 word dataN (512 bytes) */
 	*(flashdrv_common.bch + bch_flash0layout1) = flashdrv_common.pagesz << 16 | 7 << 11 | 0 << 10 | 128;
@@ -831,16 +846,18 @@ void flashdrv_init(void)
 
 int main(int argc, char **argv)
 {
+	/* run some tests */
+
 	flashdrv_dma_t *dma;
 	int err;
 
-	char *buffer = mmap(NULL, 16 * SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_PHYSMEM, 0x900000);
+	void *buffer = mmap(NULL, 16 * SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_PHYSMEM, 0x900000);
 
 	memset(buffer, 0, 16 * SIZE_PAGE);
 
 	for (int i = 0; i < 0x1000; ++i) {
-		buffer[i] = 0xb2;
-		buffer[0x1000 + i] = 0x8a;
+		((char *)buffer)[i] = 0xb2;
+		((char *)buffer)[0x1000 + i] = 0x8a;
 	}
 
 
@@ -860,120 +877,55 @@ int main(int argc, char **argv)
 	err = flashdrv_write(dma, 0, buffer, buffer + 0x1000);
 	printf("%d\n", err);
 
+	printf("readraw ");
+	err = flashdrv_readraw(dma, 0, buffer + 0x5000, flashdrv_common.pagesz);
+	printf("%d\n", err);
+
+
 	printf("read ");
 	err = flashdrv_read(dma, 0, buffer + 0x2000, buffer + 0x3000);
+	printf("%d\n", err);
+
+	printf("read ");
+	err = flashdrv_read(dma, 0, buffer + 0xb000, buffer + 0xc000);
+	printf("%d\n", err);
+
+	printf("erase\n");
+	flashdrv_erase(dma, 0);
+
+
+	*((char *)buffer + 0x5100) |= 1;
+
+	printf("writeraw EVIL ");
+	err = flashdrv_writeraw(dma, 0, buffer + 0x5000, flashdrv_common.pagesz);
+	printf("%d\n", err);
+
+
+
+	printf("readraw ");
+	err = flashdrv_readraw(dma, 0, buffer + 0x9000, flashdrv_common.pagesz);
 	printf("%d\n", err);
 
 	printf("readmeta ");
 	err = flashdrv_read(dma, 0, NULL, buffer + 0x4000);
 	printf("%d\n", err);
 
+
+	printf("read ");
+	err = flashdrv_read(dma, 0, buffer + 0x7000, buffer + 0x8000);
+	printf("%d\n", err);
+
+	printf("read ");
+	err = flashdrv_read(dma, 0, buffer + 0xd000, buffer + 0xe000);
+	printf("%d\n", err);
+
+
 	printf("done\n");
 
 
-
+usleep(1000000);
 __asm__ volatile ("1: b 1b");
 
-
-
-
-
-
-#if 0
-	struct {
-		char pages[3][4096];
-		char address[8];
-		char status;
-	} *buffer;
-
-	void *buffer = mmap(NULL, 16 * SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_PHYSMEM, 0x900000);
-
-	buffer = mmap(NULL, 4 * SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0);
-	memset(buffer->address, 0, 5);
-
-	buffer->address[2] = 22;
-
-	buffer->status = 0;
-
-	for (int i = 0; i < 0x1000; ++i)
-		buffer->pages[0][i] = 0x11; //(unsigned char)i;
-
-	memset(buffer->pages[1], 0, 4096);
-
-	flashdrv_init();
-
-	printf("p0: %p, p1: %p\n", va2pa(buffer->pages[0]), va2pa(buffer->pages[1]));
-
-	dma = flashdrv_dmanew();
-
-	do {
-		if ((err = flashdrv_issue(dma, flash_reset, 0, NULL, 0, NULL, NULL)) < 0)
-			break;
-		if ((err = flashdrv_wait4ready(dma, 0, -1)) < 0)
-			break;
-#if 1
-		if ((err = flashdrv_issue(dma, flash_program_page, 0, buffer->address, 4096 + 218, buffer->pages[0], buffer->pages[2])) < 0)
-			break;
-		if ((err = flashdrv_wait4ready(dma, 0, -2)) < 0)
-			break;
-		if ((err = flashdrv_issue(dma, flash_read_status, 0, NULL, 0, NULL, NULL)) < 0)
-			break;
-		if ((err = flashdrv_readback(dma, 0, 1, &buffer->status, NULL)) < 0)
-			break;
-		if ((err = flashdrv_wait4ready(dma, 0, -3)) < 0)
-			break;
-#endif
-#if 1
-		if ((err = flashdrv_issue(dma, flash_read_page, 0, buffer->address, 0, NULL, NULL)) < 0)
-			break;
-		if ((err = flashdrv_wait4ready(dma, 0, EOK)) < 0)
-			break;
-		if ((err = flashdrv_readback(dma, 0, 4096 + 218, buffer->pages[1], buffer->pages[2])) < 0)
-			break;
-		//if ((err = flashdrv_disablebch(dma, 0)) < 0)
-		//	break;
-#endif
-		if ((err = flashdrv_finish(dma)) < 0)
-			break;
-	} while (0);
-
-	if (!err) {
-		printf("run!\n");
-		flashdrv_rundma(dma);
-	}
-
-#if 0
-usleep(1000 * 1000);
-
-	for (int i = 0; i < 4096; ++i) {
-		printf("%2x ", buffer->pages[1][i]);
-	}
-#endif
-#if 0
-	for (;;) {
-		printf("bch: ctrl: %x stat: %x int stat: %x, gpmi: %x (debug: %x %x %x) dma: %x status: %x icount: %x\n",  *(flashdrv_common.bch + bch_ctrl), *(flashdrv_common.bch + bch_status0), flashdrv_common.bch_status,
-			*(flashdrv_common.gpmi + gpmi_stat), *(flashdrv_common.gpmi + gpmi_debug), *(flashdrv_common.gpmi + gpmi_debug2), *(flashdrv_common.gpmi + gpmi_debug3), *(flashdrv_common.dma + apbh_ch0_debug1), buffer->status, flashdrv_common.icount);
-		usleep(500 * 1000);
-	}
-#endif
-	// printf("id: %x %x %x %x %x\n", buffer->data[0], buffer->data[1], buffer->data[2], buffer->data[3], buffer->data[4]);
-
-	printf("write status: %x bch: %x  result: %x\n", buffer->status, flashdrv_common.bch_status, flashdrv_common.result);
-
-	usleep(1000000);
-
-	flashdrv_dmadestroy(dma);
-
-	err = 0;
-	for (int i = 0; i < 4096; ++i) {
-		if (buffer->pages[0][i] != buffer->pages[1][i])
-			++err;
-	}
-
-	printf("%d errors!\n", err);
-
-	for (;;)
-		usleep(10000000);
-#endif
+	return 0;
 }
 
