@@ -247,7 +247,7 @@ static int dtd_init(int endpt)
 }
 
 
-dtd_t *dtd_get(int endpt, int dir)
+static dtd_t *dtd_get(int endpt, int dir)
 {
 	int qh = endpt * 2 + dir;
 	u32 base_addr;
@@ -262,12 +262,10 @@ dtd_t *dtd_get(int endpt, int dir)
 }
 
 
-int dtd_build(dtd_t *dtd, u32 paddr, u32 size)
+static int dtd_build(dtd_t *dtd, u32 paddr, u32 size)
 {
 	if (size > 0x1000)
 		return -EINVAL;
-
-	memset(dtd, 0, sizeof(dtd_t));
 
 	dtd->dtd_next = 1;
 	if (size)
@@ -621,13 +619,13 @@ int main(void)
 	while (dc.op != DC_OP_EXIT) {
 
 		mutexLock(dc.lock);
-		condWait(dc.cond, dc.lock, 5000);
+		condWait(dc.cond, dc.lock, 0);
 		mutexUnlock(dc.lock);
 
 		if (dc.op == DC_OP_RECEIVE) {
 
 			if (dc.mods_cnt >= MOD_MAX) {
-				//printf("Maximum modules number reached (%d), stopping usb...\n", MOD_MAX);
+				printf("Maximum modules number reached (%d), stopping usb...\n", MOD_MAX);
 				break;
 			} else
 				dc.op = DC_OP_NONE;
@@ -641,10 +639,11 @@ int main(void)
 		}
 	}
 
-//	if (dc.op == DC_OP_EXIT)
-//		printf("Modules transfer done (%d), stopping usb...\n", dc.mods_cnt);
+	if (dc.op == DC_OP_EXIT)
+		printf("Modules transfer done (%d), stopping usb...\n", dc.mods_cnt);
 
 	/* stopping device controller */
+	*(dc.base + usbintr) = 0;
 	*(dc.base + usbcmd) &= ~1;
 	munmap(conf, 0x1000);
 	munmap((void *)dc.base, 0x1000);
@@ -654,7 +653,7 @@ int main(void)
 	if (portCreate(&uart_port) != EOK)
 		return 0;
 
-	if (portRegister(uart_port, "/p", &oid) != EOK)
+	if (portRegister(uart_port, "/printf", &oid) != EOK)
 		return 0;
 
 	if (beginthread(printf_mockup, 4, stack0, sizeof(stack0), (void *)port) != EOK)
@@ -671,7 +670,8 @@ int main(void)
 
 	memcpy(path, "/init/", 6);
 
-//	portDestroy(uart_port);
+//	printf("uart_port destroy: %u\n", uart_port);
+	portDestroy(uart_port);
 
 	while (cnt < dc.mods_cnt) {
 		argc = 0;
