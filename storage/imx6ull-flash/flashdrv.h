@@ -40,7 +40,7 @@ enum {
 
 typedef struct _flashdrv_meta_t {
 	char metadata[16];
-	char errors[8];
+	char errors[9];
 } flashdrv_meta_t;
 
 

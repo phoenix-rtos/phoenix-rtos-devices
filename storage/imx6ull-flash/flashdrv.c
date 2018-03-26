@@ -647,7 +647,7 @@ int flashdrv_write(flashdrv_dma_t *dma, u32 paddr, void *data, char *aux)
 	flashdrv_issue(dma, flash_program_page, chip, addr, flashdrv_common.pagesz, data, aux);
 	flashdrv_wait4ready(dma, chip, EOK);
 	flashdrv_issue(dma, flash_read_status, 0, NULL, 0, NULL, NULL);
-	flashdrv_readcompare(dma, 0, 0x3, 0, -1);
+	flashdrv_readcompare(dma, chip, 0x3, 0, -1);
 	flashdrv_finish(dma);
 
 	mutexLock(flashdrv_common.mutex);
@@ -669,7 +669,7 @@ int flashdrv_read(flashdrv_dma_t *dma, u32 paddr, void *data, flashdrv_meta_t *a
 	if (aux != NULL)
 		sz = flashdrv_common.pagesz;
 	else
-		sz = 0;
+		sz = flashdrv_common.metasz;
 
 	dma->first = NULL;
 	dma->last = NULL;
@@ -679,7 +679,6 @@ int flashdrv_read(flashdrv_dma_t *dma, u32 paddr, void *data, flashdrv_meta_t *a
 	flashdrv_wait4ready(dma, chip, EOK);
 	flashdrv_readback(dma, chip, sz, data, aux);
 	flashdrv_disablebch(dma, chip);
-	flashdrv_wait4ready(dma, chip, EOK);
 	flashdrv_finish(dma);
 
 	mutexLock(flashdrv_common.mutex);
@@ -687,6 +686,7 @@ int flashdrv_read(flashdrv_dma_t *dma, u32 paddr, void *data, flashdrv_meta_t *a
 	condWait(flashdrv_common.bch_cond, flashdrv_common.mutex, 0);
 	condWait(flashdrv_common.dma_cond, flashdrv_common.mutex, 0);
 	result = flashdrv_common.bch_status;
+
 	mutexUnlock(flashdrv_common.mutex);
 
 	return result;
@@ -702,6 +702,7 @@ int flashdrv_erase(flashdrv_dma_t *dma, u32 paddr)
 	flashdrv_wait4ready(dma, chip, EOK);
 	flashdrv_issue(dma, flash_erase_block, chip, &paddr, 0, NULL, NULL);
 	flashdrv_wait4ready(dma, chip, EOK);
+	flashdrv_readcompare(dma, chip, 0x3, 0, -1);
 	flashdrv_finish(dma);
 
 	mutexLock(flashdrv_common.mutex);
@@ -753,8 +754,8 @@ int flashdrv_readraw(flashdrv_dma_t *dma, u32 paddr, void *data, int sz)
 	flashdrv_issue(dma, flash_read_page, chip, addr, 0, NULL, NULL);
 	flashdrv_wait4ready(dma, chip, EOK);
 	flashdrv_readback(dma, chip, sz, data, NULL);
+	flashdrv_disablebch(dma, chip);
 	flashdrv_wait4ready(dma, chip, EOK);
-	// flashdrv_disablebch(dma, chip);
 	flashdrv_finish(dma);
 
 	mutexLock(flashdrv_common.mutex);
@@ -847,11 +848,68 @@ void flashdrv_init(void)
 int main(int argc, char **argv)
 {
 	/* run some tests */
-
+#if 0
+	void *data, *meta;
 	flashdrv_dma_t *dma;
 	int err;
+	unsigned last_block = 0xff << 6;
+	int i, b;
 
+	unsigned long long corrected_errors = 0, uncorrectable_blocks = 0, failed_erase = 0, failed_write = 0, error_erased = 0;
+
+	flashdrv_meta_t *m;
+
+	flashdrv_init();
+
+	dma = flashdrv_dmanew();
+
+	data = mmap(NULL, SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0);
+	m = meta = mmap(NULL, SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0);
+
+	for (int i = 0; i < 0x1000; ++i) {
+		((char *)data)[i] = (char)i;
+		((char *)meta)[i] = 0xba;
+	}
+
+	printf("reset\n");
+	flashdrv_reset(dma);
+
+	for (i = 0; ; ++i) {
+		printf("%d: ", i);
+
+		if ((err = flashdrv_erase(dma, last_block)))
+			failed_erase++;
+
+		if ((err = flashdrv_write(dma, last_block, data, meta)))
+			failed_write++;
+
+		if ((err = flashdrv_read(dma, last_block, data, meta))) {
+			for (b = 0; b < 9; ++b) {
+				switch (m->errors[b]) {
+					case flash_no_errors:
+						break;
+					case flash_uncorrectable:
+						uncorrectable_blocks++;
+						break;
+					case flash_erased:
+						error_erased++;
+						break;
+					default:
+						corrected_errors += m->errors[b];
+						break;
+				}
+			}
+		}
+
+		printf(" corrected: %llu uncorrectable: %llu failed erase: %llu failed write: %llu erased: %llu\n",
+			corrected_errors, uncorrectable_blocks, failed_erase, failed_write, error_erased);
+	}
+
+
+#else
 	void *buffer = mmap(NULL, 16 * SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_PHYSMEM, 0x900000);
+	flashdrv_dma_t *dma;
+	int err;
 
 	memset(buffer, 0, 16 * SIZE_PAGE);
 
@@ -925,7 +983,7 @@ int main(int argc, char **argv)
 
 usleep(1000000);
 __asm__ volatile ("1: b 1b");
-
+#endif
 	return 0;
 }
 
