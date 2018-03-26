@@ -31,25 +31,41 @@ enum {
 };
 
 
+enum {
+	flash_no_errors = 0,
+	flash_uncorrectable = 0xfe,
+	flash_erased = 0xff
+};
+
+
+typedef struct _flashdrv_meta_t {
+	char metadata[16];
+	char errors[8];
+} flashdrv_meta_t;
+
+
 extern flashdrv_dma_t *flashdrv_dmanew(void);
 
 
 extern void flashdrv_dmadestroy(flashdrv_dma_t *dma);
 
 
-extern int flashdrv_issue(flashdrv_dma_t *dma, int c, int chip, void *addr, unsigned datasz, void *data, void *aux);
+extern int flashdrv_reset(flashdrv_dma_t *dma);
 
 
-extern int flashdrv_readback(flashdrv_dma_t *dma, int chip, int bufsz, void *buf, void *aux);
+extern int flashdrv_write(flashdrv_dma_t *dma, u32 paddr, void *data, char *metadata);
 
 
-extern int flashdrv_wait4ready(flashdrv_dma_t *dma, int chip, int err);
+extern int flashdrv_read(flashdrv_dma_t *dma, u32 paddr, void *data, flashdrv_meta_t *meta);
 
 
-extern int flashdrv_finish(flashdrv_dma_t *dma);
+extern int flashdrv_erase(flashdrv_dma_t *dma, u32 paddr);
 
 
-extern void flashdrv_rundma(flashdrv_dma_t *dma);
+extern int flashdrv_writeraw(flashdrv_dma_t *dma, u32 paddr, void *data, int sz);
+
+
+extern int flashdrv_readraw(flashdrv_dma_t *dma, u32 paddr, void *data, int sz);
 
 
 extern void flashdrv_init(void);
