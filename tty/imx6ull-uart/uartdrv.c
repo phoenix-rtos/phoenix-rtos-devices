@@ -57,7 +57,6 @@ static int uart_write(void *data, size_t size)
 	return i;
 }
 
-int del = 0;
 
 static int uart_read(void *data, size_t size)
 {
@@ -67,8 +66,10 @@ static int uart_read(void *data, size_t size)
 	mutexLock(uart.lock);
 
 	for (i = 0; i < size; i++) {
+		/* wait for buffer to fill */
 		while (uart.rx_head == uart.rx_tail)
 			condWait(uart.rx_cond, uart.lock, 0);
+		/* read buffer */
 		*(char *)(data + i) = uart.rx_buff[uart.rx_head];
 		head = uart.rx_head + 1;
 		uart.rx_head = (uart.rx_head & ~0xff) + (head & 0xff);
@@ -78,6 +79,7 @@ static int uart_read(void *data, size_t size)
 
 	return i;
 }
+
 
 void uart_thr(void *arg)
 {
@@ -119,18 +121,21 @@ static int uart_intr(unsigned int intr, void *data)
 	return uart.cond;
 }
 
+
 static void uart_intrthr(void *arg)
 {
 	char c;
 	int chr = 0;
 	int tail;
 
-	while (1) {
+	for (;;) {
 
 		mutexLock(uart.lock);
+		/* wait for character or transmit data */
 		if (!(*(uart.base + usr1) & (1 << 9)) && uart.tx_head == uart.tx_tail)
 			condWait(uart.cond, uart.lock, 0);
 
+		/* receive */
 		if ((*(uart.base + usr1) & (1 << 9))) {
 			c = *(uart.base + urxd);
 
@@ -147,6 +152,7 @@ static void uart_intrthr(void *arg)
 				}
 			}
 
+			/* echo */
 			if (c) {
 				chr++;
 				uart.rx_buff[uart.rx_tail] = c;
@@ -164,6 +170,7 @@ static void uart_intrthr(void *arg)
 			}
 		}
 
+		/* transmit */
 		while (uart.tx_head != uart.tx_tail) {
 			if (*(uart.base + usr1) & (1 << 13))
 				*(uart.base + utxd) = uart.tx_buff[uart.tx_head++];
@@ -202,7 +209,7 @@ void main(void)
 	platformctl(&uart_clk);
 	*(uart.base + ucr2) &= ~0;
 
-	while(!(*(uart.base + ucr2) & 1));
+	while (!(*(uart.base + ucr2) & 1));
 
 	if (condCreate(&uart.tx_cond) != EOK)
 		return;
