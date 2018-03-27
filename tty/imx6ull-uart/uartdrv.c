@@ -228,8 +228,8 @@ void main(void)
 	/* enable uart and rx ready interrupt */
 	*(uart.base + ucr1) |= 0x0201;
 
-	/* soft reset, tx&rx enable, 8bit transmit, parity enabled */
-	*(uart.base + ucr2) = 0x4127;
+	/* soft reset, tx&rx enable, 8bit transmit, no parity (8N1) */
+	*(uart.base + ucr2) = 0x4027;
 	*(uart.base + ucr3) = 0x704;
 
 	if (portCreate(&port) != EOK)
