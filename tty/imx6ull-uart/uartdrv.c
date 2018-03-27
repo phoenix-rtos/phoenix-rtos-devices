@@ -152,13 +152,13 @@ static void uart_intrthr(void *arg)
 				}
 			}
 
-			/* echo */
 			if (c) {
 				chr++;
 				uart.rx_buff[uart.rx_tail] = c;
 				tail = uart.rx_tail + 1;
 				uart.rx_tail = (uart.rx_tail & ~0xff) + (tail & 0xff);
 
+				/* echo */
 				if (c == '\b') {
 					chr--;
 					uart.tx_buff[uart.tx_tail++] = c;

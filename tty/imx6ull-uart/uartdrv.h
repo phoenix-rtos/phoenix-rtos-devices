@@ -13,6 +13,8 @@
  * %LICENSE%
  */
 
+#ifndef _UARTDRV_H_
+#define _UARTDRV_H_
 
 enum { urxd = 0, utxd = 16, ucr1 = 32, ucr2, ucr3, ucr4, ufcr, usr1, usr2,
 	uesc, utim, ubir, ubmr, ubrc, onems, uts, umcr };
@@ -34,3 +36,5 @@ typedef struct {
 	handle_t cond;
 	handle_t lock;
 } uart_t;
+
+#endif /* _UARTDRV_H_ */
