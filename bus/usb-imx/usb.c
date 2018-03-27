@@ -670,7 +670,6 @@ int main(void)
 
 	memcpy(path, "/init/", 6);
 
-//	printf("uart_port destroy: %u\n", uart_port);
 	portDestroy(uart_port);
 
 	while (cnt < dc.mods_cnt) {
@@ -687,16 +686,12 @@ int main(void)
 
 		memcpy(&path[6], dc.mods[cnt].name, strlen(dc.mods[cnt].name) + 1);
 		if (vfork() == 0) {
-			execve(path, argv, NULL);
-			//if(execve(path, argv, NULL) != EOK)
-			//	printf("Failed to start %s\n", &path[6]);
-			//return 0;
+			if(execve(path, argv, NULL) != EOK)
+				printf("Failed to start %s\n", &path[6]);
+			return 0;
 		}
 		cnt++;
-		//usleep(200000);
 	}
 
-	//printf("Bye\n");
-	while (1) usleep(99999999);
 	return EOK;
 }

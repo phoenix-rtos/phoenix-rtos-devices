@@ -1,10 +1,10 @@
 #
 # Phoenix-RTOS
 #
-# dummyfs - dummy filesystem driver
+# imx6ull-usb-loader - imx6ull usb module loader
 #
 # Copyright 2018 Phoenix Systems
-# Author: Pawel Pisarczyk
+# Author: Kamil Amanowicz
 #
 
 CC = arm-phoenix-gcc
