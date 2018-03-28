@@ -34,11 +34,11 @@
 
 static struct _usb_dc_t dc = { 0 };
 
-u32 pdev;
-u32 pconf;
+addr_t pdev;
+addr_t pconf;
 
-u32 pIN;
-u32 pOUT;
+addr_t pIN;
+addr_t pOUT;
 u8 *IN;
 u8 *OUT;
 
@@ -189,7 +189,7 @@ static int ctrlqh_init(void)
 
 	memset((void *)dc.endptqh, 0, 0x1000);
 
-	qh_addr = ((u32)va2pa((void *)dc.endptqh)) & ~0xfff;
+	qh_addr = (va2pa((void *)dc.endptqh)) & ~0xfff;
 
 	dc.endptqh[0].caps =  0x40 << 16; /* max 64 bytes */
 	dc.endptqh[0].caps |= 0x1 << 29;
@@ -201,12 +201,12 @@ static int ctrlqh_init(void)
 	dc.endptqh[1].caps |=  0x1 << 15;
 	dc.endptqh[1].dtd_next = 1;
 
-	dc.endptqh[0].base = (((u32)va2pa(dc.endptqh)) & ~0xfff) + (32 * sizeof(dqh_t));
+	dc.endptqh[0].base = ((va2pa(dc.endptqh)) & ~0xfff) + (32 * sizeof(dqh_t));
 	dc.endptqh[0].size = 0x10;
 	dc.endptqh[0].head = (dtd_t *)(dc.endptqh + 32);
 	dc.endptqh[0].tail = (dtd_t *)(dc.endptqh + 32);
 
-	dc.endptqh[1].base = (((u32)va2pa(dc.endptqh)) & ~0xfff) + (48 * sizeof(dqh_t));
+	dc.endptqh[1].base = ((va2pa(dc.endptqh)) & ~0xfff) + (48 * sizeof(dqh_t));
 	dc.endptqh[1].size = 0x10;
 	dc.endptqh[1].head = (dtd_t *)(dc.endptqh + 48);
 	dc.endptqh[1].tail = (dtd_t *)(dc.endptqh + 48);
@@ -234,11 +234,11 @@ static int dtd_init(int endpt)
 
 	memset(buff, 0, 0x1000);
 
-	dc.endptqh[qh].base = (((u32)va2pa(buff)) & ~0xfff);
+	dc.endptqh[qh].base = ((va2pa(buff)) & ~0xfff);
 	dc.endptqh[qh].size = 0x40;
 	dc.endptqh[qh].head = buff;
 	dc.endptqh[qh].tail = buff;
-	dc.endptqh[++qh].base = (((u32)va2pa(buff)) & ~0xfff) + (64 * sizeof(dqh_t));
+	dc.endptqh[++qh].base = ((va2pa(buff)) & ~0xfff) + (64 * sizeof(dqh_t));
 	dc.endptqh[++qh].size = 0x40;
 	dc.endptqh[++qh].head = buff + 64;
 	dc.endptqh[++qh].tail = buff + 64;
@@ -323,6 +323,7 @@ static int dtd_exec_chain(int endpt, u32 vaddr, int sz, int dir)
 	dc.endptqh[qh].dtd_token &= ~(1 << 6);
 	dc.endptqh[qh].dtd_token &= ~(1 << 7);
 
+	while (*(dc.base + endptprime) & (1 << shift));
 	*(dc.base + endptprime) |= 1 << shift;
 	while (!(*(dc.base + endptprime) & (1 << shift)) && (*(dc.base + endptstat) & (1 << shift)));
 
@@ -354,6 +355,7 @@ static int dtd_exec(int endpt, u32 paddr, u32 sz, int dir)
 	dc.endptqh[qh].dtd_token &= ~(1 << 7);
 
 	/* prime the endpoint and wait for it to prime */
+	while (*(dc.base + endptprime) & (1 << shift));
 	*(dc.base + endptprime) |= 1 << shift;
 	while (!(*(dc.base + endptprime) & (1 << shift)) && (*(dc.base + endptstat) & (1 << shift)));
 
@@ -367,7 +369,7 @@ static int dtd_exec(int endpt, u32 paddr, u32 sz, int dir)
 }
 
 
-int endpt_init(int endpt, endpt_init_t *endpt_init)
+static int endpt_init(int endpt, endpt_init_t *endpt_init)
 {
 	u32 setup = 0;
 	int res;
@@ -619,7 +621,8 @@ int main(void)
 	while (dc.op != DC_OP_EXIT) {
 
 		mutexLock(dc.lock);
-		condWait(dc.cond, dc.lock, 0);
+		while (dc.op == DC_OP_NONE)
+			condWait(dc.cond, dc.lock, 0);
 		mutexUnlock(dc.lock);
 
 		if (dc.op == DC_OP_RECEIVE) {
@@ -632,11 +635,13 @@ int main(void)
 
 			dc.mods[dc.mods_cnt].data = mmap(NULL, (dc.mods[dc.mods_cnt].size + 0xfff) & ~0xfff, PROT_WRITE | PROT_READ, MAP_UNCACHED, OID_NULL, 0);
 			dtd_exec_chain(1, (u32)dc.mods[dc.mods_cnt].data, dc.mods[dc.mods_cnt].size, DIR_OUT);
+			dc.op = DC_OP_NONE;
 			dc.mods_cnt++;
 		} else if (dc.op == DC_OP_INIT && endpt_init(1, &bulk_endpt) != EOK) {
 			dc.op = DC_OP_NONE;
 			return 0;
-		}
+		} else if (dc.op != DC_OP_EXIT)
+			dc.op = DC_OP_NONE;
 	}
 
 	if (dc.op == DC_OP_EXIT)
