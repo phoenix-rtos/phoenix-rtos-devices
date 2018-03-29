@@ -680,6 +680,8 @@ int main(void)
 	while (cnt < dc.mods_cnt) {
 		argc = 0;
 
+		argv[argc] = dc.mods[cnt].name;
+		argc++;
 		arg_tok = strtok(dc.mods[cnt].args, ",");
 
 		while (arg_tok != NULL && argc < 15){
