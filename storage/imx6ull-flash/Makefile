@@ -1,55 +1,46 @@
 #
-# Makefile for IMX6ULL flash driver
+# Makefile for Phoenix-RTOS imx6ull-uart driver
 #
-# Copyright 2017 Phoenix Systems
-#
-# %LICENSE%
+# Copyright 2018 Phoenix Systems
 #
 
-SIL ?= @
+SRCS = flashdrv.c
+OBJS = $(SRCS:.c=.o)
+BIN = flashdrv
 
-CROSS ?= arm-phoenix-
-SUBDIRS = arch/arm-imx $(SUBSYSTEMS)
+CFLAGS += -I. -I../../../libphoenix -I../../../phoenix-rtos-kernel/include
 
-MKDEP = $(CROSS)gcc -MM
-MKDEPFLAGS = $(CFLAGS)
 
-CC = $(CROSS)gcc
+all: check $(BIN)
 
-SRCDIR=$(CURDIR)
-LIBPHOENIX=../../../libphoenix
-LIB=$(LIBPHOENIX)/libphoenix.a
-KERNELHEADERS=../../../phoenix-rtos-kernel/include
 
-CFLAGS += -Os -Wall -Wstrict-prototypes -g -I$(SRCDIR) -I$(LIBPHOENIX) -I$(KERNELHEADERS) -nostartfiles -nostdlib\
-	-mcpu=cortex-a7 -mtune=cortex-a7 -mfloat-abi=hard -mthumb\
-	-fomit-frame-pointer -ffreestanding -mno-unaligned-access\
-	-DVERSION=\"$(VERSION)\" -DARCH=\"arch/arm-imx/arch.h\"
+check:
+	@(if test -z "$(TARGET)"; then\
+		echo "Error: Only main Makefile can be used for compilation!";\
+		exit 1;\
+	fi;)
 
-AR = $(CROSS)ar
-ARFLAGS = -r
-
-LD = $(CROSS)ld
-LDFLAGS = -nostdlib -z max-page-size=0x1000
-GCCLIB := $(shell $(CC) $(CFLAGS) -print-libgcc-file-name)
-
-OBJCOPY = $(CROSS)objcopy
-OBJDUMP = $(CROSS)objdump
-STRIP = $(CROSS)strip
-
-OBJECTS = flashdrv.o
-
-all: flashdrv.elf
-
-flashdrv.elf: $(OBJECTS)
-	$(SIL)(printf "LD  %-24s  \n" "$(OBJECTS)"; $(LD) $(LDFLAGS) -o $@_unstripped $(OBJECTS) $(LIB) $(GCCLIB))
-	$(SIL)($(STRIP) $@_unstripped -o $@)
 
 .c.o:
-	$(SIL)(printf "CC  %-24s  \n" "$<"; $(CC) -c $(CFLAGS) $<)
+	@(printf " CC    %-24s  \n" "$<"; $(CC) -c $(CFLAGS) $<)
 
-clean:
-	$(SIL)rm -f *.o *.elf
+-include .depend
+
+
+$(BIN): $(OBJS)
+	@echo " LD    $@"
+	$(SIL)$(LD) -o $(BIN) $(OBJS) ../../../libphoenix/libphoenix.a $(GCCLIB)
+	@echo " STRIP $@"
+	$(SIL)$(STRIP) $(BIN) 2>/dev/null
+
+
+depend: check
+	$(SIL)$(MKDEP) $(MKDEPFLAGS) $(SRCS) >.depend
+
+
+clean: check
+	$(SIL)rm -f core *.o $(ARCH)
+
 
 .PHONY: clean
 # DO NOT DELETE

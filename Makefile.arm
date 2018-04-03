@@ -1,0 +1,36 @@
+#
+# Makefile for Phoenix-RTOS 3 device drivers
+#
+# ARM (Cortex-A5/A7/A9) options
+#
+# Copyright 2018 Phoenix Systems
+#
+
+ifneq (, $(findstring arm-imx, $(TARGET)))
+	CROSS ?= arm-phoenix-
+
+	SUBDIRS = tty/imx6ull-uart storage/imx6ull-flash
+	SUBDIRS = storage/imx6ull-flash
+
+
+	MKDEP = $(CROSS)gcc -MM
+	MKDEPFLAGS = $(CFLAGS)
+
+	CC = $(CROSS)gcc
+
+	CFLAGS += -Os -Wall -Wstrict-prototypes -g -I$(SRCDIR) -nostartfiles -nostdlib\
+		-mcpu=cortex-a7 -mtune=cortex-a7 -mfloat-abi=hard -mthumb\
+		-fomit-frame-pointer -ffreestanding -mno-unaligned-access\
+		-DVERSION=\"$(VERSION)\" -DARCH=\"arch/arm-imx/arch.h\"
+
+	AR = $(CROSS)ar
+	ARFLAGS = -r
+
+	LD = $(CROSS)ld
+	LDFLAGS = -nostdlib -z max-page-size=0x1000
+	GCCLIB := $(shell $(CC) $(CFLAGS) -print-libgcc-file-name)
+
+	OBJCOPY = $(CROSS)objcopy
+	OBJDUMP = $(CROSS)objdump
+	STRIP = $(CROSS)strip
+endif

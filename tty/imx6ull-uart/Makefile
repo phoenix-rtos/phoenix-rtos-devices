@@ -1,38 +1,46 @@
 #
-# Phoenix-RTOS
-#
-# uart  - i.MX6ULL uart driver
+# Makefile for Phoenix-RTOS imx6ull-uart driver
 #
 # Copyright 2018 Phoenix Systems
-# Author: Kamil Amanowicz
 #
 
-CC = arm-phoenix-gcc
-CFLAGS = -mthumb -c -Wall -Os -nostartfiles -nostdlib -mno-unaligned-access -mcpu=cortex-a7 -mtune=cortex-a7 -mfloat-abi=hard -fomit-frame-pointer -ffreestanding -I. -I../../../libphoenix/ -I../../../phoenix-rtos-kernel/src/ -DARCH=\"arch/arm-imx/arch.h\"
-
-LD = arm-phoenix-gcc
-LDFLAGS = -nostdlib -z max-page-size=0x1000
-
-STRIP = arm-phoenix-strip
-
-SRCS = uartdrv.c
+SRCS = imx6ull-uart.c
 OBJS = $(SRCS:.c=.o)
+BIN = imx6ull-uart
 
-LIBPHOENIX = ../../../libphoenix/libphoenix.a
-GCCLIB := $(shell $(CC) $(CFLAGS) -print-libgcc-file-name)
-BIN = imx-uart
+CFLAGS += -I. -I../../../libphoenix
 
-all: imx-uart imx-uart.debug
+
+all: check $(BIN)
+
+
+check:
+	@(if test -z "$(TARGET)"; then\
+		echo "Error: Only main Makefile can be used for compilation!";\
+		exit 1;\
+	fi;)
+
 
 .c.o:
-	$(CC) $(CFLAGS) $<
+	@(printf " CC    %-24s  \n" "$<"; $(CC) -c $(CFLAGS) $<)
 
-imx-uart: $(OBJS) $(LIBPHOENIX)
-	$(LD) $(LDFLAGS) -o $(BIN) $(OBJS) $(LIBPHOENIX) $(GCCLIB)
-	$(STRIP) $(BIN)
+-include .depend
 
-imx-uart.debug: $(OBJS) $(LIBPHOENIX)
-	$(LD) $(LDFLAGS) -o $(BIN).debug $(OBJS) $(LIBPHOENIX) $(GCCLIB)
 
-clean:
-	rm -f *.o *~ core
+$(BIN): $(OBJS)
+	@echo " LD    $@"
+	$(SIL)$(LD) -o $(BIN) $(OBJS) ../../../libphoenix/libphoenix.a $(GCCLIB)
+	@echo " STRIP $@"
+	$(SIL)$(STRIP) $(BIN) 2>/dev/null
+
+
+depend: check
+	$(SIL)$(MKDEP) $(MKDEPFLAGS) $(SRCS) >.depend
+
+
+clean: check
+	$(SIL)rm -f core *.o $(ARCH)
+
+
+.PHONY: clean
+# DO NOT DELETE

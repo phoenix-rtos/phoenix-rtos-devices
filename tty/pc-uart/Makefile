@@ -1,33 +1,47 @@
 #
-# Phoenix-RTOS
+# Makefile for Phoenix-RTOS pc-uart driver
 #
-# pc-uart - PC serial port driver
+# Copyright 2017, 2018 Phoenix Systems
+# Copyright 2001, 2005-2006 Pawel Pisarczyk
 #
-# Copyright 2017 Phoenix Systems
-# Author: Pawel Pisarczyk
-#
-
-CC = i386-pc-phoenix-gcc
-CFLAGS = -c -Wall -O2 -g -I. -I../../../libphoenix/ -DARCH=\"arch/ia32/arch.h\"
-
-LD = i386-pc-phoenix-gcc
-LDFLAGS = -nostartfiles -nostdlib
-
-STRIP = i386-pc-phoenix-strip
 
 SRCS = pc-uart.c
 OBJS = $(SRCS:.c=.o)
-GCCLIB := $(shell $(CC) $(CFLAGS) -print-libgcc-file-name)
 BIN = pc-uart
 
-all: pc-uart
+CFLAGS += -I. -I../../../libphoenix/ -DARCH=\"arch/ia32/arch.h\"
+
+
+all: check $(BIN)
+
+
+check:
+	@(if test -z "$(TARGET)"; then\
+		echo "Error: Only main Makefile can be used for compilation!";\
+		exit 1;\
+	fi;)
+
 
 .c.o:
-	$(CC) $(CFLAGS) $<
+	@(printf " CC    %-24s  \n" "$<"; $(CC) -c $(CFLAGS) $<)
 
-pc-uart: $(OBJS)
-	$(LD) $(LDFLAGS) -o $(BIN) $(OBJS) ../../../libphoenix/libphoenix.a $(GCCLIB)
-	$(STRIP) $(BIN)
+-include .depend
 
-clean:
-	rm -f *.o *~ core
+
+$(BIN): $(OBJS)
+	@echo " LD    $@"
+	$(SIL)$(LD) -o $(BIN) $(OBJS) ../../../libphoenix/libphoenix.a $(GCCLIB)
+	@echo " STRIP $@"
+	$(SIL)$(STRIP) $(BIN) 2>/dev/null
+
+
+depend: check
+	$(SIL)$(MKDEP) $(MKDEPFLAGS) $(SRCS) >.depend
+
+
+clean: check
+	$(SIL)rm -f core *.o $(ARCH)
+
+
+.PHONY: clean
+# DO NOT DELETE

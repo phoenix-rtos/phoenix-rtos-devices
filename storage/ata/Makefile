@@ -1,33 +1,47 @@
 #
-# Phoenix-RTOS
+# Makefile for Phoenix-RTOS pc-ata driver
 #
-# descriptions
+# Copyright 2017, 2018 Phoenix Systems
+# Copyright 2001, 2005-2006 Pawel Pisarczyk
 #
-# Copyright 2017 Phoenix Systems
-# Author: Pawel Pisarczyk
-#
-
-CC = gcc
-CFLAGS = -m32 -c -Wall -O2 -g -I. -I../../../libphoenix/ -DARCH=\"arch/ia32/arch.h\"\
-			-DHAL=\"hal//ia32//hal.h\" \
-			-I../../../phoenix-rtos-kernel/src/ -I../../bus/pci/pc-pci/
-
-LD = gcc
-LDFLAGS = -m32 -nostdlib -nostartfiles -static
-#-z max-page-size=0x10000
 
 SRCS = pc-ata.c
 OBJS = $(SRCS:.c=.o)
-GCCLIB := $(shell $(CC) $(CFLAGS) -print-libgcc-file-name)
 BIN = pc-ata
 
-all: pc-ata
+CFLAGS += -I. -I../../../libphoenix/ -I../../pci/pc-pci -DARCH=\"arch/ia32/arch.h\"
+
+
+all: check $(BIN)
+
+
+check:
+	@(if test -z "$(TARGET)"; then\
+		echo "Error: Only main Makefile can be used for compilation!";\
+		exit 1;\
+	fi;)
+
 
 .c.o:
-	$(CC) $(CFLAGS) $<
+	@(printf " CC    %-24s  \n" "$<"; $(CC) -c $(CFLAGS) $<)
 
-pc-ata: $(OBJS)
-	$(LD) $(LDFLAGS) -o $(BIN) $(OBJS) ../../../libphoenix/libphoenix.a $(GCCLIB)
+-include .depend
 
-clean:
-	rm -f *.o *~ core
+
+$(BIN): $(OBJS)
+	@echo " LD    $@"
+	$(SIL)$(LD) -o $(BIN) $(OBJS) ../../../libphoenix/libphoenix.a $(GCCLIB)
+	@echo " STRIP $@"
+	$(SIL)$(STRIP) $(BIN) 2>/dev/null
+
+
+depend: check
+	$(SIL)$(MKDEP) $(MKDEPFLAGS) $(SRCS) >.depend
+
+
+clean: check
+	$(SIL)rm -f core *.o $(ARCH)
+
+
+.PHONY: clean
+# DO NOT DELETE

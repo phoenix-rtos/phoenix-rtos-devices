@@ -23,7 +23,7 @@
 #include <errno.h>
 #include <string.h>
 
-#include <uartdrv.h>
+#include "imx6ull-uart.h"
 
 #include "../../../phoenix-rtos-kernel/include/arch/imx6ull.h"
 
@@ -203,7 +203,7 @@ void main(void)
 
 	uart_clk.action = pctl_set;
 	uart_clk.type = pctl_devclock;
-	uart_clk.devclock.dev = uart1;
+	uart_clk.devclock.dev = pctl_clk_uart1;
 	uart_clk.devclock.state = 3;
 
 	platformctl(&uart_clk);

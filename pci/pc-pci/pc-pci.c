@@ -232,7 +232,8 @@ void _pci_init(void)
 	return;
 }
 
-int main() {
+int main(void)
+{
 	u32 port;
 	oid_t toid;
 	msg_t msg;
@@ -248,7 +249,7 @@ int main() {
 		return -1;
 	}
 
-	for(;;) {
+	for (;;) {
 		msgRecv(port, &msg, &rid);
 
 		dev_pciAlloc(msg.i.data, &pci_dev);
