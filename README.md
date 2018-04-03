@@ -3,7 +3,8 @@ This repository contains the source for the Phoenix-RTOS device drivers. Device 
 using libphoenix standard library. Most of drivers are imported into this repository directly from Phoenix-RTOS 2 kernel and need to be reimplemnted.
 These drivers are marked with _ prefix.
 
-To compile driver enter into the driver directory and type:
+To compile driver set for target architecture edit Makefile and TARGET
+variable and after this type:
 
 	$ make clean
 	$ make
