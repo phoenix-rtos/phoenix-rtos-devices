@@ -795,13 +795,13 @@ void flashdrv_init(void)
 	condCreate(&flashdrv_common.dma_cond);
 	mutexCreate(&flashdrv_common.mutex);
 
-	flashdrv_setDevClock(apbhdma, 3);
-	flashdrv_setDevClock(rawnand_u_gpmi_input_apb, 3);
-	flashdrv_setDevClock(rawnand_u_gpmi_bch_input_gpmi_io, 3);
-	flashdrv_setDevClock(rawnand_u_gpmi_bch_input_bch, 3);
-	flashdrv_setDevClock(rawnand_u_bch_input_apb, 3);
+	flashdrv_setDevClock(pctl_clk_apbhdma, 3);
+	flashdrv_setDevClock(pctl_clk_rawnand_u_gpmi_input_apb, 3);
+	flashdrv_setDevClock(pctl_clk_rawnand_u_gpmi_bch_input_gpmi_io, 3);
+	flashdrv_setDevClock(pctl_clk_rawnand_u_gpmi_bch_input_bch, 3);
+	flashdrv_setDevClock(pctl_clk_rawnand_u_bch_input_apb, 3);
 
-	flashdrv_setDevClock(iomuxc, 3);
+	flashdrv_setDevClock(pctl_clk_iomuxc, 3);
 
 	*(flashdrv_common.dma + apbh_ctrl0) &= ~(1 << 31 | 1 << 30);
 	*(flashdrv_common.gpmi + gpmi_ctrl0) &= ~(1 << 31 | 1 << 30);
