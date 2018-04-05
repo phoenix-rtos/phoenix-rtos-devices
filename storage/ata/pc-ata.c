@@ -1,11 +1,9 @@
 /*
  * Phoenix-RTOS
  *
- * Operating system kernel
- *
  * Generic ata controller driver
  *
- * Copyright 2012 Phoenix Systems
+ * Copyright 2012, 2018 Phoenix Systems
  * Author: Marcin Stragowski, Kamil Amanowicz
  *
  * This file is part of Phoenix-RTOS.
@@ -22,9 +20,11 @@
 #include <sys/threads.h>
 #include <sys/msg.h>
 #include <sys/interrupt.h>
+#include <sys/platform.h>
 
-#include <pc-pci.h>
 #include "pc-ata.h"
+
+#include "../../../phoenix-rtos-kernel/include/arch/ia32.h"
 
 
 static pci_id_t ata_pci_tbl[] = {
@@ -453,35 +453,28 @@ int ata_generic_init(ata_opt_t *opt)
 	ata_opt_t *aopt = (opt ? opt : &ata_defaults);
 	unsigned int i = 0;
 	int devs_found = 0;
-	oid_t pci;
-	msg_t msg;
+	platformctl_t pctl;
 
-	while (lookup("/dev/pci", &pci) < 0) usleep(3000000);
+	pctl.action = pctl_get;
+	pctl.type = pctl_pci;
 
 	buses_cnt = 0;
 	/* iterate through pci to find ata-bus devices */
 	for (i = 0; ata_pci_tbl[i].cl != 0; i++) {
-		do {
-			msg.i.data = &ata_pci_tbl[i];
-			msg.i.size = sizeof(pci_id_t);
-			msg.o.data = &pci_dev[devs_found];
-			msg.o.size = sizeof(pci_device_t);
+		pctl.pci.id = ata_pci_tbl[i];
+		if (platformctl(&pctl) != EOK)
+			break;
+		pci_dev[devs_found] = pctl.pci.dev;
 
-			msgSend(pci.port, &msg);
+		printf("ata :%2u:%2u:%2u-->%6u,%6u-->%3u,%3u \n",
+				pci_dev[devs_found].b, pci_dev[devs_found].d,
+				pci_dev[devs_found].f, pci_dev[devs_found].device & 0xFFFF,
+				pci_dev[devs_found].vendor & 0xFFFF,
+				(pci_dev[devs_found].cl >> 8) & 0xFF,pci_dev[devs_found].cl & 0xFF);
 
-			if (msg.o.io.err != EOK)
-				break;
-
-			printf("ata :%2u:%2u:%2u-->%6u,%6u-->%3u,%3u \n",
-					pci_dev[devs_found].b, pci_dev[devs_found].d,
-					pci_dev[devs_found].f, pci_dev[devs_found].device & 0xFFFF,
-					pci_dev[devs_found].vendor & 0xFFFF,
-					(pci_dev[devs_found].cl >> 8) & 0xFF,pci_dev[devs_found].cl & 0xFF);
-
-			if (!ata_init_one(&pci_dev[devs_found], aopt)) {
-				devs_found++;
-			}
-		} while (1);
+		if (!ata_init_one(&pci_dev[devs_found], aopt)) {
+			devs_found++;
+		}
 	}
 	if (!devs_found) {
 		printf("ata: no devices found %s\n", "");

@@ -1,11 +1,9 @@
 /*
  * Phoenix-RTOS
  *
- * Operating system kernel
- *
  * Generic ata devices controller
  *
- * Copyright 2012 Phoenix Systems
+ * Copyright 2012, 2018 Phoenix Systems
  * Author: Marcin Stragowski, Kamil Amanowicz
  *
  * This file is part of Phoenix-RTOS.
@@ -18,6 +16,8 @@
 
 #include <stdint.h>
 #include <sys/threads.h>
+
+#include "../../../phoenix-rtos-kernel/include/arch/ia32.h"
 
 #include "pc-ata_info.h"
 
