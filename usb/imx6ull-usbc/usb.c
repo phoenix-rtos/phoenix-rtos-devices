@@ -478,18 +478,23 @@ static void mod_lookup(void *arg)
 {
 	msg_t msg;
 	unsigned int rid;
-	int size;
+	int size, err;
 	int mod_no = 0;
+	u32 port = (u32)arg;
 
 	while (1) {
 
-		msgRecv(1, &msg, &rid);
+		err = msgRecv(port, &msg, &rid);
+		if (err < 0) {
+			printf("recv(%u) error %d\n", port, err);
+			break;
+		}
 
 		switch (msg.type) {
 
 			case mtLookup:
 				msg.o.lookup.res.id = mod_no;
-				msg.o.lookup.res.port = 1;
+				msg.o.lookup.res.port = port;
 				break;
 			case mtRead:
 				if (msg.o.size > dc.mods[mod_no - 1].size - msg.i.io.offs)
@@ -507,7 +512,7 @@ static void mod_lookup(void *arg)
 				break;
 		}
 
-		msgRespond(1, &msg, rid);
+		msgRespond(port, &msg, rid);
 	}
 
 	portDestroy((u32)arg);
@@ -520,10 +525,14 @@ static void printf_mockup(void *arg)
 	msg_t msg;
 	unsigned int rid;
 	int offs = 0;
-	int size;
+	int size, err;
 	char buff[16] = { 0 };
 	while (1) {
-		msgRecv(0, &msg, &rid);
+		err = msgRecv(0, &msg, &rid);
+		if (err < 0) {
+			//printf("recv(%u) error %d\n", 0, err);
+			break;
+		}
 		offs = 0;
 		size = msg.i.size;
 		if (size > 0) {
