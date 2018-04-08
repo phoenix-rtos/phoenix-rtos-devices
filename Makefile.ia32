@@ -9,7 +9,7 @@
 ifneq (, $(findstring ia32, $(TARGET)))
 	CROSS ?= i386-pc-phoenix-
 
-	SUBDIRS = pci/pc-pci tty/pc-tty tty/pc-uart storage/ata
+	SUBDIRS = tty/pc-tty tty/pc-uart storage/ata
 
 	MKDEP = $(CROSS)gcc -MM
 	MKDEPFLAGS = $(CFLAGS)
