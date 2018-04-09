@@ -10,8 +10,6 @@ ifneq (, $(findstring arm-imx, $(TARGET)))
 	CROSS ?= arm-phoenix-
 
 	SUBDIRS = tty/imx6ull-uart storage/imx6ull-flash
-	SUBDIRS = storage/imx6ull-flash
-
 
 	MKDEP = $(CROSS)gcc -MM
 	MKDEPFLAGS = $(CFLAGS)
