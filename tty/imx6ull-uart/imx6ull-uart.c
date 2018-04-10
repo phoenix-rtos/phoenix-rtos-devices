@@ -196,6 +196,12 @@ void main(void)
 	oid_t oid;
 	platformctl_t uart_clk;
 
+	if (portCreate(&port) != EOK)
+		return;
+
+	if (portRegister(0, "/dev/ttyS0", &oid) != EOK)
+		return;
+
 	uart.base = mmap(NULL, 0x1000, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, UART_ADDR);
 
 	if (uart.base == NULL)
@@ -231,12 +237,6 @@ void main(void)
 	/* soft reset, tx&rx enable, 8bit transmit, no parity (8N1) */
 	*(uart.base + ucr2) = 0x4027;
 	*(uart.base + ucr3) = 0x704;
-
-	if (portCreate(&port) != EOK)
-		return;
-
-	if (portRegister(0, "/dev/ttyS0", &oid) != EOK)
-		return;
 
 	beginthread(uart_intrthr, 3, &stack0, 2048, NULL);
 	beginthread(uart_thr, 3, &stack, 2048, (void *)port);
