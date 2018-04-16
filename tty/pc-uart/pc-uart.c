@@ -434,11 +434,8 @@ void poolthr(void *arg)
 	unsigned int rid;
 
 	for (;;) {
-		if (msgRecv(port, &msg, &rid) < 0) {
-			memset(&msg, 0, sizeof(msg));
-			msgRespond(port, &msg, rid);
+		if (msgRecv(port, &msg, &rid) < 0)
 			continue;
-		}
 
 		switch (msg.type) {
 		case mtOpen:
@@ -455,7 +452,6 @@ void poolthr(void *arg)
 
 		msgRespond(port, &msg, rid);
 	}
-	return;
 }
 
 
