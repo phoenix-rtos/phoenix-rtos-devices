@@ -267,10 +267,10 @@ void thread(void *arg)
 				break;
 
 			case mtWrite:
-				if (msg.i.data != NULL && msg.i.size >= msg.i.io.len && msg.i.io.len >= sizeof(u32)) {
+				if (msg.i.data != NULL && msg.i.size >= sizeof(u32)) {
 					memcpy(&val, msg.i.data, sizeof(u32));
 
-					if (msg.i.io.len >= sizeof(u32) << 1)
+					if (msg.i.size >= sizeof(u32) << 1)
 						memcpy(&mask, msg.i.data + sizeof(u32), sizeof(u32));
 					else
 						mask = (u32)-1;
