@@ -263,6 +263,9 @@ void thread(void *arg)
 						msg.o.io.err = gpiogetdir(d, &val);
 						memcpy(msg.o.data, &val, sizeof(u32));
 					}
+
+					if (msg.o.io.err == EOK)
+						msg.o.io.err = sizeof(u32);
 				}
 				break;
 
@@ -281,6 +284,9 @@ void thread(void *arg)
 						msg.o.io.err = gpiowrite(d, val, mask);
 					else if (d >= dir1 && d <= dir5)
 						msg.o.io.err = gpiosetdir(d, val, mask);
+
+					if (msg.o.io.err == EOK)
+						msg.o.io.err = (msg.i.size >= (sizeof(u32) << 1)) ? sizeof(u32) << 1 : sizeof(u32);
 				}
 				break;
 		}
