@@ -128,6 +128,7 @@ typedef struct _ttypc_virt_t {
 	unsigned int rbuffsz;
 	unsigned int rb;
 	unsigned int rp;
+	unsigned int ready;
 
 	struct _ttypc_t *ttypc;
 } ttypc_virt_t;
@@ -140,7 +141,7 @@ extern u16 csd_supplemental[CSSIZE];
 
 
 /* Emulator main entry */
-extern void ttypc_virt_sput(ttypc_virt_t *virt, u8 *s, int len);
+extern int ttypc_virt_sput(ttypc_virt_t *virt, u8 *s, int len);
 
 
 /* Function adds characters to input buffer */

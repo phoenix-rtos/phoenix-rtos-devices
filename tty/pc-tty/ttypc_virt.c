@@ -148,19 +148,24 @@ static void _ttypc_virt_writechar(ttypc_virt_t *virt, u16 attrib, u16 ch)
 
 
 /* Emulator main entry */
-void ttypc_virt_sput(ttypc_virt_t *virt, u8 *s, int len)
+int ttypc_virt_sput(ttypc_virt_t *virt, u8 *s, int len)
 {
 	u16 ch;
+	int ret;
 
 	mutexLock(virt->mutex);
 
+	if (virt->rb == virt->rp)
+		virt->ready = 0;
+
+	ret = len;
 	while (len-- > 0) {
 		if ((ch = *(s++)) == 0)
 			break;
 
 		/* always process control-chars in the range 0x00..0x1f, 0x7f !!! */
 		if ((ch <= 0x1f) || (ch == 0x7f)) {
-			
+
 			switch (ch) {
 			case 0x00:  /* NUL */
 			case 0x01:  /* SOH */
@@ -174,9 +179,20 @@ void ttypc_virt_sput(ttypc_virt_t *virt, u8 *s, int len)
 				break;
 
 			case 0x08:  /* BS */
-				if (virt->col > 0) {
+
+				if (virt->rp == virt->rb && ret) {
+					mutexUnlock(virt->mutex);
+					return 0;
+				}
+
+				if (virt->col) {
 					virt->cur_offset--;
 					virt->col--;
+				}
+
+				if (virt->rp != virt->rb && ret) {
+					ret = 0;
+					virt->rp = ((virt->rp - 1) % virt->rbuffsz);
 				}
 				break;
 
@@ -189,6 +205,7 @@ void ttypc_virt_sput(ttypc_virt_t *virt, u8 *s, int len)
 				break;
 
 			case 0x0a:  /* LF */
+				virt->ready = 1;
 			case 0x0b:  /* VT */
 			case 0x0c:  /* FF */
 #if 0
@@ -648,7 +665,7 @@ void ttypc_virt_sput(ttypc_virt_t *virt, u8 *s, int len)
 
 	mutexUnlock(virt->mutex);
 
-	return;
+	return ret;
 }
 
 
@@ -657,10 +674,10 @@ int ttypc_virt_sadd(ttypc_virt_t *virt, u8 *s, unsigned int len)
 	unsigned int l, i;
 
 	if (virt->m_echo == 1)
-		ttypc_virt_sput(virt, s, len);
+		len = ttypc_virt_sput(virt, s, len);
 
 	mutexLock(virt->mutex);
-	
+
 	if (virt->rp >= virt->rb)
 		l = virt->rbuffsz - (virt->rp - virt->rb);
 	else
@@ -686,18 +703,22 @@ int ttypc_virt_sget(ttypc_virt_t *virt, char *buff, unsigned int len)
 {
 	int err;
 	unsigned int l, cnt;
+	unsigned int bytes;
 
 	mutexLock(virt->mutex);
 
-	while (virt->rp == virt->rb) {
+	while ((virt->rp == virt->rb) || (!virt->ready)) {
 		if ((err = condWait(virt->cond, virt->mutex, 0)) < 0)
 			return err;
 	}
 
-	if (virt->rp > virt->rb)
+	if (virt->rp > virt->rb) {
 		l = min(virt->rp - virt->rb, len);
-	else
+		bytes = virt->rp - virt->rb;
+	} else {
 		l = min(virt->rbuffsz - virt->rb, len);
+		bytes = virt->rbuffsz - virt->rb + virt->rp;
+	}
 
 	memcpy(buff, &virt->rbuff[virt->rb], l);
 
@@ -707,6 +728,9 @@ int ttypc_virt_sget(ttypc_virt_t *virt, char *buff, unsigned int len)
 		cnt += min(len - l, virt->rp);
 	}
 	virt->rb = ((virt->rb + cnt) % virt->rbuffsz);
+
+	if (bytes - cnt == 0)
+		virt->ready = 0;
 
 	mutexUnlock(virt->mutex);
 	return cnt;
@@ -753,6 +777,7 @@ int _ttypc_virt_init(ttypc_virt_t *virt, size_t rbuffsz, ttypc_t *ttypc)
 	}
 	virt->rp = 0;
 	virt->rb = 0;
+	virt->ready = 0;
 
 	/* init emulator */
 	_ttypc_vtf_str(virt);
