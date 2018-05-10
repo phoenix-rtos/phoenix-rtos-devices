@@ -74,7 +74,7 @@ static int uart_read(void *data, size_t size)
 		head = uart.rx_head + 1;
 		uart.rx_head = (uart.rx_head & ~0xff) + (head & 0xff);
 	}
-
+	uart.ready = 0;
 	mutexUnlock(uart.lock);
 
 	return i;
@@ -142,6 +142,7 @@ static void uart_intrthr(void *arg)
 			if (c == 0xd) {
 				chr = -1;
 				c = 0xa;
+				uart.ready = 1;
 			}
 
 			if (c == 0x8) {
@@ -161,12 +162,15 @@ static void uart_intrthr(void *arg)
 				/* echo */
 				if (c == '\b') {
 					chr--;
+					tail = uart.rx_tail - 2;
+					uart.rx_tail = (uart.rx_tail & ~0xff) + (tail & 0xff);
 					uart.tx_buff[uart.tx_tail++] = c;
 					uart.tx_buff[uart.tx_tail++] = ' ';
 				}
 				uart.tx_buff[uart.tx_tail++] = c;
 
-				condSignal(uart.rx_cond);
+				if (uart.ready)
+					condSignal(uart.rx_cond);
 			}
 		}
 
@@ -231,6 +235,7 @@ void main(void)
 
 	interrupt(58, uart_intr, NULL, uart.cond);
 
+	uart.ready = 0;
 	/* enable uart and rx ready interrupt */
 	*(uart.base + ucr1) |= 0x0201;
 

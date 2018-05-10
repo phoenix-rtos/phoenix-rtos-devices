@@ -35,6 +35,7 @@ typedef struct {
 
 	handle_t cond;
 	handle_t lock;
+	int ready;
 } uart_t;
 
 #endif /* _UARTDRV_H_ */
