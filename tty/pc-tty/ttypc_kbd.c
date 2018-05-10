@@ -328,7 +328,7 @@ void ttypc_kbd_ctlthr(void *arg)
 	for (;;) {
 		mutexLock(ttypc->rlock);
 
-		while (!(inb(ttypc->inp_base + 4) & 33)) {
+		while (inb(ttypc->inp_base + 4) != 0x1d) {
 			condWait(ttypc->rcond, ttypc->rlock, 0);
 		}
 
