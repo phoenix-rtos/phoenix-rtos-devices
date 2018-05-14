@@ -340,7 +340,8 @@ static int nand_ecread(gpmi_dma6_t *cmd, int chip, void *payload, void *auxiliar
 	cmd->compare = 0;
 	cmd->eccctrl = 1 << 12 | eccmode;
 	cmd->ecccount = bufsz;
-	cmd->payload = (u32)va2pa(payload);
+	if (payload != NULL)
+		cmd->payload = (u32)va2pa(payload);
 	cmd->auxiliary = (u32)va2pa(auxiliary);
 
 	return sizeof(*cmd);
@@ -374,6 +375,8 @@ static int nand_write(gpmi_dma3_t *cmd, int chip, void *buffer, u16 bufsz)
 
 static int nand_ecwrite(gpmi_dma6_t *cmd, int chip, void *payload, void *auxiliary, u16 bufsz)
 {
+	int eccmode = (payload == NULL) ? 0x100 : 0x1ff;
+
 	memset(cmd, 0, sizeof(*cmd));
 
 	cmd->dma.flags = dma_hot | dma_nandlock | dma_w4endcmd | dma_noxfer | dma_pio(6);
@@ -382,9 +385,10 @@ static int nand_ecwrite(gpmi_dma6_t *cmd, int chip, void *payload, void *auxilia
 
 	cmd->ctrl0 = chip * gpmi_chip | gpmi_write | gpmi_lock_cs | gpmi_data_bytes | gpmi_8bit;
 	cmd->compare = 0;
-	cmd->eccctrl = 1 << 13 | 1 << 12 | 0x1ff;
+	cmd->eccctrl = 1 << 13 | 1 << 12 | eccmode;
 	cmd->ecccount = bufsz;
-	cmd->payload = (u32)va2pa(payload);
+	if (payload != NULL)
+		cmd->payload = (u32)va2pa(payload);
 	cmd->auxiliary = (u32)va2pa(auxiliary);
 
 	return sizeof(*cmd);
@@ -635,16 +639,21 @@ int flashdrv_reset(flashdrv_dma_t *dma)
 
 int flashdrv_write(flashdrv_dma_t *dma, u32 paddr, void *data, char *aux)
 {
-	int chip = 0, channel = 0;
+	int chip = 0, channel = 0, sz;
 	char addr[5] = { 0 };
 	int err;
 	memcpy(addr + 2, &paddr, 3);
+
+	if (data != NULL)
+		sz = flashdrv_common.pagesz;
+	else
+		sz = flashdrv_common.metasz;
 
 	dma->first = NULL;
 	dma->last = NULL;
 
 	flashdrv_wait4ready(dma, chip, EOK);
-	flashdrv_issue(dma, flash_program_page, chip, addr, flashdrv_common.pagesz, data, aux);
+	flashdrv_issue(dma, flash_program_page, chip, addr, sz, data, aux);
 	flashdrv_wait4ready(dma, chip, EOK);
 	flashdrv_issue(dma, flash_read_status, 0, NULL, 0, NULL, NULL);
 	flashdrv_readcompare(dma, chip, 0x3, 0, -1);
@@ -666,7 +675,7 @@ int flashdrv_read(flashdrv_dma_t *dma, u32 paddr, void *data, flashdrv_meta_t *a
 	char addr[5] = { 0 };
 	memcpy(addr + 2, &paddr, 3);
 
-	if (aux != NULL)
+	if (data != NULL)
 		sz = flashdrv_common.pagesz;
 	else
 		sz = flashdrv_common.metasz;
@@ -986,4 +995,3 @@ __asm__ volatile ("1: b 1b");
 #endif
 	return 0;
 }
-
