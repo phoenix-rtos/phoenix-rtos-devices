@@ -17,10 +17,10 @@
 #define _RCC_H_
 
 
-inline void pwr_lock(void);
+void pwr_lock(void);
 
 
-inline void pwr_unlock(void);
+void pwr_unlock(void);
 
 
 int rcc_setHsi(int state);

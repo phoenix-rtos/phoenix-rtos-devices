@@ -1,9 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * Operating system kernel
- *
- * STM32L1 helper functions
+ * STM32L1 multidriver common
  *
  * Copyright 2017, 2018 Phoenix Systems
  * Author: Aleksander Kaminski
@@ -17,17 +15,15 @@
 #define _COMMON_H_
 
 
+#include <stdio.h>
 #include "../../../phoenix-rtos-kernel/include/arch/stm32l1.h"
 
 
 #ifdef NDEBUG
 #define DEBUG(format, ...)
 #else
-#define DEBUG(format, ...) printf("%s:"format, drvname, __VA_ARGS__)
+#define DEBUG(format, ...) printf("%s:"format, drvname, ##__VA_ARGS__)
 #endif
-
-
-extern const char *drvname;
 
 
 /* STM32L1 interrupts numbers */
@@ -42,9 +38,19 @@ enum { wwdq_irq = 16, pvd_irq, tamper_stamp_irq, rtc_wkup_irq, flash_irq, rcc_ir
 	comp_acq_irq = 72 };
 
 
-static inline dataBarier(void)
+static inline void dataBarier(void)
 {
 	__asm__ volatile ("dmb");
+}
+
+
+static inline u32 getPC(void)
+{
+	u32 ret;
+
+	__asm__ volatile ("mov %0, pc" : "=r" (ret));
+
+	return ret;
 }
 
 #endif

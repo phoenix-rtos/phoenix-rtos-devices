@@ -14,7 +14,6 @@
  */
 
 #include ARCH
-										#define NULL 0
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,15 +34,16 @@
 #define THREADS_PRIORITY 2
 #define STACKSZ 512
 
+#ifndef NDEBUG
+static const char drvname[] = "multidrv: ";
+#endif
+
 
 struct {
 	char stack[STACKSZ][THREADS_NO];
 
 	unsigned int port;
 } common;
-
-
-const char drvname[] = "multidriver";
 
 
 void thread(void *arg)
@@ -65,33 +65,25 @@ int main(void)
 {
 	int i;
 
-	common.pool_root = NULL;
-	common.pool_size = 0;
-	common.pool_busy = 0;
-
 	if (portCreate(&common.port) != EOK) {
-		DEBUG("Failed to port\n");
-		return -1;
-	}
-
-	if (mutexCreate(&common.pool_lock) != EOK) {
-		DEBUG("Failed to create lock\n");
-		portDestroy(common.port);
+		DEBUG("Failed to create port\n");
 		return -1;
 	}
 
 	rcc_init();
 	rtc_init();
-	//lcd_init();
+	gpio_init();
+	lcd_init();
+	adc_init();
 	//uart_init();
-	//gpio_init();
 	//flash_init();
-	//adc_init();
 
 	for (i = 0; i < THREADS_NO - 1; ++i) {
-		if (beginthread(thread, THREADS_PRIORITY, common.stack[i], STACKSZ, i) < 0)
+		if (beginthread(thread, THREADS_PRIORITY, common.stack[i], STACKSZ, (void *)i) < 0)
 			DEBUG("Failed to spawn thread #%d", i);
 	}
 
-	thread();
+	thread((void *)THREADS_NO);
+
+	return 0;
 }

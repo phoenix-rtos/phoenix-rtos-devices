@@ -8,16 +8,15 @@
 
 ifneq (, $(findstring armv7, $(TARGET)))
 	CROSS ?= arm-phoenix-
-	SUBDIRS = arch/armv7 $(SUBSYSTEMS)
+	SUBDIRS = multidriver/stm32-multi
 
 	MKDEP = $(CROSS)gcc -MM
 	MKDEPFLAGS = $(CFLAGS)
 
 	CC = $(CROSS)gcc
 
-	CFLAGS += -O2 -Wall -Wstrict-prototypes -g -I$(SRCDIR) -nostartfiles -nostdlib\
-		-mcpu=cortex-m3 -mthumb \
-		-fomit-frame-pointer -ffreestanding\
+	CFLAGS += -Os -Wall -Wstrict-prototypes -g -I$(SRCDIR) -nostartfiles -nostdlib\
+		-mcpu=cortex-m3 -mthumb -fomit-frame-pointer -ffreestanding\
 		-fpic -fpie -msingle-pic-base -mno-pic-data-is-text-relative\
 		-DVERSION=\"$(VERSION)\" -DARCH=\"arch/armv7/arch.h\" -DNOMMU
 
@@ -27,8 +26,8 @@ ifneq (, $(findstring armv7, $(TARGET)))
 	LD = $(CROSS)ld
 	LDFLAGS = -nostdlib -e _start --section-start .text=0 -Tbss=20000000 -z max-page-size=0x10
 	GCCLIB := $(shell $(CC) $(CFLAGS) -print-libgcc-file-name)
-#GCCLIB := ../$(GCCLIB)
 
 	OBJCOPY = $(CROSS)objcopy
 	OBJDUMP = $(CROSS)objdump
+	STRIP = $(CROSS)strip
 endif

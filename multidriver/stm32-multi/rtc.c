@@ -22,6 +22,10 @@
 #include "rcc.h"
 #include "rtc.h"
 
+#ifndef NDEBUG
+static const char drvname[] = "rtc: ";
+#endif
+
 
 enum { pwr_cr = 0, pwr_csr };
 
@@ -56,7 +60,7 @@ static char rtc_binToBcd(char bin)
 }
 
 
-static void rtc_lock(void)
+static void _rtc_lock(void)
 {
 	*(rtc_common.base + wpr) = 0xff;
 	pwr_lock();
@@ -65,7 +69,7 @@ static void rtc_lock(void)
 }
 
 
-static void rtc_unlock(void)
+static void _rtc_unlock(void)
 {
 	pwr_unlock();
 	*(rtc_common.base + wpr) = 0xca;
@@ -79,15 +83,12 @@ int rtc_get(rtctimestamp_t *timestamp)
 {
 	unsigned int time, date;
 
-	if (timestamp == NULL)
-		return -EINVAL;
-
-	mutexLock(&rtc_common.lock);
+	mutexLock(rtc_common.lock);
 
 	time = *(rtc_common.base + tr);
 	date = *(rtc_common.base + dr);
 
-	mutexUnlock(&rtc_common.lock);
+	mutexUnlock(rtc_common.lock);
 
 	timestamp->hours = rtc_bcdToBin((time >> 16) & 0x3f);
 	timestamp->minutes = rtc_bcdToBin((time >> 8) & 0x7f);
@@ -106,9 +107,6 @@ int rtc_set(rtctimestamp_t *timestamp)
 {
 	unsigned int time, date;
 
-	if (timestamp == NULL)
-		return -EINVAL;
-
 	time = 0;
 	time |= (rtc_binToBcd(timestamp->hours) & 0x3f) << 16;
 	time |= (rtc_binToBcd(timestamp->minutes) & 0x7f) << 8;
@@ -120,9 +118,9 @@ int rtc_set(rtctimestamp_t *timestamp)
 	date |= (rtc_binToBcd(timestamp->year) & 0xff) << 16;
 	date |= (timestamp->wday & 0x7) << 13;
 
-	mutexLock(&rtc_common.lock);
+	mutexLock(rtc_common.lock);
 
-	rtc_unlock();
+	_rtc_unlock();
 
 	if (!(*(rtc_common.base + isr) & (1 << 6))) {
 		*(rtc_common.base + isr) |= (1 << 7);
@@ -134,29 +132,31 @@ int rtc_set(rtctimestamp_t *timestamp)
 
 	*(rtc_common.base + isr) &= ~(1 << 7);
 
-	rtc_lock();
+	_rtc_lock();
 
-	mutexUnlock(&rtc_common.lock);
+	mutexUnlock(rtc_common.lock);
+
+	return EOK;
 }
 
 
 int rtc_init(void)
 {
-	platformctl_t pctl;
-
 	rtc_common.base = (void *)0x40002800;
 	rtc_common.pwr = (void *)0x40007000;
 
-	if (mutexCreate(&rtc_common.lock) != EOK)
+	if (mutexCreate(&rtc_common.lock) != EOK) {
+		DEBUG("RTC failed to create mutex\n");
 		return -ENOMEM;
+	}
 
-	rtc_unlock();
+	pwr_unlock();
 
-	pctl.action = PLATCTL_SET;
-	pctl.type = PLATCTL_DEVCLOCK;
-	pctl.devclock.dev = rtc;
-	pctl.devclock.state = 1;
-	platformctl(&pctl);
+	if (rcc_devClk(pctl_rtc, 1) != EOK) {
+		DEBUG("RTC failed to enable clock\n");
+	}
 
-	rtc_lock();
+	pwr_lock();
+
+	return EOK;
 }

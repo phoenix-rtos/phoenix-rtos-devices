@@ -17,14 +17,19 @@
 #include <errno.h>
 #include <string.h>
 #include <sys/threads.h>
-#include <sys/platform.h>
 #include <sys/interrupt.h>
 
 #include "common.h"
 #include "gpio.h"
 #include "lcd.h"
+#include "rcc.h"
 
 #define LCD_MAX_POSITION 10
+
+
+#ifndef NDEBUG
+static const char drvname[] = "lcd: ";
+#endif
 
 
 enum { cr = 0, fcr, sr, clr, ram = 5 };
@@ -47,78 +52,18 @@ struct {
 } lcd_common;
 
 
-static const unsigned char numbers[10] = {
-		0x3F, /* 0 */
-		0x06, /* 1 */
-		0x5B, /* 2 */
-		0x4F, /* 3 */
-		0x66, /* 4 */
-		0x6D, /* 5 */
-		0x7D, /* 6 */
-		0x07, /* 7 */
-		0x7F, /* 8 */
-		0x6F  /* 9 */
-};
+/* Numbers LUT from '0' to '9' */
+static const unsigned char numbers[10] = { 0x3f, 0x06, 0x5b, 0x4f, 0x66, 0x6d, 0x7d, 0x07, 0x7f, 0x6f };
 
 
-static const unsigned char lowercase_letters[] = {
-		0x5F,   /**< a */
-		0x7C,   /**< b */
-		0x58,   /**< c */
-		0x5E,   /**< d */
-		0x7B,   /**< e */
-		0x71,   /**< f */
-		0x6F,   /**< g */
-		0x74,   /**< h */
-		0x04,   /**< i */
-		0x0E,   /**< j */
-		0x76,   /**< k - not possible */
-		0x38,   /**< l */
-		0x54,   /**< m - not possible */
-		0x54,   /**< n */
-		0x5C,   /**< o */
-		0x73,   /**< p */
-		0x67,   /**< q */
-		0x50,   /**< r */
-		0x6D,   /**< s */
-		0x78,   /**< t */
-		0x1C,   /**< u */
-		0x1C,   /**< v - not possible */
-		0x1C,   /**< w - not possible */
-		0x76,   /**< x - not possible */
-		0x6E,   /**< y */
-		0x6B    /**< z */
-};
+/* Characters LUT for lower case letters from 'a' to 'z' */
+static const unsigned char lowercase_letters[] = { 0x5F, 0x7C, 0x58, 0x5E, 0x7B, 0x71, 0x6F, 0x74, 0x04,
+	0x0E, 0x76, 0x38, 0x54, 0x54, 0x5C, 0x73, 0x67, 0x50, 0x6D, 0x78, 0x1C, 0x1C, 0x1C, 0x76, 0x6E, 0x6B };
 
 
-static const unsigned char uppercase_letters[] = {
-		0x77,   /**< A */
-		0x7F,   /**< B */
-		0x39,   /**< C */
-		0x3F,   /**< D */
-		0x79,   /**< E */
-		0x71,   /**< F */
-		0x7D,   /**< G */
-		0x76,   /**< H */
-		0x06,   /**< I */
-		0x0E,   /**< J */
-		0x76,   /**< K - not possible */
-		0x38,   /**< L */
-		0x37,   /**< M - not possible */
-		0x37,   /**< N */
-		0x3F,   /**< O */
-		0x73,   /**< P */
-		0x3F,   /**< Q - not possible */
-		0x77,   /**< R */
-		0x6D,   /**< S */
-		0x78,   /**< T - not possible*/
-		0x3E,   /**< U */
-		0x3E,   /**< V - not possible */
-		0x3E,   /**< W - not possible */
-		0x76,   /**< X - not possible */
-		0x6E,   /**< Y */
-		0x6B    /**< Z */
-};
+/* Characters LUT for upper case letters from 'A' to 'Z' */
+static const unsigned char uppercase_letters[] = { 0x77, 0x7F, 0x39, 0x3F, 0x79, 0x71, 0x7D, 0x76, 0x06,
+	0x0E, 0x76, 0x38, 0x37, 0x37, 0x3F, 0x73, 0x3F, 0x77, 0x6D, 0x78, 0x3E, 0x3E, 0x3E, 0x76, 0x6E, 0x6B };
 
 
 static const unsigned char char_dash = 0x40;
@@ -128,85 +73,85 @@ static const unsigned char char_degree = 0x63;
 
 
 static const unsigned char symbols[LCDSYM_TOTAL][2] = {
-		{ COM1, 27 },    /* LCDSYM_SMALL_ONE */
-		{ COM1, 23 },    /* LCDSYM_CLOCK */
-		{ COM1, 19 },    /* LCDSYM_DATE */
-		{ COM1, 17 },    /* LCDSYM_WARN */
-		{ COM2, 16 },    /* LCDSYM_BATT */
-		{ COM4, 16 },    /* LCDSYM_LOWBATT */
-		{ COM3, 16 },    /* LCDSYM_NOBATT */
-		{ COM1, 16 },    /* LCDSYM_LOCK */
-		{ COM1, 25 },    /* LCDYSM_FACTORY */
-		{ COM1, 9 },    /* LCDSYM_FIRE */
-		{ COM1, 7 },    /* LCDSYM_COM */
-		{ COM1, 6 },    /* LCDSYM_POUND */
-		{ COM1, 5 },    /* LCDSYM_EUR */
-		{ COM2, 6 },    /* LCDSYM_M3 */
-		{ COM2, 5 },    /* LCDSYM_SLASH_TOP */
-		{ COM3, 5 },    /* LCDSYM_H_TOP */
-		{ COM4, 5 },    /* LCDSYM_H_BOT */
-		{ COM3, 6 },    /* LCDSYM_K */
-		{ COM4, 6 },    /* LCDSYM_W */
-		{ COM2, 7 },    /* LCDSYM_FRAME */
-		{ COM4, 29 },    /* LCDSYM_FRAME_SMALL */
-		{ COM1, 29 },    /* LCDSYM_BAR0 */
-		{ COM2, 29 },    /* LCDSYM_BAR1 */
-		{ COM3, 29 },    /* LCDSYM_BAR2 */
-		{ COM1, 21 },    /* LCDSYM_DOT1_BOT */
-		{ COM4, 15 },    /* LCDSYM_DOT2_TOP */
-		{ COM4, 7 },    /* LCDSYM_DOT2_BOT */
-		{ COM4, 13 },    /* LCDSYM_DOT3_BOT */
-		{ COM4, 11 },    /* LCDSYM_DOT4_TOP */
-		{ COM3, 7 },    /* LCDSYM_DOT4_BOT */
+	{ COM1, 27 },    /* LCDSYM_SMALL_ONE */
+	{ COM1, 23 },    /* LCDSYM_CLOCK */
+	{ COM1, 19 },    /* LCDSYM_DATE */
+	{ COM1, 17 },    /* LCDSYM_WARN */
+	{ COM2, 16 },    /* LCDSYM_BATT */
+	{ COM4, 16 },    /* LCDSYM_LOWBATT */
+	{ COM3, 16 },    /* LCDSYM_NOBATT */
+	{ COM1, 16 },    /* LCDSYM_LOCK */
+	{ COM1, 25 },    /* LCDYSM_FACTORY */
+	{ COM1, 9 },     /* LCDSYM_FIRE */
+	{ COM1, 7 },     /* LCDSYM_COM */
+	{ COM1, 6 },     /* LCDSYM_POUND */
+	{ COM1, 5 },     /* LCDSYM_EUR */
+	{ COM2, 6 },     /* LCDSYM_M3 */
+	{ COM2, 5 },     /* LCDSYM_SLASH_TOP */
+	{ COM3, 5 },     /* LCDSYM_H_TOP */
+	{ COM4, 5 },     /* LCDSYM_H_BOT */
+	{ COM3, 6 },     /* LCDSYM_K */
+	{ COM4, 6 },     /* LCDSYM_W */
+	{ COM2, 7 },     /* LCDSYM_FRAME */
+	{ COM4, 29 },    /* LCDSYM_FRAME_SMALL */
+	{ COM1, 29 },    /* LCDSYM_BAR0 */
+	{ COM2, 29 },    /* LCDSYM_BAR1 */
+	{ COM3, 29 },    /* LCDSYM_BAR2 */
+	{ COM1, 21 },    /* LCDSYM_DOT1_BOT */
+	{ COM4, 15 },    /* LCDSYM_DOT2_TOP */
+	{ COM4, 7 },     /* LCDSYM_DOT2_BOT */
+	{ COM4, 13 },    /* LCDSYM_DOT3_BOT */
+	{ COM4, 11 },    /* LCDSYM_DOT4_TOP */
+	{ COM3, 7 },     /* LCDSYM_DOT4_BOT */
 };
 
 
 static const unsigned char pin_to_ram[30] = {
-		0, 0, 0, 0, 0, 37, 43, 42, 27, 26, 25, 24, 35, 34, 33, 32,
-		31, 30, 28, 15, 14, 13, 12, 4, 38, 39, 18, 19, 20, 21
+	0, 0, 0, 0, 0, 37, 43, 42, 27, 26, 25, 24, 35, 34, 33, 32,
+	31, 30, 28, 15, 14, 13, 12, 4, 38, 39, 18, 19, 20, 21
 };
 
 
 static const unsigned char pin_map[11][7] = {
-		{ 0,  0,  0,  0,  0,  0,  0 },
-		{ 28, 27, 27, 28, 28, 28, 27 },
-		{ 26, 25, 25, 26, 26, 26, 25 },
-		{ 24, 23, 23, 24, 24, 24, 23 },
-		{ 22, 21, 21, 22, 22, 22, 21 },
-		{ 20, 19, 19, 20, 20, 20, 19 },
-		{ 18, 17, 17, 18, 18, 18, 17 },
-		{ 14, 14, 14, 14, 15, 15, 15 },
-		{ 12, 12, 12, 12, 13, 13, 13 },
-		{ 10, 10, 10, 10, 11, 11, 11 },
-		{ 8,  8,  8,  8,  9,  9,  9 }
+	{ 0,  0,  0,  0,  0,  0,  0 },
+	{ 28, 27, 27, 28, 28, 28, 27 },
+	{ 26, 25, 25, 26, 26, 26, 25 },
+	{ 24, 23, 23, 24, 24, 24, 23 },
+	{ 22, 21, 21, 22, 22, 22, 21 },
+	{ 20, 19, 19, 20, 20, 20, 19 },
+	{ 18, 17, 17, 18, 18, 18, 17 },
+	{ 14, 14, 14, 14, 15, 15, 15 },
+	{ 12, 12, 12, 12, 13, 13, 13 },
+	{ 10, 10, 10, 10, 11, 11, 11 },
+	{ 8,  8,  8,  8,  9,  9,  9 }
 };
 
 
 static const unsigned char com_map[11][7] = {
-		{ 0,    0,    0,    0,    0,    0,    0 },
-		{ COM1, COM2, COM4, COM4, COM3, COM2, COM3 },
-		{ COM1, COM2, COM4, COM4, COM3, COM2, COM3 },
-		{ COM1, COM2, COM4, COM4, COM3, COM2, COM3 },
-		{ COM1, COM2, COM4, COM4, COM3, COM2, COM3 },
-		{ COM1, COM2, COM4, COM4, COM3, COM2, COM3 },
-		{ COM1, COM2, COM4, COM4, COM3, COM2, COM3 },
-		{ COM1, COM2, COM3, COM4, COM3, COM1, COM2 },
-		{ COM1, COM2, COM3, COM4, COM3, COM1, COM2 },
-		{ COM1, COM2, COM3, COM4, COM3, COM1, COM2 },
-		{ COM1, COM2, COM3, COM4, COM4, COM2, COM3 }
+	{ 0,    0,    0,    0,    0,    0,    0 },
+	{ COM1, COM2, COM4, COM4, COM3, COM2, COM3 },
+	{ COM1, COM2, COM4, COM4, COM3, COM2, COM3 },
+	{ COM1, COM2, COM4, COM4, COM3, COM2, COM3 },
+	{ COM1, COM2, COM4, COM4, COM3, COM2, COM3 },
+	{ COM1, COM2, COM4, COM4, COM3, COM2, COM3 },
+	{ COM1, COM2, COM4, COM4, COM3, COM2, COM3 },
+	{ COM1, COM2, COM3, COM4, COM3, COM1, COM2 },
+	{ COM1, COM2, COM3, COM4, COM3, COM1, COM2 },
+	{ COM1, COM2, COM3, COM4, COM3, COM1, COM2 },
+	{ COM1, COM2, COM3, COM4, COM4, COM2, COM3 }
 };
 
 
 static const char gpio_pins[5][9] = {
-		{ 7, 8,  9,  10, -1, -1, -1, -1, -1 },
-		{ 9, 12, 13, 14, 15, -1, -1, -1, -1 },
-		{ 0, 1,  2,  3,  6,  7,  8,  9,  12 },
-		{ 2, 8,  10, 11, 12, 13, 14, 15, -1 },
-		{ 1, 2,  3,  -1, -1, -1, -1, -1, -1 }
+	{ 7, 8,  9,  10, -1, -1, -1, -1, -1 },
+	{ 9, 12, 13, 14, 15, -1, -1, -1, -1 },
+	{ 0, 1,  2,  3,  6,  7,  8,  9,  12 },
+	{ 2, 8,  10, 11, 12, 13, 14, 15, -1 },
+	{ 1, 2,  3,  -1, -1, -1, -1, -1, -1 }
 };
 
 
-static int lcd_irqHandler(void *arg)
+static int lcd_irqHandler(unsigned int n, void *arg)
 {
 	/* Turn off interrupt */
 	*(lcd_common.base + fcr) &= ~(1 << 3);
@@ -248,12 +193,12 @@ static void lcd_showChar(char ch, unsigned int pos)
 
 	for (i = 0; i < 7; i++) {
 		on = segment & (unsigned char)(1 << i);
-		lcddrv_setRamSegment(com_map[pos][i], pin_to_ram[pin_map[pos][i]], on);
+		lcd_setRamSegment(com_map[pos][i], pin_to_ram[pin_map[pos][i]], on);
 	}
 }
 
 
-void lcddrv_update(void)
+void lcd_update(void)
 {
 	mutexLock(lcd_common.lock);
 
@@ -281,33 +226,32 @@ void lcd_showString(const char *text)
 
 	/* Clear string */
 	for (i = 2; i <= LCD_MAX_POSITION; i++)
-		lcddrv_showChar(' ', i);
+		lcd_showChar(' ', i);
 
 	if ((len = strlen(text)) >= LCD_MAX_POSITION - 1)
 		len = LCD_MAX_POSITION - 1;
 
 	start = LCD_MAX_POSITION - len + 1;
 	for (i = start; i <= LCD_MAX_POSITION; i++)
-		lcddrv_showChar(text[i - start], i);
+		lcd_showChar(text[i - start], i);
 
 	mutexLock(lcd_common.lock);
-	memcpy(lcd_common.str, text, strlen);
-	lcd_common.str[strlen] = '\0';
+	memcpy(lcd_common.str, text, len);
+	lcd_common.str[len] = '\0';
 	mutexUnlock(lcd_common.lock);
 }
 
 
 void lcd_showSymbols(unsigned int sym_mask, unsigned int state)
 {
-	unsigned int symbol;
-	int i;
+	unsigned int i, symbol;
 
 	for (i = 0; i < LCDSYM_TOTAL; i++) {
 		if (!(symbol = sym_mask & (1 << i)))
 			continue;
 
 		mutexLock(lcd_common.lock);
-		lcddrv_setRamSegment(symbols[i][0], pin_to_ram[symbols[i][1]], symbol & state);
+		lcd_setRamSegment(symbols[i][0], pin_to_ram[symbols[i][1]], symbol & state);
 		mutexUnlock(lcd_common.lock);
 	}
 
@@ -323,17 +267,17 @@ void lcd_showSmallString(const char *text)
 	mutexLock(lcd_common.lock);
 
 	/* clear small digits */
-	lcd_showSymbol(LCDSYM_SMALL_ONE, 0);
+	lcd_showSymbols(LCDSYM_SMALL_ONE, 0);
 	lcd_showChar(' ', 1);
 
 	if (text[0] == '1') {
-		lcd_showSymbol(LCDSYM_SMALL_ONE, 1);
+		lcd_showSymbols(LCDSYM_SMALL_ONE, 1);
 	}
 
 	lcd_showChar(text[1], 1);
 
 	memcpy(lcd_common.str_small, text, sizeof(lcd_common.str_small) - 1);
-	lcd_common.str_small[sizeof(lcd_common.str_small)] = '\0';
+	lcd_common.str_small[sizeof(lcd_common.str_small) - 1] = '\0';
 
 	mutexUnlock(lcd_common.lock);
 }
@@ -341,11 +285,13 @@ void lcd_showSmallString(const char *text)
 
 void lcd_enable(int on)
 {
+	on = !on;
+
 	mutexLock(lcd_common.lock);
 
-	lcd_common.on = on;
-	*(lcd_common.base + cr) &= ~!on;
-	*(lcd_common.base + cr) |= !!on;
+	lcd_common.on = !on;
+	*(lcd_common.base + cr) &= ~on;
+	*(lcd_common.base + cr) |= !on;
 
 	mutexUnlock(lcd_common.lock);
 }
@@ -355,18 +301,19 @@ int lcd_setBacklight(unsigned char val)
 {
 	mutexLock(lcd_common.lock);
 
-	if (gpio_setPort(gpiod, 1, !!val) != EOK)
+	if (gpio_setPort(pctl_gpiod, 1, !!val) != EOK)
 		return -EIO;
 
 	lcd_common.backlight = val;
 
 	mutexUnlock(lcd_common.lock);
+
+	return EOK;
 }
 
 
-int lcddrv_init(void)
+int lcd_init(void)
 {
-	platformctl_t pctl;
 	int port, pin;
 
 	lcd_common.base = (void *)0x40002400;
@@ -380,11 +327,7 @@ int lcddrv_init(void)
 	*(lcd_common.base + fcr) &= 0xfc03ffff;
 
 	/* enable LCD clock */
-	pctl.action = PLATCTL_SET;
-	pctl.type = PLATCTL_DEVCLOCK;
-	pctl.devclock.dev = lcd;
-	pctl.devclock.state = 1;
-	platformctl(&pctl);
+	rcc_devClk(pctl_lcd, 1);
 
 	*(lcd_common.base + cr) |= 0x03 << 2;   /* DUTY = 1/4 */
 	*(lcd_common.base + fcr) |= 0x0a << 18; /* DIV  = 16  */
@@ -405,25 +348,34 @@ int lcddrv_init(void)
 			if (gpio_pins[port][pin] == -1)
 				continue;
 
-			if (gpio_configPin(port + gpioa, pin, 2, 0xb, 0, 1, 0) != EOK)
+			if (gpio_configPin(port + pctl_gpioa, pin, 2, 0xb, 0, 1, 0) != EOK) {
+				DEBUG("LCD failed to config gpio %d pin %d\n", port, pin);
 				return -EIO;
+			}
 		}
 	}
 
 	/* Backlight pin */
-	if (gpio_configPin(gpiod, 0, 1, 0, 0, 0, 0) != EOK)
+	if (gpio_configPin(pctl_gpiod, 0, 1, 0, 0, 0, 0) != EOK) {
+		DEBUG("LCD failed to config backlight\n", port, pin);
 		return -EIO;
+	}
 
-	if (mutexCreate(&lcd_common.lock) != EOK)
-		return -ENOMEM;
-
-	if (condCreate(&lcd_common.cond) != EOK) {
-		/* TODO - free mutex */
+	if (mutexCreate(&lcd_common.lock) != EOK) {
+		DEBUG("LCD failed to create mutex\n");
 		return -ENOMEM;
 	}
 
-	if (interrupt(lcd_irq, lcd_irqHandler, NULL, &lcd_common.cond) != EOK) {
-		/* TODO - free mutex and cond */
+	if (condCreate(&lcd_common.cond) != EOK) {
+		DEBUG("LCD failed to create cond\n");
+		resourceDestroy(lcd_common.lock);
+		return -ENOMEM;
+	}
+
+	if (interrupt(lcd_irq, lcd_irqHandler, NULL, lcd_common.cond) != EOK) {
+		DEBUG("LCD failed to register irq\n");
+		resourceDestroy(lcd_common.lock);
+		resourceDestroy(lcd_common.cond);
 		return -ENOMEM;
 	}
 

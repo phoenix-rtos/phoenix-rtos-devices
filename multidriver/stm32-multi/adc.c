@@ -1,8 +1,6 @@
 /*
  * Phoenix-RTOS
  *
- * Operating system kernel
- *
  * STM32L1 ADC driver
  *
  * Copyright 2017, 2018 Phoenix Systems
@@ -23,7 +21,13 @@
 #include "common.h"
 #include "rcc.h"
 
-enum { sr = 0, cr1, cr2, smpr1, smpr2, smpr3, jofr1, jofr2, jofr3, jofr4, htr, ltr, qr1,
+
+#ifndef NDEBUG
+static const char drvname[] = "adc: ";
+#endif
+
+
+enum { sr = 0, cr1, cr2, smpr1, smpr2, smpr3, jofr1, jofr2, jofr3, jofr4, htr, ltr, sqr1,
 	sqr2, sqr3, sqr4, sqr5, jsqr, jdr1, jdr2, jdr3, jdr4, dr, smpr0, csr = 192, ccr };
 
 
@@ -90,6 +94,8 @@ unsigned short adc_conversion(char channel)
 	/* Disable HSI clock */
 	rcc_setHsi(0);
 
+	mutexUnlock(adc_common.lock);
+
 	return conv;
 }
 
@@ -140,7 +146,8 @@ int adc_init(void)
 	}
 
 	/* Disable HSI clock */
-	rcc_setHsi(0);
+	if (rcc_setHsi(0) != EOK)
+		DEBUG("ADC HSI turn off failed\n");
 
 	/* Register end of conversion interrupt */
 	if (interrupt(adc1_irq, adc_irqEoc, NULL, adc_common.lock) != EOK) {

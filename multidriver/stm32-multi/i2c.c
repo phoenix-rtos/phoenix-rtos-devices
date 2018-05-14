@@ -21,6 +21,11 @@
 #include "common.h"
 
 
+#ifndef NDEBUG
+static const char drvname[] = "i2c: ";
+#endif
+
+
 /* TODO TODO TODO TODO */
 #if 0
 enum { _I2C_READ = 0, _I2C_WRITE };

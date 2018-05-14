@@ -1,8 +1,6 @@
 /*
  * Phoenix-RTOS
  *
- * Operating system kernel
- *
  * STM32L1 ADC driver
  *
  * Copyright 2017, 2018 Phoenix Systems

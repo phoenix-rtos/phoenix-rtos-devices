@@ -23,6 +23,10 @@
 #include "common.h"
 #include "rtc.h"
 
+#ifndef NDEBUG
+static const char drvname[] = "rcc: ";
+#endif
+
 struct {
 	volatile unsigned int *base;
 	volatile unsigned int *pwr;
@@ -103,20 +107,20 @@ int rcc_devClk(int dev, int state)
 
 	pctl.action = pctl_set;
 	pctl.type = pctl_devclk;
-	pctl.devclock.dev = dev;
-	pctl.devclock.state = state;
+	pctl.devclk.dev = dev;
+	pctl.devclk.state = state;
 
 	return platformctl(&pctl);
 }
 
 
-inline void pwr_lock(void)
+void pwr_lock(void)
 {
 	*(rcc_common.pwr + pwr_cr) &= ~(1 << 8);
 }
 
 
-inline void pwr_unlock(void)
+void pwr_unlock(void)
 {
 	*(rcc_common.pwr + pwr_cr) |= 1 << 8;
 }

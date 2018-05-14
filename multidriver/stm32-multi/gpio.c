@@ -1,8 +1,6 @@
 /*
  * Phoenix-RTOS
  *
- * Operating system kernel
- *
  * STM32L1 GPIO driver
  *
  * Copyright 2017, 2018 Phoenix Systems
@@ -17,10 +15,15 @@
 #include ARCH
 #include <errno.h>
 #include <stdint.h>
-#include <sys/platform.h>
 #include <sys/threads.h>
 
 #include "common.h"
+#include "rcc.h"
+
+
+#ifndef NDEBUG
+static const char drvname[] = "gpio: ";
+#endif
 
 
 enum { moder = 0, otyper, ospeedr, pupdr, idr, odr, bsrr, lckr, afrl, afrh, brr };
@@ -37,14 +40,14 @@ int gpio_setPort(int port, unsigned int mask, unsigned int val)
 {
 	unsigned int t;
 
-	if (port < gpioa || port > gpioh)
+	if (port < pctl_gpioa || port > pctl_gpioh)
 		return -EINVAL;
 
 	mutexLock(gpio_common.lock);
 
-	t = *(gpio_common.base[port - gpioa] + odr) & ~(~val & mask);
+	t = *(gpio_common.base[port - pctl_gpioa] + odr) & ~(~val & mask);
 	t |= val & mask;
-	*(gpio_common.base[port - gpioa] + odr) = t & 0xffff;
+	*(gpio_common.base[port - pctl_gpioa] + odr) = t & 0xffff;
 
 	mutexUnlock(gpio_common.lock);
 
@@ -56,12 +59,12 @@ int gpio_getPort(int port)
 {
 	unsigned int t;
 
-	if (port > gpioa || port > gpioh)
+	if (port > pctl_gpioa || port > pctl_gpioh)
 		return -EINVAL;
 
 	mutexLock(gpio_common.lock);
 
-	t = *(gpio_common.base[port - gpioa] + idr) & 0xffff;
+	t = *(gpio_common.base[port - pctl_gpioa] + idr) & 0xffff;
 
 	mutexUnlock(gpio_common.lock);
 
@@ -72,21 +75,15 @@ int gpio_getPort(int port)
 int gpio_configPin(int port, char pin, char mode, char af, char otype, char ospeed, char pupd)
 {
 	volatile unsigned int *base;
-	platformctl_t pctl;
 	unsigned int t;
 
-	if (port < gpioa || port > gpioa || pin > 16)
+	if (port < pctl_gpioa || port > pctl_gpioa || pin > 16)
 		return -EINVAL;
 
-	pctl.action = PLATCTL_SET;
-	pctl.type = PLATCTL_DEVCLOCK;
-	pctl.devclock.dev = port;
-	pctl.devclock.state = 1;
-
-	base = gpio_common.base[port - gpioa];
-
 	/* Enable GPIO port's clock */
-	platformctl(&pctl);
+	rcc_devClk(port, 1);
+
+	base = gpio_common.base[port - pctl_gpioa];
 
 	mutexLock(gpio_common.lock);
 
@@ -127,8 +124,10 @@ int gpio_init(void)
 	gpio_common.base[6] = (void *)0x40021c00;
 	gpio_common.base[7] = (void *)0x40021400;
 
-	if (mutexCreate(&gpio_common.lock) != EOK)
+	if (mutexCreate(&gpio_common.lock) != EOK) {
+		DEBUG("GPIO lock create failed\n");
 		return -ENOMEM;
+	}
 
 	return EOK;
 }
