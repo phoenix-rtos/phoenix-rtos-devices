@@ -74,7 +74,10 @@ static int uart_read(void *data, size_t size)
 		head = uart.rx_head + 1;
 		uart.rx_head = (uart.rx_head & ~0xff) + (head & 0xff);
 	}
-	uart.ready = 0;
+
+	if (uart.rx_head == uart.rx_tail)
+		uart.ready = 0;
+
 	mutexUnlock(uart.lock);
 
 	return i;
