@@ -32,6 +32,7 @@ $(BIN): $(OBJS)
 	$(SIL)$(LD) $(LDFLAGS) -o $(BIN) $(OBJS) ../../../libphoenix/libphoenix.a $(GCCLIB)
 	@echo " STRIP $@"
 	$(SIL)$(STRIP) $(BIN) 2>/dev/null
+	$(SIL)rm -f core *.o $(ARCH)
 
 
 depend: check

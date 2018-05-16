@@ -853,8 +853,11 @@ void flashdrv_init(void)
 	interrupt(32 + 16, gpmi_irqHandler, NULL, 0);
 }
 
-
+#ifndef LIBFLASHDRV
 int main(int argc, char **argv)
+#else
+int run_test(int argc, char **argv)
+#endif
 {
 	/* run some tests */
 #if 0
