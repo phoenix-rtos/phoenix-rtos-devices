@@ -16,10 +16,9 @@ TARGET ?= ia32-qemu
 VERSION = 0.2
 SRCDIR := $(CURDIR)
 
-include Makefile.ia32
-include Makefile.armv7
-include Makefile.arm
-
+# Compliation options for various architectures
+TARGET_FAMILY = $(firstword $(subst -, ,$(TARGET)-))
+include Makefile.$(TARGET_FAMILY)
 
 export SIL TARGET CC CFLAGS MKDEP MKDEPFLAGS AR ARFLAGS LD LDFLAGS LDLIBS OBJDUMP STRIP
 

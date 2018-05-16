@@ -6,33 +6,31 @@
 # Copyright 2018 Phoenix Systems
 #
 
-ifneq (, $(findstring armv7, $(TARGET)))
-	CROSS ?= arm-phoenix-
-	SUBDIRS = multidriver/stm32-multi
+CROSS ?= arm-phoenix-
+SUBDIRS = multidriver/stm32-multi
 
-	MKDEP = $(CROSS)gcc -MM
-	MKDEPFLAGS = $(CFLAGS)
+MKDEP = $(CROSS)gcc -MM
+MKDEPFLAGS = $(CFLAGS)
 
-	CC = $(CROSS)gcc
+CC = $(CROSS)gcc
 
-	CFLAGS += -Os -Wall -Wstrict-prototypes -g -I$(SRCDIR) -nostartfiles -nostdlib\
-		-mcpu=cortex-m3 -mthumb -fomit-frame-pointer -ffreestanding\
-		-fpic -fpie -msingle-pic-base -mno-pic-data-is-text-relative\
-		-DVERSION=\"$(VERSION)\" -DARCH=\"arch/armv7/arch.h\" -DNOMMU
+CFLAGS += -Os -Wall -Wstrict-prototypes -g -I$(SRCDIR) -nostartfiles -nostdlib\
+	-mcpu=cortex-m3 -mthumb -fomit-frame-pointer -ffreestanding\
+	-fpic -fpie -msingle-pic-base -mno-pic-data-is-text-relative\
+	-DVERSION=\"$(VERSION)\" -DARCH=\"arch/armv7/arch.h\" -DNOMMU
 
-	CFLAGS += -fdata-sections -ffunction-sections
+CFLAGS += -fdata-sections -ffunction-sections
 
-	AR = $(CROSS)ar
-	ARFLAGS = -r
+AR = $(CROSS)ar
+ARFLAGS = -r
 
-	LD = $(CROSS)ld
-	LDFLAGS = -nostdlib -e _start --section-start .text=0 -Tbss=20000000 -z max-page-size=0x10
-	LDFLAGS += --gc-sections
-	GCCLIB := $(shell $(CC) $(CFLAGS) -print-libgcc-file-name)
-	PHOENIXLIB := $(shell $(CC) $(CFLAGS) -print-file-name=libphoenix.a)
-	LDLIBS := $(PHOENIXLIB) $(GCCLIB)
+LD = $(CROSS)ld
+LDFLAGS = -nostdlib -e _start --section-start .text=0 -Tbss=20000000 -z max-page-size=0x10
+LDFLAGS += --gc-sections
+GCCLIB := $(shell $(CC) $(CFLAGS) -print-libgcc-file-name)
+PHOENIXLIB := $(shell $(CC) $(CFLAGS) -print-file-name=libphoenix.a)
+LDLIBS := $(PHOENIXLIB) $(GCCLIB)
 
-	OBJCOPY = $(CROSS)objcopy
-	OBJDUMP = $(CROSS)objdump
-	STRIP = $(CROSS)strip
-endif
+OBJCOPY = $(CROSS)objcopy
+OBJDUMP = $(CROSS)objdump
+STRIP = $(CROSS)strip
