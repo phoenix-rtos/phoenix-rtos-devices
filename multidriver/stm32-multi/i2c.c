@@ -1,8 +1,6 @@
 /*
  * Phoenix-RTOS
  *
- * Operating system kernel
- *
  * STM32L1 I2C driver
  *
  * Copyright 2017, 2018 Phoenix Systems
@@ -15,10 +13,14 @@
 
 #include ARCH
 #include <errno.h>
+#include <sys/pwman.h>
 #include <sys/threads.h>
 #include <sys/interrupt.h>
 
 #include "common.h"
+#include "gpio.h"
+#include "i2c.h"
+#include "rcc.h"
 
 
 #ifndef NDEBUG
@@ -26,8 +28,6 @@ static const char drvname[] = "i2c: ";
 #endif
 
 
-/* TODO TODO TODO TODO */
-#if 0
 enum { _I2C_READ = 0, _I2C_WRITE };
 
 
@@ -38,165 +38,165 @@ struct {
 	volatile unsigned int *base;
 
 	handle_t lock;
-	handle_t cond;
+	handle_t irqlock;
+	handle_t irqcond;
 } i2c_common;
 
 
-static int i2c_irq(void *arg)
+static int i2c_irq(unsigned int n, void *arg)
 {
 	/* Event irq disable */
-	*(i2cdrv_common.base + i2c_cr2) &= ~(3 << 9);
-	proc_threadWakeup(&i2cdrv_common.irqEv);
+	*(i2c_common.base + cr2) &= ~(3 << 9);
 
-	return 0;
+	return 1;
 }
 
 
-static inline void i2cdv_waitForIrq(void)
+static void i2c_waitForIrq(void)
 {
-	hal_spinlockSet(&i2cdrv_common.irqSp);
-	*(i2cdrv_common.base + i2c_cr2) |= (3 << 9);
-	proc_threadWait(&i2cdrv_common.irqEv, &i2cdrv_common.irqSp, 0);
-	hal_spinlockClear(&i2cdrv_common.irqSp);
+	mutexLock(i2c_common.irqlock);
+	*(i2c_common.base + cr2) |= (3 << 9);
+	condWait(i2c_common.irqcond, i2c_common.irqlock, 0);
+	mutexUnlock(i2c_common.irqlock);
 }
 
 
-static unsigned int i2cdrv_transaction(char op, char addr, char reg, void *buff, unsigned int count)
+unsigned int i2c_transaction(char op, char addr, char reg, void *buff, unsigned int count)
 {
 	int i;
 
-	if (count < 1)
+	if (count < 1 || (op != _I2C_READ && op != _I2C_WRITE))
 		return 0;
 
-	hal_spinlockSet(&i2cdrv_common.idleSp);
-	/* Wait for i2c idle */
-	while (i2cdrv_common.busy)
-		proc_threadWait(&i2cdrv_common.idleEv, &i2cdrv_common.idleSp, 0);
+	mutexLock(i2c_common.lock);
+	keepidle(1);
 
-	i2cdrv_common.busy = 1;
-	hal_cpuSetDevBusy(1);
-	*(i2cdrv_common.base + i2c_cr2) |= (3 << 9);
+	*(i2c_common.base + cr2) |= (3 << 9);
 
 	/* Start condition generation */
-	*(i2cdrv_common.base + i2c_cr1) |= (1 << 8);
-	hal_spinlockClear(&i2cdrv_common.idleSp);
+	*(i2c_common.base + cr1) |= (1 << 8);
 
-	while (!(*(i2cdrv_common.base + i2c_sr1) & 1))
-		i2cdv_waitForIrq();
+	while (!(*(i2c_common.base + sr1) & 1))
+		i2c_waitForIrq();
 
-	*(i2cdrv_common.base + i2c_dr) = addr << 1;
+	*(i2c_common.base + dr) = addr << 1;
 
-	while (!((*(i2cdrv_common.base + i2c_sr1) & 2) && (*(i2cdrv_common.base + i2c_sr2) & 1)))
-		i2cdv_waitForIrq();
+	while (!((*(i2c_common.base + sr1) & 2) && (*(i2c_common.base + sr2) & 1)))
+		i2c_waitForIrq();
 
-	while (!(*(i2cdrv_common.base + i2c_sr1) & (1 << 7)))
-		i2cdv_waitForIrq();
+	while (!(*(i2c_common.base + sr1) & (1 << 7)))
+		i2c_waitForIrq();
 
-	*(i2cdrv_common.base + i2c_dr) = reg;
+	*(i2c_common.base + dr) = reg;
 
 	if (op == _I2C_READ) {
-		*(i2cdrv_common.base + i2c_cr1) |= (1 << 8);
+		*(i2c_common.base + cr1) |= (1 << 8);
 		if (count > 1)
-			*(i2cdrv_common.base + i2c_cr1) |= (1 << 10);
+			*(i2c_common.base + cr1) |= (1 << 10);
 
-		while (!(*(i2cdrv_common.base + i2c_sr1) & 1))
-			i2cdv_waitForIrq();
+		while (!(*(i2c_common.base + sr1) & 1))
+			i2c_waitForIrq();
 
-		*(i2cdrv_common.base + i2c_dr) = (addr << 1) | 1;
+		*(i2c_common.base + dr) = (addr << 1) | 1;
 
-		while (!((*(i2cdrv_common.base + i2c_sr1) & 2) && (*(i2cdrv_common.base + i2c_sr2) & 1)))
-			i2cdv_waitForIrq();
+		while (!((*(i2c_common.base + sr1) & 2) && (*(i2c_common.base + sr2) & 1)))
+			i2c_waitForIrq();
 
 		for (i = 0; i < count; ++i) {
-			while (!(*(i2cdrv_common.base + i2c_sr1) & (1 << 6)))
-				i2cdv_waitForIrq();
+			while (!(*(i2c_common.base + sr1) & (1 << 6)))
+				i2c_waitForIrq();
 
 			if ((i + 2) >= count)
-				*(i2cdrv_common.base + i2c_cr1) &= ~(1 << 10);
+				*(i2c_common.base + cr1) &= ~(1 << 10);
 
-			((char *)buff)[i] = *(i2cdrv_common.base + i2c_dr);
+			((char *)buff)[i] = *(i2c_common.base + dr);
 		}
 	}
 	else {
 		for (i = 0; i < count; ++i) {
-			while (!(*(i2cdrv_common.base + i2c_sr1) & (1 << 7)))
-				i2cdv_waitForIrq();
+			while (!(*(i2c_common.base + sr1) & (1 << 7)))
+				i2c_waitForIrq();
 
-			*(i2cdrv_common.base + i2c_dr) = ((char *)buff)[i];
+			*(i2c_common.base + dr) = ((char *)buff)[i];
 		}
 
-		while (!(*(i2cdrv_common.base + i2c_sr1) & (1 << 7)))
-			i2cdv_waitForIrq();
+		while (!(*(i2c_common.base + sr1) & (1 << 7)))
+			i2c_waitForIrq();
 	}
 
-	*(i2cdrv_common.base + i2c_cr1) |= (1 << 9);
+	*(i2c_common.base + cr1) |= (1 << 9);
 
-	hal_spinlockSet(&i2cdrv_common.idleSp);
-	i2cdrv_common.busy = 0;
-	hal_cpuSetDevBusy(0);
-	proc_threadWakeup(&i2cdrv_common.idleEv);
-	hal_spinlockClear(&i2cdrv_common.idleSp);
+	keepidle(0);
+	mutexUnlock(i2c_common.lock);
 
 	return i;
 }
 
 
-void i2cdrv_init(void)
+int i2c_init(void)
 {
 	unsigned int t;
 
-	i2cdrv_common.base = (void *)0x40005800;
-	i2cdrv_common.rcc = (void *)0x40023800;
+	i2c_common.base = (void *)0x40005800;
 
-	*(i2cdrv_common.rcc + rcc_apb1enr) |= (1 << 22);
-
-	hal_cpuDataBarrier();
+	if (rcc_devClk(pctl_i2c1, 1) != EOK) {
+		DEBUG("Failed to enable clock\n");
+		return -EIO;
+	}
 
 	/* Disable I2C periph */
-	*(i2cdrv_common.base + i2c_cr1) &= ~1;
+	*(i2c_common.base + cr1) &= ~1;
+	dataBarier();
 
-	/* TODO: Use gpiodrv message interface */
-	gpiodrv_configPin(GPIOB, 10, 2, 4, 1, 0, 0);
-	gpiodrv_configPin(GPIOB, 11, 2, 4, 1, 0, 0);
+	if (gpio_configPin(pctl_gpiob, 10, 2, 4, 1, 0, 0) != EOK ||
+		gpio_configPin(pctl_gpiob, 11, 2, 4, 1, 0, 0) != EOK) {
+		DEBUG("Failed to initialize GPIOs\n");
+		return -EIO;
+	}
 
 	/* Enable ACK after each byte */
-	*(i2cdrv_common.base + i2c_cr2) |= 1 << 10;
+	*(i2c_common.base + cr2) |= 1 << 10;
 
 	/* Peripheral clock = 2 MHz */
-	t = *(i2cdrv_common.base + i2c_cr2) & ~0x1ff;
-	*(i2cdrv_common.base + i2c_cr2) = t | (1 << 2);
+	t = *(i2c_common.base + cr2) & ~0x1ff;
+	*(i2c_common.base + cr2) = t | (1 << 2);
 
 	/* 95,325 kHz SCK */
-	t = *(i2cdrv_common.base + i2c_ccr) & ~((1 << 14) | 0x7ff);
-	*(i2cdrv_common.base + i2c_ccr) = t | 0xb;
+	t = *(i2c_common.base + ccr) & ~((1 << 14) | 0x7ff);
+	*(i2c_common.base + ccr) = t | 0xb;
 
 	/* 500 ns SCL rise time */
-	t = *(i2cdrv_common.base + i2c_trise) & ~0x1ff;
-	*(i2cdrv_common.base + i2c_trise) = t | 3;
+	t = *(i2c_common.base + trise) & ~0x1ff;
+	*(i2c_common.base + trise) = t | 3;
 
 	/* Enable I2C periph */
-	*(i2cdrv_common.base + i2c_cr1) |= 1;
+	*(i2c_common.base + cr1) |= 1;
 
-	i2cdrv_common.idleEv = NULL;
-	i2cdrv_common.irqEv = NULL;
+	if (mutexCreate(&i2c_common.lock) != EOK) {
+		DEBUG("Failed to create lock\n");
+		return -ENOMEM;
+	}
 
-	i2cdrv_common.busy = 0;
+	if (mutexCreate(&i2c_common.irqlock) != EOK) {
+		DEBUG("Failed to create irqlock\n");
+		resourceDestroy(i2c_common.lock);
+		return -ENOMEM;
+	}
 
-	hal_spinlockCreate(&i2cdrv_common.idleSp, "i2c idle spinlock");
-	hal_spinlockCreate(&i2cdrv_common.irqSp, "i2c irq spinlock");
+	if (condCreate(&i2c_common.irqcond) != EOK) {
+		DEBUG("Failed to create irqcond\n");
+		resourceDestroy(i2c_common.lock);
+		resourceDestroy(i2c_common.irqcond);
+		return -ENOMEM;
+	}
 
-	i2cdrv_common.irqHandler.next = NULL;
-	i2cdrv_common.irqHandler.prev = NULL;
-	i2cdrv_common.irqHandler.f = i2cdrv_irqHandler;
-	i2cdrv_common.irqHandler.data = NULL;
-	i2cdrv_common.irqHandler.pmap = NULL;
-	i2cdrv_common.irqHandler.cond = NULL;
+	if (interrupt(49, i2c_irq, NULL, i2c_common.irqcond) != EOK) {
+		DEBUG("Failed to register irq\n");
+		resourceDestroy(i2c_common.lock);
+		resourceDestroy(i2c_common.irqlock);
+		resourceDestroy(i2c_common.irqcond);
+		return -ENOMEM;
+	}
 
-	hal_interruptsSetHandler(49, &i2cdrv_common.irqHandler);
-
-	proc_portCreate(&i2cdrv_id);
-	proc_portRegister(i2cdrv_id, "/i2cdrv");
-
-	proc_threadCreate(0, i2cdrv_thread, NULL, 2, 512, 0, 0, 0);
+	return EOK;
 }
-#endif

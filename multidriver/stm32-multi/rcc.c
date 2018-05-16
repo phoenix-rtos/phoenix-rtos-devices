@@ -31,8 +31,8 @@ struct {
 	volatile unsigned int *base;
 	volatile unsigned int *pwr;
 
-	handle_t hsiCond;
-	handle_t hsiLock;
+	handle_t cond;
+	handle_t lock;
 
 	int hsiState;
 } rcc_common;
@@ -53,16 +53,28 @@ static int rcc_irqHsiReady(unsigned int n, void *arg)
 		return 1;
 	}
 
-	return 0;
+	return -1;
+}
+
+
+static inline void _pwr_lock(void)
+{
+	*(rcc_common.pwr + pwr_cr) &= ~(1 << 8);
+}
+
+
+static inline void _pwr_unlock(void)
+{
+	*(rcc_common.pwr + pwr_cr) |= 1 << 8;
 }
 
 
 int rcc_setHsi(int state)
 {
-	mutexLock(rcc_common.hsiLock);
+	mutexLock(rcc_common.lock);
 	if (!rcc_common.hsiState == !state) {
 		/* HSI's already in the desired state */
-		mutexUnlock(rcc_common.hsiLock);
+		mutexUnlock(rcc_common.lock);
 		return EOK;
 	}
 
@@ -70,7 +82,7 @@ int rcc_setHsi(int state)
 		*(rcc_common.base + cr) &= ~1;
 		dataBarier();
 		keepidle(0);
-		mutexUnlock(rcc_common.hsiLock);
+		mutexUnlock(rcc_common.lock);
 
 		return EOK;
 	}
@@ -78,24 +90,24 @@ int rcc_setHsi(int state)
 	if (!(*(rcc_common.base + cr) & 2)) {
 		keepidle(1);
 
-		/* Enable HSI ready interrupt */
+		/* Enable the HSI ready interrupt */
 		*(rcc_common.base + cir) |= 1 << 10;
 		dataBarier();
 
-		/* Enable HSI clock */
+		/* Enable the HSI clock */
 		*(rcc_common.base + cr) |= 1;
 		dataBarier();
 
-		/* Wait for clock to stabilize */
+		/* Wait for the clock to stabilize */
 		while (!(*(rcc_common.base + cr) & 2))
-			condWait(rcc_common.hsiCond, rcc_common.hsiLock, 0);
+			condWait(rcc_common.cond, rcc_common.lock, 0);
 
-		/* Disable HSI ready interrupt */
+		/* Disable the HSI ready interrupt */
 		*(rcc_common.base + cir) &= ~(1 << 10);
 		dataBarier();
 	}
 
-	mutexUnlock(rcc_common.hsiLock);
+	mutexUnlock(rcc_common.lock);
 
 	return EOK;
 }
@@ -103,6 +115,7 @@ int rcc_setHsi(int state)
 
 int rcc_devClk(int dev, int state)
 {
+	int ret;
 	platformctl_t pctl;
 
 	pctl.action = pctl_set;
@@ -110,19 +123,27 @@ int rcc_devClk(int dev, int state)
 	pctl.devclk.dev = dev;
 	pctl.devclk.state = state;
 
-	return platformctl(&pctl);
+	mutexLock(rcc_common.lock);
+	ret = platformctl(&pctl);
+	mutexUnlock(rcc_common.lock);
+
+	return ret;
 }
 
 
 void pwr_lock(void)
 {
-	*(rcc_common.pwr + pwr_cr) &= ~(1 << 8);
+	mutexLock(rcc_common.lock);
+	_pwr_lock();
+	mutexUnlock(rcc_common.lock);
 }
 
 
 void pwr_unlock(void)
 {
-	*(rcc_common.pwr + pwr_cr) |= 1 << 8;
+	mutexLock(rcc_common.lock);
+	_pwr_unlock();
+	mutexUnlock(rcc_common.lock);
 }
 
 
@@ -132,25 +153,30 @@ int rcc_init(void)
 	rcc_common.pwr = (void *)0x40007000;
 	rcc_common.hsiState = 0;
 
-	pwr_unlock();
+	_pwr_unlock();
 
 	/* Select LSE as clock source for RTC and LCD. */
 	*(rcc_common.base + csr) |= 1 << 16;
-
 	dataBarier();
 
-	pwr_lock();
+	_pwr_lock();
 
-	if (mutexCreate(&rcc_common.hsiLock) != EOK)
-		return -ENOMEM;
-
-	if (condCreate(&rcc_common.hsiCond) != EOK) {
-		/* TODO - free mutex */
+	if (condCreate(&rcc_common.cond) != EOK) {
+		DEBUG("Failed to create cond\n");
+		resourceDestroy(rcc_common.lock);
 		return -ENOMEM;
 	}
 
-	if (interrupt(rcc_irq, rcc_irqHsiReady, NULL, rcc_common.hsiCond) != EOK) {
-		/* TODO - free cond and mutex */
+	if (mutexCreate(&rcc_common.lock) != EOK) {
+		DEBUG("Failed to create lock\n");
+		resourceDestroy(rcc_common.cond);
+		return -ENOMEM;
+	}
+
+	if (interrupt(rcc_irq, rcc_irqHsiReady, NULL, rcc_common.cond) != EOK) {
+		DEBUG("Failed to register irq\n");
+		resourceDestroy(rcc_common.lock);
+		resourceDestroy(rcc_common.cond);
 		return -ENOMEM;
 	}
 

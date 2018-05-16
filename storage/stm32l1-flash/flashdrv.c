@@ -98,7 +98,7 @@ static void eeprom_unlock(void)
 }
 
 
-int eeprom_eraseByte(u32 addr)
+int _eeprom_eraseByte(u32 addr)
 {
 	int err;
 

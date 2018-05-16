@@ -1,8 +1,6 @@
 /*
  * Phoenix-RTOS
  *
- * Operating system kernel
- *
  * STM32L1 RTC driver
  *
  * Copyright 2017, 2018 Phoenix Systems
@@ -35,7 +33,6 @@ enum { tr = 0, dr, cr, isr, prer, wutr, wpr = 9, ssr};
 
 struct {
 	volatile unsigned int *base;
-	volatile unsigned int *pwr;
 
 	handle_t lock;
 } rtc_common;
@@ -143,7 +140,6 @@ int rtc_set(rtctimestamp_t *timestamp)
 int rtc_init(void)
 {
 	rtc_common.base = (void *)0x40002800;
-	rtc_common.pwr = (void *)0x40007000;
 
 	if (mutexCreate(&rtc_common.lock) != EOK) {
 		DEBUG("RTC failed to create mutex\n");
@@ -154,6 +150,9 @@ int rtc_init(void)
 
 	if (rcc_devClk(pctl_rtc, 1) != EOK) {
 		DEBUG("RTC failed to enable clock\n");
+		resourceDestroy(rtc_common.lock);
+		pwr_lock();
+		return -ENOMEM;
 	}
 
 	pwr_lock();

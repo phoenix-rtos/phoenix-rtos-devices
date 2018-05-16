@@ -1,8 +1,6 @@
 /*
  * Phoenix-RTOS
  *
- * Operating system kernel
- *
  * STM32L1 reset and clock controler driver
  *
  * Copyright 2017, 2018 Phoenix Systems
@@ -30,5 +28,6 @@ int rcc_devClk(int dev, int state);
 
 
 int rcc_init(void);
+
 
 #endif

@@ -14,6 +14,8 @@
 
 #include ARCH
 #include <sys/threads.h>
+#include <sys/pwman.h>
+#include <unistd.h>
 
 #include "flash.h"
 #include "log.h"
@@ -48,7 +50,7 @@ typedef struct {
 
 struct {
 	volatile unsigned int *flash;
-	volatile unsigned int *iwdg;
+//	volatile unsigned int *iwdg;
 	unsigned int port;
 	lock_t lock;
 
@@ -62,17 +64,17 @@ struct {
 } log_common;
 
 
-static int flash_wait(void)
+static int _flash_wait(void)
 {
 	int i;
 
 	for (i = 0; i < 10; ++i) {
 		/* Check if flash is busy. */
 		if ((*(flash_common.flash + flash_sr) & 0x1) == 0x1) {
-			hal_cpuSetDevBusy(1);
-			proc_threadSleep(10000);
-			hal_cpuSetDevBusy(0);
-			*flash_common.iwdg = 0xaaaa;
+			keepidle(1);
+			usleep(10000);
+			keepidle(0);
+//			*flash_common.iwdg = 0xaaaa;
 			continue;
 		}
 
@@ -87,7 +89,7 @@ static int flash_wait(void)
 }
 
 
-static inline void flash_clearFlags(void)
+static inline void _flash_clearFlags(void)
 {
 	*(flash_common.flash + flash_sr) |= 0x3f02;
 }
@@ -99,56 +101,54 @@ static inline int eeprom_isValidAdress(u32 addr)
 }
 
 
-static inline void eeprom_lock(void)
+static inline void _eeprom_lock(void)
 {
 	*(flash_common.flash + flash_pecr) |= (1 << 0);
-	hal_cpuDataBarrier();
+	dataBarier();
 }
 
 
-static void eeprom_unlock(void)
+static void _eeprom_unlock(void)
 {
 	while (*(flash_common.flash + flash_pecr) & (1 << 0)) {
 		*(flash_common.flash + flash_pekeyr) = 0x89abcdef;
-		hal_cpuDataBarrier();
+		dataBarier();
 		*(flash_common.flash + flash_pekeyr) = 0x02030405;
-		hal_cpuDataBarrier();
+		dataBarier();
 	}
 }
 
 
-int eeprom_eraseByte(u32 addr)
+int _eeprom_eraseByte(u32 addr)
 {
 	int err;
 
-	proc_lockSet(&flash_common.lock);
-	eeprom_unlock();
-	flash_clearFlags();
+	_eeprom_unlock();
+	_flash_clearFlags();
 
-	if ((err = flash_wait()) == 0)
+	if ((err = _flash_wait()) == 0)
 		*(volatile u8 *) addr = 0x0;
 
-	eeprom_lock();
-	proc_lockClear(&flash_common.lock);
+	_eeprom_lock();
+
 	return err;
 }
 
 
-static int eeprom_writeByte(u32 addr, char value)
+static int _eeprom_writeByte(u32 addr, char value)
 {
 	int err;
 
-	proc_lockSet(&flash_common.lock);
-	eeprom_unlock();
-	flash_clearFlags();
+	_eeprom_unlock();
+	_flash_clearFlags();
 
-	if ((err = flash_wait()) == 0) {
+	if ((err = _flash_wait()) == 0) {
 		*(volatile u8 *) addr = value;
-		err = flash_wait();
+		err = _flash_wait();
 	}
 
-	eeprom_lock();
-	proc_lockClear(&flash_common.lock);
+	_eeprom_lock();
+
 	return err;
 }
 
@@ -157,8 +157,10 @@ static size_t eeprom_readData(u32 offset, char *buff, size_t size)
 {
 	unsigned int i;
 
+	mutexLock(flash_common.lock);
 	for (i = 0; i < size; ++i)
 		buff[i] = *((volatile u8 *) offset + i);
+	mutexUnlock(flash_common.lock);
 
 	return i;
 }
@@ -169,9 +171,12 @@ static size_t eeprom_writeData(u32 offset, char *buff, size_t size)
 	unsigned int i;
 
 	for (i = 0; i < size; ++i) {
-		eeprom_eraseByte(offset + i);
-		eeprom_writeByte(offset + i, buff[i]);
+		mutexLock(flash_common.lock);
+		_eeprom_eraseByte(offset + i);
+		_eeprom_writeByte(offset + i, buff[i]);
+		mutexUnlock(flash_common.lock);
 	}
+
 	return i;
 }
 
@@ -179,7 +184,7 @@ static size_t eeprom_writeData(u32 offset, char *buff, size_t size)
 static inline int ob_isValidAdress(u32 addr)
 {
 	/* Address must be even. */
-	if (addr & (1 << 1))
+	if (addr & 1)
 		return 0;
 
 	if (!flash_activeBank()) {
@@ -195,21 +200,21 @@ static inline int ob_isValidAdress(u32 addr)
 }
 
 
-static inline void ob_lock(void)
+static inline void _ob_lock(void)
 {
 	*(flash_common.flash + flash_pecr) |= (1 << 2);
 }
 
 
-static void ob_unlock(void)
+static void _ob_unlock(void)
 {
 	while (*(flash_common.flash + flash_pecr) & (1 << 2)) {
-		eeprom_unlock();
+		_eeprom_unlock();
 
 		*(flash_common.flash + flash_oprkeyr) = 0xfbead9c8;
-		hal_cpuDataBarrier();
+		dataBarier();
 		*(flash_common.flash + flash_oprkeyr) = 0x24252627;
-		hal_cpuDataBarrier();
+		dataBarier();
 	}
 }
 
@@ -220,11 +225,11 @@ static int ob_writeByte(u32 addr, char value)
 	volatile u32 word;
 	volatile u32 *wordAddr = (u32 *) (addr & ~((u32) 0x3));
 
-	proc_lockSet(&flash_common.lock);
-	ob_unlock();
-	flash_clearFlags();
+	mutexLock(flash_common.lock);
+	_ob_unlock();
+	_flash_clearFlags();
 
-	if ((err = flash_wait()) == 0) {
+	if ((err = _flash_wait()) == 0) {
 		word = *wordAddr;
 		if (addr & (1 << 0)) {
 			word &= 0x00ff00ff;
@@ -239,11 +244,12 @@ static int ob_writeByte(u32 addr, char value)
 
 
 		*wordAddr = word;
-		err = flash_wait();
+		err = _flash_wait();
 	}
 
-	ob_lock();
-	proc_lockClear(&flash_common.lock);
+	_ob_lock();
+	mutexUnlock(flash_common.lock);
+
 	return err;
 }
 
@@ -261,11 +267,11 @@ static size_t ob_readData(u32 offset, char *buff, size_t size)
 
 static size_t ob_writeData(u32 offset, char *buff, size_t size)
 {
-	/* Writing OB is to compliaceted to do in chunks greater than a byte. */
 	if (size != 1)
 		return 0;
 
 	ob_writeByte(offset, buff[0]);
+
 	return 1;
 }
 
@@ -282,23 +288,23 @@ static inline int program_isValidAddress(u32 addr)
 }
 
 
-static inline void program_lock(void)
+static inline void _program_lock(void)
 {
 	*(flash_common.flash + flash_pecr) |= (1 << 1);
-	hal_cpuDataBarrier();
+	dataBarier();
 }
 
 
-static void program_unlock(void)
+static void _program_unlock(void)
 {
 
 	while (*(flash_common.flash + flash_pecr) & (1 << 1)) {
-		eeprom_unlock();
+		_eeprom_unlock();
 
 		*(flash_common.flash + flash_prgkeyr) = 0x8c9daebf;
-		hal_cpuDataBarrier();
+		dataBarier();
 		*(flash_common.flash + flash_prgkeyr) = 0x13141516;
-		hal_cpuDataBarrier();
+		dataBarier();
 	}
 }
 
@@ -307,24 +313,25 @@ static int program_erasePage(u32 addr)
 {
 	int err;
 
-	proc_lockSet(&flash_common.lock);
-	program_unlock();
-	flash_clearFlags();
+	mutexLock(flash_common.lock);
+	_program_unlock();
+	_flash_clearFlags();
 
-	if ((err = flash_wait()) == 0) {
+	if ((err = _flash_wait()) == 0) {
 		/* Set the ERASE and PROG bits. */
 		*(flash_common.flash + flash_pecr) |= ((1 << 9) | (1 << 3));
 
 		/* Erase page. */
 		*(volatile u32 *) addr = 0x0;
-		err = flash_wait();
+		err = _flash_wait();
 
 		/* Disable the ERASE and PROG bits. */
 		*(flash_common.flash + flash_pecr) &= ~((1 << 9) | (1 << 3));
 	}
 
-	program_lock();
-	proc_lockClear(&flash_common.lock);
+	_program_lock();
+	mutexUnlock(flash_common.lock);
+
 	return err;
 }
 
@@ -334,23 +341,24 @@ static int program_writeWord(u32 addr, u32 value)
 	int err;
 	volatile u32 *current = (volatile u32 *) addr;
 
-	proc_lockSet(&flash_common.lock);
-	program_unlock();
-	flash_clearFlags();
+	mutexLock(flash_common.lock);
+	_program_unlock();
+	_flash_clearFlags();
 
-	if ((err = flash_wait()) == 0)  {
+	if ((err = _flash_wait()) == 0)  {
 		if (*current == value) {
-			program_lock();
-			proc_lockClear(&flash_common.lock);
+			_program_lock();
+			mutexUnlock(flash_common.lock);
 			return 0;
 		}
 
 		*current = value;
-		err = flash_wait();
+		err = _flash_wait();
 	}
 
-	program_lock();
-	proc_lockClear(&flash_common.lock);
+	_program_lock();
+	mutexUnlock(&flash_common.lock);
+
 	return err;
 }
 
@@ -477,11 +485,6 @@ void flash_bankBreak(void)
 
 static int _flash_atomCopy(u32 dest, u32 src, size_t len)
 {
-	char *buff;
-
-	if ((buff = vm_kmalloc(FLASH_MAX_READ)) == NULL)
-		return -ENOMEM;
-
 	hal_cpuDisableInterrupts();
 
 	flash_writeData(dest, (void *)src, len);

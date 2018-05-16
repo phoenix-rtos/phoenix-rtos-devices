@@ -11,8 +11,8 @@
  * %LICENSE%
  */
 
-#ifndef _FLASHDRV_H_
-#define _FLASHDRV_H_
+#ifndef _FLASH_H_
+#define _FLASH_H_
 
 #include ARCH
 #include "rtc.h"

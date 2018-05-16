@@ -175,21 +175,20 @@ static void lcd_showChar(char ch, unsigned int pos)
 	unsigned char segment = 0;
 	unsigned int i, on;
 
-	if (ch >= '0' && ch <= '9') {
+	if (ch >= '0' && ch <= '9')
 		segment = numbers[ch - '0'];
-	} else if (ch >= 'a' && ch <= 'z') {
+	else if (ch >= 'a' && ch <= 'z')
 		segment = lowercase_letters[ch - 'a'];
-	} else if (ch >= 'A' && ch <= 'Z') {
+	else if (ch >= 'A' && ch <= 'Z')
 		segment = uppercase_letters[ch - 'A'];
-	} else if (ch == '-') {
+	else if (ch == '-')
 		segment = char_dash;
-	} else if (ch == '_') {
+	else if (ch == '_')
 		segment = char_underscore;
-	} else if (ch == '?') {
+	else if (ch == '?')
 		segment = char_questionmark;
-	} else if (ch == LCDDRV_CHAR_DEGREE) {
+	else if (ch == LCDDRV_CHAR_DEGREE)
 		segment = char_degree;
-	}
 
 	for (i = 0; i < 7; i++) {
 		on = segment & (unsigned char)(1 << i);
@@ -202,19 +201,16 @@ void lcd_update(void)
 {
 	mutexLock(lcd_common.lock);
 
-	if(!lcd_common.on) {
-		mutexUnlock(lcd_common.lock);
-		return;
+	if (lcd_common.on) {
+		/* Request update */
+		*(lcd_common.base + fcr) |= 1 << 3;
+		*(lcd_common.base + sr) |= 0x04;
+		/* Wait for update done */
+		while (!(*(lcd_common.base + sr) & 0x08))
+			condWait(lcd_common.cond, lcd_common.lock, 0);
+
+		*(lcd_common.base + clr) |= 0x08;
 	}
-
-	/* Request update */
-	*(lcd_common.base + fcr) |= 1 << 3;
-	*(lcd_common.base + sr) |= 0x04;
-	/* Wait for update done */
-	while (!(*(lcd_common.base + sr) & 0x08))
-		condWait(lcd_common.cond, lcd_common.lock, 0);
-
-	*(lcd_common.base + clr) |= 0x08;
 
 	mutexUnlock(lcd_common.lock);
 }
@@ -301,8 +297,10 @@ int lcd_setBacklight(unsigned char val)
 {
 	mutexLock(lcd_common.lock);
 
-	if (gpio_setPort(pctl_gpiod, 1, !!val) != EOK)
+	if (gpio_setPort(pctl_gpiod, 1, !!val) != EOK) {
+		mutexUnlock(lcd_common.lock);
 		return -EIO;
+	}
 
 	lcd_common.backlight = val;
 

@@ -81,7 +81,10 @@ int gpio_configPin(int port, char pin, char mode, char af, char otype, char ospe
 		return -EINVAL;
 
 	/* Enable GPIO port's clock */
-	rcc_devClk(port, 1);
+	if (rcc_devClk(port, 1) != EOK) {
+		DEBUG("Failed to enable gpio%d clock\n", port - pctl_gpioa);
+		return -EIO;
+	}
 
 	base = gpio_common.base[port - pctl_gpioa];
 

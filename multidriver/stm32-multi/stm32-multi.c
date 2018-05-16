@@ -75,6 +75,7 @@ int main(void)
 	gpio_init();
 	lcd_init();
 	adc_init();
+	i2c_init();
 	//uart_init();
 	//flash_init();
 
