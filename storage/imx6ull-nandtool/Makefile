@@ -1,5 +1,5 @@
 #
-# Makefile for Phoenix-RTOS imx6ull-uart driver
+# Makefile for Phoenix-RTOS imx6ull-nandtool
 #
 # Copyright 2018 Phoenix Systems
 #
