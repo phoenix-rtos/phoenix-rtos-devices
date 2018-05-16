@@ -30,6 +30,8 @@ ifneq (, $(findstring arm-imx, $(TARGET)))
 	LDFLAGS = -nostdlib -z max-page-size=0x1000
 	LDFLAGS += --gc-sections
 	GCCLIB := $(shell $(CC) $(CFLAGS) -print-libgcc-file-name)
+	PHOENIXLIB := $(shell $(CC) $(CFLAGS) -print-file-name=libphoenix.a)
+	LDLIBS := $(PHOENIXLIB) $(GCCLIB)
 
 	OBJCOPY = $(CROSS)objcopy
 	OBJDUMP = $(CROSS)objdump

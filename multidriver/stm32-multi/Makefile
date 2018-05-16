@@ -8,7 +8,6 @@ SRCS = adc.c gpio.c i2c.c lcd.c rcc.c rtc.c stm32-multi.c #flash.c uart.c
 OBJS = $(SRCS:.c=.o)
 BIN = stm32-multi
 
-CFLAGS += -I. -I../../../libphoenix
 
 
 all: check $(BIN)
@@ -29,7 +28,7 @@ check:
 
 $(BIN): $(OBJS)
 	@echo " LD    $@"
-	$(SIL)$(LD) $(LDFLAGS) -o $(BIN) $(OBJS) ../../../libphoenix/libphoenix.a $(GCCLIB)
+	$(SIL)$(LD) $(LDFLAGS) -o $(BIN) $(OBJS) $(LDLIBS)
 	@cp $(BIN) $(BIN)-unstripped
 	@echo " STRIP $@"
 	$(SIL)$(STRIP) $(BIN) 2>/dev/null

@@ -8,7 +8,7 @@ SRCS = nandtool.c ../imx6ull-flash/flashdrv.c
 OBJS = $(SRCS:.c=.o)
 BIN = nandtool
 
-CFLAGS += -DLIBFLASHDRV -I. -I../../../libphoenix -I../../../phoenix-rtos-kernel/include
+CFLAGS += -DLIBFLASHDRV
 
 ifeq ($(CONFIG_NANDTOOL_TEST), 1)
 	CFLAGS += -DCONFIG_NANDTOOL_TEST
@@ -33,7 +33,7 @@ check:
 
 $(BIN): $(OBJS)
 	@echo " LD    $@"
-	$(SIL)$(LD) $(LDFLAGS) -o $(BIN) $(notdir $(OBJS)) ../../../libphoenix/libphoenix.a $(GCCLIB)
+	$(SIL)$(LD) $(LDFLAGS) -o $(BIN) $(notdir $(OBJS)) $(LDLIBS)
 	@echo " STRIP $@"
 	$(SIL)$(STRIP) $(BIN) 2>/dev/null
 

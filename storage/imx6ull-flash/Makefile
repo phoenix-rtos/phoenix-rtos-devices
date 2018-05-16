@@ -8,8 +8,6 @@ SRCS = flashdrv.c
 OBJS = $(SRCS:.c=.o)
 BIN = flashdrv
 
-CFLAGS += -I. -I../../../libphoenix -I../../../phoenix-rtos-kernel/include
-
 
 all: check $(BIN)
 
@@ -29,7 +27,7 @@ check:
 
 $(BIN): $(OBJS)
 	@echo " LD    $@"
-	$(SIL)$(LD) $(LDFLAGS) -o $(BIN) $(OBJS) ../../../libphoenix/libphoenix.a $(GCCLIB)
+	$(SIL)$(LD) $(LDFLAGS) -o $(BIN) $(OBJS) $(LDLIBS)
 	@echo " STRIP $@"
 	$(SIL)$(STRIP) $(BIN) 2>/dev/null
 	$(SIL)rm -f core *.o $(ARCH)

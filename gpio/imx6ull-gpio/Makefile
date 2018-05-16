@@ -8,8 +8,6 @@ SRCS = imx6ull-gpio.c
 OBJS = $(SRCS:.c=.o)
 BIN = imx6ull-gpio
 
-CFLAGS += -I. -I../../../libphoenix
-
 
 all: check $(BIN)
 
@@ -29,7 +27,7 @@ check:
 
 $(BIN): $(OBJS)
 	@echo " LD    $@"
-	$(SIL)$(LD) $(LDFLAGS) -o $(BIN) $(OBJS) ../../../libphoenix/libphoenix.a $(GCCLIB)
+	$(SIL)$(LD) $(LDFLAGS) -o $(BIN) $(OBJS) $(LDLIBS)
 	@cp $(BIN) $(BIN)-unstriped
 	@echo " STRIP $@"
 	$(SIL)$(STRIP) $(BIN) 2>/dev/null

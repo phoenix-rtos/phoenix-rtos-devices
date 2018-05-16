@@ -23,9 +23,9 @@
 #include <sys/mman.h>
 #include <sys/interrupt.h>
 #include <sys/platform.h>
+#include <phoenix/arch/imx6ull.h>
 
 #include "flashdrv.h"
-#include "arch/imx6ull.h"
 
 
 enum {

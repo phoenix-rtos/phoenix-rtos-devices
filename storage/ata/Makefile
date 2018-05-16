@@ -9,7 +9,7 @@ SRCS = pc-ata.c
 OBJS = $(SRCS:.c=.o)
 BIN = pc-ata
 
-CFLAGS += -I. -I../../../libphoenix/ -I../../pci/pc-pci -DARCH=\"arch/ia32/arch.h\"
+CFLAGS += -I../../pci/pc-pci
 
 
 all: check $(BIN)
@@ -30,7 +30,7 @@ check:
 
 $(BIN): $(OBJS)
 	@echo " LD    $@"
-	$(SIL)$(LD) $(LDFLAGS) -o $(BIN) $(OBJS) ../../../libphoenix/libphoenix.a $(GCCLIB)
+	$(SIL)$(LD) $(LDFLAGS) -o $(BIN) $(OBJS) $(LDLIBS)
 	@echo " STRIP $@"
 	$(SIL)$(STRIP) $(BIN) 2>/dev/null
 

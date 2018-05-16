@@ -9,8 +9,6 @@ SRCS = pc-uart.c
 OBJS = $(SRCS:.c=.o)
 BIN = pc-uart
 
-CFLAGS += -I. -I../../../libphoenix/ -DARCH=\"arch/ia32/arch.h\"
-
 
 all: check $(BIN)
 
@@ -30,7 +28,7 @@ check:
 
 $(BIN): $(OBJS)
 	@echo " LD    $@"
-	$(SIL)$(LD) $(LDFLAGS) -o $(BIN) $(OBJS) ../../../libphoenix/libphoenix.a $(GCCLIB)
+	$(SIL)$(LD) $(LDFLAGS) -o $(BIN) $(OBJS) $(LDLIBS)
 	@echo " STRIP $@"
 	$(SIL)$(STRIP) $(BIN) 2>/dev/null
 

@@ -29,7 +29,9 @@ ifneq (, $(findstring riscv64, $(TARGET)))
 	LDFLAGS = -nostdlib -e _start --section-start .init=$(VADDR)
 
 	GCCLIB := $(shell $(CC) $(CFLAGS) -print-libgcc-file-name)
-	LIBS = $(GCCLIB)
+	PHOENIXLIB := $(shell $(CC) $(CFLAGS) -print-file-name=libphoenix.a)
+	LDLIBS := $(PHOENIXLIB) $(GCCLIB)
+	LIBS = $(LDLIBS)
 
 	OBJCOPY = $(CROSS)objcopy
 	OBJDUMP = $(CROSS)objdump
