@@ -11,15 +11,15 @@
  * %LICENSE%
  */
 
-#ifndef _FLASHDRV_LOG_H_
-#define _FLASHDRV_LOG_H_
+#ifndef _LOG_H_
+#define _LOG_H_
 
-#include HAL
+#include ARCH
 #include "flash.h"
 
 
-#define FLASH_EVENT_COUNT   100
-#define FLASH_LOG_COUNT     24
+#define EVENT_COUNT   100
+#define LOG_COUNT     24
 
 
 extern void event_read(flashdevctl_t *devctl, flashevent_t *event);

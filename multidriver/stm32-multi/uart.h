@@ -1,8 +1,6 @@
 /*
  * Phoenix-RTOS
  *
- * Operating system kernel
- *
  * STM32L1 UART driver
  *
  * Copyright 2017, 2018 Phoenix Systems
@@ -30,5 +28,8 @@ enum { UARTDRV_MNORMAL = 0, UARTDRV_MNBLOCK };
 
 
 enum { UARTDRV_PARNONE = 0, UARTDRV_PAREVEN, UARTDRV_PARODD };
+
+
+int uart_init(void);
 
 #endif
