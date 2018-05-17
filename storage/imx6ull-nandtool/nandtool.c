@@ -36,7 +36,7 @@
 
 static inline int check_block(char *raw_block)
 {
-	if (!raw_block[0])
+	if (!raw_block[4096])
 		return 1;
 	return 0;
 }
