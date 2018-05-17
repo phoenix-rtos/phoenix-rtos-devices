@@ -17,7 +17,7 @@ int do_test(void *arg)
 	char *wbuf, *rbuf;
 	flashdrv_meta_t *meta;
 
-	unsigned fail_erase = 0, fail_read = 0, fail_write = 0, mismatch = 0, errors = 0, uncorrectable = 0, erased = 0;
+	unsigned fail_erase = 0, fail_write = 0, mismatch = 0, errors = 0, uncorrectable = 0, erased = 0;
 
 	if ((wbuf = mmap(NULL, SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0)) == NULL)
 		return 1;
@@ -76,7 +76,7 @@ int do_test(void *arg)
 	}
 
 	printf("\n");
-	printf("0 summary: %u erase, %u read, %u write errors\n", fail_erase, fail_read, fail_write);
+	printf("0 summary: %u erase, %u write errors\n", fail_erase, fail_write);
 	printf("           %u bit errors, %u uncorrectable ECC blocks, %u erased blocks\n", errors, uncorrectable, erased);
 	printf("           %u pages with data mismatch errors\n", mismatch);
 
