@@ -210,7 +210,7 @@ void print_help(void)
 			"\t-s (number) - start flashing from page (requires -i option)\n" \
 			"\t-c - search for bad blocks from factory and print summary\n" \
 			"\t-h - print this message\n" \
-			"\t-t (number) - run test #" \
+			"\t-t (number) - run test #no\n" \
 			"\t-e (start:end) - erase blocks form start to end\n");
 }
 
