@@ -34,6 +34,7 @@ typedef struct {
 	handle_t tx_cond;
 
 	handle_t cond;
+	handle_t inth;
 	handle_t lock;
 	int ready;
 } uart_t;

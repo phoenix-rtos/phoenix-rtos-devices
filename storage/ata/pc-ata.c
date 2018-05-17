@@ -421,11 +421,11 @@ int ata_init_bus(struct ata_bus *ab)
 	}
 
 	/* TODO: rework interrupt handling (pass only bus not channel etc) */
-	if (interrupt(ab->ac[0].irq_reg, ata_interrupt, (void *)&(ab->ac[0]), ab->ac[0].waitq) < 0)
+	if (interrupt(ab->ac[0].irq_reg, ata_interrupt, (void *)&(ab->ac[0]), ab->ac[0].waitq, &ab->ac[0].inth) < 0)
 		return -EINVAL;
 
 	if (ab->ac[0].irq_reg != ab->ac[1].irq_reg)
-		if (interrupt(ab->ac[1].irq_reg, ata_interrupt, (void *)&(ab->ac[1]), ab->ac[1].waitq) < 0)
+		if (interrupt(ab->ac[1].irq_reg, ata_interrupt, (void *)&(ab->ac[1]), ab->ac[1].waitq, &ab->ac[1].inth) < 0)
 			return -EINVAL;
 
 	return 0;

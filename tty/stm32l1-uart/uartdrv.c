@@ -42,6 +42,7 @@ typedef struct {
 
 	handle_t cond;
 	handle_t mutex;
+	handle_t inth;
 } uart_t;
 
 
@@ -385,7 +386,7 @@ void main(void)
 			portCreate(&uartptr->port);
 			portRegister(uartptr->port, name);
 
-			interrupt(info[i].irq, uartdrv_irqHandler, uartptr, uartptr->cond);
+			interrupt(info[i].irq, uartdrv_irqHandler, uartptr, uartptr->cond, &uartptr->inth);
 
 			if (uartmain != NULL) {
 				if ((stack = malloc(stacksz)) == NULL || beginthread(uartdrv_thread, 1, stack, stacksz, (void *)uartptr) == -ENOMEM) {

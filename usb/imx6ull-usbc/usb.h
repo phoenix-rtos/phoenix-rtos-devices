@@ -117,6 +117,7 @@ typedef struct _usb_dc_t {
 	u32 dev_addr;
 	handle_t cond;
 	handle_t lock;
+	handle_t inth;
 	u32 mods_cnt;
 	mod_t mods[MOD_MAX];
 	u8 op;

@@ -30,6 +30,7 @@ struct {
 	char spi_ready;
 	handle_t mutex;
 	handle_t cond;
+	handle_t inth;
 
 	unsigned int gpio, port;
 } spi_common;
@@ -184,7 +185,7 @@ int spi_init(void)
 	/* Enable SPI */
 	*(spi_common.base + cr1) |= 1 << 6;
 
-	interrupt(16 + 35, spi_irqHandler, NULL, spi_common.cond);
+	interrupt(16 + 35, spi_irqHandler, NULL, spi_common.cond, &spi_common.inth);
 
 	gpio_pinConfig(GPIOA, 12, 1, 0, 1, 0, 0); /* SPI PWEN */
 	gpio_pinConfig(GPIOA,  4, 1, 0, 1, 0, 0); /* SPI /CS */

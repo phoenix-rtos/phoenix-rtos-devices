@@ -199,6 +199,7 @@ struct {
 	volatile u32 *mux;
 
 	handle_t mutex, bch_cond, dma_cond;
+	handle_t intbch, intdma, intgpmi;
 	unsigned pagesz, metasz;
 
 	int result, bch_status;
@@ -848,9 +849,9 @@ void flashdrv_init(void)
 	/* 4096 + 218 page size, ECC14, GF13, 128 word dataN (512 bytes) */
 	*(flashdrv_common.bch + bch_flash0layout1) = flashdrv_common.pagesz << 16 | 7 << 11 | 0 << 10 | 128;
 
-	interrupt(32 + 13, dma_irqHandler, NULL, flashdrv_common.dma_cond);
-	interrupt(32 + 15, bch_irqHandler, NULL, flashdrv_common.bch_cond);
-	interrupt(32 + 16, gpmi_irqHandler, NULL, 0);
+	interrupt(32 + 13, dma_irqHandler, NULL, flashdrv_common.dma_cond, &flashdrv_common.intdma);
+	interrupt(32 + 15, bch_irqHandler, NULL, flashdrv_common.bch_cond, &flashdrv_common.intbch);
+	interrupt(32 + 16, gpmi_irqHandler, NULL, 0, &flashdrv_common.intgpmi);
 }
 
 #ifndef LIBFLASHDRV

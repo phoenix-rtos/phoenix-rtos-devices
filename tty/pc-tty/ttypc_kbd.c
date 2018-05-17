@@ -383,7 +383,7 @@ int _ttypc_kbd_init(ttypc_t *ttypc)
 		return -ENOMEM;
 	beginthread(ttypc_kbd_ctlthr, 1, stack, 2048, (void *)ttypc);
 
-	interrupt(1, ttypc_kbd_interrupt, ttypc, ttypc->rcond);
+	interrupt(1, ttypc_kbd_interrupt, ttypc, ttypc->rcond, &ttypc->inth);
 
 	/* Read byte from controller (reset is neccessary) */
 	inb(ttypc->inp_base);

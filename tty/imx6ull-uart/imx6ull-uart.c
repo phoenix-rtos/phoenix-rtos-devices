@@ -236,7 +236,7 @@ void main(void)
 	if (condCreate(&uart.cond) != EOK)
 		return;
 
-	interrupt(58, uart_intr, NULL, uart.cond);
+	interrupt(58, uart_intr, NULL, uart.cond, &uart.inth);
 
 	uart.ready = 0;
 	/* enable uart and rx ready interrupt */

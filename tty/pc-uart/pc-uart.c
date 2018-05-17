@@ -41,6 +41,7 @@ typedef struct {
 
 	handle_t mutex;
 	handle_t intcond;
+	handle_t inth;
 
 	oid_t oid;
 
@@ -384,7 +385,7 @@ int _uart_init(void *base, unsigned int irq, unsigned int speed, uart_t **uart)
 	condCreate(&(*uart)->intcond);
 	mutexCreate(&(*uart)->mutex);
 
-	interrupt(irq, uart_interrupt, (*uart), (*uart)->intcond);
+	interrupt(irq, uart_interrupt, (*uart), (*uart)->intcond, &(*uart)->inth);
 
 	u8 *stack;
 	stack = (u8 *)malloc(4096);

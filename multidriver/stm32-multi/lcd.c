@@ -1,8 +1,6 @@
 /*
  * Phoenix-RTOS
  *
- * Operating system kernel
- *
  * STM32L1 LCD driver
  *
  * Copyright 2017, 2018 Phoenix Systems
@@ -49,6 +47,7 @@ struct {
 
 	handle_t lock;
 	handle_t cond;
+	handle_t inth;
 } lcd_common;
 
 
@@ -370,7 +369,7 @@ int lcd_init(void)
 		return -ENOMEM;
 	}
 
-	if (interrupt(lcd_irq, lcd_irqHandler, NULL, lcd_common.cond) != EOK) {
+	if (interrupt(lcd_irq, lcd_irqHandler, NULL, lcd_common.cond, &lcd_common.inth) != EOK) {
 		DEBUG("LCD failed to register irq\n");
 		resourceDestroy(lcd_common.lock);
 		resourceDestroy(lcd_common.cond);

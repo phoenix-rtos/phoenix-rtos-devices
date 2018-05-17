@@ -38,6 +38,7 @@ typedef struct _ttypc_t {
 
 	handle_t rlock;
 	handle_t rcond;
+	handle_t inth;
 	unsigned char **rbuff;
 	unsigned int rbuffsz;
 	unsigned int rb;

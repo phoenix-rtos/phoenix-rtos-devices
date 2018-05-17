@@ -40,6 +40,7 @@ struct {
 	handle_t lock;
 	handle_t irqlock;
 	handle_t irqcond;
+	handle_t inth;
 } i2c_common;
 
 
@@ -190,7 +191,7 @@ int i2c_init(void)
 		return -ENOMEM;
 	}
 
-	if (interrupt(49, i2c_irq, NULL, i2c_common.irqcond) != EOK) {
+	if (interrupt(49, i2c_irq, NULL, i2c_common.irqcond, &i2c_common.inth) != EOK) {
 		DEBUG("Failed to register irq\n");
 		resourceDestroy(i2c_common.lock);
 		resourceDestroy(i2c_common.irqlock);

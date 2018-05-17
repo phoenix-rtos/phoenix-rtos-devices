@@ -113,6 +113,7 @@ struct ata_channel {
 	handle_t irq_spin;
 	volatile u8 irq_invoked;
 	handle_t waitq;
+	handle_t inth;
 
 	struct ata_bus *ab;
 	struct ata_dev devices[2];

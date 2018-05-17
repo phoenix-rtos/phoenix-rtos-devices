@@ -1,8 +1,6 @@
 /*
  * Phoenix-RTOS
  *
- * Operating system kernel
- *
  * STM32L1 reset and clock controler driver
  *
  * Copyright 2017, 2018 Phoenix Systems
@@ -33,6 +31,7 @@ struct {
 
 	handle_t cond;
 	handle_t lock;
+	handle_t inth;
 
 	int hsiState;
 } rcc_common;
@@ -123,9 +122,7 @@ int rcc_devClk(int dev, int state)
 	pctl.devclk.dev = dev;
 	pctl.devclk.state = state;
 
-	mutexLock(rcc_common.lock);
 	ret = platformctl(&pctl);
-	mutexUnlock(rcc_common.lock);
 
 	return ret;
 }
@@ -173,7 +170,7 @@ int rcc_init(void)
 		return -ENOMEM;
 	}
 
-	if (interrupt(rcc_irq, rcc_irqHsiReady, NULL, rcc_common.cond) != EOK) {
+	if (interrupt(rcc_irq, rcc_irqHsiReady, NULL, rcc_common.cond, &rcc_common.inth) != EOK) {
 		DEBUG("Failed to register irq\n");
 		resourceDestroy(rcc_common.lock);
 		resourceDestroy(rcc_common.cond);
