@@ -17,7 +17,7 @@
 
 typedef int (*test_func_t)(void *arg);
 
-test_func_t test_func[16];
+extern test_func_t test_func[16];
 extern int test_cnt;
 
 #ifndef CONFIG_NANDTOOL_TEST

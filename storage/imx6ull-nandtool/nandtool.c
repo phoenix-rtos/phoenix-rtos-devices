@@ -34,6 +34,11 @@
 #define PAGES_PER_BLOCK 64
 #define BLOCKS_CNT 4096
 
+
+test_func_t test_func[16];
+int test_cnt;
+
+
 static inline int check_block(char *raw_block)
 {
 	if (!raw_block[4096])
@@ -196,7 +201,7 @@ void flash_erase(int start, int end)
 	flashdrv_reset(dma);
 
 	for (i = start; i <= end; i++) {
-		err = flashdrv_erase(dma, i);
+		err = flashdrv_erase(dma, 64 * i);
 		if (err)
 			printf("Erasing block %d returned error %d\n", i, err);
 	}
@@ -266,4 +271,3 @@ int main(int argc, char **argv)
 
 	return flash_image(path, start);
 }
-
