@@ -42,9 +42,15 @@ static int uart_write(void *data, size_t size)
 		condWait(uart.tx_cond, uart.lock, 0);
 
 	/* write contents of the buffer */
-	for (i = 0; i < size; i++)
+	for (i = 0; i < size; i++) {
 		uart.tx_buff[uart.tx_tail++] = *(char *)(data + i);
 
+		if (!(uart.tx_tail & 0xff)) {
+			*(uart.base + ucr1) |= 0x2000;
+			while (uart.tx_head != uart.tx_tail)
+				condWait(uart.tx_cond, uart.lock, 0);
+		}
+	}
 	/* enable tx ready interrupt */
 	*(uart.base + ucr1) |= 0x2000;
 
