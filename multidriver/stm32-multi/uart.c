@@ -13,14 +13,16 @@
 
 #include ARCH
 #include <errno.h>
+#include <stdlib.h>
 #include <sys/threads.h>
 #include <sys/pwman.h>
 #include <sys/interrupt.h>
+#include <sys/platform.h>
 
 #include "common.h"
 #include "gpio.h"
 #include "uart.h"
-
+#include "rcc.h"
 
 
 typedef struct {
@@ -37,6 +39,7 @@ typedef struct {
 
 	handle_t cond;
 	handle_t mutex;
+	handle_t inth;
 } uart_t;
 
 
@@ -130,7 +133,7 @@ static int uart_read(void* buff, unsigned int count, uart_t *uart, char mode, un
 	}
 
 	uart->rxbeg = NULL;
-	__asm__ volatile ("dmb");
+	dataBarier();
 	uart->rxend = NULL;
 
 	read = uart->read;
@@ -149,15 +152,15 @@ static int uart_read(void* buff, unsigned int count, uart_t *uart, char mode, un
 static int uart_adjustBaud(uart_t *uart, int cpufreq)
 {
 	platformctl_t pctl;
-	pctl.action = PLATCTL_GET;
-	pctl.type = PLATCTL_CPUCLOCK;
 
+	pctl.action = pctl_get;
+	pctl.type = pctl_cpuclk;
 	platformctl(&pctl);
 
-	if (cpufreq != pctl.cpuclock.hz) {
+	if (cpufreq != pctl.cpuclk.hz) {
 		/* Adjust to new clock frequency */
 
-		cpufreq = pctl.cpuclock.hz;
+		cpufreq = pctl.cpuclk.hz;
 
 		*(uart->base + cr1) &= ~(1 << 13);
 		*(uart->base + brr) = cpufreq / uart->baud;
@@ -168,162 +171,30 @@ static int uart_adjustBaud(uart_t *uart, int cpufreq)
 }
 
 
-static void uart_thread(void *arg)
-{
-	int err;
-	unsigned int tmp;
-	char buff[64];
-	msghdr_t hdr;
-	uartdrv_data_t *data = (uartdrv_data_t *)buff;
-	uartdrv_devctl_t *devctl = (uartdrv_devctl_t *)buff;
-	size_t size;
-	uart_t *uart = arg;
-
-	int cpufreq = 0;
-
-
-	for (;;) {
-		tmp = recv(uart->port, buff, sizeof(buff), &hdr);
-		size = min(sizeof(buff), hdr.rsize);
-
-		cpufreq = uartdrv_adjustBaud(uart, cpufreq);
-
-		switch (hdr.op) {
-		case READ:
-			if (*(uart->base + cr1) & (1 << 13)) {
-				tmp = uartdrv_read(buff, size, uart, UARTDRV_MNORMAL, 0);
-				if (hdr.type == NORMAL)
-					respond(uart->port, EOK, buff, tmp);
-			}
-			else if (hdr.type == NORMAL) {
-				respond(uart->port, EINVAL, NULL, 0);
-			}
-
-			break;
-
-		case WRITE:
-			if (*(uart->base + cr1) & (1 << 13)) {
-				tmp = uartdrv_write(data->buff, tmp - sizeof(data->off), uart);
-				if (hdr.type == NORMAL)
-					respond(uart->port, EOK, &tmp, sizeof(tmp));
-			}
-			else if (hdr.type == NORMAL) {
-				respond(uart->port, EINVAL, NULL, 0);
-			}
-
-			break;
-
-		case DEVCTL: {
-			switch (devctl->type) {
-			case UARTDRV_DEF:
-				err = EOK;
-				tmp = *(uart->base + cr1) & (1 << 13);
-				*(uart->base + cr1) &= ~(1 << 13);
-
-				if ((devctl->def.bits == 8 && devctl->def.parity != UARTDRV_PARNONE))
-					*(uart->base + cr1) |= (1 << 12);
-				else if ((devctl->def.bits == 7 && devctl->def.parity != UARTDRV_PARNONE) ||
-					 (devctl->def.bits == 8 && devctl->def.parity == UARTDRV_PARNONE))
-					*(uart->base + cr1) &= ~(1 << 12);
-				else
-					err = EINVAL;
-
-				if (err == EOK) {
-					uart->baud = devctl->def.baud;
-					*(uart->base + brr) = cpufreq / uart->baud;
-
-					if (devctl->def.parity != UARTDRV_PARNONE)
-						*(uart->base + cr1) |= (1 << 10);
-					else
-						*(uart->base + cr1) &= ~(1 << 10);
-
-					if (devctl->def.parity == UARTDRV_PARODD)
-						*(uart->base + cr1) |= (1 << 9);
-					else
-						*(uart->base + cr1) &= ~(1 << 9);
-
-					*(uart->base + cr1) |= (!!(devctl->def.enable) << 13);
-				}
-				else if (tmp) {
-					*(uart->base + cr1) |= (1 << 13);
-				}
-
-				if (hdr.type == NORMAL)
-					respond(uart->port, err, NULL, 0);
-
-				break;
-
-			case UARTDRV_GET:
-				if (*(uart->base + cr1) & (1 << 13)) {
-					tmp = uartdrv_read(buff, size, uart, devctl->get.mode, devctl->get.timeout);
-					if (hdr.type == NORMAL)
-						respond(uart->port, EOK, buff, tmp);
-				}
-				else if (hdr.type == NORMAL) {
-					respond(uart->port, EINVAL, NULL, 0);
-				}
-
-				break;
-
-			case UARTDRV_ENABLE:
-				*(uart->base + cr1) &= ~(!devctl->enable.state << 13);
-				*(uart->base + cr1) |= (!!devctl->enable.state << 13);
-
-				if (hdr.type == NORMAL)
-					respond(uart->port, EOK, NULL, 0);
-
-				break;
-
-			default:
-				if (hdr.type == NORMAL)
-					respond(uart->port, EINVAL, NULL, 0);
-
-				break;
-			}
-			break;
-		}
-
-		default:
-			if (hdr.type == NORMAL) {
-				respond(uart->port, EINVAL, NULL, 0);
-			}
-			break;
-		}
-	}
-}
-
-
 int uart_init(void)
 {
-	unsigned uarts = UARTS;
-
-	uart_t *uartmain = NULL;
-	int i, stacksz = 1024 - 32;
-	char name[] = "/uartdrv0", *stack;
+	unsigned uarts = 0xb;
+	int i;
+//	char name[] = "/uartdrv0";
 
 	const struct {
 		volatile u32 *base;
-		unsigned apbenr;
+		int dev;
 		unsigned enableBit;
 		unsigned irq;
 	} info[] = {
-		{ (void *)0x40013800, rcc_apb2enr, 1 << 14, 37 + 16 }, /* USART 1 */
-		{ (void *)0x40004400, rcc_apb1enr, 1 << 17, 38 + 16 }, /* USART 2 */
-		{ (void *)0x40004800, rcc_apb1enr, 1 << 18, 39 + 16 }, /* USART 3 */
-		{ (void *)0x40004c00, rcc_apb1enr, 1 << 19, 48 + 16 }, /* UART 4 */
-		{ (void *)0x40005000, rcc_apb1enr, 1 << 20, 49 + 16 }, /* UART 5 */
+		{ (void *)0x40013800, pctl_usart1, 37 + 16 },
+		{ (void *)0x40004400, pctl_usart2, 38 + 16 },
+		{ (void *)0x40004800, pctl_usart3, 39 + 16 },
+		{ (void *)0x40004c00, pctl_uart4, 48 + 16 },
+		{ (void *)0x40005000, pctl_uart5, 49 + 16 },
 	};
 
 	uart_t *uartptr;
 
 	for (i = 0; i < 5; ++i) {
 		if (uarts & (1 << i)) {
-			*(rcc + info[i].apbenr) |= info[i].enableBit;
-
-			__asm__ volatile ("dmb");
-
-			/* Enable low power clock */
-			*(rcc + info[i].apbenr + 3) |= info[i].enableBit;
+			rcc_devClk(info[i].dev, 3);
 
 			uartptr = malloc(sizeof(uart_t));
 
@@ -354,25 +225,11 @@ int uart_init(void)
 
 			uartptr->baud = 9600;
 
-			name[8] = '1' + i;
+//			name[8] = '1' + i;
 
-			portCreate(&uartptr->port);
-			portRegister(uartptr->port, name);
-
-			interrupt(info[i].irq, uartdrv_irqHandler, uartptr, uartptr->cond);
-
-			if (uartmain != NULL) {
-				if ((stack = malloc(stacksz)) == NULL || beginthread(uartdrv_thread, 1, stack, stacksz, (void *)uartptr) == -ENOMEM) {
-					printf("uartdrv: not enough memory to start uart%d!\n", i + 1);
-					free(stack);
-					free(uartptr);
-				}
-			}
-			else {
-				uartmain = uartptr;
-			}
+			interrupt(info[i].irq, uart_irq, uartptr, uartptr->cond, &uartptr->inth);
 		}
 	}
 
-	uartdrv_thread(uartmain);
+	return EOK;
 }

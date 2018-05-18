@@ -85,46 +85,22 @@ static inline int flash_activeBank(void)
 }
 
 
-extern int flash_eventRead(int idx, flashevent_t *event);
-
-
-extern int flash_eventWrite(flashevent_t *event);
-
-
-extern int flash_logRead(flashlog_t *log);
-
-
-extern int flash_logWrite(flashlog_t *log);
-
-
 extern int flash_read(void *buff, size_t size, u32 addr);
 
 
 extern int flash_write(void *buff, size_t size, u32 addr);
 
 
-extern int flash_eepromInfo(unsigned int *addr, size_t *size);
-
-
-extern int flash_getActiveBank(int *bank);
-
-
-extern int flash_breakActiveBank(void);
-
-
-extern int flash_atomCopy(u32 dest, u32 src, size_t len);
-
-
-extern int eeprom_eraseByte(u32 addr);
-
-
 extern size_t flash_readData(u32 offset, char *buff, size_t size);
 
 
-extern size_t flash_writeData(u32 offset, char *buff, size_t size);
+extern size_t flash_writeData(u32 offset, const char *buff, size_t size);
 
 
-extern void flash_init(void);
+extern int _eeprom_eraseByte(u32 addr);
+
+
+extern int flash_init(void);
 
 
 #endif

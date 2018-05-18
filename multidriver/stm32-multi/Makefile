@@ -4,7 +4,7 @@
 # Copyright 2018 Phoenix Systems
 #
 
-SRCS = adc.c gpio.c i2c.c lcd.c rcc.c rtc.c stm32-multi.c #flash.c uart.c
+SRCS = adc.c gpio.c i2c.c lcd.c rcc.c rtc.c stm32-multi.c flash.c log.c uart.c
 OBJS = $(SRCS:.c=.o)
 BIN = stm32-multi
 

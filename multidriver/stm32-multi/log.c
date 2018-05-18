@@ -11,6 +11,8 @@
  * %LICENSE%
  */
 
+#include <string.h>
+
 #include "log.h"
 #include "common.h"
 
@@ -126,20 +128,20 @@ void eeprom_init(void)
 
 	log_common.area[events].addr = base;
 	log_common.area[events].entrySize = sizeof(flashevent_t);
-	log_common.area[events].entryCount = FLASH_EVENT_COUNT;
+	log_common.area[events].entryCount = EVENT_COUNT;
 	log_common.area[logs].addr = base + sizeof(log_magic) + log_common.area[events].entrySize * log_common.area[events].entryCount;
 	log_common.area[logs].entrySize = sizeof(flashlog_t);
-	log_common.area[logs].entryCount = FLASH_LOG_COUNT;
+	log_common.area[logs].entryCount = LOG_COUNT;
 
 	for (i = 0; i < 2; ++i) {
 		/* Clear area if uninitialized. */
 		flash_readData(log_common.area[i].addr + (log_common.area[i].entryCount * log_common.area[i].entrySize), buff, sizeof(buff));
 
-		if (hal_memcmp(buff, log_magic, sizeof(log_magic)) != 0) {
-			lib_printf("flash: Log area magic mismatch [%d], erasing...\n", i);
+		if (memcmp(buff, log_magic, sizeof(log_magic)) != 0) {
+			DEBUG("Log area magic mismatch [%d], erasing...\n", i);
 
 			for (j = 0; j < (log_common.area[i].entryCount * log_common.area[i].entrySize) + sizeof(log_magic); ++j)
-				eeprom_eraseByte(log_common.area[i].addr + j);
+				_eeprom_eraseByte(log_common.area[i].addr + j);
 
 			flash_writeData(log_common.area[i].addr + (log_common.area[i].entryCount * log_common.area[i].entrySize), log_magic, sizeof(log_magic));
 

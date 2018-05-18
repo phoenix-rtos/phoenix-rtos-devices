@@ -74,8 +74,8 @@ int main(void)
 	lcd_init();
 	adc_init();
 	i2c_init();
+	flash_init();
 	//uart_init();
-	//flash_init();
 
 	for (i = 0; i < THREADS_NO - 1; ++i) {
 		if (beginthread(thread, THREADS_PRIORITY, common.stack[i], STACKSZ, (void *)i) < 0)

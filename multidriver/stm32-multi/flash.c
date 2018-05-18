@@ -16,17 +16,11 @@
 #include <sys/threads.h>
 #include <sys/pwman.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include "flash.h"
 #include "log.h"
-
-
-#define BUFFER_SIZE         128
-#define FLASH_MAX_READ      64
-
-#define FLASH_AREA_EVENTS   0
-#define FLASH_AREA_LOGS     1
-
+#include "common.h"
 
 #ifndef NDEBUG
 static const char drvname[] = "flash: ";
@@ -50,18 +44,12 @@ typedef struct {
 
 struct {
 	volatile unsigned int *flash;
-//	volatile unsigned int *iwdg;
 	unsigned int port;
-	lock_t lock;
+	handle_t lock;
 
-	char buff[FLASH_MAX_READ];
-	char page[FLASH_PAGE_SIZE];
+	char buff[64];
+	char page[256];
 } flash_common;
-
-
-struct {
-	logarea_t area[2];
-} log_common;
 
 
 static int _flash_wait(void)
@@ -74,7 +62,6 @@ static int _flash_wait(void)
 			keepidle(1);
 			usleep(10000);
 			keepidle(0);
-//			*flash_common.iwdg = 0xaaaa;
 			continue;
 		}
 
@@ -166,7 +153,7 @@ static size_t eeprom_readData(u32 offset, char *buff, size_t size)
 }
 
 
-static size_t eeprom_writeData(u32 offset, char *buff, size_t size)
+static size_t eeprom_writeData(u32 offset, const char *buff, size_t size)
 {
 	unsigned int i;
 
@@ -258,14 +245,18 @@ static size_t ob_readData(u32 offset, char *buff, size_t size)
 {
 	unsigned int i;
 
+	mutexLock(flash_common.lock);
+
 	for (i = 0; i < size; ++i)
 		buff[i] = *((volatile u8 *) offset + i);
+
+	mutexUnlock(flash_common.lock);
 
 	return i;
 }
 
 
-static size_t ob_writeData(u32 offset, char *buff, size_t size)
+static size_t ob_writeData(u32 offset, const char *buff, size_t size)
 {
 	if (size != 1)
 		return 0;
@@ -357,7 +348,7 @@ static int program_writeWord(u32 addr, u32 value)
 	}
 
 	_program_lock();
-	mutexUnlock(&flash_common.lock);
+	mutexUnlock(flash_common.lock);
 
 	return err;
 }
@@ -395,7 +386,7 @@ static size_t program_readData(u32 offset, char *buff, size_t size)
 }
 
 
-static size_t program_writeData(u32 offset, char *buff, size_t size)
+static size_t program_writeData(u32 offset, const char *buff, size_t size)
 {
 	u32 word, pageAddr, addr = offset;
 	size_t n = 0;
@@ -442,7 +433,7 @@ size_t flash_readData(u32 offset, char *buff, size_t size)
 }
 
 
-size_t flash_writeData(u32 offset, char *buff, size_t size)
+size_t flash_writeData(u32 offset, const char *buff, size_t size)
 {
 	if (program_isValidAddress(offset))
 		return program_writeData(offset, buff, size);
@@ -456,7 +447,7 @@ size_t flash_writeData(u32 offset, char *buff, size_t size)
 	return 0;
 }
 
-
+#if 0
 void flash_bankBreak(void)
 {
 	spinlock_t spinlock;
@@ -494,109 +485,7 @@ static int _flash_atomCopy(u32 dest, u32 src, size_t len)
 	/* Should never reach here */
 	return 0;
 }
-
-
-static void flash_thread(void *arg)
-{
-	char msg[BUFFER_SIZE];
-	msghdr_t hdr;
-	msgdata_t *data;
-	flashdevctl_t *devctl;
-	flashevent_t event;
-	flashlog_t log;
-	flasheeprominfo_t info;
-	int count, bank, res;
-
-	eeprom_init();
-
-	for (;;) {
-		int size = proc_recv(flash_common.port, msg, sizeof(msg), &hdr);
-		if (hdr.type == MSG_NOTIFY)
-			continue;
-
-		switch (hdr.op) {
-			case MSG_READ:
-				if (size != sizeof(msgdata_t)) {
-					proc_respond(flash_common.port, EINVAL, NULL, 0);
-					break;
-				}
-
-				data = (msgdata_t *) msg;
-				size = min(FLASH_MAX_READ, data->size);
-
-				count = flash_readData(data->offset, flash_common.buff, size);
-				proc_respond(flash_common.port, EOK, flash_common.buff, count);
-				break;
-
-			case MSG_WRITE:
-				if (size != sizeof(msgdata_t)) {
-					proc_respond(flash_common.port, EINVAL, NULL, 0);
-					break;
-				}
-
-				data = (msgdata_t *) msg;
-				flash_writeData(data->offset, data->buff, data->size);
-				proc_respond(flash_common.port, EOK, NULL, 0);
-				break;
-
-			case MSG_DEVCTL:
-				if (size != sizeof(flashdevctl_t)) {
-					proc_respond(flash_common.port, EINVAL, NULL, 0);
-					break;
-				}
-
-				devctl = (flashdevctl_t *) msg;
-				switch (devctl->type) {
-					case FLASH_EVENT_GET:
-						event_read(devctl, &event);
-						proc_respond(flash_common.port, EOK, &event, sizeof(event));
-						break;
-
-					case FLASH_EVENT_SET:
-						event_write(devctl);
-						proc_respond(flash_common.port, EOK, NULL, 0);
-						break;
-
-					case FLASH_LOG_GET:
-						log_read(&log);
-						proc_respond(flash_common.port, EOK, &log, sizeof(log));
-						break;
-
-					case FLASH_LOG_SET:
-						log_write(devctl);
-						proc_respond(flash_common.port, EOK, NULL, 0);
-						break;
-
-					case FLASH_EEPROM_INFO_GET:
-						info.addr = eeprom_freeAddr();
-						info.size = eeprom_freeSize();
-						proc_respond(flash_common.port, EOK, &info, sizeof(info));
-						break;
-
-					case FLASH_BANK_GET:
-						bank = flash_activeBank();
-						proc_respond(flash_common.port, EOK, &bank, sizeof(bank));
-						break;
-
-					case FLASH_BANK_BREAK:
-						flash_bankBreak();
-						proc_respond(flash_common.port, EOK, NULL, 0);
-						break;
-
-					case FLASH_ATOM_COPY:
-						res = _flash_atomCopy(devctl->atomcpy.dest, devctl->atomcpy.src, devctl->atomcpy.len);
-						proc_respond(flash_common.port, res, NULL, 0);
-						break;
-				}
-
-				break;
-
-			default:
-				proc_respond(flash_common.port, EINVAL, NULL, 0);
-				break;
-		}
-	}
-}
+#endif
 
 
 static inline int flash_isValidAddress(u32 addr)
@@ -614,255 +503,16 @@ static inline int flash_isValidAddress(u32 addr)
 }
 
 
-int flash_eventRead(int idx, flashevent_t *event)
-{
-	flashdevctl_t devctl;
-
-	if (idx < 1 || idx > FLASH_EVENT_COUNT)
-		return -EINVAL;
-
-	devctl.type = FLASH_EVENT_GET;
-	devctl.idx = idx - 1;
-
-	return proc_send(flash_common.port, MSG_DEVCTL, &devctl, sizeof(devctl), MSG_NORMAL, event, sizeof(flashevent_t));
-}
-
-
-int flash_eventWrite(flashevent_t *event)
-{
-	flashdevctl_t devctl;
-	devctl.type = FLASH_EVENT_SET;
-	devctl.event = *event;
-
-	return proc_send(flash_common.port, MSG_DEVCTL, &devctl, sizeof(devctl), MSG_NORMAL, NULL, 0);
-}
-
-
-int flash_logRead(flashlog_t *log)
-{
-	flashdevctl_t devctl;
-	devctl.type = FLASH_LOG_GET;
-
-	return proc_send(flash_common.port, MSG_DEVCTL, &devctl, sizeof(devctl), MSG_NORMAL, log, sizeof(flashlog_t));
-}
-
-
-int flash_logWrite(flashlog_t *log)
-{
-	flashdevctl_t devctl;
-	devctl.type = FLASH_LOG_SET;
-	devctl.log = *log;
-
-	return proc_send(flash_common.port, MSG_DEVCTL, &devctl, sizeof(devctl), MSG_NORMAL, NULL, 0);
-}
-
-
-int flash_eepromInfo(unsigned int *addr, size_t *size)
-{
-	int res;
-	flashdevctl_t devctl;
-	flasheeprominfo_t info;
-
-	devctl.type = FLASH_EEPROM_INFO_GET;
-
-	res = proc_send(flash_common.port, MSG_DEVCTL, &devctl, sizeof(devctl), MSG_NORMAL, &info, sizeof(info));
-	if (res < 0)
-		return res;
-
-	*addr = info.addr;
-	*size = info.size;
-
-	return EOK;
-}
-
-
-int flash_read(void *buff, size_t size, u32 addr)
-{
-	msgdata_t data;
-
-	if (!flash_isValidAddress(addr))
-		return -EINVAL;
-
-	data.offset = addr;
-	data.size = size;
-
-	return proc_send(flash_common.port, MSG_READ, &data, sizeof(data), MSG_NORMAL, buff, size);
-}
-
-
-int flash_write(void *buff, size_t size, u32 addr)
-{
-	msgdata_t data;
-
-	if (!flash_isValidAddress(addr))
-		return -EINVAL;
-
-	data.offset = addr;
-	data.buff = buff;
-	data.size = size;
-
-	return proc_send(flash_common.port, MSG_WRITE, &data, sizeof(data), MSG_NORMAL, NULL, 0);
-}
-
-
-int flash_getActiveBank(int *bank)
-{
-	flashdevctl_t devctl;
-	devctl.type = FLASH_BANK_GET;
-
-	return proc_send(flash_common.port, MSG_DEVCTL, &devctl, sizeof(devctl), MSG_NORMAL, bank, sizeof(int));
-}
-
-int flash_breakActiveBank(void)
-{
-	flashdevctl_t devctl;
-	devctl.type = FLASH_BANK_BREAK;
-
-	return proc_send(flash_common.port, MSG_DEVCTL, &devctl, sizeof(devctl), MSG_NORMAL, NULL, 0);
-}
-
-
-int flash_atomCopy(u32 dest, u32 src, size_t len)
-{
-	flashdevctl_t devctl;
-
-	devctl.type = FLASH_ATOM_COPY;
-	devctl.atomcpy.dest = dest;
-	devctl.atomcpy.src = src;
-	devctl.atomcpy.len = len;
-
-	return proc_send(flash_common.port, MSG_DEVCTL, &devctl, sizeof(devctl), MSG_NORMAL, NULL, 0);
-}
-
-
-void flash_init(void)
+int flash_init(void)
 {
 	flash_common.flash = (void *) 0x40023c00;
-	flash_common.iwdg = (void *)0x40003000;
 
-	proc_lockInit(&flash_common.lock);
-
-	flash_clearFlags();
-
-	proc_portCreate(&flash_common.port);
-	proc_portRegister(flash_common.port, "/flashdrv");
-	proc_threadCreate(NULL, flash_thread, NULL, 2, 1024, NULL, 0, NULL);
-}
-
-
-void event_read(flashdevctl_t *devctl, flashevent_t *event)
-{
-	int currIdx = log_common.area[EVENTS].currIdx;
-	int diffIdx = (currIdx >= devctl->idx) ? (currIdx - devctl->idx) : (log_common.area[EVENTS].entryCount - (devctl->idx - currIdx));
-
-	u32 addr = log_common.area[EVENTS].addr + diffIdx * log_common.area[EVENTS].entrySize;
-
-	flash_readData(addr, (char *)event, log_common.area[EVENTS].entrySize);
-}
-
-
-void event_write(flashdevctl_t *devctl)
-{
-	u32 addr;
-
-	log_common.area[EVENTS].currIdx += 1;
-	log_common.area[EVENTS].currIdx %= log_common.area[EVENTS].entryCount;
-	addr = log_common.area[EVENTS].addr + log_common.area[EVENTS].currIdx * log_common.area[EVENTS].entrySize;
-	devctl->event.id = ++log_common.area[EVENTS].currId;
-
-	flash_writeData(addr, (char *)(&devctl->event), log_common.area[EVENTS].entrySize);
-}
-
-
-void log_read(flashlog_t *log)
-{
-	int currIdx = log_common.area[LOGS].currIdx;
-	u32 addr = log_common.area[LOGS].addr + currIdx * log_common.area[LOGS].entrySize;
-
-	flash_readData(addr, (char *)log, log_common.area[LOGS].entrySize);
-}
-
-
-void log_write(flashdevctl_t *devctl)
-{
-	u32 addr;
-
-	log_common.area[LOGS].currIdx += 1;
-	log_common.area[LOGS].currIdx %= log_common.area[LOGS].entryCount;
-	addr = log_common.area[LOGS].addr + log_common.area[LOGS].currIdx * log_common.area[LOGS].entrySize;
-	devctl->event.id = ++log_common.area[LOGS].currId;
-
-	flash_writeData(addr, (char *)(&devctl->event), log_common.area[LOGS].entrySize);
-}
-
-
-u32 eeprom_freeAddr(void)
-{
-	if (log_common.area[0].addr > log_common.area[1].addr)
-		return log_common.area[0].addr + sizeof(u32) + log_common.area[0].entrySize * log_common.area[0].entryCount;
-	else
-		return log_common.area[1].addr + sizeof(u32) + log_common.area[1].entrySize * log_common.area[1].entryCount;
-}
-
-
-size_t eeprom_freeSize(void)
-{
-	size_t size = FLASH_EEPROM_SIZE;
-
-	size -= 2 * sizeof(u32);
-	size -= log_common.area[0].entryCount * log_common.area[0].entrySize;
-	size -= log_common.area[1].entryCount * log_common.area[1].entrySize;
-
-	return size;
-}
-
-
-void eeprom_init(void)
-{
-	u32 base;
-	char buff[sizeof(u32)];
-	char magic[] = { 0x12, 0x34, 0xab, 0xcd };
-	int i, j;
-	u64 id;
-
-	/* Use eeprom from diffrent bank than flash we're executing from */
-	if (!flash_activeBank())
-		base = FLASH_EEPROM_2_ADDR;
-	else
-		base = FLASH_EEPROM_1_ADDR;
-
-	log_common.area[EVENTS].addr = base;
-	log_common.area[EVENTS].entrySize = sizeof(flashevent_t);
-	log_common.area[EVENTS].entryCount = FLASH_EVENT_COUNT;
-	log_common.area[LOGS].addr = base + sizeof(magic) + log_common.area[EVENTS].entrySize * log_common.area[EVENTS].entryCount;
-	log_common.area[LOGS].entrySize = sizeof(flashlog_t);
-	log_common.area[LOGS].entryCount = FLASH_LOG_COUNT;
-
-	for (i = 0; i < 2; ++i) {
-		/* Clear area if uninitialized. */
-		flash_readData(log_common.area[i].addr + (log_common.area[i].entryCount * log_common.area[i].entrySize), buff, sizeof(buff));
-
-		if (hal_memcmp(buff, magic, sizeof(magic)) != 0) {
-			lib_printf("flash: Log area magic mismatch [%d], erasing...\n", i);
-
-			for (j = 0; j < (log_common.area[i].entryCount * log_common.area[i].entrySize) + sizeof(magic); ++j)
-				eeprom_eraseByte(log_common.area[i].addr + j);
-
-			flash_writeData(log_common.area[i].addr + (log_common.area[i].entryCount * log_common.area[i].entrySize), magic, sizeof(magic));
-
-			log_common.area[i].currId = 0;
-			log_common.area[i].currIdx = 0;
-			continue;
-		}
-
-		/* Find last log. */
-		log_common.area[i].currId = 0;
-		for (j = log_common.area[i].entryCount - 1; j >= 0; --j) {
-			id = *((u64 *) (log_common.area[i].addr + (j * log_common.area[i].entrySize)));
-			if (id >= log_common.area[i].currId) {
-				log_common.area[i].currId = id;
-				log_common.area[i].currIdx = j;
-			}
-		}
+	if (mutexCreate(&flash_common.lock) != EOK) {
+		DEBUG("Failed to create mutex\n");
+		return -ENOMEM;
 	}
+
+	_flash_clearFlags();
+
+	return EOK;
 }
