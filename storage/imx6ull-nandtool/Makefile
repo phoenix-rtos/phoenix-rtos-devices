@@ -4,8 +4,9 @@
 # Copyright 2018 Phoenix Systems
 #
 
-SRCS = nandtool.c ../imx6ull-flash/flashdrv.c
+SRCS = nandtool.c
 OBJS = $(SRCS:.c=.o)
+LIBS := flashdrv.o
 BIN = nandtool
 
 CFLAGS += -DLIBFLASHDRV
@@ -26,14 +27,18 @@ check:
 
 
 .c.o:
-	@(printf " CC    %-24s  \n" "$<"; $(CC) -c $(CFLAGS) $<)
+	@(printf " CC    %-24s  \n" "$<"; $(CC) -c $(CFLAGS) "$<" -o "$@")
 
 -include .depend
 
 
-$(BIN): $(OBJS)
+#FIXME: move this code to static library, do not compile twice
+flashdrv.o: ../imx6ull-flash/flashdrv.c
+	@(printf " CC    %-24s  \n" "$<"; $(CC) -c $(CFLAGS) "$<" -o "$@")
+
+$(BIN): $(OBJS) $(LIBS)
 	@echo " LD    $@"
-	$(SIL)$(LD) $(LDFLAGS) -o $(BIN) $(notdir $(OBJS)) $(LDLIBS)
+	$(SIL)$(LD) $(LDFLAGS) -o $(BIN) $^ $(LDLIBS)
 	@echo " STRIP $@"
 	$(SIL)$(STRIP) $(BIN) 2>/dev/null
 
