@@ -7,7 +7,7 @@
 #
 
 CROSS ?= arm-phoenix-
-SUBDIRS = multidriver/stm32-multi
+SUBDIRS = multi/stm32-multi
 
 MKDEP = $(CROSS)gcc -MM
 MKDEPFLAGS = $(CFLAGS)

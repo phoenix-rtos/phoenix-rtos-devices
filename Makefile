@@ -10,7 +10,7 @@ SIL ?= @
 MAKEFLAGS += --no-print-directory
 
 TARGET ?= ia32-qemu
-#TARGET ?= armv7-stm32-tiramisu
+#TARGET ?= armv7-stm32
 #TARGET ?= arm-imx
 
 VERSION = 0.2
