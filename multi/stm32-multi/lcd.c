@@ -18,6 +18,7 @@
 #include <sys/interrupt.h>
 
 #include "common.h"
+#include "stm32-multi.h"
 #include "gpio.h"
 #include "lcd.h"
 #include "rcc.h"
@@ -47,7 +48,6 @@ struct {
 
 	handle_t lock;
 	handle_t cond;
-	handle_t inth;
 } lcd_common;
 
 
@@ -159,7 +159,7 @@ static int lcd_irqHandler(unsigned int n, void *arg)
 }
 
 
-static inline void lcd_setRamSegment(unsigned int com, unsigned int pin, unsigned int on)
+static inline void _lcd_setRamSegment(unsigned int com, unsigned int pin, unsigned int on)
 {
 	if (pin > 31)
 		++com;
@@ -169,7 +169,7 @@ static inline void lcd_setRamSegment(unsigned int com, unsigned int pin, unsigne
 }
 
 
-static void lcd_showChar(char ch, unsigned int pos)
+static void _lcd_showChar(char ch, unsigned int pos)
 {
 	unsigned char segment = 0;
 	unsigned int i, on;
@@ -191,7 +191,7 @@ static void lcd_showChar(char ch, unsigned int pos)
 
 	for (i = 0; i < 7; i++) {
 		on = segment & (unsigned char)(1 << i);
-		lcd_setRamSegment(com_map[pos][i], pin_to_ram[pin_map[pos][i]], on);
+		_lcd_setRamSegment(com_map[pos][i], pin_to_ram[pin_map[pos][i]], on);
 	}
 }
 
@@ -221,14 +221,14 @@ void lcd_showString(const char *text)
 
 	/* Clear string */
 	for (i = 2; i <= LCD_MAX_POSITION; i++)
-		lcd_showChar(' ', i);
+		_lcd_showChar(' ', i);
 
 	if ((len = strlen(text)) >= LCD_MAX_POSITION - 1)
 		len = LCD_MAX_POSITION - 1;
 
 	start = LCD_MAX_POSITION - len + 1;
 	for (i = start; i <= LCD_MAX_POSITION; i++)
-		lcd_showChar(text[i - start], i);
+		_lcd_showChar(text[i - start], i);
 
 	mutexLock(lcd_common.lock);
 	memcpy(lcd_common.str, text, len);
@@ -246,7 +246,7 @@ void lcd_showSymbols(unsigned int sym_mask, unsigned int state)
 			continue;
 
 		mutexLock(lcd_common.lock);
-		lcd_setRamSegment(symbols[i][0], pin_to_ram[symbols[i][1]], symbol & state);
+		_lcd_setRamSegment(symbols[i][0], pin_to_ram[symbols[i][1]], symbol & state);
 		mutexUnlock(lcd_common.lock);
 	}
 
@@ -259,17 +259,14 @@ void lcd_showSymbols(unsigned int sym_mask, unsigned int state)
 
 void lcd_showSmallString(const char *text)
 {
+	if (text[0] == '1')
+		lcd_showSymbols(LCDSYM_SMALL_ONE, 1);
+	else
+		lcd_showSymbols(LCDSYM_SMALL_ONE, 0);
+
 	mutexLock(lcd_common.lock);
 
-	/* clear small digits */
-	lcd_showSymbols(LCDSYM_SMALL_ONE, 0);
-	lcd_showChar(' ', 1);
-
-	if (text[0] == '1') {
-		lcd_showSymbols(LCDSYM_SMALL_ONE, 1);
-	}
-
-	lcd_showChar(text[1], 1);
+	_lcd_showChar(text[1], 1);
 
 	memcpy(lcd_common.str_small, text, sizeof(lcd_common.str_small) - 1);
 	lcd_common.str_small[sizeof(lcd_common.str_small) - 1] = '\0';
@@ -369,7 +366,7 @@ int lcd_init(void)
 		return -ENOMEM;
 	}
 
-	if (interrupt(lcd_irq, lcd_irqHandler, NULL, lcd_common.cond, &lcd_common.inth) != EOK) {
+	if (interrupt(lcd_irq, lcd_irqHandler, NULL, lcd_common.cond, NULL) != EOK) {
 		DEBUG("LCD failed to register irq\n");
 		resourceDestroy(lcd_common.lock);
 		resourceDestroy(lcd_common.cond);

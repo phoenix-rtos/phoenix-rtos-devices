@@ -30,50 +30,6 @@
 #define FLASH_OB_SIZE           32
 
 
-typedef enum { FLASH_EVENT_GET, FLASH_EVENT_SET, FLASH_LOG_GET, FLASH_LOG_SET,
-			FLASH_EEPROM_INFO_GET, FLASH_BANK_GET, FLASH_BANK_BREAK, FLASH_ATOM_COPY } devctltype_t ;
-
-
-typedef struct {
-	u64 id;
-	u32 events;
-	rtctimestamp_t timestamp;
-} __attribute__((packed)) flashevent_t;
-
-
-typedef struct {
-	u64 id;
-	u64 volume;
-	u64 volumeCorr;
-	u64 volumeBase;
-	rtctimestamp_t timestamp;
-} __attribute__((packed)) flashlog_t;
-
-
-typedef struct {
-	u32 addr;
-	size_t size;
-} __attribute__((packed)) flasheeprominfo_t;
-
-
-typedef struct {
-	u32 dest;
-	u32 src;
-	size_t len;
-} __attribute__((packed)) flashatomcopy_t;
-
-
-typedef struct {
-	devctltype_t type;
-	int idx;
-	union {
-		flashevent_t event;
-		flashlog_t log;
-		flashatomcopy_t atomcpy;
-	};
-} __attribute__((packed)) flashdevctl_t;
-
-
 static inline int flash_activeBank(void)
 {
 	u32 pc = getPC();

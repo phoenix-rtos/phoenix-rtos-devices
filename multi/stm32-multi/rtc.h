@@ -14,19 +14,8 @@
 #ifndef _RTC_H_
 #define _RTC_H_
 
-enum { MONDAY = 1, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY, SUNDAY };
 
-
-typedef struct {
-	int hours;
-	int minutes;
-	int seconds;
-
-	int day;
-	int month;
-	int year;
-	int wday;
-} __attribute__((packed)) rtctimestamp_t;
+#include "stm32-multi.h"
 
 
 int rtc_get(rtctimestamp_t *timestamp);

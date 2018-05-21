@@ -19,7 +19,6 @@
 #include <errno.h>
 
 #include "flash.h"
-#include "log.h"
 #include "common.h"
 
 #ifndef NDEBUG
@@ -300,11 +299,10 @@ static void _program_unlock(void)
 }
 
 
-static int program_erasePage(u32 addr)
+static int _program_erasePage(u32 addr)
 {
 	int err;
 
-	mutexLock(flash_common.lock);
 	_program_unlock();
 	_flash_clearFlags();
 
@@ -321,25 +319,22 @@ static int program_erasePage(u32 addr)
 	}
 
 	_program_lock();
-	mutexUnlock(flash_common.lock);
 
 	return err;
 }
 
 
-static int program_writeWord(u32 addr, u32 value)
+static int _program_writeWord(u32 addr, u32 value)
 {
 	int err;
 	volatile u32 *current = (volatile u32 *) addr;
 
-	mutexLock(flash_common.lock);
 	_program_unlock();
 	_flash_clearFlags();
 
 	if ((err = _flash_wait()) == 0)  {
 		if (*current == value) {
 			_program_lock();
-			mutexUnlock(flash_common.lock);
 			return 0;
 		}
 
@@ -348,13 +343,12 @@ static int program_writeWord(u32 addr, u32 value)
 	}
 
 	_program_lock();
-	mutexUnlock(flash_common.lock);
 
 	return err;
 }
 
 
-static size_t program_readData(u32 offset, char *buff, size_t size)
+static size_t _program_readData(u32 offset, char *buff, size_t size)
 {
 	unsigned int i, j, n = 0;
 	unsigned int prefixBytes = min(4 - (offset & 0x3), size);
@@ -386,17 +380,31 @@ static size_t program_readData(u32 offset, char *buff, size_t size)
 }
 
 
+static size_t program_readData(u32 offset, char *buff, size_t size)
+{
+	size_t ret;
+
+	mutexLock(flash_common.lock);
+	ret = _program_readData(offset, buff, size);
+	mutexUnlock(flash_common.lock);
+
+	return ret;
+}
+
+
 static size_t program_writeData(u32 offset, const char *buff, size_t size)
 {
 	u32 word, pageAddr, addr = offset;
 	size_t n = 0;
 	int i, j, toSkip;
 
+	mutexLock(flash_common.lock);
+
 	while (n < size) {
 		/* Read page into buffer and erase it. */
 		pageAddr = addr & ~((u32) (FLASH_PAGE_SIZE - 1));
-		program_readData(pageAddr, flash_common.page, FLASH_PAGE_SIZE);
-		program_erasePage(pageAddr);
+		_program_readData(pageAddr, flash_common.page, FLASH_PAGE_SIZE);
+		_program_erasePage(pageAddr);
 
 		/* Modify data in buffer. */
 		toSkip = addr - pageAddr;
@@ -408,11 +416,13 @@ static size_t program_writeData(u32 offset, const char *buff, size_t size)
 			for (j = 0, word = 0; j < 4; ++j)
 				word |= flash_common.page[i + j] << 8 * j;
 
-			program_writeWord(pageAddr + i, word);
+			_program_writeWord(pageAddr + i, word);
 		}
 
 		addr += FLASH_PAGE_SIZE;
 	}
+
+	mutexUnlock(flash_common.lock);
 
 	return n;
 }
@@ -490,13 +500,7 @@ static int _flash_atomCopy(u32 dest, u32 src, size_t len)
 
 static inline int flash_isValidAddress(u32 addr)
 {
-	if (program_isValidAddress(addr))
-		return 1;
-
-	if (eeprom_isValidAdress(addr))
-		return 1;
-
-	if (ob_isValidAdress(addr))
+	if (program_isValidAddress(addr) || eeprom_isValidAdress(addr) || ob_isValidAdress(addr))
 		return 1;
 
 	return 0;

@@ -14,6 +14,7 @@
 #ifndef _GPIO_H_
 #define _GPIO_H_
 
+
 int gpio_setPort(int port, unsigned int mask, unsigned int val);
 
 
@@ -24,5 +25,6 @@ int gpio_configPin(int port, char pin, char mode, char af, char otype, char ospe
 
 
 int gpio_init(void);
+
 
 #endif

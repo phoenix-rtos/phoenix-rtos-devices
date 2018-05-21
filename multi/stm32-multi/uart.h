@@ -14,22 +14,17 @@
 #ifndef _UART_H_
 #define _UART_H_
 
-enum { UART1_BIT = 1 << 0,
-	   UART2_BIT = 1 << 1,
-	   UART3_BIT = 1 << 2,
-	   UART4_BIT = 1 << 3,
-	   UART5_BIT = 1 << 4 };
+
+int uart_write(int uart, void* buff, unsigned int bufflen);
 
 
-enum { UARTDRV_DEF = 0, UARTDRV_GET, UARTDRV_ENABLE };
+int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int timeout);
 
 
-enum { UARTDRV_MNORMAL = 0, UARTDRV_MNBLOCK };
-
-
-enum { UARTDRV_PARNONE = 0, UARTDRV_PAREVEN, UARTDRV_PARODD };
+int uart_adjustBaud(int uart, int cpufreq);
 
 
 int uart_init(void);
+
 
 #endif
