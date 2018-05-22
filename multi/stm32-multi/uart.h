@@ -21,9 +21,6 @@ int uart_write(int uart, void* buff, unsigned int bufflen);
 int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int timeout);
 
 
-int uart_adjustBaud(int uart, int cpufreq);
-
-
 int uart_init(void);
 
 

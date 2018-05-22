@@ -27,6 +27,9 @@ int rcc_setHsi(int state);
 int rcc_devClk(int dev, int state);
 
 
+int rcc_getCpufreq(void);
+
+
 int rcc_init(void);
 
 

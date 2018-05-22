@@ -108,16 +108,55 @@ int uart_isEnabled(int uart)
 
 int uart_configure(int uart, char bits, char parity, unsigned int baud, char enable)
 {
+	int en, err = EOK;
+
 	if (uart < usart1 || uart > uart5)
 		return -EINVAL;
 
+	en = uart_isEnabled(uart);
+
+	rcc_devClk(uart2pctl[uart], 1);
+
 	mutexLock(uart_common[uart].mutex);
 
-	/* TODO */
+	*(uart_common[uart].base + cr1) &= ~(1 << 13);
+	dataBarier();
+
+	if (bits == 8 && parity != uart_parnone)
+		*(uart_common[uart].base + cr1) |= 1 << 12;
+	else if ((bits == 7 && parity != uart_parnone) || (bits == 8 && parity == uart_parnone))
+		*(uart_common[uart].base + cr1) &= ~(1 << 12);
+	else
+		err = -EINVAL;
+
+	if (err == EOK) {
+		uart_common[uart].baud = baud;
+		*(uart_common[uart].base + brr) = rcc_getCpufreq() / baud;
+
+		if (parity != uart_parnone)
+			*(uart_common[uart].base + cr1) |= 1 << 10;
+		else
+			*(uart_common[uart].base + cr1) &= ~(1 << 10);
+
+		if (parity == uart_parodd)
+			*(uart_common[uart].base + cr1) |= 1 << 9;
+		else
+			*(uart_common[uart].base + cr1) &= ~(1 << 9);
+
+		*(uart_common[uart].base + cr1) |= (!!enable) << 13;
+
+		en = enable;
+	}
+
+	dataBarier();
+	*(uart_common[uart].base + cr1) |= 1 << 13;
+	dataBarier();
+
+	rcc_devClk(uart2pctl[uart], !!en);
 
 	mutexUnlock(uart_common[uart].mutex);
 
-	return -ENOSYS;
+	return err;
 }
 
 
@@ -125,6 +164,9 @@ int uart_write(int uart, void* buff, unsigned int bufflen)
 {
 	if (uart < usart1 || uart > uart5)
 		return -EINVAL;
+
+	if (!uart_isEnabled(uart))
+		return -EIO;
 
 	mutexLock(uart_common[uart].mutex);
 	keepidle(1);
@@ -153,6 +195,9 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 
 	if (uart < usart1 || uart > uart5)
 		return -EINVAL;
+
+	if (!uart_isEnabled(uart))
+		return -EIO;
 
 	mutexLock(uart_common[uart].mutex);
 	keepidle(1);
@@ -191,33 +236,6 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 }
 
 
-int uart_adjustBaud(int uart, int cpufreq)
-{
-	platformctl_t pctl;
-
-	if (uart < usart1 || uart > uart5)
-		return -EINVAL;
-
-	pctl.action = pctl_get;
-	pctl.type = pctl_cpuclk;
-	platformctl(&pctl);
-
-	if (cpufreq != pctl.cpuclk.hz) {
-		/* Adjust to new clock frequency */
-
-		cpufreq = pctl.cpuclk.hz;
-
-		mutexLock(uart_common[uart].mutex);
-		*(uart_common[uart].base + cr1) &= ~(1 << 13);
-		*(uart_common[uart].base + brr) = cpufreq / uart_common[uart].baud;
-		*(uart_common[uart].base + cr1) |= 1 << 13;
-		mutexUnlock(uart_common[uart].mutex);
-	}
-
-	return cpufreq;
-}
-
-
 int uart_init(void)
 {
 	int i;
@@ -239,7 +257,7 @@ int uart_init(void)
 	platformctl(&pctl);
 
 	for (i = 0; i < 5; ++i) {
-		rcc_devClk(info[i - usart1].dev, 1);
+		rcc_devClk(info[i].dev, 1);
 
 		mutexCreate(&uart_common[i].mutex);
 		condCreate(&uart_common[i].cond);
@@ -270,7 +288,7 @@ int uart_init(void)
 		/* UART enable */
 		*(uart_common[i].base + cr1) |= 1 << 13;
 
-		/* Left enabled only UART4 */
+		/* Left UART4 enabled only */
 		if (i != 4)
 			rcc_devClk(info[i].dev, 0);
 

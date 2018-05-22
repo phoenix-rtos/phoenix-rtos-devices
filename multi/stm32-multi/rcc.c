@@ -128,6 +128,18 @@ int rcc_devClk(int dev, int state)
 }
 
 
+int rcc_getCpufreq(void)
+{
+	platformctl_t pctl;
+
+	pctl.action = pctl_get;
+	pctl.type = pctl_cpuclk;
+	platformctl(&pctl);
+
+	return pctl.cpuclk.hz;
+}
+
+
 void pwr_lock(void)
 {
 	mutexLock(rcc_common.lock);
