@@ -14,23 +14,9 @@
 #ifndef _STM32_MULTI_H_
 #define _STM32_MULTI_H_
 
-/* ADC */
-
-
-enum { adc_def = 0, adc_get, adc_set };
-
-
-typedef struct {
-	unsigned int off;
-	char buff[];
-} __attribute__((packed)) adcdrv_data_t;
-
-
-typedef struct {
-	char type;
-	char channel;
-} __attribute__((packed)) adcdrv_devctl_t;
-
+enum { adc_get = 0, rtc_get, rtc_set, lcd_get, lcd_set,
+	i2c_def, i2c_get, i2c_set, gpio_def, gpio_get, gpio_set, gpio_seq, uart_def, uart_get, uart_set,
+	flash_def, flash_get, flash_set };
 
 /* RTC */
 
@@ -53,7 +39,7 @@ typedef struct {
 #define LCDDRV_CHAR_DEGREE 0xf8
 
 
-typedef enum _lcd_symbols_t {
+typedef enum {
 	LCDSYM_SMALL_ONE    = 1 << 0,
 	LCDSYM_CLOCK        = 1 << 1,
 	LCDSYM_DATE         = 1 << 2,
@@ -88,87 +74,69 @@ typedef enum _lcd_symbols_t {
 } lcd_symbols_t;
 
 
-typedef struct _lcddrv_msg_t {
-	enum { GET, SET, CONF } type;
-
+typedef struct {
 	char str[10];
 	char str_small[2];
 	unsigned int sym_mask;
 	unsigned char state;
 	int backlight;
 	int on;
-} __attribute__((packed)) lcddrv_msg_t;
+} __attribute__((packed)) lcdmsg_t;
 
 
 /* I2C */
 
 
-enum { i2c_def = 0, i2c_get, i2c_set };
-
-
 typedef struct {
-	unsigned int off;
-	char buff[];
-} __attribute__((packed)) i2cdrv_data_t;
-
-
-typedef struct {
-	char type;
 	char addr;
 	char reg;
-	char buff[];
-} __attribute__((packed)) i2cdrv_devctl_t;
+} __attribute__((packed)) i2cmsg_t;
 
 
 /* GPIO */
-
-
-enum { gpio_config, gpio_get, gpio_set };
 
 
 enum { gpioa = 0, gpiob, gpioc, gpiod, gpioe, gpiof, gpiog, gpioh };
 
 
 typedef struct {
+	int port;
+} __attribute__((packed)) gpioget_t;
+
+
+typedef struct {
+	int port;
 	int mask;
 	int state;
 } __attribute__((packed)) gpioset_t;
 
 
 typedef struct {
+	int port;
 	char pin;
 	char mode;
 	char af;
 	char otype;
 	char ospeed;
 	char pupd;
-} __attribute__((packed)) gpioconfig_t;
+} __attribute__((packed)) gpiodef_t;
 
 
 typedef struct {
-	char type;
-	int port;
+	int type;
 
 	union {
 		gpioset_t set;
-		gpioconfig_t config;
+		gpioget_t get;
+		gpiodef_t def;
 	};
-} __attribute__((packed)) gpiomsg_t;
-
-
-typedef struct {
-	size_t off;
-	char buff[];
-} __attribute__((packed)) gpiodrv_data_t;
+} __attribute__((packed)) gpioseq_t;
 
 
 /* UART */
 
 
 enum { usart1 = 0, usart2, usart3, uart4, uart5 };
-
-
-enum { uart_def = 0, uart_get, uart_enable };
 
 
 enum { uart_mnormal = 0, uart_mnblock };
@@ -178,34 +146,56 @@ enum { uart_parnone = 0, uart_pareven, uart_parodd };
 
 
 typedef struct {
-	unsigned int off;
-	char buff[];
-} __attribute__((packed)) uartdrv_data_t;
+	int uart;
+	int mode;
+} __attribute__((packed)) uartget_t;
 
 
 typedef struct {
+	int uart;
+} __attribute__((packed)) uartset_t;
+
+
+typedef struct {
+	int uart;
+	unsigned int baud;
 	char enable;
 	char bits;
 	char parity;
-	unsigned int baud;
-} __attribute__((packed)) uartdrv_config_t;
+} __attribute__((packed)) uartdef_t;
+
+
+/* MULTI */
 
 
 typedef struct {
-	char mode;
-	unsigned int timeout;
-} __attribute__((packed)) uartdrv_get_t;
-
-
-typedef struct {
-	char type;
+	int type;
 
 	union {
-		uartdrv_config_t def;
-		uartdrv_get_t get;
-		int enable;
+		int adc_channel;
+		rtctimestamp_t rtc_timestamp;
+		lcdmsg_t lcd_msg;
+		i2cmsg_t i2c_msg;
+		gpiodef_t gpio_def;
+		gpioget_t gpio_get;
+		gpioset_t gpio_set;
+		uartget_t uart_get;
+		uartset_t uart_set;
+		uartdef_t uart_def;
 	};
-} __attribute__((packed)) uartdrv_devctl_t;
+} __attribute__((packed)) multi_i_t;
+
+
+typedef struct {
+	int err;
+
+	union {
+		unsigned short adc_val;
+		rtctimestamp_t rtc_timestamp;
+		lcdmsg_t lcd_msg;
+		unsigned int gpio_get;
+	};
+} __attribute__((packed)) multi_o_t;
 
 
 #endif

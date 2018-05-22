@@ -76,7 +76,7 @@ static void _rtc_unlock(void)
 }
 
 
-int rtc_get(rtctimestamp_t *timestamp)
+int rtc_getTime(rtctimestamp_t *timestamp)
 {
 	unsigned int time, date;
 
@@ -100,7 +100,7 @@ int rtc_get(rtctimestamp_t *timestamp)
 }
 
 
-int rtc_set(rtctimestamp_t *timestamp)
+int rtc_setTime(rtctimestamp_t *timestamp)
 {
 	unsigned int time, date;
 
