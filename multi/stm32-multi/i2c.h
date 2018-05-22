@@ -16,6 +16,9 @@
 #define _I2C_H_
 
 
+enum { _i2c_read = 0, _i2c_write };
+
+
 extern unsigned int i2c_transaction(char op, char addr, char reg, void *buff, unsigned int count);
 
 

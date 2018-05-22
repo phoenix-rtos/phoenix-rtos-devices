@@ -28,9 +28,6 @@ static const char drvname[] = "i2c: ";
 #endif
 
 
-enum { _I2C_READ = 0, _I2C_WRITE };
-
-
 enum { cr1 = 0, cr2, oar1, oar2, dr, sr1, sr2, ccr, trise };
 
 
@@ -66,7 +63,7 @@ unsigned int i2c_transaction(char op, char addr, char reg, void *buff, unsigned 
 {
 	int i;
 
-	if (count < 1 || (op != _I2C_READ && op != _I2C_WRITE))
+	if (count < 1 || (op != _i2c_read && op != _i2c_write))
 		return 0;
 
 	mutexLock(i2c_common.lock);
@@ -90,7 +87,7 @@ unsigned int i2c_transaction(char op, char addr, char reg, void *buff, unsigned 
 
 	*(i2c_common.base + dr) = reg;
 
-	if (op == _I2C_READ) {
+	if (op == _i2c_read) {
 		*(i2c_common.base + cr1) |= (1 << 8);
 		if (count > 1)
 			*(i2c_common.base + cr1) |= (1 << 10);

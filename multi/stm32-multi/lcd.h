@@ -14,23 +14,13 @@
 #ifndef _LCD_H_
 #define _LCD_H_
 
-
-void lcd_update(void);
-
-
-void lcd_showString(const char *text);
+#include "stm32-multi.h"
 
 
-void lcd_showSymbols(unsigned int sym_mask, unsigned int state);
+void lcd_getDisplay(lcdmsg_t *disp);
 
 
-void lcd_showSmallString(const char *text);
-
-
-void lcd_enable(int on);
-
-
-int lcd_setBacklight(unsigned char val);
+void lcd_setDisplay(lcdmsg_t *disp);
 
 
 int lcd_init(void);

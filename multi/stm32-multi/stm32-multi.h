@@ -15,8 +15,8 @@
 #define _STM32_MULTI_H_
 
 enum { adc_get = 0, rtc_get, rtc_set, lcd_get, lcd_set,
-	i2c_def, i2c_get, i2c_set, gpio_def, gpio_get, gpio_set, gpio_seq, uart_def, uart_get, uart_set,
-	flash_def, flash_get, flash_set };
+	i2c_get, i2c_set, gpio_def, gpio_get, gpio_set, gpio_seq,
+	uart_def, uart_get, uart_set, flash_get, flash_set };
 
 /* RTC */
 
@@ -106,8 +106,8 @@ typedef struct {
 
 typedef struct {
 	int port;
-	int mask;
-	int state;
+	unsigned int mask;
+	unsigned int state;
 } __attribute__((packed)) gpioset_t;
 
 
@@ -148,6 +148,7 @@ enum { uart_parnone = 0, uart_pareven, uart_parodd };
 typedef struct {
 	int uart;
 	int mode;
+	unsigned int timeout;
 } __attribute__((packed)) uartget_t;
 
 

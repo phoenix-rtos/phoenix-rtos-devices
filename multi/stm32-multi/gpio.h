@@ -18,7 +18,7 @@
 int gpio_setPort(int port, unsigned int mask, unsigned int val);
 
 
-int gpio_getPort(int port);
+int gpio_getPort(int port, unsigned int *val);
 
 
 int gpio_configPin(int port, char pin, char mode, char af, char otype, char ospeed, char pupd);

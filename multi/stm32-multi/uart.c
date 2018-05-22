@@ -90,7 +90,7 @@ static int uart_irq(unsigned int n, void *arg)
 }
 
 
-int uart_isEnabled(int uart)
+static int uart_isEnabled(int uart)
 {
 	platformctl_t pctl;
 

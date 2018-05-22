@@ -196,7 +196,7 @@ static void _lcd_showChar(char ch, unsigned int pos)
 }
 
 
-void lcd_update(void)
+static void lcd_update(void)
 {
 	mutexLock(lcd_common.lock);
 
@@ -215,7 +215,7 @@ void lcd_update(void)
 }
 
 
-void lcd_showString(const char *text)
+static void lcd_showString(const char *text)
 {
 	unsigned int i, start, len = 0;
 
@@ -237,7 +237,7 @@ void lcd_showString(const char *text)
 }
 
 
-void lcd_showSymbols(unsigned int sym_mask, unsigned int state)
+static void lcd_showSymbols(unsigned int sym_mask, unsigned int state)
 {
 	unsigned int i, symbol;
 
@@ -257,7 +257,7 @@ void lcd_showSymbols(unsigned int sym_mask, unsigned int state)
 }
 
 
-void lcd_showSmallString(const char *text)
+static void lcd_showSmallString(const char *text)
 {
 	if (text[0] == '1')
 		lcd_showSymbols(LCDSYM_SMALL_ONE, 1);
@@ -275,7 +275,7 @@ void lcd_showSmallString(const char *text)
 }
 
 
-void lcd_enable(int on)
+static void lcd_enable(int on)
 {
 	on = !on;
 
@@ -289,7 +289,7 @@ void lcd_enable(int on)
 }
 
 
-int lcd_setBacklight(unsigned char val)
+static int lcd_setBacklight(unsigned char val)
 {
 	mutexLock(lcd_common.lock);
 
@@ -303,6 +303,43 @@ int lcd_setBacklight(unsigned char val)
 	mutexUnlock(lcd_common.lock);
 
 	return EOK;
+}
+
+
+void lcd_getDisplay(lcdmsg_t *disp)
+{
+	mutexLock(lcd_common.lock);
+
+	memcpy(disp->str, lcd_common.str, sizeof(lcd_common.str));
+	memcpy(disp->str_small, lcd_common.str_small, sizeof(lcd_common.str_small));
+	disp->sym_mask = lcd_common.sym_mask;
+	disp->backlight = lcd_common.backlight;
+	disp->on = lcd_common.on;
+
+	mutexUnlock(lcd_common.lock);
+}
+
+
+void lcd_setDisplay(lcdmsg_t *disp)
+{
+	mutexLock(lcd_common.lock);
+
+	if (disp->str[0] != '\0')
+		lcd_showString(disp->str);
+
+	if (disp->state >= 0)
+		lcd_showSymbols(disp->sym_mask, disp->state);
+
+	if (disp->str_small[0] != '\0')
+		lcd_showSmallString(disp->str_small);
+
+	if (disp->backlight >= 0)
+		lcd_setBacklight(disp->backlight);
+
+	lcd_enable(disp->on);
+	lcd_update();
+
+	mutexUnlock(lcd_common.lock);
 }
 
 
