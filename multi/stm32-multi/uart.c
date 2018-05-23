@@ -289,10 +289,10 @@ int uart_init(void)
 		*(uart_common[i].base + cr1) |= 1 << 13;
 
 		/* Left UART4 enabled only */
-		if (i != 4)
+		if (i != 3)
 			rcc_devClk(info[i].dev, 0);
 
-		interrupt(info[i].irq, uart_irq, (void *)(usart1 + i), uart_common[i].cond, NULL);
+		interrupt(info[i].irq, uart_irq, (void *)i, uart_common[i].cond, NULL);
 	}
 
 	return EOK;

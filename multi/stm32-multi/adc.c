@@ -23,7 +23,7 @@
 
 
 #ifndef NDEBUG
-static const char drvname[] = "adc: ";
+static const char drvname[] = "adc";
 #endif
 
 

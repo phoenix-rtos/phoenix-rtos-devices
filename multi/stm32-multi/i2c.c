@@ -17,6 +17,7 @@
 #include <sys/threads.h>
 #include <sys/interrupt.h>
 
+#include "stm32-multi.h"
 #include "common.h"
 #include "gpio.h"
 #include "i2c.h"
@@ -24,7 +25,7 @@
 
 
 #ifndef NDEBUG
-static const char drvname[] = "i2c: ";
+static const char drvname[] = "i2c";
 #endif
 
 
@@ -146,8 +147,8 @@ int i2c_init(void)
 	*(i2c_common.base + cr1) &= ~1;
 	dataBarier();
 
-	if (gpio_configPin(pctl_gpiob, 10, 2, 4, 1, 0, 0) != EOK ||
-		gpio_configPin(pctl_gpiob, 11, 2, 4, 1, 0, 0) != EOK) {
+	if (gpio_configPin(gpiob, 10, 2, 4, 1, 0, 0) != EOK ||
+		gpio_configPin(gpiob, 11, 2, 4, 1, 0, 0) != EOK) {
 		DEBUG("Failed to initialize GPIOs\n");
 		return -EIO;
 	}

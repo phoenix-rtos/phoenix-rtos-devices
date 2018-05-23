@@ -18,6 +18,7 @@
 #include <stdint.h>
 #include <sys/threads.h>
 #include <sys/msg.h>
+#include <sys/pwman.h>
 
 #include "common.h"
 
@@ -35,12 +36,12 @@
 #define STACKSZ 512
 
 #ifndef NDEBUG
-static const char drvname[] = "multidrv: ";
+static const char drvname[] = "multidrv";
 #endif
 
 
 struct {
-	char stack[STACKSZ][THREADS_NO];
+	char stack[THREADS_NO][STACKSZ];
 
 	unsigned int port;
 } common;
@@ -207,26 +208,26 @@ int main(void)
 	int i;
 	oid_t oid;
 
+	DEBUG("Started\n");
+
+	rcc_init();  DEBUG("rcc done\n");
+	rtc_init();  DEBUG("rtc done\n");
+	gpio_init(); DEBUG("gpio done\n");
+	lcd_init();  DEBUG("lcd done\n");
+	adc_init();  DEBUG("adc done\n");
+	i2c_init();  DEBUG("i2c done\n");
+	flash_init();DEBUG("flash done\n");
+	uart_init(); DEBUG("uart done\n");
+
 	if (portCreate(&common.port) != EOK) {
 		DEBUG("Failed to create port\n");
 		return -1;
 	}
 
-	rcc_init();
-	rtc_init();
-	gpio_init();
-	lcd_init();
-	adc_init();
-	i2c_init();
-	flash_init();
-	uart_init();
-
 	portRegister(common.port, "/multi", &oid);
 
-	for (i = 0; i < THREADS_NO - 1; ++i) {
-		if (beginthread(thread, THREADS_PRIORITY, common.stack[i], STACKSZ, (void *)i) < 0)
-			DEBUG("Failed to spawn thread #%d", i);
-	}
+	for (i = 0; i < THREADS_NO - 1; ++i)
+		beginthread(thread, THREADS_PRIORITY, common.stack[i], STACKSZ, (void *)i);
 
 	thread((void *)i);
 

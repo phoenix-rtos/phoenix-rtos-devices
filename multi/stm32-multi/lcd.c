@@ -27,7 +27,7 @@
 
 
 #ifndef NDEBUG
-static const char drvname[] = "lcd: ";
+static const char drvname[] = "lcd";
 #endif
 
 
@@ -141,7 +141,7 @@ static const unsigned char com_map[11][7] = {
 };
 
 
-static const char gpio_pins[5][9] = {
+static const signed char gpio_pins[5][9] = {
 	{ 7, 8,  9,  10, -1, -1, -1, -1, -1 },
 	{ 9, 12, 13, 14, 15, -1, -1, -1, -1 },
 	{ 0, 1,  2,  3,  6,  7,  8,  9,  12 },
@@ -377,17 +377,17 @@ int lcd_init(void)
 	for (port = 0; port < 5; port++) {
 		for (pin = 0; pin < 9; pin++) {
 			if (gpio_pins[port][pin] == -1)
-				continue;
+				break;
 
-			if (gpio_configPin(port + pctl_gpioa, pin, 2, 0xb, 0, 1, 0) != EOK) {
-				DEBUG("LCD failed to config gpio %d pin %d\n", port, pin);
+			if (gpio_configPin(port + gpioa, gpio_pins[port][pin], 2, 0xb, 0, 1, 0) != EOK) {
+				DEBUG("LCD failed to config gpio %d pin %d\n", port, gpio_pins[port][pin]);
 				return -EIO;
 			}
 		}
 	}
 
 	/* Backlight pin */
-	if (gpio_configPin(pctl_gpiod, 0, 1, 0, 0, 0, 0) != EOK) {
+	if (gpio_configPin(gpiod, 0, 1, 0, 0, 0, 0) != EOK) {
 		DEBUG("LCD failed to config backlight\n", port, pin);
 		return -EIO;
 	}

@@ -22,7 +22,7 @@
 #include "common.h"
 
 #ifndef NDEBUG
-static const char drvname[] = "flash: ";
+static const char drvname[] = "flash";
 #endif
 
 

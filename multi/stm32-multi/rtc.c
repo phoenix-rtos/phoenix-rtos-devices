@@ -21,7 +21,7 @@
 #include "rtc.h"
 
 #ifndef NDEBUG
-static const char drvname[] = "rtc: ";
+static const char drvname[] = "rtc";
 #endif
 
 

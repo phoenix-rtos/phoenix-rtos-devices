@@ -16,7 +16,7 @@
 
 
 #include <stdio.h>
-#include "../../../phoenix-rtos-kernel/include/arch/stm32l1.h"
+#include <phoenix/arch/stm32l1.h>
 
 
 #define max(a, b) ({ \
@@ -36,7 +36,7 @@
 #ifdef NDEBUG
 #define DEBUG(format, ...)
 #else
-#define DEBUG(format, ...) printf("%s:"format, drvname, ##__VA_ARGS__)
+#define DEBUG(format, ...) printf("%s: "format, drvname, ##__VA_ARGS__)
 #endif
 
 

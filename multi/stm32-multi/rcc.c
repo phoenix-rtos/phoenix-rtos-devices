@@ -22,7 +22,7 @@
 #include "rtc.h"
 
 #ifndef NDEBUG
-static const char drvname[] = "rcc: ";
+static const char drvname[] = "rcc";
 #endif
 
 struct {

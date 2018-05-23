@@ -17,12 +17,13 @@
 #include <stdint.h>
 #include <sys/threads.h>
 
+#include "stm32-multi.h"
 #include "common.h"
 #include "rcc.h"
 
 
 #ifndef NDEBUG
-static const char drvname[] = "gpio: ";
+static const char drvname[] = "gpio";
 #endif
 
 
@@ -36,18 +37,22 @@ struct {
 } gpio_common;
 
 
+static const int gpio2pctl[] = { pctl_gpioa, pctl_gpiob, pctl_gpioc, pctl_gpiod, pctl_gpioe,
+	pctl_gpiof, pctl_gpiog, pctl_gpioh };
+
+
 int gpio_setPort(int port, unsigned int mask, unsigned int val)
 {
 	unsigned int t;
 
-	if (port < pctl_gpioa || port > pctl_gpioh)
+	if (port < gpioa || port > gpioh)
 		return -EINVAL;
 
 	mutexLock(gpio_common.lock);
 
-	t = *(gpio_common.base[port - pctl_gpioa] + odr) & ~(~val & mask);
+	t = *(gpio_common.base[port - gpioa] + odr) & ~(~val & mask);
 	t |= val & mask;
-	*(gpio_common.base[port - pctl_gpioa] + odr) = t & 0xffff;
+	*(gpio_common.base[port - gpioa] + odr) = t & 0xffff;
 
 	mutexUnlock(gpio_common.lock);
 
@@ -57,12 +62,12 @@ int gpio_setPort(int port, unsigned int mask, unsigned int val)
 
 int gpio_getPort(int port, unsigned int *val)
 {
-	if (port > pctl_gpioa || port > pctl_gpioh)
+	if (port > gpioa || port > gpioh)
 		return -EINVAL;
 
 	mutexLock(gpio_common.lock);
 
-	(*val) = *(gpio_common.base[port - pctl_gpioa] + idr) & 0xffff;
+	(*val) = *(gpio_common.base[port - gpioa] + idr) & 0xffff;
 
 	mutexUnlock(gpio_common.lock);
 
@@ -75,16 +80,16 @@ int gpio_configPin(int port, char pin, char mode, char af, char otype, char ospe
 	volatile unsigned int *base;
 	unsigned int t;
 
-	if (port < pctl_gpioa || port > pctl_gpioa || pin > 16)
+	if (port < gpioa || port > gpioh || pin > 16)
 		return -EINVAL;
 
 	/* Enable GPIO port's clock */
-	if (rcc_devClk(port, 1) != EOK) {
-		DEBUG("Failed to enable gpio%d clock\n", port - pctl_gpioa);
+	if (rcc_devClk(gpio2pctl[port - gpioa], 1) != EOK) {
+		DEBUG("Failed to enable gpio%d clock\n", port - gpioa);
 		return -EIO;
 	}
 
-	base = gpio_common.base[port - pctl_gpioa];
+	base = gpio_common.base[port - gpioa];
 
 	mutexLock(gpio_common.lock);
 
