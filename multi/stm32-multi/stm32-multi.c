@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <sys/threads.h>
 #include <sys/msg.h>
 
@@ -45,12 +46,40 @@ struct {
 } common;
 
 
-void handleMsg(msg_t *msg)
+void handleGpioSeq(gpioseq_t seq[], size_t scount, unsigned int *val)
+{
+	size_t i;
+	volatile int j;
+
+	for (i = 0; i < scount; ++i) {
+		switch (seq[i].type) {
+			case gpio_def:
+				gpio_configPin(seq[i].def.port, seq[i].def.pin, seq[i].def.mode,
+					seq[i].def.af, seq[i].def.otype, seq[i].def.ospeed, seq[i].def.pupd);
+				break;
+
+			case gpio_get:
+				gpio_getPort(seq[i].get.port, val);
+				break;
+
+			case gpio_set:
+				gpio_setPort(seq[i].set.port, seq[i].set.mask, seq[i].set.state);
+				break;
+
+			case gpio_delay:
+				for (j = 0; j < seq[i].delay; ++j)
+					__asm__ volatile ("nop");
+				break;
+		}
+	}
+}
+
+
+int handleMsg(msg_t *msg)
 {
 	multi_i_t *imsg = (multi_i_t *)(&msg->i);
 	multi_o_t *omsg = (multi_o_t *)(&msg->o);
-
-	omsg->err = EOK;
+	int err = EOK;
 
 	switch (imsg->type) {
 		case adc_get:
@@ -74,55 +103,57 @@ void handleMsg(msg_t *msg)
 			break;
 
 		case i2c_get:
-			omsg->err = i2c_transaction(_i2c_read, imsg->i2c_msg.addr, imsg->i2c_msg.reg, msg->o.data, msg->o.size);
+			err = i2c_transaction(_i2c_read, imsg->i2c_msg.addr, imsg->i2c_msg.reg, msg->o.data, msg->o.size);
 			break;
 
 		case i2c_set:
-			omsg->err = i2c_transaction(_i2c_write, imsg->i2c_msg.addr, imsg->i2c_msg.reg, msg->i.data, msg->i.size);
+			err = i2c_transaction(_i2c_write, imsg->i2c_msg.addr, imsg->i2c_msg.reg, msg->i.data, msg->i.size);
 			break;
 
 		case gpio_def:
-			omsg->err = gpio_configPin(imsg->gpio_def.port, imsg->gpio_def.pin, imsg->gpio_def.mode,
+			err = gpio_configPin(imsg->gpio_def.port, imsg->gpio_def.pin, imsg->gpio_def.mode,
 				imsg->gpio_def.af, imsg->gpio_def.otype, imsg->gpio_def.ospeed, imsg->gpio_def.pupd);
 			break;
 
 		case gpio_get:
-			omsg->err = gpio_getPort(imsg->gpio_get.port, &omsg->gpio_get);
+			err = gpio_getPort(imsg->gpio_get.port, &omsg->gpio_get);
 			break;
 
 		case gpio_set:
-			omsg->err = gpio_setPort(imsg->gpio_set.port, imsg->gpio_set.mask, imsg->gpio_set.state);
+			err = gpio_setPort(imsg->gpio_set.port, imsg->gpio_set.mask, imsg->gpio_set.state);
 			break;
 
 		case gpio_seq:
-			/* TODO */
+			handleGpioSeq(msg->i.data, msg->i.size / sizeof(gpioseq_t), &omsg->gpio_get);
 			break;
 
 		case uart_def:
-			omsg->err = uart_configure(imsg->uart_def.uart, imsg->uart_def.bits, imsg->uart_def.parity,
+			err = uart_configure(imsg->uart_def.uart, imsg->uart_def.bits, imsg->uart_def.parity,
 				imsg->uart_def.baud, imsg->uart_def.enable);
 			break;
 
 		case uart_get:
-			omsg->err = uart_read(imsg->uart_get.uart, msg->o.data, msg->o.size,
+			err = uart_read(imsg->uart_get.uart, msg->o.data, msg->o.size,
 				imsg->uart_get.mode, imsg->uart_get.timeout);
 			break;
 
 		case uart_set:
-			omsg->err = uart_write(imsg->uart_set.uart, msg->i.data, msg->i.size);
+			err = uart_write(imsg->uart_set.uart, msg->i.data, msg->i.size);
 			break;
 
 		case flash_get:
-			/* TODO */
+			err = flash_readData(imsg->flash_addr, msg->o.data, msg->o.size);
 			break;
 
 		case flash_set:
-			/* TODO */
+			err = flash_writeData(imsg->flash_addr, msg->i.data, msg->i.size);
 			break;
 
 		default:
-			omsg->err = -EINVAL;
+			err = -EINVAL;
 	}
+
+	return err;
 }
 
 
@@ -150,7 +181,7 @@ void thread(void *arg)
 				break;
 
 			case mtDevCtl:
-				handleMsg(&msg);
+				msg.o.io.err = handleMsg(&msg);
 				break;
 
 			case mtCreate:
@@ -158,7 +189,7 @@ void thread(void *arg)
 				break;
 
 			case mtLookup:
-				msg.o.create.err = -EINVAL;
+				msg.o.lookup.err = -EINVAL;
 				break;
 
 			default:

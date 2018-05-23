@@ -14,9 +14,9 @@
 #ifndef _STM32_MULTI_H_
 #define _STM32_MULTI_H_
 
-enum { adc_get = 0, rtc_get, rtc_set, lcd_get, lcd_set,
-	i2c_get, i2c_set, gpio_def, gpio_get, gpio_set, gpio_seq,
-	uart_def, uart_get, uart_set, flash_get, flash_set };
+enum { adc_get = 0, rtc_get, rtc_set, lcd_get, lcd_set, i2c_get, i2c_set,
+	gpio_def, gpio_get, gpio_set, gpio_seq, gpio_delay, uart_def, uart_get,
+	uart_set, flash_get, flash_set };
 
 /* RTC */
 
@@ -129,6 +129,7 @@ typedef struct {
 		gpioset_t set;
 		gpioget_t get;
 		gpiodef_t def;
+		unsigned int delay;
 	};
 } __attribute__((packed)) gpioseq_t;
 
@@ -177,12 +178,13 @@ typedef struct {
 		rtctimestamp_t rtc_timestamp;
 		lcdmsg_t lcd_msg;
 		i2cmsg_t i2c_msg;
-		gpiodef_t gpio_def;
-		gpioget_t gpio_get;
-		gpioset_t gpio_set;
 		uartget_t uart_get;
 		uartset_t uart_set;
 		uartdef_t uart_def;
+		gpiodef_t gpio_def;
+		gpioget_t gpio_get;
+		gpioset_t gpio_set;
+		unsigned int flash_addr;
 	};
 } __attribute__((packed)) multi_i_t;
 

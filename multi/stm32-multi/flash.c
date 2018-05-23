@@ -105,7 +105,7 @@ static void _eeprom_unlock(void)
 }
 
 
-int _eeprom_eraseByte(u32 addr)
+static int _eeprom_eraseByte(u32 addr)
 {
 	int err;
 
@@ -496,16 +496,6 @@ static int _flash_atomCopy(u32 dest, u32 src, size_t len)
 	return 0;
 }
 #endif
-
-
-static inline int flash_isValidAddress(u32 addr)
-{
-	if (program_isValidAddress(addr) || eeprom_isValidAdress(addr) || ob_isValidAdress(addr))
-		return 1;
-
-	return 0;
-}
-
 
 int flash_init(void)
 {
