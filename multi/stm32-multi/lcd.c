@@ -196,10 +196,8 @@ static void _lcd_showChar(char ch, unsigned int pos)
 }
 
 
-static void lcd_update(void)
+static void _lcd_update(void)
 {
-	mutexLock(lcd_common.lock);
-
 	if (lcd_common.on) {
 		/* Request update */
 		*(lcd_common.base + fcr) |= 1 << 3;
@@ -210,12 +208,10 @@ static void lcd_update(void)
 
 		*(lcd_common.base + clr) |= 0x08;
 	}
-
-	mutexUnlock(lcd_common.lock);
 }
 
 
-static void lcd_showString(const char *text)
+static void _lcd_showString(const char *text)
 {
 	unsigned int i, start, len = 0;
 
@@ -230,14 +226,12 @@ static void lcd_showString(const char *text)
 	for (i = start; i <= LCD_MAX_POSITION; i++)
 		_lcd_showChar(text[i - start], i);
 
-	mutexLock(lcd_common.lock);
 	memcpy(lcd_common.str, text, len);
 	lcd_common.str[len] = '\0';
-	mutexUnlock(lcd_common.lock);
 }
 
 
-static void lcd_showSymbols(unsigned int sym_mask, unsigned int state)
+static void _lcd_showSymbols(unsigned int sym_mask, unsigned int state)
 {
 	unsigned int i, symbol;
 
@@ -245,62 +239,45 @@ static void lcd_showSymbols(unsigned int sym_mask, unsigned int state)
 		if (!(symbol = sym_mask & (1 << i)))
 			continue;
 
-		mutexLock(lcd_common.lock);
 		_lcd_setRamSegment(symbols[i][0], pin_to_ram[symbols[i][1]], symbol & state);
-		mutexUnlock(lcd_common.lock);
 	}
 
-	mutexLock(lcd_common.lock);
 	lcd_common.sym_mask &= ~sym_mask;
 	lcd_common.sym_mask |= sym_mask & state;
-	mutexUnlock(lcd_common.lock);
 }
 
 
-static void lcd_showSmallString(const char *text)
+static void _lcd_showSmallString(const char *text)
 {
 	if (text[0] == '1')
-		lcd_showSymbols(LCDSYM_SMALL_ONE, 1);
+		_lcd_showSymbols(LCDSYM_SMALL_ONE, 1);
 	else
-		lcd_showSymbols(LCDSYM_SMALL_ONE, 0);
-
-	mutexLock(lcd_common.lock);
+		_lcd_showSymbols(LCDSYM_SMALL_ONE, 0);
 
 	_lcd_showChar(text[1], 1);
 
 	memcpy(lcd_common.str_small, text, sizeof(lcd_common.str_small) - 1);
 	lcd_common.str_small[sizeof(lcd_common.str_small) - 1] = '\0';
-
-	mutexUnlock(lcd_common.lock);
 }
 
 
-static void lcd_enable(int on)
+static void _lcd_enable(int on)
 {
 	on = !on;
-
-	mutexLock(lcd_common.lock);
 
 	lcd_common.on = !on;
 	*(lcd_common.base + cr) &= ~on;
 	*(lcd_common.base + cr) |= !on;
-
-	mutexUnlock(lcd_common.lock);
 }
 
 
-static int lcd_setBacklight(unsigned char val)
+static int _lcd_setBacklight(unsigned char val)
 {
-	mutexLock(lcd_common.lock);
-
 	if (gpio_setPort(pctl_gpiod, 1, !!val) != EOK) {
-		mutexUnlock(lcd_common.lock);
 		return -EIO;
 	}
 
 	lcd_common.backlight = val;
-
-	mutexUnlock(lcd_common.lock);
 
 	return EOK;
 }
@@ -325,19 +302,19 @@ void lcd_setDisplay(lcdmsg_t *disp)
 	mutexLock(lcd_common.lock);
 
 	if (disp->str[0] != '\0')
-		lcd_showString(disp->str);
+		_lcd_showString(disp->str);
 
 	if (disp->state >= 0)
-		lcd_showSymbols(disp->sym_mask, disp->state);
+		_lcd_showSymbols(disp->sym_mask, disp->state);
 
 	if (disp->str_small[0] != '\0')
-		lcd_showSmallString(disp->str_small);
+		_lcd_showSmallString(disp->str_small);
 
 	if (disp->backlight >= 0)
-		lcd_setBacklight(disp->backlight);
+		_lcd_setBacklight(disp->backlight);
 
-	lcd_enable(disp->on);
-	lcd_update();
+	_lcd_enable(disp->on);
+	_lcd_update();
 
 	mutexUnlock(lcd_common.lock);
 }

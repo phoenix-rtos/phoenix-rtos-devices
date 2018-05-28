@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <stdint.h>
 #include <sys/threads.h>
 #include <sys/msg.h>
@@ -41,7 +42,7 @@ static const char drvname[] = "multidrv";
 
 
 struct {
-	char stack[THREADS_NO][STACKSZ];
+	char stack[THREADS_NO][STACKSZ] __attribute__ ((aligned(8)));
 
 	unsigned int port;
 } common;
@@ -208,8 +209,6 @@ int main(void)
 	int i;
 	oid_t oid;
 
-	DEBUG("Started\n");
-
 	rcc_init();  DEBUG("rcc done\n");
 	rtc_init();  DEBUG("rtc done\n");
 	gpio_init(); DEBUG("gpio done\n");
@@ -228,6 +227,8 @@ int main(void)
 
 	for (i = 0; i < THREADS_NO - 1; ++i)
 		beginthread(thread, THREADS_PRIORITY, common.stack[i], STACKSZ, (void *)i);
+
+	DEBUG("Finishing init\n");
 
 	thread((void *)i);
 
