@@ -79,6 +79,11 @@ static int uart_read(void *data, size_t size)
 		*(char *)(data + i) = uart.rx_buff[uart.rx_head];
 		head = uart.rx_head + 1;
 		uart.rx_head = (uart.rx_head & ~0xff) + (head & 0xff);
+
+		if (*(char *)(data + i) == 0xa) {
+			i++;
+			break;
+		}
 	}
 
 	if (uart.rx_head == uart.rx_tail)
@@ -176,6 +181,7 @@ static void uart_intrthr(void *arg)
 					uart.tx_buff[uart.tx_tail++] = c;
 					uart.tx_buff[uart.tx_tail++] = ' ';
 				}
+
 				uart.tx_buff[uart.tx_tail++] = c;
 
 				if (uart.ready)
