@@ -31,6 +31,7 @@
 #include "rcc.h"
 #include "rtc.h"
 #include "uart.h"
+#include "spi.h"
 
 #define THREADS_NO 4
 #define THREADS_PRIORITY 2
@@ -151,6 +152,20 @@ int handleMsg(msg_t *msg)
 			err = flash_writeData(imsg->flash_addr, msg->i.data, msg->i.size);
 			break;
 
+		case spi_get:
+			err = spi_transaction(imsg->spi_rw.spi, spi_read, imsg->spi_rw.cmd, imsg->spi_rw.addr,
+				imsg->spi_rw.flags, msg->o.data, msg->o.size);
+			break;
+
+		case spi_set:
+			err = spi_transaction(imsg->spi_rw.spi, spi_write, imsg->spi_rw.cmd, imsg->spi_rw.addr,
+				imsg->spi_rw.flags, msg->i.data, msg->i.size);
+			break;
+
+		case spi_def:
+			err = spi_configure(imsg->spi_def.spi, imsg->spi_def.mode, imsg->spi_def.bdiv, imsg->spi_def.enable);
+			break;
+
 		default:
 			err = -EINVAL;
 	}
@@ -217,6 +232,7 @@ int main(void)
 	i2c_init();  DEBUG("i2c done\n");
 	flash_init();DEBUG("flash done\n");
 	uart_init(); DEBUG("uart done\n");
+	spi_init();  DEBUG("spi done\n");
 
 	if (portCreate(&common.port) != EOK) {
 		DEBUG("Failed to create port\n");

@@ -16,7 +16,7 @@
 
 enum { adc_get = 0, rtc_get, rtc_set, lcd_get, lcd_set, i2c_get, i2c_set,
 	gpio_def, gpio_get, gpio_set, gpio_seq, gpio_delay, uart_def, uart_get,
-	uart_set, flash_get, flash_set };
+	uart_set, flash_get, flash_set, spi_get, spi_set, spi_def };
 
 /* RTC */
 
@@ -167,6 +167,31 @@ typedef struct {
 } __attribute__((packed)) uartdef_t;
 
 
+/* SPI */
+
+
+enum { spi1 = 0, spi2, spi3 };
+
+
+enum { spi_address = 0x1, spi_dummy = 0x2 };
+
+
+typedef struct {
+	int spi;
+	char cmd;
+	unsigned int addr;
+	unsigned int flags;
+} spirw_t;
+
+
+typedef struct {
+	int spi;
+	char mode;
+	char bdiv;
+	int enable;
+} spidef_t;
+
+
 /* MULTI */
 
 
@@ -184,6 +209,8 @@ typedef struct {
 		gpiodef_t gpio_def;
 		gpioget_t gpio_get;
 		gpioset_t gpio_set;
+		spirw_t spi_rw;
+		spidef_t spi_def;
 		unsigned int flash_addr;
 	};
 } __attribute__((packed)) multi_i_t;
