@@ -99,7 +99,7 @@ int flash_image(char *path, int start)
 	while (offs < stat->st_size) {
 		memset(img_buf, 0x00, PAGE_SIZE);
 		memcpy(img_buf, img + offs, PAGE_SIZE + offs > stat->st_size ? stat->st_size - offs : PAGE_SIZE);
-		if ((ret = flashdrv_write(dma, offs / PAGE_SIZE, img_buf, meta_buf))) {
+		if ((ret = flashdrv_write(dma, (offs / PAGE_SIZE) + (start * 64), img_buf, meta_buf))) {
 			printf("Image write error 0x%x at offset 0x%x\n", ret, offs);
 			return -1;
 		}
