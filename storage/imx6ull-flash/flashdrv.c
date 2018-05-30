@@ -661,9 +661,26 @@ int flashdrv_write(flashdrv_dma_t *dma, u32 paddr, void *data, char *aux)
 	flashdrv_finish(dma);
 
 	mutexLock(flashdrv_common.mutex);
+
+	if (data == NULL) {
+		/* Trick BCH controller into thinking that the whole page consists of just the metadata block */
+		*(flashdrv_common.bch + bch_flash0layout0) &= ~(0xff << 24);
+
+		*(flashdrv_common.bch + bch_flash0layout1) &= ~(0xffff << 16);
+		*(flashdrv_common.bch + bch_flash0layout1) |= flashdrv_common.metasz << 16;
+	}
+
 	dma_run((dma_t *)dma->first, channel);
 	condWait(flashdrv_common.dma_cond, flashdrv_common.mutex, 0);
 	err = flashdrv_common.result;
+
+	if (data == NULL) {
+		*(flashdrv_common.bch + bch_flash0layout0) |= 8 << 24;
+
+		*(flashdrv_common.bch + bch_flash0layout1) &= ~(0xffff << 16);
+		*(flashdrv_common.bch + bch_flash0layout1) |= flashdrv_common.pagesz << 16;
+	}
+
 	mutexUnlock(flashdrv_common.mutex);
 
 	return err;
