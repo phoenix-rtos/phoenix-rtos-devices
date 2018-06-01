@@ -22,14 +22,14 @@ enum { adc_get = 0, rtc_get, rtc_set, lcd_get, lcd_set, i2c_get, i2c_set,
 
 
 typedef struct {
+	unsigned int year;
+	unsigned char month;
+	unsigned char day;
+	unsigned char wday;
+
 	unsigned char hours;
 	unsigned char minutes;
 	unsigned char seconds;
-
-	unsigned char day;
-	unsigned char month;
-	unsigned char wday;
-	unsigned int year;
 } __attribute__((packed)) rtctimestamp_t;
 
 
