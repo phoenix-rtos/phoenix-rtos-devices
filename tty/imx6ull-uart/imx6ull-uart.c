@@ -223,7 +223,7 @@ void main(void)
 
 	uart.base = mmap(NULL, 0x1000, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, UART_ADDR);
 
-	if (uart.base == NULL)
+	if (uart.base == MAP_FAILED)
 		return;
 
 	uart_clk.action = pctl_set;

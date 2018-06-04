@@ -228,7 +228,6 @@ static int ob_writeByte(u32 addr, char value)
 			word |= ((u32) ~value) << 16;
 		}
 
-
 		*wordAddr = word;
 		err = _flash_wait();
 	}

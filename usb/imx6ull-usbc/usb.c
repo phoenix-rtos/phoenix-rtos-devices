@@ -184,7 +184,7 @@ static int ctrlqh_init(void)
 	/* map queue head list */
 	dc.endptqh = mmap(NULL, 0x1000, PROT_WRITE | PROT_READ, MAP_UNCACHED, OID_NULL, 0);
 
-	if (dc.endptqh == NULL)
+	if (dc.endptqh == MAP_FAILED)
 		return -ENOMEM;
 
 	memset((void *)dc.endptqh, 0, 0x1000);
@@ -229,7 +229,7 @@ static int dtd_init(int endpt)
 
 	buff = mmap(NULL, 0x1000, PROT_WRITE | PROT_READ, MAP_UNCACHED, OID_NULL, 0);
 
-	if (buff == NULL)
+	if (buff == MAP_FAILED)
 		return -ENOMEM;
 
 	memset(buff, 0, 0x1000);
@@ -589,7 +589,7 @@ int main(void)
 	dc.cond = 0;
 	dc.dev_addr = 0;
 
-	if (dc.base == NULL)
+	if (dc.base == MAP_FAILED)
 		return -ENOMEM;
 
 	if (mutexCreate(&dc.lock) != EOK)

@@ -119,12 +119,12 @@ void flash_check(void)
 	int err = 0;
 	void *raw_data = mmap(NULL, 2 * PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_PHYSMEM, 0x900000);
 
-	memset(raw_data, 0, 4320);
-
-	if (raw_data == NULL) {
+	if (raw_data == MAP_FAILED) {
 		printf("Failed to map pages from OC RAM\n");
 		return;
 	}
+
+	memset(raw_data, 0, 4320);
 
 	flashdrv_init();
 	dma = flashdrv_dmanew();

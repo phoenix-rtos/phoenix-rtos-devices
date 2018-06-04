@@ -19,13 +19,13 @@ int do_test(void *arg)
 
 	unsigned fail_erase = 0, fail_write = 0, mismatch = 0, errors = 0, uncorrectable = 0, erased = 0;
 
-	if ((wbuf = mmap(NULL, SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0)) == NULL)
+	if ((wbuf = mmap(NULL, SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0)) == MAP_FAILED)
 		return 1;
 
-	if ((rbuf = mmap(NULL, SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0)) == NULL)
+	if ((rbuf = mmap(NULL, SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0)) == MAP_FAILED)
 		return 1;
 
-	if ((meta = mmap(NULL, SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0)) == NULL)
+	if ((meta = mmap(NULL, SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0)) == MAP_FAILED)
 		return 1;
 
 	for (i = 0; i < SIZE_PAGE; ++i)
