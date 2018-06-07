@@ -14,7 +14,7 @@
 #ifndef IMX6ULL_SDMA_LIB_H
 #define IMX6ULL_SDMA_LIB_H
 
-#include "../api/sdma-api.h"
+#include "sdma-api.h"
 
 typedef struct {
     oid_t oid;

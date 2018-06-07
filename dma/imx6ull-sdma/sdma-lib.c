@@ -18,7 +18,7 @@
 #include <sys/msg.h>
 #include <sys/mman.h>
 
-#include "../lib/sdma-lib.h"
+#include "sdma-lib.h"
 
 static int sdma_dev_ctl(sdma_t *s,
                         const sdma_dev_ctl_t *dev_ctl,

@@ -26,7 +26,7 @@
 
 #include <phoenix/arch/imx6ull.h>
 
-#include "../api/sdma-api.h"
+#include "sdma-api.h"
 
 #define COL_RED     "\033[1;31m"
 #define COL_CYAN    "\033[1;36m"
