@@ -30,15 +30,21 @@
 
 #define COL_RED     "\033[1;31m"
 #define COL_CYAN    "\033[1;36m"
+#define COL_YELLOW  "\033[1;33m"
 #define COL_NORMAL  "\033[0m"
 
 #define LOG_TAG "sdma-drv: "
 #define log_debug(fmt, ...)     do { printf(LOG_TAG fmt "\n", ##__VA_ARGS__); } while (0)
 #define log_info(fmt, ...)      do { printf(COL_CYAN LOG_TAG fmt "\n" COL_NORMAL, ##__VA_ARGS__); } while (0)
+#define log_warn(fmt, ...)      do { printf(COL_YELLOW LOG_TAG fmt "\n" COL_NORMAL, ##__VA_ARGS__); } while (0)
 #define log_error(fmt, ...)     do { printf(COL_RED  LOG_TAG fmt "\n" COL_NORMAL, ##__VA_ARGS__); } while (0)
 
 #define NUM_OF_SDMA_CHANNELS    (32)
 #define NUM_OF_SDMA_REQUESTS    (48)
+
+#define NUM_OF_WORKER_THREADS   (NUM_OF_SDMA_CHANNELS)
+#define WORKER_THD_PRIO         (2)
+#define WORKER_THD_STACK        (4096)
 
 /* Buffer Descriptor Commands for Bootload scripts */
 #define SDMA_CMD_C0_SET_DM                      (0x1)
@@ -97,15 +103,21 @@ typedef struct __attribute__((packed)) sdma_arm_regs_s {
 typedef struct {
     int active;
     int auto_bd_done;
+
     sdma_buffer_desc_t *bd;
     addr_t bd_paddr;
+
+    id_t file_id;
+
+    handle_t intr_cond;
+    unsigned intr_cnt;
 } sdma_channel_t;
 
 struct driver_common_s
 {
-    uint32_t port;
+    char stack[NUM_OF_WORKER_THREADS][WORKER_THD_STACK] __attribute__ ((aligned(8)));
 
-    id_t file_id[NUM_OF_SDMA_CHANNELS];
+    uint32_t port;
 
     sdma_channel_t channel[NUM_OF_SDMA_CHANNELS];
     sdma_channel_ctrl_t *ccb; /* Pointer to channel control block array */
@@ -118,11 +130,9 @@ struct driver_common_s
 
     volatile sdma_arm_regs_t *regs;
 
-    handle_t cond;
+    handle_t intr_cond;
     handle_t lock;
-};
-
-static struct driver_common_s common;
+} common;
 
 static void sdma_enable_channel(u8 channel_id)
 {
@@ -266,16 +276,25 @@ static int sdma_intr(unsigned int intr, void *arg)
 {
     struct driver_common_s *cmn = (struct driver_common_s*)arg;
 
-    cmn->regs->INTR = cmn->regs->INTR;
+    uint32_t _INTR = cmn->regs->INTR;
+    cmn->regs->INTR = _INTR;
 
     unsigned i;
     for (i = 0; i < NUM_OF_SDMA_CHANNELS; i++) {
-        if (cmn->channel[i].active) {
+
+        /* Check if channel is active and it's interrupt flag is set */
+        if (_INTR & (1 << i) && cmn->channel[i].active) {
+
+            /* Set BD_DONE in all buffer descriptors */
             sdma_buffer_desc_t *current = cmn->channel[i].bd;
             do {
                 if (!(current->flags & SDMA_BD_DONE))
                     current->flags |= SDMA_BD_DONE;
             } while (!((current++)->flags & SDMA_BD_WRAP));
+
+            /* Increase interrupt count to notify dispatcher that interrupt for
+             * this channel occurred */
+            cmn->channel[i].intr_cnt++;
         }
     }
 
@@ -340,7 +359,7 @@ static int sdma_init(void)
         common.channel[i].active = 0;
 
     unsigned handle;
-    interrupt(32 + 2, sdma_intr, &common, common.cond, &handle);
+    interrupt(32 + 2, sdma_intr, &common, common.intr_cond, &handle);
 
     return 0;
 
@@ -381,7 +400,7 @@ static int sdma_channel_configure(uint8_t channel_id, sdma_channel_config_t *cfg
     int res;
 
     if (cfg->priority >= SDMA_CHANNEL_PRIORITY_MAX) {
-        log_error("dev_ctl: unsupported channel priority");
+        log_error("unsupported channel priority");
         return -1;
     }
 
@@ -389,7 +408,7 @@ static int sdma_channel_configure(uint8_t channel_id, sdma_channel_config_t *cfg
 
     if (cfg->trig == sdma_trig__event) {
         if (cfg->event >= NUM_OF_SDMA_REQUESTS) {
-            log_error("dev_ctl: event number is too high (%d)", cfg->event);
+            log_error("event number is too high (%d)", cfg->event);
             return -1;
         }
 
@@ -406,7 +425,7 @@ static int sdma_channel_configure(uint8_t channel_id, sdma_channel_config_t *cfg
     sdma_set_channel_priority(channel_id, cfg->priority);
 
     if ((res = sdma_set_bd_array(channel_id, cfg->bd_paddr, cfg->bd_cnt)) < 0) {
-        log_error("dev_ctl: failed to set buffer descriptor array (%d)", res);
+        log_error("failed to set buffer descriptor array (%d)", res);
         return -1;
     }
 
@@ -460,7 +479,7 @@ static int dev_init(oid_t root)
         }
 
         oid_t file_oid = msg.o.create.oid;
-        common.file_id[i] = msg.o.create.oid.id;
+        common.channel[i].file_id = msg.o.create.oid.id;
 
         msg.type = mtLink;
         msg.i.ln.dir = dir;
@@ -495,21 +514,33 @@ static int oid_to_channel(oid_t *oid)
     int i;
 
     for (i = 1; i < NUM_OF_SDMA_CHANNELS; i++) {
-        if (common.file_id[i] == oid->id)
+        if (common.channel[i].file_id == oid->id)
             return i;
     }
 
     return -1;
 }
 
-static int dev_read(oid_t *oid)
+static int dev_read(oid_t *oid, void *data, size_t size)
 {
     int channel = oid_to_channel(oid);
+    unsigned intr_cnt;
 
-    /* TODO: Wait for interrupt */
-    (void)channel;
+    mutexLock(common.lock);
+    condWait(common.channel[channel].intr_cond, common.lock, 0);
 
-    return -ENOSYS;
+    intr_cnt = common.channel[channel].intr_cnt;
+
+    mutexUnlock(common.lock);
+
+    if (data != NULL && size == sizeof(unsigned)) {
+        memcpy(data, (void*)intr_cnt, sizeof(unsigned));
+    } else if (data != NULL) {
+        log_error("dev_read: invalid size");
+        return -EIO;
+    }
+
+    return EOK;
 }
 
 static int dev_ctl(msg_t *msg)
@@ -581,10 +612,12 @@ static int dev_ctl(msg_t *msg)
     return EOK;
 }
 
-static void msg_loop(void)
+static void worker_thread(void *arg)
 {
     msg_t msg;
     unsigned rid;
+
+    (void)arg;
 
     while (1) {
         if (msgRecv(common.port, &msg, &rid) < 0)
@@ -600,7 +633,7 @@ static void msg_loop(void)
                 break;
 
             case mtRead:
-                msg.o.io.err = dev_read(&msg.i.openclose.oid);
+                msg.o.io.err = dev_read(&msg.i.io.oid, msg.o.data, msg.o.size);
                 break;
 
             case mtWrite:
@@ -608,7 +641,9 @@ static void msg_loop(void)
                 break;
 
             case mtDevCtl:
+                mutexLock(common.lock);
                 msg.o.io.err = dev_ctl(&msg);
+                mutexUnlock(common.lock);
                 break;
         }
 
@@ -618,13 +653,38 @@ static void msg_loop(void)
 
 static int init(oid_t root)
 {
-    int res;
+    int res, i;
 
-    if ((res = sdma_init()) < 0)
-        return res;
+    if (mutexCreate(&common.lock) != EOK) {
+        log_error("failed to create mutex");
+        return -1;
+    }
 
-    if ((res = dev_init(root)) < 0)
+    if (condCreate(&common.intr_cond) != EOK) {
+        log_error("failed to create conditional variable");
+        return -1;
+    }
+
+    for (i = 0; i < NUM_OF_SDMA_CHANNELS; i++) {
+        common.channel[i].intr_cnt = 0;
+        if (condCreate(&common.channel[i].intr_cond) != EOK) {
+            log_error("failed to create conditional variable for channel %d", i);
+            return -1;
+        }
+    }
+
+    if ((res = sdma_init()) < 0) {
+        log_error("SDMA initialization failed");
         return res;
+    }
+
+    if ((res = dev_init(root)) < 0) {
+        log_error("device initialization failed");
+        return res;
+    }
+
+    for (i = 0; i < NUM_OF_WORKER_THREADS; i++)
+        beginthread(worker_thread, WORKER_THD_PRIO, common.stack[i], WORKER_THD_STACK, NULL);
 
     return 0;
 }
@@ -640,7 +700,28 @@ int main(void)
     if (init(root))
         return -EIO;
 
-    msg_loop();
+    unsigned i, intr_cnt[NUM_OF_SDMA_CHANNELS], cnt;
+    memset(intr_cnt, 0, sizeof(intr_cnt));
+
+    while (1) {
+        mutexLock(common.lock);
+        condWait(common.intr_cond, common.lock, 0);
+
+        for (i = 0; i < NUM_OF_SDMA_CHANNELS; i++) {
+            cnt = common.channel[i].intr_cnt;
+
+            if (intr_cnt[i] == cnt) /* No interrupts for this channel */
+                continue;
+
+            if ((intr_cnt[i] + 1) != cnt) /* More than one interrupt */
+                log_warn("missed interrupt for channel %d (%u vs %u)", i, intr_cnt[i], cnt);
+
+            condSignal(common.channel[i].intr_cond);
+            intr_cnt[i] = cnt;
+        }
+
+        mutexUnlock(common.lock);
+    }
 
     /* Should never be reached */
     log_error("Exiting!");
