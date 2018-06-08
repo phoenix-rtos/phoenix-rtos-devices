@@ -449,7 +449,8 @@ static int dev_init(oid_t root)
         msg.type = mtCreate;
         msg.i.create.type = 2; /* otDev */
         msg.i.create.mode = 0;
-        msg.i.create.port = common.port;
+#warning FIXME: new create message
+        msg.i.create.dev.port = common.port;
         msg.i.data = filename;
         msg.i.size = strlen(filename) + 1;
 

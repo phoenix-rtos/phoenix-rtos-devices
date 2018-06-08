@@ -95,7 +95,8 @@ int init(oid_t root)
 		msg.type = mtCreate;
 		msg.i.create.type = 2; /* otDev */
 		msg.i.create.mode = 0;
-		msg.i.create.port = common.port;
+#warning FIXME: new create message
+		msg.i.create.dev.port = common.port;
 		msg.i.data = "port";
 		msg.i.size = sizeof("port");
 
@@ -118,7 +119,8 @@ int init(oid_t root)
 		msg.type = mtCreate;
 		msg.i.create.type = 2; /* otDev */
 		msg.i.create.mode = 0;
-		msg.i.create.port = common.port;
+#warning FIXME: new create message
+		msg.i.create.dev.port = common.port;
 		msg.i.data = "dir";
 		msg.i.size = sizeof("dir");
 
