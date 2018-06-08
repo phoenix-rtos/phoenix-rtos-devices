@@ -20,6 +20,7 @@
 #include <sys/threads.h>
 #include <sys/mman.h>
 #include <sys/msg.h>
+#include <sys/file.h>
 #include <sys/platform.h>
 #include <../phoenix-rtos-kernel/include/arch/imx6ull.h>
 
@@ -93,34 +94,27 @@ int init(oid_t root)
 		}
 
 		msg.type = mtCreate;
-		msg.i.create.type = 2; /* otDev */
+		msg.i.create.dir = dir;
+		msg.i.create.type = otDev;
 		msg.i.create.mode = 0;
-#warning FIXME: new create message
 		msg.i.create.dev.port = common.port;
+		msg.i.create.dev.id = gpio1 + i;
 		msg.i.data = "port";
 		msg.i.size = sizeof("port");
 
 		if (msgSend(root.port, &msg) < 0 || msg.o.create.err != EOK) {
-			printf("gpiodrv: Could not create port file #%d\n", i + 1);
+			printf("gpiodrv: Could not create port file #%d (err %d)\n", i + 1, msg.o.create.err);
 			return - 1;
 		}
 
 		common.gpio[i].port = msg.o.create.oid.id;
 
-		msg.type = mtLink;
-		msg.i.ln.dir = dir;
-		msg.i.ln.oid = msg.o.create.oid;
-
-		if (msgSend(root.port, &msg) < 0) {
-			printf("gpiodrv: Could not link port file #%d\n", i + 1);
-			return -1;
-		}
-
 		msg.type = mtCreate;
-		msg.i.create.type = 2; /* otDev */
+		msg.i.create.dir = dir;
+		msg.i.create.type = otDev;
 		msg.i.create.mode = 0;
-#warning FIXME: new create message
 		msg.i.create.dev.port = common.port;
+		msg.i.create.dev.id = dir1 + i;
 		msg.i.data = "dir";
 		msg.i.size = sizeof("dir");
 
@@ -130,15 +124,6 @@ int init(oid_t root)
 		}
 
 		common.gpio[i].dir = msg.o.create.oid.id;
-
-		msg.type = mtLink;
-		msg.i.ln.dir = dir;
-		msg.i.ln.oid = msg.o.create.oid;
-
-		if (msgSend(root.port, &msg) < 0) {
-			printf("gpiodrv: Could not link direction file #%d\n", i + 1);
-			return -1;
-		}
 
 		pctl.action = pctl_set;
 		pctl.type = pctl_devclock;
@@ -157,22 +142,6 @@ int init(oid_t root)
 	}
 
 	return 0;
-}
-
-
-int oid2gpio(oid_t *oid)
-{
-	int i;
-
-	for (i = 0; i < sizeof(common.gpio) / sizeof(common.gpio[0]); ++i) {
-		if (oid->id == common.gpio[i].port)
-			return gpio1 + i;
-
-		if (oid->id == common.gpio[i].dir)
-			return dir1 + i;
-	}
-
-	return -ENOENT;
 }
 
 
@@ -250,12 +219,12 @@ void thread(void *arg)
 		switch (msg.type) {
 			case mtOpen:
 			case mtClose:
-				msg.o.io.err = oid2gpio(&msg.i.openclose.oid) < 0 ? -ENOENT : EOK;
+				msg.o.io.err = msg.i.openclose.oid.id < gpio1 || msg.i.openclose.oid.id > dir5 ? -ENOENT : EOK;
 				break;
 
 			case mtRead:
 				if (msg.o.data != NULL && msg.o.size >= sizeof(u32)) {
-					d = oid2gpio(&msg.i.io.oid);
+					d = msg.i.io.oid.id;
 
 					if (d >= gpio1 && d <= gpio5) {
 						msg.o.io.err = gpioread(d, &val);
@@ -280,7 +249,7 @@ void thread(void *arg)
 					else
 						mask = (u32)-1;
 
-					d = oid2gpio(&msg.i.io.oid);
+					d = msg.i.io.oid.id;
 
 					if (d >= gpio1 && d <= gpio5)
 						msg.o.io.err = gpiowrite(d, val, mask);
