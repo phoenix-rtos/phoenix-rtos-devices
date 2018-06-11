@@ -41,6 +41,19 @@
 #define SDMA_CHANNEL_PRIORITY_MIN               (1)
 #define SDMA_CHANNEL_PRIORITY_DISABLED          (0) /* Channel disabled */
 
+/* ROM script addresses */
+typedef enum {
+    sdma_script__ap_2_ap         = 642,
+    sdma_script__ap_2_mcu        = 683,
+    sdma_script__mcu_2_ap        = 747,
+    sdma_script__uart_2_mcu      = 817,
+    sdma_script__shp_2_mcu       = 891,
+    sdma_script__mcu_2_shp       = 960,
+    sdma_script__uartsh_2_mcu    = 1032,
+    sdma_script__spdif_2_mcu     = 1100,
+    sdma_script__mcu_2_spdif     = 1134,
+} sdma_script_t;
+
 struct __attribute__((packed)) sdma_buffer_desc_s {
     uint32_t count:16; /* Size of the buffer */
     uint32_t flags:8;
