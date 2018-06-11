@@ -144,6 +144,29 @@ int sdma_trigger(sdma_t *s)
     return sdma_dev_ctl(s, &dev_ctl, NULL, 0);
 }
 
+int sdma_wait_for_intr(sdma_t *s, uint32_t *cnt)
+{
+    int res;
+    msg_t msg;
+
+    msg.type = mtRead;
+    msg.o.size = sizeof(uint32_t);
+    msg.o.data = cnt;
+    msg.i.size = 0;
+    msg.i.data = NULL;
+    msg.i.io.oid = s->oid;
+
+    if ((res = msgSend(s->oid.port, &msg)) < 0) {
+        fprintf(stderr, "msgSend failed (%d)\n\r", res);
+        return -1;
+    } else if (msg.o.io.err != EOK) {
+        fprintf(stderr, "read failed (%d)\n\r", msg.o.io.err);
+        return -2;
+    }
+
+    return 0;
+}
+
 void *sdma_alloc_uncached(size_t size, addr_t *paddr)
 {
     uint32_t n = (size + SIZE_PAGE - 1)/SIZE_PAGE;

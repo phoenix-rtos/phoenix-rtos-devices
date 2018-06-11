@@ -34,6 +34,9 @@ int sdma_context_set(sdma_t *s, const sdma_context_t *ctx);
 int sdma_enable(sdma_t *s);
 int sdma_trigger(sdma_t *s);
 
+/* cnt - number of interrupts for this channel registered up until this point */
+int sdma_wait_for_intr(sdma_t *s, uint32_t *cnt);
+
 void* sdma_alloc_uncached(size_t size, addr_t *paddr);
 int sdma_free_uncached(void *vaddr, size_t size);
 
