@@ -41,8 +41,10 @@ struct {
 	volatile char *rxend;
 	volatile unsigned int read;
 
-	handle_t cond;
-	handle_t mutex;
+	handle_t rxlock;
+	handle_t rxcond;
+	handle_t txlock;
+	handle_t txcond;
 } uart_common[5];
 
 
@@ -52,7 +54,7 @@ static const int uart2pctl[] = { pctl_usart1, pctl_usart2, pctl_usart3, pctl_uar
 enum { sr = 0, dr, brr, cr1, cr2, cr3, gtpr };
 
 
-static int uart_irq(unsigned int n, void *arg)
+static int uart_txirq(unsigned int n, void *arg)
 {
 	int uart = (int)arg, release = -1;
 
@@ -66,6 +68,14 @@ static int uart_irq(unsigned int n, void *arg)
 			release = 1;
 		}
 	}
+
+	return release;
+}
+
+
+static int uart_rxirq(unsigned int n, void *arg)
+{
+	int uart = (int)arg, release = -1;
 
 	if (*(uart_common[uart].base + sr) & ((1 << 5) | (1 << 3))) {
 		/* Rxd buffer not empty */
@@ -117,7 +127,9 @@ int uart_configure(int uart, char bits, char parity, unsigned int baud, char ena
 
 	rcc_devClk(uart2pctl[uart], 1);
 
-	mutexLock(uart_common[uart].mutex);
+	mutexLock(uart_common[uart].txlock);
+	mutexLock(uart_common[uart].rxlock);
+
 
 	*(uart_common[uart].base + cr1) &= ~(1 << 13);
 	dataBarier();
@@ -154,7 +166,8 @@ int uart_configure(int uart, char bits, char parity, unsigned int baud, char ena
 
 	rcc_devClk(uart2pctl[uart], !!en);
 
-	mutexUnlock(uart_common[uart].mutex);
+	mutexUnlock(uart_common[uart].rxlock);
+	mutexUnlock(uart_common[uart].txlock);
 
 	return err;
 }
@@ -168,7 +181,7 @@ int uart_write(int uart, void* buff, unsigned int bufflen)
 	if (!uart_isEnabled(uart))
 		return -EIO;
 
-	mutexLock(uart_common[uart].mutex);
+	mutexLock(uart_common[uart].txlock);
 	keepidle(1);
 
 	uart_common[uart].txbeg = buff;
@@ -177,13 +190,13 @@ int uart_write(int uart, void* buff, unsigned int bufflen)
 	*(uart_common[uart].base + cr1) |= 1 << 7;
 
 	while (uart_common[uart].txbeg != uart_common[uart].txend)
-		condWait(uart_common[uart].cond, uart_common[uart].mutex, 0);
+		condWait(uart_common[uart].txcond, uart_common[uart].txlock, 0);
 
 	uart_common[uart].txbeg = NULL;
 	uart_common[uart].txend = NULL;
 
 	keepidle(0);
-	mutexUnlock(uart_common[uart].mutex);
+	mutexUnlock(uart_common[uart].txlock);
 
 	return bufflen;
 }
@@ -199,7 +212,7 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 	if (!uart_isEnabled(uart))
 		return -EIO;
 
-	mutexLock(uart_common[uart].mutex);
+	mutexLock(uart_common[uart].rxlock);
 	keepidle(1);
 
 	uart_common[uart].read = 0;
@@ -213,7 +226,7 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 	*(uart_common[uart].base + cr1) |= 1 << 7;
 
 	while (mode != uart_mnblock && uart_common[uart].rxbeg != uart_common[uart].rxend) {
-		err = condWait(uart_common[uart].cond, uart_common[uart].mutex, timeout);
+		err = condWait(uart_common[uart].rxcond, uart_common[uart].rxlock, timeout);
 
 		if (timeout && err == -ETIME)
 			break;
@@ -230,7 +243,7 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 	}
 
 	keepidle(0);
-	mutexUnlock(uart_common[uart].mutex);
+	mutexUnlock(uart_common[uart].rxlock);
 
 	return read;
 }
@@ -259,8 +272,10 @@ int uart_init(void)
 	for (i = 0; i < 5; ++i) {
 		rcc_devClk(info[i].dev, 1);
 
-		mutexCreate(&uart_common[i].mutex);
-		condCreate(&uart_common[i].cond);
+		mutexCreate(&uart_common[i].rxlock);
+		condCreate(&uart_common[i].rxcond);
+		mutexCreate(&uart_common[i].txlock);
+		condCreate(&uart_common[i].txcond);
 
 		uart_common[i].base = info[i].base;
 
@@ -292,7 +307,8 @@ int uart_init(void)
 		if (i != 3)
 			rcc_devClk(info[i].dev, 0);
 
-		interrupt(info[i].irq, uart_irq, (void *)i, uart_common[i].cond, NULL);
+		interrupt(info[i].irq, uart_rxirq, (void *)i, uart_common[i].rxcond, NULL);
+		interrupt(info[i].irq, uart_txirq, (void *)i, uart_common[i].txcond, NULL);
 	}
 
 	return EOK;
