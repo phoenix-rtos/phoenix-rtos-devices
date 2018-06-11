@@ -23,6 +23,7 @@
 #include <sys/threads.h>
 #include <sys/mman.h>
 #include <sys/interrupt.h>
+#include <sys/file.h>
 
 #include <phoenix/arch/imx6ull.h>
 
@@ -441,6 +442,10 @@ static int dev_init(oid_t root)
     char filename[5];
 
     res = portCreate(&common.port);
+    if (res != EOK) {
+        log_error("could not create port: %d", res);
+        return -1;
+    }
 
     res = mkdir("/dev", 0);
     if (res < 0 && res != -EEXIST) {
@@ -466,30 +471,20 @@ static int dev_init(oid_t root)
         res = snprintf(filename, sizeof(filename), "ch%02u", (unsigned)i);
 
         msg.type = mtCreate;
-        msg.i.create.type = 2; /* otDev */
+        msg.i.create.type = otDev;
         msg.i.create.mode = 0;
-#warning FIXME: new create message
         msg.i.create.dev.port = common.port;
+        msg.i.create.dev.id = i;
+        msg.i.create.dir = dir;
         msg.i.data = filename;
         msg.i.size = strlen(filename) + 1;
 
         if ((res = msgSend(root.port, &msg)) < 0 || msg.o.create.err != EOK) {
-            log_error("could not create %s/%s (res=%d, err=%u)", dirname, filename, res, msg.o.create.err);
+            log_error("could not create %s/%s (res=%d, err=%d)", dirname, filename, res, msg.o.create.err);
             return -1;
         }
 
-        oid_t file_oid = msg.o.create.oid;
-        common.channel[i].file_id = msg.o.create.oid.id;
-
-        msg.type = mtLink;
-        msg.i.ln.dir = dir;
-        msg.i.ln.oid = file_oid;
-
-        if ((res = msgSend(root.port, &msg)) < 0) {
-            log_error("failed to link device file %s/%s (%d)", dirname, filename, res);
-            /* TODO: Delete created files */
-            return -1;
-        }
+        common.channel[i].file_id = msg.i.create.dev.id;
     }
 
     log_info("device initialized");
@@ -511,14 +506,7 @@ static int dev_close(oid_t *oid, int flags)
 
 static int oid_to_channel(oid_t *oid)
 {
-    int i;
-
-    for (i = 1; i < NUM_OF_SDMA_CHANNELS; i++) {
-        if (common.channel[i].file_id == oid->id)
-            return i;
-    }
-
-    return -1;
+    return oid->id;
 }
 
 static int dev_read(oid_t *oid, void *data, size_t size)
@@ -534,7 +522,7 @@ static int dev_read(oid_t *oid, void *data, size_t size)
     mutexUnlock(common.lock);
 
     if (data != NULL && size == sizeof(unsigned)) {
-        memcpy(data, (void*)intr_cnt, sizeof(unsigned));
+        memcpy(data, &intr_cnt, sizeof(unsigned));
     } else if (data != NULL) {
         log_error("dev_read: invalid size");
         return -EIO;
