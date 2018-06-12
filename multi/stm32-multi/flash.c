@@ -29,18 +29,6 @@ static const char drvname[] = "flash";
 enum { flash_pecr = 1, flash_pekeyr = 3, flash_prgkeyr, flash_oprkeyr, flash_sr, flash_obr };
 
 
-enum { EVENTS = 0, LOGS };
-
-
-typedef struct {
-	u32 addr;
-	int currIdx;
-	u64 currId;
-	int entrySize;
-	int entryCount;
-} __attribute__((packed)) logarea_t;
-
-
 struct {
 	volatile unsigned int *flash;
 	unsigned int port;
