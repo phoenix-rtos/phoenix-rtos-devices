@@ -14,7 +14,13 @@ MKDEPFLAGS = $(CFLAGS)
 
 CC = $(CROSS)gcc
 
-CFLAGS += -Os -g -Wall -Wstrict-prototypes -g -I$(SRCDIR) -nostartfiles -nostdlib\
+ifeq ($(DEBUG), 1)
+	CFLAGS += -O0 -g
+else
+	CFLAGS += -Os -DNDEBUG
+endif
+
+CFLAGS += -Wall -Wstrict-prototypes -g -I$(SRCDIR) -nostartfiles -nostdlib\
 	-mcpu=cortex-m3 -mthumb -fomit-frame-pointer -ffreestanding -mno-unaligned-access\
 	-fpic -fpie -msingle-pic-base -mno-pic-data-is-text-relative\
 	-DVERSION=\"$(VERSION)\" -DARCH=\"arch/armv7/arch.h\" -DNOMMU
