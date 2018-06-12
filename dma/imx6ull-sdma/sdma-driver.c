@@ -682,6 +682,84 @@ static int init(oid_t root)
     return 0;
 }
 
+#if 0
+static void sdma_print_debug_info(void)
+{
+    log_info("SDMA regs:");
+    log_debug("EVTPEND      = 0x%x", common.regs->EVTPEND);
+    log_debug("EVT_MIRROR   = 0x%x", common.regs->EVT_MIRROR);
+    log_debug("EVT_MIRROR2  = 0x%x", common.regs->EVT_MIRROR2);
+    log_debug("EVTERRDBG    = 0x%x", common.regs->EVTERRDBG);
+    log_debug("INTR         = 0x%x", common.regs->INTR);
+    log_debug("INTRMASK     = 0x%x", common.regs->INTRMASK);
+    log_debug("PSW          = 0x%x", common.regs->PSW);
+    log_debug("ONCE_STAT    = 0x%x\n", common.regs->ONCE_STAT);
+
+    unsigned i;
+    for (i = 0; i < NUM_OF_SDMA_CHANNELS; i++) {
+        if (!common.channel[i].active)
+            continue;
+
+        log_info("Channel %u is active", i);
+
+        log_debug("intr_cnt = %u", common.channel[i].intr_cnt);
+        log_debug("priority = %u\n", common.regs->SDMA_CHNPRI[i]);
+
+        sdma_context_t context;
+        log_debug("Dumping context...");
+        sdma_context_dump(i, &context);
+        unsigned pc = context.state[0] & SDMA_CONTEXT_PC_MASK;
+        log_debug("pc           = 0x%x (%u)", pc, pc);
+        log_debug("state[0]     = 0x%x", context.state[0]);
+        log_debug("state[1]     = 0x%x", context.state[1]);
+        log_debug("gr[0]        = 0x%x", context.gr[0]);
+        log_debug("gr[1]        = 0x%x", context.gr[1]);
+        log_debug("gr[2]        = 0x%x", context.gr[2]);
+        log_debug("gr[3]        = 0x%x", context.gr[3]);
+        log_debug("gr[4]        = 0x%x", context.gr[4]);
+        log_debug("gr[5]        = 0x%x", context.gr[5]);
+        log_debug("gr[6]        = 0x%x", context.gr[6]);
+        log_debug("gr[7]        = 0x%x", context.gr[7]);
+        log_debug("mda          = 0x%x", context.mda);
+        log_debug("msa          = 0x%x", context.msa);
+        log_debug("ms           = 0x%x", context.ms);
+        log_debug("md           = 0x%x", context.md);
+        log_debug("pda          = 0x%x", context.pda);
+        log_debug("psa          = 0x%x", context.psa);
+        log_debug("ps           = 0x%x", context.ps);
+        log_debug("pd           = 0x%x", context.pd);
+        log_debug("ca           = 0x%x", context.ca);
+        log_debug("cs           = 0x%x", context.cs);
+        log_debug("dda          = 0x%x", context.dda);
+        log_debug("dsa          = 0x%x", context.dsa);
+        log_debug("ds           = 0x%x", context.ds);
+        log_debug("dd           = 0x%x", context.dd);
+        log_debug("scratch[0]   = 0x%x", context.scratch[0]);
+        log_debug("scratch[1]   = 0x%x", context.scratch[1]);
+        log_debug("scratch[2]   = 0x%x", context.scratch[2]);
+        log_debug("scratch[3]   = 0x%x", context.scratch[3]);
+        log_debug("scratch[4]   = 0x%x", context.scratch[4]);
+        log_debug("scratch[5]   = 0x%x", context.scratch[5]);
+        log_debug("scratch[6]   = 0x%x", context.scratch[6]);
+        log_debug("scratch[7]   = 0x%x\n", context.scratch[7]);
+
+        unsigned j = 0;
+        sdma_buffer_desc_t *current = common.channel[i].bd;
+        do {
+            log_debug("bd[%u].flags = 0x%x", j, current->flags);
+            log_debug("\tSDMA_BD_DONE is %s", (current->flags & SDMA_BD_DONE) ? "SET" : "CLEARED");
+            log_debug("\tSDMA_BD_WRAP is %s", (current->flags & SDMA_BD_WRAP) ? "SET" : "CLEARED");
+            log_debug("\tSDMA_BD_INTR is %s\n", (current->flags & SDMA_BD_INTR) ? "SET" : "CLEARED");
+            j++;
+        } while (!((current++)->flags & SDMA_BD_WRAP));
+
+        log_debug("Dumping CCB...");
+        log_debug("common.ccb[i].base_bd         = 0x%x", common.ccb[i].base_bd);
+        log_debug("common.ccb[i].current_bd      = 0x%x\n", common.ccb[i].current_bd);
+    }
+}
+#endif
+
 int main(void)
 {
     oid_t root;
