@@ -275,27 +275,32 @@ static void sdma_reset(void)
 
 static int sdma_intr(unsigned int intr, void *arg)
 {
+    uint32_t _INTR;
     struct driver_common_s *cmn = (struct driver_common_s*)arg;
 
-    uint32_t _INTR = cmn->regs->INTR;
-    cmn->regs->INTR = _INTR;
+    while ((_INTR = cmn->regs->INTR) != 0) {
 
-    unsigned i;
-    for (i = 0; i < NUM_OF_SDMA_CHANNELS; i++) {
+        /* Clear interrupt flags */
+        cmn->regs->INTR = _INTR;
 
-        /* Check if channel is active and it's interrupt flag is set */
-        if (_INTR & (1 << i) && cmn->channel[i].active) {
+        unsigned i;
+        for (i = 1; i < NUM_OF_SDMA_CHANNELS; i++) {
 
-            /* Set BD_DONE in all buffer descriptors */
-            sdma_buffer_desc_t *current = cmn->channel[i].bd;
-            do {
-                if (!(current->flags & SDMA_BD_DONE))
-                    current->flags |= SDMA_BD_DONE;
-            } while (!((current++)->flags & SDMA_BD_WRAP));
+            /* Check if channel is active and it's interrupt flag is set */
+            if (_INTR & (1 << i) && cmn->channel[i].active) {
 
-            /* Increase interrupt count to notify dispatcher that interrupt for
-             * this channel occurred */
-            cmn->channel[i].intr_cnt++;
+
+                /* Set BD_DONE in all buffer descriptors */
+                sdma_buffer_desc_t *current = cmn->channel[i].bd;
+                do {
+                    if (!(current->flags & SDMA_BD_DONE))
+                        current->flags |= SDMA_BD_DONE;
+                } while (!((current++)->flags & SDMA_BD_WRAP));
+
+                /* Increase interrupt count to notify dispatcher that interrupt for
+                 * this channel occurred */
+                cmn->channel[i].intr_cnt++;
+            }
         }
     }
 
