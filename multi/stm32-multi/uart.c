@@ -34,7 +34,7 @@ struct {
 	volatile char *txbeg;
 	volatile char *txend;
 
-	volatile char rxdfifo[32];
+	volatile char rxdfifo[64];
 	volatile unsigned int rxdr;
 	volatile unsigned int rxdw;
 	volatile char *rxbeg;
