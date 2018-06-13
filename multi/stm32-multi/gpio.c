@@ -62,7 +62,7 @@ int gpio_setPort(int port, unsigned int mask, unsigned int val)
 
 int gpio_getPort(int port, unsigned int *val)
 {
-	if (port > gpioa || port > gpioh)
+	if (port < gpioa || port > gpioh)
 		return -EINVAL;
 
 	mutexLock(gpio_common.lock);
