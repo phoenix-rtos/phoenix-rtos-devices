@@ -65,6 +65,8 @@ static int uart_txirq(unsigned int n, void *arg)
 		}
 		else {
 			*(uart_common[uart].base + cr1) &= ~(1 << 7);
+			uart_common[uart].txbeg = NULL;
+			uart_common[uart].txend = NULL;
 			release = 1;
 		}
 	}
@@ -191,9 +193,6 @@ int uart_write(int uart, void* buff, unsigned int bufflen)
 
 	while (uart_common[uart].txbeg != uart_common[uart].txend)
 		condWait(uart_common[uart].txcond, uart_common[uart].txlock, 0);
-
-	uart_common[uart].txbeg = NULL;
-	uart_common[uart].txend = NULL;
 
 	keepidle(0);
 	mutexUnlock(uart_common[uart].txlock);
