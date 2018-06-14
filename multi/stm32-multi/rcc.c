@@ -36,8 +36,10 @@ struct {
 	int hsiState;
 } rcc_common;
 
+
 enum { cr = 0, icscr, cfgr, cir, ahbrstr, apb2rstr, apb1rstr, ahbenr, apb2enr,
 	apb1enr, ahblpenr, apb2lpenr, apb1lpenr, csr };
+
 
 enum { pwr_cr = 0, pwr_csr };
 

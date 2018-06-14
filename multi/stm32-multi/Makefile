@@ -28,9 +28,6 @@ check:
 $(BIN): $(OBJS)
 	@echo " LD    $@"
 	$(SIL)$(LD) $(LDFLAGS) -o $(BIN) $(OBJS) $(LDLIBS)
-	@cp $(BIN) $(BIN)-unstripped
-	@echo " STRIP $@"
-	$(SIL)$(STRIP) $(BIN) 2>/dev/null
 
 
 depend: check

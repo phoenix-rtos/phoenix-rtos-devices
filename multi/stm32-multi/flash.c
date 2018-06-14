@@ -31,10 +31,8 @@ enum { flash_pecr = 1, flash_pekeyr = 3, flash_prgkeyr, flash_oprkeyr, flash_sr,
 
 struct {
 	volatile unsigned int *flash;
-	unsigned int port;
 	handle_t lock;
 
-	char buff[64];
 	char page[256];
 } flash_common;
 
