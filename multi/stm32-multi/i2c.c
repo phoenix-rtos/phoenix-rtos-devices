@@ -138,7 +138,7 @@ int i2c_init(void)
 
 	i2c_common.base = (void *)0x40005800;
 
-	if (rcc_devClk(pctl_i2c1, 1) != EOK) {
+	if (rcc_devClk(pctl_i2c2, 1) != EOK) {
 		DEBUG("Failed to enable clock\n");
 		return -EIO;
 	}
