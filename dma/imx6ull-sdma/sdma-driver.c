@@ -101,6 +101,14 @@ typedef struct __attribute__((packed)) sdma_arm_regs_s {
     uint32_t CHNENBL[48];
 } sdma_arm_regs_t;
 
+/* Context Switching Mode */
+typedef enum {
+    sdma_csm__static                = 0x0,
+    sdma_csm__dynamic_low_power     = 0x1,
+    sdma_csm__dynamic_no_loop       = 0x2,
+    sdma_csm__dynamic               = 0x3,
+} sdma_csm_t;
+
 typedef struct {
     int active;
     int auto_bd_done;
@@ -135,6 +143,14 @@ struct driver_common_s
     handle_t lock;
 } common;
 
+#define SDMA_CONFIG_CSM_MASK                    (0b11)
+
+static void sdma_set_context_switching_mode(sdma_csm_t csm)
+{
+    common.regs->CONFIG &= ~SDMA_CONFIG_CSM_MASK;
+    common.regs->CONFIG |= csm;
+}
+
 static void sdma_enable_channel(u8 channel_id)
 {
     common.channel[channel_id].active = 1;
@@ -162,6 +178,10 @@ static void sdma_run_channel0_cmd(uint16_t count,
 
     /* Wait until HE bit is cleared */
     while (common.regs->STOP_STAT & 1);
+
+    /* After channel 0 was used at least once, we can enable dynamic context
+     * switching */
+    sdma_set_context_switching_mode(sdma_csm__dynamic);
 }
 
 #define CHNPRIn_PRIORITY_MASK                   (0b111)
