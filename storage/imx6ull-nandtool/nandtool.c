@@ -67,7 +67,7 @@ int flash_image(char *path, int start)
 
 	stat = malloc(sizeof(struct stat));
 
-	printf("Flashing %s starting from page %d... \n", path, start);
+	printf("Flashing %s starting from block %d... \n", path, start);
 	imgfd = open(path, 'r');
 
 	if (fstat(imgfd, stat)) {
@@ -85,7 +85,7 @@ int flash_image(char *path, int start)
 
 	while ((ret = read(imgfd, img + offs, 1024)) > 0) {
 		offs += ret;
-		if (offs == stat->st_size)
+		if (offs >= stat->st_size)
 			break;
 	}
 
