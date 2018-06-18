@@ -213,7 +213,7 @@ void main(void)
 {
 	u32 port;
 	oid_t oid;
-	platformctl_t uart_clk;
+	platformctl_t uart_ctl;
 
 	if (portCreate(&port) != EOK)
 		return;
@@ -226,15 +226,19 @@ void main(void)
 	if (uart.base == MAP_FAILED)
 		return;
 
-	uart_clk.action = pctl_set;
-	uart_clk.type = pctl_devclock;
-	uart_clk.devclock.dev = pctl_clk_uart1;
-	uart_clk.devclock.state = 3;
+	uart_ctl.action = pctl_set;
+	uart_ctl.type = pctl_devclock;
+	uart_ctl.devclock.dev = pctl_clk_uart1;
+	uart_ctl.devclock.state = 3;
 
-	platformctl(&uart_clk);
-	*(uart.base + ucr2) &= ~0;
+	platformctl(&uart_ctl);
 
-	while (!(*(uart.base + ucr2) & 1));
+	/* set correct daisy for rx input */
+	uart_ctl.action = pctl_set;
+	uart_ctl.type = pctl_ioisel;
+	uart_ctl.ioisel.isel = pctl_isel_uart1_rx;
+	uart_ctl.ioisel.daisy = 3;
+	platformctl(&uart_ctl);
 
 	if (condCreate(&uart.tx_cond) != EOK)
 		return;
@@ -251,10 +255,9 @@ void main(void)
 	interrupt(58, uart_intr, NULL, uart.cond, &uart.inth);
 
 	uart.ready = 0;
-	/* enable uart and rx ready interrupt */
-	*(uart.base + ucr1) |= 0x0201;
 
-	/* soft reset, tx&rx enable, 8bit transmit, no parity (8N1) */
+	/* tx&rx enable, 8bit transmit, no parity (8N1) */
+	*(uart.base + ucr1) |= 0x0201;
 	*(uart.base + ucr2) = 0x4027;
 	*(uart.base + ucr3) = 0x704;
 
