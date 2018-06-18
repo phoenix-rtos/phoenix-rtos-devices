@@ -848,6 +848,10 @@ void flashdrv_init(void)
 	/* enable irq on channel 0 */
 	*(flashdrv_common.dma + apbh_ctrl1) |= 1 << 16;
 
+	/* flush irq flag */
+	if (*(flashdrv_common.dma + apbh_ctrl1_clr) & 1)
+		*(flashdrv_common.dma + apbh_ctrl1_clr) = 1;
+
 	for (int i = 0; i < 17; ++i) {
 		/* set all NAND pins to NAND function */
 		*(flashdrv_common.mux + i + 94) = 0;
