@@ -204,30 +204,34 @@ void flash_test(int test_no, void * arg)
 		printf("------ PASSED ------\n\n");
 }
 
-void flash_erase(int start, int end)
+void flash_erase(void *arg, int start, int end, int silent)
 {
 	flashdrv_dma_t *dma;
 	int i;
 	int err;
 
-	printf("\n------ ERASE ------\n", start, end);
+	nand_msg(silent, "\n------ ERASE ------\n", start, end);
 
 	if (end < start)
-		printf("Invalid range (%d-%d)\n", start, end);
+		nand_msg(silent, "Invalid range (%d-%d)\n", start, end);
 
 	printf("Erasing blocks from %d to %d\n", start, end);
+	if (arg == NULL) {
+		flashdrv_init();
+		dma = flashdrv_dmanew();
 
-	flashdrv_init();
-	dma = flashdrv_dmanew();
-
-	flashdrv_reset(dma);
+		flashdrv_reset(dma);
+	} else
+		dma = (flashdrv_dma_t *)arg;
 
 	for (i = start; i <= end; i++) {
 		err = flashdrv_erase(dma, 64 * i);
 		if (err)
 			printf("Erasing block %d returned error %d\n", i, err);
 	}
-	printf("--------------------\n");
+	if (arg == NULL)
+		flashdrv_dmadestroy(dma);
+	nand_msg(silent, "--------------------\n");
 }
 
 
@@ -289,6 +293,10 @@ void set_nandboot(char *fcb, char *kernel, char *modules, char *rootfs)
 	flashdrv_reset(dma);
 
 	printf("\n- NANDBOOT SETUP -\n");
+
+	printf("Flash erase\n");
+	flash_erase(dma, 0, 172, 1);
+
 	printf("Performing flash check\n");
 	ret = flash_check(dma, 1);
 
@@ -370,9 +378,9 @@ int main(int argc, char **argv)
 					start = atoi(tok);
 					tok = strtok(NULL,":");
 					if (tok != NULL)
-						flash_erase(start, atoi(tok));
+						flash_erase(NULL, start, atoi(tok), 0);
 					else
-						flash_erase(start, start);
+						flash_erase(NULL, start, start, 0);
 				} else
 					print_help();
 				return 0;
