@@ -39,6 +39,13 @@ test_func_t test_func[16];
 int test_cnt;
 
 
+#define nand_msg(silent, fmt, ...)		\
+	do {								\
+		if (!silent)					\
+		printf(fmt, ##__VA_ARGS__);		\
+	} while(0)
+
+
 static inline int check_block(char *raw_block)
 {
 	if (!raw_block[4096])
@@ -47,7 +54,7 @@ static inline int check_block(char *raw_block)
 }
 
 
-int flash_image(char *path, int start)
+int flash_image(void *arg, char *path, int start, int silent)
 {
 	int ret = 0;
 	int imgfd, offs = 0;
@@ -57,22 +64,22 @@ int flash_image(char *path, int start)
 	void *meta_buf;
 	flashdrv_dma_t *dma;
 
-	printf("\n------ FLASH ------\n");
+	nand_msg(silent, "\n------ FLASH ------\n");
 
 	if (start < 0) {
-		printf("Start eraseblock must by larger than 0\n");
-		printf("\n------------------\n");
+		nand_msg(silent, "Start eraseblock must by larger than 0\n");
+		nand_msg(silent, "\n------------------\n");
 		return -1;
 	}
 
 	stat = malloc(sizeof(struct stat));
 
-	printf("Flashing %s starting from block %d... \n", path, start);
+	nand_msg(silent, "Flashing %s starting from block %d... \n", path, start);
 	imgfd = open(path, 'r');
 
 	if (fstat(imgfd, stat)) {
-		printf("File stat failed\n");
-		printf("\n------------------\n");
+		nand_msg(silent, "File stat failed\n");
+		nand_msg(silent, "\n------------------\n");
 		return -1;
 	}
 
@@ -89,10 +96,13 @@ int flash_image(char *path, int start)
 			break;
 	}
 
-	flashdrv_init();
-	dma = flashdrv_dmanew();
+	if (arg == NULL) {
+		flashdrv_init();
+		dma = flashdrv_dmanew();
 
-	flashdrv_reset(dma);
+		flashdrv_reset(dma);
+	} else
+		dma = (flashdrv_dma_t *)arg;
 
 	offs = 0;
 
@@ -100,18 +110,22 @@ int flash_image(char *path, int start)
 		memset(img_buf, 0x00, PAGE_SIZE);
 		memcpy(img_buf, img + offs, PAGE_SIZE + offs > stat->st_size ? stat->st_size - offs : PAGE_SIZE);
 		if ((ret = flashdrv_write(dma, (offs / PAGE_SIZE) + (start * 64), img_buf, meta_buf))) {
-			printf("Image write error 0x%x at offset 0x%x\n", ret, offs);
+			nand_msg(silent, "Image write error 0x%x at offset 0x%x\n", ret, offs);
 			return -1;
 		}
 		offs += PAGE_SIZE;
 	}
 
-	printf("\n------------------\n");
+	nand_msg(silent, "\n------------------\n");
+
+	if (arg == NULL)
+		flashdrv_dmadestroy(dma);
+
 	return ret;
 }
 
 
-void flash_check(void)
+int flash_check(void *arg, int silent)
 {
 	flashdrv_dma_t *dma;
 	int i, ret = 0;
@@ -120,18 +134,20 @@ void flash_check(void)
 	void *raw_data = mmap(NULL, 2 * PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_PHYSMEM, 0x900000);
 
 	if (raw_data == MAP_FAILED) {
-		printf("Failed to map pages from OC RAM\n");
-		return;
+		nand_msg(silent, "Failed to map pages from OC RAM\n");
+		return -1;
 	}
 
 	memset(raw_data, 0, 4320);
 
-	flashdrv_init();
-	dma = flashdrv_dmanew();
+	if (arg == NULL) {
+		flashdrv_init();
+		dma = flashdrv_dmanew();
+		flashdrv_reset(dma);
+	} else
+		dma = (flashdrv_dma_t *)arg;
 
-	flashdrv_reset(dma);
-
-	printf("\n------ CHECK ------\n");
+	nand_msg(silent, "\n------ CHECK ------\n");
 
 	for (i = 0; i < BLOCKS_CNT; i++) {
 
@@ -139,20 +155,25 @@ void flash_check(void)
 		ret = flashdrv_readraw(dma, (i * PAGES_PER_BLOCK), raw_data, READ_SIZE);
 
 		if (ret != EOK) {
-			printf("Reading block %d returned an error\n", i);
+			nand_msg(silent, "Reading block %d returned an error\n", i);
 			err++;
 		}
 
 		if (check_block(raw_data)) {
-			printf("Block %d is marked as bad\n", i);
+			nand_msg(silent, "Block %d is marked as bad\n", i);
 			bad++;
 		}
 	}
 
-	printf("\nTotal blocks read: %d\n\n", i);
-	printf("Number of read errors: %d\n", err);
-	printf("Number of bad blocks:  %d\n", bad);
-	printf("------------------\n");
+	nand_msg(silent, "\nTotal blocks read: %d\n\n", i);
+	nand_msg(silent, "Number of read errors: %d\n", err);
+	nand_msg(silent, "Number of bad blocks:  %d\n", bad);
+	nand_msg(silent, "------------------\n");
+
+	if (arg == NULL)
+		flashdrv_dmadestroy(dma);
+
+	return err || bad ? 1 : 0;
 }
 
 
@@ -209,25 +230,120 @@ void flash_erase(int start, int end)
 	printf("--------------------\n");
 }
 
+
+int flash_fcb(flashdrv_dma_t *dma, char *fcb)
+{
+	int fd;
+	char *wbuf;
+	size_t offs = 0;
+	int err = 0, ret;
+
+	printf("Flashing fcb %s\n", fcb);
+
+	if ((wbuf = mmap(NULL, SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0)) == MAP_FAILED) {
+		printf("Fcb write buffer mmap failed\n");
+		return 1;
+	}
+
+	memset(wbuf, 0, SIZE_PAGE);
+
+	fd = open("/init/fcb.img", 'r');
+	if (fd <= 0) {
+		printf("File open failed\n");
+	}
+
+	offs += read(fd, wbuf + 16, 2048);
+
+	offs = 0;
+
+	ret = flashdrv_writeraw(dma, 0, wbuf, 4096);
+
+	if (ret) {
+		printf("Flashing fcb on block 0 failed\n");
+		err = ret;
+	}
+
+	/* default stride size is 128 and stride size is 2 */
+	ret = flashdrv_writeraw(dma, 128, wbuf, 4096);
+
+	if (err && ret) {
+		return ret;
+	} else if (ret) {
+		printf("Flashing fcb on block 128 failed\n");
+		err = 0;
+	}
+	munmap(wbuf, SIZE_PAGE);
+
+	return err;
+}
+
+void set_nandboot(char *fcb, char *kernel, char *modules, char *rootfs)
+{
+	int ret = 0;
+	char *tok;
+	flashdrv_dma_t *dma;
+	char *mods;
+
+	flashdrv_init();
+	dma = flashdrv_dmanew();
+	flashdrv_reset(dma);
+
+	printf("\n- NANDBOOT SETUP -\n");
+	printf("Performing flash check\n");
+	ret = flash_check(dma, 1);
+
+	if (ret)
+		printf("WARNING: This device has bad blocks.\nBad block management is not implemented yet - this device may not boot correctly\n");
+
+	ret = flash_fcb(dma, fcb);
+
+	if (ret) {
+		printf("ERROR: Flashing fcb failed - this device won't boot correctly\n");
+		printf("------ FAIL ------\n");
+		return;
+	}
+
+	printf("Flashing kernel: %s\n", kernel);
+	ret = flash_image(dma, kernel, 8, 1);
+	ret = flash_image(dma, kernel, 16, 1);
+
+	mods = strdup(modules);
+	tok = strtok(mods," ");
+
+	printf("Flashing modules\n");
+	ret = flash_image(dma, tok, 32, 1);
+
+	tok = strtok(NULL," ");
+	ret = flash_image(dma, tok, 33, 1);
+
+	printf("rootfs: %s\n", rootfs);
+	ret = flash_image(dma, rootfs, 64, 1);
+	ret = flash_image(dma, rootfs, 128, 1);
+
+	free(mods);
+	flashdrv_dmadestroy(dma);
+	printf("------------------\n");
+}
+
 void print_help(void)
 {
 	printf("Usage:\n" \
-			"\t-i (path) - image file path (requires -s option)\n" \
+			"\t-i (path) - file path (requires -s option)\n" \
 			"\t-s (number) - start flashing from page (requires -i option)\n" \
 			"\t-c - search for bad blocks from factory and print summary\n" \
 			"\t-h - print this message\n" \
 			"\t-t (number) - run test #no\n" \
-			"\t-e (start:end) - erase blocks form start to end\n");
+			"\t-e (start:end) - erase blocks form start to end\n" \
+			"\t-f (fcb) (kernel) (rootfs) - set flash for internal booting\n");
 }
-
 
 int main(int argc, char **argv)
 {
 	int c;
 	char *path = NULL;
 	int start = -1;
-	char *tok;
-	while ((c = getopt(argc, argv, "i:s:hct:e:")) != -1) {
+	char *tok, *fcb, *kernel, *rootfs, *modules;
+	while ((c = getopt(argc, argv, "i:s:hct:e:f")) != -1) {
 		switch (c) {
 
 			case 'i':
@@ -235,7 +351,7 @@ int main(int argc, char **argv)
 				break;
 
 			case 'c':
-				flash_check();
+				flash_check(NULL, 0);
 				return 0;
 
 			case 's':
@@ -258,6 +374,18 @@ int main(int argc, char **argv)
 				} else
 					print_help();
 				return 0;
+			case 'f':
+				if (argc == 2) {
+					fcb = "/init/fcb.img";
+					kernel = "/init/img.imx";
+					rootfs = "/init/rootfs.img";
+					modules = "/init/jffs2 /init/imx6ull-uart";
+				} else {
+					printf("paths not supported for now\n");
+					return 0;
+				}
+				set_nandboot(fcb, kernel, modules, rootfs);
+				return 0;
 			case 'h':
 			default:
 				print_help();
@@ -270,5 +398,5 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
-	return flash_image(path, start);
+	return flash_image(NULL, path, start, 0);
 }
