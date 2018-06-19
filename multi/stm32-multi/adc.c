@@ -12,7 +12,6 @@
  */
 
 
-#include ARCH
 #include <errno.h>
 #include <sys/threads.h>
 #include <sys/interrupt.h>
@@ -41,6 +40,8 @@ struct {
 
 static int adc_irqEoc(unsigned int n, void *arg)
 {
+	*(adc_common.base + cr1) &= ~(1 << 5);
+
 	return 1;
 }
 
@@ -75,6 +76,9 @@ unsigned short adc_conversion(char channel)
 
 	/* Clear flags */
 	*(adc_common.base + sr) &= ~((1 << 2) | (1 << 1));
+
+	/* Enable interrupt */
+	*(adc_common.base + cr1) |= 1 << 5;
 
 	/* Start conversion */
 	*(adc_common.base + cr2) |= 1 << 30;
@@ -124,7 +128,7 @@ int adc_init(void)
 	}
 
 	/* 12 bit resolution, power down when idle, interrupts on, */
-	*(adc_common.base + cr1) |= (1 << 17) | (1 << 7) | (1 << 5);
+	*(adc_common.base + cr1) |= (1 << 17) | (1 << 7);
 	*(adc_common.base + cr1) &= ~(1 << 8);
 
 	*(adc_common.base + sr) |= 1 << 5;

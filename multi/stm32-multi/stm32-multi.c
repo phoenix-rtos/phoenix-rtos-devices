@@ -11,7 +11,7 @@
  * %LICENSE%
  */
 
-#include ARCH
+
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>

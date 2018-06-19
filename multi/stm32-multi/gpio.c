@@ -12,7 +12,6 @@
  */
 
 
-#include ARCH
 #include <errno.h>
 #include <stdint.h>
 #include <sys/threads.h>

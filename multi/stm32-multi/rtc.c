@@ -11,7 +11,7 @@
  * %LICENSE%
  */
 
-#include ARCH
+
 #include <errno.h>
 #include <sys/threads.h>
 #include <sys/platform.h>

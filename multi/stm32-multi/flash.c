@@ -12,7 +12,6 @@
  */
 
 
-#include ARCH
 #include <sys/threads.h>
 #include <sys/pwman.h>
 #include <unistd.h>
