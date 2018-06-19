@@ -150,7 +150,7 @@ int adc_init(void)
 		DEBUG("ADC HSI turn off failed\n");
 
 	/* Register end of conversion interrupt */
-	if (interrupt(adc1_irq, adc_irqEoc, NULL, adc_common.lock, NULL) != EOK) {
+	if (interrupt(adc1_irq, adc_irqEoc, NULL, adc_common.cond, NULL) != EOK) {
 		DEBUG("ADC interrupt register failed\n");
 		resourceDestroy(adc_common.lock);
 		resourceDestroy(adc_common.cond);
