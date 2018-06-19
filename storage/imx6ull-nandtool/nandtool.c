@@ -54,7 +54,7 @@ static inline int check_block(char *raw_block)
 }
 
 
-int flash_image(void *arg, char *path, int start, int silent)
+int flash_image(void *arg, char *path, int start, int block_offset, int silent)
 {
 	int ret = 0;
 	int imgfd, offs = 0;
@@ -109,7 +109,7 @@ int flash_image(void *arg, char *path, int start, int silent)
 	while (offs < stat->st_size) {
 		memset(img_buf, 0x00, PAGE_SIZE);
 		memcpy(img_buf, img + offs, PAGE_SIZE + offs > stat->st_size ? stat->st_size - offs : PAGE_SIZE);
-		if ((ret = flashdrv_write(dma, (offs / PAGE_SIZE) + (start * 64), img_buf, meta_buf))) {
+		if ((ret = flashdrv_write(dma, (offs / PAGE_SIZE) + (start * 64) + block_offset, img_buf, meta_buf))) {
 			nand_msg(silent, "Image write error 0x%x at offset 0x%x\n", ret, offs);
 			return -1;
 		}
@@ -304,21 +304,23 @@ void set_nandboot(char *fcb, char *kernel, char *modules, char *rootfs)
 	}
 
 	printf("Flashing kernel: %s\n", kernel);
-	ret = flash_image(dma, kernel, 8, 1);
-	ret = flash_image(dma, kernel, 16, 1);
+	ret = flash_image(dma, kernel, 8, 0, 1);
+	ret = flash_image(dma, kernel, 16, 0, 1);
 
 	mods = strdup(modules);
 	tok = strtok(mods," ");
 
 	printf("Flashing modules\n");
-	ret = flash_image(dma, tok, 32, 1);
+	ret = flash_image(dma, tok, 8, 18, 1);
+	ret = flash_image(dma, tok, 16, 18, 1);
 
 	tok = strtok(NULL," ");
-	ret = flash_image(dma, tok, 33, 1);
+	ret = flash_image(dma, tok, 8, 34, 1);
+	ret = flash_image(dma, tok, 16, 34, 1);
 
 	printf("Flashing rootfs: %s\n", rootfs);
-	ret = flash_image(dma, rootfs, 64, 1);
-	ret = flash_image(dma, rootfs, 128, 1);
+	ret = flash_image(dma, rootfs, 64, 0, 1);
+	ret = flash_image(dma, rootfs, 128, 0, 1);
 
 	free(mods);
 	flashdrv_dmadestroy(dma);
@@ -379,7 +381,7 @@ int main(int argc, char **argv)
 					fcb = "/init/fcb.img";
 					kernel = "/init/kernel.img";
 					rootfs = "/init/rootfs.img";
-					modules = "/init/jffs2 /init/imx6ull-uart";
+					modules = "/init/imx6ull-uart /init/jffs2";
 				} else {
 					printf("paths not supported for now\n");
 					return 0;
@@ -398,5 +400,5 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
-	return flash_image(NULL, path, start, 0);
+	return flash_image(NULL, path, start, 0, 0);
 }
