@@ -316,7 +316,7 @@ void set_nandboot(char *fcb, char *kernel, char *modules, char *rootfs)
 	tok = strtok(NULL," ");
 	ret = flash_image(dma, tok, 33, 1);
 
-	printf("rootfs: %s\n", rootfs);
+	printf("Flashing rootfs: %s\n", rootfs);
 	ret = flash_image(dma, rootfs, 64, 1);
 	ret = flash_image(dma, rootfs, 128, 1);
 
@@ -377,7 +377,7 @@ int main(int argc, char **argv)
 			case 'f':
 				if (argc == 2) {
 					fcb = "/init/fcb.img";
-					kernel = "/init/img.imx";
+					kernel = "/init/kernel.img";
 					rootfs = "/init/rootfs.img";
 					modules = "/init/jffs2 /init/imx6ull-uart";
 				} else {
