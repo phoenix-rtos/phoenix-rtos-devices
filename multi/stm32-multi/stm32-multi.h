@@ -78,7 +78,6 @@ typedef struct {
 	char str[10];
 	char str_small[2];
 	unsigned int sym_mask;
-	unsigned int state;
 	int backlight;
 	int on;
 } __attribute__((packed)) lcdmsg_t;

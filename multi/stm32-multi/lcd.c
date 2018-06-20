@@ -231,28 +231,28 @@ static void _lcd_showString(const char *text)
 }
 
 
-static void _lcd_showSymbols(unsigned int sym_mask, unsigned int state)
+static void _lcd_showSymbols(unsigned int sym_mask)
 {
 	unsigned int i, symbol;
 
 	for (i = 0; i < LCDSYM_TOTAL; i++) {
-		if (!(symbol = sym_mask & (1 << i)))
-			continue;
+		symbol = sym_mask & (1 << i);
 
-		_lcd_setRamSegment(symbols[i][0], pin_to_ram[symbols[i][1]], symbol & state);
+		_lcd_setRamSegment(symbols[i][0], pin_to_ram[symbols[i][1]], !!symbol);
 	}
 
-	lcd_common.sym_mask &= ~sym_mask;
-	lcd_common.sym_mask |= sym_mask & state;
+	lcd_common.sym_mask = sym_mask;
 }
 
 
 static void _lcd_showSmallString(const char *text)
 {
 	if (text[0] == '1')
-		_lcd_showSymbols(LCDSYM_SMALL_ONE, 1);
+		lcd_common.sym_mask |= LCDSYM_SMALL_ONE;
 	else
-		_lcd_showSymbols(LCDSYM_SMALL_ONE, 0);
+		lcd_common.sym_mask &= ~LCDSYM_SMALL_ONE;
+
+	_lcd_showSymbols(lcd_common.sym_mask);
 
 	_lcd_showChar(text[1], 1);
 
@@ -304,8 +304,7 @@ void lcd_setDisplay(lcdmsg_t *disp)
 	if (disp->str[0] != '\0')
 		_lcd_showString(disp->str);
 
-	if (disp->state >= 0)
-		_lcd_showSymbols(disp->sym_mask, disp->state);
+	_lcd_showSymbols(disp->sym_mask);
 
 	if (disp->str_small[0] != '\0')
 		_lcd_showSmallString(disp->str_small);
