@@ -20,10 +20,6 @@
 #include "rcc.h"
 #include "rtc.h"
 
-#ifndef NDEBUG
-static const char drvname[] = "rtc";
-#endif
-
 
 enum { pwr_cr = 0, pwr_csr };
 
@@ -141,20 +137,10 @@ int rtc_init(void)
 {
 	rtc_common.base = (void *)0x40002800;
 
-	if (mutexCreate(&rtc_common.lock) != EOK) {
-		DEBUG("RTC failed to create mutex\n");
-		return -ENOMEM;
-	}
+	mutexCreate(&rtc_common.lock);
 
 	pwr_unlock();
-
-	if (rcc_devClk(pctl_rtc, 1) != EOK) {
-		DEBUG("RTC failed to enable clock\n");
-		resourceDestroy(rtc_common.lock);
-		pwr_lock();
-		return -ENOMEM;
-	}
-
+	rcc_devClk(pctl_rtc, 1);
 	pwr_lock();
 
 	return EOK;

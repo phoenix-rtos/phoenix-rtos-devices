@@ -21,11 +21,6 @@
 #include "rcc.h"
 
 
-#ifndef NDEBUG
-static const char drvname[] = "gpio";
-#endif
-
-
 enum { moder = 0, otyper, ospeedr, pupdr, idr, odr, bsrr, lckr, afrl, afrh, brr };
 
 
@@ -83,10 +78,7 @@ int gpio_configPin(int port, char pin, char mode, char af, char otype, char ospe
 		return -EINVAL;
 
 	/* Enable GPIO port's clock */
-	if (rcc_devClk(gpio2pctl[port - gpioa], 1) != EOK) {
-		DEBUG("Failed to enable gpio%d clock\n", port - gpioa);
-		return -EIO;
-	}
+	rcc_devClk(gpio2pctl[port - gpioa], 1);
 
 	base = gpio_common.base[port - gpioa];
 
@@ -129,10 +121,7 @@ int gpio_init(void)
 	gpio_common.base[6] = (void *)0x40021c00;
 	gpio_common.base[7] = (void *)0x40021400;
 
-	if (mutexCreate(&gpio_common.lock) != EOK) {
-		DEBUG("GPIO lock create failed\n");
-		return -ENOMEM;
-	}
+	mutexCreate(&gpio_common.lock);
 
 	return EOK;
 }

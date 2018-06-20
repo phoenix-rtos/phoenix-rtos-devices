@@ -26,11 +26,6 @@
 #define LCD_MAX_POSITION 10
 
 
-#ifndef NDEBUG
-static const char drvname[] = "lcd";
-#endif
-
-
 enum { cr = 0, fcr, sr, clr, ram = 5 };
 
 
@@ -355,36 +350,17 @@ int lcd_init(void)
 			if (gpio_pins[port][pin] == -1)
 				break;
 
-			if (gpio_configPin(port + gpioa, gpio_pins[port][pin], 2, 0xb, 0, 1, 0) != EOK) {
-				DEBUG("LCD failed to config gpio %d pin %d\n", port, gpio_pins[port][pin]);
-				return -EIO;
-			}
+			gpio_configPin(port + gpioa, gpio_pins[port][pin], 2, 0xb, 0, 1, 0);
 		}
 	}
 
 	/* Backlight pin */
-	if (gpio_configPin(gpiod, 0, 1, 0, 0, 0, 0) != EOK) {
-		DEBUG("LCD failed to config backlight\n", port, pin);
-		return -EIO;
-	}
+	gpio_configPin(gpiod, 0, 1, 0, 0, 0, 0);
 
-	if (mutexCreate(&lcd_common.lock) != EOK) {
-		DEBUG("LCD failed to create mutex\n");
-		return -ENOMEM;
-	}
+	mutexCreate(&lcd_common.lock);
+	condCreate(&lcd_common.cond);
 
-	if (condCreate(&lcd_common.cond) != EOK) {
-		DEBUG("LCD failed to create cond\n");
-		resourceDestroy(lcd_common.lock);
-		return -ENOMEM;
-	}
-
-	if (interrupt(lcd_irq, lcd_irqHandler, NULL, lcd_common.cond, NULL) != EOK) {
-		DEBUG("LCD failed to register irq\n");
-		resourceDestroy(lcd_common.lock);
-		resourceDestroy(lcd_common.cond);
-		return -ENOMEM;
-	}
+	interrupt(lcd_irq, lcd_irqHandler, NULL, lcd_common.cond, NULL);
 
 	return EOK;
 }

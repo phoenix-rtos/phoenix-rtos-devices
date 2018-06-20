@@ -24,11 +24,6 @@
 #include "rcc.h"
 
 
-#ifndef NDEBUG
-static const char drvname[] = "i2c";
-#endif
-
-
 enum { cr1 = 0, cr2, oar1, oar2, dr, sr1, sr2, ccr, trise };
 
 
@@ -138,20 +133,14 @@ int i2c_init(void)
 
 	i2c_common.base = (void *)0x40005800;
 
-	if (rcc_devClk(pctl_i2c2, 1) != EOK) {
-		DEBUG("Failed to enable clock\n");
-		return -EIO;
-	}
+	rcc_devClk(pctl_i2c2, 1);
 
 	/* Disable I2C periph */
 	*(i2c_common.base + cr1) &= ~1;
 	dataBarier();
 
-	if (gpio_configPin(gpiob, 10, 2, 4, 1, 0, 0) != EOK ||
-		gpio_configPin(gpiob, 11, 2, 4, 1, 0, 0) != EOK) {
-		DEBUG("Failed to initialize GPIOs\n");
-		return -EIO;
-	}
+	gpio_configPin(gpiob, 10, 2, 4, 1, 0, 0);
+	gpio_configPin(gpiob, 11, 2, 4, 1, 0, 0);
 
 	/* Enable ACK after each byte */
 	*(i2c_common.base + cr2) |= 1 << 10;
@@ -171,31 +160,11 @@ int i2c_init(void)
 	/* Enable I2C periph */
 	*(i2c_common.base + cr1) |= 1;
 
-	if (mutexCreate(&i2c_common.lock) != EOK) {
-		DEBUG("Failed to create lock\n");
-		return -ENOMEM;
-	}
+	mutexCreate(&i2c_common.lock);
+	mutexCreate(&i2c_common.irqlock);
+	condCreate(&i2c_common.irqcond);
 
-	if (mutexCreate(&i2c_common.irqlock) != EOK) {
-		DEBUG("Failed to create irqlock\n");
-		resourceDestroy(i2c_common.lock);
-		return -ENOMEM;
-	}
-
-	if (condCreate(&i2c_common.irqcond) != EOK) {
-		DEBUG("Failed to create irqcond\n");
-		resourceDestroy(i2c_common.lock);
-		resourceDestroy(i2c_common.irqcond);
-		return -ENOMEM;
-	}
-
-	if (interrupt(49, i2c_irq, NULL, i2c_common.irqcond, &i2c_common.inth) != EOK) {
-		DEBUG("Failed to register irq\n");
-		resourceDestroy(i2c_common.lock);
-		resourceDestroy(i2c_common.irqlock);
-		resourceDestroy(i2c_common.irqcond);
-		return -ENOMEM;
-	}
+	interrupt(49, i2c_irq, NULL, i2c_common.irqcond, &i2c_common.inth);
 
 	return EOK;
 }

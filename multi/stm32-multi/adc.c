@@ -21,11 +21,6 @@
 #include "rcc.h"
 
 
-#ifndef NDEBUG
-static const char drvname[] = "adc";
-#endif
-
-
 enum { sr = 0, cr1, cr2, smpr1, smpr2, smpr3, jofr1, jofr2, jofr3, jofr4, htr, ltr, sqr1,
 	sqr2, sqr3, sqr4, sqr5, jsqr, jdr1, jdr2, jdr3, jdr4, dr, smpr0, csr = 192, ccr };
 
@@ -34,6 +29,7 @@ struct {
 	volatile unsigned int *base;
 
 	handle_t lock;
+	handle_t irqLock;
 	handle_t cond;
 } adc_common;
 
@@ -83,8 +79,10 @@ unsigned short adc_conversion(char channel)
 	/* Start conversion */
 	*(adc_common.base + cr2) |= 1 << 30;
 
+	mutexLock(adc_common.irqLock);
 	while (!(*(adc_common.base + sr) & ((1 << 2) | (1 << 1))))
 		condWait(adc_common.cond, adc_common.lock, 0);
+	mutexUnlock(adc_common.irqLock);
 
 	/* Read result */
 	conv = *(adc_common.base + dr) & 0xffff;
@@ -111,21 +109,12 @@ int adc_init(void)
 	adc_common.base = (void *)0x40012400;
 
 	/* Enable HSI and ADC clock */
-	if (rcc_setHsi(1) != EOK || rcc_devClk(pctl_adc1, 1) != EOK) {
-		DEBUG("ADC initial clock config failed");
-		return -EIO;
-	}
+	rcc_setHsi(1);
+	rcc_devClk(pctl_adc1, 1);
 
-	if (mutexCreate(&adc_common.lock) != EOK) {
-		DEBUG("ADC lock create failed\n");
-		return -ENOMEM;
-	}
-
-	if (condCreate(&adc_common.cond) != EOK) {
-		DEBUG("ADC cond create failed\n");
-		resourceDestroy(adc_common.lock);
-		return -ENOMEM;
-	}
+	mutexCreate(&adc_common.lock);
+	mutexCreate(&adc_common.irqLock);
+	condCreate(&adc_common.cond);
 
 	/* 12 bit resolution, power down when idle, interrupts on, */
 	*(adc_common.base + cr1) |= (1 << 17) | (1 << 7);
@@ -143,23 +132,15 @@ int adc_init(void)
 	/* Turn off ADC */
 	*(adc_common.base + cr2) &= ~1;
 	while (*(adc_common.base + sr) & (1 << 6)) {
-		if (++i > 500) {
-			DEBUG("ADC turn off timed out\n");
+		if (++i > 500)
 			break;
-		}
 	}
 
 	/* Disable HSI clock */
-	if (rcc_setHsi(0) != EOK)
-		DEBUG("ADC HSI turn off failed\n");
+	rcc_setHsi(0);
 
 	/* Register end of conversion interrupt */
-	if (interrupt(adc1_irq, adc_irqEoc, NULL, adc_common.cond, NULL) != EOK) {
-		DEBUG("ADC interrupt register failed\n");
-		resourceDestroy(adc_common.lock);
-		resourceDestroy(adc_common.cond);
-		return -ENOMEM;
-	}
+	interrupt(adc1_irq, adc_irqEoc, NULL, adc_common.cond, NULL);
 
 	return EOK;
 }

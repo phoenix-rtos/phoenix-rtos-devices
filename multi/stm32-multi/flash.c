@@ -20,10 +20,6 @@
 #include "flash.h"
 #include "common.h"
 
-#ifndef NDEBUG
-static const char drvname[] = "flash";
-#endif
-
 
 enum { flash_pecr = 1, flash_pekeyr = 3, flash_prgkeyr, flash_oprkeyr, flash_sr, flash_obr };
 
@@ -485,10 +481,7 @@ int flash_init(void)
 {
 	flash_common.flash = (void *) 0x40023c00;
 
-	if (mutexCreate(&flash_common.lock) != EOK) {
-		DEBUG("Failed to create mutex\n");
-		return -ENOMEM;
-	}
+	mutexCreate(&flash_common.lock);
 
 	_flash_clearFlags();
 

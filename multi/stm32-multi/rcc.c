@@ -21,9 +21,6 @@
 #include "common.h"
 #include "rtc.h"
 
-#ifndef NDEBUG
-static const char drvname[] = "rcc";
-#endif
 
 struct {
 	volatile unsigned int *base;
@@ -172,24 +169,10 @@ int rcc_init(void)
 
 	_pwr_lock();
 
-	if (condCreate(&rcc_common.cond) != EOK) {
-		DEBUG("Failed to create cond\n");
-		resourceDestroy(rcc_common.lock);
-		return -ENOMEM;
-	}
+	condCreate(&rcc_common.cond);
+	mutexCreate(&rcc_common.lock);
 
-	if (mutexCreate(&rcc_common.lock) != EOK) {
-		DEBUG("Failed to create lock\n");
-		resourceDestroy(rcc_common.cond);
-		return -ENOMEM;
-	}
-
-	if (interrupt(rcc_irq, rcc_irqHsiReady, NULL, rcc_common.cond, &rcc_common.inth) != EOK) {
-		DEBUG("Failed to register irq\n");
-		resourceDestroy(rcc_common.lock);
-		resourceDestroy(rcc_common.cond);
-		return -ENOMEM;
-	}
+	interrupt(rcc_irq, rcc_irqHsiReady, NULL, rcc_common.cond, &rcc_common.inth);
 
 	return 0;
 }
