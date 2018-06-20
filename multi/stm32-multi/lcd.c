@@ -38,7 +38,6 @@ struct {
 	char str[10];
 	char str_small[3];
 	unsigned int sym_mask;
-	unsigned char backlight;
 	unsigned char on;
 
 	handle_t lock;
@@ -266,18 +265,6 @@ static void _lcd_enable(int on)
 }
 
 
-static int _lcd_setBacklight(unsigned char val)
-{
-	if (gpio_setPort(pctl_gpiod, 1, !!val) != EOK) {
-		return -EIO;
-	}
-
-	lcd_common.backlight = val;
-
-	return EOK;
-}
-
-
 void lcd_getDisplay(lcdmsg_t *disp)
 {
 	mutexLock(lcd_common.lock);
@@ -285,7 +272,6 @@ void lcd_getDisplay(lcdmsg_t *disp)
 	memcpy(disp->str, lcd_common.str, sizeof(lcd_common.str));
 	memcpy(disp->str_small, lcd_common.str_small, sizeof(lcd_common.str_small));
 	disp->sym_mask = lcd_common.sym_mask;
-	disp->backlight = lcd_common.backlight;
 	disp->on = lcd_common.on;
 
 	mutexUnlock(lcd_common.lock);
@@ -304,9 +290,6 @@ void lcd_setDisplay(lcdmsg_t *disp)
 	if (disp->str_small[0] != '\0')
 		_lcd_showSmallString(disp->str_small);
 
-	if (disp->backlight >= 0)
-		_lcd_setBacklight(disp->backlight);
-
 	_lcd_enable(disp->on);
 	_lcd_update();
 
@@ -321,7 +304,6 @@ int lcd_init(void)
 	lcd_common.base = (void *)0x40002400;
 	lcd_common.str[0] = 0;
 	lcd_common.sym_mask = 0;
-	lcd_common.backlight = 0;
 	lcd_common.on = 0;
 
 	/* mask all needed registers */
@@ -353,9 +335,6 @@ int lcd_init(void)
 			gpio_configPin(port + gpioa, gpio_pins[port][pin], 2, 0xb, 0, 1, 0);
 		}
 	}
-
-	/* Backlight pin */
-	gpio_configPin(gpiod, 0, 1, 0, 0, 0, 0);
 
 	mutexCreate(&lcd_common.lock);
 	condCreate(&lcd_common.cond);
