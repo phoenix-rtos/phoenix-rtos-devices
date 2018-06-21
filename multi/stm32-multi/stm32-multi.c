@@ -39,7 +39,7 @@
 
 
 struct {
-	char stack[THREADS_NO][STACKSZ] __attribute__ ((aligned(8)));
+	char stack[THREADS_NO - 1][STACKSZ] __attribute__ ((aligned(8)));
 
 	unsigned int port;
 } common;
