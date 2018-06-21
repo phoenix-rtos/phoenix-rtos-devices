@@ -186,11 +186,11 @@ void thread(void *arg)
 				break;
 
 			case mtRead:
-				msg.o.io.err = uart_read(uart4, msg.o.data, msg.o.size, uart_mnormal, 0);
+				msg.o.io.err = uart_read(UART_CONSOLE + usart1 - 1, msg.o.data, msg.o.size, uart_mnormal, 0);
 				break;
 
 			case mtWrite:
-				msg.o.io.err = uart_write(uart4, msg.i.data, msg.i.size);
+				msg.o.io.err = uart_write(UART_CONSOLE + usart1 - 1, msg.i.data, msg.i.size);
 				break;
 
 			case mtDevCtl:
@@ -228,7 +228,7 @@ int main(void)
 	i2c_init();
 	flash_init();
 	uart_init();
-	spi_init();;
+	spi_init();
 
 	portCreate(&common.port);
 	portRegister(common.port, "/multi", &oid);

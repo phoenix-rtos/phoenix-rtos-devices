@@ -18,6 +18,8 @@
 #include <stdio.h>
 #include <phoenix/arch/stm32l1.h>
 
+#include "config.h"
+
 
 #define max(a, b) ({ \
 	__typeof__ (a) _a = (a); \

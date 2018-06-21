@@ -25,17 +25,31 @@
 #include "spi.h"
 
 
+#define SPI1_POS 0
+#define SPI2_POS (SPI1_POS + SPI1)
+#define SPI3_POS (SPI2_POS + SPI2)
+
+#define SPI_CNT (SPI1 + SPI2 + SPI3)
+
+
 struct {
 	volatile unsigned int *base;
 	volatile int ready;
 
 	handle_t mutex;
+	handle_t irqLock;
 	handle_t cond;
 	handle_t inth;
-} spi_common[3];
+} spi_common[SPI_CNT];
 
 
 static const int spi2pctl[] = { pctl_spi1, pctl_spi2, pctl_spi3 };
+
+
+static const int spiConfig[] = { SPI1, SPI2, SPI3 };
+
+
+static const int spiPos[] = { SPI1_POS, SPI2_POS, SPI3_POS };
 
 
 enum { cr1 = 0, cr2, sr, dr, crcpr, rxcrcr, txcrcr, i2scfgr, i2spr };
@@ -60,8 +74,10 @@ static unsigned char _spi_readwrite(int spi, unsigned char txd)
 	*(spi_common[spi].base + dr) = txd;
 	*(spi_common[spi].base + cr2) |= 1 << 7;
 
+	mutexLock(spi_common[spi].irqLock);
 	while (!spi_common[spi].ready)
 		condWait(spi_common[spi].cond, spi_common[spi].mutex, 1);
+	mutexUnlock(spi_common[spi].irqLock);
 
 	rxd = *(spi_common[spi].base + dr);
 
@@ -73,8 +89,10 @@ int spi_transaction(int spi, int dir, unsigned char cmd, unsigned int addr, unsi
 {
 	int i;
 
-	if (spi < spi1 || spi > spi3)
+	if (spi < spi1 || spi > spi3 || !spiConfig[spi])
 		return -EINVAL;
+
+	spi = spiPos[spi];
 
 	mutexLock(spi_common[spi].mutex);
 	keepidle(1);
@@ -109,26 +127,29 @@ int spi_transaction(int spi, int dir, unsigned char cmd, unsigned int addr, unsi
 
 int spi_configure(int spi, char mode, char bdiv, int enable)
 {
+	int pos;
 	unsigned int t;
 
-	if (spi < spi1 || spi > spi3)
+	if (spi < spi1 || spi > spi3 || !spiConfig[spi])
 		return -EINVAL;
 
-	mutexLock(spi_common[spi].mutex);
+	pos = spiPos[spi];
+
+	mutexLock(spi_common[pos].mutex);
 
 	rcc_devClk(spi2pctl[spi], 1);
-	*(spi_common[spi].base + cr1) &= ~(1 << 6);
+	*(spi_common[pos].base + cr1) &= ~(1 << 6);
 
 	/* Set mode and baud div */
-	t = *(spi_common[spi].base + cr1) & ~((0x7 << 3) | 0x3);
-	*(spi_common[spi].base + cr1) = t | (((unsigned int)bdiv & 0x7) << 3) | (mode & 0x3);
+	t = *(spi_common[pos].base + cr1) & ~((0x7 << 3) | 0x3);
+	*(spi_common[pos].base + cr1) = t | (((unsigned int)bdiv & 0x7) << 3) | (mode & 0x3);
 
 	if (enable)
-		*(spi_common[spi].base + cr1) |= 1 << 6;
+		*(spi_common[pos].base + cr1) |= 1 << 6;
 	else
 		rcc_devClk(spi2pctl[spi], 0);
 
-	mutexUnlock(spi_common[spi].mutex);
+	mutexUnlock(spi_common[pos].mutex);
 
 	return EOK;
 }
@@ -136,22 +157,26 @@ int spi_configure(int spi, char mode, char bdiv, int enable)
 
 void spi_init(void)
 {
-	int i;
+	int i, spi;
 
 	static const struct {
 		unsigned int base;
 		int irq;
 	} spiinfo[3] = { { 0x40013000, 35 }, { 0x40003800, 36 }, { 0x40003c00, 47 } };
 
-	for (i = 0; i < 3; ++i) {
+	for (i = 0, spi = 0; spi < 3; ++spi) {
+		if (!spiConfig[spi])
+			continue;
+
 		spi_common[i].base = (void *)spiinfo[i].base;
 
 		spi_common[i].ready = 1;
 
 		mutexCreate(&spi_common[i].mutex);
+		mutexCreate(&spi_common[i].irqLock);
 		condCreate(&spi_common[i].cond);
 
-		rcc_devClk(spi2pctl[i], 1);
+		rcc_devClk(spi2pctl[spi], 1);
 
 		/* Disable SPI */
 		*(spi_common[i].base + cr1) &= ~(1 << 6);
@@ -167,8 +192,10 @@ void spi_init(void)
 		*(spi_common[i].base + i2scfgr) = 0;
 
 		/* Disable clock */
-		rcc_devClk(spi2pctl[i], 0);
+		rcc_devClk(spi2pctl[spi], 0);
 
-		interrupt(16 + spiinfo[i].irq, spi_irqHandler, (void *)i, spi_common[i].cond, &spi_common[i].inth);
+		interrupt(16 + spiinfo[spi].irq, spi_irqHandler, (void *)i, spi_common[i].cond, &spi_common[i].inth);
+
+		++i;
 	}
 }
