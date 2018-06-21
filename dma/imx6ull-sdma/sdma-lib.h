@@ -37,7 +37,7 @@ int sdma_trigger(sdma_t *s);
 /* cnt - number of interrupts for this channel registered up until this point */
 int sdma_wait_for_intr(sdma_t *s, uint32_t *cnt);
 
-void* sdma_alloc_uncached(size_t size, addr_t *paddr);
+void *sdma_alloc_uncached(sdma_t *s, size_t size, addr_t *paddr, int ocram);
 int sdma_free_uncached(void *vaddr, size_t size);
 
 #endif /* IMX6ULL_SDMA_LIB_H */

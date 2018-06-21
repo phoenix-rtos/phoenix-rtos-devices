@@ -141,6 +141,8 @@ struct driver_common_s
 
     handle_t intr_cond;
     handle_t lock;
+
+    addr_t ocram_next;
 } common;
 
 #define SDMA_CONFIG_CSM_MASK                    (0b11)
@@ -210,18 +212,44 @@ static void sdma_context_dump(uint8_t channel_id, sdma_context_t *context)
     memcpy(context, common.tmp, sizeof(sdma_context_t));
 }
 
-static void *sdma_alloc_unchaced(size_t size, addr_t *paddr)
+#define OCRAM_BASE              (0x900000)
+#define OCRAM_END               (0x920000)
+
+addr_t sdma_ocram_alloc(size_t size)
+{
+    unsigned n = (size + SIZE_PAGE - 1)/SIZE_PAGE;
+    addr_t paddr = 0;
+
+    if (common.ocram_next + n*SIZE_PAGE <= OCRAM_END) {
+        paddr = common.ocram_next;
+        common.ocram_next += n*SIZE_PAGE;
+    }
+
+    return paddr;
+}
+
+void *sdma_alloc_uncached(size_t size, addr_t *paddr, int ocram)
 {
     uint32_t n = (size + SIZE_PAGE - 1)/SIZE_PAGE;
+    oid_t *oid = OID_NULL;
+    addr_t _paddr = 0;
 
-    void *vaddr = mmap(NULL, n*SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0);
+    if (ocram) {
+        oid = OID_PHYSMEM;
+        _paddr = sdma_ocram_alloc(n*SIZE_PAGE);
+        if (!_paddr)
+            return NULL;
+    }
+
+    void *vaddr = mmap(NULL, n*SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_UNCACHED, oid, _paddr);
     if (vaddr == MAP_FAILED)
         return NULL;
 
-    if (paddr) {
-        addr_t page_addr = va2pa(vaddr - (addr_t)vaddr % SIZE_PAGE);
-        *paddr = page_addr + (addr_t)vaddr % SIZE_PAGE;
-    }
+    if (!ocram)
+        _paddr = va2pa(vaddr);
+
+    if (paddr != NULL)
+        *paddr = _paddr;
 
     return vaddr;
 }
@@ -354,13 +382,13 @@ static int sdma_init(void)
     common.regs->CHN0ADDR |= 1 << 14;
 
     addr_t ccb_paddr;
-    common.ccb = sdma_alloc_unchaced(sizeof(sdma_channel_ctrl_t) * NUM_OF_SDMA_CHANNELS, &ccb_paddr);
+    common.ccb = sdma_alloc_uncached(sizeof(sdma_channel_ctrl_t) * NUM_OF_SDMA_CHANNELS, &ccb_paddr, 1);
     if (common.ccb == NULL)
         goto fail;
 
     memset(common.ccb, 0, sizeof(sdma_channel_ctrl_t) * NUM_OF_SDMA_CHANNELS);
 
-    common.channel[0].bd = sdma_alloc_unchaced(sizeof(sdma_buffer_desc_t), &common.channel[0].bd_paddr);
+    common.channel[0].bd = sdma_alloc_uncached(sizeof(sdma_buffer_desc_t), &common.channel[0].bd_paddr, 0);
     if (common.channel[0].bd == NULL)
         goto fail;
 
@@ -376,7 +404,7 @@ static int sdma_init(void)
     sdma_set_channel_priority(0, SDMA_CHANNEL_PRIORITY_MAX);
 
     common.tmp_size = SIZE_PAGE;
-    common.tmp = sdma_alloc_unchaced(common.tmp_size, &common.tmp_paddr);
+    common.tmp = sdma_alloc_uncached(common.tmp_size, &common.tmp_paddr, 0);
     if (common.tmp == NULL)
         goto fail;
 
@@ -617,6 +645,11 @@ static int dev_ctl(msg_t *msg)
         sdma_enable_channel(channel);
         return EOK;
 
+    case sdma_dev_ctl__ocram_alloc:
+        dev_ctl.alloc.paddr = sdma_ocram_alloc(dev_ctl.alloc.size);
+        memcpy(msg->o.raw, &dev_ctl, sizeof(sdma_dev_ctl_t));
+        return EOK;
+
     default:
         log_error("dev_ctl: unknown type (%d)", dev_ctl.type);
         return -ENOSYS;
@@ -668,6 +701,8 @@ static int init(oid_t root)
 {
     int res, i;
 
+    common.ocram_next = OCRAM_BASE;
+
     if (mutexCreate(&common.lock) != EOK) {
         log_error("failed to create mutex");
         return -1;
@@ -716,7 +751,7 @@ static void sdma_print_debug_info(void)
     log_debug("ONCE_STAT    = 0x%x\n", common.regs->ONCE_STAT);
 
     unsigned i;
-    for (i = 0; i < NUM_OF_SDMA_CHANNELS; i++) {
+    for (i = 1; i < NUM_OF_SDMA_CHANNELS; i++) {
         if (!common.channel[i].active)
             continue;
 
@@ -765,13 +800,15 @@ static void sdma_print_debug_info(void)
 
         unsigned j = 0;
         sdma_buffer_desc_t *current = common.channel[i].bd;
-        do {
-            log_debug("bd[%u].flags = 0x%x", j, current->flags);
-            log_debug("\tSDMA_BD_DONE is %s", (current->flags & SDMA_BD_DONE) ? "SET" : "CLEARED");
-            log_debug("\tSDMA_BD_WRAP is %s", (current->flags & SDMA_BD_WRAP) ? "SET" : "CLEARED");
-            log_debug("\tSDMA_BD_INTR is %s\n", (current->flags & SDMA_BD_INTR) ? "SET" : "CLEARED");
-            j++;
-        } while (!((current++)->flags & SDMA_BD_WRAP));
+        if (current != NULL) {
+            do {
+                log_debug("bd[%u].flags = 0x%x", j, current->flags);
+                log_debug("\tSDMA_BD_DONE is %s", (current->flags & SDMA_BD_DONE) ? "SET" : "CLEARED");
+                log_debug("\tSDMA_BD_WRAP is %s", (current->flags & SDMA_BD_WRAP) ? "SET" : "CLEARED");
+                log_debug("\tSDMA_BD_INTR is %s\n", (current->flags & SDMA_BD_INTR) ? "SET" : "CLEARED");
+                j++;
+            } while (!((current++)->flags & SDMA_BD_WRAP));
+        }
 
         log_debug("Dumping CCB...");
         log_debug("common.ccb[i].base_bd         = 0x%x", common.ccb[i].base_bd);

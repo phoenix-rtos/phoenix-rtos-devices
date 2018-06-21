@@ -21,7 +21,7 @@
 #include "sdma-lib.h"
 
 static int sdma_dev_ctl(sdma_t *s,
-                        const sdma_dev_ctl_t *dev_ctl,
+                        sdma_dev_ctl_t *dev_ctl,
                         void *data,
                         size_t size)
 {
@@ -43,6 +43,8 @@ static int sdma_dev_ctl(sdma_t *s,
         fprintf(stderr, "devctl failed (%d)\n\r", msg.o.io.err);
         return -2;
     }
+
+    memcpy(dev_ctl, msg.o.raw, sizeof(sdma_dev_ctl_t));
 
     return 0;
 }
@@ -167,18 +169,46 @@ int sdma_wait_for_intr(sdma_t *s, uint32_t *cnt)
     return 0;
 }
 
-void *sdma_alloc_uncached(size_t size, addr_t *paddr)
+addr_t sdma_ocram_alloc(sdma_t *s, size_t size)
+{
+    int res;
+    sdma_dev_ctl_t dev_ctl;
+
+    if (s == NULL)
+        return 0;
+
+    dev_ctl.oid = s->oid;
+    dev_ctl.type = sdma_dev_ctl__ocram_alloc;
+    dev_ctl.alloc.size = size;
+
+    if ((res = sdma_dev_ctl(s, &dev_ctl, NULL, 0)) < 0)
+        return 0;
+
+    return dev_ctl.alloc.paddr;
+}
+
+void *sdma_alloc_uncached(sdma_t *s, size_t size, addr_t *paddr, int ocram)
 {
     uint32_t n = (size + SIZE_PAGE - 1)/SIZE_PAGE;
+    oid_t *oid = OID_NULL;
+    addr_t _paddr = 0;
 
-    void *vaddr = mmap(NULL, n*SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0);
+    if (ocram) {
+        oid = OID_PHYSMEM;
+        _paddr = sdma_ocram_alloc(s, n*SIZE_PAGE);
+        if (!_paddr)
+            return NULL;
+    }
+
+    void *vaddr = mmap(NULL, n*SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_UNCACHED, oid, _paddr);
     if (vaddr == MAP_FAILED)
         return NULL;
 
-    if (paddr) {
-        addr_t page_addr = va2pa(vaddr - (addr_t)vaddr % SIZE_PAGE);
-        *paddr = page_addr + (addr_t)vaddr % SIZE_PAGE;
-    }
+    if (!ocram)
+        _paddr = va2pa(vaddr);
+
+    if (paddr != NULL)
+        *paddr = _paddr;
 
     return vaddr;
 }

@@ -120,6 +120,7 @@ typedef enum {
     sdma_dev_ctl__context_set,
     sdma_dev_ctl__enable,
     sdma_dev_ctl__trigger,
+    sdma_dev_ctl__ocram_alloc
 } sdma_dev_ctl_type_t;
 
 typedef struct {
@@ -134,6 +135,11 @@ typedef struct {
         } mem;
 
         sdma_channel_config_t cfg;
+
+        struct {
+            size_t size;
+            addr_t paddr;
+        } alloc;
     };
 } sdma_dev_ctl_t;
 
