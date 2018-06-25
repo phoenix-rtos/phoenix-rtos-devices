@@ -16,7 +16,9 @@
 
 #include <sys/threads.h>
 #include <sys/mman.h>
+#include <errno.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "ttypc.h"
 #include "ttypc_virt.h"

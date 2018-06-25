@@ -11,6 +11,7 @@
  * %LICENSE%
  */
 
+#include <errno.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -23,8 +24,6 @@
 #include <sys/platform.h>
 
 #include "pc-ata.h"
-
-#include "../../../phoenix-rtos-kernel/include/arch/ia32.h"
 
 
 static pci_id_t ata_pci_tbl[] = {
