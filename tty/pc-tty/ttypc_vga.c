@@ -15,6 +15,7 @@
  */
 
 #include <stdio.h>
+#include <string.h>
 #include <sys/threads.h>
 
 #include "ttypc.h"

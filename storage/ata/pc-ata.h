@@ -17,7 +17,7 @@
 #include <stdint.h>
 #include <sys/threads.h>
 
-#include "../../../phoenix-rtos-kernel/include/arch/ia32.h"
+#include <phoenix/arch/ia32.h>
 
 #include "pc-ata_info.h"
 
