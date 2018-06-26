@@ -13,11 +13,13 @@
  */
 
 #include <errno.h>
+#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/threads.h>
 #include <sys/interrupt.h>
+#include <sys/file.h>
 #include <unistd.h>
 #include <sys/msg.h>
 #include <sys/mman.h>
@@ -345,6 +347,28 @@ static int uart_read(u8 d, size_t len, char *buff)
 }
 
 
+static int uart_poll_status(u8 d)
+{
+	uart_t *serial;
+	int revents = 0;
+
+	if (d >= sizeof(uarts) / sizeof(uart_t *))
+		return POLLNVAL;
+
+	if ((serial = uarts[d]) == NULL)
+		return POLLNVAL;
+
+	mutexLock(serial->mutex);
+	if ((serial->rp != serial->rb) && serial->ready)
+		revents |= POLLIN|POLLRDNORM;
+	if (serial->sp == serial->se)
+		revents |= POLLOUT|POLLWRNORM;
+	mutexUnlock(serial->mutex);
+
+	return revents;
+}
+
+
 u8 uart_get(oid_t *oid)
 {
 	unsigned int i;
@@ -446,6 +470,12 @@ void poolthr(void *arg)
 			msg.o.io.err = uart_read(uart_get(&msg.i.io.oid), msg.o.size, msg.o.data);
 			break;
 		case mtClose:
+			break;
+		case mtGetAttr:
+			if (msg.i.attr.type == atPollStatus)
+				msg.o.attr.val = uart_poll_status(uart_get(&msg.i.io.oid));
+			else
+				msg.o.attr.val = -EINVAL;
 			break;
 		}
 
