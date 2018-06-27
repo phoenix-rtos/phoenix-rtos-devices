@@ -9,7 +9,7 @@
 ifneq (, $(findstring arm-imx, $(TARGET)))
 	CROSS ?= arm-phoenix-
 
-	SUBDIRS = tty/imx6ull-uart storage/imx6ull-flash gpio/imx6ull-gpio storage/imx6ull-nandtool dma/imx6ull-sdma
+	SUBDIRS = tty/imx6ull-uart storage/imx6ull-flash gpio/imx6ull-gpio storage/imx6ull-nandtool dma/imx6ull-sdma otp/imx6ull-otp
 
 	MKDEP = $(CROSS)gcc -MM
 	MKDEPFLAGS = $(CFLAGS)
