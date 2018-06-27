@@ -234,17 +234,15 @@ static int uart_write(u8 d, size_t len, char *buff)
 	if (!len)
 		return 0;
 
-	/* Wait for transmitter */
 	mutexLock(serial->mutex);
 
+	/* Wait for transmitter */
 	while (serial->sp != serial->se)
 		if ((err = condWait(serial->scond, serial->mutex, 0)) < 0)
 			return err;
 
 	sp = serial->sp;
 	se = serial->se;
-
-	mutexUnlock(serial->mutex);
 
 	if (sp > se)
 		l = min(sp - se, len);
@@ -261,11 +259,12 @@ static int uart_write(u8 d, size_t len, char *buff)
 	}
 
 	/* Initialize sending process */
-	mutexLock(serial->mutex);
-	if (serial->se == serial->sp)
-		outb(serial->base, serial->sbuff[serial->sp]);
 
-	serial->se = ((serial->se + cnt) % serial->sbuffsz);
+	serial->se = ((se + cnt) % serial->sbuffsz);
+
+	if (se == sp)
+		outb(serial->base, serial->sbuff[sp]);
+
 	mutexUnlock(serial->mutex);
 
 	return cnt;
