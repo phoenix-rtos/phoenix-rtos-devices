@@ -18,9 +18,11 @@
 #include <sys/threads.h>
 #include <sys/mman.h>
 #include <sys/interrupt.h>
+#include <sys/file.h>
 #include <sys/platform.h>
 #include <sys/msg.h>
 #include <errno.h>
+#include <poll.h>
 #include <string.h>
 
 #include "imx6ull-uart.h"
@@ -95,6 +97,23 @@ static int uart_read(void *data, size_t size)
 }
 
 
+static int uart_poll_status()
+{
+	int revents = 0;
+
+	mutexLock(uart.lock);
+
+	if (uart.rx_head != uart.rx_tail)
+		revents |= POLLIN|POLLRDNORM;
+	if (uart.tx_head == uart.tx_tail)
+		revents |= POLLOUT|POLLWRNORM;
+
+	mutexUnlock(uart.lock);
+
+	return revents;
+}
+
+
 void uart_thr(void *arg)
 {
 	u32 port = (u32)arg;
@@ -118,6 +137,12 @@ void uart_thr(void *arg)
 			msg.o.io.err = uart_read(msg.o.data, msg.o.size);
 			break;
 		case mtClose:
+			break;
+		case mtGetAttr:
+			if (msg.i.attr.type == atPollStatus)
+				msg.o.attr.val = uart_poll_status();
+			else
+				msg.o.attr.val = -EINVAL;
 			break;
 		}
 
