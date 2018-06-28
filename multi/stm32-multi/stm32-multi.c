@@ -45,7 +45,7 @@ struct {
 } common;
 
 
-void handleGpioSeq(gpioseq_t seq[], size_t scount, unsigned int *val)
+static void handleGpioSeq(gpioseq_t seq[], size_t scount, unsigned int *val)
 {
 	size_t i;
 	volatile int j;
@@ -74,7 +74,7 @@ void handleGpioSeq(gpioseq_t seq[], size_t scount, unsigned int *val)
 }
 
 
-int handleMsg(msg_t *msg)
+static void handleMsg(msg_t *msg)
 {
 	multi_i_t *imsg = (multi_i_t *)(&msg->i.raw);
 	multi_o_t *omsg = (multi_o_t *)(&msg->o.raw);
@@ -166,11 +166,11 @@ int handleMsg(msg_t *msg)
 			err = -EINVAL;
 	}
 
-	return err;
+	omsg->err = err;
 }
 
 
-void thread(void *arg)
+static void thread(void *arg)
 {
 	msg_t msg;
 	unsigned int rid;
@@ -194,7 +194,7 @@ void thread(void *arg)
 				break;
 
 			case mtDevCtl:
-				msg.o.io.err = handleMsg(&msg);
+				handleMsg(&msg);
 				break;
 
 			case mtCreate:
