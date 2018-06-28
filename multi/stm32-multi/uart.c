@@ -231,7 +231,6 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 	uart = uartPos[uart];
 
 	mutexLock(uart_common[uart].rxlock);
-	keepidle(1);
 
 	uart_common[uart].read = 0;
 	uart_common[uart].rxend = buff + count;
@@ -260,7 +259,6 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 			((char *)buff)[i] &= 0x7f;
 	}
 
-	keepidle(0);
 	mutexUnlock(uart_common[uart].rxlock);
 
 	return read;
