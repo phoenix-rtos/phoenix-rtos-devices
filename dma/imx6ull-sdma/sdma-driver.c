@@ -167,10 +167,10 @@ static void __attribute__((unused)) sdma_disable_channel(u8 channel_id)
     common.channel[channel_id].active = 0;
 }
 
-static void sdma_run_channel0_cmd(uint16_t count,
-                                  uint8_t command,
-                                  uint32_t buffer_addr,
-                                  uint32_t ext_buffer_addr)
+static int sdma_run_channel0_cmd(uint16_t count,
+                                 uint8_t command,
+                                 uint32_t buffer_addr,
+                                 uint32_t ext_buffer_addr)
 {
     common.channel[0].bd->count = count;
     common.channel[0].bd->flags = SDMA_BD_DONE | SDMA_BD_WRAP;
@@ -181,11 +181,18 @@ static void sdma_run_channel0_cmd(uint16_t count,
     sdma_enable_channel(0);
 
     /* Wait until HE bit is cleared */
-    while (common.regs->STOP_STAT & 1);
+    unsigned tries = 100;
+    while (common.regs->STOP_STAT & 1) {
+        if (--tries == 0)
+            return -ETIME;
+        usleep(1000);
+    }
 
     /* After channel 0 was used at least once, we can enable dynamic context
      * switching */
     sdma_set_context_switching_mode(sdma_csm__dynamic);
+
+    return EOK;
 }
 
 #define CHNPRIn_PRIORITY_MASK                   (0b111)
@@ -196,22 +203,29 @@ static void sdma_set_channel_priority(uint8_t channel_id, uint8_t priority)
     common.regs->SDMA_CHNPRI[channel_id] |= priority & CHNPRIn_PRIORITY_MASK;
 }
 
-static void sdma_context_load(uint8_t channel_id, sdma_context_t *context)
+static int sdma_context_load(uint8_t channel_id, sdma_context_t *context)
 {
     memcpy(common.tmp, context, sizeof(sdma_context_t));
-    sdma_run_channel0_cmd(sizeof(sdma_context_t)/4,
-                          SDMA_CMD_C0_SETCTX(channel_id),
-                          common.tmp_paddr,
-                          0);
+    return sdma_run_channel0_cmd(sizeof(sdma_context_t)/4,
+                                 SDMA_CMD_C0_SETCTX(channel_id),
+                                 common.tmp_paddr,
+                                 0);
 }
 
-static void sdma_context_dump(uint8_t channel_id, sdma_context_t *context)
+static int sdma_context_dump(uint8_t channel_id, sdma_context_t *context)
 {
-    sdma_run_channel0_cmd(sizeof(sdma_context_t)/4,
-                          SDMA_CMD_C0_GETCTX(channel_id),
-                          common.tmp_paddr,
-                          0);
+    int res;
+
+    res = sdma_run_channel0_cmd(sizeof(sdma_context_t)/4,
+                                SDMA_CMD_C0_GETCTX(channel_id),
+                                common.tmp_paddr,
+                                0);
+    if (res < 0)
+        return res;
+
     memcpy(context, common.tmp, sizeof(sdma_context_t));
+
+    return EOK;
 }
 
 #define OCRAM_BASE              (0x900000)
@@ -263,32 +277,32 @@ static int sdma_free_uncached(void *vaddr, size_t size)
     return munmap(vaddr, n*SIZE_PAGE);
 }
 
-static void __attribute__((unused)) sdma_program_memory_dump(uint16_t addr,
+static int __attribute__((unused)) sdma_program_memory_dump(uint16_t addr,
+                                                            addr_t buffer,
+                                                            size_t size)
+{
+    return sdma_run_channel0_cmd(size, SDMA_CMD_C0_GET_PM, buffer, addr);
+}
+
+static int __attribute__((unused)) sdma_program_memory_write(uint16_t addr,
                                                              addr_t buffer,
                                                              size_t size)
 {
-    sdma_run_channel0_cmd(size, SDMA_CMD_C0_GET_PM, buffer, addr);
+    return sdma_run_channel0_cmd(size, SDMA_CMD_C0_SET_PM, buffer, addr);
 }
 
-static void __attribute__((unused)) sdma_program_memory_write(uint16_t addr,
-                                                              addr_t buffer,
-                                                              size_t size)
+static int sdma_data_memory_dump(uint16_t addr,
+                                 addr_t buffer,
+                                 size_t size)
 {
-    sdma_run_channel0_cmd(size, SDMA_CMD_C0_SET_PM, buffer, addr);
+    return sdma_run_channel0_cmd(size, SDMA_CMD_C0_GET_DM, buffer, addr);
 }
 
-static void sdma_data_memory_dump(uint16_t addr,
+static int sdma_data_memory_write(uint16_t addr,
                                   addr_t buffer,
                                   size_t size)
 {
-    sdma_run_channel0_cmd(size, SDMA_CMD_C0_GET_DM, buffer, addr);
-}
-
-static void sdma_data_memory_write(uint16_t addr,
-                                   addr_t buffer,
-                                   size_t size)
-{
-    sdma_run_channel0_cmd(size, SDMA_CMD_C0_SET_DM, buffer, addr);
+    return sdma_run_channel0_cmd(size, SDMA_CMD_C0_SET_DM, buffer, addr);
 }
 
 static void sdma_reset(void)
@@ -613,17 +627,16 @@ static int dev_ctl(msg_t *msg)
             return -EIO;
         }
         memcpy(common.tmp, msg->o.data, msg->o.size);
-        sdma_data_memory_write(dev_ctl.mem.addr, common.tmp_paddr, dev_ctl.mem.len);
-        return EOK;
+        return sdma_data_memory_write(dev_ctl.mem.addr, common.tmp_paddr, dev_ctl.mem.len);
 
     case sdma_dev_ctl__data_mem_read:
         if (msg->o.size != dev_ctl.mem.len || msg->o.size > common.tmp_size) {
             log_error("dev_ctl: invalid size");
             return -EIO;
         }
-        sdma_data_memory_dump(dev_ctl.mem.addr, common.tmp_paddr, dev_ctl.mem.len);
+        res = sdma_data_memory_dump(dev_ctl.mem.addr, common.tmp_paddr, dev_ctl.mem.len);
         memcpy(msg->o.data, common.tmp, msg->o.size);
-        return EOK;
+        return res;
 
     case sdma_dev_ctl__context_dump:
         if (msg->o.size != sizeof(sdma_context_t)) {
@@ -631,8 +644,7 @@ static int dev_ctl(msg_t *msg)
             return -EIO;
         }
         context = (sdma_context_t*)msg->o.data;
-        sdma_context_dump(channel, context);
-        return EOK;
+        return sdma_context_dump(channel, context);
 
     case sdma_dev_ctl__context_set:
         if (msg->o.size != sizeof(sdma_context_t)) {
@@ -640,8 +652,7 @@ static int dev_ctl(msg_t *msg)
             return -EIO;
         }
         context = (sdma_context_t*)msg->o.data;
-        sdma_context_load(channel, context);
-        return EOK;
+        return sdma_context_load(channel, context);
 
     case sdma_dev_ctl__enable:
         sdma_enable_channel(channel);
@@ -742,6 +753,8 @@ static int init(oid_t root)
 #if 0
 static void sdma_print_debug_info(void)
 {
+    int res;
+
     log_info("SDMA regs:");
     log_debug("EVTPEND      = 0x%x", common.regs->EVTPEND);
     log_debug("EVT_MIRROR   = 0x%x", common.regs->EVT_MIRROR);
@@ -764,41 +777,45 @@ static void sdma_print_debug_info(void)
 
         sdma_context_t context;
         log_debug("Dumping context...");
-        sdma_context_dump(i, &context);
-        unsigned pc = context.state[0] & SDMA_CONTEXT_PC_MASK;
-        log_debug("pc           = 0x%x (%u)", pc, pc);
-        log_debug("state[0]     = 0x%x", context.state[0]);
-        log_debug("state[1]     = 0x%x", context.state[1]);
-        log_debug("gr[0]        = 0x%x", context.gr[0]);
-        log_debug("gr[1]        = 0x%x", context.gr[1]);
-        log_debug("gr[2]        = 0x%x", context.gr[2]);
-        log_debug("gr[3]        = 0x%x", context.gr[3]);
-        log_debug("gr[4]        = 0x%x", context.gr[4]);
-        log_debug("gr[5]        = 0x%x", context.gr[5]);
-        log_debug("gr[6]        = 0x%x", context.gr[6]);
-        log_debug("gr[7]        = 0x%x", context.gr[7]);
-        log_debug("mda          = 0x%x", context.mda);
-        log_debug("msa          = 0x%x", context.msa);
-        log_debug("ms           = 0x%x", context.ms);
-        log_debug("md           = 0x%x", context.md);
-        log_debug("pda          = 0x%x", context.pda);
-        log_debug("psa          = 0x%x", context.psa);
-        log_debug("ps           = 0x%x", context.ps);
-        log_debug("pd           = 0x%x", context.pd);
-        log_debug("ca           = 0x%x", context.ca);
-        log_debug("cs           = 0x%x", context.cs);
-        log_debug("dda          = 0x%x", context.dda);
-        log_debug("dsa          = 0x%x", context.dsa);
-        log_debug("ds           = 0x%x", context.ds);
-        log_debug("dd           = 0x%x", context.dd);
-        log_debug("scratch[0]   = 0x%x", context.scratch[0]);
-        log_debug("scratch[1]   = 0x%x", context.scratch[1]);
-        log_debug("scratch[2]   = 0x%x", context.scratch[2]);
-        log_debug("scratch[3]   = 0x%x", context.scratch[3]);
-        log_debug("scratch[4]   = 0x%x", context.scratch[4]);
-        log_debug("scratch[5]   = 0x%x", context.scratch[5]);
-        log_debug("scratch[6]   = 0x%x", context.scratch[6]);
-        log_debug("scratch[7]   = 0x%x\n", context.scratch[7]);
+        res = sdma_context_dump(i, &context);
+        if (res != EOK) {
+            log_error("Failed to dump channel context (%d)\n", res);
+        } else {
+            unsigned pc = context.state[0] & SDMA_CONTEXT_PC_MASK;
+            log_debug("pc           = 0x%x (%u)", pc, pc);
+            log_debug("state[0]     = 0x%x", context.state[0]);
+            log_debug("state[1]     = 0x%x", context.state[1]);
+            log_debug("gr[0]        = 0x%x", context.gr[0]);
+            log_debug("gr[1]        = 0x%x", context.gr[1]);
+            log_debug("gr[2]        = 0x%x", context.gr[2]);
+            log_debug("gr[3]        = 0x%x", context.gr[3]);
+            log_debug("gr[4]        = 0x%x", context.gr[4]);
+            log_debug("gr[5]        = 0x%x", context.gr[5]);
+            log_debug("gr[6]        = 0x%x", context.gr[6]);
+            log_debug("gr[7]        = 0x%x", context.gr[7]);
+            log_debug("mda          = 0x%x", context.mda);
+            log_debug("msa          = 0x%x", context.msa);
+            log_debug("ms           = 0x%x", context.ms);
+            log_debug("md           = 0x%x", context.md);
+            log_debug("pda          = 0x%x", context.pda);
+            log_debug("psa          = 0x%x", context.psa);
+            log_debug("ps           = 0x%x", context.ps);
+            log_debug("pd           = 0x%x", context.pd);
+            log_debug("ca           = 0x%x", context.ca);
+            log_debug("cs           = 0x%x", context.cs);
+            log_debug("dda          = 0x%x", context.dda);
+            log_debug("dsa          = 0x%x", context.dsa);
+            log_debug("ds           = 0x%x", context.ds);
+            log_debug("dd           = 0x%x", context.dd);
+            log_debug("scratch[0]   = 0x%x", context.scratch[0]);
+            log_debug("scratch[1]   = 0x%x", context.scratch[1]);
+            log_debug("scratch[2]   = 0x%x", context.scratch[2]);
+            log_debug("scratch[3]   = 0x%x", context.scratch[3]);
+            log_debug("scratch[4]   = 0x%x", context.scratch[4]);
+            log_debug("scratch[5]   = 0x%x", context.scratch[5]);
+            log_debug("scratch[6]   = 0x%x", context.scratch[6]);
+            log_debug("scratch[7]   = 0x%x\n", context.scratch[7]);
+        }
 
         unsigned j = 0;
         sdma_buffer_desc_t *current = common.channel[i].bd;
