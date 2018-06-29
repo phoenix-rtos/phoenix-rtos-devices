@@ -44,8 +44,10 @@
 #define NUM_OF_SDMA_REQUESTS    (48)
 
 #define NUM_OF_WORKER_THREADS   (NUM_OF_SDMA_CHANNELS)
-#define WORKER_THD_PRIO         (2)
+#define WORKER_THD_PRIO         (3)
 #define WORKER_THD_STACK        (4096)
+
+#define MAIN_THD_PRIO           (2)
 
 /* Buffer Descriptor Commands for Bootload scripts */
 #define SDMA_CMD_C0_SET_DM                      (0x1)
@@ -820,6 +822,8 @@ static void sdma_print_debug_info(void)
 int main(void)
 {
     oid_t root;
+
+    priority(MAIN_THD_PRIO);
 
     /* Wait for the filesystem */
     while (lookup("/", &root) < 0)
