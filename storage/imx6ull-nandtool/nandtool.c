@@ -234,6 +234,10 @@ void flash_erase(void *arg, int start, int end, int silent)
 	nand_msg(silent, "--------------------\n");
 }
 
+int flash_dbbt(flashdrv_dma_t *dma)
+{
+	return 0;
+}
 
 int flash_fcb(flashdrv_dma_t *dma, char *fcb)
 {
@@ -267,13 +271,12 @@ int flash_fcb(flashdrv_dma_t *dma, char *fcb)
 		err = ret;
 	}
 
-	/* default stride size is 128 and stride size is 2 */
-	ret = flashdrv_writeraw(dma, 128, wbuf, 4096);
+	ret = flashdrv_writeraw(dma, 64, wbuf, 4096);
 
 	if (err && ret) {
 		return ret;
 	} else if (ret) {
-		printf("Flashing fcb on block 128 failed\n");
+		printf("Flashing fcb on block 64 failed\n");
 		err = 0;
 	}
 	munmap(wbuf, SIZE_PAGE);
@@ -281,12 +284,10 @@ int flash_fcb(flashdrv_dma_t *dma, char *fcb)
 	return err;
 }
 
-void set_nandboot(char *fcb, char *kernel, char *modules, char *rootfs)
+void set_nandboot(char *fcb, char *primary, char *secondary, char *rootfs)
 {
-	int ret = 0;
-	char *tok;
+	int ret = 0, err = 0;
 	flashdrv_dma_t *dma;
-	char *mods;
 
 	flashdrv_init();
 	dma = flashdrv_dmanew();
@@ -300,9 +301,10 @@ void set_nandboot(char *fcb, char *kernel, char *modules, char *rootfs)
 	printf("Performing flash check\n");
 	ret = flash_check(dma, 1);
 
-	if (ret)
+	if (ret) {
 		printf("WARNING: This device has bad blocks.\nBad block management is not implemented yet - this device may not boot correctly\n");
-
+		err++;
+	}
 	ret = flash_fcb(dma, fcb);
 
 	if (ret) {
@@ -311,28 +313,31 @@ void set_nandboot(char *fcb, char *kernel, char *modules, char *rootfs)
 		return;
 	}
 
-	printf("Flashing kernel: %s\n", kernel);
-	ret = flash_image(dma, kernel, 8, 0, 1);
-	ret = flash_image(dma, kernel, 16, 0, 1);
+	if(flash_dbbt(dma))
+		err++;
 
-	mods = strdup(modules);
-	tok = strtok(mods," ");
+	printf("Flashing primary image: %s\n", primary);
+	if (flash_image(dma, primary, 8, 0, 1))
+		err++;
 
-	printf("Flashing modules\n");
-	ret = flash_image(dma, tok, 8, 18, 1);
-	ret = flash_image(dma, tok, 16, 18, 1);
-
-	tok = strtok(NULL," ");
-	ret = flash_image(dma, tok, 8, 34, 1);
-	ret = flash_image(dma, tok, 16, 34, 1);
+	printf("Flashing secondary image: %s\n", secondary);
+	if (flash_image(dma, secondary, 16, 0, 1))
+		err++;
 
 	printf("Flashing rootfs: %s\n", rootfs);
-	ret = flash_image(dma, rootfs, 64, 0, 1);
-	ret = flash_image(dma, rootfs, 128, 0, 1);
+	if (flash_image(dma, rootfs, 64, 0, 1))
+		err++;
 
-	free(mods);
+	if (flash_image(dma, rootfs, 128, 0, 1))
+		err++;
+
 	flashdrv_dmadestroy(dma);
 	printf("------------------\n");
+
+	if (err)
+		printf("%d error(s) occured. Device may not boot correctly after restart.\n");
+	else
+		printf("All done. Restart the device to boot from internal storage.\n");
 }
 
 void print_help(void)
@@ -344,7 +349,7 @@ void print_help(void)
 			"\t-h - print this message\n" \
 			"\t-t (number) - run test #no\n" \
 			"\t-e (start:end) - erase blocks form start to end\n" \
-			"\t-f (fcb) (kernel) (rootfs) - set flash for internal booting\n");
+			"\t-f (fcb) (kernel) (kernel2) (rootfs) - set flash for internal booting\n");
 }
 
 int main(int argc, char **argv)
@@ -352,7 +357,9 @@ int main(int argc, char **argv)
 	int c;
 	char *path = NULL;
 	int start = -1;
-	char *tok, *fcb, *kernel, *rootfs, *modules;
+	char *tok, *fcb, *primary, *secondary, *rootfs;
+	int len, i;
+
 	while ((c = getopt(argc, argv, "i:s:hct:e:f")) != -1) {
 		switch (c) {
 
@@ -386,15 +393,55 @@ int main(int argc, char **argv)
 				return 0;
 			case 'f':
 				if (argc == 2) {
+
 					fcb = "/init/fcb.img";
-					kernel = "/init/kernel.img";
+					primary = "/init/primary.img";
+					secondary = "/init/secondary.img";
 					rootfs = "/init/rootfs.img";
-					modules = "/init/imx6ull-uart /init/jffs2";
-				} else {
-					printf("paths not supported for now\n");
+					set_nandboot(fcb, primary, secondary, rootfs);
+				} else if (argc == 5) {
+
+					len = strlen(argv[optind]);
+					for (i = len; i >= 0 && argv[optind][i] != '/'; --i);
+
+					fcb = malloc(strlen("/init/") + strlen(argv[optind] + i + 1));
+					fcb[0] = 0;
+					strcat(fcb, "/init/");
+					strcat(fcb, argv[optind++] + i + 1);
+
+					len = strlen(argv[optind]);
+					for (i = len; i >= 0 && argv[optind][i] != '/'; --i);
+
+					primary = malloc(strlen("/init/") + strlen(argv[optind] + i + 1));
+					primary[0] = 0;
+					strcat(primary, "/init/");
+					strcat(primary, argv[optind++] + i + 1);
+
+					len = strlen(argv[optind]);
+					for (i = len; i >= 0 && argv[optind][i] != '/'; --i);
+
+					secondary = malloc(strlen("/init/") + strlen(argv[optind] + i + 1));
+					secondary[0] = 0;
+					strcat(secondary, "/init/");
+					strcat(secondary, argv[optind++] + i + 1);
+
+					len = strlen(argv[optind]);
+					for (i = len; i >= 0 && argv[optind][i] != '/'; --i);
+
+					rootfs = malloc(strlen("/init/") + strlen(argv[optind] + i + 1));
+					rootfs[0] = 0;
+					strcat(rootfs, "/init/");
+					strcat(rootfs, argv[optind] + i + 1);
+
+					set_nandboot(fcb, primary, secondary, rootfs);
+
+					free(fcb);
+					free(primary);
+					free(secondary);
+					free(rootfs);
+
 					return 0;
 				}
-				set_nandboot(fcb, kernel, modules, rootfs);
 				return 0;
 			case 'h':
 			default:
