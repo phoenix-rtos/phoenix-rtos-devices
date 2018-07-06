@@ -15,8 +15,8 @@
 #define _STM32_MULTI_H_
 
 enum { adc_get = 0, rtc_get, rtc_set, lcd_get, lcd_set, i2c_get, i2c_set,
-	gpio_def, gpio_get, gpio_set, gpio_seq, gpio_delay, uart_def, uart_get,
-	uart_set, flash_get, flash_set, spi_get, spi_set, spi_def };
+	gpio_def, gpio_get, gpio_set, uart_def, uart_get, uart_set, flash_get,
+	flash_set, spi_get, spi_set, spi_def };
 
 /* RTC */
 
@@ -118,18 +118,6 @@ typedef struct {
 	char ospeed;
 	char pupd;
 } __attribute__((packed)) gpiodef_t;
-
-
-typedef struct {
-	int type;
-
-	union {
-		gpioset_t set;
-		gpioget_t get;
-		gpiodef_t def;
-		unsigned int delay;
-	};
-} __attribute__((packed)) gpioseq_t;
 
 
 /* UART */

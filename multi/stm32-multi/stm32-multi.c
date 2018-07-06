@@ -45,35 +45,6 @@ struct {
 } common;
 
 
-static void handleGpioSeq(gpioseq_t seq[], size_t scount, unsigned int *val)
-{
-	size_t i;
-	volatile int j;
-
-	for (i = 0; i < scount; ++i) {
-		switch (seq[i].type) {
-			case gpio_def:
-				gpio_configPin(seq[i].def.port, seq[i].def.pin, seq[i].def.mode,
-					seq[i].def.af, seq[i].def.otype, seq[i].def.ospeed, seq[i].def.pupd);
-				break;
-
-			case gpio_get:
-				gpio_getPort(seq[i].get.port, val);
-				break;
-
-			case gpio_set:
-				gpio_setPort(seq[i].set.port, seq[i].set.mask, seq[i].set.state);
-				break;
-
-			case gpio_delay:
-				for (j = 0; j < seq[i].delay; ++j)
-					__asm__ volatile ("nop");
-				break;
-		}
-	}
-}
-
-
 static void handleMsg(msg_t *msg)
 {
 	multi_i_t *imsg = (multi_i_t *)(&msg->i.raw);
@@ -120,10 +91,6 @@ static void handleMsg(msg_t *msg)
 
 		case gpio_set:
 			err = gpio_setPort(imsg->gpio_set.port, imsg->gpio_set.mask, imsg->gpio_set.state);
-			break;
-
-		case gpio_seq:
-			handleGpioSeq(msg->i.data, msg->i.size / sizeof(gpioseq_t), &omsg->gpio_get);
 			break;
 
 		case uart_def:
