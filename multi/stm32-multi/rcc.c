@@ -80,12 +80,8 @@ int rcc_setHsi(int state)
 		*(rcc_common.base + cr) &= ~1;
 		dataBarier();
 		keepidle(0);
-		mutexUnlock(rcc_common.lock);
-
-		return EOK;
 	}
-
-	if (!(*(rcc_common.base + cr) & 2)) {
+	else if (!rcc_common.hsiState) {
 		keepidle(1);
 
 		/* Enable the HSI ready interrupt */
@@ -104,6 +100,8 @@ int rcc_setHsi(int state)
 		*(rcc_common.base + cir) &= ~(1 << 10);
 		dataBarier();
 	}
+
+	rcc_common.hsiState = state;
 
 	mutexUnlock(rcc_common.lock);
 
