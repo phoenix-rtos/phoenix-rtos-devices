@@ -25,7 +25,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 
-#include "../imx6ull-flash/flashdrv.h"
+#include "../../storage/imx6ull-flash/flashdrv.h"
 
 #include "test.h"
 

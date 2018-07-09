@@ -33,7 +33,7 @@ check:
 
 
 #FIXME: move this code to static library, do not compile twice
-flashdrv.o: ../imx6ull-flash/flashdrv.c
+flashdrv.o: ../../storage/imx6ull-flash/flashdrv.c
 	@(printf " CC    %-24s  \n" "$<"; $(CC) -c $(CFLAGS) "$<" -o "$@")
 
 $(BIN): $(OBJS) $(LIBS)
