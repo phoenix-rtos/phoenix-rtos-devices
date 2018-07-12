@@ -22,7 +22,7 @@
 #include <sys/msg.h>
 #include <sys/file.h>
 #include <sys/platform.h>
-#include <../phoenix-rtos-kernel/include/arch/imx6ull.h>
+#include <phoenix/arch/imx6ull.h>
 
 #include "imx6ull-gpio.h"
 
