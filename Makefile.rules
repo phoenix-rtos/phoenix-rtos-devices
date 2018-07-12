@@ -72,6 +72,8 @@ $(PREFIX_PROG_STRIPPED)%: $(PREFIX_PROG)%
 	@(printf " STR %-24s  \n" "$(@F)")
 	$(SIL)$(STRIP) -s -o "$@" "$<"
 
+clean:
+	@rm -rf $(PREFIX_O) $(LIB_OUT) $(LIB_HDRS_OUT) $(PROGS_UNSTRIPPED) $(PROGS_STRIPPED)
 
 # include file dependencies
 ALL_D := $(wildcard $(PREFIX_O)*.d)
