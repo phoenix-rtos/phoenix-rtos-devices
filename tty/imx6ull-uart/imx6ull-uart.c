@@ -30,7 +30,7 @@
 
 #include "imx6ull-uart.h"
 
-#include "../../../phoenix-rtos-kernel/include/arch/imx6ull.h"
+#include <phoenix/arch/imx6ull.h>
 
 u32 uart_addr[8] = { 0x02020000, 0x021E8000, 0x021EC000, 0x021F0000,
 	0x021F4000, 0x021FC000, 0x02018000, 0x02284000 };
