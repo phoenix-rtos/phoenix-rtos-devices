@@ -101,6 +101,8 @@ int init(oid_t root)
 		msg.i.create.dev.id = gpio1 + i;
 		msg.i.data = "port";
 		msg.i.size = sizeof("port");
+		msg.o.data = NULL;
+		msg.o.size = 0;
 
 		if (msgSend(root.port, &msg) < 0 || msg.o.create.err != EOK) {
 			printf("gpiodrv: Could not create port file #%d (err %d)\n", i + 1, msg.o.create.err);
@@ -117,6 +119,8 @@ int init(oid_t root)
 		msg.i.create.dev.id = dir1 + i;
 		msg.i.data = "dir";
 		msg.i.size = sizeof("dir");
+		msg.o.data = NULL;
+		msg.o.size = 0;
 
 		if (msgSend(root.port, &msg) < 0 || msg.o.create.err != EOK) {
 			printf("gpiodrv: Could not create direction file #%d\n", i + 1);
