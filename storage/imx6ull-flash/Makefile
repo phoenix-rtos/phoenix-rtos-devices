@@ -4,41 +4,14 @@
 # Copyright 2018 Phoenix Systems
 #
 
-SRCS = flashdrv.c
-OBJS = $(SRCS:.c=.o)
-BIN = flashdrv
+# build and install into staging static lib
+LIB := flashdrv.a
+LIB_SRCS := flashdrv.c
+LIB_HDRS := flashdrv.h
 
+# build test program and link against lib
+PROGS := flashdrv_test
+PROGS_LIBS := flashdrv.a
 
-all: check $(BIN)
-
-
-check:
-	@(if test -z "$(TARGET)"; then\
-		echo "Error: Only main Makefile can be used for compilation!";\
-		exit 1;\
-	fi;)
-
-
-.c.o:
-	@(printf " CC    %-24s  \n" "$<"; $(CC) -c $(CFLAGS) $<)
-
--include .depend
-
-
-$(BIN): $(OBJS)
-	@echo " LD    $@"
-	$(SIL)$(LD) $(LDFLAGS) -o $(BIN) $(OBJS) $(LDLIBS)
-	@echo " STRIP $@"
-	$(SIL)$(STRIP) $(BIN) 2>/dev/null
-
-
-depend: check
-	$(SIL)$(MKDEP) $(MKDEPFLAGS) $(SRCS) >.depend
-
-
-clean: check
-	$(SIL)rm -f core *.o $(ARCH)
-
-
-.PHONY: clean
-# DO NOT DELETE
+# include after all dependencies are set
+include $(TOPDIR)/Makefile.rules
