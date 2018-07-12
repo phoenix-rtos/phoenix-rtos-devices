@@ -6,34 +6,31 @@
 # Copyright 2018 Phoenix Systems
 #
 
-ifneq (, $(findstring arm-imx, $(TARGET)))
-	CROSS ?= arm-phoenix-
+CROSS ?= arm-phoenix-
 
-	SUBDIRS = tty/imx6ull-uart storage/imx6ull-flash gpio/imx6ull-gpio utils/imx6ull-nandtool dma/imx6ull-sdma utils/imx6ull-otp
+SUBDIRS = tty/imx6ull-uart storage/imx6ull-flash gpio/imx6ull-gpio utils/imx6ull-nandtool dma/imx6ull-sdma utils/imx6ull-otp
 
-	MKDEP = $(CROSS)gcc -MM
-	MKDEPFLAGS = $(CFLAGS)
+MKDEP = $(CROSS)gcc -MM
+MKDEPFLAGS = $(CFLAGS)
 
-	CC = $(CROSS)gcc
+CC = $(CROSS)gcc
 
-	CFLAGS += -Os -Wall -Wstrict-prototypes -g -I$(SRCDIR) -nostartfiles -nostdlib\
-		-mcpu=cortex-a7 -mtune=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard -mthumb\
-		-fomit-frame-pointer -ffreestanding -mno-unaligned-access\
-		-DVERSION=\"$(VERSION)\" -DARCH=\"arch/arm-imx/arch.h\"
+CFLAGS += -Os -Wall -Wstrict-prototypes -g\
+	-mcpu=cortex-a7 -mtune=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard -mthumb\
+	-fomit-frame-pointer -ffreestanding -mno-unaligned-access
 
-	CFLAGS += -fdata-sections -ffunction-sections
+CFLAGS += -fdata-sections -ffunction-sections
 
-	AR = $(CROSS)ar
-	ARFLAGS = -r
+AR = $(CROSS)ar
+ARFLAGS = -r
 
-	LD = $(CROSS)ld
-	LDFLAGS = -nostdlib -z max-page-size=0x1000
-	LDFLAGS += --gc-sections
-	GCCLIB := $(shell $(CC) $(CFLAGS) -print-libgcc-file-name)
-	PHOENIXLIB := $(shell $(CC) $(CFLAGS) -print-file-name=libphoenix.a)
-	LDLIBS := $(PHOENIXLIB) $(GCCLIB)
+LD = $(CROSS)ld
+LDFLAGS = -z max-page-size=0x1000
+LDFLAGS += --gc-sections
+GCCLIB := $(shell $(CC) $(CFLAGS) -print-libgcc-file-name)
+PHOENIXLIB := $(shell $(CC) $(CFLAGS) -print-file-name=libphoenix.a)
+LDLIBS := $(PHOENIXLIB) $(GCCLIB)
 
-	OBJCOPY = $(CROSS)objcopy
-	OBJDUMP = $(CROSS)objdump
-	STRIP = $(CROSS)strip
-endif
+OBJCOPY = $(CROSS)objcopy
+OBJDUMP = $(CROSS)objdump
+STRIP = $(CROSS)strip

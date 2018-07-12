@@ -1,0 +1,80 @@
+#
+# Makefile for libphoenix - pattern rules for compiling and linking
+#
+# Copyright 2012-2018 Phoenix Systems
+#
+ifeq (,$(TOPDIR))
+$(error Only main Makefile can be used for compilation)
+endif
+
+# build artifacts dir
+CURR_SUFFIX := $(patsubst $(TOPDIR)/%,%,$(abspath $(CURDIR))/)
+PREFIX_O := $(BUILD_DIR)/$(CURR_SUFFIX)
+
+# target install paths, can be provided exterally
+PREFIX_A ?= $(BUILD_DIR)/lib/
+PREFIX_H ?= $(BUILD_DIR)/include/
+PREFIX_PROG ?= $(BUILD_DIR)/prog/
+PREFIX_PROG_STRIPPED ?= $(BUILD_DIR)/prog.stripped/
+
+# building programs
+PROGS_UNSTRIPPED := $(patsubst %,$(PREFIX_PROG)%,$(PROGS))
+PROGS_STRIPPED   := $(patsubst %,$(PREFIX_PROG_STRIPPED)%,$(PROGS))
+ifneq ("$(wildcard $(PROGS:=.c))","")
+PROGS_OBJS += $(patsubst %,$(PREFIX_O)%,$(PROGS:=.o))
+endif
+PROGS_OBJS += $(patsubst %,$(PREFIX_O)%,$(PROGS_SRCS:.c=.o))
+PROGS_LIBS := $(patsubst %,$(PREFIX_A)%,$(PROGS_LIBS))
+
+# building libs
+LIB_OUT := $(patsubst %,$(PREFIX_A)%,$(LIB))
+LIB_OBJS := $(patsubst %,$(PREFIX_O)%,$(LIB_SRCS:.c=.o))
+LIB_HDRS_OUT := $(patsubst %,$(PREFIX_H)%,$(LIB_HDRS))
+
+# add include path for auto-generated files
+CFLAGS += -I"$(BUILD_DIR)/$(CURR_SUFFIX)"
+
+# suppress 'nothing to be done'
+all: $(PROGS_UNSTRIPPED) $(PROGS_STRIPPED) $(PROGS_OBJS) $(LIB_OUT)
+	@echo > /dev/null;
+
+$(LIB_OUT): $(LIB_OBJS) $(LIB_HDRS_OUT)
+
+$(LIB_HDRS_OUT): $(LIB_HDRS)
+	@mkdir -p $(@D)
+	@cp -pR "$^" $(PREFIX_H)
+
+$(PREFIX_O)%.o: %.c
+	@mkdir -p $(@D)
+	$(SIL)(printf " CC  %-24s\n" "$<")
+	$(SIL)$(CC) -c $(CFLAGS) "$<" -o "$@"
+	$(SIL)$(CC) -M  -MD -MP -MF $(PREFIX_O)$*.c.d -MT "$@" $(CFLAGS) $<
+
+$(PREFIX_O)%.o: %.S
+	@mkdir -p $(@D)
+	$(SIL)(printf " ASM %-24s\n" "$<")
+	$(SIL)$(CC) -c $(CFLAGS) "$<" -o "$@"
+	$(SIL)$(CC) -M  -MD -MP -MF $(PREFIX_O)$*.S.d -MT "$@" $(CFLAGS) $<
+
+$(PREFIX_A)%.a:
+	@mkdir -p $(@D)
+	@(printf " AR  %-24s\n" "$*")
+	$(SIL)$(AR) $(ARFLAGS) $@ $^ 2>/dev/null
+
+
+$(PREFIX_PROG)%: $(PROGS_OBJS) $(PROGS_LIBS) $(LDLIBS)
+	@mkdir -p $(@D)
+	@(printf " LD  %-24s\n" "$(@F)")
+	$(SIL)$(LD) $(LDFLAGS) -o "$@" $^
+
+$(PREFIX_PROG_STRIPPED)%: $(PREFIX_PROG)%
+	@mkdir -p $(@D)
+	@(printf " STR %-24s  \n" "$(@F)")
+	$(SIL)$(STRIP) -s -o "$@" "$<"
+
+
+# include file dependencies
+ALL_D := $(wildcard $(PREFIX_O)*.d)
+-include $(ALL_D)
+
+.PHONY: all
