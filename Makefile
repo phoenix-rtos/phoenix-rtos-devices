@@ -28,6 +28,8 @@ export TOPDIR BUILD_DIR SIL TARGET CC CFLAGS MKDEP MKDEPFLAGS AR ARFLAGS LD LDFL
 ifneq ($(filter $(SUBDIRS),$(MAKECMDGOALS)),)
 SUBDIRS := $(filter $(SUBDIRS),$(MAKECMDGOALS))
 MAKECMDGOALS := $(filter-out $(SUBDIRS),$(MAKECMDGOALS))
+else
+CLEAN_ALL:=yes
 endif
 
 all: $(SUBDIRS)
@@ -39,7 +41,9 @@ $(SUBDIRS): .FORCE
 .FORCE:
 
 clean:
+ifeq ($(CLEAN_ALL),yes)
 	@rm -rf $(BUILD_DIR)
+endif
 
 
 .PHONY: clean
