@@ -200,6 +200,8 @@ int main(void)
 	portCreate(&common.port);
 	portRegister(common.port, "/multi", &oid);
 
+	uart_write(UART_CONSOLE + usart1 - 1, "multidrv: Started\n", 18);
+
 	for (i = 0; i < THREADS_NO - 1; ++i)
 		beginthread(thread, THREADS_PRIORITY, common.stack[i], STACKSZ, (void *)i);
 
