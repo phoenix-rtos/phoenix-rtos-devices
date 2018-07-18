@@ -335,7 +335,7 @@ void set_nandboot(char *fcb, char *primary, char *secondary, char *rootfs)
 	printf("------------------\n");
 
 	if (err)
-		printf("%d error(s) occured. Device may not boot correctly after restart.\n");
+		printf("%d error(s) occured. Device may not boot correctly after restart.\n", err);
 	else
 		printf("All done. Restart the device to boot from internal storage.\n");
 }
