@@ -478,6 +478,10 @@ void main(int argc, char **argv)
 	/* enable uart and rx ready interrupt */
 	*(uart.base + ucr1) |= 0x0201;
 
+	/* set Reference Frequency Divider */
+	*(uart.base + ufcr) &= ~(0b111 << 7);
+	*(uart.base + ufcr) |= 0b010 << 7;
+
 	/* soft reset, tx&rx enable, 8bit transmit */
 	*(uart.base + ucr2) = 0x4027;
 	if (uart.parity)
