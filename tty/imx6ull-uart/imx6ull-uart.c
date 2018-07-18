@@ -65,6 +65,8 @@ uart_pctl_t uart_pctl_isel[8][2] = {
 	{ { pctl_isel_uart8_rts, 3 }, { pctl_isel_uart8_rx, 3 } },
 };
 
+unsigned uart_intr_number[8] = { 58, 59, 60, 61, 62, 49, 71, 72 };
+
 uart_t uart = { 0 };
 
 #define MODULE_CLK 20000000
@@ -469,7 +471,7 @@ void main(int argc, char **argv)
 	if (condCreate(&uart.cond) != EOK)
 		return;
 
-	interrupt(58, uart_intr, NULL, uart.cond, &uart.inth);
+	interrupt(uart_intr_number[uart.dev_no - 1], uart_intr, NULL, uart.cond, &uart.inth);
 
 	uart.ready = uart.mode ? 0 : 1;
 
