@@ -67,6 +67,35 @@ uart_pctl_t uart_pctl_isel[8][2] = {
 
 unsigned uart_intr_number[8] = { 58, 59, 60, 61, 62, 49, 71, 72 };
 
+#define FIFO_SIZE (256)
+
+typedef struct {
+	uint8_t buff[FIFO_SIZE];
+	unsigned head;
+	unsigned tail;
+	unsigned full;
+} fifo_t;
+
+typedef struct {
+	volatile u32 *base;
+	u32 mode;
+	u32 baud_rate;
+	u8 parity;
+	u16 dev_no;
+	u32 flags;
+
+	fifo_t rx_fifo;
+	handle_t rx_cond;
+
+	fifo_t tx_fifo;
+	handle_t tx_cond;
+
+	handle_t cond;
+	handle_t inth;
+	handle_t lock;
+	int ready;
+} uart_t;
+
 uart_t uart = { 0 };
 
 #define MODULE_CLK 20000000
@@ -75,30 +104,96 @@ uart_t uart = { 0 };
 #define IS_COOL (uart.flags & FL_COOL)
 #define IS_TTY (uart.mode & MODE_TTY)
 
-static inline int tx_put(char data) {
 
-	int tail;
+static void fifo_init(fifo_t *f)
+{
+	f->head = 0;
+	f->tail = 0;
+	f->full = 0;
+}
 
-	if (uart.tx_head == uart.tx_tail && (*(uart.base + usr1) & (1 << 13))) {
+
+static inline unsigned fifo_is_full(fifo_t *f)
+{
+	return f->full;
+}
+
+
+static inline unsigned fifo_is_empty(fifo_t *f)
+{
+	return (f->head == f->tail && !f->full);
+}
+
+
+static void fifo_push(fifo_t *f, uint8_t byte)
+{
+	if (fifo_is_full(f)) {
+		/* Drop oldest element */
+		f->tail = (f->tail + 1)%FIFO_SIZE;
+	}
+
+	f->buff[f->head] = byte;
+	f->head = (f->head + 1)%FIFO_SIZE;
+
+	if (f->head == f->tail)
+		f->full = 1;
+}
+
+
+static int fifo_pop_back(fifo_t *f, uint8_t *byte)
+{
+	if (fifo_is_empty(f))
+		return -1;
+
+	if (fifo_is_full(f))
+		f->full = 0;
+
+	if (byte != NULL)
+		*byte = f->buff[f->tail];
+
+	f->tail = (f->tail + 1)%FIFO_SIZE;
+
+	return 0;
+}
+
+
+static int fifo_pop_front(fifo_t *f, uint8_t *byte)
+{
+	if (fifo_is_empty(f))
+		return -1;
+
+	if (fifo_is_full(f))
+		f->full = 0;
+
+	if (byte != NULL)
+		*byte = f->buff[f->head];
+
+	if (f->head == 0) {
+		f->head = FIFO_SIZE - 1;
+	} else {
+		f->head = f->head - 1;
+	}
+}
+
+
+static inline int tx_put(char data)
+{
+	if (fifo_is_empty(&uart.tx_fifo) && (*(uart.base + usr1) & (1 << 13))) {
 		*(uart.base + utxd) = data;
 		return 0;
 	}
 
-	if (uart.tx_full)
+	if (fifo_is_full(&uart.tx_fifo))
 		return 1;
 
-	uart.tx_buff[uart.tx_tail] = data;
-	tail = uart.tx_tail + 1;
-	uart.tx_tail = (uart.tx_tail & ~0xff) + (tail & 0xff);
+	fifo_push(&uart.tx_fifo, (uint8_t)data);
 
-	if (uart.tx_head == uart.tx_tail) {
-		uart.tx_full = 1;
-		uart.tx_tail = tail - 1;
+	if (fifo_is_full(&uart.tx_fifo))
 		return 1;
-	}
 
 	return 0;
 }
+
 
 static int uart_write(void *data, size_t size)
 {
@@ -106,7 +201,7 @@ static int uart_write(void *data, size_t size)
 
 	mutexLock(uart.lock);
 
-	while (IS_SYNC && uart.tx_head != uart.tx_tail)
+	while (IS_SYNC && !fifo_is_empty(&uart.tx_fifo))
 		condWait(uart.tx_cond, uart.lock, 0);
 
 	/* write contents of the buffer */
@@ -125,7 +220,7 @@ static int uart_write(void *data, size_t size)
 	/* enable tx ready interrupt */
 	*(uart.base + ucr1) |= 0x2000;
 
-	while (IS_SYNC && uart.tx_head != uart.tx_tail)
+	while (IS_SYNC && !fifo_is_empty(&uart.tx_fifo))
 		condWait(uart.tx_cond, uart.lock, 0);
 
 	mutexUnlock(uart.lock);
@@ -137,25 +232,22 @@ static int uart_write(void *data, size_t size)
 static int uart_read(void *data, size_t size)
 {
 	int i;
-	int head;
 
 	mutexLock(uart.lock);
 
 	for (i = 0; i < size; i++) {
 
 		/* wait for buffer to fill */
-		if (!IS_SYNC && uart.rx_head == uart.rx_tail) {
+		if (!IS_SYNC && fifo_is_empty(&uart.rx_fifo)) {
 			mutexUnlock(uart.lock);
 			return i;
 		}
 
-		while (IS_SYNC && uart.rx_head == uart.rx_tail)
+		while (IS_SYNC && fifo_is_empty(&uart.rx_fifo))
 			condWait(uart.rx_cond, uart.lock, 0);
 
 		/* read buffer */
-		*(char *)(data + i) = uart.rx_buff[uart.rx_head];
-		head = uart.rx_head + 1;
-		uart.rx_head = (uart.rx_head & ~0xff) + (head & 0xff);
+		fifo_pop_back(&uart.rx_fifo, (uint8_t*)(data + i));
 
 		if (IS_TTY && *(char *)(data + i) == 0xa) {
 			i++;
@@ -163,7 +255,7 @@ static int uart_read(void *data, size_t size)
 		}
 	}
 
-	if (IS_TTY && uart.rx_head == uart.rx_tail)
+	if (IS_TTY && fifo_is_empty(&uart.rx_fifo))
 		uart.ready = 0;
 
 	mutexUnlock(uart.lock);
@@ -172,15 +264,15 @@ static int uart_read(void *data, size_t size)
 }
 
 
-static int uart_poll_status()
+static int uart_poll_status(void)
 {
 	int revents = 0;
 
 	mutexLock(uart.lock);
 
-	if (uart.rx_head != uart.rx_tail)
+	if (!fifo_is_empty(&uart.rx_fifo))
 		revents |= POLLIN|POLLRDNORM;
-	if (uart.tx_head == uart.tx_tail)
+	if (fifo_is_empty(&uart.tx_fifo))
 		revents |= POLLOUT|POLLWRNORM;
 
 	mutexUnlock(uart.lock);
@@ -248,7 +340,7 @@ static void uart_intrthr(void *arg)
 	for (;;) {
 
 		/* wait for character or transmit data */
-		while (!(*(uart.base + usr1) & (1 << 9)) && (!(*(uart.base + usr1) & (1 << 13)) || uart.tx_head == uart.tx_tail))
+		while (!(*(uart.base + usr1) & (1 << 9)) && (!(*(uart.base + usr1) & (1 << 13)) || fifo_is_empty(&uart.tx_fifo)))
 			condWait(uart.cond, uart.lock, 0);
 
 		if (IS_TTY) {
@@ -272,16 +364,14 @@ static void uart_intrthr(void *arg)
 
 				if (c) {
 					chr++;
-					uart.rx_buff[uart.rx_tail] = c;
-					tail = uart.rx_tail + 1;
-					uart.rx_tail = (uart.rx_tail & ~0xff) + (tail & 0xff);
+					fifo_push(&uart.rx_fifo, c);
 				}
 
 				/* echo */
 				if (c == '\b') {
 					chr--;
-					tail = uart.rx_tail - 2;
-					uart.rx_tail = (uart.rx_tail & ~0xff) + (tail & 0xff);
+					fifo_pop_front(&uart.rx_fifo, NULL);
+					fifo_pop_front(&uart.rx_fifo, NULL);
 					tx_put(c);
 					tx_put(' ');
 				}
@@ -291,11 +381,8 @@ static void uart_intrthr(void *arg)
 					condSignal(uart.rx_cond);
 			}
 		} else {
-			while ((*(uart.base + usr1) & (1 << 9))) {
-				uart.rx_buff[uart.rx_tail] = *(uart.base + urxd);
-				tail = uart.rx_tail + 1;
-				uart.rx_tail = (uart.rx_tail & ~0xff) + (tail & 0xff);
-			}
+			while ((*(uart.base + usr1) & (1 << 9)))
+				fifo_push(&uart.rx_fifo, *(uart.base + urxd));
 
 			if (IS_SYNC)
 				condSignal(uart.rx_cond);
@@ -304,20 +391,18 @@ static void uart_intrthr(void *arg)
 		/* transmit */
 		*(uart.base + ufcr) |= 0x1f << 10;
 
-		while (uart.tx_head != uart.tx_tail && (*(uart.base + usr1) & (1 << 13))) {
-			*(uart.base + utxd) = uart.tx_buff[uart.tx_head];
-			head = uart.tx_head + 1;
-			uart.tx_head = (uart.tx_head & ~0xff) + (head & 0xff);
+		uint8_t byte;
+		while (!fifo_is_empty(&uart.tx_fifo) && (*(uart.base + usr1) & (1 << 13))) {
+			fifo_pop_back(&uart.tx_fifo, &byte);
+			*(uart.base + utxd) = byte;
 		}
 
-		if (uart.tx_head != uart.tx_tail) {
+		if (!fifo_is_empty(&uart.tx_fifo)) {
 			*(uart.base + ucr1) |= 0x2000;
 			*(uart.base + ufcr) |= 0xf << 10;
 		} else if (IS_SYNC || IS_COOL)
 			condSignal(uart.tx_cond);
 		//	*(uart.base + ufcr) |= 0x1f << 10;
-
-		uart.tx_full = 0;
 	}
 	mutexUnlock(uart.lock);
 }
@@ -417,6 +502,9 @@ void main(int argc, char **argv)
 	oid_t dir, root;
 	msg_t msg;
 	int err;
+
+	fifo_init(&uart.rx_fifo);
+	fifo_init(&uart.tx_fifo);
 
 	if (argc == 1) {
 		uart.mode = MODE_TTY;
