@@ -173,6 +173,8 @@ static int fifo_pop_front(fifo_t *f, uint8_t *byte)
 	} else {
 		f->head = f->head - 1;
 	}
+
+	return 0;
 }
 
 
@@ -333,8 +335,6 @@ static void uart_intrthr(void *arg)
 {
 	char c;
 	int chr = 0;
-	int tail;
-	int head;
 
 	mutexLock(uart.lock);
 	for (;;) {
