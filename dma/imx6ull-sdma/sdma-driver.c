@@ -353,7 +353,6 @@ static int sdma_intr(unsigned int intr, void *arg)
 			/* Check if channel is active and it's interrupt flag is set */
 			if (_INTR & (1 << i) && cmn->channel[i].active) {
 
-
 				/* Set BD_DONE in all buffer descriptors */
 				sdma_buffer_desc_t *current = cmn->channel[i].bd;
 				do {
@@ -547,6 +546,8 @@ static int dev_init(oid_t root)
 		msg.i.create.dir = dir;
 		msg.i.data = filename;
 		msg.i.size = strlen(filename) + 1;
+		msg.o.data = NULL;
+		msg.o.size = 0;
 
 		if ((res = msgSend(root.port, &msg)) < 0 || msg.o.create.err != EOK) {
 			log_error("could not create %s/%s (res=%d, err=%d)", dirname, filename, res, msg.o.create.err);
