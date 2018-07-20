@@ -59,173 +59,173 @@
 
 /* Channel Control Block */
 struct __attribute__((packed)) sdma_channel_ctrl_s {
-    addr_t current_bd; /* Current buffer descriptor pointer */
-    addr_t base_bd; /* Base buffer descriptor pointer */
-    uint32_t channel_desc;
-    uint32_t status;
+	addr_t current_bd; /* Current buffer descriptor pointer */
+	addr_t base_bd; /* Base buffer descriptor pointer */
+	uint32_t channel_desc;
+	uint32_t status;
 };
 
 typedef struct sdma_channel_ctrl_s sdma_channel_ctrl_t;
 
 typedef struct __attribute__((packed)) sdma_arm_regs_s {
-    uint32_t MC0PTR;
-    uint32_t INTR;
-    uint32_t STOP_STAT;
-    uint32_t HSTART;
-    uint32_t EVTOVR;
-    uint32_t DSPOVR;
-    uint32_t HOSTOVR;
-    uint32_t EVTPEND;
-    uint32_t reserved0;
-    uint32_t RESET;
-    uint32_t EVTERR;
-    uint32_t INTRMASK;
-    uint32_t PSW;
-    uint32_t EVTERRDBG;
-    uint32_t CONFIG;
-    uint32_t SDMA_LOCK;
-    uint32_t ONCE_ENB;
-    uint32_t ONCE_DATA;
-    uint32_t ONCE_INSTR;
-    uint32_t ONCE_STAT;
-    uint32_t ONCE_CMD;
-    uint32_t reserved1;
-    uint32_t ILLINSTRADDR;
-    uint32_t CHN0ADDR;
-    uint32_t EVT_MIRROR;
-    uint32_t EVT_MIRROR2;
-    uint32_t reserved2[2];
-    uint32_t XTRIG_CONF1;
-    uint32_t XTRIG_CONF2;
-    uint32_t reserved3[34];
-    uint32_t SDMA_CHNPRI[32];
-    uint32_t reserved4[32];
-    uint32_t CHNENBL[48];
+	uint32_t MC0PTR;
+	uint32_t INTR;
+	uint32_t STOP_STAT;
+	uint32_t HSTART;
+	uint32_t EVTOVR;
+	uint32_t DSPOVR;
+	uint32_t HOSTOVR;
+	uint32_t EVTPEND;
+	uint32_t reserved0;
+	uint32_t RESET;
+	uint32_t EVTERR;
+	uint32_t INTRMASK;
+	uint32_t PSW;
+	uint32_t EVTERRDBG;
+	uint32_t CONFIG;
+	uint32_t SDMA_LOCK;
+	uint32_t ONCE_ENB;
+	uint32_t ONCE_DATA;
+	uint32_t ONCE_INSTR;
+	uint32_t ONCE_STAT;
+	uint32_t ONCE_CMD;
+	uint32_t reserved1;
+	uint32_t ILLINSTRADDR;
+	uint32_t CHN0ADDR;
+	uint32_t EVT_MIRROR;
+	uint32_t EVT_MIRROR2;
+	uint32_t reserved2[2];
+	uint32_t XTRIG_CONF1;
+	uint32_t XTRIG_CONF2;
+	uint32_t reserved3[34];
+	uint32_t SDMA_CHNPRI[32];
+	uint32_t reserved4[32];
+	uint32_t CHNENBL[48];
 } sdma_arm_regs_t;
 
 /* Context Switching Mode */
 typedef enum {
-    sdma_csm__static                = 0x0,
-    sdma_csm__dynamic_low_power     = 0x1,
-    sdma_csm__dynamic_no_loop       = 0x2,
-    sdma_csm__dynamic               = 0x3,
+	sdma_csm__static                = 0x0,
+	sdma_csm__dynamic_low_power     = 0x1,
+	sdma_csm__dynamic_no_loop       = 0x2,
+	sdma_csm__dynamic               = 0x3,
 } sdma_csm_t;
 
 typedef struct {
-    int active;
-    int auto_bd_done;
+	int active;
+	int auto_bd_done;
 
-    sdma_buffer_desc_t *bd;
-    addr_t bd_paddr;
+	sdma_buffer_desc_t *bd;
+	addr_t bd_paddr;
 
-    id_t file_id;
+	id_t file_id;
 
-    handle_t intr_cond;
-    unsigned intr_cnt;
+	handle_t intr_cond;
+	unsigned intr_cnt;
 } sdma_channel_t;
 
 struct driver_common_s
 {
-    char stack[NUM_OF_WORKER_THREADS][WORKER_THD_STACK] __attribute__ ((aligned(8)));
+	char stack[NUM_OF_WORKER_THREADS][WORKER_THD_STACK] __attribute__ ((aligned(8)));
 
-    uint32_t port;
+	uint32_t port;
 
-    sdma_channel_t channel[NUM_OF_SDMA_CHANNELS];
-    sdma_channel_ctrl_t *ccb; /* Pointer to channel control block array */
+	sdma_channel_t channel[NUM_OF_SDMA_CHANNELS];
+	sdma_channel_ctrl_t *ccb; /* Pointer to channel control block array */
 
-    /* Temporary buffer (uncached, with known physical address) for
-     * loading/dumping contexts, scripts etc. */
-    size_t tmp_size;
-    void *tmp;
-    addr_t tmp_paddr;
+	/* Temporary buffer (uncached, with known physical address) for
+	 * loading/dumping contexts, scripts etc. */
+	size_t tmp_size;
+	void *tmp;
+	addr_t tmp_paddr;
 
-    volatile sdma_arm_regs_t *regs;
+	volatile sdma_arm_regs_t *regs;
 
-    handle_t intr_cond;
-    handle_t lock;
+	handle_t intr_cond;
+	handle_t lock;
 
-    addr_t ocram_next;
+	addr_t ocram_next;
 } common;
 
 #define SDMA_CONFIG_CSM_MASK                    (0b11)
 
 static void sdma_set_context_switching_mode(sdma_csm_t csm)
 {
-    common.regs->CONFIG &= ~SDMA_CONFIG_CSM_MASK;
-    common.regs->CONFIG |= csm;
+	common.regs->CONFIG &= ~SDMA_CONFIG_CSM_MASK;
+	common.regs->CONFIG |= csm;
 }
 
 static void sdma_enable_channel(u8 channel_id)
 {
-    common.channel[channel_id].active = 1;
-    common.regs->HSTART = (1 << channel_id);
+	common.channel[channel_id].active = 1;
+	common.regs->HSTART = (1 << channel_id);
 }
 
 static void __attribute__((unused)) sdma_disable_channel(u8 channel_id)
 {
-    common.regs->HSTART &= ~(1 << channel_id);
-    common.channel[channel_id].active = 0;
+	common.regs->HSTART &= ~(1 << channel_id);
+	common.channel[channel_id].active = 0;
 }
 
 static int sdma_run_channel0_cmd(uint16_t count,
-                                 uint8_t command,
-                                 uint32_t buffer_addr,
-                                 uint32_t ext_buffer_addr)
+								 uint8_t command,
+								 uint32_t buffer_addr,
+								 uint32_t ext_buffer_addr)
 {
-    common.channel[0].bd->count = count;
-    common.channel[0].bd->flags = SDMA_BD_DONE | SDMA_BD_WRAP;
-    common.channel[0].bd->command = command;
-    common.channel[0].bd->buffer_addr = buffer_addr;
-    common.channel[0].bd->ext_buffer_addr = ext_buffer_addr;
+	common.channel[0].bd->count = count;
+	common.channel[0].bd->flags = SDMA_BD_DONE | SDMA_BD_WRAP;
+	common.channel[0].bd->command = command;
+	common.channel[0].bd->buffer_addr = buffer_addr;
+	common.channel[0].bd->ext_buffer_addr = ext_buffer_addr;
 
-    sdma_enable_channel(0);
+	sdma_enable_channel(0);
 
-    /* Wait until HE bit is cleared */
-    unsigned tries = 100;
-    while (common.regs->STOP_STAT & 1) {
-        if (--tries == 0)
-            return -ETIME;
-        usleep(1000);
-    }
+	/* Wait until HE bit is cleared */
+	unsigned tries = 100;
+	while (common.regs->STOP_STAT & 1) {
+		if (--tries == 0)
+			return -ETIME;
+		usleep(1000);
+	}
 
-    /* After channel 0 was used at least once, we can enable dynamic context
-     * switching */
-    sdma_set_context_switching_mode(sdma_csm__dynamic);
+	/* After channel 0 was used at least once, we can enable dynamic context
+	 * switching */
+	sdma_set_context_switching_mode(sdma_csm__dynamic);
 
-    return EOK;
+	return EOK;
 }
 
 #define CHNPRIn_PRIORITY_MASK                   (0b111)
 
 static void sdma_set_channel_priority(uint8_t channel_id, uint8_t priority)
 {
-    common.regs->SDMA_CHNPRI[channel_id] &= ~CHNPRIn_PRIORITY_MASK;
-    common.regs->SDMA_CHNPRI[channel_id] |= priority & CHNPRIn_PRIORITY_MASK;
+	common.regs->SDMA_CHNPRI[channel_id] &= ~CHNPRIn_PRIORITY_MASK;
+	common.regs->SDMA_CHNPRI[channel_id] |= priority & CHNPRIn_PRIORITY_MASK;
 }
 
 static int sdma_context_load(uint8_t channel_id, sdma_context_t *context)
 {
-    memcpy(common.tmp, context, sizeof(sdma_context_t));
-    return sdma_run_channel0_cmd(sizeof(sdma_context_t)/4,
-                                 SDMA_CMD_C0_SETCTX(channel_id),
-                                 common.tmp_paddr,
-                                 0);
+	memcpy(common.tmp, context, sizeof(sdma_context_t));
+	return sdma_run_channel0_cmd(sizeof(sdma_context_t)/4,
+								 SDMA_CMD_C0_SETCTX(channel_id),
+								 common.tmp_paddr,
+								 0);
 }
 
 static int sdma_context_dump(uint8_t channel_id, sdma_context_t *context)
 {
-    int res;
+	int res;
 
-    res = sdma_run_channel0_cmd(sizeof(sdma_context_t)/4,
-                                SDMA_CMD_C0_GETCTX(channel_id),
-                                common.tmp_paddr,
-                                0);
-    if (res < 0)
-        return res;
+	res = sdma_run_channel0_cmd(sizeof(sdma_context_t)/4,
+								SDMA_CMD_C0_GETCTX(channel_id),
+								common.tmp_paddr,
+								0);
+	if (res < 0)
+		return res;
 
-    memcpy(context, common.tmp, sizeof(sdma_context_t));
+	memcpy(context, common.tmp, sizeof(sdma_context_t));
 
-    return EOK;
+	return EOK;
 }
 
 #define OCRAM_BASE              (0x900000)
@@ -233,646 +233,646 @@ static int sdma_context_dump(uint8_t channel_id, sdma_context_t *context)
 
 addr_t sdma_ocram_alloc(size_t size)
 {
-    unsigned n = (size + SIZE_PAGE - 1)/SIZE_PAGE;
-    addr_t paddr = 0;
+	unsigned n = (size + SIZE_PAGE - 1)/SIZE_PAGE;
+	addr_t paddr = 0;
 
-    if (common.ocram_next + n*SIZE_PAGE <= OCRAM_END) {
-        paddr = common.ocram_next;
-        common.ocram_next += n*SIZE_PAGE;
-    }
+	if (common.ocram_next + n*SIZE_PAGE <= OCRAM_END) {
+		paddr = common.ocram_next;
+		common.ocram_next += n*SIZE_PAGE;
+	}
 
-    return paddr;
+	return paddr;
 }
 
 void *sdma_alloc_uncached(size_t size, addr_t *paddr, int ocram)
 {
-    uint32_t n = (size + SIZE_PAGE - 1)/SIZE_PAGE;
-    oid_t *oid = OID_NULL;
-    addr_t _paddr = 0;
+	uint32_t n = (size + SIZE_PAGE - 1)/SIZE_PAGE;
+	oid_t *oid = OID_NULL;
+	addr_t _paddr = 0;
 
-    if (ocram) {
-        oid = OID_PHYSMEM;
-        _paddr = sdma_ocram_alloc(n*SIZE_PAGE);
-        if (!_paddr)
-            return NULL;
-    }
+	if (ocram) {
+		oid = OID_PHYSMEM;
+		_paddr = sdma_ocram_alloc(n*SIZE_PAGE);
+		if (!_paddr)
+			return NULL;
+	}
 
-    void *vaddr = mmap(NULL, n*SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_UNCACHED, oid, _paddr);
-    if (vaddr == MAP_FAILED)
-        return NULL;
+	void *vaddr = mmap(NULL, n*SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_UNCACHED, oid, _paddr);
+	if (vaddr == MAP_FAILED)
+		return NULL;
 
-    if (!ocram)
-        _paddr = va2pa(vaddr);
+	if (!ocram)
+		_paddr = va2pa(vaddr);
 
-    if (paddr != NULL)
-        *paddr = _paddr;
+	if (paddr != NULL)
+		*paddr = _paddr;
 
-    return vaddr;
+	return vaddr;
 }
 
 static int sdma_free_uncached(void *vaddr, size_t size)
 {
-    unsigned n = (size + SIZE_PAGE - 1)/SIZE_PAGE;
+	unsigned n = (size + SIZE_PAGE - 1)/SIZE_PAGE;
 
-    return munmap(vaddr, n*SIZE_PAGE);
+	return munmap(vaddr, n*SIZE_PAGE);
 }
 
 static int __attribute__((unused)) sdma_program_memory_dump(uint16_t addr,
-                                                            addr_t buffer,
-                                                            size_t size)
+															addr_t buffer,
+															size_t size)
 {
-    return sdma_run_channel0_cmd(size, SDMA_CMD_C0_GET_PM, buffer, addr);
+	return sdma_run_channel0_cmd(size, SDMA_CMD_C0_GET_PM, buffer, addr);
 }
 
 static int __attribute__((unused)) sdma_program_memory_write(uint16_t addr,
-                                                             addr_t buffer,
-                                                             size_t size)
+															 addr_t buffer,
+															 size_t size)
 {
-    return sdma_run_channel0_cmd(size, SDMA_CMD_C0_SET_PM, buffer, addr);
+	return sdma_run_channel0_cmd(size, SDMA_CMD_C0_SET_PM, buffer, addr);
 }
 
 static int sdma_data_memory_dump(uint16_t addr,
-                                 addr_t buffer,
-                                 size_t size)
+								 addr_t buffer,
+								 size_t size)
 {
-    return sdma_run_channel0_cmd(size, SDMA_CMD_C0_GET_DM, buffer, addr);
+	return sdma_run_channel0_cmd(size, SDMA_CMD_C0_GET_DM, buffer, addr);
 }
 
 static int sdma_data_memory_write(uint16_t addr,
-                                  addr_t buffer,
-                                  size_t size)
+								  addr_t buffer,
+								  size_t size)
 {
-    return sdma_run_channel0_cmd(size, SDMA_CMD_C0_SET_DM, buffer, addr);
+	return sdma_run_channel0_cmd(size, SDMA_CMD_C0_SET_DM, buffer, addr);
 }
 
 static void sdma_reset(void)
 {
-    uint32_t i, status;
+	uint32_t i, status;
 
-    common.regs->MC0PTR = 0;
+	common.regs->MC0PTR = 0;
 
-    /* Clear channel interrupt status */
-    status = common.regs->INTR;
-    common.regs->INTR = status;
+	/* Clear channel interrupt status */
+	status = common.regs->INTR;
+	common.regs->INTR = status;
 
-    /* Clear channel stop status */
-    status = common.regs->STOP_STAT;
-    common.regs->STOP_STAT = status;
+	/* Clear channel stop status */
+	status = common.regs->STOP_STAT;
+	common.regs->STOP_STAT = status;
 
-    common.regs->EVTOVR = 0;
-    common.regs->HOSTOVR = 0;
-    common.regs->DSPOVR = 0xffffffff;
+	common.regs->EVTOVR = 0;
+	common.regs->HOSTOVR = 0;
+	common.regs->DSPOVR = 0xffffffff;
 
-    /* Clear channel pending status */
-    common.regs->EVTPEND = common.regs->EVTPEND;
+	/* Clear channel pending status */
+	common.regs->EVTPEND = common.regs->EVTPEND;
 
-    common.regs->INTRMASK = 0;
+	common.regs->INTRMASK = 0;
 
-    /* Initialize DMA request-channels matrix with zeros */
-    for (i = 0; i < NUM_OF_SDMA_REQUESTS; i++)
-        common.regs->CHNENBL[i] = 0;
+	/* Initialize DMA request-channels matrix with zeros */
+	for (i = 0; i < NUM_OF_SDMA_REQUESTS; i++)
+		common.regs->CHNENBL[i] = 0;
 
-    /* Set the priority of each channel to zero */
-    for (i = 0; i < NUM_OF_SDMA_CHANNELS; i++)
-        common.regs->SDMA_CHNPRI[i] = 0;
+	/* Set the priority of each channel to zero */
+	for (i = 0; i < NUM_OF_SDMA_CHANNELS; i++)
+		common.regs->SDMA_CHNPRI[i] = 0;
 }
 
 static int sdma_intr(unsigned int intr, void *arg)
 {
-    uint32_t _INTR;
-    struct driver_common_s *cmn = (struct driver_common_s*)arg;
+	uint32_t _INTR;
+	struct driver_common_s *cmn = (struct driver_common_s*)arg;
 
-    while ((_INTR = cmn->regs->INTR) != 0) {
+	while ((_INTR = cmn->regs->INTR) != 0) {
 
-        /* Clear interrupt flags */
-        cmn->regs->INTR = _INTR;
+		/* Clear interrupt flags */
+		cmn->regs->INTR = _INTR;
 
-        unsigned i;
-        for (i = 1; i < NUM_OF_SDMA_CHANNELS; i++) {
+		unsigned i;
+		for (i = 1; i < NUM_OF_SDMA_CHANNELS; i++) {
 
-            /* Check if channel is active and it's interrupt flag is set */
-            if (_INTR & (1 << i) && cmn->channel[i].active) {
+			/* Check if channel is active and it's interrupt flag is set */
+			if (_INTR & (1 << i) && cmn->channel[i].active) {
 
 
-                /* Set BD_DONE in all buffer descriptors */
-                sdma_buffer_desc_t *current = cmn->channel[i].bd;
-                do {
-                    if (!(current->flags & SDMA_BD_DONE))
-                        current->flags |= SDMA_BD_DONE;
-                } while (!((current++)->flags & SDMA_BD_WRAP));
+				/* Set BD_DONE in all buffer descriptors */
+				sdma_buffer_desc_t *current = cmn->channel[i].bd;
+				do {
+					if (!(current->flags & SDMA_BD_DONE))
+						current->flags |= SDMA_BD_DONE;
+				} while (!((current++)->flags & SDMA_BD_WRAP));
 
-                /* Increase interrupt count to notify dispatcher that interrupt for
-                 * this channel occurred */
-                cmn->channel[i].intr_cnt++;
-            }
-        }
-    }
+				/* Increase interrupt count to notify dispatcher that interrupt for
+				 * this channel occurred */
+				cmn->channel[i].intr_cnt++;
+			}
+		}
+	}
 
-    return 0;
+	return 0;
 }
 
 static int sdma_init(void)
 {
-    common.ccb = NULL;
-    common.channel[0].bd = NULL;
-    common.tmp = NULL;
+	common.ccb = NULL;
+	common.channel[0].bd = NULL;
+	common.tmp = NULL;
 
-    const addr_t sdma_paddr = 0x20ec000;
-    common.regs = mmap(NULL, SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, sdma_paddr);
-    if (common.regs == MAP_FAILED)
-        goto fail;
+	const addr_t sdma_paddr = 0x20ec000;
+	common.regs = mmap(NULL, SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, sdma_paddr);
+	if (common.regs == MAP_FAILED)
+		goto fail;
 
-    platformctl_t pctl;
-    pctl.action = pctl_set;
-    pctl.type = pctl_devclock;
-    pctl.devclock.dev = pctl_clk_sdma;
-    pctl.devclock.state = 0b11;
-    platformctl(&pctl);
+	platformctl_t pctl;
+	pctl.action = pctl_set;
+	pctl.type = pctl_devclock;
+	pctl.devclock.dev = pctl_clk_sdma;
+	pctl.devclock.state = 0b11;
+	platformctl(&pctl);
 
-    sdma_reset();
+	sdma_reset();
 
-    /* Static context switching */
-    common.regs->CONFIG = 0;
+	/* Static context switching */
+	common.regs->CONFIG = 0;
 
-    /* Set context size to 32 bytes (set SMSZ bit) */
-    common.regs->CHN0ADDR |= 1 << 14;
+	/* Set context size to 32 bytes (set SMSZ bit) */
+	common.regs->CHN0ADDR |= 1 << 14;
 
-    addr_t ccb_paddr;
-    common.ccb = sdma_alloc_uncached(sizeof(sdma_channel_ctrl_t) * NUM_OF_SDMA_CHANNELS, &ccb_paddr, 1);
-    if (common.ccb == NULL)
-        goto fail;
+	addr_t ccb_paddr;
+	common.ccb = sdma_alloc_uncached(sizeof(sdma_channel_ctrl_t) * NUM_OF_SDMA_CHANNELS, &ccb_paddr, 1);
+	if (common.ccb == NULL)
+		goto fail;
 
-    memset(common.ccb, 0, sizeof(sdma_channel_ctrl_t) * NUM_OF_SDMA_CHANNELS);
+	memset(common.ccb, 0, sizeof(sdma_channel_ctrl_t) * NUM_OF_SDMA_CHANNELS);
 
-    common.channel[0].bd = sdma_alloc_uncached(sizeof(sdma_buffer_desc_t), &common.channel[0].bd_paddr, 0);
-    if (common.channel[0].bd == NULL)
-        goto fail;
+	common.channel[0].bd = sdma_alloc_uncached(sizeof(sdma_buffer_desc_t), &common.channel[0].bd_paddr, 0);
+	if (common.channel[0].bd == NULL)
+		goto fail;
 
-    common.ccb[0].base_bd = common.channel[0].bd_paddr;
-    common.ccb[0].current_bd = common.channel[0].bd_paddr;
+	common.ccb[0].base_bd = common.channel[0].bd_paddr;
+	common.ccb[0].current_bd = common.channel[0].bd_paddr;
 
-    common.regs->MC0PTR = ccb_paddr;
+	common.regs->MC0PTR = ccb_paddr;
 
-    /* Ignore DMA requests for channel 0 (channel 0 will be triggered by setting HE[0] bit) */
-    common.regs->HOSTOVR = 0;
-    common.regs->EVTOVR = 1;
+	/* Ignore DMA requests for channel 0 (channel 0 will be triggered by setting HE[0] bit) */
+	common.regs->HOSTOVR = 0;
+	common.regs->EVTOVR = 1;
 
-    sdma_set_channel_priority(0, SDMA_CHANNEL_PRIORITY_MAX);
+	sdma_set_channel_priority(0, SDMA_CHANNEL_PRIORITY_MAX);
 
-    common.tmp_size = SIZE_PAGE;
-    common.tmp = sdma_alloc_uncached(common.tmp_size, &common.tmp_paddr, 0);
-    if (common.tmp == NULL)
-        goto fail;
+	common.tmp_size = SIZE_PAGE;
+	common.tmp = sdma_alloc_uncached(common.tmp_size, &common.tmp_paddr, 0);
+	if (common.tmp == NULL)
+		goto fail;
 
-    unsigned i;
-    for (i = 0; i < NUM_OF_SDMA_CHANNELS; i++)
-        common.channel[i].active = 0;
+	unsigned i;
+	for (i = 0; i < NUM_OF_SDMA_CHANNELS; i++)
+		common.channel[i].active = 0;
 
-    unsigned handle;
-    interrupt(32 + 2, sdma_intr, &common, common.intr_cond, &handle);
+	unsigned handle;
+	interrupt(32 + 2, sdma_intr, &common, common.intr_cond, &handle);
 
-    return 0;
+	return 0;
 
 fail:
 
-    if (common.ccb != NULL) sdma_free_uncached(common.ccb, sizeof(sdma_channel_ctrl_t) * NUM_OF_SDMA_CHANNELS);
-    if (common.channel[0].bd != NULL) sdma_free_uncached(common.channel[0].bd, sizeof(sdma_buffer_desc_t));
-    if (common.tmp != NULL) sdma_free_uncached(common.tmp, SIZE_PAGE);
+	if (common.ccb != NULL) sdma_free_uncached(common.ccb, sizeof(sdma_channel_ctrl_t) * NUM_OF_SDMA_CHANNELS);
+	if (common.channel[0].bd != NULL) sdma_free_uncached(common.channel[0].bd, sizeof(sdma_buffer_desc_t));
+	if (common.tmp != NULL) sdma_free_uncached(common.tmp, SIZE_PAGE);
 
-    return -1;
+	return -1;
 }
 
 static int sdma_set_bd_array(uint8_t channel_id, addr_t paddr, unsigned cnt)
 {
-    sdma_buffer_desc_t *bd;
+	sdma_buffer_desc_t *bd;
 
-    size_t size = cnt * sizeof(sdma_buffer_desc_t);
-    unsigned n = (size + SIZE_PAGE - 1)/SIZE_PAGE;
-    bd = mmap(NULL, n*SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, paddr);
-    if (bd == MAP_FAILED)
-        return -1;
+	size_t size = cnt * sizeof(sdma_buffer_desc_t);
+	unsigned n = (size + SIZE_PAGE - 1)/SIZE_PAGE;
+	bd = mmap(NULL, n*SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, paddr);
+	if (bd == MAP_FAILED)
+		return -1;
 
-    common.channel[channel_id].bd = bd;
-    common.channel[channel_id].bd_paddr = paddr;
+	common.channel[channel_id].bd = bd;
+	common.channel[channel_id].bd_paddr = paddr;
 
-    common.ccb[channel_id].base_bd = paddr;
-    common.ccb[channel_id].current_bd = paddr;
+	common.ccb[channel_id].base_bd = paddr;
+	common.ccb[channel_id].current_bd = paddr;
 
-    /* TODO: mmap buffers */
+	/* TODO: mmap buffers */
 
-    /* TODO: Error handlig (unmap what was already mapped) */
+	/* TODO: Error handlig (unmap what was already mapped) */
 
-    return 0;
+	return 0;
 }
 
 static int sdma_channel_configure(uint8_t channel_id, sdma_channel_config_t *cfg)
 {
-    int res;
+	int res;
 
-    if (cfg->priority >= SDMA_CHANNEL_PRIORITY_MAX) {
-        log_error("unsupported channel priority");
-        return -1;
-    }
+	if (cfg->priority >= SDMA_CHANNEL_PRIORITY_MAX) {
+		log_error("unsupported channel priority");
+		return -1;
+	}
 
-    common.regs->DSPOVR |= 1 << channel_id;
+	common.regs->DSPOVR |= 1 << channel_id;
 
-    if (cfg->trig == sdma_trig__event) {
-        if (cfg->event >= NUM_OF_SDMA_REQUESTS) {
-            log_error("event number is too high (%d)", cfg->event);
-            return -1;
-        }
+	if (cfg->trig == sdma_trig__event) {
+		if (cfg->event >= NUM_OF_SDMA_REQUESTS) {
+			log_error("event number is too high (%d)", cfg->event);
+			return -1;
+		}
 
-        common.regs->CHNENBL[cfg->event] |= 1 << channel_id;
+		common.regs->CHNENBL[cfg->event] |= 1 << channel_id;
 
-        common.regs->EVTOVR &= ~(1 << channel_id);
-        common.regs->HOSTOVR |= 1 << channel_id;
+		common.regs->EVTOVR &= ~(1 << channel_id);
+		common.regs->HOSTOVR |= 1 << channel_id;
 
-    } else {
-        common.regs->EVTOVR |= 1 << channel_id;
-        common.regs->HOSTOVR &= ~(1 << channel_id);
-    }
+	} else {
+		common.regs->EVTOVR |= 1 << channel_id;
+		common.regs->HOSTOVR &= ~(1 << channel_id);
+	}
 
-    sdma_set_channel_priority(channel_id, cfg->priority);
+	sdma_set_channel_priority(channel_id, cfg->priority);
 
-    if ((res = sdma_set_bd_array(channel_id, cfg->bd_paddr, cfg->bd_cnt)) < 0) {
-        log_error("failed to set buffer descriptor array (%d)", res);
-        return -1;
-    }
+	if ((res = sdma_set_bd_array(channel_id, cfg->bd_paddr, cfg->bd_cnt)) < 0) {
+		log_error("failed to set buffer descriptor array (%d)", res);
+		return -1;
+	}
 
-    return 0;
+	return 0;
 }
 
 static int dev_init(oid_t root)
 {
-    int i, res;
-    oid_t dir;
-    msg_t msg;
-    const char *dirname = "/dev/sdma";
-    char filename[5];
+	int i, res;
+	oid_t dir;
+	msg_t msg;
+	const char *dirname = "/dev/sdma";
+	char filename[5];
 
-    res = portCreate(&common.port);
-    if (res != EOK) {
-        log_error("could not create port: %d", res);
-        return -1;
-    }
+	res = portCreate(&common.port);
+	if (res != EOK) {
+		log_error("could not create port: %d", res);
+		return -1;
+	}
 
-    res = mkdir("/dev", 0);
-    if (res < 0 && res != -EEXIST) {
-        log_error("mkdir /dev failed (%d)", res);
-        return -1;
-    }
+	res = mkdir("/dev", 0);
+	if (res < 0 && res != -EEXIST) {
+		log_error("mkdir /dev failed (%d)", res);
+		return -1;
+	}
 
-    res = mkdir(dirname, 0);
-    if (res < 0 && res != -EEXIST) {
-        log_error("mkdir %s failed (%d)", dirname, res);
-        return -1;
-    }
+	res = mkdir(dirname, 0);
+	if (res < 0 && res != -EEXIST) {
+		log_error("mkdir %s failed (%d)", dirname, res);
+		return -1;
+	}
 
-    if ((res = lookup(dirname, &dir)) < 0) {
-        log_error("%s lookup failed (%d)", dirname, res);
-        return -1;
-    }
+	if ((res = lookup(dirname, &dir)) < 0) {
+		log_error("%s lookup failed (%d)", dirname, res);
+		return -1;
+	}
 
-    /* Start from channel 1. Channel 0 is used for loading/dumping context,
-     * scripts etc. */
-    for (i = 1; i < NUM_OF_SDMA_CHANNELS; i++) {
+	/* Start from channel 1. Channel 0 is used for loading/dumping context,
+	 * scripts etc. */
+	for (i = 1; i < NUM_OF_SDMA_CHANNELS; i++) {
 
-        res = snprintf(filename, sizeof(filename), "ch%02u", (unsigned)i);
+		res = snprintf(filename, sizeof(filename), "ch%02u", (unsigned)i);
 
-        msg.type = mtCreate;
-        msg.i.create.type = otDev;
-        msg.i.create.mode = 0;
-        msg.i.create.dev.port = common.port;
-        msg.i.create.dev.id = i;
-        msg.i.create.dir = dir;
-        msg.i.data = filename;
-        msg.i.size = strlen(filename) + 1;
+		msg.type = mtCreate;
+		msg.i.create.type = otDev;
+		msg.i.create.mode = 0;
+		msg.i.create.dev.port = common.port;
+		msg.i.create.dev.id = i;
+		msg.i.create.dir = dir;
+		msg.i.data = filename;
+		msg.i.size = strlen(filename) + 1;
 
-        if ((res = msgSend(root.port, &msg)) < 0 || msg.o.create.err != EOK) {
-            log_error("could not create %s/%s (res=%d, err=%d)", dirname, filename, res, msg.o.create.err);
-            return -1;
-        }
+		if ((res = msgSend(root.port, &msg)) < 0 || msg.o.create.err != EOK) {
+			log_error("could not create %s/%s (res=%d, err=%d)", dirname, filename, res, msg.o.create.err);
+			return -1;
+		}
 
-        common.channel[i].file_id = msg.i.create.dev.id;
-    }
+		common.channel[i].file_id = msg.i.create.dev.id;
+	}
 
-    log_info("device initialized");
+	log_info("device initialized");
 
-    return 0;
+	return 0;
 }
 
 static int dev_open(oid_t *oid, int flags)
 {
-    return EOK;
+	return EOK;
 }
 
 static int dev_close(oid_t *oid, int flags)
 {
-    /* TODO: unmap buffer descriptor array and buffers */
+	/* TODO: unmap buffer descriptor array and buffers */
 
-    return EOK;
+	return EOK;
 }
 
 static int oid_to_channel(oid_t *oid)
 {
-    return oid->id;
+	return oid->id;
 }
 
 static int dev_read(oid_t *oid, void *data, size_t size)
 {
-    int channel = oid_to_channel(oid);
-    unsigned intr_cnt;
+	int channel = oid_to_channel(oid);
+	unsigned intr_cnt;
 
-    mutexLock(common.lock);
-    condWait(common.channel[channel].intr_cond, common.lock, 0);
+	mutexLock(common.lock);
+	condWait(common.channel[channel].intr_cond, common.lock, 0);
 
-    intr_cnt = common.channel[channel].intr_cnt;
+	intr_cnt = common.channel[channel].intr_cnt;
 
-    mutexUnlock(common.lock);
+	mutexUnlock(common.lock);
 
-    if (data != NULL && size == sizeof(unsigned)) {
-        memcpy(data, &intr_cnt, sizeof(unsigned));
-    } else if (data != NULL) {
-        log_error("dev_read: invalid size");
-        return -EIO;
-    }
+	if (data != NULL && size == sizeof(unsigned)) {
+		memcpy(data, &intr_cnt, sizeof(unsigned));
+	} else if (data != NULL) {
+		log_error("dev_read: invalid size");
+		return -EIO;
+	}
 
-    return EOK;
+	return EOK;
 }
 
 static int dev_ctl(msg_t *msg)
 {
-    int channel, res;
-    sdma_dev_ctl_t dev_ctl;
-    sdma_context_t *context;
+	int channel, res;
+	sdma_dev_ctl_t dev_ctl;
+	sdma_context_t *context;
 
-    memcpy(&dev_ctl, msg->o.raw, sizeof(sdma_dev_ctl_t));
+	memcpy(&dev_ctl, msg->o.raw, sizeof(sdma_dev_ctl_t));
 
-    if ((channel = oid_to_channel(&dev_ctl.oid)) < 0) {
-        log_error("dev_ctl: failed to get channel corresponding to this oid");
-        return -EIO;
-    }
+	if ((channel = oid_to_channel(&dev_ctl.oid)) < 0) {
+		log_error("dev_ctl: failed to get channel corresponding to this oid");
+		return -EIO;
+	}
 
-    switch (dev_ctl.type) {
-    case sdma_dev_ctl__channel_cfg:
-        if ((res = sdma_channel_configure(channel, &dev_ctl.cfg)) < 0) {
-            log_error("dev_ctl: an error occurred while configuring channel %d (%d)", channel, res);
-            return -EIO;
-        }
-        return EOK;
+	switch (dev_ctl.type) {
+		case sdma_dev_ctl__channel_cfg:
+			if ((res = sdma_channel_configure(channel, &dev_ctl.cfg)) < 0) {
+				log_error("dev_ctl: an error occurred while configuring channel %d (%d)", channel, res);
+				return -EIO;
+			}
+			return EOK;
 
-    case sdma_dev_ctl__data_mem_write:
-        if (msg->o.size != dev_ctl.mem.len || msg->o.size > common.tmp_size) {
-            log_error("dev_ctl: invalid size");
-            return -EIO;
-        }
-        memcpy(common.tmp, msg->o.data, msg->o.size);
-        return sdma_data_memory_write(dev_ctl.mem.addr, common.tmp_paddr, dev_ctl.mem.len);
+		case sdma_dev_ctl__data_mem_write:
+			if (msg->o.size != dev_ctl.mem.len || msg->o.size > common.tmp_size) {
+				log_error("dev_ctl: invalid size");
+				return -EIO;
+			}
+			memcpy(common.tmp, msg->o.data, msg->o.size);
+			return sdma_data_memory_write(dev_ctl.mem.addr, common.tmp_paddr, dev_ctl.mem.len);
 
-    case sdma_dev_ctl__data_mem_read:
-        if (msg->o.size != dev_ctl.mem.len || msg->o.size > common.tmp_size) {
-            log_error("dev_ctl: invalid size");
-            return -EIO;
-        }
-        res = sdma_data_memory_dump(dev_ctl.mem.addr, common.tmp_paddr, dev_ctl.mem.len);
-        memcpy(msg->o.data, common.tmp, msg->o.size);
-        return res;
+		case sdma_dev_ctl__data_mem_read:
+			if (msg->o.size != dev_ctl.mem.len || msg->o.size > common.tmp_size) {
+				log_error("dev_ctl: invalid size");
+				return -EIO;
+			}
+			res = sdma_data_memory_dump(dev_ctl.mem.addr, common.tmp_paddr, dev_ctl.mem.len);
+			memcpy(msg->o.data, common.tmp, msg->o.size);
+			return res;
 
-    case sdma_dev_ctl__context_dump:
-        if (msg->o.size != sizeof(sdma_context_t)) {
-            log_error("dev_ctl: can't dump context of channel %d (invalid size)", channel);
-            return -EIO;
-        }
-        context = (sdma_context_t*)msg->o.data;
-        return sdma_context_dump(channel, context);
+		case sdma_dev_ctl__context_dump:
+			if (msg->o.size != sizeof(sdma_context_t)) {
+				log_error("dev_ctl: can't dump context of channel %d (invalid size)", channel);
+				return -EIO;
+			}
+			context = (sdma_context_t*)msg->o.data;
+			return sdma_context_dump(channel, context);
 
-    case sdma_dev_ctl__context_set:
-        if (msg->o.size != sizeof(sdma_context_t)) {
-            log_error("dev_ctl: can't set context for channel %d (invalid size)", channel);
-            return -EIO;
-        }
-        context = (sdma_context_t*)msg->o.data;
-        return sdma_context_load(channel, context);
+		case sdma_dev_ctl__context_set:
+			if (msg->o.size != sizeof(sdma_context_t)) {
+				log_error("dev_ctl: can't set context for channel %d (invalid size)", channel);
+				return -EIO;
+			}
+			context = (sdma_context_t*)msg->o.data;
+			return sdma_context_load(channel, context);
 
-    case sdma_dev_ctl__enable:
-        sdma_enable_channel(channel);
-        return EOK;
+		case sdma_dev_ctl__enable:
+			sdma_enable_channel(channel);
+			return EOK;
 
-    case sdma_dev_ctl__ocram_alloc:
-        dev_ctl.alloc.paddr = sdma_ocram_alloc(dev_ctl.alloc.size);
-        memcpy(msg->o.raw, &dev_ctl, sizeof(sdma_dev_ctl_t));
-        return EOK;
+		case sdma_dev_ctl__ocram_alloc:
+			dev_ctl.alloc.paddr = sdma_ocram_alloc(dev_ctl.alloc.size);
+			memcpy(msg->o.raw, &dev_ctl, sizeof(sdma_dev_ctl_t));
+			return EOK;
 
-    default:
-        log_error("dev_ctl: unknown type (%d)", dev_ctl.type);
-        return -ENOSYS;
-    }
+		default:
+			log_error("dev_ctl: unknown type (%d)", dev_ctl.type);
+			return -ENOSYS;
+	}
 
-    return EOK;
+	return EOK;
 }
 
 static void worker_thread(void *arg)
 {
-    msg_t msg;
-    unsigned rid;
+	msg_t msg;
+	unsigned rid;
 
-    (void)arg;
+	(void)arg;
 
-    while (1) {
-        if (msgRecv(common.port, &msg, &rid) < 0)
-            continue;
+	while (1) {
+		if (msgRecv(common.port, &msg, &rid) < 0)
+			continue;
 
-        switch (msg.type) {
-            case mtOpen:
-                msg.o.io.err = dev_open(&msg.i.openclose.oid, msg.i.openclose.flags);
-                break;
+		switch (msg.type) {
+			case mtOpen:
+				msg.o.io.err = dev_open(&msg.i.openclose.oid, msg.i.openclose.flags);
+				break;
 
-            case mtClose:
-                msg.o.io.err = dev_close(&msg.i.openclose.oid, msg.i.openclose.flags);
-                break;
+			case mtClose:
+				msg.o.io.err = dev_close(&msg.i.openclose.oid, msg.i.openclose.flags);
+				break;
 
-            case mtRead:
-                msg.o.io.err = dev_read(&msg.i.io.oid, msg.o.data, msg.o.size);
-                break;
+			case mtRead:
+				msg.o.io.err = dev_read(&msg.i.io.oid, msg.o.data, msg.o.size);
+				break;
 
-            case mtWrite:
-                msg.o.io.err = -ENOSYS;
-                break;
+			case mtWrite:
+				msg.o.io.err = -ENOSYS;
+				break;
 
-            case mtDevCtl:
-                mutexLock(common.lock);
-                msg.o.io.err = dev_ctl(&msg);
-                mutexUnlock(common.lock);
-                break;
-        }
+			case mtDevCtl:
+				mutexLock(common.lock);
+				msg.o.io.err = dev_ctl(&msg);
+				mutexUnlock(common.lock);
+				break;
+		}
 
-        msgRespond(common.port, &msg, rid);
-    }
+		msgRespond(common.port, &msg, rid);
+	}
 }
 
 static int init(oid_t root)
 {
-    int res, i;
+	int res, i;
 
-    common.ocram_next = OCRAM_BASE;
+	common.ocram_next = OCRAM_BASE;
 
-    if (mutexCreate(&common.lock) != EOK) {
-        log_error("failed to create mutex");
-        return -1;
-    }
+	if (mutexCreate(&common.lock) != EOK) {
+		log_error("failed to create mutex");
+		return -1;
+	}
 
-    if (condCreate(&common.intr_cond) != EOK) {
-        log_error("failed to create conditional variable");
-        return -1;
-    }
+	if (condCreate(&common.intr_cond) != EOK) {
+		log_error("failed to create conditional variable");
+		return -1;
+	}
 
-    for (i = 0; i < NUM_OF_SDMA_CHANNELS; i++) {
-        common.channel[i].intr_cnt = 0;
-        if (condCreate(&common.channel[i].intr_cond) != EOK) {
-            log_error("failed to create conditional variable for channel %d", i);
-            return -1;
-        }
-    }
+	for (i = 0; i < NUM_OF_SDMA_CHANNELS; i++) {
+		common.channel[i].intr_cnt = 0;
+		if (condCreate(&common.channel[i].intr_cond) != EOK) {
+			log_error("failed to create conditional variable for channel %d", i);
+			return -1;
+		}
+	}
 
-    if ((res = sdma_init()) < 0) {
-        log_error("SDMA initialization failed");
-        return res;
-    }
+	if ((res = sdma_init()) < 0) {
+		log_error("SDMA initialization failed");
+		return res;
+	}
 
-    if ((res = dev_init(root)) < 0) {
-        log_error("device initialization failed");
-        return res;
-    }
+	if ((res = dev_init(root)) < 0) {
+		log_error("device initialization failed");
+		return res;
+	}
 
-    for (i = 0; i < NUM_OF_WORKER_THREADS; i++)
-        beginthread(worker_thread, WORKER_THD_PRIO, common.stack[i], WORKER_THD_STACK, NULL);
+	for (i = 0; i < NUM_OF_WORKER_THREADS; i++)
+		beginthread(worker_thread, WORKER_THD_PRIO, common.stack[i], WORKER_THD_STACK, NULL);
 
-    return 0;
+	return 0;
 }
 
 #if 0
 static void sdma_print_debug_info(void)
 {
-    int res;
+	int res;
 
-    log_info("SDMA regs:");
-    log_debug("EVTPEND      = 0x%x", common.regs->EVTPEND);
-    log_debug("EVT_MIRROR   = 0x%x", common.regs->EVT_MIRROR);
-    log_debug("EVT_MIRROR2  = 0x%x", common.regs->EVT_MIRROR2);
-    log_debug("EVTERRDBG    = 0x%x", common.regs->EVTERRDBG);
-    log_debug("INTR         = 0x%x", common.regs->INTR);
-    log_debug("INTRMASK     = 0x%x", common.regs->INTRMASK);
-    log_debug("PSW          = 0x%x", common.regs->PSW);
-    log_debug("ONCE_STAT    = 0x%x\n", common.regs->ONCE_STAT);
+	log_info("SDMA regs:");
+	log_debug("EVTPEND      = 0x%x", common.regs->EVTPEND);
+	log_debug("EVT_MIRROR   = 0x%x", common.regs->EVT_MIRROR);
+	log_debug("EVT_MIRROR2  = 0x%x", common.regs->EVT_MIRROR2);
+	log_debug("EVTERRDBG    = 0x%x", common.regs->EVTERRDBG);
+	log_debug("INTR         = 0x%x", common.regs->INTR);
+	log_debug("INTRMASK     = 0x%x", common.regs->INTRMASK);
+	log_debug("PSW          = 0x%x", common.regs->PSW);
+	log_debug("ONCE_STAT    = 0x%x\n", common.regs->ONCE_STAT);
 
-    unsigned i;
-    for (i = 1; i < NUM_OF_SDMA_CHANNELS; i++) {
-        if (!common.channel[i].active)
-            continue;
+	unsigned i;
+	for (i = 1; i < NUM_OF_SDMA_CHANNELS; i++) {
+		if (!common.channel[i].active)
+			continue;
 
-        log_info("Channel %u is active", i);
+		log_info("Channel %u is active", i);
 
-        log_debug("intr_cnt = %u", common.channel[i].intr_cnt);
-        log_debug("priority = %u\n", common.regs->SDMA_CHNPRI[i]);
+		log_debug("intr_cnt = %u", common.channel[i].intr_cnt);
+		log_debug("priority = %u\n", common.regs->SDMA_CHNPRI[i]);
 
-        sdma_context_t context;
-        log_debug("Dumping context...");
-        res = sdma_context_dump(i, &context);
-        if (res != EOK) {
-            log_error("Failed to dump channel context (%d)\n", res);
-        } else {
-            unsigned pc = context.state[0] & SDMA_CONTEXT_PC_MASK;
-            log_debug("pc           = 0x%x (%u)", pc, pc);
-            log_debug("state[0]     = 0x%x", context.state[0]);
-            log_debug("state[1]     = 0x%x", context.state[1]);
-            log_debug("gr[0]        = 0x%x", context.gr[0]);
-            log_debug("gr[1]        = 0x%x", context.gr[1]);
-            log_debug("gr[2]        = 0x%x", context.gr[2]);
-            log_debug("gr[3]        = 0x%x", context.gr[3]);
-            log_debug("gr[4]        = 0x%x", context.gr[4]);
-            log_debug("gr[5]        = 0x%x", context.gr[5]);
-            log_debug("gr[6]        = 0x%x", context.gr[6]);
-            log_debug("gr[7]        = 0x%x", context.gr[7]);
-            log_debug("mda          = 0x%x", context.mda);
-            log_debug("msa          = 0x%x", context.msa);
-            log_debug("ms           = 0x%x", context.ms);
-            log_debug("md           = 0x%x", context.md);
-            log_debug("pda          = 0x%x", context.pda);
-            log_debug("psa          = 0x%x", context.psa);
-            log_debug("ps           = 0x%x", context.ps);
-            log_debug("pd           = 0x%x", context.pd);
-            log_debug("ca           = 0x%x", context.ca);
-            log_debug("cs           = 0x%x", context.cs);
-            log_debug("dda          = 0x%x", context.dda);
-            log_debug("dsa          = 0x%x", context.dsa);
-            log_debug("ds           = 0x%x", context.ds);
-            log_debug("dd           = 0x%x", context.dd);
-            log_debug("scratch[0]   = 0x%x", context.scratch[0]);
-            log_debug("scratch[1]   = 0x%x", context.scratch[1]);
-            log_debug("scratch[2]   = 0x%x", context.scratch[2]);
-            log_debug("scratch[3]   = 0x%x", context.scratch[3]);
-            log_debug("scratch[4]   = 0x%x", context.scratch[4]);
-            log_debug("scratch[5]   = 0x%x", context.scratch[5]);
-            log_debug("scratch[6]   = 0x%x", context.scratch[6]);
-            log_debug("scratch[7]   = 0x%x\n", context.scratch[7]);
-        }
+		sdma_context_t context;
+		log_debug("Dumping context...");
+		res = sdma_context_dump(i, &context);
+		if (res != EOK) {
+			log_error("Failed to dump channel context (%d)\n", res);
+		} else {
+			unsigned pc = context.state[0] & SDMA_CONTEXT_PC_MASK;
+			log_debug("pc           = 0x%x (%u)", pc, pc);
+			log_debug("state[0]     = 0x%x", context.state[0]);
+			log_debug("state[1]     = 0x%x", context.state[1]);
+			log_debug("gr[0]        = 0x%x", context.gr[0]);
+			log_debug("gr[1]        = 0x%x", context.gr[1]);
+			log_debug("gr[2]        = 0x%x", context.gr[2]);
+			log_debug("gr[3]        = 0x%x", context.gr[3]);
+			log_debug("gr[4]        = 0x%x", context.gr[4]);
+			log_debug("gr[5]        = 0x%x", context.gr[5]);
+			log_debug("gr[6]        = 0x%x", context.gr[6]);
+			log_debug("gr[7]        = 0x%x", context.gr[7]);
+			log_debug("mda          = 0x%x", context.mda);
+			log_debug("msa          = 0x%x", context.msa);
+			log_debug("ms           = 0x%x", context.ms);
+			log_debug("md           = 0x%x", context.md);
+			log_debug("pda          = 0x%x", context.pda);
+			log_debug("psa          = 0x%x", context.psa);
+			log_debug("ps           = 0x%x", context.ps);
+			log_debug("pd           = 0x%x", context.pd);
+			log_debug("ca           = 0x%x", context.ca);
+			log_debug("cs           = 0x%x", context.cs);
+			log_debug("dda          = 0x%x", context.dda);
+			log_debug("dsa          = 0x%x", context.dsa);
+			log_debug("ds           = 0x%x", context.ds);
+			log_debug("dd           = 0x%x", context.dd);
+			log_debug("scratch[0]   = 0x%x", context.scratch[0]);
+			log_debug("scratch[1]   = 0x%x", context.scratch[1]);
+			log_debug("scratch[2]   = 0x%x", context.scratch[2]);
+			log_debug("scratch[3]   = 0x%x", context.scratch[3]);
+			log_debug("scratch[4]   = 0x%x", context.scratch[4]);
+			log_debug("scratch[5]   = 0x%x", context.scratch[5]);
+			log_debug("scratch[6]   = 0x%x", context.scratch[6]);
+			log_debug("scratch[7]   = 0x%x\n", context.scratch[7]);
+		}
 
-        unsigned j = 0;
-        sdma_buffer_desc_t *current = common.channel[i].bd;
-        if (current != NULL) {
-            do {
-                log_debug("bd[%u].flags = 0x%x", j, current->flags);
-                log_debug("\tSDMA_BD_DONE is %s", (current->flags & SDMA_BD_DONE) ? "SET" : "CLEARED");
-                log_debug("\tSDMA_BD_WRAP is %s", (current->flags & SDMA_BD_WRAP) ? "SET" : "CLEARED");
-                log_debug("\tSDMA_BD_INTR is %s\n", (current->flags & SDMA_BD_INTR) ? "SET" : "CLEARED");
-                j++;
-            } while (!((current++)->flags & SDMA_BD_WRAP));
-        }
+		unsigned j = 0;
+		sdma_buffer_desc_t *current = common.channel[i].bd;
+		if (current != NULL) {
+			do {
+				log_debug("bd[%u].flags = 0x%x", j, current->flags);
+				log_debug("\tSDMA_BD_DONE is %s", (current->flags & SDMA_BD_DONE) ? "SET" : "CLEARED");
+				log_debug("\tSDMA_BD_WRAP is %s", (current->flags & SDMA_BD_WRAP) ? "SET" : "CLEARED");
+				log_debug("\tSDMA_BD_INTR is %s\n", (current->flags & SDMA_BD_INTR) ? "SET" : "CLEARED");
+				j++;
+			} while (!((current++)->flags & SDMA_BD_WRAP));
+		}
 
-        log_debug("Dumping CCB...");
-        log_debug("common.ccb[i].base_bd         = 0x%x", common.ccb[i].base_bd);
-        log_debug("common.ccb[i].current_bd      = 0x%x\n", common.ccb[i].current_bd);
-    }
+		log_debug("Dumping CCB...");
+		log_debug("common.ccb[i].base_bd         = 0x%x", common.ccb[i].base_bd);
+		log_debug("common.ccb[i].current_bd      = 0x%x\n", common.ccb[i].current_bd);
+	}
 }
 #endif
 
 int main(void)
 {
-    oid_t root;
+	oid_t root;
 
-    priority(MAIN_THD_PRIO);
+	priority(MAIN_THD_PRIO);
 
-    /* Wait for the filesystem */
-    while (lookup("/", &root) < 0)
-        usleep(10000);
+	/* Wait for the filesystem */
+	while (lookup("/", &root) < 0)
+		usleep(10000);
 
-    if (init(root))
-        return -EIO;
+	if (init(root))
+		return -EIO;
 
-    unsigned i, intr_cnt[NUM_OF_SDMA_CHANNELS], cnt;
-    memset(intr_cnt, 0, sizeof(intr_cnt));
+	unsigned i, intr_cnt[NUM_OF_SDMA_CHANNELS], cnt;
+	memset(intr_cnt, 0, sizeof(intr_cnt));
 
-    while (1) {
-        mutexLock(common.lock);
-        condWait(common.intr_cond, common.lock, 0);
+	while (1) {
+		mutexLock(common.lock);
+		condWait(common.intr_cond, common.lock, 0);
 
-        for (i = 0; i < NUM_OF_SDMA_CHANNELS; i++) {
-            cnt = common.channel[i].intr_cnt;
+		for (i = 0; i < NUM_OF_SDMA_CHANNELS; i++) {
+			cnt = common.channel[i].intr_cnt;
 
-            if (intr_cnt[i] == cnt) /* No interrupts for this channel */
-                continue;
+			if (intr_cnt[i] == cnt) /* No interrupts for this channel */
+				continue;
 
-            if ((intr_cnt[i] + 1) != cnt) /* More than one interrupt */
-                log_warn("missed interrupt for channel %d (%u vs %u)", i, intr_cnt[i], cnt);
+			if ((intr_cnt[i] + 1) != cnt) /* More than one interrupt */
+				log_warn("missed interrupt for channel %d (%u vs %u)", i, intr_cnt[i], cnt);
 
-            condSignal(common.channel[i].intr_cond);
-            intr_cnt[i] = cnt;
-        }
+			condSignal(common.channel[i].intr_cond);
+			intr_cnt[i] = cnt;
+		}
 
-        mutexUnlock(common.lock);
-    }
+		mutexUnlock(common.lock);
+	}
 
-    /* Should never be reached */
-    log_error("Exiting!");
-    return 0;
+	/* Should never be reached */
+	log_error("Exiting!");
+	return 0;
 }
