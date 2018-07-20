@@ -29,8 +29,6 @@
 #define SPI2_POS (SPI1_POS + SPI1)
 #define SPI3_POS (SPI2_POS + SPI2)
 
-#define SPI_CNT (SPI1 + SPI2 + SPI3)
-
 
 struct {
 	volatile unsigned int *base;
@@ -40,7 +38,7 @@ struct {
 	handle_t irqLock;
 	handle_t cond;
 	handle_t inth;
-} spi_common[SPI_CNT];
+} spi_common[SPI1 + SPI2 + SPI3];
 
 
 static const int spi2pctl[] = { pctl_spi1, pctl_spi2, pctl_spi3 };
@@ -168,8 +166,7 @@ void spi_init(void)
 		if (!spiConfig[spi])
 			continue;
 
-		spi_common[i].base = (void *)spiinfo[i].base;
-
+		spi_common[i].base = (void *)spiinfo[spi].base;
 		spi_common[i].ready = 1;
 
 		mutexCreate(&spi_common[i].mutex);
@@ -191,8 +188,8 @@ void spi_init(void)
 		/* SPI mode enabled */
 		*(spi_common[i].base + i2scfgr) = 0;
 
-		/* Disable clock */
-		rcc_devClk(spi2pctl[spi], 0);
+		/* Enable SPI */
+		*(spi_common[i].base + cr1) |= 1 << 6;
 
 		interrupt(16 + spiinfo[spi].irq, spi_irqHandler, (void *)i, spi_common[i].cond, &spi_common[i].inth);
 
