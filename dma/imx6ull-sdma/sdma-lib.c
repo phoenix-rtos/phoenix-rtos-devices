@@ -58,7 +58,7 @@ int sdma_open(sdma_t *s, const char *dev_name)
 	if ((fd = open(dev_name, O_RDWR)) < 0)
 		return -2;
 
-	if ((res = lookup(dev_name, &s->oid)) < 0)
+	if ((res = lookup(dev_name, NULL, &s->oid)) < 0)
 		return -3;
 
 	return 0;

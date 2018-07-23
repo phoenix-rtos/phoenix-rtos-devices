@@ -88,7 +88,7 @@ int init(oid_t root)
 			return -1;
 		}
 
-		if (lookup(dirname, &dir) < 0) {
+		if (lookup(dirname, NULL, &dir) < 0) {
 			printf("gpiodrv: %s lookup failed\n", dirname);
 			return -1;
 		}
@@ -276,7 +276,7 @@ int main(void)
 	oid_t root;
 
 	/* Wait for the filesystem */
-	while (lookup("/", &root) < 0)
+	while (lookup("/", NULL, &root) < 0)
 		usleep(10000);
 
 	/* Wait for the console */

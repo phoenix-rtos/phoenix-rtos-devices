@@ -584,7 +584,7 @@ void main(int argc, char **argv)
 	beginthread(uart_intrthr, 3, &stack0, 2048, NULL);
 	beginthread(uart_thr, 3, &stack, 2048, (void *)port);
 
-	while (lookup("/", &root) < 0)
+	while (lookup("/", NULL, &root) < 0)
 		usleep(100000);
 
 	err = mkdir("/dev", 0);
@@ -596,7 +596,7 @@ void main(int argc, char **argv)
 	uartn = malloc(strlen("uartx") + 1);
 	sprintf(uartn, "uart%d", uart.dev_no);
 
-	if (lookup("/dev", &dir) < 0) {
+	if (lookup("/dev", NULL, &dir) < 0) {
 		debug("imx6ull-uart: /dev lookup failed");
 	}
 

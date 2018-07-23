@@ -527,7 +527,7 @@ static int dev_init(oid_t root)
 		return -1;
 	}
 
-	if ((res = lookup(dirname, &dir)) < 0) {
+	if ((res = lookup(dirname, NULL, &dir)) < 0) {
 		log_error("%s lookup failed (%d)", dirname, res);
 		return -1;
 	}
@@ -844,7 +844,7 @@ int main(void)
 	priority(MAIN_THD_PRIO);
 
 	/* Wait for the filesystem */
-	while (lookup("/", &root) < 0)
+	while (lookup("/", NULL, &root) < 0)
 		usleep(10000);
 
 	if (init(root))

@@ -493,8 +493,10 @@ static void mod_lookup(void *arg)
 		switch (msg.type) {
 
 			case mtLookup:
-				msg.o.lookup.res.id = mod_no;
-				msg.o.lookup.res.port = port;
+				msg.o.lookup.fil.id = mod_no;
+				msg.o.lookup.fil.port = port;
+				msg.o.lookup.dev.id = mod_no;
+				msg.o.lookup.dev.port = port;
 				break;
 			case mtRead:
 				if (msg.o.size > dc.mods[mod_no - 1].size - msg.i.io.offs)
