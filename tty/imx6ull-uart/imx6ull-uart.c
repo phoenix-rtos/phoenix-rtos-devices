@@ -354,7 +354,7 @@ static void uart_intrthr(void *arg)
 					uart.ready = 1;
 				}
 
-				if (c == 0x8) {
+				if (c == 0x8 || c == 0x7f) {
 					c = 0;
 					if (chr > 0) {
 						c = '\b';
