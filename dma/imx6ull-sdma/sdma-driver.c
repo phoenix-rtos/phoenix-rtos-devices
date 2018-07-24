@@ -501,7 +501,7 @@ static int sdma_channel_configure(uint8_t channel_id, sdma_channel_config_t *cfg
 	return 0;
 }
 
-static int dev_init(oid_t root)
+static int dev_init(void)
 {
 	int i, res;
 	oid_t dir;
@@ -549,7 +549,7 @@ static int dev_init(oid_t root)
 		msg.o.data = NULL;
 		msg.o.size = 0;
 
-		if ((res = msgSend(root.port, &msg)) < 0 || msg.o.create.err != EOK) {
+		if ((res = msgSend(dir.port, &msg)) < 0 || msg.o.create.err != EOK) {
 			log_error("could not create %s/%s (res=%d, err=%d)", dirname, filename, res, msg.o.create.err);
 			return -1;
 		}
@@ -711,7 +711,7 @@ static void worker_thread(void *arg)
 	}
 }
 
-static int init(oid_t root)
+static int init(void)
 {
 	int res, i;
 
@@ -740,7 +740,7 @@ static int init(oid_t root)
 		return res;
 	}
 
-	if ((res = dev_init(root)) < 0) {
+	if ((res = dev_init()) < 0) {
 		log_error("device initialization failed");
 		return res;
 	}
@@ -847,7 +847,7 @@ int main(void)
 	while (lookup("/", NULL, &root) < 0)
 		usleep(10000);
 
-	if (init(root))
+	if (init())
 		return -EIO;
 
 	unsigned i, intr_cnt[NUM_OF_SDMA_CHANNELS], cnt;
