@@ -165,14 +165,14 @@ static int fifo_pop_front(fifo_t *f, uint8_t *byte)
 	if (fifo_is_full(f))
 		f->full = 0;
 
-	if (byte != NULL)
-		*byte = f->buff[f->head];
-
 	if (f->head == 0) {
 		f->head = FIFO_SIZE - 1;
 	} else {
 		f->head = f->head - 1;
 	}
+
+	if (byte != NULL)
+		*byte = f->buff[f->head];
 
 	return 0;
 }
