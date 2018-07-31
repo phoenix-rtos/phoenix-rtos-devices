@@ -1,11 +1,12 @@
 #
-# Makefile for Phoenix-RTOS imx6ull-uart driver
+# Makefile for Phoenix-RTOS TTY abstraction layer
 #
 # Copyright 2018 Phoenix Systems
 #
 
-PROGS := imx6ull-uart
-PROGS_LIBS := libtty.a
+LIB := libtty.a
+LIB_SRCS := libtty.c
+LIB_HDRS := libtty.h
 
 # include after all dependencies are set
 include $(TOPDIR)/Makefile.rules

@@ -17,6 +17,9 @@ PREFIX_H ?= $(BUILD_DIR)/include/
 PREFIX_PROG ?= $(BUILD_DIR)/prog/
 PREFIX_PROG_STRIPPED ?= $(BUILD_DIR)/prog.stripped/
 
+CFLAGS += -I"$(PREFIX_H)"
+LDFLAGS += -L"$(PREFIX_A)"
+
 # building programs
 PROGS_UNSTRIPPED := $(patsubst %,$(PREFIX_PROG)%,$(PROGS))
 PROGS_STRIPPED   := $(patsubst %,$(PREFIX_PROG_STRIPPED)%,$(PROGS))

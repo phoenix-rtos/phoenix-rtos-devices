@@ -28,6 +28,8 @@
 #include <sys/stat.h>
 #include <sys/debug.h>
 
+#include <libtty.h>
+
 #include "imx6ull-uart.h"
 
 #include <phoenix/arch/imx6ull.h>
@@ -79,8 +81,6 @@ typedef struct {
 typedef struct {
 	volatile u32 *base;
 	u32 mode;
-	u32 baud_rate;
-	u8 parity;
 	u16 dev_no;
 	u32 flags;
 
@@ -94,6 +94,7 @@ typedef struct {
 	handle_t inth;
 	handle_t lock;
 	int ready;
+	libtty_common_t tty_common;
 } uart_t;
 
 uart_t uart = { 0 };
@@ -301,6 +302,7 @@ void uart_thr(void *arg)
 		case mtOpen:
 			break;
 		case mtWrite:
+			//msg.i.io.mode
 			msg.o.io.err = uart_write(msg.i.data, msg.i.size);
 			break;
 		case mtRead:
@@ -313,6 +315,15 @@ void uart_thr(void *arg)
 				msg.o.attr.val = uart_poll_status();
 			else
 				msg.o.attr.val = -EINVAL;
+			break;
+		case mtDevCtl: { /* ioctl */
+				unsigned long request;
+				const void *in_data = ioctl_unpack(&msg, &request);
+				const void *out_data = NULL;
+
+				int err = libtty_ioctl(&uart.tty_common, request, in_data, &out_data);
+				ioctl_setResponse(&msg, request, err, out_data);
+			}
 			break;
 		}
 
@@ -368,6 +379,7 @@ static void uart_intrthr(void *arg)
 				}
 
 				/* echo */
+#if 0
 				if (c == '\b') {
 					chr--;
 					fifo_pop_front(&uart.rx_fifo, NULL);
@@ -377,6 +389,7 @@ static void uart_intrthr(void *arg)
 				}
 
 				tx_put(c);
+#endif
 				if (IS_SYNC && uart.ready)
 					condSignal(uart.rx_cond);
 			}
@@ -445,16 +458,19 @@ void set_mux(int dev_no)
 	}
 }
 
-void set_baud_rate(int baud_rate)
+void set_baudrate(void* _uart, speed_t baud)
 {
 	int md, in, div, res;
+
+	int baud_rate = libtty_baudrate_to_int(baud);
+	uart_t* uartptr = (uart_t*) _uart;
 
 	if (!baud_rate)
 		return;
 
 	/* count gcd */
 	md = MODULE_CLK;
-	in = 16 * uart.baud_rate;
+	in = 16 * baud_rate;
 
 	div = 0;
 	while (md % 2 == 0 && in % 2 == 0) {
@@ -487,57 +503,107 @@ void set_baud_rate(int baud_rate)
 	res = md * res;
 
 	/* set baud rate */
-	*(uart.base + ucr1) &= ~(1 << 14);
-	*(uart.base + ubir) = ((uart.baud_rate * 16) / res) - 1;
-	*(uart.base + ubmr) = (MODULE_CLK / res) - 1;
+	*(uartptr->base + ucr1) &= ~(1 << 14);
+	*(uartptr->base + ubir) = ((baud_rate * 16) / res) - 1;
+	*(uartptr->base + ubmr) = (MODULE_CLK / res) - 1;
+}
+
+void set_cflag(void* _uart, tcflag_t* cflag)
+{
+	uart_t* uartptr = (uart_t*) _uart;
+
+	/* CSIZE ony CS7 and CS8 (default) is supported */
+	if ((*cflag & CSIZE) == CS7)
+		*(uartptr->base + ucr2) &= ~(1 << 6);
+	else { /* CS8 */
+		*cflag &= ~CSIZE;
+		*cflag |= CS8;
+
+		*(uartptr->base + ucr2) |= (1 << 6);
+	}
+
+	/* parity */
+	*(uartptr->base + ucr2) &= ~((1 << 8) | (1 << 7));
+	*(uartptr->base + ucr2) |= (((*cflag & PARENB) != 0) << 8) | (((*cflag & PARODD) != 0) << 7);
+
+	/* stop bits */
+	if (*cflag & CSTOPB)
+		*(uartptr->base + ucr2) |= (1 << 6);
+	else
+		*(uartptr->base + ucr2) &= ~(1 << 6);
 }
 
 char __attribute__((aligned(8))) stack[2048];
 char __attribute__((aligned(8))) stack0[2048];
 
-void main(int argc, char **argv)
+static void print_usage(const char* progname) {
+	printf("Usage: %s [mode] [device] [speed] [parity] or no args for default settings (tty, uart1, B115200, 8N1)\n", progname);
+	printf("\tmode: 0 - raw, 1 - tty\n\tdevice: 1 to 8\n");
+	printf("\tspeed: baud_rate\n\tparity: 0 - none, 1 - odd, 2 - even\n");
+}
+
+int main(int argc, char **argv)
 {
 	u32 port;
 	char *uartn;
 	oid_t dir, root;
 	msg_t msg;
 	int err;
+	speed_t baud = B115200;
+	int parity = 0;
 
 	fifo_init(&uart.rx_fifo);
 	fifo_init(&uart.tx_fifo);
 
+	libtty_callbacks_t callbacks = {
+		.arg = &uart,
+		.set_baudrate = &set_baudrate,
+		.set_cflag = &set_cflag,
+	};
+
+	libtty_init(&uart.tty_common, &callbacks);
+
 	if (argc == 1) {
 		uart.mode = MODE_TTY;
 		uart.dev_no = 1;
-		uart.flags = FL_SYNC | FL_COOL;
-		uart.parity = 0;
-		uart.baud_rate = 115200;
-	} else if (argc == 6) {
+	} else if (argc == 5) {
 		uart.mode = atoi(argv[1]);
 		uart.dev_no = atoi(argv[2]);
-		uart.baud_rate = atoi(argv[3]);
-		uart.parity = atoi(argv[4]);
-		uart.flags = atoi(argv[5]);
+		parity = atoi(argv[4]);
+		baud = libtty_int_to_baudrate(atoi(argv[3]));
 	} else {
-		printf("Usage: imx6ull-uart [mode] [device] [speed] [parity] [flags] or no args for default setting(tty, uart1, 115200, 8N1)\n");
-		printf("\tmode: 0 - raw, 1 - tty\n\tdevice: 1 to 8\n");
-		printf("\tspeed: baud_rate\n\tparity: 0 - none, 1 - odd, 2 - even\n");
-		printf("\tflags: 1 - return if buffer is full, 2 - wait for transmition to end\n");
-		return;
+		print_usage(argv[0]);
+		return 0;
 	}
+
+	if (baud < 0) {
+		printf("Invalid baud rate!\n");
+		print_usage(argv[0]);
+		return 1;
+	}
+	uart.tty_common.term.c_ispeed = uart.tty_common.term.c_ospeed = baud;
+
+	if (parity < 0 || parity > 2) {
+		printf("Invalid parity!\n");
+		print_usage(argv[0]);
+		return 1;
+	}
+	if (parity > 0)
+		uart.tty_common.term.c_cflag = PARENB | ((parity == 1) ? PARODD : 0);
 
 	if (uart.dev_no <= 0 || uart.dev_no > 8) {
 		printf("device number must be value 1-8\n");
-		return;
+		print_usage(argv[0]);
+		return 1;
 	}
 
 	if (portCreate(&port) != EOK)
-		return;
+		return 2;
 
 	uart.base = mmap(NULL, 0x1000, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, uart_addr[uart.dev_no - 1]);
 
 	if (uart.base == MAP_FAILED)
-		return;
+		return 2;
 
 	set_clk(uart.dev_no);
 	*(uart.base + ucr2) &= ~0;
@@ -548,16 +614,16 @@ void main(int argc, char **argv)
 	while (!(*(uart.base + ucr2) & 1));
 
 	if (condCreate(&uart.tx_cond) != EOK)
-		return;
+		return 2;
 
 	if (condCreate(&uart.rx_cond) != EOK)
-		return;
+		return 2;
 
 	if (mutexCreate(&uart.lock) != EOK)
-		return;
+		return 2;
 
 	if (condCreate(&uart.cond) != EOK)
-		return;
+		return 2;
 
 	interrupt(uart_intr_number[uart.dev_no - 1], uart_intr, NULL, uart.cond, &uart.inth);
 
@@ -574,10 +640,9 @@ void main(int argc, char **argv)
 
 	/* soft reset, tx&rx enable, 8bit transmit */
 	*(uart.base + ucr2) = 0x4027;
-	if (uart.parity)
-		*(uart.base + ucr2) |= (uart.parity | 2) << 7;
 
-	set_baud_rate(uart.baud_rate);
+	set_cflag(&uart, &uart.tty_common.term.c_cflag);
+	set_baudrate(&uart, baud);
 
 	*(uart.base + ucr3) = 0x704;
 
@@ -618,4 +683,6 @@ void main(int argc, char **argv)
 	free(uartn);
 
 	uart_thr((void *)port);
+
+	return 0;
 }
