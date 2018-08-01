@@ -13,16 +13,22 @@
  * %LICENSE%
  */
 
+#include <stdint.h>
 #include <termios.h>
 
 typedef struct libtty_common_s libtty_common_t;
 typedef struct libtty_callbacks_s libtty_callbacks_t;
+typedef struct fifo_s fifo_t;
 
 struct libtty_callbacks_s {
 	void* arg; /* argument to be passed to each of the callbacks */
 
+	/* HW configuration */
 	void (*set_baudrate)(void* arg, speed_t baudrate);
 	void (*set_cflag)(void* arg, tcflag_t* cflag);
+
+	/* at least one character ready to be sent */
+	void (*signal_txready)(void* arg);
 };
 
 struct libtty_common_s {
@@ -30,13 +36,44 @@ struct libtty_common_s {
 	struct termios term;
 	struct winsize ws;
 	pid_t pgrp;
+
+	fifo_t *tx_fifo;
+	fifo_t *rx_fifo;
+
+	handle_t tx_waitq;
+	handle_t rx_waitq;
+
+	handle_t mutex;
+
+	volatile uint32_t* debug;
 };
 
 
+/* bufsize: TX/RX buffer size - has to be power of 2 ! */
+int libtty_init(libtty_common_t* tty, libtty_callbacks_t* callbacks, unsigned int bufsize);
 
-int libtty_init(libtty_common_t* tty, libtty_callbacks_t* callbacks);
+/* external (message) interface */
+ssize_t libtty_read(libtty_common_t *tty, char *data, size_t size, unsigned mode);
+ssize_t libtty_write(libtty_common_t *tty, const char *data, size_t size, unsigned mode);
+int libtty_poll_status(libtty_common_t* tty);
 int libtty_ioctl(libtty_common_t* tty, unsigned int cmd, const void* in_arg, const void** out_arg);
 
+/* internal (HW) interface */
+int libtty_putchar(libtty_common_t *tty, unsigned char c);
+unsigned char libtty_getchar(libtty_common_t *tty);
+
+int libtty_txready(libtty_common_t *tty);	// at least 1 character ready to be sent
+int libtty_txfull(libtty_common_t *tty);	// no more place in the TX buffer
+int libtty_rxready(libtty_common_t *tty);	// at least 1 character ready to be read out
+
+static inline void libtty_set_mode_raw(libtty_common_t *tty)
+{
+	tty->term.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL | IXON);
+	tty->term.c_oflag &= ~OPOST;
+	tty->term.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
+}
+
+/* utils */
 static inline int libtty_baudrate_to_int(speed_t baudrate)
 {
 	switch (baudrate) {

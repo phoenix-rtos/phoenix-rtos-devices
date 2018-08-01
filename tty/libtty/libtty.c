@@ -14,10 +14,15 @@
  */
 
 #include "libtty.h"
+#include "fifo.h"
 
 #include <sys/ioctl.h>
+#include <sys/threads.h>
 #include <termios.h>
+#include <poll.h>
 #include <string.h>
+#include <stdlib.h>
+#include <fcntl.h>
 #include <errno.h>
 
 #include <stdio.h> // printf
@@ -34,7 +39,40 @@
 #define log_warn(fmt, ...)      do { if (1) printf(COL_YELLOW LOG_TAG fmt "\n" COL_NORMAL, ##__VA_ARGS__); } while (0)
 #define log_error(fmt, ...)     do { if (1) printf(COL_RED  LOG_TAG fmt "\n" COL_NORMAL, ##__VA_ARGS__); } while (0)
 
-#define MARKER_MAGIC 0x10203040
+
+#define CALLBACK(cb_name, ...) do {\
+	if (tty->cb.cb_name != NULL)\
+		/*log_warn("callback " #cb_name);*/\
+		tty->cb.cb_name(tty->cb.arg, ##__VA_ARGS__);\
+	} while (0)
+
+/* termios comparison macro's. */
+#define	CMP_CC(v,c) (tty->term.c_cc[v] != _POSIX_VDISABLE && \
+			tty->term.c_cc[v] == (c))
+#define	CMP_FLAG(field,opt) (tty->term.c_ ## field ## flag & (opt))
+
+/* Characters that cannot be modified through c_cc. */
+#define CTAB	'\t'
+#define CNL	'\n'
+#define CCR	'\r'
+
+/* Character is a control character. */
+#define CTL_VALID(c)	((c) == 0x7f || (unsigned char)(c) < 0x20)
+/* Control character should be processed on echo. */
+#define CTL_ECHO(c,q)	(!(q) && ((c) == CERASE2 || (c) == CTAB || \
+    (c) == CNL || (c) == CCR))
+/* Control character should be printed using ^X notation. */
+#define CTL_PRINT(c,q)	((c) == 0x7f || ((unsigned char)(c) < 0x20 && \
+    ((q) || ((c) != CTAB && (c) != CNL))))
+/* Character is whitespace. */
+#define CTL_WHITE(c)	((c) == ' ' || (c) == CTAB)
+/* Character is alphanumeric. */
+#define CTL_ALNUM(c)	(((c) >= '0' && (c) <= '9') || \
+    ((c) >= 'a' && (c) <= 'z') || ((c) >= 'A' && (c) <= 'Z'))
+
+#define DEBUG_CHAR(c) do {\
+		*(tty->debug + 16) = (c);\
+	} while (0)
 
 static void termios_init(struct termios* term)
 {
@@ -65,23 +103,207 @@ static void termios_init(struct termios* term)
 	term->c_ospeed = B115200;
 }
 
-int libtty_init(libtty_common_t* tty, libtty_callbacks_t* callbacks)
+static ssize_t libtty_read_raw(libtty_common_t *tty, char *data, size_t size, unsigned mode)
+{
+	size_t vmin = tty->term.c_cc[VMIN];
+	time_t vtime = (time_t)tty->term.c_cc[VTIME] * 100; // deciseconds to ms
+	ssize_t len = 0;
+
+
+	while (len < size) {
+		if (fifo_is_empty(tty->rx_fifo)) {
+			//DEBUG_CHAR('E');
+			if (mode & O_NONBLOCK) {
+				if (len == 0)
+					return -EWOULDBLOCK;
+				else
+					break;
+			} else if (vmin == 0 && vtime == 0) { // polling read
+				break;
+			} else { // read until at least vmin with optional initial/interchar timeout
+				if (len < vmin) {
+					while (fifo_is_empty(tty->rx_fifo)) {
+						mutexLock(tty->mutex);
+						int ret = condWait(tty->rx_waitq, tty->mutex, vtime);
+						mutexUnlock(tty->mutex);
+						if ((vtime > 0) && (ret == -ETIME))
+							return len; // timer expired
+					}
+				}
+				else
+					break; // at least vmin chars present
+			}
+		}
+
+		*data++ = fifo_pop_back(tty->rx_fifo);
+		len += 1;
+	}
+
+	//DEBUG_CHAR('X');
+	return len;
+
+}
+
+ssize_t libtty_read(libtty_common_t *tty, char *data, size_t size, unsigned mode)
+{
+	int ret = 0;
+
+	//TODO: ICANON
+#if 0
+	if (CMP_FLAG(l, ICANON))
+		ret = libtty_read_canonical(tty, data, size, mode);
+	else
+#endif
+		ret = libtty_read_raw(tty, data, size, mode);
+
+	return ret;
+}
+
+int libtty_putchar(libtty_common_t *tty, unsigned char c)
+{
+	//TODO: ICANON
+	if (!fifo_is_full(tty->rx_fifo)) {
+		fifo_push(tty->rx_fifo, c);
+	} else {
+		log_warn("RX OVERRUN!");
+	}
+
+	condSignal(tty->rx_waitq);
+	return 0;
+}
+
+unsigned char libtty_getchar(libtty_common_t *tty)
+{
+	unsigned char ret = fifo_pop_back(tty->tx_fifo);
+	if (!fifo_is_full(tty->rx_fifo)) {
+		// TODO: watermark
+		condSignal(tty->tx_waitq);
+	}
+
+	return ret;
+}
+
+int libtty_init(libtty_common_t* tty, libtty_callbacks_t* callbacks, unsigned int bufsize)
 {
 	memset(tty, 0, sizeof(*tty));
 	tty->cb = *callbacks;
 
+	tty->tx_fifo = malloc(sizeof(fifo_t) + bufsize * sizeof(tty->tx_fifo->data[0]));
+	tty->rx_fifo = malloc(sizeof(fifo_t) + bufsize * sizeof(tty->tx_fifo->data[0]));
+	if (tty->tx_fifo == NULL || tty->rx_fifo == NULL)
+		return -1;
+
+	if (condCreate(&tty->tx_waitq) != EOK)
+		return -1;
+
+	if (condCreate(&tty->rx_waitq) != EOK)
+		return -1;
+
+	if (mutexCreate(&tty->mutex) != EOK)
+		return -1;
+
+	fifo_init(tty->tx_fifo, bufsize);
+	fifo_init(tty->rx_fifo, bufsize);
+
 	termios_init(&tty->term);
 
-	tty->ws.ws_row = 24;
+	tty->ws.ws_row = 25;
 	tty->ws.ws_col = 80;
+
 	return 0;
 }
 
-#define CALLBACK(cb_name, ...) do {\
-	if (tty->cb.cb_name != NULL)\
-		log_warn("callback " #cb_name);\
-		tty->cb.cb_name(tty->cb.arg, __VA_ARGS__);\
-	} while (0)
+
+ssize_t libtty_write(libtty_common_t *tty, const char *data, size_t size, unsigned mode)
+{
+	//TODO: ICANON
+	//TODO: O_SYNC
+
+	ssize_t len = 0;
+
+	// short path
+	if (fifo_is_full(tty->tx_fifo) && (mode & O_NONBLOCK))
+		return -EWOULDBLOCK;
+
+	mutexLock(tty->mutex);
+
+	/* write contents of the buffer */
+	while (len < size) {
+		// TODO: maybe watermark fifo and signal automatically earlier?
+		if (fifo_is_full(tty->tx_fifo)) {
+			if (mode & O_NONBLOCK)
+				break;
+
+			// TODO: while
+			CALLBACK(signal_txready);
+			condWait(tty->tx_waitq, tty->mutex, 0);
+		}
+
+		fifo_push(tty->tx_fifo, *data++);
+		len += 1;
+
+#if 0
+		if (tx_put(*((char *)data + i))) {
+			if (!IS_COOL)
+				break;
+			else {
+				*(uart.base + ucr1) |= 0x2000;
+				condWait(uart.tx_cond, uart.lock, 0);
+			}
+		}
+#endif
+	}
+
+	//DEBUG_CHAR('W');
+	CALLBACK(signal_txready);
+#if 0
+	//TODO: test O_SYNC
+	while ((mode & O_SYNC) && !fifo_is_empty(tty->tx_fifo))
+		condWait(tty->tx_waitq, tty->mutex, 0);
+#endif
+
+	mutexUnlock(tty->mutex);
+
+	if ((len == 0) && (mode & O_NONBLOCK))
+		len = -EWOULDBLOCK;
+
+	return len;
+}
+
+int libtty_txready(libtty_common_t* tty)
+{
+#if 0
+	//DEBUG_CHAR('0' + fifo_count(tty->tx_fifo));
+	if (fifo_is_empty(tty->tx_fifo))
+		DEBUG_CHAR('E');
+	else
+		DEBUG_CHAR('F');
+#endif
+
+	return !fifo_is_empty(tty->tx_fifo);
+}
+
+int libtty_txfull(libtty_common_t* tty)
+{
+	return fifo_is_full(tty->tx_fifo);
+}
+
+int libtty_rxready(libtty_common_t* tty)
+{
+	return !fifo_is_empty(tty->rx_fifo);
+}
+
+int libtty_poll_status(libtty_common_t* tty)
+{
+	int revents = 0;
+
+	if (libtty_rxready(tty))
+		revents |= POLLIN|POLLRDNORM;
+	if (!libtty_txfull(tty))
+		revents |= POLLOUT|POLLWRNORM;
+
+	return revents;
+}
 
 int libtty_ioctl(libtty_common_t* tty, unsigned int cmd, const void* in_arg, const void** out_arg)
 {
@@ -109,7 +331,7 @@ int libtty_ioctl(libtty_common_t* tty, unsigned int cmd, const void* in_arg, con
 		case TCSETS:
 		case TCSETSW:
 		case TCSETSF: {
-			log_ioctl("TCSETS");
+			log_ioctl("TCSETS (%s)", ((termios_p->c_lflag & ICANON) ? "cooked" : "raw"));
 			//TODO: SW SF
 
 			/* need local copy to be able to change values */
@@ -132,11 +354,17 @@ int libtty_ioctl(libtty_common_t* tty, unsigned int cmd, const void* in_arg, con
 			if (temp_term.c_cflag != tty->term.c_cflag)
 				CALLBACK(set_cflag, &temp_term.c_cflag);
 
-			tty->term = *termios_p; // FIXME
+			/* all succeded, we can apply params now */
+			tty->term.c_cflag = temp_term.c_cflag;
+			// TODO: only supported params
+			tty->term.c_iflag = temp_term.c_iflag;
+			tty->term.c_oflag = temp_term.c_oflag;
+			tty->term.c_lflag = temp_term.c_lflag;
+			memcpy(&tty->term.c_cc, &temp_term.c_cc, sizeof(temp_term.c_cc));
 			break;
 		}
 		case TCGETS:
-			log_ioctl("TCGETS (ibaud=%u, obaud=%u)", tty->term.c_ispeed, tty->term.c_ospeed);
+			log_ioctl("TCGETS (%s)", ((tty->term.c_lflag & ICANON) ? "cooked" : "raw"));
 			*out_arg = (const void*) &tty->term;
 			break;
 		case TIOCGPGRP:
@@ -164,8 +392,8 @@ int libtty_ioctl(libtty_common_t* tty, unsigned int cmd, const void* in_arg, con
 		}
 #endif
 		default:
-			log_ioctl("unsupported: %u", cmd);
-			//log_warn("unsupported ioctl: %02x", cmd);
+			//log_warn("unsupported ioctl: %u", cmd);
+			log_warn("unsupported ioctl: 0x%x", cmd);
 			ret = -EINVAL;
 			break;
 	}
