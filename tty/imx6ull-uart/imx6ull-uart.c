@@ -6,7 +6,7 @@
  * i.MX6ULL UART driver
  *
  * Copyright 2018 Phoenix Systems
- * Author: Kamil Amanowicz
+ * Author: Kamil Amanowicz, Marek Białowąs
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -29,9 +29,10 @@
 
 #include <libtty.h>
 
-#include "imx6ull-uart.h"
-
 #include <phoenix/arch/imx6ull.h>
+
+enum { urxd = 0, utxd = 16, ucr1 = 32, ucr2, ucr3, ucr4, ufcr, usr1, usr2,
+	uesc, utim, ubir, ubmr, ubrc, onems, uts, umcr };
 
 u32 uart_addr[8] = { 0x02020000, 0x021E8000, 0x021EC000, 0x021F0000,
 	0x021F4000, 0x021FC000, 0x02018000, 0x02284000 };
@@ -84,16 +85,7 @@ uart_t uart = { 0 };
 
 #define MODULE_CLK 20000000
 
-#define IS_SYNC (uart.flags & FL_SYNC)
-#define IS_COOL (uart.flags & FL_COOL)
-#define IS_TTY (uart.mode & MODE_TTY)
-
 #define BUFSIZE 4096
-
-#define DEBUG_CHAR(c) do {\
-		*(uart.base + 16) = c;\
-	} while (0)
-
 
 void uart_thr(void *arg)
 {
@@ -111,6 +103,7 @@ void uart_thr(void *arg)
 
 		switch (msg.type) {
 		case mtOpen:
+			// TODO: set PGID?
 			break;
 		case mtWrite:
 			msg.o.io.err = libtty_write(&uart.tty_common, msg.i.data, msg.i.size, msg.i.io.mode);
@@ -145,9 +138,6 @@ void uart_thr(void *arg)
 
 static int uart_intr(unsigned int intr, void *data)
 {
-	/* disable tx ready interrupt */
-	*(uart.base + ucr1) &= ~0x2000;
-
 	return uart.cond;
 }
 
@@ -155,14 +145,15 @@ static int uart_intr(unsigned int intr, void *data)
 static void uart_intrthr(void *arg)
 {
 	for (;;) {
-
 		/* wait for character or transmit data */
 		mutexLock(uart.lock);
 		while (!(*(uart.base + usr1) & (1 << 9)) && (!(*(uart.base + usr1) & (1 << 13)) || !libtty_txready(&uart.tty_common)))
 			condWait(uart.cond, uart.lock, 0);
 
+		/* disable tx ready interrupt */
+		*(uart.base + ucr1) &= ~0x2000;
+
 		mutexUnlock(uart.lock);
-		//DEBUG_CHAR('!');
 
 		/* RX */
 		while ((*(uart.base + usr1) & (1 << 9)))
@@ -295,7 +286,6 @@ void set_cflag(void* _uart, tcflag_t* cflag)
 
 static void signal_txready(void* _uart)
 {
-	//DEBUG_CHAR('*');
 	uart_t* uartptr = (uart_t*) _uart;
 
 	mutexLock(uartptr->lock);
@@ -374,7 +364,6 @@ int main(int argc, char **argv)
 		return 2;
 
 	uart.base = mmap(NULL, 0x1000, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, uart_addr[uart.dev_no - 1]);
-	uart.tty_common.debug = uart.base;
 
 	if (uart.base == MAP_FAILED)
 		return 2;

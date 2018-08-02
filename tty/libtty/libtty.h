@@ -13,6 +13,9 @@
  * %LICENSE%
  */
 
+#ifndef _LIBTTY_H_
+#define _LIBTTY_H_
+
 #include <stdint.h>
 #include <termios.h>
 
@@ -43,10 +46,20 @@ struct libtty_common_s {
 	handle_t tx_waitq;
 	handle_t rx_waitq;
 
-	handle_t mutex;
+	handle_t tx_mutex;
+	handle_t rx_mutex;
 
+	// cached optimizations
+	char breakchars[4];	/* enough to hold \n, VEOF and VEOL. */
+	unsigned int t_flags;
+
+	// TODO: remove
 	volatile uint32_t* debug;
 };
+
+// t_flags
+#define	TF_LITERAL	0x00200	/* Accept the next character literally. */
+#define	TF_BYPASS	0x04000	/* Optimized input path. */
 
 
 /* bufsize: TX/RX buffer size - has to be power of 2 ! */
@@ -61,6 +74,7 @@ int libtty_ioctl(libtty_common_t* tty, unsigned int cmd, const void* in_arg, con
 /* internal (HW) interface */
 int libtty_putchar(libtty_common_t *tty, unsigned char c);
 unsigned char libtty_getchar(libtty_common_t *tty);
+void libtty_signal_pgrp(libtty_common_t* tty, int signal);
 
 int libtty_txready(libtty_common_t *tty);	// at least 1 character ready to be sent
 int libtty_txfull(libtty_common_t *tty);	// no more place in the TX buffer
@@ -68,9 +82,9 @@ int libtty_rxready(libtty_common_t *tty);	// at least 1 character ready to be re
 
 static inline void libtty_set_mode_raw(libtty_common_t *tty)
 {
-	tty->term.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL | IXON);
+	tty->term.c_iflag &= ~(IGNBRK | BRKINT | INLCR | IGNCR | ICRNL );
 	tty->term.c_oflag &= ~OPOST;
-	tty->term.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
+	tty->term.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG);
 }
 
 /* utils */
@@ -116,3 +130,5 @@ static inline speed_t libtty_int_to_baudrate(int baudrate) {
 
 	return -1;
 }
+
+#endif //_LIBTTY_H_

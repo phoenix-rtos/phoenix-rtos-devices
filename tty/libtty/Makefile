@@ -5,7 +5,7 @@
 #
 
 LIB := libtty.a
-LIB_SRCS := libtty.c
+LIB_SRCS := libtty.c libtty_disc.c
 LIB_HDRS := libtty.h
 
 # include after all dependencies are set

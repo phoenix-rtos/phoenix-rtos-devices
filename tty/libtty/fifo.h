@@ -62,4 +62,28 @@ static inline uint8_t fifo_pop_front(fifo_t *f)
 	return ret;
 }
 
+static inline uint8_t fifo_peek_front(fifo_t *f)
+{
+	unsigned int new_head = (f->head - 1) & f->size_mask;
+	uint8_t ret = f->data[new_head];
+	return ret;
+}
+
+static inline int fifo_has_char(fifo_t *f, char byte)
+{
+	unsigned int tail = f->tail;
+
+	if (fifo_is_empty(f))
+		return 0;
+
+	while (tail != f->head) {
+		if (f->data[tail] == (uint8_t) byte)
+			return 1;
+
+		tail = (tail + 1) & f->size_mask;
+	}
+
+	return 0;
+}
+
 #endif // _LIBTTY_FIFO_H
