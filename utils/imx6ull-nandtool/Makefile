@@ -4,6 +4,7 @@
 # Copyright 2018 Phoenix Systems
 #
 
+PROGS_SRCS := nandtool.c bch.c bcb.c
 PROGS = nandtool
 PROGS_LIBS := flashdrv.a
 

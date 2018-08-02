@@ -1,4 +1,4 @@
-#/*
+/*
  * Phoenix-RTOS
  *
  * IMX6ULL NAND tool.
@@ -25,8 +25,8 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 
-#include "../../storage/imx6ull-flash/flashdrv.h"
 
+#include "bcb.h"
 #include "test.h"
 
 #define PAGE_SIZE 4096
@@ -241,57 +241,7 @@ void flash_erase(void *arg, int start, int end, int silent)
 	nand_msg(silent, "--------------------\n");
 }
 
-int flash_dbbt(flashdrv_dma_t *dma)
-{
-	return 0;
-}
-
-int flash_fcb(flashdrv_dma_t *dma, char *fcb)
-{
-	int fd;
-	char *wbuf;
-	size_t offs = 0;
-	int err = 0, ret;
-
-	printf("Flashing fcb %s\n", fcb);
-
-	if ((wbuf = mmap(NULL, SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0)) == MAP_FAILED) {
-		printf("Fcb write buffer mmap failed\n");
-		return 1;
-	}
-
-	memset(wbuf, 0, SIZE_PAGE);
-
-	fd = open("/init/fcb.img", 'r');
-	if (fd <= 0) {
-		printf("File open failed\n");
-	}
-
-	offs += read(fd, wbuf + 16, 2048);
-
-	offs = 0;
-
-	ret = flashdrv_writeraw(dma, 0, wbuf, 4096);
-
-	if (ret) {
-		printf("Flashing fcb on block 0 failed\n");
-		err = ret;
-	}
-
-	ret = flashdrv_writeraw(dma, 64, wbuf, 4096);
-
-	if (err && ret) {
-		return ret;
-	} else if (ret) {
-		printf("Flashing fcb on block 64 failed\n");
-		err = 0;
-	}
-	munmap(wbuf, SIZE_PAGE);
-
-	return err;
-}
-
-void set_nandboot(char *fcb, char *primary, char *secondary, char *rootfs)
+void set_nandboot(char *primary, char *secondary, char *rootfs)
 {
 	int ret = 0, err = 0;
 	flashdrv_dma_t *dma;
@@ -312,7 +262,9 @@ void set_nandboot(char *fcb, char *primary, char *secondary, char *rootfs)
 		printf("WARNING: This device has bad blocks.\nBad block management is not implemented yet - this device may not boot correctly\n");
 		err++;
 	}
-	ret = flash_fcb(dma, fcb);
+
+	printf("Flashing fcb\n");
+	ret = fcb_flash(dma);
 
 	if (ret) {
 		printf("ERROR: Flashing fcb failed - this device won't boot correctly\n");
@@ -320,7 +272,7 @@ void set_nandboot(char *fcb, char *primary, char *secondary, char *rootfs)
 		return;
 	}
 
-	if(flash_dbbt(dma))
+	if(dbbt_flash(dma))
 		err++;
 
 	printf("Flashing primary image: %s\n", primary);
@@ -365,7 +317,7 @@ int main(int argc, char **argv)
 	int c;
 	char *path = NULL;
 	int start = -1;
-	char *tok, *fcb, *primary, *secondary, *rootfs;
+	char *tok, *primary, *secondary, *rootfs;
 	int len, i, raw = 0;
 
 	while ((c = getopt(argc, argv, "i:r:s:hct:e:f")) != -1) {
@@ -408,20 +360,11 @@ int main(int argc, char **argv)
 			case 'f':
 				if (argc == 2) {
 
-					fcb = "/init/fcb.img";
 					primary = "/init/primary.img";
 					secondary = "/init/secondary.img";
 					rootfs = "/init/rootfs.img";
-					set_nandboot(fcb, primary, secondary, rootfs);
-				} else if (argc == 5) {
-
-					len = strlen(argv[optind]);
-					for (i = len; i >= 0 && argv[optind][i] != '/'; --i);
-
-					fcb = malloc(strlen("/init/") + strlen(argv[optind] + i + 1));
-					fcb[0] = 0;
-					strcat(fcb, "/init/");
-					strcat(fcb, argv[optind++] + i + 1);
+					set_nandboot(primary, secondary, rootfs);
+				} else if (argc == 4) {
 
 					len = strlen(argv[optind]);
 					for (i = len; i >= 0 && argv[optind][i] != '/'; --i);
@@ -447,9 +390,8 @@ int main(int argc, char **argv)
 					strcat(rootfs, "/init/");
 					strcat(rootfs, argv[optind] + i + 1);
 
-					set_nandboot(fcb, primary, secondary, rootfs);
+					set_nandboot(primary, secondary, rootfs);
 
-					free(fcb);
 					free(primary);
 					free(secondary);
 					free(rootfs);
