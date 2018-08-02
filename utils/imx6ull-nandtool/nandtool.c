@@ -54,7 +54,7 @@ static inline int check_block(char *raw_block)
 }
 
 
-int flash_image(void *arg, char *path, int start, int block_offset, int silent)
+int flash_image(void *arg, char *path, int start, int block_offset, int silent, int raw)
 {
 	int ret = 0;
 	int imgfd, offs = 0;
@@ -109,9 +109,16 @@ int flash_image(void *arg, char *path, int start, int block_offset, int silent)
 	while (offs < stat->st_size) {
 		memset(img_buf, 0x00, PAGE_SIZE);
 		memcpy(img_buf, img + offs, PAGE_SIZE + offs > stat->st_size ? stat->st_size - offs : PAGE_SIZE);
-		if ((ret = flashdrv_write(dma, (offs / PAGE_SIZE) + (start * 64) + block_offset, img_buf, meta_buf))) {
-			nand_msg(silent, "Image write error 0x%x at offset 0x%x\n", ret, offs);
-			return -1;
+		if (!raw) {
+			if ((ret = flashdrv_write(dma, (offs / PAGE_SIZE) + (start * 64) + block_offset, img_buf, meta_buf))) {
+				nand_msg(silent, "Image write error 0x%x at offset 0x%x\n", ret, offs);
+				return -1;
+			}
+		} else {
+			if ((ret = flashdrv_writeraw(dma, (offs / PAGE_SIZE) + (start * 64) + block_offset, img_buf, PAGE_SIZE))) {
+				nand_msg(silent, "Image write raw error 0x%x at offset 0x%x\n", ret, offs);
+				return -1;
+			}
 		}
 		offs += PAGE_SIZE;
 	}
@@ -317,18 +324,18 @@ void set_nandboot(char *fcb, char *primary, char *secondary, char *rootfs)
 		err++;
 
 	printf("Flashing primary image: %s\n", primary);
-	if (flash_image(dma, primary, 8, 0, 1))
+	if (flash_image(dma, primary, 8, 0, 1, 0))
 		err++;
 
 	printf("Flashing secondary image: %s\n", secondary);
-	if (flash_image(dma, secondary, 16, 0, 1))
+	if (flash_image(dma, secondary, 16, 0, 1, 0))
 		err++;
 
 	printf("Flashing rootfs: %s\n", rootfs);
-	if (flash_image(dma, rootfs, 64, 0, 1))
+	if (flash_image(dma, rootfs, 64, 0, 1, 0))
 		err++;
 
-	if (flash_image(dma, rootfs, 128, 0, 1))
+	if (flash_image(dma, rootfs, 128, 0, 1, 0))
 		err++;
 
 	flashdrv_dmadestroy(dma);
@@ -344,6 +351,7 @@ void print_help(void)
 {
 	printf("Usage:\n" \
 			"\t-i (path) - file path (requires -s option)\n" \
+			"\t-r (path) - just like -i option but raw\n" \
 			"\t-s (number) - start flashing from page (requires -i option)\n" \
 			"\t-c - search for bad blocks from factory and print summary\n" \
 			"\t-h - print this message\n" \
@@ -358,13 +366,19 @@ int main(int argc, char **argv)
 	char *path = NULL;
 	int start = -1;
 	char *tok, *fcb, *primary, *secondary, *rootfs;
-	int len, i;
+	int len, i, raw = 0;
 
-	while ((c = getopt(argc, argv, "i:s:hct:e:f")) != -1) {
+	while ((c = getopt(argc, argv, "i:r:s:hct:e:f")) != -1) {
 		switch (c) {
 
 			case 'i':
 				path = optarg;
+				raw = 0;
+				break;
+
+			case 'r':
+				path = optarg;
+				raw = 1;
 				break;
 
 			case 'c':
@@ -455,5 +469,5 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
-	return flash_image(NULL, path, start, 0, 0);
+	return flash_image(NULL, path, start, 0, 0, raw);
 }
