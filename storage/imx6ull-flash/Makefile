@@ -7,7 +7,7 @@
 # build and install into staging static lib
 LIB := flashdrv.a
 LIB_SRCS := flashdrv.c
-LIB_HDRS := flashdrv.h
+INSTALL_HDRS := flashdrv.h
 
 # build test program and link against lib
 PROGS := flashdrv_test

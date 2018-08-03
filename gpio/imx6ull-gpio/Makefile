@@ -5,6 +5,7 @@
 #
 
 PROGS := imx6ull-gpio
+INSTALL_HDRS := imx6ull-gpio.h
 
 # include after all dependencies are set
 include $(TOPDIR)/Makefile.rules

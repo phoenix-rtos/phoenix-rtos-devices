@@ -6,7 +6,7 @@
 
 LIB := libsdma.a
 LIB_SRCS := sdma-lib.c
-LIB_HDRS := sdma-api.h sdma-lib.h
+INSTALL_HDRS := sdma-api.h sdma-lib.h
 
 PROGS := sdma-driver
 
