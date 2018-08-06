@@ -121,7 +121,7 @@ void uart_thr(void *arg)
 			break;
 		case mtDevCtl: { /* ioctl */
 				unsigned long request;
-				const void *in_data = ioctl_unpack(&msg, &request);
+				const void *in_data = ioctl_unpack(&msg, &request, NULL);
 				const void *out_data = NULL;
 
 				int err = libtty_ioctl(&uart.tty_common, request, in_data, &out_data);
