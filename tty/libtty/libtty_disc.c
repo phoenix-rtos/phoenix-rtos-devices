@@ -245,7 +245,7 @@ int libtty_putchar(libtty_common_t *tty, unsigned char c)
 
 	/* ICANON: Canonical line editing. */
 	if (CMP_FLAG(l, ICANON)) {
-		if (CMP_CC(VERASE, c)) {
+		if (CMP_CC(VERASE, c) || CMP_CC(VERASE2, c)) {
 			libttydisc_rubchar(tty);
 			return 0;
 		} else if (CMP_CC(VKILL, c)) {

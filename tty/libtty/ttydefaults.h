@@ -60,6 +60,7 @@
 # define CEOL		'\0'		/* XXX avoid _POSIX_VDISABLE */
 #endif
 #define	CERASE		0177
+#define	CERASE2		CTRL('H')
 #define	CINTR		CTRL('c')
 #ifdef _POSIX_VDISABLE
 # define CSTATUS	_POSIX_VDISABLE
@@ -100,7 +101,7 @@
 cc_t	ttydefchars[NCCS] = {
 	CINTR, CQUIT, CERASE, CKILL, CEOF, CTIME, CMIN,
 	CSTART, CSTOP, CSUSP, CEOL, CREPRINT, CDISCARD,
-	CWERASE, CLNEXT, CEOL
+	CWERASE, CLNEXT, CERASE2, CEOL
 };
 #undef TTYDEFCHARS
 #endif
