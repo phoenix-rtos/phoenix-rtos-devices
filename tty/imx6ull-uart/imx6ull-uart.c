@@ -138,6 +138,9 @@ void uart_thr(void *arg)
 
 static int uart_intr(unsigned int intr, void *data)
 {
+	/* disable tx ready interrupt ASAP to minimize interrupts received */
+	*(uart.base + ucr1) &= ~0x2000;
+
 	return uart.cond;
 }
 
@@ -147,24 +150,25 @@ static void uart_intrthr(void *arg)
 	for (;;) {
 		/* wait for character or transmit data */
 		mutexLock(uart.lock);
-		while (!(*(uart.base + usr1) & (1 << 9)) && (!(*(uart.base + usr1) & (1 << 13)) || !libtty_txready(&uart.tty_common)))
+		while (!(*(uart.base + usr2) & (1 << 0))) {  // nothing to RX
+			if (libtty_txready(&uart.tty_common)) { // we something to TX
+				if ((*(uart.base + usr1) & (1 << 13))) // TX ready
+					break;
+				else
+					*(uart.base + ucr1) |= 0x2000; // wait for TRDY interrupt
+			}
 			condWait(uart.cond, uart.lock, 0);
-
-		/* disable tx ready interrupt */
-		*(uart.base + ucr1) &= ~0x2000;
-
+		}
 		mutexUnlock(uart.lock);
 
 		/* RX */
-		while ((*(uart.base + usr1) & (1 << 9)))
+		while ((*(uart.base + usr2) & (1 << 0)))
 			libtty_putchar(&uart.tty_common, *(uart.base + urxd));
 
 		/* TX */
 		while (libtty_txready(&uart.tty_common)) {
 			if (*(uart.base + uts) & (1 << 4)) { // check TXFULL bit
-				/* wait for TX to be ready before resuming operation */
-				*(uart.base + ucr1) |= 0x2000;
-				break;
+				break; /* wait in main loop for TX to be ready before resuming operation */
 			}
 			*(uart.base + utxd) = libtty_getchar(&uart.tty_common);
 		}
