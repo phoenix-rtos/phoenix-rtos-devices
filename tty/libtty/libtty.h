@@ -82,7 +82,7 @@ int libtty_rxready(libtty_common_t *tty);	// at least 1 character ready to be re
 
 static inline void libtty_set_mode_raw(libtty_common_t *tty)
 {
-	tty->term.c_iflag &= ~(IGNBRK | BRKINT | INLCR | IGNCR | ICRNL );
+	tty->term.c_iflag &= ~(IGNBRK | BRKINT | INLCR | IGNCR | ICRNL | ISTRIP);
 	tty->term.c_oflag &= ~OPOST;
 	tty->term.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG);
 }
