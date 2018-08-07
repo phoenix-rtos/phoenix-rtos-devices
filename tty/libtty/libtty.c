@@ -134,6 +134,9 @@ ssize_t libtty_read(libtty_common_t *tty, char *data, size_t size, unsigned mode
 {
 	ssize_t ret = 0;
 
+	if (tty->t_flags & TF_CLOSING)
+		return -EPIPE;
+
 	if (CMP_FLAG(l, ICANON))
 		ret = libttydisc_read_canonical(tty, data, size, mode);
 	else
@@ -188,12 +191,44 @@ int libtty_init(libtty_common_t* tty, libtty_callbacks_t* callbacks, unsigned in
 }
 
 
+int libtty_close(libtty_common_t* tty)
+{
+	mutexLock2(tty->tx_mutex, tty->rx_mutex);
+	tty->t_flags |= TF_CLOSING;
+
+	condBroadcast(tty->tx_waitq);
+	condBroadcast(tty->rx_waitq);
+
+	mutexUnlock(tty->tx_mutex);
+	mutexUnlock(tty->rx_mutex);
+
+	return 0;
+}
+
+
+/* Note: only call after all readers/writers have finished */
+int libtty_destroy(libtty_common_t* tty)
+{
+	resourceDestroy(tty->tx_waitq);
+	resourceDestroy(tty->rx_waitq);
+	resourceDestroy(tty->tx_mutex);
+	resourceDestroy(tty->rx_mutex);
+
+	free(tty->tx_fifo);
+	free(tty->rx_fifo);
+
+	return 0;
+}
+
+
 ssize_t libtty_write(libtty_common_t *tty, const char *data, size_t size, unsigned mode)
 {
 	ssize_t len = 0;
 
 	// short path
-	if (fifo_is_full(tty->tx_fifo) && (mode & O_NONBLOCK))
+	if (tty->t_flags & TF_CLOSING)
+		return -EPIPE;
+	else if (fifo_is_full(tty->tx_fifo) && (mode & O_NONBLOCK))
 		return -EWOULDBLOCK;
 
 	mutexLock(tty->tx_mutex);
@@ -202,6 +237,9 @@ ssize_t libtty_write(libtty_common_t *tty, const char *data, size_t size, unsign
 	while (len < size) {
 		// TODO: maybe watermark fifo and signal automatically earlier?
 		while (fifo_is_full(tty->tx_fifo)) {
+			if (tty->t_flags & TF_CLOSING)
+				goto exit;
+
 			if (mode & O_NONBLOCK)
 				goto exit;
 
@@ -223,15 +261,18 @@ ssize_t libtty_write(libtty_common_t *tty, const char *data, size_t size, unsign
 	CALLBACK(signal_txready);
 #if 0
 	//TODO: test O_SYNC
-	while ((mode & O_SYNC) && !fifo_is_empty(tty->tx_fifo))
+	while ((mode & O_SYNC) && !fifo_is_empty(tty->tx_fifo) && !(tty->t_flags & TF_CLOSING))
 		condWait(tty->tx_waitq, tty->tx_mutex, 0);
 #endif
 
 exit:
-	mutexUnlock(tty->tx_mutex);
 
-	if ((len == 0) && (mode & O_NONBLOCK))
+	if (tty->t_flags & TF_CLOSING)
+		len = -EPIPE;
+	else if ((len == 0) && (mode & O_NONBLOCK))
 		len = -EWOULDBLOCK;
+
+	mutexUnlock(tty->tx_mutex);
 
 	return len;
 }

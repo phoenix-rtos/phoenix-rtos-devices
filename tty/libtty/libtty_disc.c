@@ -365,6 +365,11 @@ ssize_t libttydisc_read_canonical(libtty_common_t *tty, char *data, size_t size,
 			++breakc;
 		}
 
+		if (tty->t_flags & TF_CLOSING) {
+			mutexUnlock(tty->rx_mutex);
+			return -EBADF;
+		}
+
 		if (mode & O_NONBLOCK) {
 			mutexUnlock(tty->rx_mutex);
 			return -EWOULDBLOCK;
@@ -413,6 +418,11 @@ ssize_t libttydisc_read_raw(libtty_common_t *tty, char *data, size_t size, unsig
 				if (len < vmin) {
 					mutexLock(tty->rx_mutex);
 					while (fifo_is_empty(tty->rx_fifo)) {
+						if (tty->t_flags & TF_CLOSING) {
+							mutexUnlock(tty->rx_mutex);
+							return len;
+						}
+
 						int ret = condWait(tty->rx_waitq, tty->rx_mutex, vtime);
 						if ((vtime > 0) && (ret == -ETIME)) {
 							mutexUnlock(tty->rx_mutex);
@@ -433,4 +443,3 @@ ssize_t libttydisc_read_raw(libtty_common_t *tty, char *data, size_t size, unsig
 	return len;
 
 }
-

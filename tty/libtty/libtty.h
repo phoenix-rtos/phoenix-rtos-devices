@@ -60,10 +60,13 @@ struct libtty_common_s {
 // t_flags
 #define	TF_LITERAL	0x00200	/* Accept the next character literally. */
 #define	TF_BYPASS	0x04000	/* Optimized input path. */
+#define TF_CLOSING  0x08000 /* TTY is being closed */
 
 
 /* bufsize: TX/RX buffer size - has to be power of 2 ! */
 int libtty_init(libtty_common_t* tty, libtty_callbacks_t* callbacks, unsigned int bufsize);
+int libtty_destroy(libtty_common_t* tty);
+int libtty_close(libtty_common_t* tty);
 
 /* external (message) interface */
 ssize_t libtty_read(libtty_common_t *tty, char *data, size_t size, unsigned mode);
