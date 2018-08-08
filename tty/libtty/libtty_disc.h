@@ -32,8 +32,8 @@
 
 /* internal interface - line discipline */
 int libttydisc_write_oproc(libtty_common_t *tty, char c);
-ssize_t libttydisc_read_canonical(libtty_common_t *tty, char *data, size_t size, unsigned mode);
-ssize_t libttydisc_read_raw(libtty_common_t *tty, char *data, size_t size, unsigned mode);
+ssize_t libttydisc_read_canonical(libtty_common_t *tty, char *data, size_t size, unsigned mode, libtty_read_state_t *st);
+ssize_t libttydisc_read_raw(libtty_common_t *tty, char *data, size_t size, unsigned mode, libtty_read_state_t *st);
 
 
 #endif //_LIBTTY_DISC_H_

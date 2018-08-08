@@ -22,6 +22,7 @@
 typedef struct libtty_common_s libtty_common_t;
 typedef struct libtty_callbacks_s libtty_callbacks_t;
 typedef struct fifo_s fifo_t;
+typedef struct libtty_read_state_s libtty_read_state_t;
 
 struct libtty_callbacks_s {
 	void* arg; /* argument to be passed to each of the callbacks */
@@ -32,6 +33,10 @@ struct libtty_callbacks_s {
 
 	/* at least one character ready to be sent */
 	void (*signal_txready)(void* arg);
+
+	/* read_nonblock and nonblocking write may return different value */
+	void (*signal_read_state_changed)(void* arg);
+	void (*signal_write_state_changed)(void* arg);
 };
 
 struct libtty_common_s {
@@ -57,6 +62,17 @@ struct libtty_common_s {
 	volatile uint32_t* debug;
 };
 
+struct libtty_read_state_s {
+	int timeout_ms;
+	int prevlen;
+};
+
+static inline void libtty_read_state_init(libtty_read_state_t *st) {
+	st->timeout_ms = -1;
+	st->prevlen = 0;
+}
+
+
 // t_flags
 #define	TF_LITERAL	0x00200	/* Accept the next character literally. */
 #define	TF_BYPASS	0x04000	/* Optimized input path. */
@@ -73,6 +89,16 @@ ssize_t libtty_read(libtty_common_t *tty, char *data, size_t size, unsigned mode
 ssize_t libtty_write(libtty_common_t *tty, const char *data, size_t size, unsigned mode);
 int libtty_poll_status(libtty_common_t* tty);
 int libtty_ioctl(libtty_common_t* tty, unsigned int cmd, const void* in_arg, const void** out_arg);
+
+/* non-blocking interface:
+ *  - first invocation has to be done with initialized libtty_read_state_t st param
+ *  - if the function returns 0 and st->timeout >= 0, the user needs to call function again:
+ *      1) when caller receives signal_read_state_changed callback
+ *      2) if st->timeout > 0 - when timeout expired
+ *  - if st->timeout > 0 for every next function invocation the st->timeout should be decreased
+ *    by the caller by amout of miliseconds which passed since the last call (until st->timeout == 0, do not set negative values here)
+ */
+ssize_t libtty_read_nonblock(libtty_common_t *tty, char *data, size_t size, unsigned mode, libtty_read_state_t *st);
 
 /* internal (HW) interface */
 int libtty_putchar(libtty_common_t *tty, unsigned char c);

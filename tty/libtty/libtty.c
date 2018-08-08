@@ -138,9 +138,24 @@ ssize_t libtty_read(libtty_common_t *tty, char *data, size_t size, unsigned mode
 		return -EBADF;
 
 	if (CMP_FLAG(l, ICANON))
-		ret = libttydisc_read_canonical(tty, data, size, mode);
+		ret = libttydisc_read_canonical(tty, data, size, mode, NULL);
 	else
-		ret = libttydisc_read_raw(tty, data, size, mode);
+		ret = libttydisc_read_raw(tty, data, size, mode, NULL);
+
+	return ret;
+}
+
+ssize_t libtty_read_nonblock(libtty_common_t *tty, char *data, size_t size, unsigned mode, libtty_read_state_t *st)
+{
+	ssize_t ret = 0;
+
+	if (tty->t_flags & TF_CLOSING)
+		return -EBADF;
+
+	if (CMP_FLAG(l, ICANON))
+		ret = libttydisc_read_canonical(tty, data, size, mode, st);
+	else
+		ret = libttydisc_read_raw(tty, data, size, mode, st);
 
 	return ret;
 }
@@ -150,6 +165,7 @@ unsigned char libtty_getchar(libtty_common_t *tty)
 	unsigned char ret = fifo_pop_back(tty->tx_fifo);
 	if (!fifo_is_full(tty->rx_fifo)) {
 		// TODO: watermark
+		CALLBACK(signal_write_state_changed);
 		condSignal(tty->tx_waitq);
 	}
 
@@ -304,6 +320,7 @@ int libtty_poll_status(libtty_common_t* tty)
 {
 	int revents = 0;
 
+	// FIXME: poll in ICANON mode should return POLLIN only if breakchar is present
 	if (libtty_rxready(tty))
 		revents |= POLLIN|POLLRDNORM;
 	if (!libtty_txfull(tty))

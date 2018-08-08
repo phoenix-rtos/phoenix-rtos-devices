@@ -280,12 +280,14 @@ processed:
 		char* breakc = tty->breakchars;
 		while (*breakc) {
 			if (*breakc == c) {
+				CALLBACK(signal_read_state_changed);
 				condSignal(tty->rx_waitq);
 				break;
 			}
 			++breakc;
 		}
 	} else {
+		CALLBACK(signal_read_state_changed);
 		condSignal(tty->rx_waitq);
 	}
 	mutexUnlock(tty->rx_mutex);
@@ -349,10 +351,13 @@ int libttydisc_write_oproc(libtty_common_t *tty, char c)
 #undef PRINT_NORMAL
 }
 
-ssize_t libttydisc_read_canonical(libtty_common_t *tty, char *data, size_t size, unsigned mode)
+ssize_t libttydisc_read_canonical(libtty_common_t *tty, char *data, size_t size, unsigned mode, libtty_read_state_t* st)
 {
 	char* breakc;
 	size_t len = 0;
+
+	if (st)
+		st->timeout_ms = -1; // default (finished)
 
 	// check if we have break char in RX fifo
 	mutexLock(tty->rx_mutex);
@@ -375,8 +380,14 @@ ssize_t libttydisc_read_canonical(libtty_common_t *tty, char *data, size_t size,
 			return -EWOULDBLOCK;
 		}
 
-		// wait for any of the chars from breakchars to be available in tty->rx_fifo
-		condWait(tty->rx_waitq, tty->rx_mutex, 0);
+		if (st) { // nonblocking
+			st->timeout_ms = 0; // wait indefinitely
+			mutexUnlock(tty->rx_mutex);
+			return 0; // read will resume execution at a later time
+		} else {
+			// blocking wait for any of the chars from breakchars to be available in tty->rx_fifo
+			condWait(tty->rx_waitq, tty->rx_mutex, 0);
+		}
 	} while (1);
 
 break_found:
@@ -398,13 +409,30 @@ exit:
 	return len;
 }
 
-ssize_t libttydisc_read_raw(libtty_common_t *tty, char *data, size_t size, unsigned mode)
+ssize_t libttydisc_read_raw(libtty_common_t *tty, char *data, size_t size, unsigned mode, libtty_read_state_t *st)
 {
 	size_t vmin = tty->term.c_cc[VMIN];
 	time_t vtime = (time_t)tty->term.c_cc[VTIME] * 100; // deciseconds to ms
+	time_t first_char_timeout = (vmin == 0) ? vtime : 0;
 	ssize_t len = 0;
 
-	time_t first_char_timeout = (vmin == 0) ? vtime : 0;
+	if (st && st->timeout_ms >= 0) { /* continuing previous read */
+		int we_wanted_to_sleep_ms = (st->prevlen == 0) ? first_char_timeout : vtime;
+		if (fifo_is_empty(tty->rx_fifo)) {
+			if (we_wanted_to_sleep_ms == 0) // blocking read without timeout
+				return 0;
+			else if (st->timeout_ms > 0) { // no new data, wait some more time
+				return 0;
+			} else { // st->timeout == 0, timer expired
+				st->timeout_ms = -1;
+				return st->prevlen; // first- or interbyte timeout - return what we have
+			}
+		}
+
+		st->timeout_ms = -1; // default (finished)
+		len = st->prevlen;
+		data += st->prevlen;
+	}
 
 	while (len < size) {
 		if (fifo_is_empty(tty->rx_fifo)) {
@@ -417,20 +445,26 @@ ssize_t libttydisc_read_raw(libtty_common_t *tty, char *data, size_t size, unsig
 				break;
 			} else { // read until at least vmin with optional initial/interchar timeout
 				if ((len == 0) || (len < vmin)) {
-					mutexLock(tty->rx_mutex);
-					while (fifo_is_empty(tty->rx_fifo)) {
-						if (tty->t_flags & TF_CLOSING) {
-							mutexUnlock(tty->rx_mutex);
-							return len;
-						}
+					if (st) { // non-blocking wait
+						st->prevlen = len;
+						st->timeout_ms = (len == 0) ? first_char_timeout : vtime;
+						return 0;
+					} else { // blocking wait
+						mutexLock(tty->rx_mutex);
+						while (fifo_is_empty(tty->rx_fifo)) {
+							if (tty->t_flags & TF_CLOSING) {
+								mutexUnlock(tty->rx_mutex);
+								return len;
+							}
 
-						int ret = condWait(tty->rx_waitq, tty->rx_mutex, (len == 0) ? first_char_timeout : vtime);
-						if (ret == -ETIME) {
-							mutexUnlock(tty->rx_mutex);
-							return len; // timer expired
+							int ret = condWait(tty->rx_waitq, tty->rx_mutex, (len == 0) ? first_char_timeout : vtime);
+							if (ret == -ETIME) {
+								mutexUnlock(tty->rx_mutex);
+								return len; // timer expired
+							}
 						}
+						mutexUnlock(tty->rx_mutex);
 					}
-					mutexUnlock(tty->rx_mutex);
 				}
 				else
 					break; // at least vmin chars present
@@ -442,5 +476,4 @@ ssize_t libttydisc_read_raw(libtty_common_t *tty, char *data, size_t size, unsig
 	}
 
 	return len;
-
 }
