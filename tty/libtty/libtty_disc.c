@@ -404,6 +404,7 @@ ssize_t libttydisc_read_raw(libtty_common_t *tty, char *data, size_t size, unsig
 	time_t vtime = (time_t)tty->term.c_cc[VTIME] * 100; // deciseconds to ms
 	ssize_t len = 0;
 
+	time_t first_char_timeout = (vmin == 0) ? vtime : 0;
 
 	while (len < size) {
 		if (fifo_is_empty(tty->rx_fifo)) {
@@ -415,7 +416,7 @@ ssize_t libttydisc_read_raw(libtty_common_t *tty, char *data, size_t size, unsig
 			} else if (vmin == 0 && vtime == 0) { // polling read
 				break;
 			} else { // read until at least vmin with optional initial/interchar timeout
-				if (len < vmin) {
+				if ((len == 0) || (len < vmin)) {
 					mutexLock(tty->rx_mutex);
 					while (fifo_is_empty(tty->rx_fifo)) {
 						if (tty->t_flags & TF_CLOSING) {
@@ -423,8 +424,8 @@ ssize_t libttydisc_read_raw(libtty_common_t *tty, char *data, size_t size, unsig
 							return len;
 						}
 
-						int ret = condWait(tty->rx_waitq, tty->rx_mutex, vtime);
-						if ((vtime > 0) && (ret == -ETIME)) {
+						int ret = condWait(tty->rx_waitq, tty->rx_mutex, (len == 0) ? first_char_timeout : vtime);
+						if (ret == -ETIME) {
 							mutexUnlock(tty->rx_mutex);
 							return len; // timer expired
 						}

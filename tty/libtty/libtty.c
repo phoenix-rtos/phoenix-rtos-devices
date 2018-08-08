@@ -135,7 +135,7 @@ ssize_t libtty_read(libtty_common_t *tty, char *data, size_t size, unsigned mode
 	ssize_t ret = 0;
 
 	if (tty->t_flags & TF_CLOSING)
-		return -EPIPE;
+		return -EBADF;
 
 	if (CMP_FLAG(l, ICANON))
 		ret = libttydisc_read_canonical(tty, data, size, mode);
@@ -308,6 +308,8 @@ int libtty_poll_status(libtty_common_t* tty)
 		revents |= POLLIN|POLLRDNORM;
 	if (!libtty_txfull(tty))
 		revents |= POLLOUT|POLLWRNORM;
+	if (tty->t_flags & TF_CLOSING)
+		revents |= POLLHUP;
 
 	return revents;
 }
