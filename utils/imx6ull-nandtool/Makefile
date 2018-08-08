@@ -6,7 +6,7 @@
 
 PROGS_SRCS := nandtool.c bch.c bcb.c
 PROGS = nandtool
-PROGS_LIBS := flashdrv.a
+PROGS_LIBS := libflashdrv.a
 
 ifeq ($(CONFIG_NANDTOOL_TEST), 1)
 CFLAGS += -DCONFIG_NANDTOOL_TEST

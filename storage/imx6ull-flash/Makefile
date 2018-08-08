@@ -5,13 +5,13 @@
 #
 
 # build and install into staging static lib
-LIB := flashdrv.a
+LIB := libflashdrv.a
 LIB_SRCS := flashdrv.c
 INSTALL_HDRS := flashdrv.h
 
 # build test program and link against lib
 PROGS := flashdrv_test
-PROGS_LIBS := flashdrv.a
+PROGS_LIBS := libflashdrv.a
 
 # include after all dependencies are set
 include $(TOPDIR)/Makefile.rules
