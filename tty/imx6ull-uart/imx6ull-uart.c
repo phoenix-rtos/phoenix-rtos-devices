@@ -163,14 +163,14 @@ static void uart_intrthr(void *arg)
 
 		/* RX */
 		while ((*(uart.base + usr2) & (1 << 0)))
-			libtty_putchar(&uart.tty_common, *(uart.base + urxd));
+			libtty_putchar(&uart.tty_common, *(uart.base + urxd), NULL);
 
 		/* TX */
 		while (libtty_txready(&uart.tty_common)) {
 			if (*(uart.base + uts) & (1 << 4)) { // check TXFULL bit
 				break; /* wait in main loop for TX to be ready before resuming operation */
 			}
-			*(uart.base + utxd) = libtty_getchar(&uart.tty_common);
+			*(uart.base + utxd) = libtty_getchar(&uart.tty_common, NULL);
 		}
 	}
 }

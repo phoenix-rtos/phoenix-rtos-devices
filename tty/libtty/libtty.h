@@ -33,10 +33,6 @@ struct libtty_callbacks_s {
 
 	/* at least one character ready to be sent */
 	void (*signal_txready)(void* arg);
-
-	/* read_nonblock and nonblocking write may return different value */
-	void (*signal_read_state_changed)(void* arg);
-	void (*signal_write_state_changed)(void* arg);
 };
 
 struct libtty_common_s {
@@ -101,8 +97,8 @@ int libtty_ioctl(libtty_common_t* tty, unsigned int cmd, const void* in_arg, con
 ssize_t libtty_read_nonblock(libtty_common_t *tty, char *data, size_t size, unsigned mode, libtty_read_state_t *st);
 
 /* internal (HW) interface */
-int libtty_putchar(libtty_common_t *tty, unsigned char c);
-unsigned char libtty_getchar(libtty_common_t *tty);
+int libtty_putchar(libtty_common_t *tty, unsigned char c, int *wake_reader);
+unsigned char libtty_getchar(libtty_common_t *tty, int *wake_writer);
 void libtty_signal_pgrp(libtty_common_t* tty, int signal);
 
 int libtty_txready(libtty_common_t *tty);	// at least 1 character ready to be sent

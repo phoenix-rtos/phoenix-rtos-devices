@@ -183,8 +183,11 @@ static int libttydisc_rubchar(libtty_common_t* tty)
 	return 0;
 }
 
-int libtty_putchar(libtty_common_t *tty, unsigned char c)
+int libtty_putchar(libtty_common_t *tty, unsigned char c, int *wake_reader)
 {
+	if (wake_reader)
+		*wake_reader = 0;
+
 	/* ISTRIP: removing the top bit */
 	if (CMP_FLAG(i, ISTRIP))
 		c &= ~0x80;
@@ -280,14 +283,16 @@ processed:
 		char* breakc = tty->breakchars;
 		while (*breakc) {
 			if (*breakc == c) {
-				CALLBACK(signal_read_state_changed);
+				if (wake_reader)
+					*wake_reader = 1;
 				condSignal(tty->rx_waitq);
 				break;
 			}
 			++breakc;
 		}
 	} else {
-		CALLBACK(signal_read_state_changed);
+		if (wake_reader)
+			*wake_reader = 1;
 		condSignal(tty->rx_waitq);
 	}
 	mutexUnlock(tty->rx_mutex);

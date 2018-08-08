@@ -160,12 +160,15 @@ ssize_t libtty_read_nonblock(libtty_common_t *tty, char *data, size_t size, unsi
 	return ret;
 }
 
-unsigned char libtty_getchar(libtty_common_t *tty)
+unsigned char libtty_getchar(libtty_common_t *tty, int *wake_writer)
 {
+	if (wake_writer)
+		*wake_writer = 0;
 	unsigned char ret = fifo_pop_back(tty->tx_fifo);
 	if (!fifo_is_full(tty->rx_fifo)) {
 		// TODO: watermark
-		CALLBACK(signal_write_state_changed);
+		if (wake_writer)
+			*wake_writer = 1;
 		condSignal(tty->tx_waitq);
 	}
 
