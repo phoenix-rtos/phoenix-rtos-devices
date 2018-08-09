@@ -30,8 +30,13 @@
 /* Character is a control character. */
 #define CTL_VALID(c)	((c) == 0x7f || (unsigned char)(c) < 0x20)
 
+
+/* maximum amount of chars outputed by libttydisc_write_oproc */
+#define LIBTTYDISC_WRITE_OPROC_MAXLEN 8
+
 /* internal interface - line discipline */
 int libttydisc_write_oproc(libtty_common_t *tty, char c);
+
 ssize_t libttydisc_read_canonical(libtty_common_t *tty, char *data, size_t size, unsigned mode, libtty_read_state_t *st);
 ssize_t libttydisc_read_raw(libtty_common_t *tty, char *data, size_t size, unsigned mode, libtty_read_state_t *st);
 

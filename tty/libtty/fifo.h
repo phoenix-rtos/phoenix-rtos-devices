@@ -36,6 +36,11 @@ static inline unsigned int fifo_count(fifo_t *f)
 	return (f->head - f->tail) & f->size_mask;
 }
 
+static inline unsigned int fifo_freespace(fifo_t *f)
+{
+	return (f->tail - f->head - 1) & f->size_mask;
+}
+
 
 static inline void fifo_push(fifo_t *f, uint8_t byte)
 {

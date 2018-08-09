@@ -65,6 +65,8 @@
 	} while (0)
 #endif
 
+#define TX_FIFO_NOTFULL_WATERMARK   16  // amount of free space in fifo before we will wake up the writer
+
 static void termios_optimize(libtty_common_t* tty)
 {
 	// check break characters
@@ -164,9 +166,9 @@ unsigned char libtty_getchar(libtty_common_t *tty, int *wake_writer)
 {
 	if (wake_writer)
 		*wake_writer = 0;
+
 	unsigned char ret = fifo_pop_back(tty->tx_fifo);
-	if (!fifo_is_full(tty->rx_fifo)) {
-		// TODO: watermark
+	if (fifo_freespace(tty->rx_fifo) >= TX_FIFO_NOTFULL_WATERMARK) {
 		if (wake_writer)
 			*wake_writer = 1;
 		condSignal(tty->tx_waitq);
@@ -252,10 +254,11 @@ ssize_t libtty_write(libtty_common_t *tty, const char *data, size_t size, unsign
 
 	mutexLock(tty->tx_mutex);
 
+	int fifo_freespace_for_single_char = CMP_FLAG(o, OPOST) ? LIBTTYDISC_WRITE_OPROC_MAXLEN : 1;
+
 	/* write contents of the buffer */
 	while (len < size) {
-		// TODO: maybe watermark fifo and signal automatically earlier?
-		while (fifo_is_full(tty->tx_fifo)) {
+		while (fifo_freespace(tty->tx_fifo) < fifo_freespace_for_single_char) {
 			if (tty->t_flags & TF_CLOSING)
 				goto exit;
 
