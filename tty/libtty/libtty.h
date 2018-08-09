@@ -109,7 +109,7 @@ static inline void libtty_set_mode_raw(libtty_common_t *tty)
 {
 	tty->term.c_iflag &= ~(IGNBRK | BRKINT | INLCR | IGNCR | ICRNL | ISTRIP);
 	tty->term.c_oflag &= ~OPOST;
-	tty->term.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG);
+	tty->term.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
 }
 
 /* utils */
