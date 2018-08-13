@@ -280,15 +280,12 @@ processed:
 
 	if (CMP_FLAG(l, ICANON)) {
 		// signal only when the line ends
-		char* breakc = tty->breakchars;
-		while (*breakc) {
-			if (*breakc == c) {
-				if (wake_reader)
-					*wake_reader = 1;
-				condSignal(tty->rx_waitq);
-				break;
-			}
-			++breakc;
+		if (libttydisc_is_breakchar(tty, c)) {
+			tty->t_flags |= TF_HAVEBREAK;
+
+			if (wake_reader)
+				*wake_reader = 1;
+			condSignal(tty->rx_waitq);
 		}
 	} else {
 		if (wake_reader)
@@ -358,7 +355,7 @@ int libttydisc_write_oproc(libtty_common_t *tty, char c)
 
 ssize_t libttydisc_read_canonical(libtty_common_t *tty, char *data, size_t size, unsigned mode, libtty_read_state_t* st)
 {
-	char* breakc;
+	char byte = 0xff;
 	size_t len = 0;
 
 	if (st)
@@ -367,13 +364,8 @@ ssize_t libttydisc_read_canonical(libtty_common_t *tty, char *data, size_t size,
 	// check if we have break char in RX fifo
 	mutexLock(tty->rx_mutex);
 	do {
-		breakc = tty->breakchars;
-		while (*breakc) {
-			if (fifo_has_char(tty->rx_fifo, *breakc))
-				goto break_found;
-
-			++breakc;
-		}
+		if (tty->t_flags & TF_HAVEBREAK)
+			break;
 
 		if (tty->t_flags & TF_CLOSING) {
 			mutexUnlock(tty->rx_mutex);
@@ -395,22 +387,28 @@ ssize_t libttydisc_read_canonical(libtty_common_t *tty, char *data, size_t size,
 		}
 	} while (1);
 
-break_found:
-	mutexUnlock(tty->rx_mutex);
-
 	while (len < size) {
-		char byte = (char) fifo_pop_back(tty->rx_fifo);
+		byte = (char) fifo_pop_back(tty->rx_fifo);
 		if (CMP_CC(VEOF, byte))
 			break; // EOF - dropping and exiting
 
 		*data++ = byte;
 		len += 1;
-		for (breakc = tty->breakchars; *breakc; ++breakc)
-			if (byte == *breakc)
-				goto exit; // EOL - exiting
+
+		if (libttydisc_is_breakchar(tty, byte))
+			break; // EOL - exiting after the byte was added
 	}
 
-exit:
+	if (libttydisc_is_breakchar(tty, byte)) { // loop ended due to breakchar
+		// check if we have another break char in the RX FIFO
+		tty->t_flags &= ~TF_HAVEBREAK;
+		if (CMP_FLAG(l, ICANON)) {
+			if (libttydisc_rx_have_breakchar(tty))
+				tty->t_flags |= TF_HAVEBREAK;
+		}
+	}
+
+	mutexUnlock(tty->rx_mutex);
 	return len;
 }
 

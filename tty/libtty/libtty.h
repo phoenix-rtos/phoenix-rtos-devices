@@ -70,6 +70,7 @@ static inline void libtty_read_state_init(libtty_read_state_t *st) {
 
 
 // t_flags
+#define	TF_HAVEBREAK	0x00001	/* There is a breakchar present in RX fifo */
 #define	TF_LITERAL	0x00200	/* Accept the next character literally. */
 #define	TF_BYPASS	0x04000	/* Optimized input path. */
 #define TF_CLOSING  0x08000 /* TTY is being closed */

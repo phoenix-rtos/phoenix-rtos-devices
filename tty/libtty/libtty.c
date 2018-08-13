@@ -65,11 +65,11 @@
 	} while (0)
 #endif
 
-#define TX_FIFO_NOTFULL_WATERMARK   16  // amount of free space in fifo before we will wake up the writer
+#define TX_FIFO_NOTFULL_WATERMARK	16  // amount of free space in fifo before we will wake up the writer
 
 static void termios_optimize(libtty_common_t* tty)
 {
-	// check break characters
+	// check break characters list
 	tty->breakchars[0] = CNL;
 	int n = 1;
 
@@ -80,6 +80,13 @@ static void termios_optimize(libtty_common_t* tty)
 		tty->breakchars[n++] = tty->term.c_cc[VEOL];
 
 	tty->breakchars[n] = '\0';
+
+	// check if we have break char in the RX FIFO
+	tty->t_flags &= ~TF_HAVEBREAK;
+	if (CMP_FLAG(l, ICANON)) {
+		if (libttydisc_rx_have_breakchar(tty))
+			tty->t_flags |= TF_HAVEBREAK;
+	}
 }
 
 static void termios_init(struct termios* term)
@@ -326,9 +333,15 @@ int libtty_poll_status(libtty_common_t* tty)
 {
 	int revents = 0;
 
-	// FIXME: poll in ICANON mode should return POLLIN only if breakchar is present
-	if (libtty_rxready(tty))
-		revents |= POLLIN|POLLRDNORM;
+	// poll in ICANON mode should return POLLIN only if breakchar is present
+	if (!CMP_FLAG(l, ICANON)) {
+		if (libtty_rxready(tty))
+			revents |= POLLIN|POLLRDNORM;
+	} else {
+		if (tty->t_flags & TF_HAVEBREAK)
+			revents |= POLLIN|POLLRDNORM;
+	}
+
 	if (!libtty_txfull(tty))
 		revents |= POLLOUT|POLLWRNORM;
 	if (tty->t_flags & TF_CLOSING)

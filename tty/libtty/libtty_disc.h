@@ -18,6 +18,7 @@
 #define _LIBTTY_DISC_H_
 
 #include "libtty.h"
+#include "fifo.h"
 
 #include <stdint.h>
 #include <termios.h>
@@ -39,6 +40,29 @@ int libttydisc_write_oproc(libtty_common_t *tty, char c);
 
 ssize_t libttydisc_read_canonical(libtty_common_t *tty, char *data, size_t size, unsigned mode, libtty_read_state_t *st);
 ssize_t libttydisc_read_raw(libtty_common_t *tty, char *data, size_t size, unsigned mode, libtty_read_state_t *st);
+
+
+static inline int libttydisc_is_breakchar(libtty_common_t *tty, char c)
+{
+	for (char* breakc = tty->breakchars; *breakc; ++breakc)
+		if (c == *breakc)
+			return 1;
+
+	return 0;
+}
+
+static inline int libttydisc_rx_have_breakchar(libtty_common_t *tty)
+{
+	char* breakc = tty->breakchars;
+	while (*breakc) {
+		if (fifo_has_char(tty->rx_fifo, *breakc))
+			return 1;
+
+		++breakc;
+	}
+
+	return 0;
+}
 
 
 #endif //_LIBTTY_DISC_H_
