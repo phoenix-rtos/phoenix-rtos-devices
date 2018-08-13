@@ -159,6 +159,9 @@ static void uart_intrthr(void *arg)
 			}
 			condWait(uart.cond, uart.lock, 0);
 		}
+		/* disable tx ready interrupt again (sticky conds) */
+		*(uart.base + ucr1) &= ~0x2000;
+
 		mutexUnlock(uart.lock);
 
 		/* RX */
