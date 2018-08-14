@@ -423,7 +423,7 @@ int main(int argc, char **argv)
 	}
 
 	uartn = malloc(strlen("uartx") + 1);
-	sprintf(uartn, "uart%d", uart.dev_no);
+	sprintf(uartn, "uart%u", uart.dev_no % 10);
 
 	if (lookup("/dev", NULL, &dir) < 0) {
 		debug("imx6ull-uart: /dev lookup failed");

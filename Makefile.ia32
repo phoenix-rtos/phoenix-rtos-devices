@@ -8,17 +8,16 @@
 
 CROSS ?= i386-pc-phoenix-
 
-SUBDIRS = tty/pc-tty tty/pc-uart storage/pc-ata
+SUBDIRS = tty/libtty tty/pc-tty tty/pc-uart storage/pc-ata
 
 MKDEP = $(CROSS)gcc -MM
 MKDEPFLAGS = $(CFLAGS)
 
 CC = $(CROSS)gcc
 
-CFLAGS += -O2 -g -Wall -Wstrict-prototypes -I$(SRCDIR) -nostartfiles -nostdlib\
+CFLAGS += -O2 -g -Wall -Wstrict-prototypes -nostartfiles -nostdlib\
 	-m32 -mtune=generic -mno-mmx -mno-sse -fno-pic -fno-pie\
-	-fomit-frame-pointer -fno-strength-reduce -ffreestanding\
-	-DVERSION=\"$(VERSION)\" -DARCH=\"arch/ia32/arch.h\"
+	-fomit-frame-pointer -fno-strength-reduce
 
 AR = $(CROSS)ar
 ARFLAGS = -r

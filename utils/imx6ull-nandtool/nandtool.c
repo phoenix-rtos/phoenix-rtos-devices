@@ -239,7 +239,7 @@ void flash_erase(void *arg, int start, int end, int silent)
 	int i;
 	int err;
 
-	nand_msg(silent, "\n------ ERASE ------\n", start, end);
+	nand_msg(silent, "\n------ ERASE ------\n");
 
 	if (end < start)
 		nand_msg(silent, "Invalid range (%d-%d)\n", start, end);

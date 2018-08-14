@@ -59,7 +59,7 @@ int init(oid_t root)
 
 	for (i = 0; i < sizeof(common.gpio) / sizeof(common.gpio[0]); ++i) {
 		if ((common.gpio[i].base = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_DEVICE | MAP_UNCACHED, OID_PHYSMEM, paddr[i])) == MAP_FAILED) {
-			printf("gpiodrv: Could not map gpio%d paddr %p\n", i + 1, paddr[i]);
+			printf("gpiodrv: Could not map gpio%d paddr %p\n", i + 1, (void*) paddr[i]);
 			return -1;
 		}
 	}
@@ -72,7 +72,7 @@ int init(oid_t root)
 	err = mkdir("/dev", 0);
 
 	if (err < 0 && err != -EEXIST) {
-		printf("gpiodrv: mkdir /dev failed\n", err);
+		printf("gpiodrv: mkdir /dev failed\n");
 		return -1;
 	}
 
