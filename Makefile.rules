@@ -37,6 +37,8 @@ INSTALL_HDRS_OUT := $(patsubst %,$(PREFIX_H)%,$(INSTALL_HDRS))
 # add include path for auto-generated files
 CFLAGS += -I"$(BUILD_DIR)/$(CURR_SUFFIX)"
 
+.PRECIOUS: $(PREFIX_A)%.a
+
 # suppress 'nothing to be done'
 all: $(PROGS_UNSTRIPPED) $(PROGS_STRIPPED) $(PROGS_OBJS) $(LIB_OUT) $(INSTALL_HDRS_OUT)
 	@echo > /dev/null;
