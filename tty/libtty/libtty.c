@@ -22,6 +22,7 @@
 #include <termios.h>
 #include <poll.h>
 #include <signal.h>
+#include <unistd.h>
 #include <string.h>
 #include <stdlib.h>
 #include <fcntl.h>
@@ -42,7 +43,7 @@
 #define LOG_TAG "libtty: "
 #define log_debug(fmt, ...)     do { if (0) printf(LOG_TAG fmt "\n", ##__VA_ARGS__); } while (0)
 #define log_ioctl(fmt, ...)     do { if (0) printf(COL_CYAN LOG_TAG "IOCTL: " fmt "\n" COL_NORMAL, ##__VA_ARGS__); } while (0)
-#define log_info(fmt, ...)      do { if (0) printf(COL_CYAN LOG_TAG fmt "\n" COL_NORMAL, ##__VA_ARGS__); } while (0)
+#define log_info(fmt, ...)      do { if (1) printf(COL_CYAN LOG_TAG fmt "\n" COL_NORMAL, ##__VA_ARGS__); } while (0)
 #define log_warn(fmt, ...)      do { if (1) printf(COL_YELLOW LOG_TAG fmt "\n" COL_NORMAL, ##__VA_ARGS__); } while (0)
 #define log_error(fmt, ...)     do { if (1) printf(COL_RED  LOG_TAG fmt "\n" COL_NORMAL, ##__VA_ARGS__); } while (0)
 // } DEBUG
@@ -214,6 +215,7 @@ int libtty_init(libtty_common_t* tty, libtty_callbacks_t* callbacks, unsigned in
 
 	tty->ws.ws_row = 25;
 	tty->ws.ws_col = 80;
+	tty->pgrp = -1;
 
 	return 0;
 }
@@ -352,13 +354,14 @@ int libtty_poll_status(libtty_common_t* tty)
 
 void libtty_signal_pgrp(libtty_common_t* tty, int signal)
 {
-	log_warn("signal(%u): %d", tty->pgrp, signal);
-	kill(-tty->pgrp, signal);
+	if (tty->pgrp > 0) {
+		log_warn("signal(%u): %d", tty->pgrp, signal);
+		kill(-tty->pgrp, signal);
+	}
 }
 
 void libtty_drain(libtty_common_t* tty)
 {
-	log_info("%s", __func__);
 	mutexLock(tty->tx_mutex);
 	while (!fifo_is_empty(tty->tx_fifo))
 		condWait(tty->tx_waitq, tty->tx_mutex, 0);
@@ -367,9 +370,6 @@ void libtty_drain(libtty_common_t* tty)
 }
 void libtty_flush(libtty_common_t* tty, int type)
 {
-	log_info("%s: %s %s", __func__,
-			(type == TCIFLUSH || type == TCIOFLUSH) ? "RX" : "",
-			(type == TCOFLUSH || type == TCIOFLUSH) ? "TX" : "");
 	if (type == TCIFLUSH || type == TCIOFLUSH) {
 		mutexLock(tty->rx_mutex);
 		fifo_remove_all(tty->rx_fifo);
@@ -388,7 +388,7 @@ void libtty_flush(libtty_common_t* tty, int type)
 	termios_optimize(tty);
 }
 
-int libtty_ioctl(libtty_common_t* tty, unsigned int cmd, const void* in_arg, const void** out_arg)
+int libtty_ioctl(libtty_common_t* tty, pid_t sender_pid, unsigned int cmd, const void* in_arg, const void** out_arg)
 {
 	struct termios *termios_p = (struct termios *)in_arg;
 	struct winsize *ws = (struct winsize*)in_arg;
@@ -417,7 +417,9 @@ int libtty_ioctl(libtty_common_t* tty, unsigned int cmd, const void* in_arg, con
 			break;
 		case TCFLSH:
 			log_ioctl("TCFLSH");
-			libtty_flush(tty, *((int*)in_arg));
+			log_warn("TCFLSH = %d", (int)in_arg);
+			// WARN: passing ioctl attr by value
+			libtty_flush(tty, (int)in_arg);
 			break;
 		case TCSETS:
 		case TCSETSW:
@@ -465,23 +467,22 @@ int libtty_ioctl(libtty_common_t* tty, unsigned int cmd, const void* in_arg, con
 		case TIOCSPGRP:
 			log_ioctl("TIOCSPGRP(%u)", *pid);
 			// FIXME: check permissions
-			tty->pgrp = *pid;
+			tty->pgrp = getpgid(*pid);
 			break;
 		case TIOCNOTTY:
 			log_ioctl("TIOCNOTTY");
 			tty->pgrp = -1; /* process detached from the console */
 			break;
-#if 0
-		case TIOCSCTTY: {
+		case TIOCSCTTY:
+			log_ioctl("TIOCSCTTY: pid=%X", sender_pid);
 			// FIXME: check permissions
-			thread_t *curr = proc_current();
-			if (!curr || !curr->process)
-				return -EINVAL;
-
-			con->pgrp = proc_getpgid(curr->process);
+			tty->pgrp = getpgid(sender_pid);
 			break;
-		}
-#endif
+		case TIOCGSID:
+			/* NOTE: simulating sessions with process groups */
+			log_ioctl("TIOCGSID = %u", tty->pgrp);
+			*out_arg = (const void*) &tty->pgrp;
+			break;
 		default:
 			//log_warn("unsupported ioctl: %u", cmd);
 			log_warn("unsupported ioctl: 0x%x", cmd);

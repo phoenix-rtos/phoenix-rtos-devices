@@ -85,7 +85,7 @@ int libtty_close(libtty_common_t* tty);
 ssize_t libtty_read(libtty_common_t *tty, char *data, size_t size, unsigned mode);
 ssize_t libtty_write(libtty_common_t *tty, const char *data, size_t size, unsigned mode);
 int libtty_poll_status(libtty_common_t* tty);
-int libtty_ioctl(libtty_common_t* tty, unsigned int cmd, const void* in_arg, const void** out_arg);
+int libtty_ioctl(libtty_common_t* tty, pid_t sender_pid, unsigned int cmd, const void* in_arg, const void** out_arg);
 
 /* non-blocking interface:
  *  - first invocation has to be done with initialized libtty_read_state_t st param
