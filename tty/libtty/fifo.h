@@ -19,6 +19,15 @@ static inline void fifo_init(fifo_t *f, unsigned int size)
 	f->size_mask = size - 1;
 }
 
+static inline void fifo_remove_all(fifo_t *f)
+{
+	f->head = f->tail = 0;
+}
+
+static inline void fifo_remove_all_but_one(fifo_t *f)
+{
+	f->head = f->tail + 1;
+}
 
 static inline unsigned int fifo_is_full(fifo_t *f)
 {

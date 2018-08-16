@@ -356,6 +356,38 @@ void libtty_signal_pgrp(libtty_common_t* tty, int signal)
 	kill(-tty->pgrp, signal);
 }
 
+void libtty_drain(libtty_common_t* tty)
+{
+	log_info("%s", __func__);
+	mutexLock(tty->tx_mutex);
+	while (!fifo_is_empty(tty->tx_fifo))
+		condWait(tty->tx_waitq, tty->tx_mutex, 0);
+
+	mutexUnlock(tty->tx_mutex);
+}
+void libtty_flush(libtty_common_t* tty, int type)
+{
+	log_info("%s: %s %s", __func__,
+			(type == TCIFLUSH || type == TCIOFLUSH) ? "RX" : "",
+			(type == TCOFLUSH || type == TCIOFLUSH) ? "TX" : "");
+	if (type == TCIFLUSH || type == TCIOFLUSH) {
+		mutexLock(tty->rx_mutex);
+		fifo_remove_all(tty->rx_fifo);
+		mutexUnlock(tty->rx_mutex);
+	}
+
+	if (type == TCOFLUSH || type == TCIOFLUSH) {
+		// leaving one char in TX fifo should allow us to avoid
+		// undefined behaviour if writer is in the middle of operation
+		mutexLock(tty->tx_mutex);
+		fifo_remove_all_but_one(tty->tx_fifo);
+		mutexUnlock(tty->tx_mutex);
+	}
+
+	// check for breakchars, etc.
+	termios_optimize(tty);
+}
+
 int libtty_ioctl(libtty_common_t* tty, unsigned int cmd, const void* in_arg, const void** out_arg)
 {
 	struct termios *termios_p = (struct termios *)in_arg;
@@ -377,6 +409,15 @@ int libtty_ioctl(libtty_common_t* tty, unsigned int cmd, const void* in_arg, con
 			tty->ws.ws_row = ws->ws_row;
 			tty->ws.ws_col = ws->ws_col;
 			libtty_signal_pgrp(tty, SIGWINCH);
+			break;
+
+		case TCDRAIN:
+			log_ioctl("TCDRAIN");
+			libtty_drain(tty);
+			break;
+		case TCFLSH:
+			log_ioctl("TCFLSH");
+			libtty_flush(tty, *((int*)in_arg));
 			break;
 		case TCSETS:
 		case TCSETSW:
