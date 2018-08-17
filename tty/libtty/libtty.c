@@ -417,7 +417,6 @@ int libtty_ioctl(libtty_common_t* tty, pid_t sender_pid, unsigned int cmd, const
 			break;
 		case TCFLSH:
 			log_ioctl("TCFLSH");
-			log_warn("TCFLSH = %d", (int)in_arg);
 			// WARN: passing ioctl attr by value
 			libtty_flush(tty, (int)in_arg);
 			break;
@@ -484,7 +483,6 @@ int libtty_ioctl(libtty_common_t* tty, pid_t sender_pid, unsigned int cmd, const
 			*out_arg = (const void*) &tty->pgrp;
 			break;
 		default:
-			//log_warn("unsupported ioctl: %u", cmd);
 			log_warn("unsupported ioctl: 0x%x", cmd);
 			ret = -EINVAL;
 			break;
