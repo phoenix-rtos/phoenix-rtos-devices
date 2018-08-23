@@ -13,16 +13,17 @@ TARGET ?= ia32-qemu
 #TARGET ?= armv7-stm32
 #TARGET ?= arm-imx
 
-VERSION = 0.2
 TOPDIR := $(CURDIR)
-BUILD_DIR ?= build/$(TARGET)
+BUILD_PREFIX ?= ../build/$(TARGET)
+BUILD_PREFIX := $(abspath $(BUILD_PREFIX))
+BUILD_DIR ?= $(BUILD_PREFIX)/$(notdir $(TOPDIR))
 BUILD_DIR := $(abspath $(BUILD_DIR))
 
 # Compliation options for various architectures
 TARGET_FAMILY = $(firstword $(subst -, ,$(TARGET)-))
 include Makefile.$(TARGET_FAMILY)
 
-export TOPDIR BUILD_DIR SIL TARGET CC CFLAGS MKDEP MKDEPFLAGS AR ARFLAGS LD LDFLAGS LDLIBS OBJDUMP STRIP
+export TOPDIR BUILD_PREFIX BUILD_DIR SIL TARGET CC CFLAGS AR ARFLAGS LD LDFLAGS LDLIBS OBJDUMP STRIP
 
 # allow taking subdirs as targets
 ifneq ($(filter $(SUBDIRS),$(MAKECMDGOALS)),)
@@ -44,6 +45,5 @@ clean:
 ifeq ($(CLEAN_ALL),yes)
 	@rm -rf $(BUILD_DIR)
 endif
-
 
 .PHONY: clean
