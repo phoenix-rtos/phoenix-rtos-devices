@@ -8,7 +8,8 @@ LIB := libsdma.a
 LIB_SRCS := sdma-lib.c
 INSTALL_HDRS := sdma-api.h sdma-lib.h
 
-PROGS := sdma-driver
+PROGS := imx6ull-sdma
+PROGS_SRCS := sdma-driver.c
 
 # include after all dependencies are set
 include $(TOPDIR)/Makefile.rules
