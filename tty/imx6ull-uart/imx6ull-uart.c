@@ -437,7 +437,7 @@ int main(int argc, char **argv)
 	msg.i.create.dev.port = port;
 	msg.i.create.dev.id = 0;
 	msg.i.data = uartn;
-	msg.i.size = strlen(uartn);
+	msg.i.size = strlen(uartn) + 1;
 	msg.o.data = NULL;
 	msg.o.size = 0;
 
