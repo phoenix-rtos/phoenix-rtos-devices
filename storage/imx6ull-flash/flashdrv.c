@@ -198,11 +198,11 @@ struct {
 	volatile u32 *dma;
 	volatile u32 *mux;
 
-	handle_t mutex, bch_cond, dma_cond;
+	handle_t mutex, wait_mutex, bch_cond, dma_cond;
 	handle_t intbch, intdma, intgpmi;
 	unsigned pagesz, metasz;
 
-	int result, bch_status;
+	int result, bch_status, bch_done;
 } flashdrv_common;
 
 
@@ -272,6 +272,7 @@ static int bch_irqHandler(unsigned int n, void *data)
 {
 	/* Clear interrupt flags */
 	flashdrv_common.bch_status = *(flashdrv_common.bch + bch_status0);
+	flashdrv_common.bch_done = 1;
 	*(flashdrv_common.bch + bch_ctrl_clr) = 1;
 	return 1;
 }
@@ -629,8 +630,14 @@ int flashdrv_reset(flashdrv_dma_t *dma)
 	flashdrv_finish(dma);
 
 	mutexLock(flashdrv_common.mutex);
+	flashdrv_common.result = 1;
 	dma_run((dma_t *)dma->first, channel);
-	condWait(flashdrv_common.dma_cond, flashdrv_common.mutex, 0);
+
+	mutexLock(flashdrv_common.wait_mutex);
+	while (flashdrv_common.result > 0)
+		condWait(flashdrv_common.dma_cond, flashdrv_common.wait_mutex, 0);
+	mutexUnlock(flashdrv_common.wait_mutex);
+
 	err = flashdrv_common.result;
 	mutexUnlock(flashdrv_common.mutex);
 
@@ -670,8 +677,14 @@ int flashdrv_write(flashdrv_dma_t *dma, u32 paddr, void *data, char *aux)
 		*(flashdrv_common.bch + bch_flash0layout1) |= flashdrv_common.metasz << 16;
 	}
 
+	flashdrv_common.result = 1;
 	dma_run((dma_t *)dma->first, channel);
-	condWait(flashdrv_common.dma_cond, flashdrv_common.mutex, 0);
+
+	mutexLock(flashdrv_common.wait_mutex);
+	while (flashdrv_common.result > 0)
+		condWait(flashdrv_common.dma_cond, flashdrv_common.wait_mutex, 0);
+	mutexUnlock(flashdrv_common.wait_mutex);
+
 	err = flashdrv_common.result;
 
 	if (data == NULL) {
@@ -709,11 +722,19 @@ int flashdrv_read(flashdrv_dma_t *dma, u32 paddr, void *data, flashdrv_meta_t *a
 	flashdrv_finish(dma);
 
 	mutexLock(flashdrv_common.mutex);
+	flashdrv_common.result = 1;
+	flashdrv_common.bch_done = 0;
 	dma_run((dma_t *)dma->first, channel);
-	condWait(flashdrv_common.bch_cond, flashdrv_common.mutex, 0);
-	condWait(flashdrv_common.dma_cond, flashdrv_common.mutex, 0);
-	result = flashdrv_common.bch_status;
 
+	mutexLock(flashdrv_common.wait_mutex);
+	while (!flashdrv_common.bch_done)
+		condWait(flashdrv_common.bch_cond, flashdrv_common.wait_mutex, 0);
+
+	while (flashdrv_common.result > 0)
+		condWait(flashdrv_common.dma_cond, flashdrv_common.wait_mutex, 0);
+	mutexUnlock(flashdrv_common.wait_mutex);
+
+	result = flashdrv_common.bch_status;
 	mutexUnlock(flashdrv_common.mutex);
 
 	return result;
@@ -733,8 +754,14 @@ int flashdrv_erase(flashdrv_dma_t *dma, u32 paddr)
 	flashdrv_finish(dma);
 
 	mutexLock(flashdrv_common.mutex);
+	flashdrv_common.result = 1;
 	dma_run((dma_t *)dma->first, channel);
-	condWait(flashdrv_common.dma_cond, flashdrv_common.mutex, 0);
+
+	mutexLock(flashdrv_common.wait_mutex);
+	while (flashdrv_common.result > 0)
+		condWait(flashdrv_common.dma_cond, flashdrv_common.wait_mutex, 0);
+	mutexUnlock(flashdrv_common.wait_mutex);
+
 	result = flashdrv_common.result;
 	mutexUnlock(flashdrv_common.mutex);
 
@@ -759,8 +786,14 @@ int flashdrv_writeraw(flashdrv_dma_t *dma, u32 paddr, void *data, int sz)
 	flashdrv_finish(dma);
 
 	mutexLock(flashdrv_common.mutex);
+	flashdrv_common.result = 1;
 	dma_run((dma_t *)dma->first, channel);
-	condWait(flashdrv_common.dma_cond, flashdrv_common.mutex, 0);
+
+	mutexLock(flashdrv_common.wait_mutex);
+	while (flashdrv_common.result > 0)
+		condWait(flashdrv_common.dma_cond, flashdrv_common.wait_mutex, 0);
+	mutexUnlock(flashdrv_common.wait_mutex);
+
 	err = flashdrv_common.result;
 	mutexUnlock(flashdrv_common.mutex);
 
@@ -786,8 +819,14 @@ int flashdrv_readraw(flashdrv_dma_t *dma, u32 paddr, void *data, int sz)
 	flashdrv_finish(dma);
 
 	mutexLock(flashdrv_common.mutex);
+	flashdrv_common.result = 1;
 	dma_run((dma_t *)dma->first, channel);
-	condWait(flashdrv_common.dma_cond, flashdrv_common.mutex, 0);
+
+	mutexLock(flashdrv_common.wait_mutex);
+	while (flashdrv_common.result > 0)
+		condWait(flashdrv_common.dma_cond, flashdrv_common.wait_mutex, 0);
+	mutexUnlock(flashdrv_common.wait_mutex);
+
 	err = flashdrv_common.result;
 	mutexUnlock(flashdrv_common.mutex);
 
@@ -801,7 +840,6 @@ void flashdrv_rundma(flashdrv_dma_t *dma)
 
 	mutexLock(flashdrv_common.mutex);
 	dma_run((dma_t *)dma->first, channel);
-	//condWait(flashdrv_common.dma_cond, flashdrv_common.mutex, 0);
 	mutexUnlock(flashdrv_common.mutex);
 }
 
@@ -821,6 +859,7 @@ void flashdrv_init(void)
 	condCreate(&flashdrv_common.bch_cond);
 	condCreate(&flashdrv_common.dma_cond);
 	mutexCreate(&flashdrv_common.mutex);
+	mutexCreate(&flashdrv_common.wait_mutex);
 
 	flashdrv_setDevClock(pctl_clk_apbhdma, 3);
 	flashdrv_setDevClock(pctl_clk_rawnand_u_gpmi_input_apb, 3);
