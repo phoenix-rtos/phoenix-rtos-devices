@@ -26,7 +26,8 @@ static inline void fifo_remove_all(fifo_t *f)
 
 static inline void fifo_remove_all_but_one(fifo_t *f)
 {
-	f->head = f->tail + 1;
+	if (f->head != f->tail)
+		f->head = f->tail + 1;
 }
 
 static inline unsigned int fifo_is_full(fifo_t *f)
