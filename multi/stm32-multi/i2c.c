@@ -55,6 +55,39 @@ static void i2c_waitForIrq(void)
 }
 
 
+static void i2c_hwinit(void)
+{
+	unsigned int t;
+
+	/* Disable I2C periph */
+	*(i2c_common.base + cr1) &= ~1;
+	dataBarier();
+
+	*(i2c_common.base + cr1) |= 1 << 15;
+	dataBarier();
+	*(i2c_common.base + cr1) &= ~(1 << 15);
+	dataBarier();
+
+	/* Enable ACK after each byte */
+	*(i2c_common.base + cr2) |= 1 << 10;
+
+	/* Peripheral clock = 2 MHz */
+	t = *(i2c_common.base + cr2) & ~0x1ff;
+	*(i2c_common.base + cr2) = t | (1 << 2);
+
+	/* 95,325 kHz SCK */
+	t = *(i2c_common.base + ccr) & ~((1 << 14) | 0x7ff);
+	*(i2c_common.base + ccr) = t | 0xb;
+
+	/* 500 ns SCL rise time */
+	t = *(i2c_common.base + trise) & ~0x1ff;
+	*(i2c_common.base + trise) = t | 3;
+
+	/* Enable I2C periph */
+	*(i2c_common.base + cr1) |= 1;
+}
+
+
 unsigned int i2c_transaction(char op, char addr, char reg, void *buff, unsigned int count)
 {
 	int i;
@@ -64,6 +97,9 @@ unsigned int i2c_transaction(char op, char addr, char reg, void *buff, unsigned 
 
 	mutexLock(i2c_common.lock);
 	keepidle(1);
+
+	if (*(i2c_common.base + sr2) & (1 << 1))
+		i2c_hwinit();
 
 	*(i2c_common.base + cr2) |= (3 << 9);
 
@@ -129,36 +165,14 @@ unsigned int i2c_transaction(char op, char addr, char reg, void *buff, unsigned 
 
 int i2c_init(void)
 {
-	unsigned int t;
-
 	i2c_common.base = (void *)0x40005800;
 
 	rcc_devClk(pctl_i2c2, 1);
 
-	/* Disable I2C periph */
-	*(i2c_common.base + cr1) &= ~1;
-	dataBarier();
+	i2c_hwinit();
 
 	gpio_configPin(gpiob, 10, 2, 4, 1, 0, 0);
 	gpio_configPin(gpiob, 11, 2, 4, 1, 0, 0);
-
-	/* Enable ACK after each byte */
-	*(i2c_common.base + cr2) |= 1 << 10;
-
-	/* Peripheral clock = 2 MHz */
-	t = *(i2c_common.base + cr2) & ~0x1ff;
-	*(i2c_common.base + cr2) = t | (1 << 2);
-
-	/* 95,325 kHz SCK */
-	t = *(i2c_common.base + ccr) & ~((1 << 14) | 0x7ff);
-	*(i2c_common.base + ccr) = t | 0xb;
-
-	/* 500 ns SCL rise time */
-	t = *(i2c_common.base + trise) & ~0x1ff;
-	*(i2c_common.base + trise) = t | 3;
-
-	/* Enable I2C periph */
-	*(i2c_common.base + cr1) |= 1;
 
 	mutexCreate(&i2c_common.lock);
 	mutexCreate(&i2c_common.irqlock);
