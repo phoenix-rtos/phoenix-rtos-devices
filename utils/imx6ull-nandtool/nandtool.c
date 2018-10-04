@@ -263,7 +263,7 @@ void flash_erase(void *arg, int start, int end, int silent)
 	nand_msg(silent, "--------------------\n");
 }
 
-void set_nandboot(char *primary, char *secondary, char *rootfs)
+void set_nandboot(char *primary, char *secondary, char *rootfs, size_t rootfssz)
 {
 	int ret = 0, err = 0;
 	flashdrv_dma_t *dma;
@@ -275,9 +275,9 @@ void set_nandboot(char *primary, char *secondary, char *rootfs)
 	flashdrv_reset(dma);
 
 	printf("\n- NANDBOOT SETUP -\n");
-
+	printf("Root partition size: %u\n", rootfssz);
 	printf("Flash erase\n");
-	flash_erase(dma, 0, 192, 1);
+	flash_erase(dma, 0, 64 + (2 * rootfssz), 1);
 
 	printf("Performing flash check\n");
 	ret = flash_check(dma, 1, &dbbt);
@@ -318,7 +318,7 @@ void set_nandboot(char *primary, char *secondary, char *rootfs)
 	if (flash_image(dma, rootfs, 64, 0, 1, 0, dbbt))
 		err++;
 
-	if (flash_image(dma, rootfs, 128, 0, 1, 0, dbbt))
+	if (flash_image(dma, rootfs, 64 + rootfssz, 0, 1, 0, dbbt))
 		err++;
 
 	flashdrv_dmadestroy(dma);
@@ -353,8 +353,9 @@ int main(int argc, char **argv)
 	int start = -1;
 	char *tok, *primary, *secondary, *rootfs;
 	int len, i, raw = 0;
+	size_t rootfssz = 64;
 
-	while ((c = getopt(argc, argv, "i:r:s:hct:e:f")) != -1) {
+	while ((c = getopt(argc, argv, "i:r:s:hct:e:f:")) != -1) {
 		switch (c) {
 
 			case 'i':
@@ -392,12 +393,13 @@ int main(int argc, char **argv)
 					print_help();
 				return 0;
 			case 'f':
-				if (argc == 2) {
-
+				if (argc < 4) {
+					if (optarg != NULL)
+						rootfssz = atoi(optarg);
 					primary = "/init/primary.img";
 					secondary = "/init/secondary.img";
 					rootfs = "/init/rootfs.img";
-					set_nandboot(primary, secondary, rootfs);
+					set_nandboot(primary, secondary, rootfs, rootfssz);
 				} else if (argc == 4) {
 
 					len = strlen(argv[optind]);
@@ -424,7 +426,7 @@ int main(int argc, char **argv)
 					strcat(rootfs, "/init/");
 					strcat(rootfs, argv[optind] + i + 1);
 
-					set_nandboot(primary, secondary, rootfs);
+					set_nandboot(primary, secondary, rootfs, rootfssz);
 
 					free(primary);
 					free(secondary);
