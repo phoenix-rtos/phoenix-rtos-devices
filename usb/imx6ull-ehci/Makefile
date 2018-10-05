@@ -1,5 +1,5 @@
 #
-# Makefile for Phoenix-RTOS TTY abstraction layer
+# Makefile for Phoenix-RTOS imx6ull ehci
 #
 # Copyright 2018 Phoenix Systems
 #

@@ -1,3 +1,19 @@
+/*
+ * Phoenix-RTOS
+ *
+ * Operating system kernel
+ *
+ * ehci/ehci.c
+ *
+ * Copyright 2018 Phoenix Systems
+ * Copyright 2007 Pawel Pisarczyk
+ * Author: Jan Sikorski
+ *
+ * This file is part of Phoenix-RTOS.
+ *
+ * %LICENSE%
+ */
+
 #include <sys/mman.h>
 #include <sys/threads.h>
 #include <sys/interrupt.h>

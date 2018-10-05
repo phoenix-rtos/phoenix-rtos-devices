@@ -1,5 +1,21 @@
-#ifndef _IMX6ULL_USB_HOST_H_
-#define _IMX6ULL_USB_HOST_H_
+/*
+ * Phoenix-RTOS
+ *
+ * Operating system kernel
+ *
+ * ehci/ehci.h
+ *
+ * Copyright 2018 Phoenix Systems
+ * Copyright 2007 Pawel Pisarczyk
+ * Author: Jan Sikorski
+ *
+ * This file is part of Phoenix-RTOS.
+ *
+ * %LICENSE%
+ */
+
+#ifndef _IMX6ULL_EHCI_H_
+#define _IMX6ULL_EHCI_H_
 
 
 enum { framelist_itd = 0, framelist_qh, framelist_sitd, framelist_fstn };
