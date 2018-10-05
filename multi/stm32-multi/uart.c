@@ -52,6 +52,7 @@ struct {
 	handle_t rxcond;
 	handle_t txlock;
 	handle_t txcond;
+	handle_t lock;
 } uart_common[UART_CNT];
 
 
@@ -146,7 +147,7 @@ int uart_configure(int uart, char bits, char parity, unsigned int baud, char ena
 
 	mutexLock(uart_common[pos].txlock);
 	mutexLock(uart_common[pos].rxlock);
-
+	mutexLock(uart_common[uart].lock);
 
 	*(uart_common[pos].base + cr1) &= ~(1 << 13);
 	dataBarier();
@@ -183,6 +184,7 @@ int uart_configure(int uart, char bits, char parity, unsigned int baud, char ena
 
 	rcc_devClk(uart2pctl[uart], !!en);
 
+	mutexUnlock(uart_common[uart].lock);
 	mutexUnlock(uart_common[pos].rxlock);
 	mutexUnlock(uart_common[pos].txlock);
 
@@ -206,7 +208,9 @@ int uart_write(int uart, void* buff, unsigned int bufflen)
 	uart_common[uart].txbeg = buff;
 	uart_common[uart].txend = buff + bufflen;
 
+	mutexLock(uart_common[uart].lock);
 	*(uart_common[uart].base + cr1) |= 1 << 7;
+	mutexUnlock(uart_common[uart].lock);
 
 	while (uart_common[uart].txbeg != uart_common[uart].txend)
 		condWait(uart_common[uart].txcond, uart_common[uart].txlock, 0);
@@ -240,7 +244,9 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 	 * rxdfifo is copied into buff. The handler will clear this
 	 * bit. */
 
+	mutexLock(uart_common[uart].lock);
 	*(uart_common[uart].base + cr1) |= 1 << 7;
+	mutexUnlock(uart_common[uart].lock);
 
 	while (mode != uart_mnblock && uart_common[uart].rxbeg != uart_common[uart].rxend) {
 		err = condWait(uart_common[uart].rxcond, uart_common[uart].rxlock, timeout);
@@ -254,10 +260,13 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 	uart_common[uart].rxend = NULL;
 
 	read = uart_common[uart].read;
+
+	mutexLock(uart_common[uart].lock);
 	if (!(*(uart_common[uart].base + cr1) & (1 << 12)) && (*(uart_common[uart].base + cr1) & (1 << 10))) {
 		for (i = 0; i < read; ++i)
 			((char *)buff)[i] &= 0x7f;
 	}
+	mutexUnlock(uart_common[uart].lock);
 
 	mutexUnlock(uart_common[uart].rxlock);
 
@@ -295,6 +304,8 @@ int uart_init(void)
 		condCreate(&uart_common[i].rxcond);
 		mutexCreate(&uart_common[i].txlock);
 		condCreate(&uart_common[i].txcond);
+
+		mutexCreate(&uart_common[i].lock);
 
 		uart_common[i].base = info[uart].base;
 
