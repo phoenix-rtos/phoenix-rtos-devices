@@ -192,15 +192,18 @@ void set_clk(int dev_no)
 	platformctl(&uart_clk);
 }
 
-void set_mux(int dev_no)
+void set_mux(int dev_no, int use_rts_cts)
 {
 	platformctl_t uart_ctl;
-	int i;
+	int i, first_mux = 0;
 
 	uart_ctl.action = pctl_set;
 	uart_ctl.type = pctl_iomux;
 
-	for (i = 0; i < 4; i++) {
+	if (!use_rts_cts)
+		first_mux = 2; /* Skip RTS/CTS mux configuration */
+
+	for (i = first_mux; i < 4; i++) {
 		uart_ctl.iomux.mux = uart_pctl_mux[(dev_no - 1)][i].pctl;
 		uart_ctl.iomux.sion = 0;
 		uart_ctl.iomux.mode = uart_pctl_mux[(dev_no - 1)][i].val;
@@ -306,9 +309,10 @@ char __attribute__((aligned(8))) stack[2048];
 char __attribute__((aligned(8))) stack0[2048];
 
 static void print_usage(const char* progname) {
-	printf("Usage: %s [mode] [device] [speed] [parity] or no args for default settings (cooked, uart1, B115200, 8N1)\n", progname);
+	printf("Usage: %s [mode] [device] [speed] [parity] [use_rts_cts] or no args for default settings (cooked, uart1, B115200, 8N1)\n", progname);
 	printf("\tmode: 0 - raw, 1 - cooked\n\tdevice: 1 to 8\n");
 	printf("\tspeed: baud_rate\n\tparity: 0 - none, 1 - odd, 2 - even\n");
+	printf("\tuse_rts_cts: 0 - no hardware flow control, 1 - use hardware flow control\n");
 }
 
 int main(int argc, char **argv)
@@ -321,6 +325,7 @@ int main(int argc, char **argv)
 	speed_t baud = B115200;
 	int parity = 0;
 	int is_cooked = 1;
+	int use_rts_cts = 0;
 
 	libtty_callbacks_t callbacks = {
 		.arg = &uart,
@@ -334,11 +339,12 @@ int main(int argc, char **argv)
 
 	if (argc == 1) {
 		uart.dev_no = 1;
-	} else if (argc == 5) {
+	} else if (argc == 6) {
 		is_cooked = atoi(argv[1]);
 		uart.dev_no = atoi(argv[2]);
 		parity = atoi(argv[4]);
 		baud = libtty_int_to_baudrate(atoi(argv[3]));
+		use_rts_cts = atoi(argv[5]);
 	} else {
 		print_usage(argv[0]);
 		return 0;
@@ -380,7 +386,7 @@ int main(int argc, char **argv)
 	*(uart.base + ucr2) &= ~0;
 
 	/* set correct daisy for rx input */
-	set_mux(uart.dev_no);
+	set_mux(uart.dev_no, use_rts_cts);
 
 	while (!(*(uart.base + ucr2) & 1));
 
