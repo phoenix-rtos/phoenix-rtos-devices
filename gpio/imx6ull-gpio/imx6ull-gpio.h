@@ -14,14 +14,12 @@
 #ifndef _GPIODRV_H_
 #define _GPIODRV_H_
 
-typedef struct {
-	union {
+typedef union {
+	unsigned int val;
+	struct {
 		unsigned int val;
-		struct {
-			unsigned int val;
-			unsigned int mask;
-		} w;
-	};
-} __attribute__((packed)) gpiodata_t;
+		unsigned int mask;
+	} __attribute__((packed)) w;
+} gpiodata_t;
 
 #endif
