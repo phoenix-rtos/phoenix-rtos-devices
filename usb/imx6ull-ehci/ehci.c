@@ -27,9 +27,16 @@
 #include "phy.h"
 #include "dma.h"
 
+#define TRACE(x, ...) fprintf(stderr, "ehci: " x "\n" __VA_ARGS__)
+
 #define USBSTS_AS  (1 << 15)
 #define USBSTS_PS  (1 << 14)
 #define USBSTS_RCL (1 << 13)
+#define USBSTS_URI (1 << 6)
+#define USBSTS_SRI (1 << 7)
+#define USBSTS_SLI (1 << 8)
+#define USBSTS_ULPII (1 << 10)
+#define USBSTS_HCH (1 << 12)
 #define USBSTS_IAA (1 << 5)
 #define USBSTS_SEI (1 << 4)
 #define USBSTS_FRI (1 << 3)
@@ -51,6 +58,8 @@
 #define PORTSC_CCS (1 << 0)
 
 #define USB_OTG2_IRQ (32 + 42)
+#define USB_OTG1_IRQ (32 + 43)
+
 #define USB_ADDR 0x02184000
 
 enum {
@@ -92,12 +101,12 @@ struct {
 
 static int ehci_irqHandler(unsigned int n, void *data)
 {
-	ehci_common.status = *(ehci_common.usb2 + usbsts); // & 0x1f;//(USBSTS_SEI | USBSTS_PCI | USBSTS_UEI | USBSTS_UI);
+	ehci_common.status = *(ehci_common.usb2 + usbsts);
 	*(ehci_common.usb2 + usbsts) = ehci_common.status & 0x1f;
 
 	if (ehci_common.status & USBSTS_RCL) {
 		/* Async schedule is empty */
-
+	//	ehci_common.status &= ~USBSTS_RCL;
 	}
 
 	ehci_common.port_change = 0;
@@ -113,12 +122,42 @@ static int ehci_irqHandler(unsigned int n, void *data)
 }
 
 
+void ehci_printStatus(void)
+{
+	unsigned status = ehci_common.status;
+	printf("%s%s%s%s%s%s%s%s%s%s%s%s%s%s\n",
+		status & USBSTS_UI ? "UI " : "",
+		status & USBSTS_UEI ? "UEI " : "",
+		status & USBSTS_PCI ? "PCI " : "",
+		status & USBSTS_FRI ? "FRI " : "",
+		status & USBSTS_SEI ? "SEI " : "",
+		status & USBSTS_IAA ? "AAI " : "",
+		status & USBSTS_URI ? "URI " : "",
+		status & USBSTS_SRI ? "SRI " : "",
+		status & USBSTS_SLI ? "SLI " : "",
+		status & USBSTS_ULPII ? "ULPII " : "",
+		status & USBSTS_HCH ? "HCH " : "",
+		status & USBSTS_RCL ? "RCL " : "",
+		status & USBSTS_PS ? "PS " : "",
+		status & USBSTS_AS ? "AS " : "");
+}
+
+
 int ehci_await(int timeout)
 {
 	int err;
 	mutexLock(ehci_common.irq_lock);
 	err = condWait(ehci_common.irq_cond, ehci_common.irq_lock, timeout);
 	mutexUnlock(ehci_common.irq_lock);
+
+	if (err < 0) {
+		TRACE("TIMEOUT");
+		ehci_common.status = *(ehci_common.usb2 + usbsts);
+	}
+
+	printf("ehci: status ");
+	ehci_printStatus();
+
 	return err;
 }
 
@@ -186,6 +225,16 @@ struct qtd *ehci_allocQtd(int token, char *buffer, size_t *size, int datax)
 
 void ehci_freeQtd(struct qtd *qtd)
 {
+	if (qtd->babble) {
+		TRACE("babble!");
+	}
+	if (qtd->transaction_error) {
+		TRACE("transaction error!");
+	}
+	if (qtd->buffer_error) {
+		TRACE("buffer error");
+	}
+
 	dma_free64(qtd);
 }
 
@@ -227,6 +276,9 @@ void ehci_freeQh(struct qh *qh)
 	}
 	mutexUnlock(ehci_common.irq_lock);
 
+	if (qh->nak_count_reload) {
+		TRACE("NAK count reload");
+	}
 	dma_free64(qh);
 }
 
@@ -261,6 +313,7 @@ void ehci_unlinkQh(struct qh *prev, struct qh *unlink, struct qh *next)
 	}
 
 	prev->horizontal = unlink->horizontal;
+
 }
 
 
