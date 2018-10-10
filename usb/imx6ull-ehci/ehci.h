@@ -190,6 +190,9 @@ extern void ehci_linkQh(struct qh *prev, struct qh *next);
 extern void ehci_unlinkQh(struct qh *prev, struct qh *unlink, struct qh *next);
 
 
+extern int ehci_qhFinished(struct qh *qh);
+
+
 extern int ehci_await(int timeout);
 
 

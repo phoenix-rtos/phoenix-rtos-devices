@@ -162,14 +162,14 @@ int ehci_await(int timeout)
 }
 
 
-void ehci_irqThread(void *arg)
+void ehci_irqThread(void *callback)
 {
 	for (;;) {
 		mutexLock(ehci_common.irq_lock);
 		condWait(ehci_common.irq_cond, ehci_common.irq_lock, 0);
 		mutexUnlock(ehci_common.irq_lock);
 
-		((void (*)(int))arg)(ehci_common.port_change);
+		((void (*)(int))callback)(ehci_common.port_change);
 	}
 }
 
@@ -260,6 +260,12 @@ struct qh *ehci_allocQh(int address, int endpoint, int transfer, int speed, int 
 	result->control_endpoint = transfer == transfer_control && speed != high_speed;
 
 	return result;
+}
+
+
+int ehci_qhFinished(struct qh *qh)
+{
+	return qh->transfer_overlay.next.terminate && !qh->transfer_overlay.active;
 }
 
 
@@ -358,7 +364,7 @@ void ehci_init(void *event_callback)
 	/* Offset into USB2 */
 	ehci_common.usb2 = ehci_common.base + 128;
 
-	beginthread(ehci_irqThread, 4, malloc(4000), 4000, event_callback);
+	beginthread(ehci_irqThread, 4, malloc(0x4000), 0x4000, event_callback);
 	interrupt(USB_OTG2_IRQ, ehci_irqHandler, NULL, ehci_common.irq_cond, &ehci_common.irq_handle);
 
 	/* Reset controller */
