@@ -66,7 +66,7 @@ void event_cb(usb_event_t *usb_event, void *data, size_t size)
 		mutexLock(telit_common.lock);
 
 		telit_common.device_id = usb_event->insertion.device_id;
-		
+
 		/* config and interface */
 		telit_common.state = TELIT_STATE_INSERTED;
 		condSignal(telit_common.cond);
@@ -75,13 +75,13 @@ void event_cb(usb_event_t *usb_event, void *data, size_t size)
 		break;
 
 	case usb_event_removal:
-		break;	   
+		break;
 
 	case usb_event_interrupt:
 		break;
 
 	default:
-		break;	
+		break;
 	}
 }
 
@@ -104,7 +104,7 @@ void telit_init_powerkey(void)
 	gpiodata_t set_dir = {
 		.w = { .val = 1 << 9, .mask = 1 << 9 }
 	};
-	
+
 	gpiodata_t set_value = {
 		.w = { .val = 0, .mask = 1 << 9 }
 	};
@@ -123,18 +123,92 @@ void telit_init_powerkey(void)
 	msg.i.size = sizeof(set_dir);
 	msgSend(gpio5_dir.port, &msg);
 
+	TRACE("pwrkey set 0");
+
 	msg.type = mtWrite;
 	msg.i.io.oid = gpio5_port;
 	msg.i.data = &set_value;
 	msg.i.size = sizeof(set_value);
 	msgSend(gpio5_port.port, &msg);
+
+	sleep(7);
+
+	TRACE("pwrkey set 1");
+
+	set_value.w.val = 1 << 9;
+
+	msgSend(gpio5_port.port, &msg);
 }
+
+
+void telit_setmux(int pin, int mode)
+{
+	platformctl_t set_mux = {
+		.action = pctl_set,
+		.type = pctl_iomux,
+		.iomux = { .mux = pin, .sion = 0, .mode = mode },
+	};
+
+	platformctl(&set_mux);
+}
+
+
+void telit_init_usbpwr(void)
+{
+	platformctl_t set_mux = {
+		.action = pctl_set,
+		.type = pctl_iomux,
+		.iomux = { .mux = pctl_mux_sd1_d1, .sion = 0, .mode = 5 },
+	};
+
+	platformctl_t set_pad = {
+		.action = pctl_set,
+		.type = pctl_iopad,
+		.iopad = { .pad = pctl_pad_sd1_d1, .hys = 0, .pus = 0, .pue = 0,
+			.pke = 0, .ode = 0, .speed = 2, .dse = 4, .sre = 0 },
+	};
+
+	oid_t gpio2_port, gpio2_dir;
+	gpiodata_t set_dir = {
+		.w = { .val = 1 << 19, .mask = 1 << 19 }
+	};
+
+	gpiodata_t set_value = {
+		.w = { .val = 0 << 19, .mask = 1 << 19 }
+	};
+
+	msg_t msg = { 0 };
+
+	platformctl(&set_mux);
+	platformctl(&set_pad);
+
+	lookup("/dev/gpio2/port", NULL, &gpio2_port);
+	lookup("/dev/gpio2/dir", NULL, &gpio2_dir);
+
+	msg.type = mtWrite;
+	msg.i.io.oid = gpio2_dir;
+	msg.i.data = &set_dir;
+	msg.i.size = sizeof(set_dir);
+	msgSend(gpio2_dir.port, &msg);
+
+	msg.type = mtWrite;
+	msg.i.io.oid = gpio2_port;
+	msg.i.data = &set_value;
+	msg.i.size = sizeof(set_value);
+	msgSend(gpio2_port.port, &msg);
+}
+
 
 int telit_init(void)
 {
 	int ret = 0;
-	
+
 	telit_init_powerkey();
+	//telit_init_usbpwr();
+
+	telit_setmux(pctl_mux_sd1_d1, 8);
+	telit_setmux(pctl_mux_sd1_d2, 8);
+	telit_setmux(pctl_mux_sd1_d3, 8);
 
 	ret |= condCreate(&telit_common.cond);
 	ret |= mutexCreate(&telit_common.lock);
@@ -168,15 +242,15 @@ int main(void)
 		return -1;
 	}
 
-	usb_device_id.idVendor = TELIT_ID_VENDOR; 
-	usb_device_id.idProduct = TELIT_ID_PRODUCT; 
-	usb_device_id.bcdDevice = USB_CONNECT_WILDCARD; 
-	usb_device_id.bDeviceClass = USB_CONNECT_WILDCARD; 
-	usb_device_id.bDeviceSubClass = USB_CONNECT_WILDCARD; 
-	usb_device_id.bDeviceProtocol = USB_CONNECT_WILDCARD; 
+	usb_device_id.idVendor = TELIT_ID_VENDOR;
+	usb_device_id.idProduct = TELIT_ID_PRODUCT;
+	usb_device_id.bcdDevice = USB_CONNECT_WILDCARD;
+	usb_device_id.bDeviceClass = USB_CONNECT_WILDCARD;
+	usb_device_id.bDeviceSubClass = USB_CONNECT_WILDCARD;
+	usb_device_id.bDeviceProtocol = USB_CONNECT_WILDCARD;
 
 	if (libusb_connect(&usb_device_id, event_cb)) {
-		TRACE("unable to connect with usbd"); 
+		TRACE("unable to connect with usbd");
 		libusb_exit();
 		telit_exit();
 		return -1;
@@ -186,7 +260,7 @@ int main(void)
 	while (telit_common.state != TELIT_STATE_INSERTED)
 		condWait(telit_common.cond, telit_common.lock, 0);
 	mutexUnlock(telit_common.lock);
-	
+
 	usb_urb_t urb = { 0 };
 	usb_open_t open = { 0 };
 
