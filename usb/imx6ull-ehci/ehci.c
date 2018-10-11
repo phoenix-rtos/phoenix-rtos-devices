@@ -118,7 +118,7 @@ static int ehci_irqHandler(unsigned int n, void *data)
 		}
 	}
 
-	return -!ehci_common.status;
+	return -!(ehci_common.status & 0x1f);
 }
 
 
@@ -168,6 +168,9 @@ void ehci_irqThread(void *callback)
 		mutexLock(ehci_common.irq_lock);
 		condWait(ehci_common.irq_cond, ehci_common.irq_lock, 0);
 		mutexUnlock(ehci_common.irq_lock);
+
+		printf("ehci irq: status ");
+		ehci_printStatus();
 
 		((void (*)(int))callback)(ehci_common.port_change);
 	}
@@ -265,6 +268,11 @@ struct qh *ehci_allocQh(int address, int endpoint, int transfer, int speed, int 
 
 int ehci_qhFinished(struct qh *qh)
 {
+	if (qh->transfer_overlay.transaction_error) {
+		TRACE("transaction error");
+		return -1;
+	}
+
 	return qh->transfer_overlay.next.terminate && !qh->transfer_overlay.active;
 }
 
