@@ -16,9 +16,11 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <string.h>
 #include <sys/platform.h>
 #include <sys/msg.h>
 #include <sys/threads.h>
+#include <sys/mman.h>
 #include <phoenix/arch/imx6ull.h>
 
 #include <libusb.h>
@@ -47,6 +49,8 @@ static struct {
 	int state;
 	int device_id;
 	u32 port;
+	void *conf_descriptor;
+	device_desc_t dev_descriptor;
 } telit_common;
 
 
@@ -61,13 +65,16 @@ void event_cb(usb_event_t *usb_event, void *data, size_t size)
 	switch (usb_event->type) {
 
 	case usb_event_insertion:
-		TRACE("insert %u", size);
-		libusb_dumpConfiguration(stdout, data);
+//		libusb_dumpConfiguration(stdout, data);
 		mutexLock(telit_common.lock);
 
 		telit_common.device_id = usb_event->insertion.device_id;
 
-		/* config and interface */
+		/* copy device and config descriptors */
+		memcpy(&telit_common.dev_descriptor, &usb_event->insertion.descriptor, sizeof(device_desc_t));
+		telit_common.conf_descriptor = malloc(size);
+		memcpy(telit_common.conf_descriptor, data, size);
+
 		telit_common.state = TELIT_STATE_INSERTED;
 		condSignal(telit_common.cond);
 
@@ -230,6 +237,10 @@ int telit_exit(void)
 int main(void)
 {
 	usb_device_id_t usb_device_id;
+	int in = 0, out = 0;
+	char *data;
+	int off = 3;
+	int send = 0;
 
 	if (telit_init()) {
 		TRACE("telit init error");
@@ -261,12 +272,16 @@ int main(void)
 		condWait(telit_common.cond, telit_common.lock, 0);
 	mutexUnlock(telit_common.lock);
 
+	data = mmap(NULL, 4096, PROT_WRITE | PROT_READ, MAP_ANONYMOUS | MAP_UNCACHED, OID_NULL, 0);
+
 	usb_urb_t urb = { 0 };
 	usb_open_t open = { 0 };
 
 	urb.type = usb_transfer_control;
 	urb.device_id = telit_common.device_id;
 	urb.pipe = 0;
+
+	memset(data, 0, 4096);
 
 	urb.setup.bmRequestType = REQUEST_DIR_HOST2DEV | REQUEST_TYPE_STANDARD | REQUEST_RECIPIENT_DEVICE;
 	urb.setup.bRequest = SET_CONFIGURATION;
@@ -276,10 +291,102 @@ int main(void)
 
 	libusb_write(&urb, NULL, 0);
 
-	TRACE("looping");
-	while(1)
-		sleep(3);
+	urb.setup.bmRequestType = REQUEST_DIR_HOST2DEV | REQUEST_TYPE_CLASS | REQUEST_RECIPIENT_INTERFACE;
+	urb.setup.bRequest = 0x20;
+	urb.setup.wValue =  0;
+	urb.setup.wIndex = 0x0;
+	urb.setup.wLength = 7;
 
+	usb_cdc_line_coding_t *line_coding = (usb_cdc_line_coding_t *)data;
+	line_coding->dwDTERate = 0xc1200;
+	line_coding->bCharFormat = 0;
+	line_coding->bParityType = 0;
+	line_coding->bDataBits = 8;
+
+	libusb_write(&urb, line_coding, 7);
+
+	memset(data, 0, 4096);
+
+	urb.setup.bmRequestType = REQUEST_DIR_HOST2DEV | REQUEST_TYPE_CLASS | REQUEST_RECIPIENT_INTERFACE;
+	urb.setup.bRequest = 0x22;
+	urb.setup.wValue =  3;
+	urb.setup.wIndex = 0x0;
+	urb.setup.wLength = 0;
+
+	libusb_write(&urb, NULL, 0);
+
+	open.device_id = telit_common.device_id;
+
+	open.endpoint.bLength = 0x7;
+	open.endpoint.bDescriptorType = 0x5;
+	open.endpoint.bEndpointAddress = 0x82;
+	open.endpoint.bmAttributes = 0x2;
+	open.endpoint.wMaxPacketSize = 0x200;
+	open.endpoint.bInterval = 0x0;
+
+	in = libusb_open(&open);
+
+	open.endpoint.bLength = 0x7;
+	open.endpoint.bDescriptorType = 0x5;
+	open.endpoint.bEndpointAddress = 0x2;
+	open.endpoint.bmAttributes = 0x2;
+	open.endpoint.wMaxPacketSize = 0x200;
+	open.endpoint.bInterval = 0x0;
+
+	out = libusb_open(&open);
+
+	TRACE("enpoints in: %d out: %d", in, out);
+
+	printf("Where you want to call: ");
+	fflush(stdout);
+	memcpy(data, "ATD", 3);
+	while (1) {
+
+		urb.pipe = out;
+
+		data[off] = getchar();
+
+		if (data[off] == '\n') {
+			data[off++] = ';';
+			data[off++] = '\r';
+			data[off++] = '\n';
+			send = 1;
+		}
+		off++;
+
+		if (send) {
+			printf("DIAL : %s\n", data);
+
+			urb.type = usb_transfer_control;
+			urb.device_id = telit_common.device_id;
+			urb.pipe = 0;
+			urb.setup.bmRequestType = REQUEST_DIR_HOST2DEV | REQUEST_TYPE_CLASS | REQUEST_RECIPIENT_INTERFACE;
+			urb.setup.bRequest = 0x22;
+			urb.setup.wValue =  3;
+			urb.setup.wIndex = 0x0;
+			urb.setup.wLength = 0;
+
+			libusb_write(&urb, NULL, 0);
+
+			memset(&urb.setup, 0, sizeof(setup_packet_t));
+			urb.device_id = telit_common.device_id;
+			urb.type = usb_transfer_bulk;
+			urb.pipe = out;
+			int sz = strlen(data);
+			libusb_write(&urb, data, sz);
+
+			memset(data, 0, 4096);
+			urb.device_id = telit_common.device_id;
+			urb.type = usb_transfer_bulk;
+			urb.pipe = in;
+
+			libusb_read(&urb, data, sz);
+			TRACE("READ: %s", data);
+			break;
+		}
+	}
+
+	TRACE("exiting");
 	libusb_exit();
 	telit_exit();
 	return 0;
