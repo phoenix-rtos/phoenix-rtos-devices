@@ -210,10 +210,10 @@ int uart_write(int uart, void* buff, unsigned int bufflen)
 
 	mutexLock(uart_common[uart].lock);
 	*(uart_common[uart].base + cr1) |= 1 << 7;
-	mutexUnlock(uart_common[uart].lock);
 
 	while (uart_common[uart].txbeg != uart_common[uart].txend)
-		condWait(uart_common[uart].txcond, uart_common[uart].txlock, 0);
+		condWait(uart_common[uart].txcond, uart_common[uart].lock, 0);
+	mutexUnlock(uart_common[uart].lock);
 
 	keepidle(0);
 	mutexUnlock(uart_common[uart].txlock);
@@ -246,14 +246,14 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 
 	mutexLock(uart_common[uart].lock);
 	*(uart_common[uart].base + cr1) |= 1 << 7;
-	mutexUnlock(uart_common[uart].lock);
 
 	while (mode != uart_mnblock && uart_common[uart].rxbeg != uart_common[uart].rxend) {
-		err = condWait(uart_common[uart].rxcond, uart_common[uart].rxlock, timeout);
+		err = condWait(uart_common[uart].rxcond, uart_common[uart].lock, timeout);
 
 		if (timeout && err == -ETIME)
 			break;
 	}
+	mutexUnlock(uart_common[uart].lock);
 
 	uart_common[uart].rxbeg = NULL;
 	dataBarier();
