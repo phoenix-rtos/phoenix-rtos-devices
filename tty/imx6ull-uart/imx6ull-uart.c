@@ -318,7 +318,7 @@ static void print_usage(const char* progname) {
 int main(int argc, char **argv)
 {
 	u32 port;
-	char *uartn;
+	char uartn[sizeof("uartx") + 1];
 	oid_t dir, root;
 	msg_t msg;
 	int err;
@@ -429,7 +429,6 @@ int main(int argc, char **argv)
 		debug("imx6ull-uart: mkdir /dev failed\n");
 	}
 
-	uartn = malloc(strlen("uartx") + 1);
 	sprintf(uartn, "uart%u", uart.dev_no % 10);
 
 	if (lookup("/dev", NULL, &dir) < 0) {
@@ -449,9 +448,7 @@ int main(int argc, char **argv)
 
 	if (msgSend(dir.port, &msg) < 0 || msg.o.create.err != EOK) {
 		debug("imx6ull-uart: Could not create device file\n");
-		free(uartn);
 	}
-	free(uartn);
 
 	uart_thr((void *)port);
 
