@@ -219,3 +219,116 @@ Is used for selection from which port state should be read.
 
 - port - from pool of enum { gpioa = 0, gpiob, gpioc, gpiod, gpioe, gpiof, gpiog, gpioh };
 
+### gpio_set
+
+Structure of below format:
+
+	typedef struct {
+		int port;
+		unsigned int mask;
+		unsigned int state;
+	} __attribute__((packed)) gpioset_t;
+
+Is used for setting output pin(s) state.
+
+- port - from pool of enum { gpioa = 0, gpiob, gpioc, gpiod, gpioe, gpiof, gpiog, gpioh };
+- mask - bit mask which defines which pins state should change
+- state - new state of port, masked by mask field
+
+### spi_rw
+
+Structure of below format:
+
+	typedef struct {
+		int spi;
+		char cmd;
+		unsigned int addr;
+		unsigned int flags;
+	} spirw_t;
+
+Is used for read/write transactions with SPI device.
+
+- spi - from pool of enum { spi1 = 0, spi2, spi3 };
+- cmd - command to SPI device, first byte always written during transaction
+- addr - address, second and third byte written during transaction 
+- flags - bit mask of enum { spi_address = 0x1, spi_dummy = 0x2 };
+
+where
+
+- spi_address - if set address will be transmitted
+- spi_dummy - if set one dummy transaction will preceed read/write
+
+### spi_def
+
+Structure of below format:
+
+	typedef struct {
+		int spi;
+		char mode;
+		char bdiv;
+		int enable;
+	} spidef_t;
+
+Is used to configure paramters of transmission of SPI device.
+
+- spi - from pool of enum { spi1 = 0, spi2, spi3 };
+- mode - 0 to 3, configures polarity and active edge of SPI clock
+- bdiv - selects SPI speed
+- enable - if set to 0 SPI is disabled
+
+### Output parameters
+
+mtDevCtl message returns below structure serialized in message o.raw field:
+
+	typedef struct {
+		int err;
+
+		union {
+			unsigned short adc_val;
+			rtctimestamp_t rtc_timestamp;
+			lcdmsg_t lcd_msg;
+			unsigned int gpio_get;
+		};
+	} __attribute__((packed)) multi_o_t;
+
+### err
+
+Specifies error from errno.h pool.
+
+### adc_val
+
+Returns 12 bit converstion result, aligned to MSB.
+
+### rtc_timestamp
+
+Structure of below format:
+
+	typedef struct {
+		unsigned int year;
+		unsigned char month;
+		unsigned char day;
+		unsigned char wday;
+
+		unsigned char hours;
+		unsigned char minutes;
+		unsigned char seconds;
+	} __attribute__((packed)) rtctimestamp_t;
+
+Returns state of the RTC.
+
+### lcd_msg
+
+Structure of below format:
+
+	typedef struct {
+		char str[10];
+		char str_small[2];
+		unsigned int sym_mask;
+		int on;
+	} __attribute__((packed)) lcdmsg_t;
+
+Returns state of the LCD.
+
+### gpio_get
+
+Returns state of GPIO read using gpio_get request.
