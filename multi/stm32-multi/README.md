@@ -66,8 +66,85 @@ where
 
 ### type
 
-is one from
+is one from:
 
     enum { adc_get = 0, rtc_get, rtc_set, lcd_get, lcd_set, i2c_get, i2c_set,
         gpio_def, gpio_get, gpio_set, uart_def, uart_get, uart_set, flash_get,
         flash_set, spi_get, spi_set, spi_def };
+
+### adc_channel
+
+Selects from which channel analog value should be fetched.
+
+### rtc_timestamp
+
+Structure of below format:
+
+    typedef struct {
+	    unsigned int year;
+	    unsigned char month;
+	    unsigned char day;
+	    unsigned char wday;
+
+	    unsigned char hours;
+	    unsigned char minutes;
+	    unsigned char seconds;
+    } __attribute__((packed)) rtctimestamp_t;
+
+It is used to set new time to real time clock.
+
+### lcd_msg
+
+Structure of below format:
+
+    typedef struct {
+	    char str[10];
+	    char str_small[2];
+	    unsigned int sym_mask;
+	    int on;
+    } __attribute__((packed)) lcdmsg_t;
+
+where
+
+    str - alphanumeric string to be displated   
+    str_small - small 2 digit string to be displayed
+    sym_mask - which symbols should be active
+    on - if LCD should be active
+
+### i2c_msg
+
+Structure of below format:
+
+    typedef struct {
+	    char addr;
+	    char reg;
+    } __attribute__((packed)) i2cmsg_t;
+
+where
+
+    addr - address of I2C device on the bus
+    reg - address of I2C device's register
+
+Data to write is send in the msg.i.data field. Buffer for reading is passed in msg.o.data field.
+
+### uart_get
+
+Structure of below format:
+
+    typedef struct {
+	    int uart;
+	    int mode;
+	    unsigned int timeout;
+    } __attribute__((packed)) uartget_t;
+
+Is used for reading from UART other than UART_CONSOLE, also for reading with timeout.
+
+- uart - from pool of enum { usart1 = 0, usart2, usart3, uart4, uart5 };
+- mode - from pool of enum { uart_mnormal = 0, uart_mnblock };
+
+where
+
+- uart_mnormal - blocking read
+- uart_mnblock - non blocking read
+
+timeout - timeout in micro seconds. If no data is present during timeout period, read will end and return any data it managed to get. If user want to wait for data indefinitely, timeout should be set to 0.
