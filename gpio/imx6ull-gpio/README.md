@@ -1,17 +1,18 @@
-#imx6ull-gpio
+# imx6ull-gpio
 This hardware driver server provides access to i.MX 6ULL GPIOs.
 
 Interface
 Server creates folder in /dev for each gpio port (e.g. /dev/gpio1, /dev/gpio2 ...). Each folder contains two files: port and dir. Manipulation of GPIO port is performed via writes and read to/from this files using below binary structure:
 
-typedef union {
-    unsigned int val;
-    struct {
+    typedef union {
         unsigned int val;
-        unsigned int mask;
-    } __attribute__((packed)) w;
-} gpiodata_t;
-dir file
+        struct {
+            unsigned int val;
+            unsigned int mask;
+        } __attribute__((packed)) w;
+    } gpiodata_t;
+
+## dir file
 This file is used to select pin's direction, i.e. if it is input or output pin. For example, to set pin 9 of gpio2 as an output:
 
 open file /dev/gpio2/dir:
