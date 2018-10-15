@@ -17,41 +17,52 @@ This file is used to select pin's direction, i.e. if it is input or output pin. 
 
 open file /dev/gpio2/dir:
 
-fid = open("/dev/gpio2/dir", O_WRONLY);
+    fid = open("/dev/gpio2/dir", O_WRONLY);
+
 prepare data:
 
-gpiodata_t data;
+    gpiodata_t data;
 
-data.w.val = 1 << 9; /* Pin 9 as output */
-data.w.mask = 1 << 9; /* Allow status of pin 9 to change */
+    data.w.val = 1 << 9; /* Pin 9 as output */
+    data.w.mask = 1 << 9; /* Allow status of pin 9 to change */
+
 write:
 
-write(fid, &data, sizeof(data));
-port file
+    write(fid, &data, sizeof(data));
+
+## port file
 This file is used to output logical state to port or to read external stimuli, according to direction set for each pin.
 
-Write example (set pin 9 of gpio2 to high):
+### Write example (set pin 9 of gpio2 to high):
+
 open file /dev/gpio2/port:
 
-fid = open("/dev/gpio2/port", O_WRONLY);
+        fid = open("/dev/gpio2/port", O_WRONLY);
+
 prepare data:
 
-gpiodata_t data
+    gpiodata_t data
 
-data.w.val = 1 << 9; /* Logical high on pin 9 */
-data.w.mask = 1 << 9; /* Allow state of pin 9 to change */
+    data.w.val = 1 << 9; /* Logical high on pin 9 */
+    data.w.mask = 1 << 9; /* Allow state of pin 9 to change */
+
 write:
 
-write(fid, &data, sizeof(data));
-Read example (read state of gpio2):
-open file /dev/gpio2/port
+    write(fid, &data, sizeof(data));
 
-fid = open("/dev/gpio2/port", O_RDONLY);
-read data.
+### Read example (read state of gpio2):
 
-gpiodata_t data;
+open file /dev/gpio2/port:
 
-read(fid, &data, sizeof(data));
-/* State of gpio port 2 is in data.val */
-Note
+    fid = open("/dev/gpio2/port", O_RDONLY);
+    
+read data:
+
+    gpiodata_t data;
+
+    read(fid, &data, sizeof(data));
+    /* State of gpio port 2 is in data.val */
+
+## Note
+
 Input/output multiplexers and physical pad control is performed independently by kernel's platformctl interface and should be performed by user prior to usage of GPIO driver.
