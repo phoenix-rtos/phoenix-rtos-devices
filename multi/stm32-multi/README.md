@@ -148,3 +148,74 @@ where
 - uart_mnblock - non blocking read
 
 timeout - timeout in micro seconds. If no data is present during timeout period, read will end and return any data it managed to get. If user want to wait for data indefinitely, timeout should be set to 0.
+
+### uart_set
+
+Structure of below format:
+
+	typedef struct {
+		int uart;
+	} __attribute__((packed)) uartset_t;
+
+Is used for writing to UART other than UART_CONSOLE.
+
+uart - from pool of enum { usart1 = 0, usart2, usart3, uart4, uart5 };
+
+### uart_def
+
+Structure of below format:
+
+	typedef struct {
+		int uart;
+		unsigned int baud;
+		char enable;
+		char bits;
+		char parity;
+	} __attribute__((packed)) uartdef_t;
+
+Is used to configure UART.
+
+- uart - from pool of enum { usart1 = 0, usart2, usart3, uart4, uart5 };
+- baud - desired baudrate
+- enable - when set to 0 UART is turned off
+- bits - number of bits per frame (7, 8 or 9)
+- parity - form pool of enum { uart_parnone = 0, uart_pareven, uart_parodd };
+
+where
+
+- uart_parnone - no parity
+- uart_pareven - even parity
+- uart_parodd - odd parity
+
+### gpio_def
+
+Structure of below format:
+
+	typedef struct {
+		int port;
+		char pin;
+		char mode;
+		char af;
+		char otype;
+		char ospeed;
+		char pupd;
+	} __attribute__((packed)) gpiodef_t;
+
+Is used to configure paramters of GPIO pin.
+
+- port - from pool of enum { gpioa = 0, gpiob, gpioc, gpiod, gpioe, gpiof, gpiog, gpioh };
+- pin - from 0 to 15, selects pin for configuration
+- mode, af, otype, ospeed, pupd - paramters of pin, as described in MCU documentation
+
+### gpio_get
+
+Structure of below format:
+
+	typedef struct {
+		int port;
+	} __attribute__((packed)) gpioget_t;
+
+Is used for selection from which port state should be read.
+
+- port - from pool of enum { gpioa = 0, gpiob, gpioc, gpiod, gpioe, gpiof, gpiog, gpioh };
+
