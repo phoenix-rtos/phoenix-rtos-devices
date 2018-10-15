@@ -106,10 +106,10 @@ Structure of below format:
 
 where
 
-    str - alphanumeric string to be displated   
-    str_small - small 2 digit string to be displayed
-    sym_mask - which symbols should be active
-    on - if LCD should be active
+- str - alphanumeric string to be displated   
+- str_small - small 2 digit string to be displayed
+- sym_mask - which symbols should be active
+- on - if LCD should be active
 
 ### i2c_msg
 
@@ -122,8 +122,8 @@ Structure of below format:
 
 where
 
-    addr - address of I2C device on the bus
-    reg - address of I2C device's register
+- addr - address of I2C device on the bus
+- reg - address of I2C device's register
 
 Data to write is send in the msg.i.data field. Buffer for reading is passed in msg.o.data field.
 
