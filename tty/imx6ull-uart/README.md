@@ -12,4 +12,4 @@ Usage:
 	  parity: 0 - none, 1 - odd, 2 - even
 	  use_rts_cts: 0 - no hardware flow control, 1 - use hardware flow control
 
-Server creates special file in the <i>/dev directory</i> - <i>/dev/uartx</i>, where x is number of an UART device.
+Server creates special file in the <i>/dev</i> directory - <i>/dev/uartx</i>, where x is number of an UART device.
