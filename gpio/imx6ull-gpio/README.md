@@ -2,7 +2,7 @@
 This hardware driver server provides access to i.MX 6ULL GPIOs.
 
 Interface
-Server creates folder in /dev for each gpio port (e.g. <i>/dev/gpio1</i>, /dev/gpio2 ...). Each folder contains two files: port and dir. Manipulation of GPIO port is performed via writes and read to/from this files using below binary structure:
+Server creates folder in /dev for each gpio port (e.g. <i>/dev/gpio1</i>, <i>/dev/gpio2</i> ...). Each folder contains two files: <i>port</i> and <i>dir</i>. Manipulation of GPIO port is performed via writes and read to/from this files using below binary structure:
 
     typedef union {
         unsigned int val;
@@ -15,7 +15,7 @@ Server creates folder in /dev for each gpio port (e.g. <i>/dev/gpio1</i>, /dev/g
 ## dir file
 This file is used to select pin's direction, i.e. if it is input or output pin. For example, to set pin 9 of gpio2 as an output:
 
-open file /dev/gpio2/dir:
+open file <i>/dev/gpio2/dir</i>:
 
     fid = open("/dev/gpio2/dir", O_WRONLY);
 
@@ -52,7 +52,7 @@ write:
 
 ### Read example (read state of gpio2):
 
-open file /dev/gpio2/port:
+open file <i>/dev/gpio2/port</i>:
 
     fid = open("/dev/gpio2/port", O_RDONLY);
     
