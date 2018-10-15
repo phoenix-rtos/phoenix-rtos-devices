@@ -37,7 +37,7 @@ This file is used to output logical state to port or to read external stimuli, a
 
 open file /dev/gpio2/port:
 
-        fid = open("/dev/gpio2/port", O_WRONLY);
+    fid = open("/dev/gpio2/port", O_WRONLY);
 
 prepare data:
 
