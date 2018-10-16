@@ -110,7 +110,7 @@ struct qtd {
 
 	unsigned ping_state : 1;
 	unsigned split_state : 1;
-	unsigned miseed_uframe : 1;
+	unsigned missed_uframe : 1;
 	unsigned transaction_error : 1;
 	unsigned babble : 1;
 	unsigned buffer_error : 1;
@@ -160,6 +160,10 @@ struct qh {
 	link_pointer_t current_qtd;
 
 	struct qtd transfer_overlay;
+
+	/* non-hardware fields */
+	struct qtd *last;
+	struct qh *next, *prev;
 };
 
 
@@ -169,10 +173,13 @@ extern int ehci_deviceAttached(void);
 extern void ehci_resetPort(void);
 
 
-extern void ehci_init(void *event_callback);
+extern void ehci_init(void *event_callback, handle_t common_lock);
 
 
 extern void ehci_dumpRegisters(FILE *stream);
+
+
+extern void ehci_dumpQueue(FILE *stream, struct qh *qh);
 
 
 extern void ehci_consQtd(struct qtd *qtd, struct qh *qh);
@@ -184,7 +191,7 @@ extern void ehci_freeQtd(struct qtd *qtd);
 extern void ehci_freeQh(struct qh *qh);
 
 
-extern void ehci_linkQh(struct qh *prev, struct qh *next);
+extern void ehci_linkQh(struct qh *qh);
 
 
 extern void ehci_unlinkQh(struct qh *prev, struct qh *unlink, struct qh *next);
