@@ -63,7 +63,7 @@ static void handleMsg(msg_t *msg)
 		case rtc_set:
 			rtc_setTime(&imsg->rtc_timestamp);
 			break;
-
+#if LCD
 		case lcd_get:
 			lcd_getDisplay(&imsg->lcd_msg);
 			break;
@@ -71,7 +71,7 @@ static void handleMsg(msg_t *msg)
 		case lcd_set:
 			lcd_setDisplay(&imsg->lcd_msg);
 			break;
-
+#endif
 		case i2c_get:
 			err = i2c_transaction(_i2c_read, imsg->i2c_msg.addr, imsg->i2c_msg.reg, msg->o.data, msg->o.size);
 			break;

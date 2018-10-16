@@ -27,4 +27,6 @@
 #define SPI2 0
 #define SPI3 0
 
+#define LCD 1
+
 #endif

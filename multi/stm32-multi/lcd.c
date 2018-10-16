@@ -18,10 +18,13 @@
 #include <sys/interrupt.h>
 
 #include "common.h"
+#include "config.h"
 #include "stm32-multi.h"
 #include "gpio.h"
 #include "lcd.h"
 #include "rcc.h"
+
+#if LCD
 
 #define LCD_MAX_POSITION 10
 
@@ -295,10 +298,12 @@ void lcd_setDisplay(lcdmsg_t *disp)
 
 	mutexUnlock(lcd_common.lock);
 }
+#endif
 
 
 int lcd_init(void)
 {
+#if LCD
 	int port, pin;
 
 	lcd_common.base = (void *)0x40002400;
@@ -340,6 +345,7 @@ int lcd_init(void)
 	condCreate(&lcd_common.cond);
 
 	interrupt(lcd_irq, lcd_irqHandler, NULL, lcd_common.cond, NULL);
+#endif
 
 	return EOK;
 }

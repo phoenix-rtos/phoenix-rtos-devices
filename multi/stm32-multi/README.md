@@ -27,6 +27,8 @@ Configuration file config.h allows to enable/disable some of the elements of mul
     #define SPI2 0
     #define SPI3 0
 
+    #define LCD 1 /* 1 enables LCD controller driver, 0 disables */
+
 ## Interface
 
 Server accepts 3 types of messages
