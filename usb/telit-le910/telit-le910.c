@@ -401,6 +401,9 @@ int telit_read(char *data, size_t size, unsigned mode)
 
 	mutexUnlock(telit_common.lock);
 
+	if (i == 0)
+		return -EWOULDBLOCK;
+
 	return i;
 }
 
