@@ -15,6 +15,8 @@
  */
 
 #include <sys/mman.h>
+#include <sys/platform.h>
+#include <phoenix/arch/imx6ull.h>
 #include <stdio.h>
 #include "phy.h"
 
@@ -65,6 +67,21 @@ void phy_reset(void)
 }
 
 
+void phy_initClock(void)
+{
+	platformctl_t ctl = (platformctl_t) {
+		.action = pctl_set,
+		.type = pctl_devclock,
+		.devclock = {
+			.dev = pctl_clk_usboh3,
+			.state = 3,
+		}
+	};
+
+	platformctl(&ctl);
+}
+
+
 void phy_init(void)
 {
 	phy_common.base = mmap(NULL, 2 * SIZE_PAGE, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, PHY_ADDR);
@@ -72,6 +89,7 @@ void phy_init(void)
 	/* Offset into PHY2 */
 	phy_common.base += 1024;
 
+	phy_initClock();
 	phy_reset();
 	phy_config();
 }
