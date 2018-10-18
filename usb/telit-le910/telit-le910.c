@@ -129,8 +129,10 @@ FUN_TRACE;
 
 		mutexLock(telit_common.lock);
 
-		for (int i = 0; i < size && data[i] && !fifo_is_full(telit_common.fifo); ++i)
+		for (int i = 0; i < size && !fifo_is_full(telit_common.fifo); ++i) {
+			//fprintf(stderr, "push: %x\n", data[i]);
 			fifo_push(telit_common.fifo, data[i]);
+		}
 
 		condSignal(telit_common.cond);
 		mutexUnlock(telit_common.lock);
@@ -161,7 +163,7 @@ void telit_bulk_resubmit(void *arg)
 		urb.type = usb_transfer_bulk;
 		urb.device_id = telit_common.device_id;
 		urb.pipe = (int)1; /*in*/
-		urb.transfer_size = 64;
+		urb.transfer_size = 0x200;
 
 		urb.direction = usb_transfer_in;
 		urb.async = 1;
@@ -604,13 +606,13 @@ int main(int argc, char **argv)
 	// memset(intrbuf, 0, SIZE_PAGE);
 
 #if 1
-	for (int i = 0; i < 16; ++i) {
+	for (int i = 0; i < 64; ++i) {
 		usb_urb_t urb = { 0 };
 
 		urb.type = usb_transfer_bulk;
 		urb.device_id = telit_common.device_id;
 		urb.pipe = (int)in;
-		urb.transfer_size = 64;
+		urb.transfer_size = 0x200;
 
 		urb.direction = usb_transfer_in;
 		urb.async = 1;
