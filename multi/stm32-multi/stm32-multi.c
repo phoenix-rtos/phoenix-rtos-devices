@@ -47,8 +47,8 @@ struct {
 
 static void handleMsg(msg_t *msg)
 {
-	multi_i_t *imsg = (multi_i_t *)(&msg->i.raw);
-	multi_o_t *omsg = (multi_o_t *)(&msg->o.raw);
+	multi_i_t *imsg = (multi_i_t *)msg->i.raw;
+	multi_o_t *omsg = (multi_o_t *)msg->o.raw;
 	int err = EOK;
 
 	switch (imsg->type) {
