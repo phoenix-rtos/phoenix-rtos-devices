@@ -28,8 +28,8 @@
 #include "phy.h"
 #include "dma.h"
 
-#define TRACE(x, ...)  //usleep(10000) // fprintf(stderr, "ehci: " x "\n", ##__VA_ARGS__)
-#define FUN_TRACE //usleep(10000) // fprintf(stderr, "ehci trace: %s\n", __PRETTY_FUNCTION__)
+#define TRACE(x, ...) //fprintf(stderr, "ehci: " x "\n", ##__VA_ARGS__)
+#define FUN_TRACE //fprintf(stderr, "ehci trace: %s\n", __PRETTY_FUNCTION__)
 
 #define USBSTS_AS  (1 << 15)
 #define USBSTS_PS  (1 << 14)
@@ -160,22 +160,21 @@ static int ehci_irqHandler(unsigned int n, void *data)
 
 void ehci_printStatus(void)
 {
-	unsigned status = ehci_common.status;
 	TRACE("%s%s%s%s%s%s%s%s%s%s%s%s%s%s\n",
-		status & USBSTS_UI ? "UI " : "",
-		status & USBSTS_UEI ? "UEI " : "",
-		status & USBSTS_PCI ? "PCI " : "",
-		status & USBSTS_FRI ? "FRI " : "",
-		status & USBSTS_SEI ? "SEI " : "",
-		status & USBSTS_IAA ? "AAI " : "",
-		status & USBSTS_URI ? "URI " : "",
-		status & USBSTS_SRI ? "SRI " : "",
-		status & USBSTS_SLI ? "SLI " : "",
-		status & USBSTS_ULPII ? "ULPII " : "",
-		status & USBSTS_HCH ? "HCH " : "",
-		status & USBSTS_RCL ? "RCL " : "",
-		status & USBSTS_PS ? "PS " : "",
-		status & USBSTS_AS ? "AS " : "");
+		ehci_common.status & USBSTS_UI ? "UI " : "",
+		ehci_common.status & USBSTS_UEI ? "UEI " : "",
+		ehci_common.status & USBSTS_PCI ? "PCI " : "",
+		ehci_common.status & USBSTS_FRI ? "FRI " : "",
+		ehci_common.status & USBSTS_SEI ? "SEI " : "",
+		ehci_common.status & USBSTS_IAA ? "AAI " : "",
+		ehci_common.status & USBSTS_URI ? "URI " : "",
+		ehci_common.status & USBSTS_SRI ? "SRI " : "",
+		ehci_common.status & USBSTS_SLI ? "SLI " : "",
+		ehci_common.status & USBSTS_ULPII ? "ULPII " : "",
+		ehci_common.status & USBSTS_HCH ? "HCH " : "",
+		ehci_common.status & USBSTS_RCL ? "RCL " : "",
+		ehci_common.status & USBSTS_PS ? "PS " : "",
+		ehci_common.status & USBSTS_AS ? "AS " : "");
 }
 
 
@@ -218,16 +217,13 @@ void ehci_irqThread(void *callback)
 {
 	mutexLock(ehci_common.common_lock);
 	for (;;) {
-		//mutexLock(ehci_common.common_lock);
-		condWait(ehci_common.irq_cond, ehci_common.common_lock, 1000000);
+		condWait(ehci_common.irq_cond, ehci_common.common_lock, 0 /*1000000*/);
 
-//		printf("ehci irq: status ");
-//		ehci_printStatus();
+		ehci_printStatus();
 
 		if (ehci_common.status & USBSTS_IAA)
 			condSignal(ehci_common.aai_cond);
 
-		//mutexUnlock(ehci_common.common_lock);
 		((void (*)(int))callback)(ehci_common.port_change);
 	}
 }
@@ -262,27 +258,15 @@ void ehci_enqueue(struct qh *qh, struct qtd *first, struct qtd *last)
 	last->next.terminate = 1;
 	last->ioc = 1;
 
-	TRACE("prev_last is %x, overlay is %x, next %x, current %x", va2pa(prev_last), va2pa(&qh->transfer_overlay), va2pa(first), qh->current_qtd.pointer << 5);
-
 	prev_last->next.pointer = va2pa(first) >> 5;
 	prev_last->next.type = framelist_itd;
+
+	asm volatile ("dmb" ::: "memory");
+
 	prev_last->next.terminate = 0;
 
-	if (qh->current_qtd.pointer == va2pa(prev_last) >> 5)
+	if (!qh->transfer_overlay.active)
 		qh->transfer_overlay.next = prev_last->next;
-
-	usleep(10000);
-	//ehci_dumpQueue(stderr, qh);
-
-	if (!qh->transfer_overlay.active || qh->transfer_overlay.halted /* || 1  hack */) {
-		if (last->active) {
-			TRACE("qh was halted/not active %x", qh->transfer_overlay.next);
-			qh->transfer_overlay.halted = qh->transfer_overlay.active = 0;
-			qh->transfer_overlay.next = prev_last->next;
-		}
-
-		usleep(1000);
-	}
 }
 
 
@@ -382,44 +366,19 @@ int ehci_dequeue(struct qh *qh, struct qtd *first, struct qtd *last)
 	if (qh->last == last)
 		qh->last = &qh->transfer_overlay;
 
-	if (qh->endpoint == 2) {
-
-		//ehci_dumpQueue(stderr,qh);
-	}
 	return 0;
+}
+
+
+int ehci_qtdError(struct qtd *qtd)
+{
+	return qtd->transaction_error;
 }
 
 
 int ehci_qtdFinished(struct qtd *qtd)
 {
-	// FUN_TRACE;
-
-	if (qtd->transaction_error) {
-		printf("transaction error");
-		//ehci_dumpQueue(stderr, qtd->qh);
-		//ehci_dumpRegisters(stderr);
-		//ehci_printPortStatus();
-	}
-
 	return !qtd->active || qtd->halted;
-}
-
-
-int ehci_qhFinished(struct qh *qh)
-{
-	FUN_TRACE;
-
-
-	if (qh->transfer_overlay.transaction_error) {
-		TRACE("transaction error");
-		ehci_dumpQueue(stderr, qh);
-		ehci_dumpRegisters(stderr);
-		ehci_printPortStatus();
-
-//		return 0;
-	}
-
-	return qh->transfer_overlay.next.terminate && !qh->transfer_overlay.active;
 }
 
 
@@ -460,7 +419,7 @@ void ehci_linkQh(struct qh *qh)
 	mutexLock(ehci_common.async_lock);
 	LIST_ADD(&ehci_common.async_head, qh);
 
-	qh->horizontal.pointer = va2pa(ehci_common.async_head) >> 5;
+	qh->horizontal.pointer = va2pa(qh->next) >> 5;
 	qh->horizontal.type = framelist_qh;
 	qh->horizontal.terminate = 0;
 
@@ -521,7 +480,7 @@ void ehci_resetPort(void)
 	/* Turn port power on */
 	*(ehci_common.usb2 + portsc1) |= PORTSC_PP;
 
-	usleep(20 * 1000);
+	usleep(50 * 1000);
 
 	/* Configure port */
 	//	*(ehci_common.usb2 + portsc1) |= PORTSC_WKOC | PORTSC_WKCNT | PORTSC_WKDSCNNT;
@@ -660,6 +619,8 @@ void ehci_dumpQueue(FILE *stream, struct qh *qh)
 	fprintf(stream, "%18s: %08x\n", "halted", qh->transfer_overlay.halted);
 	fprintf(stream, "%18s: %08x\n", "active", qh->transfer_overlay.active);
 
+	fprintf(stream, "%18s: %08x\n", "current", qh->current_qtd);
+
 	fprintf(stream, "%18s: %08x\n", "next", qh->transfer_overlay.next);
 	fprintf(stream, "%18s: %08x\n", "pid_code", qh->transfer_overlay.pid_code);
 	fprintf(stream, "%18s: %08x\n", "error_counter", qh->transfer_overlay.error_counter);
@@ -668,5 +629,4 @@ void ehci_dumpQueue(FILE *stream, struct qh *qh)
 	fprintf(stream, "%18s: %08x\n", "bytes_to_transfer", qh->transfer_overlay.bytes_to_transfer);
 	fprintf(stream, "%18s: %08x\n", "data_toggle", qh->transfer_overlay.data_toggle);
 
-	fprintf(stream, "%18s: %08x\n", "current", qh->current_qtd);
 }

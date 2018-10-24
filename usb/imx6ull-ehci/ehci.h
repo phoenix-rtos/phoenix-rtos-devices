@@ -167,6 +167,12 @@ struct qh {
 };
 
 
+extern int ehci_dequeue(struct qh *qh, struct qtd *first, struct qtd *last);
+
+
+extern void ehci_enqueue(struct qh *qh, struct qtd *first, struct qtd *last);
+
+
 extern int ehci_deviceAttached(void);
 
 
@@ -197,10 +203,19 @@ extern void ehci_linkQh(struct qh *qh);
 extern void ehci_unlinkQh(struct qh *prev, struct qh *unlink, struct qh *next);
 
 
+extern void ehci_linkQtd(struct qtd *prev, struct qtd *next);
+
+
 extern int ehci_qhFinished(struct qh *qh);
 
 
 extern int ehci_await(int timeout);
+
+
+extern int ehci_qtdError(struct qtd *qtd);
+
+
+extern int ehci_qtdFinished(struct qtd *qtd);
 
 
 extern struct qtd *ehci_allocQtd(int token, char *buffer, size_t *size, int datax);
