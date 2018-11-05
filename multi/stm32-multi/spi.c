@@ -74,7 +74,7 @@ static unsigned char _spi_readwrite(int spi, unsigned char txd)
 
 	mutexLock(spi_common[spi].irqLock);
 	while (!spi_common[spi].ready)
-		condWait(spi_common[spi].cond, spi_common[spi].mutex, 1);
+		condWait(spi_common[spi].cond, spi_common[spi].irqLock, 1);
 	mutexUnlock(spi_common[spi].irqLock);
 
 	rxd = *(spi_common[spi].base + dr);
