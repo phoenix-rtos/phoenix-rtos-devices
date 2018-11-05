@@ -10,8 +10,10 @@
  */
 
 #include <stdio.h>
+#include <sys/interrupt.h>
 #include <sys/mman.h>
 #include <sys/platform.h>
+#include <sys/threads.h>
 
 #include <phoenix/arch/imx6ull.h>
 
@@ -23,6 +25,10 @@ enum { rxdata = 0, txdata, conreg, configreg, intreg, dmareg, statreg, periodreg
 typedef struct {
 	volatile uint32_t *base;
 	uint8_t chan_msk;
+
+	handle_t inth;
+	handle_t cond;
+	handle_t irqlock;
 } ecspi_t;
 
 typedef struct {
@@ -32,6 +38,7 @@ typedef struct {
 
 
 static const addr_t ecspi_addr[4] = { 0x2008000, 0x200C000, 0x2010000, 0x2014000 };
+static const unsigned int ecspi_intr_number[4] = { 63, 64, 65, 66 };
 
 ecspi_pctl_t ecspi_pctl_mux[4][7] = {
 	{ { pctl_mux_csi_d7,      3 }, { pctl_mux_csi_d6,     3 }, { pctl_mux_csi_d4,    3 }, { pctl_mux_csi_d5,     3 },
@@ -54,6 +61,17 @@ ecspi_pctl_t ecspi_pctl_isel[4][4] = {
 uint32_t ecspi_pctl_clk[4] = { pctl_clk_ecspi1, pctl_clk_ecspi2, pctl_clk_ecspi3, pctl_clk_ecspi4 };
 
 static ecspi_t ecspi[4] = {0};
+
+
+static int ecspi_irqHandler(unsigned int n, void *arg)
+{
+	ecspi_t *e = &ecspi[(int) arg];
+
+	/* Disable Transfer Completed interrupt. */
+	*(e->base + intreg) &= ~(1 << 7);
+
+	return 1;
+}
 
 
 static void ecspi_setBurst(int dev_no, uint16_t burst)
@@ -258,17 +276,23 @@ int ecspi_exchange(int dev_no, const uint8_t *out, uint8_t *in, uint16_t len)
 	ecspi_setBurst(dev_no, len * 8);
 	ecspi_writeFifo(dev_no, out, len);
 
+	mutexLock(e->irqlock);
+
+	/* Enable Transfer Completed interrupt. */
+	*(e->base + intreg) |= (1 << 7);
 	/* Begin transmission. */
 	*(e->base + conreg) |= (1 << 2);
 
-	/* Wait for STATREG.TC - reference manual is wrong about CONREG.XCH. */
-	while (!(*(e->base + statreg) & (1 << 7)))
-		;
+	while (!(*(e->base + statreg) & (1 << 7))) {
+		condWait(e->cond, e->irqlock, 0);
+	}
+
+	/* Clear Transfer Completed bit. */
+	*(e->base + statreg) |= (1 << 7);
+
+	mutexUnlock(e->irqlock);
 
 	ecspi_readFifo(dev_no, in, len);
-
-	/* Clear TC bit by writing 1 to it */
-	*(e->base + statreg) |= (1 << 7);
 
 	return 0;
 }
@@ -304,6 +328,11 @@ int ecspi_init(int dev_no, uint8_t chan_msk)
 
 	set_mux(dev_no, chan_msk);
 	set_clk(dev_no);
+
+	mutexCreate(&e->irqlock);
+	condCreate(&e->cond);
+
+	interrupt(ecspi_intr_number[dev_no - 1], ecspi_irqHandler, (void *) (dev_no - 1), e->cond, &e->inth);
 
 	/* Enable ECSPI. Defaults: 8-bit burst, multi burst, mode 0, all master, no cock division */
 	*(e->base + conreg) = 0x007000F1;
