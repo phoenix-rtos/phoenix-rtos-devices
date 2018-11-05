@@ -152,7 +152,7 @@ static void ecspi_writeFifo(int dev_no, const uint8_t *out, uint32_t len)
 	}
 
 	while (len > 0) {
-		word = out[3] | (out[2] << 8) | (out[1] << 16) | (out[0] << 24);
+		word = out[3] | ((uint32_t) out[2] << 8) | ((uint32_t) out[1] << 16) | ((uint32_t) out[0] << 24);
 
 		*(e->base + txdata) = word;
 
