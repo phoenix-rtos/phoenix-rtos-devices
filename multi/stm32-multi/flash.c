@@ -16,6 +16,7 @@
 #include <sys/pwman.h>
 #include <unistd.h>
 #include <errno.h>
+#include <string.h>
 
 #include "flash.h"
 #include "common.h"
@@ -376,7 +377,7 @@ static size_t program_writeData(u32 offset, const char *buff, size_t size)
 {
 	u32 word, pageAddr, addr = offset;
 	size_t n = 0;
-	int i, j, toSkip;
+	int i;
 
 	mutexLock(flash_common.lock);
 
@@ -387,19 +388,16 @@ static size_t program_writeData(u32 offset, const char *buff, size_t size)
 		_program_erasePage(pageAddr);
 
 		/* Modify data in buffer. */
-		toSkip = addr - pageAddr;
-		for (i = toSkip; (i < FLASH_PAGE_SIZE) && n < size; ++i, ++n)
+		for (i = addr - pageAddr; (i < FLASH_PAGE_SIZE) && n < size; ++i, ++n)
 			flash_common.page[i] = buff[n];
 
 		/* Write back page. */
 		for (i = 0; i < FLASH_PAGE_SIZE; i += 4) {
-			for (j = 0, word = 0; j < 4; ++j)
-				word |= flash_common.page[i + j] << 8 * j;
-
+			memcpy(&word, &flash_common.page[i], sizeof(word));
 			_program_writeWord(pageAddr + i, word);
 		}
 
-		addr += FLASH_PAGE_SIZE;
+		addr = pageAddr + FLASH_PAGE_SIZE;
 	}
 
 	mutexUnlock(flash_common.lock);
@@ -461,19 +459,6 @@ void flash_bankBreak(void)
 
 	hal_spinlockClear(&spinlock);
 	hal_spinlockDestroy(&spinlock);
-}
-
-
-static int _flash_atomCopy(u32 dest, u32 src, size_t len)
-{
-	hal_cpuDisableInterrupts();
-
-	flash_writeData(dest, (void *)src, len);
-
-	hal_cpuRestart();
-
-	/* Should never reach here */
-	return 0;
 }
 #endif
 
