@@ -1,6 +1,6 @@
 # imx6ull-ecspi
 
-This library API provides direct access to i.MX 6ULL ECSPI hardware. 
+This library API provides direct access to i.MX 6ULL ECSPI hardware. Currently maximum burst length is 256 bytes and Slave Select is asserted for the whole transfer.
 
 ## Initialization and configuration
 
@@ -47,10 +47,30 @@ where `delay` ∊ \[0, 63\] is how many SPI clocks shall be inserted.
 ```c
 /* Enable 4th instance, and channels 0 and 1. */
 ecspi_init(ecspi4, 0x03);
+
+ecspi_setMode(ecspi4, 1, 2);
+ecspi_setMode(ecspi4, 0, 0);
+
+ecspi_setChannel(ecspi4, 1);
+/* Set clock to ~114 Hz, assuming clock root was 60 MHz. */
+ecspi_setClockDiv(ecspi4, 0xF, 0xF);
+/* Set CS-to-SCLK delay to ~87 ms. */
+ecspi_setCSDelay(ecspi4, 10);
 ```
 
 ## Data exchange
 
+Data read and write proceed simultaneously so only one procedure is used for data transmission:
 ```c
 int ecspi_exchange(int dev_no, const uint8_t *out, uint8_t *in, uint16_t len);
+```
+where `out` is a pointer to outgoing data, `in` is a pointer for incoming data, and `len` is the length of `out` and also `in`.
+
+### Example
+
+```c
+uint8_t data[16] = {0x66, 0x12, 0};
+
+/* Data in `out` are written to ECSPI buffer before writing incoming ones to `in` so passing the same pointer works. */
+ecspi_exchange(ecspi4, data, data, 16);
 ```
