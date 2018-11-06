@@ -19,14 +19,14 @@ To set the current channel use
 ```c
 int ecspi_setChannel(int dev_no, uint8_t chan);
 ```
-where `chan` ∊ {1, 2, 3, 4} indicates a channel to use. Any subsequent exchange operation will use this channel. Only enabled channel can be selected — doing otherwise will return error value.
+where `chan` ∊ {0, 1, 2, 3} indicates a channel to use. Any subsequent exchange operation will use this channel. Only enabled channel can be selected — doing otherwise will abort with an error value.
 
 
 To set the current mode of SPI operation use
 ```c
 int ecspi_setMode(int dev_no, uint8_t chan, uint8_t mode);
 ```
-where `chan` is a channel to configure (it does not have to be set as a current one beforehand), and `mode` ∊ {0, 1, 2, 3} is a (CPOL, CPHA) value to use. 
+where `chan` is a channel to configure (no need to set the current one beforehand), and `mode` ∊ {0, 1, 2, 3} is a (CPOL, CPHA) value to use.
 
 
 To set the clock dividers use
