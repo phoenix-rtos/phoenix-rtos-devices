@@ -199,11 +199,15 @@ int ecspi_setChannel(int dev_no, uint8_t chan)
 		return -1;
 	}
 
-	if (!(e->chan_msk & (1 << chan))) {
+	if (chan > 3) {
 		return -2;
 	}
 
-	*(e->base + conreg) = (*(e->base + conreg) & ~(0x03 << 18)) | ((chan & 0x03) << 18);
+	if (!(e->chan_msk & (1 << chan))) {
+		return -3;
+	}
+
+	*(e->base + conreg) = (*(e->base + conreg) & ~(0x03 << 18)) | (chan << 18);
 
 	return 0;
 }
