@@ -95,7 +95,8 @@ int spi_transaction(int spi, int dir, unsigned char cmd, unsigned int addr, unsi
 	mutexLock(spi_common[spi].mutex);
 	keepidle(1);
 
-	_spi_readwrite(spi, cmd);
+	if (flags & spi_cmd)
+		_spi_readwrite(spi, cmd);
 
 	if (flags & spi_address) {
 		for (i = 0; i < 3; ++i) {

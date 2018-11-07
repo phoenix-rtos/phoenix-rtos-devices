@@ -159,7 +159,7 @@ typedef struct {
 enum { spi1 = 0, spi2, spi3 };
 
 
-enum { spi_address = 0x1, spi_dummy = 0x2 };
+enum { spi_cmd = 0x1, spi_address = 0x2, spi_dummy = 0x4 };
 
 
 typedef struct {
