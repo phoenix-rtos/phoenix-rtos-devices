@@ -15,9 +15,9 @@ MKDEPFLAGS = $(CFLAGS)
 CC = $(CROSS)gcc
 
 ifeq ($(DEBUG), 1)
-	CFLAGS += -O0 -g
+	CFLAGS += -Og -g
 else
-	CFLAGS += -Os -DNDEBUG
+	CFLAGS += -O2 -DNDEBUG
 endif
 
 CFLAGS += -Wall -Wstrict-prototypes -g -I$(SRCDIR) -nostartfiles -nostdlib\
