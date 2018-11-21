@@ -141,13 +141,12 @@ int uart_configure(int uart, char bits, char parity, unsigned int baud, char ena
 
 	pos = uartPos[uart];
 
-	en = uart_isEnabled(uart);
-
-	rcc_devClk(uart2pctl[uart], 1);
-
 	mutexLock(uart_common[pos].txlock);
 	mutexLock(uart_common[pos].rxlock);
 	mutexLock(uart_common[uart].lock);
+
+	en = uart_isEnabled(uart);
+	rcc_devClk(uart2pctl[uart], 1);
 
 	*(uart_common[pos].base + cr1) &= ~(1 << 13);
 	dataBarier();
@@ -197,12 +196,15 @@ int uart_write(int uart, void* buff, unsigned int bufflen)
 	if (uart < usart1 || uart > uart5 || !uartConfig[uart])
 		return -EINVAL;
 
-	if (!uart_isEnabled(uart))
-		return -EIO;
-
 	uart = uartPos[uart];
 
 	mutexLock(uart_common[uart].txlock);
+
+	if (!uart_isEnabled(uart)) {
+		mutexUnlock(uart_common[uart].txlock);
+		return -EIO;
+	}
+
 	keepidle(1);
 
 	uart_common[uart].txbeg = buff;
@@ -229,12 +231,14 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 	if (uart < usart1 || uart > uart5 || !uartConfig[uart])
 		return -EINVAL;
 
-	if (!uart_isEnabled(uart))
-		return -EIO;
-
 	uart = uartPos[uart];
 
 	mutexLock(uart_common[uart].rxlock);
+
+	if (!uart_isEnabled(uart)) {
+		mutexUnlock(uart_common[uart].rxlock);
+		return -EIO;
+	}
 
 	uart_common[uart].read = 0;
 	uart_common[uart].rxend = buff + count;
