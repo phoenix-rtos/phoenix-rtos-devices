@@ -42,13 +42,10 @@ int gpio_setPort(int port, unsigned int mask, unsigned int val)
 	if (port < gpioa || port > gpioh)
 		return -EINVAL;
 
-	mutexLock(gpio_common.lock);
+	t = (mask & val) & 0xffff;
+	t |= (mask & ~val) << 16;
 
-	t = *(gpio_common.base[port - gpioa] + odr) & ~(~val & mask);
-	t |= val & mask;
-	*(gpio_common.base[port - gpioa] + odr) = t & 0xffff;
-
-	mutexUnlock(gpio_common.lock);
+	*(gpio_common.base[port - gpioa] + bsrr) = t;
 
 	return EOK;
 }
@@ -59,11 +56,7 @@ int gpio_getPort(int port, unsigned int *val)
 	if (port < gpioa || port > gpioh)
 		return -EINVAL;
 
-	mutexLock(gpio_common.lock);
-
 	(*val) = *(gpio_common.base[port - gpioa] + idr) & 0xffff;
-
-	mutexUnlock(gpio_common.lock);
 
 	return EOK;
 }
