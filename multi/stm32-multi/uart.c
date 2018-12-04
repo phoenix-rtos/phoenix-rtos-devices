@@ -106,7 +106,7 @@ static int uart_rxirq(unsigned int n, void *arg)
 		while (uart_common[uart].rxdr != uart_common[uart].rxdw && uart_common[uart].rxbeg != uart_common[uart].rxend) {
 			*(uart_common[uart].rxbeg++) = uart_common[uart].rxdfifo[uart_common[uart].rxdr++];
 			uart_common[uart].rxdr %= sizeof(uart_common[uart].rxdfifo);
-			*(uart_common[uart].read)++;
+			(*uart_common[uart].read)++;
 		}
 
 		if (uart_common[uart].rxbeg == uart_common[uart].rxend) {
@@ -247,6 +247,8 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 		return -EIO;
 	}
 
+	mutexLock(uart_common[uart].lock);
+
 	*(uart_common[uart].base + cr1) &= ~(1 << 5);
 
 	uart_common[uart].read = &read;
@@ -259,7 +261,6 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 	 * rxdfifo is copied into buff. The handler will clear this
 	 * bit. */
 
-	mutexLock(uart_common[uart].lock);
 	*(uart_common[uart].base + cr1) |= 1 << 7;
 
 	while (mode != uart_mnblock && uart_common[uart].rxbeg != uart_common[uart].rxend) {
