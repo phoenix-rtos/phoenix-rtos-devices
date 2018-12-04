@@ -46,7 +46,7 @@ struct {
 	volatile unsigned int rxdw;
 	volatile char *rxbeg;
 	volatile char *rxend;
-	volatile unsigned int read;
+	volatile unsigned int *read;
 
 	handle_t rxlock;
 	handle_t rxcond;
@@ -106,7 +106,13 @@ static int uart_rxirq(unsigned int n, void *arg)
 		while (uart_common[uart].rxdr != uart_common[uart].rxdw && uart_common[uart].rxbeg != uart_common[uart].rxend) {
 			*(uart_common[uart].rxbeg++) = uart_common[uart].rxdfifo[uart_common[uart].rxdr++];
 			uart_common[uart].rxdr %= sizeof(uart_common[uart].rxdfifo);
-			uart_common[uart].read++;
+			*(uart_common[uart].read)++;
+		}
+
+		if (uart_common[uart].rxbeg == uart_common[uart].rxend) {
+			uart_common[uart].rxbeg = NULL;
+			uart_common[uart].rxend = NULL;
+			uart_common[uart].read = NULL;
 		}
 
 		release = 1;
@@ -226,7 +232,8 @@ int uart_write(int uart, void* buff, unsigned int bufflen)
 
 int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int timeout)
 {
-	int i, err, read;
+	int i, err;
+	unsigned int read;
 
 	if (uart < usart1 || uart > uart5 || !uartConfig[uart])
 		return -EINVAL;
@@ -240,9 +247,13 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 		return -EIO;
 	}
 
-	uart_common[uart].read = 0;
+	*(uart_common[uart].base + cr1) &= ~(1 << 5);
+
+	uart_common[uart].read = &read;
 	uart_common[uart].rxend = buff + count;
 	uart_common[uart].rxbeg = buff;
+
+	*(uart_common[uart].base + cr1) |= 1 << 5;
 
 	/* Provoke UART exception to fire so that existing data from
 	 * rxdfifo is copied into buff. The handler will clear this
@@ -258,12 +269,6 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 			break;
 	}
 	mutexUnlock(uart_common[uart].lock);
-
-	uart_common[uart].rxbeg = NULL;
-	dataBarier();
-	uart_common[uart].rxend = NULL;
-
-	read = uart_common[uart].read;
 
 	mutexLock(uart_common[uart].lock);
 	if (!(*(uart_common[uart].base + cr1) & (1 << 12)) && (*(uart_common[uart].base + cr1) & (1 << 10))) {
