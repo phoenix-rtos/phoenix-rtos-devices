@@ -233,7 +233,7 @@ int uart_write(int uart, void* buff, unsigned int bufflen)
 int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int timeout)
 {
 	int i, err;
-	unsigned int read = 0;
+	volatile unsigned int read = 0;
 
 	if (uart < usart1 || uart > uart5 || !uartConfig[uart])
 		return -EINVAL;
