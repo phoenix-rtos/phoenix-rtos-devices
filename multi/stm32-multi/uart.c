@@ -265,8 +265,14 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 	while (mode != uart_mnblock && uart_common[uart].rxbeg != uart_common[uart].rxend) {
 		err = condWait(uart_common[uart].rxcond, uart_common[uart].lock, timeout);
 
-		if (timeout && err == -ETIME)
+		if (timeout && err == -ETIME) {
+			*(uart_common[uart].base + cr1) &= ~(1 << 5);
+			uart_common[uart].rxbeg = NULL;
+			uart_common[uart].rxend = NULL;
+			uart_common[uart].read = NULL;
+			*(uart_common[uart].base + cr1) |= 1 << 5;
 			break;
+		}
 	}
 	mutexUnlock(uart_common[uart].lock);
 
