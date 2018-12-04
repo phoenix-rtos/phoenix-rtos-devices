@@ -233,7 +233,7 @@ int uart_write(int uart, void* buff, unsigned int bufflen)
 int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int timeout)
 {
 	int i, err;
-	unsigned int read;
+	unsigned int read = 0;
 
 	if (uart < usart1 || uart > uart5 || !uartConfig[uart])
 		return -EINVAL;
@@ -323,6 +323,7 @@ int uart_init(void)
 
 		uart_common[i].rxbeg = NULL;
 		uart_common[i].rxend = NULL;
+		uart_common[i].read = NULL;
 		uart_common[i].rxdr = 0;
 		uart_common[i].rxdw = 0;
 
