@@ -129,7 +129,7 @@ int adc_init(void)
 	/* One conversion in sequence */
 	*(adc_common.base + sqr1) &= ~(0x1f << 20);
 
-	/* Set sampling time to 24 cycles */
+	/* Set sampling time to 48 cycles */
 	*(adc_common.base + smpr0) = 055;
 	*(adc_common.base + smpr1) = 05555555555;
 	*(adc_common.base + smpr2) = 05555555555;
