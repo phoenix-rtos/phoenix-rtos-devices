@@ -129,6 +129,12 @@ int adc_init(void)
 	/* One conversion in sequence */
 	*(adc_common.base + sqr1) &= ~(0x1f << 20);
 
+	/* Set sampling time to 24 cycles */
+	*(adc_common.base + smpr0) = 055;
+	*(adc_common.base + smpr1) = 05555555555;
+	*(adc_common.base + smpr2) = 05555555555;
+	*(adc_common.base + smpr3) = 05555555555;
+
 	/* Turn off ADC */
 	*(adc_common.base + cr2) &= ~1;
 	while (*(adc_common.base + sr) & (1 << 6)) {
