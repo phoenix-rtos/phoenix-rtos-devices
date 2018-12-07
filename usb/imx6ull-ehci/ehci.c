@@ -68,6 +68,7 @@
 #define PORTSC_HSP (1 << 9)
 #define PORTSC_PR (1 << 8)
 #define PORTSC_SUSP (1 << 7)
+
 #define PORTSC_FPR (1 << 6)
 #define PORTSC_OCC (1 << 5)
 #define PORTSC_OCA (1 << 4)
@@ -108,6 +109,146 @@ enum {
 enum { usb_otg1_ctrl = 0x200, usb_otg2_ctrl, usb_otg1_phy_ctrl = usb_otg2_ctrl + 5, usb_otg2_phy_ctrl };
 
 
+typedef struct link_pointer {
+	unsigned terminate : 1;
+	unsigned type : 2;
+	unsigned zero : 2;
+	unsigned pointer : 27;
+} link_pointer_t;
+
+
+struct itd {
+	link_pointer_t next;
+
+	union {
+		struct {
+			unsigned offset      : 12;
+			unsigned page_select :  3;
+			unsigned ioc         :  1;
+			unsigned length      : 12;
+			unsigned status      :  4;
+		};
+		unsigned raw;
+	} transactions[8];
+
+	union {
+		struct {
+			unsigned short reserved;
+			unsigned short pointer;
+		} buffers[7];
+
+		struct {
+			unsigned device_address  :  7;
+			unsigned reserved        :  1;
+			unsigned endpoint        :  4;
+			unsigned page0           : 16;
+			unsigned max_packet_size : 11;
+			unsigned direction       :  1;
+			unsigned page1           : 16;
+			unsigned mult            :  2;
+		};
+	};
+};
+
+
+struct sitd {
+	link_pointer_t next;
+
+	unsigned device_addr : 7;
+	unsigned reserved0   : 1;
+	unsigned endpoint    : 4;
+	unsigned reserved1   : 4;
+	unsigned hub_addr    : 7;
+	unsigned reserved2   : 1;
+	unsigned port_number : 7;
+	unsigned direction   : 1;
+
+	unsigned split_start_mask : 8;
+	unsigned split_completion_mask : 8;
+	unsigned reserved3 : 16;
+
+	unsigned status : 8;
+	unsigned split_progress_mask : 8;
+	unsigned bytes_to_transfer : 10;
+	unsigned reserved4 : 4;
+	unsigned page_select : 1;
+	unsigned ioc : 1;
+
+	unsigned current_offset : 12;
+	unsigned page0          : 20;
+
+	unsigned transaction_count    :  3;
+	unsigned transaction_position :  2;
+	unsigned reserved5            :  7;
+	unsigned page1                : 20;
+
+	link_pointer_t back_link;
+};
+
+
+struct qtd {
+	link_pointer_t next;
+	link_pointer_t alt_next;
+
+	unsigned ping_state : 1;
+	unsigned split_state : 1;
+	unsigned missed_uframe : 1;
+	unsigned transaction_error : 1;
+	unsigned babble : 1;
+	unsigned buffer_error : 1;
+	unsigned halted : 1;
+	unsigned active : 1;
+
+	unsigned pid_code : 2;
+	unsigned error_counter : 2;
+	unsigned current_page : 3;
+	unsigned ioc : 1;
+	unsigned bytes_to_transfer : 15;
+	unsigned data_toggle : 1;
+
+	union {
+		struct {
+			unsigned reserved : 12;
+			unsigned page     : 20;
+		} buffers[5];
+
+		struct {
+			unsigned offset : 12;
+			unsigned page0  : 20;
+		};
+	};
+};
+
+
+struct qh {
+	link_pointer_t horizontal;
+
+	unsigned device_addr : 7;
+	unsigned inactivate : 1;
+	unsigned endpoint : 4;
+	unsigned endpoint_speed : 2;
+	unsigned data_toggle : 1;
+	unsigned head_of_reclamation : 1;
+	unsigned max_packet_len : 11;
+	unsigned control_endpoint : 1;
+	unsigned nak_count_reload : 4;
+
+	unsigned interrupt_schedule_mask : 8;
+	unsigned split_completion_mask : 8;
+	unsigned hub_addr : 7;
+	unsigned port_number : 7;
+	unsigned pipe_multiplier : 2;
+
+	link_pointer_t current_qtd;
+
+	struct qtd transfer_overlay;
+
+	/* non-hardware fields */
+	struct qtd *last;
+	struct qh *next, *prev;
+};
+
+
 struct {
 	volatile unsigned *base;
 	volatile unsigned *usb2;
@@ -117,6 +258,7 @@ struct {
 	handle_t irq_cond, irq_handle, irq_lock, aai_cond, async_lock;
 	volatile unsigned status;
 	volatile unsigned port_change;
+	volatile unsigned portsc;
 
 	handle_t common_lock;
 } ehci_common;
@@ -135,6 +277,8 @@ static int ehci_irqHandler(unsigned int n, void *data)
 {
 	ehci_common.status = *(ehci_common.usb2 + usbsts);
 	*(ehci_common.usb2 + usbsts) = ehci_common.status & 0x1f;
+
+	ehci_common.portsc = *(ehci_common.usb2 + portsc1);
 
 	if (ehci_common.status & USBSTS_RCL) {
 		/* Async schedule is empty */
@@ -175,6 +319,7 @@ void ehci_printStatus(void)
 		ehci_common.status & USBSTS_RCL ? "RCL " : "",
 		ehci_common.status & USBSTS_PS ? "PS " : "",
 		ehci_common.status & USBSTS_AS ? "AS " : "");
+	TRACE("portsc: %x", ehci_common.portsc);
 }
 
 
@@ -217,10 +362,11 @@ void ehci_irqThread(void *callback)
 {
 	mutexLock(ehci_common.common_lock);
 	for (;;) {
-		condWait(ehci_common.irq_cond, ehci_common.common_lock, 0 /*1000000*/);
+		condWait(ehci_common.irq_cond, ehci_common.common_lock, 0);
 
 		ehci_printStatus();
 
+//ehci_printPortStatus();
 		if (ehci_common.status & USBSTS_IAA)
 			condSignal(ehci_common.aai_cond);
 
@@ -252,6 +398,7 @@ void ehci_consQtd(struct qtd *qtd, struct qh *qh)
 
 void ehci_enqueue(struct qh *qh, struct qtd *first, struct qtd *last)
 {
+	FUN_TRACE;
 	struct qtd *prev_last = qh->last;
 
 	qh->last = last;
@@ -265,8 +412,10 @@ void ehci_enqueue(struct qh *qh, struct qtd *first, struct qtd *last)
 
 	prev_last->next.terminate = 0;
 
-	if (!qh->transfer_overlay.active)
+	if (!qh->transfer_overlay.active) {
+		TRACE("was not active");
 		qh->transfer_overlay.next = prev_last->next;
+	}
 }
 
 
@@ -346,7 +495,7 @@ struct qh *ehci_allocQh(int address, int endpoint, int transfer, int speed, int 
 	result->max_packet_len = max_packet_len;
 	result->endpoint = endpoint;
 	result->control_endpoint = transfer == transfer_control && speed != high_speed;
-	result->nak_count_reload = 1;
+	result->nak_count_reload = 3;
 
 	if (transfer == transfer_interrupt) {
 		result->interrupt_schedule_mask = 0xff;
@@ -382,10 +531,22 @@ int ehci_qtdFinished(struct qtd *qtd)
 }
 
 
+void ehci_qhSetAddress(struct qh *qh, int address)
+{
+	qh->device_addr = address;
+}
+
+
+int ehci_qtdRemainingBytes(struct qtd *qtd)
+{
+	return qtd->bytes_to_transfer;
+}
+
+
 void ehci_freeQh(struct qh *qh)
 {
 	FUN_TRACE;
-#if 1
+
 	mutexLock(ehci_common.async_lock);
 	if (ehci_common.async_head != NULL && /*hack*/!qh->interrupt_schedule_mask) {
 		*(ehci_common.usb2 + usbcmd) |= USBCMD_IAA;
@@ -403,10 +564,6 @@ void ehci_freeQh(struct qh *qh)
 		ehci_common.status &= ~USBSTS_IAA;
 	}
 	mutexUnlock(ehci_common.async_lock);
-#endif
-	if (qh->nak_count_reload) {
-		TRACE("NAK count reload");
-	}
 	dma_free64(qh);
 }
 
@@ -429,6 +586,7 @@ void ehci_linkQh(struct qh *qh)
 	mutexUnlock(ehci_common.async_lock);
 
 	if (first) {
+		TRACE("first qh");
 		qh->head_of_reclamation = 1;
 
 		*(ehci_common.usb2 + asynclistaddr) = va2pa(qh);
@@ -438,15 +596,15 @@ void ehci_linkQh(struct qh *qh)
 }
 
 
-void ehci_unlinkQh(struct qh *prev, struct qh *unlink, struct qh *next)
+void ehci_unlinkQh(struct qh *unlink)
 {
 	FUN_TRACE;
 
 	if (unlink->head_of_reclamation)
-		next->head_of_reclamation = 1;
+		unlink->next->head_of_reclamation = 1;
 
 	mutexLock(ehci_common.async_lock);
-	if (unlink == next) {
+	if (unlink == unlink->next) {
 		TRACE("disabling ASE");
 		ehci_common.async_head = NULL;
 		*(ehci_common.usb2 + usbcmd) &= ~USBCMD_ASE;
@@ -454,12 +612,13 @@ void ehci_unlinkQh(struct qh *prev, struct qh *unlink, struct qh *next)
 		*(ehci_common.usb2 + asynclistaddr) = 1;
 	}
 	else if (unlink == ehci_common.async_head) {
-		ehci_common.async_head = next;
-		*(ehci_common.usb2 + asynclistaddr) = va2pa(next);
+		ehci_common.async_head = unlink->next;
+		*(ehci_common.usb2 + asynclistaddr) = va2pa(unlink->next);
 	}
-	mutexUnlock(ehci_common.async_lock);
 
-	prev->horizontal = unlink->horizontal;
+	unlink->prev->horizontal = unlink->horizontal;
+	LIST_REMOVE(&ehci_common.async_head, unlink);
+	mutexUnlock(ehci_common.async_lock);
 }
 
 
@@ -471,19 +630,25 @@ int ehci_deviceAttached(void)
 
 void ehci_resetPort(void)
 {
+	//*(ehci_common.usb2 + portsc1) &= ~PORTSC_PP;
 	/* Reset port */
-	*(ehci_common.usb2 + portsc1) |= PORTSC_PR;
-	*(ehci_common.usb2 + portsc1) &= ~PORTSC_ENA;
-	while (*(ehci_common.usb2 + portsc1) & PORTSC_PR) ;
-	*(ehci_common.usb2 + portsc1) |= PORTSC_ENA;
+	for (int i = 0; i < 10; ++i) {
+		*(ehci_common.usb2 + portsc1) |= PORTSC_PR;
+		*(ehci_common.usb2 + portsc1) &= ~PORTSC_ENA;
+		while (*(ehci_common.usb2 + portsc1) & PORTSC_PR) ;
+		*(ehci_common.usb2 + portsc1) |= PORTSC_ENA;
+	}
 
 	/* Turn port power on */
 	*(ehci_common.usb2 + portsc1) |= PORTSC_PP;
 
-	usleep(50 * 1000);
+	usleep(500 * 1000);
 
 	/* Configure port */
-	//	*(ehci_common.usb2 + portsc1) |= PORTSC_WKOC | PORTSC_WKCNT | PORTSC_WKDSCNNT;
+	//*(ehci_common.usb2 + portsc1) |= PORTSC_WKOC | PORTSC_WKCNT | PORTSC_WKDSCNNT;
+
+	//ehci_printPortStatus();
+	//ehci_printStatus();
 }
 
 
@@ -538,6 +703,15 @@ void ehci_init(void *event_callback, handle_t common_lock)
 	*(ehci_common.usb2 + configflag) = 1;
 }
 
+
+#if 0
+void ehci_shutdown(void)
+{
+	*(ehci_common.usb2 + usbcmd) &= ~USBCMD_ASE;
+	*(ehci_common.usb2 + portsc1) &= PORTSC_PP;
+	phy_disableClock();
+}
+#endif
 
 void ehci_dumpRegisters(FILE *stream)
 {
@@ -629,4 +803,14 @@ void ehci_dumpQueue(FILE *stream, struct qh *qh)
 	fprintf(stream, "%18s: %08x\n", "bytes_to_transfer", qh->transfer_overlay.bytes_to_transfer);
 	fprintf(stream, "%18s: %08x\n", "data_toggle", qh->transfer_overlay.data_toggle);
 
+}
+
+
+
+
+
+
+
+void ehci_activate(struct qh *qh) {
+	qh->transfer_overlay.active = 1;
 }

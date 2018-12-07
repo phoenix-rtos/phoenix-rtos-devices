@@ -82,6 +82,21 @@ void phy_initClock(void)
 }
 
 
+void phy_disableClock(void)
+{
+	platformctl_t ctl = (platformctl_t) {
+		.action = pctl_set,
+		.type = pctl_devclock,
+		.devclock = {
+			.dev = pctl_clk_usboh3,
+			.state = 0,
+		}
+	};
+
+	platformctl(&ctl);
+}
+
+
 void phy_init(void)
 {
 	phy_common.base = mmap(NULL, 2 * SIZE_PAGE, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, PHY_ADDR);
