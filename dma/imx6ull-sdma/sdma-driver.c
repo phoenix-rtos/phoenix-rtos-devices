@@ -16,6 +16,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <string.h>
+#include <syslog.h>
 
 #include <sys/stat.h>
 #include <sys/msg.h>
@@ -34,11 +35,12 @@
 #define COL_YELLOW  "\033[1;33m"
 #define COL_NORMAL  "\033[0m"
 
-#define LOG_TAG "sdma-drv: "
-#define log_debug(fmt, ...)     do { printf(LOG_TAG fmt "\n", ##__VA_ARGS__); } while (0)
-#define log_info(fmt, ...)      do { printf(COL_CYAN LOG_TAG fmt "\n" COL_NORMAL, ##__VA_ARGS__); } while (0)
-#define log_warn(fmt, ...)      do { printf(COL_YELLOW LOG_TAG fmt "\n" COL_NORMAL, ##__VA_ARGS__); } while (0)
-#define log_error(fmt, ...)     do { printf(COL_RED  LOG_TAG fmt "\n" COL_NORMAL, ##__VA_ARGS__); } while (0)
+#define LOG_IDENT "sdma-drv"
+#define LOG_TAG LOG_IDENT": "
+#define log_debug(fmt, ...)     do { log_printf(LOG_DEBUG, fmt "\n", ##__VA_ARGS__); } while (0)
+#define log_info(fmt, ...)      do { log_printf(LOG_INFO, COL_CYAN fmt COL_NORMAL "\n", ##__VA_ARGS__); } while (0)
+#define log_warn(fmt, ...)      do { log_printf(LOG_WARNING, COL_YELLOW fmt COL_NORMAL "\n", ##__VA_ARGS__); } while (0)
+#define log_error(fmt, ...)     do { log_printf(LOG_ERR, COL_RED fmt COL_NORMAL "\n", ##__VA_ARGS__); } while (0)
 
 #define NUM_OF_SDMA_CHANNELS    (32)
 #define NUM_OF_SDMA_REQUESTS    (48)
@@ -145,7 +147,27 @@ struct driver_common_s
 	handle_t lock;
 
 	addr_t ocram_next;
+
+	int use_syslog;
+	int initialized;
 } common;
+
+static void log_printf(int lvl, const char* fmt, ...)
+{
+	va_list arg;
+
+	va_start(arg, fmt);
+
+	/* Don't use syslog until initialized */
+	if (!common.use_syslog || !common.initialized) {
+		printf("%s", LOG_TAG);
+		vprintf(fmt, arg);
+	} else {
+		vsyslog(lvl, fmt, arg);
+	}
+
+	va_end(arg);
+}
 
 #define SDMA_CONFIG_CSM_MASK                    (0b11)
 
@@ -717,6 +739,9 @@ static int init(void)
 
 	common.ocram_next = OCRAM_BASE;
 
+	if (common.use_syslog)
+		openlog("sdma-driver", LOG_NDELAY, LOG_DAEMON);
+
 	if (mutexCreate(&common.lock) != EOK) {
 		log_error("failed to create mutex");
 		return -1;
@@ -747,6 +772,8 @@ static int init(void)
 
 	for (i = 0; i < NUM_OF_WORKER_THREADS; i++)
 		beginthread(worker_thread, WORKER_THD_PRIO, common.stack[i], WORKER_THD_STACK, NULL);
+
+	common.initialized = 1;
 
 	return 0;
 }
@@ -837,12 +864,32 @@ static void sdma_print_debug_info(void)
 }
 #endif
 
-int main(void)
+int main(int argc, char *argv[])
 {
+	int res, display_usage = 0;
 	oid_t root;
 
 	priority(MAIN_THD_PRIO);
 
+	common.use_syslog = 0;
+	common.initialized = 0;
+
+	while ((res = getopt(argc, argv, "s")) >= 0) {
+		switch (res) {
+		case 's':
+			common.use_syslog = 1;
+			break;
+		default:
+			display_usage = 1;
+			break;
+		}
+	}
+
+	if (display_usage) {
+		printf("Usage: sdma-driver [-s]\n\r");
+		printf("    -s             Output logs to syslog instead of stdout\n\r");
+		return 1;
+	}
 	/* Wait for the filesystem */
 	while (lookup("/", NULL, &root) < 0)
 		usleep(10000);
