@@ -910,7 +910,7 @@ int main(int argc, char *argv[])
 	common.stats_period_s = 0; /* Don't print stats by default */
 	common.initialized = 0;
 
-	while ((res = getopt(argc, argv, "s")) >= 0) {
+	while ((res = getopt(argc, argv, "S:s")) >= 0) {
 		switch (res) {
 		case 'S':
 			common.stats_period_s = (int)strtol(optarg, NULL, 0);
@@ -925,7 +925,7 @@ int main(int argc, char *argv[])
 	}
 
 	if (display_usage) {
-		printf("Usage: sdma-driver [-s]\n\r");
+		printf("Usage: sdma-driver [-Ss]\n\r");
 		printf("    -S period    Print stats with given period (in seconds)\n\r");
 		printf("    -s             Output logs to syslog instead of stdout\n\r");
 		return 1;
