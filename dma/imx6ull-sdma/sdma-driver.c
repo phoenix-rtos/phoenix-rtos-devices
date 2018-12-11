@@ -49,6 +49,9 @@
 #define WORKER_THD_PRIO         (3)
 #define WORKER_THD_STACK        (4096)
 
+#define STATS_THD_PRIO          (4)
+#define STATS_THD_STACK         (4096)
+
 #define MAIN_THD_PRIO           (2)
 
 /* Buffer Descriptor Commands for Bootload scripts */
@@ -124,11 +127,14 @@ typedef struct {
 
 	handle_t intr_cond;
 	unsigned intr_cnt;
+
+	unsigned read_cnt;
 } sdma_channel_t;
 
 struct driver_common_s
 {
-	char stack[NUM_OF_WORKER_THREADS][WORKER_THD_STACK] __attribute__ ((aligned(8)));
+	char worker_thd_stack[NUM_OF_WORKER_THREADS][WORKER_THD_STACK] __attribute__ ((aligned(8)));
+	char stats_thd_stack[STATS_THD_STACK] __attribute__ ((aligned(8)));
 
 	uint32_t port;
 
@@ -148,6 +154,7 @@ struct driver_common_s
 
 	addr_t ocram_next;
 
+	int stats_period_s;
 	int use_syslog;
 	int initialized;
 } common;
@@ -613,6 +620,8 @@ static int dev_read(oid_t *oid, void *data, size_t size)
 
 	mutexUnlock(common.lock);
 
+	common.channel[channel].read_cnt++;
+
 	if (data != NULL && size == sizeof(unsigned)) {
 		memcpy(data, &intr_cnt, sizeof(unsigned));
 	} else if (data != NULL) {
@@ -733,6 +742,27 @@ static void worker_thread(void *arg)
 	}
 }
 
+static void stats_thread(void *arg)
+{
+	int i;
+	unsigned intr_cnt, read_cnt;
+
+	while (1) {
+
+		sleep(common.stats_period_s);
+
+		/* Skip channel 0, since it's only used for configuration */
+		for (i = 1; i < NUM_OF_SDMA_CHANNELS; i++) {
+			if (!common.channel[i].active)
+				continue;
+
+			intr_cnt = common.channel[i].intr_cnt;
+			read_cnt = common.channel[i].read_cnt;
+			log_info("ch#%u stats: %u interrupts; %u reads", i, intr_cnt, read_cnt);
+		}
+	}
+}
+
 static int init(void)
 {
 	int res, i;
@@ -754,6 +784,7 @@ static int init(void)
 
 	for (i = 0; i < NUM_OF_SDMA_CHANNELS; i++) {
 		common.channel[i].intr_cnt = 0;
+		common.channel[i].read_cnt = 0;
 		if (condCreate(&common.channel[i].intr_cond) != EOK) {
 			log_error("failed to create conditional variable for channel %d", i);
 			return -1;
@@ -771,7 +802,11 @@ static int init(void)
 	}
 
 	for (i = 0; i < NUM_OF_WORKER_THREADS; i++)
-		beginthread(worker_thread, WORKER_THD_PRIO, common.stack[i], WORKER_THD_STACK, NULL);
+		beginthread(worker_thread, WORKER_THD_PRIO, common.worker_thd_stack[i], WORKER_THD_STACK, NULL);
+
+	if (common.stats_period_s > 0) {
+		beginthread(stats_thread, STATS_THD_PRIO, common.stats_thd_stack, STATS_THD_STACK, NULL);
+	}
 
 	common.initialized = 1;
 
@@ -872,10 +907,14 @@ int main(int argc, char *argv[])
 	priority(MAIN_THD_PRIO);
 
 	common.use_syslog = 0;
+	common.stats_period_s = 0; /* Don't print stats by default */
 	common.initialized = 0;
 
 	while ((res = getopt(argc, argv, "s")) >= 0) {
 		switch (res) {
+		case 'S':
+			common.stats_period_s = (int)strtol(optarg, NULL, 0);
+			break;
 		case 's':
 			common.use_syslog = 1;
 			break;
@@ -887,9 +926,11 @@ int main(int argc, char *argv[])
 
 	if (display_usage) {
 		printf("Usage: sdma-driver [-s]\n\r");
+		printf("    -S period    Print stats with given period (in seconds)\n\r");
 		printf("    -s             Output logs to syslog instead of stdout\n\r");
 		return 1;
 	}
+
 	/* Wait for the filesystem */
 	while (lookup("/", NULL, &root) < 0)
 		usleep(10000);
