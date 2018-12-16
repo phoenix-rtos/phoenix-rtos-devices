@@ -157,6 +157,9 @@ struct driver_common_s
 	int stats_period_s;
 	int use_syslog;
 	int initialized;
+	int debug_info_dumped;
+
+	uint32_t active_mask;
 } common;
 
 static void log_printf(int lvl, const char* fmt, ...)
@@ -184,15 +187,17 @@ static void sdma_set_context_switching_mode(sdma_csm_t csm)
 	common.regs->CONFIG |= csm;
 }
 
-static void sdma_enable_channel(u8 channel_id)
+static void sdma_enable_channel(uint8_t channel_id)
 {
 	common.channel[channel_id].active = 1;
+	common.active_mask |= (1 << channel_id);
 	common.regs->HSTART = (1 << channel_id);
 }
 
-static void __attribute__((unused)) sdma_disable_channel(u8 channel_id)
+static void __attribute__((unused)) sdma_disable_channel(uint8_t channel_id)
 {
 	common.regs->HSTART &= ~(1 << channel_id);
+	common.active_mask &= ~(1 << channel_id);
 	common.channel[channel_id].active = 0;
 }
 
@@ -813,7 +818,7 @@ static int init(void)
 	return 0;
 }
 
-#if 0
+#if 1
 static void sdma_print_debug_info(void)
 {
 	int res;
@@ -899,6 +904,8 @@ static void sdma_print_debug_info(void)
 }
 #endif
 
+#define INTR_WAIT_TIMEOUT_US	(30*1000*1000)
+
 int main(int argc, char *argv[])
 {
 	int res, display_usage = 0;
@@ -909,6 +916,8 @@ int main(int argc, char *argv[])
 	common.use_syslog = 0;
 	common.stats_period_s = 0; /* Don't print stats by default */
 	common.initialized = 0;
+	common.active_mask = 0;
+	common.debug_info_dumped = 0;
 
 	while ((res = getopt(argc, argv, "S:s")) >= 0) {
 		switch (res) {
@@ -927,7 +936,7 @@ int main(int argc, char *argv[])
 	if (display_usage) {
 		printf("Usage: sdma-driver [-Ss]\n\r");
 		printf("    -S period    Print stats with given period (in seconds)\n\r");
-		printf("    -s             Output logs to syslog instead of stdout\n\r");
+		printf("    -s           Output logs to syslog instead of stdout\n\r");
 		return 1;
 	}
 
@@ -943,7 +952,20 @@ int main(int argc, char *argv[])
 
 	while (1) {
 		mutexLock(common.lock);
-		condWait(common.intr_cond, common.lock, 0);
+		res = condWait(common.intr_cond, common.lock, INTR_WAIT_TIMEOUT_US);
+
+		if (res == -ETIME) {
+
+			/* If any channel is active */
+			if (common.active_mask && !common.debug_info_dumped) {
+				log_warn("Timed out waiting for interrupts");
+				sdma_print_debug_info();
+				common.debug_info_dumped = 1;
+			}
+
+			mutexUnlock(common.lock);
+			continue;
+		}
 
 		for (i = 0; i < NUM_OF_SDMA_CHANNELS; i++) {
 			cnt = common.channel[i].intr_cnt;
