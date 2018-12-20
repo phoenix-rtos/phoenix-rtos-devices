@@ -81,9 +81,15 @@ void rtc_setCalib(int value)
 
 	t = *(rtc_common.base + calibr) & ~((1 << 7) | 0x1f);
 
+	value /= 2;
+
 	if (value < 0) {
 		t |= 1 << 7;
 		value = -value;
+	}
+	else {
+		++value;
+		value /= 2;
 	}
 
 	t |= value & 0x1f;
