@@ -24,7 +24,7 @@
 enum { pwr_cr = 0, pwr_csr };
 
 
-enum { tr = 0, dr, cr, isr, prer, wutr, wpr = 9, ssr};
+enum { tr = 0, dr, cr, isr, prer, wutr, calibr, wpr = 9, ssr};
 
 
 struct {
@@ -69,6 +69,29 @@ static void _rtc_unlock(void)
 	*(rtc_common.base + wpr) = 0x53;
 
 	dataBarier();
+}
+
+
+void rtc_setCalib(int value)
+{
+	unsigned int t;
+
+	mutexLock(rtc_common.lock);
+	_rtc_unlock();
+
+	t = *(rtc_common.base + calibr) & ~((1 << 7) | 0x1f);
+
+	if (value < 0) {
+		t |= 1 << 7;
+		value = -value;
+	}
+
+	t |= value & 0x1f;
+
+	*(rtc_common.base + calibr) = t;
+
+	_rtc_lock();
+	mutexUnlock(rtc_common.lock);
 }
 
 

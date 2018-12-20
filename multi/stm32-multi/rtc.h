@@ -18,6 +18,9 @@
 #include "stm32-multi.h"
 
 
+void rtc_setCalib(int value);
+
+
 int rtc_getTime(rtctimestamp_t *timestamp);
 
 

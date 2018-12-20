@@ -14,9 +14,9 @@
 #ifndef _STM32_MULTI_H_
 #define _STM32_MULTI_H_
 
-enum { adc_get = 0, rtc_get, rtc_set, lcd_get, lcd_set, i2c_get, i2c_set,
-	gpio_def, gpio_get, gpio_set, uart_def, uart_get, uart_set, flash_get,
-	flash_set, spi_get, spi_set, spi_def };
+enum { adc_get = 0, rtc_setcal, rtc_get, rtc_set, lcd_get, lcd_set, i2c_get,
+	i2c_set, gpio_def, gpio_get, gpio_set, uart_def, uart_get, uart_set,
+	flash_get, flash_set, spi_get, spi_set, spi_def };
 
 /* RTC */
 
@@ -186,6 +186,7 @@ typedef struct {
 
 	union {
 		int adc_channel;
+		int rtc_calib;
 		rtctimestamp_t rtc_timestamp;
 		lcdmsg_t lcd_msg;
 		i2cmsg_t i2c_msg;
