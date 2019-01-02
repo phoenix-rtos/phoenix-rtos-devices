@@ -135,7 +135,7 @@ int flash_image(void *arg, char *path, u32 start, u32 block_offset, int silent, 
 }
 
 
-int flash_check(void *arg, int silent, dbbt_t **dbbt)
+int flash_check_range(void *arg, int start, int end, int silent, dbbt_t **dbbt)
 {
 	flashdrv_dma_t *dma;
 	int i, ret = 0;
@@ -162,7 +162,7 @@ int flash_check(void *arg, int silent, dbbt_t **dbbt)
 
 	nand_msg(silent, "\n------ CHECK ------\n");
 
-	for (i = 0; i < BLOCKS_CNT; i++) {
+	for (i = start; i < end; i++) {
 
 		memset(raw_data, 0, RAW_PAGE_SIZE);
 		ret = flashdrv_readraw(dma, (i * PAGES_PER_BLOCK), raw_data, RAW_PAGE_SIZE);
@@ -206,6 +206,12 @@ int flash_check(void *arg, int silent, dbbt_t **dbbt)
 }
 
 
+int flash_check(void *arg, int silent, dbbt_t **dbbt)
+{
+	return flash_check_range(arg, 0, BLOCKS_CNT, silent, dbbt);
+}
+
+
 /* test some things */
 void flash_test(int test_no, void * arg)
 {
@@ -232,6 +238,7 @@ void flash_test(int test_no, void * arg)
 	else
 		printf("------ PASSED ------\n\n");
 }
+
 
 void flash_erase(void *arg, int start, int end, int silent)
 {
@@ -260,10 +267,11 @@ void flash_erase(void *arg, int start, int end, int silent)
 	}
 	if (arg == NULL)
 		flashdrv_dmadestroy(dma);
-	nand_msg(silent, "--------------------\n");
+	nand_msg(silent, "------------------\n");
 }
 
-void set_nandboot(char *primary, char *secondary, char *rootfs, size_t rootfssz)
+
+void set_nandboot(char *primary, char *secondary, char *rootfs, size_t rootfssz, int rwfs_erase)
 {
 	int ret = 0, err = 0;
 	flashdrv_dma_t *dma;
@@ -276,11 +284,17 @@ void set_nandboot(char *primary, char *secondary, char *rootfs, size_t rootfssz)
 
 	printf("\n- NANDBOOT SETUP -\n");
 	printf("Root partition size: %u\n", rootfssz);
-	printf("Flash erase\n");
-	flash_erase(dma, 0, 64 + (2 * rootfssz), 1);
 
-	printf("Performing flash check\n");
-	ret = flash_check(dma, 1, &dbbt);
+	if (!rwfs_erase) {
+		printf("Erasing rootfs only\n");
+		flash_erase(dma, 0, 64 + (2 * rootfssz), 1);
+		ret = flash_check_range(dma, 0, 64 + (2 * rootfssz), 1, &dbbt);
+	}
+	else {
+		printf("Erasing rootfs and data partition\n");
+		flash_erase(dma, 0, BLOCKS_CNT, 1);
+		ret = flash_check(dma, 1, &dbbt);
+	}
 
 	if (ret) {
 		printf("Error while checking flash %d\n", ret);
@@ -333,6 +347,7 @@ void set_nandboot(char *primary, char *secondary, char *rootfs, size_t rootfssz)
 		printf("All done. Restart the device to boot from internal storage.\n");
 }
 
+
 void print_help(void)
 {
 	printf("Usage:\n" \
@@ -346,6 +361,7 @@ void print_help(void)
 			"\t-f (fw1) (fw2) (rootfs) - set flash for internal booting\n");
 }
 
+
 int main(int argc, char **argv)
 {
 	int c;
@@ -353,7 +369,7 @@ int main(int argc, char **argv)
 	int start = -1;
 	char *tok, *primary, *secondary, *rootfs;
 	int len, i, raw = 0;
-	size_t rootfssz = 64;
+	size_t rootfssz = 64, erase_data = 0;
 
 	while ((c = getopt(argc, argv, "i:r:s:hct:e:f:")) != -1) {
 		switch (c) {
@@ -393,14 +409,16 @@ int main(int argc, char **argv)
 					print_help();
 				return 0;
 			case 'f':
-				if (argc < 4) {
+				if (argc < 5) {
 					if (optarg != NULL)
 						rootfssz = atoi(optarg);
+					if (argv[optind] != NULL)
+						erase_data = atoi(argv[optind]);
 					primary = "/init/primary.img";
 					secondary = "/init/secondary.img";
 					rootfs = "/init/rootfs.img";
-					set_nandboot(primary, secondary, rootfs, rootfssz);
-				} else if (argc == 4) {
+					set_nandboot(primary, secondary, rootfs, rootfssz, erase_data);
+				} else if (argc == 5) {
 
 					len = strlen(argv[optind]);
 					for (i = len; i >= 0 && argv[optind][i] != '/'; --i);
@@ -426,7 +444,7 @@ int main(int argc, char **argv)
 					strcat(rootfs, "/init/");
 					strcat(rootfs, argv[optind] + i + 1);
 
-					set_nandboot(primary, secondary, rootfs, rootfssz);
+					set_nandboot(primary, secondary, rootfs, rootfssz, erase_data);
 
 					free(primary);
 					free(secondary);
