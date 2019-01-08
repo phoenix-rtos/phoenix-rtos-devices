@@ -29,6 +29,8 @@
 #include "bcb.h"
 #include "test.h"
 
+#include "../../storage/imx6ull-flash/flash.h"
+
 test_func_t test_func[16];
 int test_cnt;
 
@@ -191,7 +193,7 @@ int flash_check_range(void *arg, int start, int end, int silent, dbbt_t **dbbt)
 	nand_msg(silent, "------------------\n");
 
 	if (dbbt != NULL && bbtn < BB_MAX) {
-		dbbtsz = (sizeof(dbbt_t) + (sizeof(u32) * bbtn) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1); 
+		dbbtsz = (sizeof(dbbt_t) + (sizeof(u32) * bbtn) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 		*dbbt = malloc(dbbtsz);
 		memset(*dbbt, 0, dbbtsz);
 		memcpy(&((*dbbt)->bad_block), &bbt, sizeof(u32) * bbtn);
@@ -362,6 +364,149 @@ void print_help(void)
 }
 
 
+static int send_nandErase(unsigned port, unsigned start, unsigned end)
+{
+	msg_t msg = { 0 };
+	nand_devctl_t *devctl = (void *)msg.i.raw;
+	int err;
+
+	msg.type = mtDevCtl;
+
+	devctl->type = nand_erase;
+	devctl->erase.start = start;
+	devctl->erase.end = end;
+
+	err = msgSend(port, &msg);
+
+	if (err)
+		return err;
+
+	return msg.o.io.err;
+}
+
+
+static int send_nandFlash(unsigned port, unsigned offset, unsigned end, void *data, size_t size)
+{
+	msg_t msg = { 0 };
+	nand_devctl_t *devctl = (void *)msg.i.raw;
+	int err;
+
+	msg.type = mtDevCtl;
+
+	devctl->type = nand_flash;
+	devctl->flash.offset = offset;
+	devctl->flash.end = end;
+
+	msg.i.data = data;
+	msg.i.size = size;
+
+	err = msgSend(port, &msg);
+
+	if (err)
+		return err;
+
+	return msg.o.io.err;
+}
+
+
+static int flash_update_tool(char **args)
+{
+	char *arg;
+	void *data;
+	unsigned start, end, offset, port;
+	size_t size;
+	oid_t oid;
+	FILE *f;
+	int result;
+
+	lookup("/", &oid, NULL);
+	port = oid.port;
+
+	if ((arg = *(args++)) == NULL)
+		return -EINVAL;
+
+	if (!strncmp(arg, "erase", sizeof("erase"))) {
+		if ((arg = *(args++)) == NULL)
+			return -EINVAL;
+
+		start = strtoul(arg, NULL, 10);
+
+		if ((arg = *(args++)) == NULL)
+			return -EINVAL;
+
+		end = strtoul(arg, NULL, 10);
+
+		if (end < start) {
+			fprintf(stderr, "flash: start block must be smaller than end block\n");
+			return -EINVAL;
+		}
+
+		result = send_nandErase(port, start, end);
+
+		if (result < 0)
+			fprintf(stderr, "flash: error while erasing\n");
+
+		return result;
+	}
+	else if (!strncmp(arg, "write", sizeof("write"))) {
+		if ((arg = *(args++)) == NULL)
+			return -EINVAL;
+
+		offset = strtoul(arg, NULL, 10);
+
+		if ((arg = *(args++)) == NULL)
+			return -EINVAL;
+
+		end = strtoul(arg, NULL, 10);
+
+		if ((arg = *(args++)) == NULL)
+			return -EINVAL;
+
+		data = malloc(1 << 20);
+
+		if (data == NULL) {
+			fprintf(stderr, "flash: could not allocate buffer\n");
+			return -ENOMEM;
+		}
+
+		f = fopen(arg, "r");
+
+		if (f == NULL) {
+			fprintf(stderr, "flash: could not open file %s\n", arg);
+			free(data);
+			return -EINVAL;
+		}
+
+		while (!feof(f)) {
+			size = fread(data, 1, 1 << 20, f);
+
+			if (!size)
+				break;
+
+			if (size & (SIZE_PAGE - 1)) {
+				memset(data + size, 0xff, SIZE_PAGE - (size & (SIZE_PAGE - 1)));
+				size = (size + SIZE_PAGE - 1) & ~(SIZE_PAGE - 1);
+			}
+
+			result = send_nandFlash(port, offset, end, data, size);
+			offset += size / SIZE_PAGE;
+
+			if (result < 0) {
+				fprintf(stderr, "flash: error while writing\n");
+				break;
+			}
+		}
+
+		fclose(f);
+		free(data);
+		return result;
+	}
+
+	fprintf(stderr, "usage: nandtool -U (erase start-block end-block | write start-page [end-page/0] file)\n");
+	return -EINVAL;
+}
+
+
 int main(int argc, char **argv)
 {
 	int c;
@@ -371,7 +516,7 @@ int main(int argc, char **argv)
 	int len, i, raw = 0;
 	size_t rootfssz = 64, erase_data = 0;
 
-	while ((c = getopt(argc, argv, "i:r:s:hct:e:f:")) != -1) {
+	while ((c = getopt(argc, argv, "i:r:s:hct:e:f:U")) != -1) {
 		switch (c) {
 
 			case 'i':
@@ -453,6 +598,10 @@ int main(int argc, char **argv)
 					return 0;
 				}
 				return 0;
+
+			case 'U':
+				return flash_update_tool(argv + optind);
+
 			case 'h':
 			default:
 				print_help();
