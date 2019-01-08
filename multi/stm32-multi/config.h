@@ -55,4 +55,20 @@
 #define LCD 1
 #endif
 
+#ifndef FLASH_PROGRAM_1_ADDR
+#define FLASH_PROGRAM_1_ADDR 0x08000000
+#endif
+
+#ifndef FLASH_PROGRAM_2_ADDR
+#define FLASH_PROGRAM_2_ADDR 0x08040000
+#endif
+
+#ifndef FLASH_EEPROM_1_ADDR
+#define FLASH_EEPROM_1_ADDR 0x08080000
+#endif
+
+#ifndef FLASH_EEPROM_2_ADDR
+#define FLASH_EEPROM_2_ADDR 0x08082000
+#endif
+
 #endif
