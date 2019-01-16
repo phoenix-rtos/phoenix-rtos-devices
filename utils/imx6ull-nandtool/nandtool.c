@@ -29,7 +29,8 @@
 #include "bcb.h"
 #include "test.h"
 
-#include "../../storage/imx6ull-flash/flash.h"
+#define PAGES_PER_BLOCK 64
+#define FLASH_PAGE_SIZE 0x1000
 
 test_func_t test_func[16];
 int test_cnt;
@@ -367,14 +368,12 @@ void print_help(void)
 static int send_nandErase(unsigned port, unsigned start, unsigned end)
 {
 	msg_t msg = { 0 };
-	nand_devctl_t *devctl = (void *)msg.i.raw;
 	int err;
 
-	msg.type = mtDevCtl;
+	msg.type = mtWrite;
 
-	devctl->type = nand_erase;
-	devctl->erase.start = start;
-	devctl->erase.end = end;
+	msg.i.io.offs = start * PAGES_PER_BLOCK * SIZE_PAGE;
+	msg.i.io.len = (end - start) * PAGES_PER_BLOCK * SIZE_PAGE;
 
 	err = msgSend(port, &msg);
 
@@ -388,14 +387,11 @@ static int send_nandErase(unsigned port, unsigned start, unsigned end)
 static int send_nandFlash(unsigned port, unsigned offset, unsigned end, void *data, size_t size)
 {
 	msg_t msg = { 0 };
-	nand_devctl_t *devctl = (void *)msg.i.raw;
 	int err;
 
-	msg.type = mtDevCtl;
+	msg.type = mtWrite;
 
-	devctl->type = nand_flash;
-	devctl->flash.offset = offset;
-	devctl->flash.end = end;
+	msg.i.io.offs = offset * SIZE_PAGE;
 
 	msg.i.data = data;
 	msg.i.size = size;
@@ -419,7 +415,7 @@ static int flash_update_tool(char **args)
 	FILE *f;
 	int result;
 
-	lookup("/", &oid, NULL);
+	lookup("/dev/flashsrv", NULL, &oid);
 	port = oid.port;
 
 	if ((arg = *(args++)) == NULL)

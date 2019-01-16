@@ -4,14 +4,11 @@
 # Copyright 2018 Phoenix Systems
 #
 
-# build and install into staging static lib
+PROGS := flashsrv
 LIB := libflashdrv.a
 LIB_SRCS := flashdrv.c
-INSTALL_HDRS := flashdrv.h
-
-# build test program and link against lib
-PROGS := flashdrv_test
-PROGS_LIBS := libflashdrv.a
+PROGS_SRCS := flashdrv.c flashsrv.c
+PROGS_LIBS := libjffs2.a
 
 # include after all dependencies are set
 include $(TOPDIR)/Makefile.rules
