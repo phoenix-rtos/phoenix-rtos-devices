@@ -32,6 +32,22 @@
 #define PAGES_PER_BLOCK 64
 #define FLASH_PAGE_SIZE 0x1000
 
+/* jffs2 cleanmarker - write it on clean blocks to mount faster */
+struct cleanmarker
+{
+	uint16_t magic;
+	uint16_t type;
+	uint32_t len;
+};
+
+static const struct cleanmarker oob_cleanmarker =
+{
+	.magic = 0x1985,
+	.type = 0x2003,
+	.len = 8
+};
+
+/* tests */
 test_func_t test_func[16];
 int test_cnt;
 
@@ -263,7 +279,7 @@ void flash_erase(void *arg, int start, int end, int silent)
 	} else
 		dma = (flashdrv_dma_t *)arg;
 
-	for (i = start; i <= end; i++) {
+	for (i = start; i < end; i++) {
 		err = flashdrv_erase(dma, PAGES_PER_BLOCK * i);
 		if (err)
 			printf("Erasing block %d returned error %d\n", i, err);
@@ -273,6 +289,30 @@ void flash_erase(void *arg, int start, int end, int silent)
 	nand_msg(silent, "------------------\n");
 }
 
+
+int flash_write_cleanmarkers(void *arg, int start, int end)
+{
+	flashdrv_dma_t *dma;
+	void *metabuf;
+	int i, ret = 0;
+
+	if (arg == NULL) {
+		flashdrv_init();
+		dma = flashdrv_dmanew();
+		flashdrv_reset(dma);
+	}
+	else
+		dma = (flashdrv_dma_t *)arg;
+
+	metabuf = mmap(NULL, PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0);
+	memset(metabuf, 0xff, PAGE_SIZE);
+	memcpy(metabuf, &oob_cleanmarker, 8);
+	for (i = start; i < end; i++) {
+		ret += flashdrv_write(dma, (i * PAGES_PER_BLOCK), NULL, metabuf);
+	}
+
+	return ret;
+}
 
 void set_nandboot(char *primary, char *secondary, char *rootfs, size_t rootfssz, int rwfs_erase)
 {
@@ -297,6 +337,7 @@ void set_nandboot(char *primary, char *secondary, char *rootfs, size_t rootfssz,
 		printf("Erasing rootfs and data partition\n");
 		flash_erase(dma, 0, BLOCKS_CNT, 1);
 		ret = flash_check(dma, 1, &dbbt);
+		flash_write_cleanmarkers(dma, 64 + (2 * rootfssz), BLOCKS_CNT);
 	}
 
 	if (ret) {
