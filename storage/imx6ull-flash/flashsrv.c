@@ -347,6 +347,21 @@ static int flashsrv_mount(mount_msg_t *mnt, oid_t *oid)
 }
 
 
+static void flashsrv_syncAll(void)
+{
+	msg_t msg = {0};
+	rbnode_t *n;
+	flashsrv_filesystem_t *fs;
+
+	msg.type = mtSync;
+
+	for (n = lib_rbMinimum(flashsrv_common.filesystems.root); n; n = lib_rbNext(n)) {
+		fs = lib_treeof(flashsrv_filesystem_t, node, n);
+		msgSend(fs->port, &msg);
+	}
+}
+
+
 static void flashsrv_devThread(void *arg)
 {
 	msg_t msg;
@@ -374,6 +389,10 @@ static void flashsrv_devThread(void *arg)
 
 		case mtMount:
 			flashsrv_mount((mount_msg_t *)msg.i.raw, (oid_t *)msg.o.raw);
+			break;
+
+		case mtSync:
+			flashsrv_syncAll();
 			break;
 
 		default:
