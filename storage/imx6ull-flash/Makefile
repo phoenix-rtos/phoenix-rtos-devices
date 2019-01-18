@@ -4,10 +4,16 @@
 # Copyright 2018, 2019 Phoenix Systems
 #
 
-$(PREFIX_PROG)imx6ull-flash-test: $(PREFIX_O)storage/imx6ull-flash/imx6ull-flash-test.o $(PREFIX_A)libflashdrv.a
+$(PREFIX_PROG)imx6ull-flash: $(addprefix $(PREFIX_O)storage/imx6ull-flash/, flashdrv.o flashsrv.o) $(PREFIX_A)libjffs2.a
 	$(LINK)
 
-$(PREFIX_A)libflashdrv.a: $(PREFIX_O)storage/imx6ull-flash/flashdrv.o
-	$(ARCH)
+#$(PREFIX_A)libflashdrv.a: $(PREFIX_O)storage/imx6ull-flash/flashdrv.o
+#	$(ARCH)
+#=======
+#PROGS := flashsrv
+#LIB := libflashdrv.a
+#LIB_SRCS := flashdrv.c
+#PROGS_SRCS := flashdrv.c flashsrv.c
+#PROGS_LIBS := libjffs2.a
 
-all: $(PREFIX_PROG)imx6ull-flash-test
+all: $(PREFIX_PROG)imx6ull-flash

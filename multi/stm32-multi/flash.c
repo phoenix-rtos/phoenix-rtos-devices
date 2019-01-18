@@ -63,9 +63,9 @@ static inline void _flash_clearFlags(void)
 }
 
 
-static inline int eeprom_isValidAdress(u32 addr)
+static inline int eeprom_isValidAdress(u32 addr, size_t size)
 {
-	return (addr >= FLASH_EEPROM_1_ADDR && addr <= (FLASH_EEPROM_2_ADDR + FLASH_EEPROM_SIZE));
+	return (addr >= FLASH_EEPROM_1_ADDR && addr + size <= (FLASH_EEPROM_2_ADDR + FLASH_EEPROM_SIZE));
 }
 
 
@@ -247,12 +247,12 @@ static size_t ob_writeData(u32 offset, const char *buff, size_t size)
 }
 
 
-static inline int program_isValidAddress(u32 addr)
+static inline int program_isValidAddress(u32 addr, size_t size)
 {
-	if (addr >= FLASH_PROGRAM_1_ADDR && addr <= (FLASH_PROGRAM_1_ADDR + FLASH_PROGRAM_SIZE))
+	if (addr >= FLASH_PROGRAM_1_ADDR && addr + size <= (FLASH_PROGRAM_1_ADDR + FLASH_PROGRAM_SIZE))
 		return 1;
 
-	if (addr >= FLASH_PROGRAM_2_ADDR && addr <= (FLASH_PROGRAM_2_ADDR + FLASH_PROGRAM_SIZE))
+	if (addr >= FLASH_PROGRAM_2_ADDR && addr + size <= (FLASH_PROGRAM_2_ADDR + FLASH_PROGRAM_SIZE))
 		return 1;
 
 	return 0;
@@ -408,10 +408,10 @@ static size_t program_writeData(u32 offset, const char *buff, size_t size)
 
 size_t flash_readData(u32 offset, char *buff, size_t size)
 {
-	if (program_isValidAddress(offset))
+	if (program_isValidAddress(offset, size))
 		return program_readData(offset, buff, size);
 
-	if (eeprom_isValidAdress(offset))
+	if (eeprom_isValidAdress(offset, size))
 		return eeprom_readData(offset, buff, size);
 
 	if (ob_isValidAdress(offset))
@@ -423,10 +423,10 @@ size_t flash_readData(u32 offset, char *buff, size_t size)
 
 size_t flash_writeData(u32 offset, const char *buff, size_t size)
 {
-	if (program_isValidAddress(offset))
+	if (program_isValidAddress(offset, size))
 		return program_writeData(offset, buff, size);
 
-	if (eeprom_isValidAdress(offset))
+	if (eeprom_isValidAdress(offset, size))
 		return eeprom_writeData(offset, buff, size);
 
 	if (ob_isValidAdress(offset))

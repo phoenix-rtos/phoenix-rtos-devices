@@ -17,14 +17,11 @@
 #include ARCH
 #include "rtc.h"
 #include "common.h"
+#include "config.h"
 
 #define FLASH_PAGE_SIZE         256
-#define FLASH_PROGRAM_1_ADDR    0x08000000
-#define FLASH_PROGRAM_2_ADDR    0x08030000
-#define FLASH_PROGRAM_SIZE      (192 * 1024)
-#define FLASH_EEPROM_1_ADDR     0x08080000
-#define FLASH_EEPROM_2_ADDR     0x08081800
-#define FLASH_EEPROM_SIZE       (6 * 1024)
+#define FLASH_PROGRAM_SIZE      (FLASH_PROGRAM_2_ADDR - FLASH_PROGRAM_1_ADDR)
+#define FLASH_EEPROM_SIZE       (FLASH_EEPROM_2_ADDR - FLASH_EEPROM_1_ADDR)
 #define FLASH_OB_1_ADDR         0x1ff80000
 #define FLASH_OB_2_ADDR         0x1ff80080
 #define FLASH_OB_SIZE           32

@@ -29,6 +29,25 @@
 #include "bcb.h"
 #include "test.h"
 
+#define PAGES_PER_BLOCK 64
+#define FLASH_PAGE_SIZE 0x1000
+
+/* jffs2 cleanmarker - write it on clean blocks to mount faster */
+struct cleanmarker
+{
+	uint16_t magic;
+	uint16_t type;
+	uint32_t len;
+};
+
+static const struct cleanmarker oob_cleanmarker =
+{
+	.magic = 0x1985,
+	.type = 0x2003,
+	.len = 8
+};
+
+/* tests */
 test_func_t test_func[16];
 int test_cnt;
 
@@ -135,7 +154,7 @@ int flash_image(void *arg, char *path, u32 start, u32 block_offset, int silent, 
 }
 
 
-int flash_check(void *arg, int silent, dbbt_t **dbbt)
+int flash_check_range(void *arg, int start, int end, int silent, dbbt_t **dbbt)
 {
 	flashdrv_dma_t *dma;
 	int i, ret = 0;
@@ -162,7 +181,7 @@ int flash_check(void *arg, int silent, dbbt_t **dbbt)
 
 	nand_msg(silent, "\n------ CHECK ------\n");
 
-	for (i = 0; i < BLOCKS_CNT; i++) {
+	for (i = start; i < end; i++) {
 
 		memset(raw_data, 0, RAW_PAGE_SIZE);
 		ret = flashdrv_readraw(dma, (i * PAGES_PER_BLOCK), raw_data, RAW_PAGE_SIZE);
@@ -191,7 +210,7 @@ int flash_check(void *arg, int silent, dbbt_t **dbbt)
 	nand_msg(silent, "------------------\n");
 
 	if (dbbt != NULL && bbtn < BB_MAX) {
-		dbbtsz = (sizeof(dbbt_t) + (sizeof(u32) * bbtn) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1); 
+		dbbtsz = (sizeof(dbbt_t) + (sizeof(u32) * bbtn) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 		*dbbt = malloc(dbbtsz);
 		memset(*dbbt, 0, dbbtsz);
 		memcpy(&((*dbbt)->bad_block), &bbt, sizeof(u32) * bbtn);
@@ -203,6 +222,12 @@ int flash_check(void *arg, int silent, dbbt_t **dbbt)
 
 	munmap(raw_data, 2 * PAGE_SIZE);
 	return (bbtn >= BB_MAX);
+}
+
+
+int flash_check(void *arg, int silent, dbbt_t **dbbt)
+{
+	return flash_check_range(arg, 0, BLOCKS_CNT, silent, dbbt);
 }
 
 
@@ -233,6 +258,7 @@ void flash_test(int test_no, void * arg)
 		printf("------ PASSED ------\n\n");
 }
 
+
 void flash_erase(void *arg, int start, int end, int silent)
 {
 	flashdrv_dma_t *dma;
@@ -253,17 +279,42 @@ void flash_erase(void *arg, int start, int end, int silent)
 	} else
 		dma = (flashdrv_dma_t *)arg;
 
-	for (i = start; i <= end; i++) {
+	for (i = start; i < end; i++) {
 		err = flashdrv_erase(dma, PAGES_PER_BLOCK * i);
 		if (err)
 			printf("Erasing block %d returned error %d\n", i, err);
 	}
 	if (arg == NULL)
 		flashdrv_dmadestroy(dma);
-	nand_msg(silent, "--------------------\n");
+	nand_msg(silent, "------------------\n");
 }
 
-void set_nandboot(char *primary, char *secondary, char *rootfs, size_t rootfssz)
+
+int flash_write_cleanmarkers(void *arg, int start, int end)
+{
+	flashdrv_dma_t *dma;
+	void *metabuf;
+	int i, ret = 0;
+
+	if (arg == NULL) {
+		flashdrv_init();
+		dma = flashdrv_dmanew();
+		flashdrv_reset(dma);
+	}
+	else
+		dma = (flashdrv_dma_t *)arg;
+
+	metabuf = mmap(NULL, PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0);
+	memset(metabuf, 0xff, PAGE_SIZE);
+	memcpy(metabuf, &oob_cleanmarker, 8);
+	for (i = start; i < end; i++) {
+		ret += flashdrv_write(dma, (i * PAGES_PER_BLOCK), NULL, metabuf);
+	}
+
+	return ret;
+}
+
+void set_nandboot(char *primary, char *secondary, char *rootfs, size_t rootfssz, int rwfs_erase)
 {
 	int ret = 0, err = 0;
 	flashdrv_dma_t *dma;
@@ -276,11 +327,18 @@ void set_nandboot(char *primary, char *secondary, char *rootfs, size_t rootfssz)
 
 	printf("\n- NANDBOOT SETUP -\n");
 	printf("Root partition size: %u\n", rootfssz);
-	printf("Flash erase\n");
-	flash_erase(dma, 0, 64 + (2 * rootfssz), 1);
 
-	printf("Performing flash check\n");
-	ret = flash_check(dma, 1, &dbbt);
+	if (!rwfs_erase) {
+		printf("Erasing rootfs only\n");
+		flash_erase(dma, 0, 64 + (2 * rootfssz), 1);
+		ret = flash_check_range(dma, 0, 64 + (2 * rootfssz), 1, &dbbt);
+	}
+	else {
+		printf("Erasing rootfs and data partition\n");
+		flash_erase(dma, 0, BLOCKS_CNT, 1);
+		ret = flash_check(dma, 1, &dbbt);
+		flash_write_cleanmarkers(dma, 64 + (2 * rootfssz), BLOCKS_CNT);
+	}
 
 	if (ret) {
 		printf("Error while checking flash %d\n", ret);
@@ -333,6 +391,7 @@ void set_nandboot(char *primary, char *secondary, char *rootfs, size_t rootfssz)
 		printf("All done. Restart the device to boot from internal storage.\n");
 }
 
+
 void print_help(void)
 {
 	printf("Usage:\n" \
@@ -346,6 +405,145 @@ void print_help(void)
 			"\t-f (fw1) (fw2) (rootfs) - set flash for internal booting\n");
 }
 
+
+static int send_nandErase(unsigned port, unsigned start, unsigned end)
+{
+	msg_t msg = { 0 };
+	int err;
+
+	msg.type = mtWrite;
+
+	msg.i.io.offs = start * PAGES_PER_BLOCK * SIZE_PAGE;
+	msg.i.io.len = (end - start) * PAGES_PER_BLOCK * SIZE_PAGE;
+
+	err = msgSend(port, &msg);
+
+	if (err)
+		return err;
+
+	return msg.o.io.err;
+}
+
+
+static int send_nandFlash(unsigned port, unsigned offset, unsigned end, void *data, size_t size)
+{
+	msg_t msg = { 0 };
+	int err;
+
+	msg.type = mtWrite;
+
+	msg.i.io.offs = offset * SIZE_PAGE;
+
+	msg.i.data = data;
+	msg.i.size = size;
+
+	err = msgSend(port, &msg);
+
+	if (err)
+		return err;
+
+	return msg.o.io.err;
+}
+
+
+static int flash_update_tool(char **args)
+{
+	char *arg;
+	void *data;
+	unsigned start, end, offset, port;
+	size_t size;
+	oid_t oid;
+	FILE *f;
+	int result;
+
+	lookup("/dev/flashsrv", NULL, &oid);
+	port = oid.port;
+
+	if ((arg = *(args++)) == NULL)
+		return -EINVAL;
+
+	if (!strncmp(arg, "erase", sizeof("erase"))) {
+		if ((arg = *(args++)) == NULL)
+			return -EINVAL;
+
+		start = strtoul(arg, NULL, 10);
+
+		if ((arg = *(args++)) == NULL)
+			return -EINVAL;
+
+		end = strtoul(arg, NULL, 10);
+
+		if (end < start) {
+			fprintf(stderr, "flash: start block must be smaller than end block\n");
+			return -EINVAL;
+		}
+
+		result = send_nandErase(port, start, end);
+
+		if (result < 0)
+			fprintf(stderr, "flash: error while erasing\n");
+
+		return result;
+	}
+	else if (!strncmp(arg, "write", sizeof("write"))) {
+		if ((arg = *(args++)) == NULL)
+			return -EINVAL;
+
+		offset = strtoul(arg, NULL, 10);
+
+		if ((arg = *(args++)) == NULL)
+			return -EINVAL;
+
+		end = strtoul(arg, NULL, 10);
+
+		if ((arg = *(args++)) == NULL)
+			return -EINVAL;
+
+		data = malloc(1 << 20);
+
+		if (data == NULL) {
+			fprintf(stderr, "flash: could not allocate buffer\n");
+			return -ENOMEM;
+		}
+
+		f = fopen(arg, "r");
+
+		if (f == NULL) {
+			fprintf(stderr, "flash: could not open file %s\n", arg);
+			free(data);
+			return -EINVAL;
+		}
+
+		while (!feof(f)) {
+			size = fread(data, 1, 1 << 20, f);
+
+			if (!size)
+				break;
+
+			if (size & (SIZE_PAGE - 1)) {
+				memset(data + size, 0xff, SIZE_PAGE - (size & (SIZE_PAGE - 1)));
+				size = (size + SIZE_PAGE - 1) & ~(SIZE_PAGE - 1);
+			}
+
+			result = send_nandFlash(port, offset, end, data, size);
+			offset += size / SIZE_PAGE;
+
+			if (result < 0) {
+				fprintf(stderr, "flash: error while writing\n");
+				break;
+			}
+		}
+
+		fclose(f);
+		free(data);
+		return result;
+	}
+
+	fprintf(stderr, "usage: nandtool -U (erase start-block end-block | write start-page [end-page/0] file)\n");
+	return -EINVAL;
+}
+
+
 int main(int argc, char **argv)
 {
 	int c;
@@ -353,9 +551,9 @@ int main(int argc, char **argv)
 	int start = -1;
 	char *tok, *primary, *secondary, *rootfs;
 	int len, i, raw = 0;
-	size_t rootfssz = 64;
+	size_t rootfssz = 64, erase_data = 0;
 
-	while ((c = getopt(argc, argv, "i:r:s:hct:e:f:")) != -1) {
+	while ((c = getopt(argc, argv, "i:r:s:hct:e:f:U")) != -1) {
 		switch (c) {
 
 			case 'i':
@@ -393,14 +591,16 @@ int main(int argc, char **argv)
 					print_help();
 				return 0;
 			case 'f':
-				if (argc < 4) {
+				if (argc < 5) {
 					if (optarg != NULL)
 						rootfssz = atoi(optarg);
+					if (argv[optind] != NULL)
+						erase_data = atoi(argv[optind]);
 					primary = "/init/primary.img";
 					secondary = "/init/secondary.img";
 					rootfs = "/init/rootfs.img";
-					set_nandboot(primary, secondary, rootfs, rootfssz);
-				} else if (argc == 4) {
+					set_nandboot(primary, secondary, rootfs, rootfssz, erase_data);
+				} else if (argc == 5) {
 
 					len = strlen(argv[optind]);
 					for (i = len; i >= 0 && argv[optind][i] != '/'; --i);
@@ -426,7 +626,7 @@ int main(int argc, char **argv)
 					strcat(rootfs, "/init/");
 					strcat(rootfs, argv[optind] + i + 1);
 
-					set_nandboot(primary, secondary, rootfs, rootfssz);
+					set_nandboot(primary, secondary, rootfs, rootfssz, erase_data);
 
 					free(primary);
 					free(secondary);
@@ -435,6 +635,10 @@ int main(int argc, char **argv)
 					return 0;
 				}
 				return 0;
+
+			case 'U':
+				return flash_update_tool(argv + optind);
+
 			case 'h':
 			default:
 				print_help();

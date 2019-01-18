@@ -56,6 +56,10 @@ static void handleMsg(msg_t *msg)
 			omsg->adc_val = adc_conversion(imsg->adc_channel);
 			break;
 
+		case rtc_setcal:
+			rtc_setCalib(imsg->rtc_calib);
+			break;
+
 		case rtc_get:
 			rtc_getTime(&omsg->rtc_timestamp);
 			break;
