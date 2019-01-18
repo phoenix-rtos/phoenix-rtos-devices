@@ -18,12 +18,9 @@
 #include <sys/msg.h>
 #include <sys/mman.h>
 
-#include "sdma-lib.h"
+#include "sdma.h"
 
-static int sdma_dev_ctl(sdma_t *s,
-						sdma_dev_ctl_t *dev_ctl,
-						void *data,
-						size_t size)
+static int sdma_dev_ctl(sdma_t *s, sdma_dev_ctl_t *dev_ctl, void *data, size_t size)
 {
 	int res;
 	msg_t msg;
@@ -187,6 +184,7 @@ addr_t sdma_ocram_alloc(sdma_t *s, size_t size)
 	return dev_ctl.alloc.paddr;
 }
 
+
 void *sdma_alloc_uncached(sdma_t *s, size_t size, addr_t *paddr, int ocram)
 {
 	uint32_t n = (size + SIZE_PAGE - 1)/SIZE_PAGE;
@@ -212,6 +210,7 @@ void *sdma_alloc_uncached(sdma_t *s, size_t size, addr_t *paddr, int ocram)
 
 	return vaddr;
 }
+
 
 int sdma_free_uncached(void *vaddr, size_t size)
 {

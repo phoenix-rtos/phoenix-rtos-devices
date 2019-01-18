@@ -793,9 +793,9 @@ void ehci_dumpQueue(FILE *stream, struct qh *qh)
 	fprintf(stream, "%18s: %08x\n", "halted", qh->transfer_overlay.halted);
 	fprintf(stream, "%18s: %08x\n", "active", qh->transfer_overlay.active);
 
-	fprintf(stream, "%18s: %08x\n", "current", qh->current_qtd);
+	fprintf(stream, "%18s: %p\n", "current", &qh->current_qtd);
 
-	fprintf(stream, "%18s: %08x\n", "next", qh->transfer_overlay.next);
+	fprintf(stream, "%18s: %p\n", "next", &qh->transfer_overlay.next);
 	fprintf(stream, "%18s: %08x\n", "pid_code", qh->transfer_overlay.pid_code);
 	fprintf(stream, "%18s: %08x\n", "error_counter", qh->transfer_overlay.error_counter);
 	fprintf(stream, "%18s: %08x\n", "current_page", qh->transfer_overlay.current_page);

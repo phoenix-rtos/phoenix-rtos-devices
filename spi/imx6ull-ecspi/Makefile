@@ -1,15 +1,10 @@
 #
 # Makefile for Phoenix-RTOS imx6ull-ecspi driver
 #
-# Copyright 2018 Phoenix Systems
+# Copyright 2018, 2019 Phoenix Systems
 #
 
-LIB := libecspi.a
-LIB_SRCS := ecspi-lib.c
-INSTALL_HDRS := ecspi-api.h
+$(PREFIX_A)libecspi.a: $(PREFIX_O)spi/imx6ull-ecspi/libecspi.o
+	$(ARCH)
 
-PROGS := imx6ull-ecspi
-PROGS_SRCS := imx6ull-ecspi.c
-
-# include after all dependencies are set
-include $(TOPDIR)/Makefile.rules
+all: $(PREFIX_A)libecspi.a

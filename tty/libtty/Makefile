@@ -1,12 +1,13 @@
 #
-# Makefile for Phoenix-RTOS TTY abstraction layer
+# Makefile for Phoenix-RTOS libtty
 #
-# Copyright 2018 Phoenix Systems
+# Copyright 2018, 2019 Phoenix Systems
 #
 
-LIB := libtty.a
-LIB_SRCS := libtty.c libtty_disc.c
-INSTALL_HDRS := libtty.h
-
-# include after all dependencies are set
-include $(TOPDIR)/Makefile.rules
+$(PREFIX_A)libtty.a: $(addprefix $(PREFIX_O)tty/libtty/, libtty.o libtty_disc.o)
+	$(ARCH)
+	
+$(PREFIX_H)libtty.h: tty/libtty/libtty.h
+	$(HEADER)
+	
+all: $(PREFIX_A)libtty.a $(PREFIX_H)libtty.h

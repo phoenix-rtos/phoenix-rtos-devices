@@ -1,12 +1,16 @@
 #
-# Makefile for Phoenix-RTOS imx6ull ehci
+# Makefile for Phoenix-RTOS imx6ull-ehci
 #
-# Copyright 2018 Phoenix Systems
+# Copyright 2018, 2019 Phoenix Systems
 #
 
-LIB := libehci-imx6ull.a
-LIB_SRCS := dma.c ehci.c phy.c
-INSTALL_HDRS := ehci.h dma.h
+$(PREFIX_A)libehci-imx6ull.a: $(addprefix $(PREFIX_O)usb/imx6ull-ehci/, ehci.o dma.o phy.o)
+	$(ARCH)
+	
+$(PREFIX_H)dma.h: usb/imx6ull-ehci/dma.h
+	$(HEADER)
+        
+$(PREFIX_H)ehci.h: usb/imx6ull-ehci/ehci.h
+	$(HEADER)
 
-# include after all dependencies are set
-include $(TOPDIR)/Makefile.rules
+all: $(PREFIX_A)libehci-imx6ull.a $(PREFIX_H)dma.h $(PREFIX_H)ehci.h

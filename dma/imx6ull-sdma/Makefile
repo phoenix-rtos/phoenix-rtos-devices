@@ -1,15 +1,19 @@
 #
-# Makefile for Phoenix-RTOS imx6ull-uart driver
+# Makefile for Phoenix-RTOS imx6ull-sdma driver
 #
 # Copyright 2018 Phoenix Systems
 #
 
-LIB := libsdma.a
-LIB_SRCS := sdma-lib.c
-INSTALL_HDRS := sdma-api.h sdma-lib.h
+$(PREFIX_PROG)imx6ull-sdma: $(PREFIX_O)dma/imx6ull-sdma/imx6ull-sdma.o $(PREFIX_A)libsdma.a
+	$(LINK)
+	
+$(PREFIX_A)libsdma.a: $(PREFIX_O)dma/imx6ull-sdma/libsdma.o
+	$(ARCH)
+	
+$(PREFIX_H)sdma.h: dma/imx6ull-sdma/sdma.h
+	$(HEADER)
+	
+$(PREFIX_H)sdma-api.h: dma/imx6ull-sdma/sdma-api.h
+	$(HEADER)
 
-PROGS := imx6ull-sdma
-PROGS_SRCS := sdma-driver.c
-
-# include after all dependencies are set
-include $(TOPDIR)/Makefile.rules
+all: $(PREFIX_PROG_STRIPPED)imx6ull-sdma $(PREFIX_H)sdma.h $(PREFIX_H)sdma-api.h

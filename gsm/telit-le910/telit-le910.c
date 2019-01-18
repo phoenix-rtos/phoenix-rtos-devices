@@ -604,7 +604,7 @@ int telit_init_device()
 int main(int argc, char **argv)
 {
 	usb_device_id_t usb_device_id;
-	int in = 0, out = 0, intr = 0;
+	int out = 0, intr = 0;
 	char *data;
 	int sz = 0;
 	unsigned port;
@@ -707,7 +707,7 @@ int main(int argc, char **argv)
 	open.endpoint.wMaxPacketSize = 0x200;
 	open.endpoint.bInterval = 0x0;
 
-	in = libusb_open(&open);
+	libusb_open(&open);
 
 	open.endpoint.bLength = 0x7;
 	open.endpoint.bDescriptorType = 0x5;

@@ -17,7 +17,7 @@
 
 #include <phoenix/arch/imx6ull.h>
 
-#include "ecspi-api.h"
+#include "ecspi.h"
 
 
 enum { rxdata = 0, txdata, conreg, configreg, intreg, dmareg, statreg, periodreg, testreg, msgdata = 16 };

@@ -1,11 +1,13 @@
 #
-# Makefile for Phoenix-RTOS imx6ull-uart driver
+# Makefile for Phoenix-RTOS imx6ull-gpio driver
 #
-# Copyright 2018 Phoenix Systems
+# Copyright 2018, 2019 Phoenix Systems
 #
 
-PROGS := imx6ull-gpio
-INSTALL_HDRS := imx6ull-gpio.h
+$(PREFIX_PROG)imx6ull-gpio: $(PREFIX_O)gpio/imx6ull-gpio/imx6ull-gpio.o
+	$(LINK)
 
-# include after all dependencies are set
-include $(TOPDIR)/Makefile.rules
+$(PREFIX_H)imx6ull-gpio.h: gpio/imx6ull-gpio/imx6ull-gpio.h
+	$(HEADER)
+
+all: $(PREFIX_PROG_STRIPPED)imx6ull-gpio $(PREFIX_H)imx6ull-gpio.h

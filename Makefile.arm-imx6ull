@@ -1,0 +1,18 @@
+#
+# Makefile for Phoenix-RTOS 3 device drivers
+#
+# iMX6ULL drivers
+#
+# Copyright 2019 Phoenix Systems
+#
+
+include dma/imx6ull-sdma/Makefile
+include gpio/imx6ull-gpio/Makefile
+include spi/imx6ull-ecspi/Makefile
+include storage/imx6ull-flash/Makefile
+include tty/imx6ull-uart/Makefile
+include tty/libtty/Makefile
+include usb/imx6ull-ehci/Makefile
+include utils/imx6ull-nandtool/Makefile
+include utils/imx6ull-otp/Makefile
+
