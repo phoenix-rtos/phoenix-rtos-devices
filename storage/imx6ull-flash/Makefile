@@ -17,4 +17,4 @@ $(PREFIX_A)libflashdrv.a: $(PREFIX_O)storage/imx6ull-flash/flashdrv.o
 #PROGS_SRCS := flashdrv.c flashsrv.c
 #PROGS_LIBS := libjffs2.a
 
-all: $(PREFIX_PROG)imx6ull-flash $(PREFIX_A)libflashdrv.a
+all: $(PREFIX_PROG_STRIPPED)imx6ull-flash $(PREFIX_A)libflashdrv.a
