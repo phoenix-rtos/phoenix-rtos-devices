@@ -7,8 +7,9 @@
 $(PREFIX_PROG)imx6ull-flash: $(addprefix $(PREFIX_O)storage/imx6ull-flash/, flashdrv.o flashsrv.o) $(PREFIX_A)libjffs2.a
 	$(LINK)
 
-#$(PREFIX_A)libflashdrv.a: $(PREFIX_O)storage/imx6ull-flash/flashdrv.o
-#	$(ARCH)
+$(PREFIX_A)libflashdrv.a: $(PREFIX_O)storage/imx6ull-flash/flashdrv.o
+	$(ARCH)
+
 #=======
 #PROGS := flashsrv
 #LIB := libflashdrv.a
@@ -16,4 +17,4 @@ $(PREFIX_PROG)imx6ull-flash: $(addprefix $(PREFIX_O)storage/imx6ull-flash/, flas
 #PROGS_SRCS := flashdrv.c flashsrv.c
 #PROGS_LIBS := libjffs2.a
 
-all: $(PREFIX_PROG)imx6ull-flash
+all: $(PREFIX_PROG)imx6ull-flash $(PREFIX_A)libflashdrv.a
