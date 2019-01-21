@@ -4,8 +4,8 @@
 # Copyright 2018 Phoenix Systems
 #
 
-PROGS_SRCS = adc.c gpio.c i2c.c lcd.c rcc.c rtc.c stm32-multi.c flash.c uart.c spi.c
-PROGS := stm32-multi
 
-# include after all dependencies are set
-include $(TOPDIR)/Makefile.rules
+$(PREFIX_PROG)stm32-multi: $(addprefix $(PREFIX_O)multi/stm32-multi/, adc.o gpio.o i2c.o lcd.o rcc.o rtc.o stm32-multi.o flash.o uart.o spi.o)
+	$(LINK)
+
+all: $(PREFIX_PROG_STRIPPED)stm32-multi

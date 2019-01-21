@@ -1,0 +1,9 @@
+#
+# Makefile for Phoenix-RTOS 3 device drivers
+#
+# STM32 drivers
+#
+# Copyright 2019 Phoenix Systems
+#
+
+include multi/stm32-multi/Makefile
