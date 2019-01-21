@@ -41,7 +41,7 @@ static int _flash_wait(void)
 		/* Check if flash is busy. */
 		if ((*(flash_common.flash + flash_sr) & 0x1) == 0x1) {
 			keepidle(1);
-			usleep(10000);
+			usleep(1000);
 			keepidle(0);
 			continue;
 		}
@@ -91,13 +91,10 @@ static int _eeprom_eraseByte(u32 addr)
 {
 	int err;
 
-	_eeprom_unlock();
 	_flash_clearFlags();
 
 	if ((err = _flash_wait()) == 0)
 		*(volatile u8 *) addr = 0x0;
-
-	_eeprom_lock();
 
 	return err;
 }
@@ -107,15 +104,12 @@ static int _eeprom_writeByte(u32 addr, char value)
 {
 	int err;
 
-	_eeprom_unlock();
 	_flash_clearFlags();
 
 	if ((err = _flash_wait()) == 0) {
 		*(volatile u8 *) addr = value;
 		err = _flash_wait();
 	}
-
-	_eeprom_lock();
 
 	return err;
 }
@@ -138,12 +132,15 @@ static size_t eeprom_writeData(u32 offset, const char *buff, size_t size)
 {
 	unsigned int i;
 
+	mutexLock(flash_common.lock);
+	_eeprom_unlock();
 	for (i = 0; i < size; ++i) {
-		mutexLock(flash_common.lock);
 		_eeprom_eraseByte(offset + i);
-		_eeprom_writeByte(offset + i, buff[i]);
-		mutexUnlock(flash_common.lock);
+		if (buff[i] != 0)
+			_eeprom_writeByte(offset + i, buff[i]);
 	}
+	_eeprom_lock();
+	mutexUnlock(flash_common.lock);
 
 	return i;
 }
