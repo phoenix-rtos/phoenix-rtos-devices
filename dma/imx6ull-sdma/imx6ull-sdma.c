@@ -927,8 +927,28 @@ static void dump_debug_info(void)
 		fprintf(f, "Dumping context...\n");
 		res = sdma_context_dump(i, &context);
 		if (res != EOK) {
+
 			fprintf(f, "Failed to dump channel context (%d [%s])\n", res, strerror(-res));
-		} else {
+			fprintf(f, "Reinitializing SDMA core...\n");
+
+			res = sdma_reset_core();
+			if (res != EOK) {
+				fprintf(f, "Initialization failed (%d)\n", res);
+			}
+
+			sdma_init_core();
+
+			sdma_init_channel0();
+
+			fprintf(f, "Retrying to dump context...\n");
+			res = sdma_context_dump(i, &context);
+			if (res != EOK) {
+				context_dumped = 0;
+				fprintf(f, "Failed to dump channel context (%d [%s])\n", res, strerror(-res));
+			}
+		}
+
+		if (context_dumped) {
 			unsigned pc = context.state[0] & SDMA_CONTEXT_PC_MASK;
 			fprintf(f, "pc           = 0x%x (%u)\n", pc, pc);
 			fprintf(f, "state[0]     = 0x%x\n", context.state[0]);
