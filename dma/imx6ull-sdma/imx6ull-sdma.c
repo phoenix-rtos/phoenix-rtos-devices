@@ -128,6 +128,7 @@ typedef struct {
 
 	handle_t intr_cond;
 	unsigned intr_cnt;
+	unsigned missed_intr_cnt;
 
 	unsigned read_cnt;
 } sdma_channel_t;
@@ -760,7 +761,7 @@ static void worker_thread(void *arg)
 static void stats_thread(void *arg)
 {
 	int i;
-	unsigned intr_cnt, read_cnt;
+	unsigned intr_cnt, read_cnt, missed_cnt;
 
 	while (1) {
 
@@ -772,8 +773,10 @@ static void stats_thread(void *arg)
 				continue;
 
 			intr_cnt = common.channel[i].intr_cnt;
+			missed_cnt = common.channel[i].missed_intr_cnt;
 			read_cnt = common.channel[i].read_cnt;
-			log_info("ch#%u stats: %u interrupts; %u reads", i, intr_cnt, read_cnt);
+
+			log_info("ch#%u stats: %u interrupts; %u missed; %u reads", i, intr_cnt, missed_cnt, read_cnt);
 		}
 	}
 }
@@ -800,6 +803,7 @@ static int init(void)
 	for (i = 0; i < NUM_OF_SDMA_CHANNELS; i++) {
 		common.channel[i].intr_cnt = 0;
 		common.channel[i].read_cnt = 0;
+		common.channel[i].missed_intr_cnt = 0;
 		if (condCreate(&common.channel[i].intr_cond) != EOK) {
 			log_error("failed to create conditional variable for channel %d", i);
 			return -1;
@@ -1041,8 +1045,13 @@ int main(int argc, char *argv[])
 			if (intr_cnt[i] == cnt) /* No interrupts for this channel */
 				continue;
 
-			if ((intr_cnt[i] + 1) != cnt) /* More than one interrupt */
+			if ((intr_cnt[i] + 1) != cnt) { /* More than one interrupt */
+				common.channel[i].missed_intr_cnt += cnt - intr_cnt[i] - 1;
+#if 0
+				/* Enable only for debugging purposes. Printing here makes us miss even more interrupts. */
 				log_warn("missed interrupt for channel %d (%u vs %u)", i, intr_cnt[i], cnt);
+#endif
+			}
 
 			condSignal(common.channel[i].intr_cond);
 			intr_cnt[i] = cnt;
