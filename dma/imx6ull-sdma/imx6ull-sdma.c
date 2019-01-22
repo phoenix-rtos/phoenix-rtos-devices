@@ -210,6 +210,9 @@ static int sdma_run_channel0_cmd(uint16_t count,
 								 uint32_t buffer_addr,
 								 uint32_t ext_buffer_addr)
 {
+	if (common.regs->STOP_STAT & 1)
+		return -EBUSY;
+
 	common.channel[0].bd->count = count;
 	common.channel[0].bd->flags = SDMA_BD_DONE | SDMA_BD_WRAP;
 	common.channel[0].bd->command = command;
