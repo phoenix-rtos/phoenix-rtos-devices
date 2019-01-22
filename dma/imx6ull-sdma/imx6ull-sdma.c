@@ -419,6 +419,18 @@ fail:
 #define SDMA_RESET_BIT		(1 << 0)
 #define SDMA_RESCHED_BIT	(1 << 1)
 
+static int sdma_reset_core(void)
+{
+	unsigned tries = 100;
+	while (common.regs->RESET & SDMA_RESET_BIT) {
+		if (--tries == 0)
+			return -ETIME;
+		usleep(1000);
+	}
+
+	return 0;
+}
+
 static void sdma_init_core(void)
 {
 	unsigned i;
@@ -477,6 +489,9 @@ static int sdma_init(void)
 	platformctl(&pctl);
 
 	if ((res = sdma_init_structs()) < 0)
+		return res;
+
+	if ((res = sdma_reset_core()) < 0)
 		return res;
 
 	sdma_init_core();
