@@ -142,6 +142,7 @@ struct driver_common_s
 
 	sdma_channel_t channel[NUM_OF_SDMA_CHANNELS];
 	sdma_channel_ctrl_t *ccb; /* Pointer to channel control block array */
+	addr_t ccb_paddr;
 
 	/* Temporary buffer (uncached, with known physical address) for
 	 * loading/dumping contexts, scripts etc. */
@@ -350,38 +351,6 @@ static int sdma_data_memory_write(uint16_t addr,
 	return sdma_run_channel0_cmd(size, SDMA_CMD_C0_SET_DM, buffer, addr);
 }
 
-static void sdma_reset(void)
-{
-	uint32_t i, status;
-
-	common.regs->MC0PTR = 0;
-
-	/* Clear channel interrupt status */
-	status = common.regs->INTR;
-	common.regs->INTR = status;
-
-	/* Clear channel stop status */
-	status = common.regs->STOP_STAT;
-	common.regs->STOP_STAT = status;
-
-	common.regs->EVTOVR = 0;
-	common.regs->HOSTOVR = 0;
-	common.regs->DSPOVR = 0xffffffff;
-
-	/* Clear channel pending status */
-	common.regs->EVTPEND = common.regs->EVTPEND;
-
-	common.regs->INTRMASK = 0;
-
-	/* Initialize DMA request-channels matrix with zeros */
-	for (i = 0; i < NUM_OF_SDMA_REQUESTS; i++)
-		common.regs->CHNENBL[i] = 0;
-
-	/* Set the priority of each channel to zero */
-	for (i = 0; i < NUM_OF_SDMA_CHANNELS; i++)
-		common.regs->SDMA_CHNPRI[i] = 0;
-}
-
 static int sdma_intr(unsigned int intr, void *arg)
 {
 	uint32_t _INTR;
@@ -415,34 +384,14 @@ static int sdma_intr(unsigned int intr, void *arg)
 	return 0;
 }
 
-static int sdma_init(void)
+static int sdma_init_structs(void)
 {
-	common.ccb = NULL;
-	common.channel[0].bd = NULL;
-	common.tmp = NULL;
+	unsigned i;
 
-	const addr_t sdma_paddr = 0x20ec000;
-	common.regs = mmap(NULL, SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, sdma_paddr);
-	if (common.regs == MAP_FAILED)
-		goto fail;
+	for (i = 0; i < NUM_OF_SDMA_CHANNELS; i++)
+		common.channel[i].active = 0;
 
-	platformctl_t pctl;
-	pctl.action = pctl_set;
-	pctl.type = pctl_devclock;
-	pctl.devclock.dev = pctl_clk_sdma;
-	pctl.devclock.state = 0b11;
-	platformctl(&pctl);
-
-	sdma_reset();
-
-	/* Static context switching */
-	common.regs->CONFIG = 0;
-
-	/* Set context size to 32 bytes (set SMSZ bit) */
-	common.regs->CHN0ADDR |= 1 << 14;
-
-	addr_t ccb_paddr;
-	common.ccb = sdma_alloc_uncached(sizeof(sdma_channel_ctrl_t) * NUM_OF_SDMA_CHANNELS, &ccb_paddr, 1);
+	common.ccb = sdma_alloc_uncached(sizeof(sdma_channel_ctrl_t) * NUM_OF_SDMA_CHANNELS, &common.ccb_paddr, 1);
 	if (common.ccb == NULL)
 		goto fail;
 
@@ -452,38 +401,91 @@ static int sdma_init(void)
 	if (common.channel[0].bd == NULL)
 		goto fail;
 
+	common.tmp_size = SIZE_PAGE;
+	common.tmp = sdma_alloc_uncached(common.tmp_size, &common.tmp_paddr, 0);
+	if (common.tmp == NULL)
+		goto fail;
+
+	return 0;
+
+fail:
+	if (common.ccb != NULL) sdma_free_uncached(common.ccb, sizeof(sdma_channel_ctrl_t) * NUM_OF_SDMA_CHANNELS);
+	if (common.channel[0].bd != NULL) sdma_free_uncached(common.channel[0].bd, sizeof(sdma_buffer_desc_t));
+	if (common.tmp != NULL) sdma_free_uncached(common.tmp, SIZE_PAGE);
+
+	return -ENOMEM;
+}
+
+#define SDMA_RESET_BIT		(1 << 0)
+#define SDMA_RESCHED_BIT	(1 << 1)
+
+static void sdma_init_core(void)
+{
+	unsigned i;
+
+	/* Initialize DMA request-channels matrix with zeros */
+	for (i = 0; i < NUM_OF_SDMA_REQUESTS; i++)
+		common.regs->CHNENBL[i] = 0;
+
+	/* Set the priority of each channel to zero */
+	for (i = 0; i < NUM_OF_SDMA_CHANNELS; i++)
+		common.regs->SDMA_CHNPRI[i] = 0;
+
+	/* Static context switching */
+	common.regs->CONFIG = 0;
+
+	/* Set physical address of channel control blocks */
+	common.regs->MC0PTR = common.ccb_paddr;
+
+	/* Set context size to 32 bytes (set SMSZ bit) */
+	common.regs->CHN0ADDR |= 1 << 14;
+
+	common.regs->EVTOVR = 0;
+	common.regs->HOSTOVR = 0;
+	common.regs->DSPOVR = 0xffffffff;
+}
+
+static void sdma_init_channel0(void)
+{
 	common.ccb[0].base_bd = common.channel[0].bd_paddr;
 	common.ccb[0].current_bd = common.channel[0].bd_paddr;
-
-	common.regs->MC0PTR = ccb_paddr;
 
 	/* Ignore DMA requests for channel 0 (channel 0 will be triggered by setting HE[0] bit) */
 	common.regs->HOSTOVR = 0;
 	common.regs->EVTOVR = 1;
 
 	sdma_set_channel_priority(0, SDMA_CHANNEL_PRIORITY_MAX);
+}
 
-	common.tmp_size = SIZE_PAGE;
-	common.tmp = sdma_alloc_uncached(common.tmp_size, &common.tmp_paddr, 0);
-	if (common.tmp == NULL)
-		goto fail;
-
-	unsigned i;
-	for (i = 0; i < NUM_OF_SDMA_CHANNELS; i++)
-		common.channel[i].active = 0;
-
+static int sdma_init(void)
+{
+	int res;
 	unsigned handle;
+
+	const addr_t sdma_paddr = 0x20ec000;
+	common.regs = mmap(NULL, SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, sdma_paddr);
+	if (common.regs == MAP_FAILED) {
+		log_error("sdma_init: mmap failed");
+		return -errno;
+	}
+
+	platformctl_t pctl;
+	pctl.action = pctl_set;
+	pctl.type = pctl_devclock;
+	pctl.devclock.dev = pctl_clk_sdma;
+	pctl.devclock.state = 0b11;
+	platformctl(&pctl);
+
+	if ((res = sdma_init_structs()) < 0)
+		return res;
+
+	sdma_init_core();
+
+	sdma_init_channel0();
+
 	interrupt(32 + 2, sdma_intr, &common, common.intr_cond, &handle);
 
 	return 0;
-
-fail:
-
-	if (common.ccb != NULL) sdma_free_uncached(common.ccb, sizeof(sdma_channel_ctrl_t) * NUM_OF_SDMA_CHANNELS);
-	if (common.channel[0].bd != NULL) sdma_free_uncached(common.channel[0].bd, sizeof(sdma_buffer_desc_t));
-	if (common.tmp != NULL) sdma_free_uncached(common.tmp, SIZE_PAGE);
-
-	return -1;
 }
 
 static int sdma_set_bd_array(uint8_t channel_id, addr_t paddr, unsigned cnt)
