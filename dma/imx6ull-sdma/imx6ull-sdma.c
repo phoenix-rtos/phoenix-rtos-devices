@@ -257,6 +257,9 @@ static int sdma_context_dump(uint8_t channel_id, sdma_context_t *context)
 {
 	int res;
 
+	// Fill buffer with recognizable pattern for debugging purposes
+	memset(common.tmp, 0xa5, sizeof(sdma_context_t));
+
 	res = sdma_run_channel0_cmd(sizeof(sdma_context_t)/4,
 								SDMA_CMD_C0_GETCTX(channel_id),
 								common.tmp_paddr,
