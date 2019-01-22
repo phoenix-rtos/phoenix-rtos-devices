@@ -159,6 +159,8 @@ struct driver_common_s
 	int initialized;
 	int debug_info_dumped;
 
+	const char *dump_dir;
+
 	uint32_t active_mask;
 } common;
 
@@ -818,91 +820,126 @@ static int init(void)
 	return 0;
 }
 
-#if 1
-static void sdma_print_debug_info(void)
+static FILE *create_dump_file(void)
+{
+	char path[256];
+
+	snprintf(path, sizeof(path), "%s/sdma_dump", common.dump_dir);
+
+	unsigned i = 0;
+	while (access(path, F_OK) == 0) {
+		snprintf(path, sizeof(path), "%s/sdma_dump.%u", common.dump_dir, i);
+		if (++i > 16)
+			return NULL;
+	}
+
+	log_warn("Creating debug info dump (%s)", path);
+
+	return fopen(path, "w");
+}
+
+static void dump_debug_info(void)
 {
 	int res;
+	FILE *f;
 
-	log_info("SDMA regs:");
-	log_debug("EVTPEND      = 0x%x", common.regs->EVTPEND);
-	log_debug("EVT_MIRROR   = 0x%x", common.regs->EVT_MIRROR);
-	log_debug("EVT_MIRROR2  = 0x%x", common.regs->EVT_MIRROR2);
-	log_debug("EVTERRDBG    = 0x%x", common.regs->EVTERRDBG);
-	log_debug("INTR         = 0x%x", common.regs->INTR);
-	log_debug("INTRMASK     = 0x%x", common.regs->INTRMASK);
-	log_debug("PSW          = 0x%x", common.regs->PSW);
-	log_debug("ONCE_STAT    = 0x%x\n", common.regs->ONCE_STAT);
+	f = create_dump_file();
+	if (f == NULL) {
+		log_error("Failed to create file for debug info dump");
+		return;
+	}
+
+	fprintf(f, "SDMA regs:\n\n");
+	fprintf(f, "EVTPEND      = 0x%x\n", common.regs->EVTPEND);
+	fprintf(f, "EVT_MIRROR   = 0x%x\n", common.regs->EVT_MIRROR);
+	fprintf(f, "EVT_MIRROR2  = 0x%x\n", common.regs->EVT_MIRROR2);
+	fprintf(f, "EVTERRDBG    = 0x%x\n", common.regs->EVTERRDBG);
+	fprintf(f, "INTR         = 0x%x\n", common.regs->INTR);
+	fprintf(f, "INTRMASK     = 0x%x\n", common.regs->INTRMASK);
+	fprintf(f, "PSW          = 0x%x\n", common.regs->PSW);
+	fprintf(f, "ONCE_STAT    = 0x%x\n", common.regs->ONCE_STAT);
+	fprintf(f, "HSTART       = 0x%x\n", common.regs->HSTART);
+	fprintf(f, "STOP_STAT    = 0x%x\n\n", common.regs->STOP_STAT);
+
+	/* Disable all channels */
+	fprintf(f, "Disabling all channels and forcing reschedule\n\n");
+	common.regs->STOP_STAT = common.regs->STOP_STAT;
+	common.regs->RESET |= SDMA_RESCHED_BIT;
 
 	unsigned i;
 	for (i = 1; i < NUM_OF_SDMA_CHANNELS; i++) {
 		if (!common.channel[i].active)
 			continue;
 
-		log_info("Channel %u is active", i);
+		fprintf(f, "Channel %u is active\n", i);
 
-		log_debug("intr_cnt = %u", common.channel[i].intr_cnt);
-		log_debug("priority = %u\n", common.regs->SDMA_CHNPRI[i]);
+		fprintf(f, "intr_cnt   = %u\n", common.channel[i].intr_cnt);
+		fprintf(f, "missed_cnt = %u\n", common.channel[i].missed_intr_cnt);
+		fprintf(f, "priority   = %u\n\n", common.regs->SDMA_CHNPRI[i]);
 
+		int context_dumped = 1;
 		sdma_context_t context;
-		log_debug("Dumping context...");
+
+		fprintf(f, "Dumping context...\n");
 		res = sdma_context_dump(i, &context);
 		if (res != EOK) {
-			log_error("Failed to dump channel context (%d)\n", res);
+			fprintf(f, "Failed to dump channel context (%d [%s])\n", res, strerror(-res));
 		} else {
 			unsigned pc = context.state[0] & SDMA_CONTEXT_PC_MASK;
-			log_debug("pc           = 0x%x (%u)", pc, pc);
-			log_debug("state[0]     = 0x%x", context.state[0]);
-			log_debug("state[1]     = 0x%x", context.state[1]);
-			log_debug("gr[0]        = 0x%x", context.gr[0]);
-			log_debug("gr[1]        = 0x%x", context.gr[1]);
-			log_debug("gr[2]        = 0x%x", context.gr[2]);
-			log_debug("gr[3]        = 0x%x", context.gr[3]);
-			log_debug("gr[4]        = 0x%x", context.gr[4]);
-			log_debug("gr[5]        = 0x%x", context.gr[5]);
-			log_debug("gr[6]        = 0x%x", context.gr[6]);
-			log_debug("gr[7]        = 0x%x", context.gr[7]);
-			log_debug("mda          = 0x%x", context.mda);
-			log_debug("msa          = 0x%x", context.msa);
-			log_debug("ms           = 0x%x", context.ms);
-			log_debug("md           = 0x%x", context.md);
-			log_debug("pda          = 0x%x", context.pda);
-			log_debug("psa          = 0x%x", context.psa);
-			log_debug("ps           = 0x%x", context.ps);
-			log_debug("pd           = 0x%x", context.pd);
-			log_debug("ca           = 0x%x", context.ca);
-			log_debug("cs           = 0x%x", context.cs);
-			log_debug("dda          = 0x%x", context.dda);
-			log_debug("dsa          = 0x%x", context.dsa);
-			log_debug("ds           = 0x%x", context.ds);
-			log_debug("dd           = 0x%x", context.dd);
-			log_debug("scratch[0]   = 0x%x", context.scratch[0]);
-			log_debug("scratch[1]   = 0x%x", context.scratch[1]);
-			log_debug("scratch[2]   = 0x%x", context.scratch[2]);
-			log_debug("scratch[3]   = 0x%x", context.scratch[3]);
-			log_debug("scratch[4]   = 0x%x", context.scratch[4]);
-			log_debug("scratch[5]   = 0x%x", context.scratch[5]);
-			log_debug("scratch[6]   = 0x%x", context.scratch[6]);
-			log_debug("scratch[7]   = 0x%x\n", context.scratch[7]);
+			fprintf(f, "pc           = 0x%x (%u)\n", pc, pc);
+			fprintf(f, "state[0]     = 0x%x\n", context.state[0]);
+			fprintf(f, "state[1]     = 0x%x\n", context.state[1]);
+			fprintf(f, "gr[0]        = 0x%x\n", context.gr[0]);
+			fprintf(f, "gr[1]        = 0x%x\n", context.gr[1]);
+			fprintf(f, "gr[2]        = 0x%x\n", context.gr[2]);
+			fprintf(f, "gr[3]        = 0x%x\n", context.gr[3]);
+			fprintf(f, "gr[4]        = 0x%x\n", context.gr[4]);
+			fprintf(f, "gr[5]        = 0x%x\n", context.gr[5]);
+			fprintf(f, "gr[6]        = 0x%x\n", context.gr[6]);
+			fprintf(f, "gr[7]        = 0x%x\n", context.gr[7]);
+			fprintf(f, "mda          = 0x%x\n", context.mda);
+			fprintf(f, "msa          = 0x%x\n", context.msa);
+			fprintf(f, "ms           = 0x%x\n", context.ms);
+			fprintf(f, "md           = 0x%x\n", context.md);
+			fprintf(f, "pda          = 0x%x\n", context.pda);
+			fprintf(f, "psa          = 0x%x\n", context.psa);
+			fprintf(f, "ps           = 0x%x\n", context.ps);
+			fprintf(f, "pd           = 0x%x\n", context.pd);
+			fprintf(f, "ca           = 0x%x\n", context.ca);
+			fprintf(f, "cs           = 0x%x\n", context.cs);
+			fprintf(f, "dda          = 0x%x\n", context.dda);
+			fprintf(f, "dsa          = 0x%x\n", context.dsa);
+			fprintf(f, "ds           = 0x%x\n", context.ds);
+			fprintf(f, "dd           = 0x%x\n", context.dd);
+			fprintf(f, "scratch[0]   = 0x%x\n", context.scratch[0]);
+			fprintf(f, "scratch[1]   = 0x%x\n", context.scratch[1]);
+			fprintf(f, "scratch[2]   = 0x%x\n", context.scratch[2]);
+			fprintf(f, "scratch[3]   = 0x%x\n", context.scratch[3]);
+			fprintf(f, "scratch[4]   = 0x%x\n", context.scratch[4]);
+			fprintf(f, "scratch[5]   = 0x%x\n", context.scratch[5]);
+			fprintf(f, "scratch[6]   = 0x%x\n", context.scratch[6]);
+			fprintf(f, "scratch[7]   = 0x%x\n\n", context.scratch[7]);
 		}
 
 		unsigned j = 0;
 		sdma_buffer_desc_t *current = common.channel[i].bd;
 		if (current != NULL) {
 			do {
-				log_debug("bd[%u].flags = 0x%x", j, current->flags);
-				log_debug("\tSDMA_BD_DONE is %s", (current->flags & SDMA_BD_DONE) ? "SET" : "CLEARED");
-				log_debug("\tSDMA_BD_WRAP is %s", (current->flags & SDMA_BD_WRAP) ? "SET" : "CLEARED");
-				log_debug("\tSDMA_BD_INTR is %s\n", (current->flags & SDMA_BD_INTR) ? "SET" : "CLEARED");
+				fprintf(f, "bd[%u].flags = 0x%x\n", j, current->flags);
+				fprintf(f, "\tSDMA_BD_DONE is %s\n", (current->flags & SDMA_BD_DONE) ? "SET" : "CLEARED");
+				fprintf(f, "\tSDMA_BD_WRAP is %s\n", (current->flags & SDMA_BD_WRAP) ? "SET" : "CLEARED");
+				fprintf(f, "\tSDMA_BD_INTR is %s\n\n", (current->flags & SDMA_BD_INTR) ? "SET" : "CLEARED");
 				j++;
 			} while (!((current++)->flags & SDMA_BD_WRAP));
 		}
 
-		log_debug("Dumping CCB...");
-		log_debug("common.ccb[i].base_bd         = 0x%x", common.ccb[i].base_bd);
-		log_debug("common.ccb[i].current_bd      = 0x%x\n", common.ccb[i].current_bd);
+		fprintf(f, "Dumping CCB...\n");
+		fprintf(f, "common.ccb[i].base_bd         = 0x%x\n", common.ccb[i].base_bd);
+		fprintf(f, "common.ccb[i].current_bd      = 0x%x\n\n", common.ccb[i].current_bd);
 	}
+
+	fclose(f);
 }
-#endif
 
 #define INTR_WAIT_TIMEOUT_US	(30*1000*1000)
 
@@ -918,14 +955,18 @@ int main(int argc, char *argv[])
 	common.initialized = 0;
 	common.active_mask = 0;
 	common.debug_info_dumped = 0;
+	common.dump_dir = "/var/run";
 
-	while ((res = getopt(argc, argv, "S:s")) >= 0) {
+	while ((res = getopt(argc, argv, "S:sd:")) >= 0) {
 		switch (res) {
 		case 'S':
 			common.stats_period_s = (int)strtol(optarg, NULL, 0);
 			break;
 		case 's':
 			common.use_syslog = 1;
+			break;
+		case 'd':
+			common.dump_dir = optarg;
 			break;
 		default:
 			display_usage = 1;
@@ -934,9 +975,10 @@ int main(int argc, char *argv[])
 	}
 
 	if (display_usage) {
-		printf("Usage: sdma-driver [-Ss]\n\r");
+		printf("Usage: sdma-driver [-s] [-S period] [-d path]\n\r");
 		printf("    -S period    Print stats with given period (in seconds)\n\r");
 		printf("    -s           Output logs to syslog instead of stdout\n\r");
+		printf("    -d path      Set directory for debug info dump (default: %s)\n\r", common.dump_dir);
 		return 1;
 	}
 
@@ -959,8 +1001,8 @@ int main(int argc, char *argv[])
 			/* If any channel is active */
 			if (common.active_mask && !common.debug_info_dumped) {
 				log_warn("Timed out waiting for interrupts");
-				sdma_print_debug_info();
 				common.debug_info_dumped = 1;
+				dump_debug_info();
 			}
 
 			mutexUnlock(common.lock);
