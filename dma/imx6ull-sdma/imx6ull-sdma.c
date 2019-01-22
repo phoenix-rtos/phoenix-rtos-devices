@@ -493,8 +493,10 @@ static int sdma_set_bd_array(uint8_t channel_id, addr_t paddr, unsigned cnt)
 	size_t size = cnt * sizeof(sdma_buffer_desc_t);
 	unsigned n = (size + SIZE_PAGE - 1)/SIZE_PAGE;
 	bd = mmap(NULL, n*SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, paddr);
-	if (bd == MAP_FAILED)
-		return -1;
+	if (bd == MAP_FAILED) {
+		log_error("sdma_set_bd_array: mmap failed");
+		return -errno;
+	}
 
 	common.channel[channel_id].bd = bd;
 	common.channel[channel_id].bd_paddr = paddr;
@@ -811,12 +813,12 @@ static int init(void)
 	}
 
 	if ((res = sdma_init()) < 0) {
-		log_error("SDMA initialization failed");
+		log_error("SDMA initialization failed (%d [%s])", res, strerror(res));
 		return res;
 	}
 
 	if ((res = dev_init()) < 0) {
-		log_error("device initialization failed");
+		log_error("device initialization failed (%d)", res);
 		return res;
 	}
 
