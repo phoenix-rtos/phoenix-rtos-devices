@@ -17,6 +17,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <syslog.h>
+#include <fcntl.h>
 
 #include <sys/stat.h>
 #include <sys/msg.h>
@@ -157,7 +158,8 @@ struct driver_common_s
 	int stats_period_s;
 	int use_syslog;
 	int initialized;
-	int debug_info_dumped;
+
+	int broken;
 
 	const char *dump_dir;
 
@@ -838,6 +840,19 @@ static FILE *create_dump_file(void)
 	return fopen(path, "w");
 }
 
+static int create_flag_file(const char *path)
+{
+	int res;
+
+	res = open(path, O_WRONLY | O_CREAT | O_TRUNC);
+	if (res < 0) {
+		log_error("create_flag_file: open failed (res=%d, errno=%s)", res, strerror(errno));
+		return -1;
+	}
+
+	return close(res);
+}
+
 static void dump_debug_info(void)
 {
 	int res;
@@ -942,6 +957,7 @@ static void dump_debug_info(void)
 }
 
 #define INTR_WAIT_TIMEOUT_US	(30*1000*1000)
+#define SDMA_BROKEN_FILE		"/var/run/sdma_broken"
 
 int main(int argc, char *argv[])
 {
@@ -954,8 +970,8 @@ int main(int argc, char *argv[])
 	common.stats_period_s = 0; /* Don't print stats by default */
 	common.initialized = 0;
 	common.active_mask = 0;
-	common.debug_info_dumped = 0;
 	common.dump_dir = "/var/run";
+	common.broken = 0;
 
 	while ((res = getopt(argc, argv, "S:sd:")) >= 0) {
 		switch (res) {
@@ -999,10 +1015,14 @@ int main(int argc, char *argv[])
 		if (res == -ETIME) {
 
 			/* If any channel is active */
-			if (common.active_mask && !common.debug_info_dumped) {
+			if (common.active_mask && !common.broken) {
+
+				create_flag_file(SDMA_BROKEN_FILE);
+
 				log_warn("Timed out waiting for interrupts");
-				common.debug_info_dumped = 1;
 				dump_debug_info();
+
+				common.broken = 1;
 			}
 
 			mutexUnlock(common.lock);
