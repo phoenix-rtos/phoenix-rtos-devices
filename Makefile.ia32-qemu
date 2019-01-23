@@ -1,0 +1,12 @@
+#
+# Makefile for Phoenix-RTOS 3 device drivers
+#
+# ia32/QEMU drivers
+#
+# Copyright 2019 Phoenix Systems
+#
+
+include tty/libtty/Makefile
+include tty/pc-tty/Makefile
+include tty/pc-uart/Makefile
+include storage/pc-ata/Makefile

@@ -6,6 +6,6 @@
 #
 
 $(PREFIX_PROG)pc-tty: $(addprefix $(PREFIX_O)tty/pc-tty/, ttypc.o ttypc_virt.o ttypc_vtf.o ttypc_vga.o ttypc_kbd.o) $(PREFIX_A)libtty.a
-        $(LINK)
+	$(LINK)
 
 all: $(PREFIX_PROG_STRIPPED)pc-tty
