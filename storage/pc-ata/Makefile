@@ -5,7 +5,7 @@
 # Copyright 2001, 2005-2006 Pawel Pisarczyk
 #
 
-$(PREFIX_PROG)pc-ata: $(PREFIX_O)storage/pc-ata.o
+$(PREFIX_PROG)pc-ata: $(PREFIX_O)storage/pc-ata/pc-ata.o
 	$(LINK)
 
 all: $(PREFIX_PROG_STRIPPED)pc-ata

@@ -5,7 +5,7 @@
 # Copyright 2001, 2005-2006 Pawel Pisarczyk
 #
 
-PROGS := pc-uart
+$(PREFIX_PROG)pc-uart: $(PREFIX_O)tty/pc-uart/pc-uart.o $(PREFIX_A)libtty.a
+	$(LINK)
 
-# include after all dependencies are set
-include $(TOPDIR)/Makefile.rules
+all: $(PREFIX_PROG_STRIPPED)pc-uart
