@@ -64,6 +64,7 @@ $(PREFIX_O)%.o: %.S
 	$(SIL)$(CC) -M  -MD -MP -MF $(PREFIX_O)$*.S.d -MT "$@" $(CFLAGS) $<
 	
 $(PREFIX_PROG_STRIPPED)%: $(PREFIX_PROG)%
+	@mkdir -p $(@D)
 	@(printf "STR %-24s\n" "$(@F)")
 	$(SIL)$(STRIP) -o $@ $<
 
