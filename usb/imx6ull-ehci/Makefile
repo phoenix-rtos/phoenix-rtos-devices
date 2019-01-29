@@ -13,6 +13,4 @@ $(PREFIX_H)dma.h: usb/imx6ull-ehci/dma.h
 $(PREFIX_H)ehci.h: usb/imx6ull-ehci/ehci.h
 	$(HEADER)
 
-ehci: $(PREFIX_A)libehci-imx6ull.a $(PREFIX_H)dma.h $(PREFIX_H)ehci.h
-
 all: $(PREFIX_A)libehci-imx6ull.a $(PREFIX_H)dma.h $(PREFIX_H)ehci.h
