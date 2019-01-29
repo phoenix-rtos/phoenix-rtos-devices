@@ -88,6 +88,9 @@ extern int ehci_await(int timeout);
 extern int ehci_qtdError(struct qtd *qtd);
 
 
+extern int ehci_qtdBabble(struct qtd *qtd);
+
+
 extern int ehci_qtdFinished(struct qtd *qtd);
 
 
