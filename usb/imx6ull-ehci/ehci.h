@@ -17,6 +17,7 @@
 #ifndef _IMX6ULL_EHCI_H_
 #define _IMX6ULL_EHCI_H_
 
+#include "dma.h"
 
 enum { framelist_itd = 0, framelist_qh, framelist_sitd, framelist_fstn };
 

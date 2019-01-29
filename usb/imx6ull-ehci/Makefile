@@ -9,8 +9,10 @@ $(PREFIX_A)libehci-imx6ull.a: $(addprefix $(PREFIX_O)usb/imx6ull-ehci/, ehci.o d
 	
 $(PREFIX_H)dma.h: usb/imx6ull-ehci/dma.h
 	$(HEADER)
-        
+
 $(PREFIX_H)ehci.h: usb/imx6ull-ehci/ehci.h
 	$(HEADER)
+
+ehci: $(PREFIX_A)libehci-imx6ull.a $(PREFIX_H)dma.h $(PREFIX_H)ehci.h
 
 all: $(PREFIX_A)libehci-imx6ull.a $(PREFIX_H)dma.h $(PREFIX_H)ehci.h
