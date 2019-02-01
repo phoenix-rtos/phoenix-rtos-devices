@@ -140,7 +140,7 @@ static int uart_isEnabled(int uart)
 
 int uart_configure(int uart, char bits, char parity, unsigned int baud, char enable)
 {
-	int en, err = EOK, pos;
+	int err = EOK, pos;
 
 	if (uart < usart1 || uart > uart5 || !uartConfig[uart])
 		return -EINVAL;
@@ -151,10 +151,10 @@ int uart_configure(int uart, char bits, char parity, unsigned int baud, char ena
 	mutexLock(uart_common[pos].rxlock);
 	mutexLock(uart_common[uart].lock);
 
-	en = uart_isEnabled(uart);
-	rcc_devClk(uart2pctl[uart], 1);
+	if (!uart_isEnabled(uart))
+		rcc_devClk(uart2pctl[uart], 1);
 
-	*(uart_common[pos].base + cr1) &= ~(1 << 13);
+	*(uart_common[pos].base + cr1) &= ~0x2c;
 	dataBarier();
 
 	if (bits == 8 && parity != uart_parnone)
@@ -178,16 +178,21 @@ int uart_configure(int uart, char bits, char parity, unsigned int baud, char ena
 		else
 			*(uart_common[pos].base + cr1) &= ~(1 << 9);
 
-		*(uart_common[pos].base + cr1) |= (!!enable) << 13;
-
-		en = enable;
+		dataBarier();
+		if (enable)
+			*(uart_common[pos].base + cr1) |= 0x2c;
 	}
 
-	dataBarier();
-	*(uart_common[pos].base + cr1) |= 1 << 13;
-	dataBarier();
+	uart_common[pos].txbeg = NULL;
+	uart_common[pos].txend = NULL;
 
-	rcc_devClk(uart2pctl[uart], !!en);
+	uart_common[pos].rxbeg = NULL;
+	uart_common[pos].rxend = NULL;
+	uart_common[pos].read = NULL;
+	uart_common[pos].rxdr = 0;
+	uart_common[pos].rxdw = 0;
+
+	rcc_devClk(uart2pctl[uart], !!enable);
 
 	mutexUnlock(uart_common[uart].lock);
 	mutexUnlock(uart_common[pos].rxlock);
@@ -293,7 +298,6 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 int uart_init(void)
 {
 	int i, uart;
-	platformctl_t pctl;
 	const struct {
 		volatile u32 *base;
 		int dev;
@@ -305,10 +309,6 @@ int uart_init(void)
 		{ (void *)0x40004c00, pctl_uart4, 48 + 16 },
 		{ (void *)0x40005000, pctl_uart5, 49 + 16 },
 	};
-
-	pctl.action = pctl_get;
-	pctl.type = pctl_cpuclk;
-	platformctl(&pctl);
 
 	for (i = 0, uart = 0; uart < 5; ++uart) {
 		if (!uartConfig[uart])
@@ -339,7 +339,7 @@ int uart_init(void)
 		/* disable UART */
 		*(uart_common[i].base + cr1) &= ~(1 << 13);
 		/* 9600 baudrate */
-		*(uart_common[i].base + brr) = pctl.cpuclk.hz / 9600;
+		*(uart_common[i].base + brr) = rcc_getCpufreq() / 9600;
 		uart_common[i].baud = 9600;
 		/* 1 start, 1 stop bit */
 		*(uart_common[i].base + cr2) = 0;
