@@ -89,7 +89,7 @@ int flash_image(void *arg, char *path, u32 start, u32 block_offset, int silent, 
 	stat = malloc(sizeof(struct stat));
 
 	nand_msg(silent, "Flashing %s starting from block %d... \n", path, start);
-	imgfd = open(path, 'r');
+	imgfd = open(path, O_RDONLY);
 
 	if (fstat(imgfd, stat)) {
 		nand_msg(silent, "File stat failed\n");
