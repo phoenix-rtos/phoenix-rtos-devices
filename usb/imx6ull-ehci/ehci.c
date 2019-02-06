@@ -29,7 +29,7 @@
 #include "dma.h"
 
 #define TRACE(x, ...) //fprintf(stderr, "ehci: " x "\n", ##__VA_ARGS__)
-#define TRACE_FAIL(x, ...) fprintf(stderr, "ehci error: " x "\n", ##__VA_ARGS__)
+#define TRACE_FAIL(x, ...) //fprintf(stderr, "ehci error: " x "\n", ##__VA_ARGS__)
 #define FUN_TRACE //fprintf(stderr, "ehci trace: %s\n", __PRETTY_FUNCTION__)
 
 #define USBSTS_AS  (1 << 15)
@@ -522,20 +522,12 @@ int ehci_dequeue(struct qh *qh, struct qtd *first, struct qtd *last)
 
 int ehci_qtdError(struct qtd *qtd)
 {
-	if (qtd->babble) {
-		TRACE_FAIL("transaction error detected");
-	}
-
 	return qtd->transaction_error;
 }
 
 
 int ehci_qtdBabble(struct qtd *qtd)
 {
-	if (qtd->babble) {
-		TRACE_FAIL("babble detected");
-	}
-
 	return qtd->babble;
 }
 
