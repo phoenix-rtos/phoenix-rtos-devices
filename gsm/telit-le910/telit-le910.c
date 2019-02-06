@@ -23,6 +23,8 @@
 #include <sys/mman.h>
 #include <sys/file.h>
 #include <sys/msg.h>
+#include <sys/list.h>
+#include <syslog.h>
 #include <poll.h>
 #include <errno.h>
 #include <posix/utils.h>
@@ -66,7 +68,7 @@ typedef union {
 } gpiodata_t;
 
 #define TRACE(x, ...) //fprintf(stderr, "telit: " x "\n", ##__VA_ARGS__)
-#define TRACE_FAIL(x, ...) fprintf(stderr, "telit error: " x "\n", ##__VA_ARGS__)
+#define TRACE_FAIL(x, ...) syslog(LOG_WARNING, x, ##__VA_ARGS__)
 #define FUN_TRACE  //fprintf(stderr, "telit trace: %s\n", __PRETTY_FUNCTION__)
 
 #define TELIT_ID_VENDOR 0x1BC7
@@ -76,18 +78,32 @@ enum { TELIT_STATE_INSERTED, TELIT_STATE_REMOVED };
 
 
 typedef struct {
+	void *next, *prev;
+
+	msg_t msg;
+	unsigned rid;
+
+	struct _ttyacm_t *acm;
+	usb_urb_t urb;
+} request_t;
+
+
+typedef struct _ttyacm_t {
+	u32 port;
 	int id;
 
-	u32 port;
 	int bulk_interface, intr_interface;
 	int pipe_in, pipe_out, pipe_intr;
 	fifo_t *fifo;
 	int read_buffers, intr_buffers;
 
 	endpoint_desc_t ep_in, ep_out, ep_intr;
+	int error;
 
 	handle_t cond;
 	handle_t lock;
+
+	request_t *readers;
 } ttyacm_t;
 
 
@@ -101,12 +117,147 @@ static struct {
 	configuration_desc_t *conf_descriptor;
 	device_desc_t dev_descriptor;
 
-	int reinit;
-	int cancel_read;
+	int resetting;
+
+	request_t *queue;
 
 	ttyacm_t data;
-	ttyacm_t monitor;
+//	ttyacm_t monitor;
 } telit_common;
+
+
+static request_t *telit_newRequest(ttyacm_t *acm)
+{
+	request_t *req;
+
+	if ((req = calloc(1, sizeof(*req))) != NULL)
+		req->acm = acm;
+
+	return req;
+}
+
+
+int _telit_reset(void);
+
+
+int _telit_write(ttyacm_t *acm, char *data, size_t size)
+{
+	FUN_TRACE;
+	int err;
+	usb_urb_t urb;
+
+	memset(&urb.setup, 0, sizeof(setup_packet_t));
+	urb.device_id = telit_common.device_id;
+	urb.type = usb_transfer_bulk;
+	urb.pipe = acm->pipe_out;
+	urb.direction = usb_transfer_out;
+	urb.async = 1;
+
+	if (acm->error || libusb_write(&urb, data, size) < 0) {
+		TRACE_FAIL("write");
+		_telit_reset();
+		err = -EIO;
+	}
+	else {
+		err = size;
+	}
+
+	return err;
+}
+
+
+int _telit_read(ttyacm_t *acm, char *data, size_t size)
+{
+	FUN_TRACE;
+	int i = 0;
+
+	for (i = 0; i < size && !fifo_is_empty(acm->fifo); ++i)
+		data[i] = fifo_pop_back(acm->fifo);
+
+	if (acm->error) {
+		_telit_reset();
+		i = -EIO;
+	}
+
+	return i;
+}
+
+
+static void telit_reqRespond(request_t *req)
+{
+	FUN_TRACE;
+	msgRespond(req->acm->port, &req->msg, req->rid);
+	free(req);
+}
+
+
+static void telit_msgThread(void *arg)
+{
+	FUN_TRACE;
+	ttyacm_t *acm = arg;
+	request_t *req = NULL;
+	msg_t *msg;
+
+	for (;;) {
+		if (req == NULL) {
+			req = telit_newRequest(acm);
+
+			if (req == NULL) {
+				TRACE_FAIL("allocate request\n");
+				sleep(10);
+				continue;
+			}
+
+			msg = &req->msg;
+		}
+
+		memset(msg, 0, sizeof(msg_t));
+
+		if (msgRecv(acm->port, &req->msg, &req->rid) < 0)
+			continue;
+
+		mutexLock(acm->lock);
+		switch (msg->type) {
+		case mtOpen:
+		case mtClose:
+			msg->o.io.err = EOK;
+			break;
+
+		case mtWrite:
+			msg->o.io.err = _telit_write(acm, msg->i.data, msg->i.size);
+			break;
+
+		case mtRead:
+			if (!msg->o.size)
+				break;
+
+			if ((msg->o.io.err = _telit_read(acm, msg->o.data, msg->o.size)) == 0) {
+				if (msg->i.io.mode & O_NONBLOCK) {
+					msg->o.io.err = -EWOULDBLOCK;
+				}
+				else {
+					LIST_ADD(&acm->readers, req);
+					req = NULL;
+				}
+			}
+			break;
+
+		case mtGetAttr:
+			if (msg->i.attr.type == atPollStatus)
+				msg->o.attr.val = 0;
+			else
+				msg->o.attr.val = -EINVAL;
+			break;
+
+		default:
+			break;
+		}
+		mutexUnlock(acm->lock);
+
+		if (req != NULL)
+			msgRespond(acm->port, &req->msg, req->rid);
+	}
+}
 
 
 int open_pipe(endpoint_desc_t *desc)
@@ -190,14 +341,16 @@ int open_ttyacm(ttyacm_t *acm, int bulk_iface, int intr_iface, endpoint_desc_t *
 
 	acm->read_buffers = 0;
 	acm->intr_buffers = 0;
+	acm->error = 0;
 
 	return EOK;
 }
 
 
-int telit_init_read_buffers(ttyacm_t *acm)
+int _telit_init_read_buffers(ttyacm_t *acm)
 {
 	FUN_TRACE;
+	int err;
 
 	usb_urb_t urb = { 0 };
 
@@ -208,25 +361,23 @@ int telit_init_read_buffers(ttyacm_t *acm)
 	urb.direction = usb_transfer_in;
 	urb.async = 1;
 
-	mutexLock(acm->lock);
 	while (acm->read_buffers < 8) {
-		mutexUnlock(acm->lock);
 		if (libusb_read(&urb, NULL, 0) < 0) {
-			return -EIO;
+			err = -EIO;
+			break;
 		}
-		mutexLock(acm->lock);
 		acm->read_buffers++;
 	}
-	mutexUnlock(acm->lock);
 
-	return EOK;
+	return err;
 }
 
 
-int telit_init_intr_buffers(ttyacm_t *acm)
+int _telit_init_intr_buffers(ttyacm_t *acm)
 {
 	FUN_TRACE;
 
+	int err;
 	usb_urb_t urb = { 0 };
 
 	urb.type = usb_transfer_interrupt;
@@ -236,19 +387,15 @@ int telit_init_intr_buffers(ttyacm_t *acm)
 	urb.direction = usb_transfer_in;
 	urb.async = 1;
 
-	mutexLock(acm->lock);
 	while (acm->intr_buffers < 2) {
-		mutexUnlock(acm->lock);
 		if (libusb_read(&urb, NULL, 0) < 0) {
-			TRACE_FAIL("intr resubmit");
-			return -EIO;
+			err = -EIO;
+			break;
 		}
-		mutexLock(acm->lock);
 		acm->intr_buffers++;
 	}
-	mutexUnlock(acm->lock);
 
-	return EOK;
+	return err;
 }
 
 
@@ -277,9 +424,6 @@ endpoint_desc_t *find_endpoint(int address)
 int telit_init_device(void)
 {
 	int type;
-
-	if (telit_common.reinit)
-		libusb_clear();
 
 	type = REQUEST_DIR_HOST2DEV | REQUEST_TYPE_STANDARD | REQUEST_RECIPIENT_DEVICE;
 	if (acm_control(type, SET_CONFIGURATION, 1, 0, NULL, 0) < 0) {
@@ -329,8 +473,8 @@ int telit_init_all(void)
 
 	telit_init_device();
 
-
-#if 1
+#if 0
+#if 0
 	telit_init_interface(2);
 
 	inep = find_endpoint(0x84);
@@ -358,7 +502,7 @@ int telit_init_all(void)
 
 	if ((err = open_ttyacm(&telit_common.monitor, bulk_interface, intr_interface, inep, outep, intrep)) < 0)
 		return err;
-
+#endif
 
 	telit_init_interface(0);
 
@@ -385,106 +529,29 @@ int telit_init_all(void)
 }
 
 
-int telit_write(ttyacm_t *acm, char *data, size_t size, unsigned mode)
+int _telit_reset(void)
 {
-	FUN_TRACE;
+	TRACE_FAIL("resetting");
+	telit_common.resetting = 1;
 
-	usb_urb_t urb;
-	memset(&urb.setup, 0, sizeof(setup_packet_t));
-	urb.device_id = telit_common.device_id;
-	urb.type = usb_transfer_bulk;
-	urb.pipe = acm->pipe_out;
-	urb.direction = usb_transfer_out;
-	urb.async = 0;
+	if (libusb_reset(telit_common.device_id) < 0)
+		return -1;
 
-	libusb_write(&urb, data, size);
+	telit_common.data.intr_buffers = 0;
+	telit_common.data.read_buffers = 0;
 
-	TRACE("write out");
-	return size;
-}
+	if (telit_init_device() < 0)
+		return -1;
 
+	if (telit_init_interface(0) < 0)
+		return -1;
 
-int telit_read(ttyacm_t *acm, char *data, size_t size, unsigned mode)
-{
-	int i = 0;
-	mutexLock(acm->lock);
+	telit_common.resetting = 0;
+	telit_common.data.error = 0;
+	TRACE_FAIL("reset done");
+	condBroadcast(telit_common.data.cond);
 
-	while (i == 0) {
-		for (i = 0; i < size && !fifo_is_empty(acm->fifo); ++i)
-			data[i] = fifo_pop_back(acm->fifo);
-
-		if (i || mode & O_NONBLOCK)
-			break;
-
-		condWait(acm->cond, acm->lock, 0);
-	}
-
-	mutexUnlock(acm->lock);
-
-	if (telit_common.cancel_read) {
-		telit_common.cancel_read = 0;
-		return -EIO;
-	}
-	if (i == 0) {
-		return -EWOULDBLOCK;
-	}
-
-	return i;
-}
-
-
-int telit_poll_status(void)
-{
-	return 0; /* TODO */
-}
-
-
-void telit_thr(void *arg)
-{
-	ttyacm_t *acm = arg;
-	msg_t msg;
-	unsigned int rid;
-
-	for (;;) {
-		if (msgRecv(acm->port, &msg, &rid) < 0) {
-			memset(&msg, 0, sizeof(msg));
-			continue;
-		}
-
-#if 1
-		while (telit_common.reinit) {
-			TRACE("waiting reinit");
-			usleep(1000000);
-		}
-#endif
-
-		switch (msg.type) {
-		case mtOpen:
-		case mtClose:
-			msg.o.io.err = EOK;
-			break;
-
-		case mtWrite:
-			msg.o.io.err = telit_write(acm, msg.i.data, msg.i.size, msg.i.io.mode);
-			break;
-
-		case mtRead:
-			msg.o.io.err = telit_read(acm, msg.o.data, msg.o.size, msg.i.io.mode);
-			break;
-
-		case mtGetAttr:
-			if (msg.i.attr.type == atPollStatus)
-				msg.o.attr.val = telit_poll_status();
-			else
-				msg.o.attr.val = -EINVAL;
-			break;
-
-		default:
-			break;
-		}
-
-		msgRespond(acm->port, &msg, rid);
-	}
+	return EOK;
 }
 
 
@@ -495,87 +562,74 @@ static void clear_halt(endpoint_desc_t ep)
 }
 
 
-void telit_monitorthr(void *arg)
+void telit_readThread(void *_acm)
 {
-	//ttyacm_t *acm = &telit_common.data;
-	ttyacm_t *acm = &telit_common.monitor;
-	int type = REQUEST_TYPE_STANDARD | REQUEST_DIR_DEV2HOST | REQUEST_RECIPIENT_ENDPOINT;
-	short in_status = 0, out_status = 0;
+	FUN_TRACE;
+	ttyacm_t *acm = _acm;
+	request_t *req;
 
+	mutexLock(acm->lock);
 	for (;;) {
-		usleep(5 * 1000 * 1000);
+		while ((req = acm->readers) == NULL || fifo_is_empty(acm->fifo))
+			condWait(acm->cond, acm->lock, 0);
 
-		acm_control(type, GET_STATUS, 0, acm->ep_in.bEndpointAddress, &in_status, 2);
-		acm_control(type, GET_STATUS, 0, acm->ep_out.bEndpointAddress, &out_status, 2);
-		TRACE("status in:%d out:%d", in_status, out_status);
-
-		if (in_status & 1) {
-			TRACE_FAIL("in halted");
-			clear_halt(acm->ep_in);
+		if (_telit_read(acm, req->msg.o.data, req->msg.o.size)) {
+			LIST_REMOVE(&acm->readers, req);
+			telit_reqRespond(req);
 		}
-
-		if (out_status & 1) {
-			TRACE_FAIL("out halted");
-			clear_halt(acm->ep_out);
+		else {
+			TRACE_FAIL("no read in read thread");
 		}
 	}
 }
 
 
-void telit_input(ttyacm_t *acm, char *data, size_t size)
+void _telit_input(ttyacm_t *acm, char *data, size_t size, int err)
 {
 	FUN_TRACE;
 	int i;
 
-	mutexLock(acm->lock);
-	TRACE("input %lu bytes to acm%d", size, acm->id);
 	acm->read_buffers--;
-	for (i = 0; i < size && !fifo_is_full(acm->fifo); ++i)
-		fifo_push(acm->fifo, data[i]);
-	mutexUnlock(acm->lock);
+
+	if (err < 0) {
+		TRACE_FAIL("read error in input");
+		acm->error = 1;
+	}
+	else {
+		TRACE("input %lu bytes to acm%d", size, acm->id);
+		for (i = 0; i < size && !fifo_is_full(acm->fifo); ++i)
+			fifo_push(acm->fifo, data[i]);
+	}
 	condBroadcast(acm->cond);
 }
 
 
-void telit_resubmitthr(void *arg)
+void telit_resubmitThread(void *arg)
 {
+	FUN_TRACE;
 	ttyacm_t *acm = arg;
 
+	mutexLock(acm->lock);
 	for (;;) {
-		mutexLock(acm->lock);
-		while (acm->read_buffers >= 8 && !telit_common.reinit)
+		while (acm->read_buffers >= 8 || acm->error)
 			condWait(acm->cond, acm->lock, 0);
 
-		TRACE("resubmit");
-
-		if (telit_common.reinit) { /* FIXME: race if 2 resubmitthr's */
-			TRACE("reinitializing");
-			if (telit_init_device() < 0)
-				TRACE_FAIL("init device");
-			if (telit_init_interface(/* HACK! */ 2 * acm->intr_interface) < 0)
-				TRACE_FAIL("init interface");
-			telit_common.reinit = 0;
-		}
-
-		mutexUnlock(acm->lock);
-
-		telit_init_read_buffers(acm);
+		_telit_init_read_buffers(acm);
 	}
 }
 
 
-void telit_intrresubmitthr(void *arg)
+void telit_intrresubmitThread(void *arg)
 {
+	FUN_TRACE;
 	ttyacm_t *acm = arg;
 
+	mutexLock(acm->lock);
 	for (;;) {
-		mutexLock(acm->lock);
 		while (acm->intr_buffers >= 2)
 			condWait(acm->cond, acm->lock, 0);
 
-		TRACE("irq resubmit");
-		mutexUnlock(acm->lock);
-		telit_init_intr_buffers(acm);
+		_telit_init_intr_buffers(acm);
 	}
 }
 
@@ -588,7 +642,7 @@ void event_cb(usb_event_t *usb_event, char *data, size_t size)
 	switch (usb_event->type) {
 	case usb_event_insertion:
 		// libusb_dumpConfiguration(stdout, data);
-		telit_common.device_id = usb_event->insertion.device_id;
+		telit_common.device_id = usb_event->device_id;
 		memcpy(&telit_common.dev_descriptor, &usb_event->insertion.descriptor, sizeof(device_desc_t));
 		telit_common.conf_descriptor = malloc(size);
 		memcpy(telit_common.conf_descriptor, data, size);
@@ -597,44 +651,46 @@ void event_cb(usb_event_t *usb_event, char *data, size_t size)
 		telit_common.state = TELIT_STATE_INSERTED;
 		mutexUnlock(telit_common.lock);
 
-		condSignal(telit_common.cond);
+		condBroadcast(telit_common.cond);
 		break;
 
 	case usb_event_removal:
-		TRACE("device removed\n");
-
-#if 1
+		TRACE_FAIL("device removed");
 		mutexLock(telit_common.lock);
-		telit_common.reinit = 1;
-		telit_common.cancel_read = 1;
+		telit_common.state = TELIT_STATE_REMOVED;
 		mutexUnlock(telit_common.lock);
-		condBroadcast(telit_common.data.cond);
-#endif
+
+		condBroadcast(telit_common.cond);
 		break;
 
 	case usb_event_completion:
 
 		if (usb_event->completion.pipe == telit_common.data.pipe_intr) {
 			TRACE("GOT INTERRUPT");
-
-#if 0
-			for (int i = 0; i < size; ++i) {
-				printf("%x", data[i]);
-			}
-			printf("\n");
-#endif
-
 			telit_common.data.intr_buffers--;
 		}
 		else {
-			if (usb_event->completion.pipe == telit_common.data.pipe_in) {
-				acm = &telit_common.data;
-			}
-			else {
-				acm = &telit_common.monitor;
+			acm = &telit_common.data;
+
+			/* Ignore aborted transfers */
+			if (usb_event->completion.error > 0) {
+				break;
 			}
 
-			telit_input(acm, data, size);
+			mutexLock(acm->lock);
+			if (usb_event->completion.pipe == telit_common.data.pipe_in) {
+				_telit_input(acm, data, size, usb_event->completion.error);
+			}
+			else if (usb_event->completion.pipe == telit_common.data.pipe_out) {
+				if (usb_event->completion.error < 0) {
+					acm->error = 1;
+					condBroadcast(acm->cond);
+				}
+			}
+			else {
+				TRACE_FAIL("completion on pipe %d unexpected", usb_event->completion.pipe);
+			}
+			mutexUnlock(acm->lock);
 		}
 		break;
 
@@ -646,6 +702,7 @@ void event_cb(usb_event_t *usb_event, char *data, size_t size)
 
 void telit_init_powerkey(void)
 {
+	FUN_TRACE;
 	platformctl_t set_mux = {
 		.action = pctl_set,
 		.type = pctl_iomux,
@@ -682,25 +739,57 @@ void telit_init_powerkey(void)
 	msg.i.size = sizeof(set_dir);
 	msgSend(gpio5_dir.port, &msg);
 
-	TRACE("pwrkey set 0");
-
 	msg.type = mtWrite;
 	msg.i.io.oid = gpio5_port;
 	msg.i.data = &set_value;
 	msg.i.size = sizeof(set_value);
+
+	TRACE("pwrkey set 0");
+	set_value.w.val = 0;
 	msgSend(gpio5_port.port, &msg);
 
 	/* Sleep a minimum of 10 seconds. */
 	sleep(14);
 
 	TRACE("ppwrkey set 1");
-
 	set_value.w.val = 1 << 9;
-
 	msgSend(gpio5_port.port, &msg);
 
 	/* Sleep a minimum of 200 ms. */
 	sleep(1);
+}
+
+
+void telit_monitorthr(void *arg)
+{
+	ttyacm_t *acm = &telit_common.data;
+	int type = REQUEST_TYPE_STANDARD | REQUEST_DIR_DEV2HOST | REQUEST_RECIPIENT_ENDPOINT;
+	short in_status = 0, out_status = 0;
+
+	mutexLock(telit_common.lock);
+	for (;;) {
+		condWait(telit_common.cond, telit_common.lock, 0);
+
+		if (telit_common.state == TELIT_STATE_REMOVED) {
+			TRACE_FAIL("reinitializing");
+			telit_init_powerkey();
+			telit_init_device();
+			telit_init_interface(0);
+		}
+
+		acm_control(type, GET_STATUS, 0, acm->ep_in.bEndpointAddress, &in_status, 2);
+		acm_control(type, GET_STATUS, 0, acm->ep_out.bEndpointAddress, &out_status, 2);
+
+		if (in_status & 1) {
+			TRACE_FAIL("in halted");
+			clear_halt(acm->ep_in);
+		}
+
+		if (out_status & 1) {
+			TRACE_FAIL("out halted");
+			clear_halt(acm->ep_out);
+		}
+	}
 }
 
 
@@ -716,58 +805,10 @@ void telit_setmux(int pin, int mode)
 }
 
 
-void telit_init_usbpwr(void)
-{
-	platformctl_t set_mux = {
-		.action = pctl_set,
-		.type = pctl_iomux,
-		.iomux = { .mux = pctl_mux_sd1_d1, .sion = 0, .mode = 5 },
-	};
-
-	platformctl_t set_pad = {
-		.action = pctl_set,
-		.type = pctl_iopad,
-		.iopad = { .pad = pctl_pad_sd1_d1, .hys = 0, .pus = 0, .pue = 0,
-			.pke = 0, .ode = 0, .speed = 2, .dse = 4, .sre = 0 },
-	};
-
-	oid_t gpio2_port, gpio2_dir;
-	gpiodata_t set_dir = {
-		.w = { .val = 1 << 19, .mask = 1 << 19 }
-	};
-
-	gpiodata_t set_value = {
-		.w = { .val = 0 << 19, .mask = 1 << 19 }
-	};
-
-	msg_t msg = { 0 };
-
-	platformctl(&set_mux);
-	platformctl(&set_pad);
-
-	lookup("/dev/gpio2/port", NULL, &gpio2_port);
-	lookup("/dev/gpio2/dir", NULL, &gpio2_dir);
-
-	msg.type = mtWrite;
-	msg.i.io.oid = gpio2_dir;
-	msg.i.data = &set_dir;
-	msg.i.size = sizeof(set_dir);
-	msgSend(gpio2_dir.port, &msg);
-
-	msg.type = mtWrite;
-	msg.i.io.oid = gpio2_port;
-	msg.i.data = &set_value;
-	msg.i.size = sizeof(set_value);
-	msgSend(gpio2_port.port, &msg);
-}
-
-
 int telit_init(void)
 {
+	FUN_TRACE;
 	int ret = 0;
-
-	telit_init_powerkey();
-	//telit_init_usbpwr();
 
 	telit_setmux(pctl_mux_sd1_d1, 8);
 	telit_setmux(pctl_mux_sd1_d2, 8);
@@ -777,20 +818,35 @@ int telit_init(void)
 	ret |= mutexCreate(&telit_common.lock);
 	ret |= portCreate(&telit_common.port);
 	ret |= portCreate(&telit_common.monitor_port);
-	telit_common.state = 0;
+	telit_common.state = TELIT_STATE_REMOVED;
 
-	telit_common.reinit = 0;
-	telit_common.cancel_read = 0;
+	telit_common.resetting = 0;
 
 	telit_common.data.id = 0;
-	telit_common.monitor.id = 1;
-
+	// telit_common.monitor.id = 1;
 	return ret;
+}
+
+
+void telit_start(void)
+{
+	FUN_TRACE;
+	int ret;
+
+	mutexLock(telit_common.lock);
+	while (telit_common.state != TELIT_STATE_INSERTED) {
+		ret = condWait(telit_common.cond, telit_common.lock, 5000000);
+
+		if (ret == -ETIME)
+			telit_init_powerkey();
+	}
+	mutexUnlock(telit_common.lock);
 }
 
 
 int usb_connect(void)
 {
+	FUN_TRACE;
 	usb_device_id_t id;
 
 	id.idVendor = TELIT_ID_VENDOR;
@@ -805,11 +861,6 @@ int usb_connect(void)
 		return -1;
 	}
 
-	mutexLock(telit_common.lock);
-	while (telit_common.state != TELIT_STATE_INSERTED)
-		condWait(telit_common.cond, telit_common.lock, 0);
-	mutexUnlock(telit_common.lock);
-
 	return EOK;
 }
 
@@ -817,6 +868,8 @@ int usb_connect(void)
 int main(int argc, char **argv)
 {
 	oid_t oid;
+
+	openlog("gsm", LOG_CONS, LOG_DAEMON);
 
 	if (libusb_init() < 0) {
 		TRACE_FAIL("init libusb");
@@ -831,8 +884,10 @@ int main(int argc, char **argv)
 	if (usb_connect() < 0)
 		return -1;
 
+	telit_start();
+
 	telit_common.data.port = telit_common.port;
-	telit_common.monitor.port = telit_common.monitor_port;
+	// telit_common.monitor.port = telit_common.monitor_port;
 
 	if (telit_init_all() < 0) {
 		TRACE_FAIL("interface init");
@@ -840,25 +895,11 @@ int main(int argc, char **argv)
 	}
 
 
-	beginthread(telit_resubmitthr, 4, malloc(0x4000), 0x4000, &telit_common.data);
-	// beginthread(telit_intrresubmitthr, 4, malloc(0x4000), 0x4000, &telit_common.data);
-
-	beginthread(telit_resubmitthr, 4, malloc(0x4000), 0x4000, &telit_common.monitor);
-
-	beginthread(telit_thr, 3, malloc(0x4000), 0x4000, &telit_common.data);
-	beginthread(telit_thr, 3, malloc(0x4000), 0x4000, &telit_common.data);
-	beginthread(telit_thr, 3, malloc(0x4000), 0x4000, &telit_common.data);
-	beginthread(telit_thr, 3, malloc(0x4000), 0x4000, &telit_common.monitor);
-	beginthread(telit_thr, 3, malloc(0x4000), 0x4000, &telit_common.monitor);
-	beginthread(telit_thr, 3, malloc(0x4000), 0x4000, &telit_common.monitor);
+	beginthread(telit_resubmitThread, 4, malloc(0x4000), 0x4000, &telit_common.data);
 
 	oid = (oid_t){ .port = telit_common.port, .id = 0 };
 	create_dev(&oid, "/dev/modem");
 	TRACE("/dev/modem ready\n");
 
-
-	oid = (oid_t){ .port = telit_common.monitor_port, .id = 0 };
-	create_dev(&oid, "/dev/modem_monitor");
-
-	telit_monitorthr(NULL);
+	telit_msgThread(&telit_common.data);
 }
