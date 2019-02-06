@@ -433,7 +433,24 @@ static int sdma_reset_core(void)
 
 static void sdma_init_core(void)
 {
-	unsigned i;
+	unsigned i, status;
+
+	/* Clear channel interrupt status */
+	status = common.regs->INTR;
+	common.regs->INTR = status;
+
+	/* Clear channel stop status */
+	status = common.regs->STOP_STAT;
+	common.regs->STOP_STAT = status;
+
+	common.regs->EVTOVR = 0;
+	common.regs->HOSTOVR = 0;
+	common.regs->DSPOVR = 0xffffffff;
+
+	/* Clear channel pending status */
+	common.regs->EVTPEND = common.regs->EVTPEND;
+
+	common.regs->INTRMASK = 0;
 
 	/* Initialize DMA request-channels matrix with zeros */
 	for (i = 0; i < NUM_OF_SDMA_REQUESTS; i++)
@@ -451,10 +468,6 @@ static void sdma_init_core(void)
 
 	/* Set context size to 32 bytes (set SMSZ bit) */
 	common.regs->CHN0ADDR |= 1 << 14;
-
-	common.regs->EVTOVR = 0;
-	common.regs->HOSTOVR = 0;
-	common.regs->DSPOVR = 0xffffffff;
 }
 
 static void sdma_init_channel0(void)
