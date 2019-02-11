@@ -265,10 +265,18 @@ static void telit_msgThread(void *arg)
 			break;
 
 		case mtGetAttr:
+			if (id < 0 || id > 1) {
+				msg->o.attr.val = -EINVAL;
+				break;
+			}
+
+			mutexLock(acm->lock);
 			if (msg->i.attr.type == atPollStatus)
-				msg->o.attr.val = 0;
+				msg->o.attr.val = fifo_is_empty(acm->fifo) ? POLLOUT : POLLOUT | POLLIN;
 			else
 				msg->o.attr.val = -EINVAL;
+			mutexUnlock(acm->lock);
+
 			break;
 
 		default:
