@@ -154,8 +154,18 @@ int uart_configure(int uart, char bits, char parity, unsigned int baud, char ena
 	if (!uart_isEnabled(uart))
 		rcc_devClk(uart2pctl[uart], 1);
 
+	*(uart_common[pos].base + cr1) &= ~(1 << 13);
 	*(uart_common[pos].base + cr1) &= ~0x2c;
 	dataBarier();
+
+	uart_common[pos].txbeg = NULL;
+	uart_common[pos].txend = NULL;
+
+	uart_common[pos].rxbeg = NULL;
+	uart_common[pos].rxend = NULL;
+	uart_common[pos].read = NULL;
+	uart_common[pos].rxdr = 0;
+	uart_common[pos].rxdw = 0;
 
 	if (bits == 8 && parity != uart_parnone)
 		*(uart_common[pos].base + cr1) |= 1 << 12;
@@ -179,18 +189,12 @@ int uart_configure(int uart, char bits, char parity, unsigned int baud, char ena
 			*(uart_common[pos].base + cr1) &= ~(1 << 9);
 
 		dataBarier();
-		if (enable)
+		if (enable) {
 			*(uart_common[pos].base + cr1) |= 0x2c;
+			dataBarier();
+			*(uart_common[pos].base + cr1) |= 1 << 13;
+		}
 	}
-
-	uart_common[pos].txbeg = NULL;
-	uart_common[pos].txend = NULL;
-
-	uart_common[pos].rxbeg = NULL;
-	uart_common[pos].rxend = NULL;
-	uart_common[pos].read = NULL;
-	uart_common[pos].rxdr = 0;
-	uart_common[pos].rxdw = 0;
 
 	rcc_devClk(uart2pctl[uart], !!enable);
 
