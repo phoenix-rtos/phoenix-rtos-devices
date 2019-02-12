@@ -10,11 +10,4 @@ $(PREFIX_PROG)imx6ull-flash: $(addprefix $(PREFIX_O)storage/imx6ull-flash/, flas
 $(PREFIX_A)libflashdrv.a: $(PREFIX_O)storage/imx6ull-flash/flashdrv.o
 	$(ARCH)
 
-#=======
-#PROGS := flashsrv
-#LIB := libflashdrv.a
-#LIB_SRCS := flashdrv.c
-#PROGS_SRCS := flashdrv.c flashsrv.c
-#PROGS_LIBS := libjffs2.a
-
 all: $(PREFIX_PROG_STRIPPED)imx6ull-flash $(PREFIX_A)libflashdrv.a
