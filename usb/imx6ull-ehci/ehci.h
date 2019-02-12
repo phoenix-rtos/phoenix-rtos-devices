@@ -17,6 +17,7 @@
 #ifndef _IMX6ULL_EHCI_H_
 #define _IMX6ULL_EHCI_H_
 
+#include "dma.h"
 
 enum { framelist_itd = 0, framelist_qh, framelist_sitd, framelist_fstn };
 
@@ -85,6 +86,9 @@ extern int ehci_await(int timeout);
 
 
 extern int ehci_qtdError(struct qtd *qtd);
+
+
+extern int ehci_qtdBabble(struct qtd *qtd);
 
 
 extern int ehci_qtdFinished(struct qtd *qtd);

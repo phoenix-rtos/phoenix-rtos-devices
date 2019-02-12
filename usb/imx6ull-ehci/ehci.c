@@ -29,6 +29,7 @@
 #include "dma.h"
 
 #define TRACE(x, ...) //fprintf(stderr, "ehci: " x "\n", ##__VA_ARGS__)
+#define TRACE_FAIL(x, ...) //fprintf(stderr, "ehci error: " x "\n", ##__VA_ARGS__)
 #define FUN_TRACE //fprintf(stderr, "ehci trace: %s\n", __PRETTY_FUNCTION__)
 
 #define USBSTS_AS  (1 << 15)
@@ -525,6 +526,12 @@ int ehci_qtdError(struct qtd *qtd)
 }
 
 
+int ehci_qtdBabble(struct qtd *qtd)
+{
+	return qtd->babble;
+}
+
+
 int ehci_qtdFinished(struct qtd *qtd)
 {
 	return !qtd->active || qtd->halted;
@@ -680,7 +687,7 @@ void ehci_init(void *event_callback, handle_t common_lock)
 	/* Offset into USB2 */
 	ehci_common.usb2 = ehci_common.base + 128;
 
-	beginthread(ehci_irqThread, 4, malloc(0x4000), 0x4000, event_callback);
+	beginthread(ehci_irqThread, 2, malloc(0x4000), 0x4000, event_callback);
 	interrupt(USB_OTG2_IRQ, ehci_irqHandler, NULL, ehci_common.irq_cond, &ehci_common.irq_handle);
 
 	/* Reset controller */

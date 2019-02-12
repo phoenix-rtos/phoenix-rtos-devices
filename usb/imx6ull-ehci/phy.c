@@ -57,6 +57,25 @@ void phy_config(void)
 	*(phy_common.base + usbphy_ctrl) |= 1 << 11;
 }
 
+void phy_initPad(void)
+{
+	platformctl_t set_mux = {
+		.action = pctl_set,
+		.type = pctl_iomux,
+		.iomux = { .mux = pctl_mux_sd1_d1, .sion = 0, .mode = 8 },
+	};
+
+	platformctl_t set_pad = {
+		.action = pctl_set,
+		.type = pctl_iopad,
+		.iopad = { .pad = pctl_pad_sd1_d1, .hys = 0, .pus = 0, .pue = 0,
+			.pke = 0, .ode = 0, .speed = 2, .dse = 4, .sre = 0 },
+	};
+
+	platformctl(&set_mux);
+	platformctl(&set_pad);
+}
+
 
 void phy_reset(void)
 {
@@ -105,6 +124,7 @@ void phy_init(void)
 	phy_common.base += 1024;
 
 	phy_initClock();
+	phy_initPad();
 	phy_reset();
 	phy_config();
 }
