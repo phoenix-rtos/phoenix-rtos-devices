@@ -121,12 +121,17 @@ static void handleMsg(msg_t *msg)
 
 		case spi_get:
 			err = spi_transaction(imsg->spi_rw.spi, spi_read, imsg->spi_rw.cmd, imsg->spi_rw.addr,
-				imsg->spi_rw.flags, msg->o.data, msg->o.size);
+				imsg->spi_rw.flags, msg->o.data, NULL, msg->o.size);
 			break;
 
 		case spi_set:
 			err = spi_transaction(imsg->spi_rw.spi, spi_write, imsg->spi_rw.cmd, imsg->spi_rw.addr,
-				imsg->spi_rw.flags, msg->i.data, msg->i.size);
+				imsg->spi_rw.flags, NULL, msg->i.data, msg->i.size);
+			break;
+
+		case spi_rw:
+			err = spi_transaction(imsg->spi_rw.spi, spi_readwrite, imsg->spi_rw.cmd, imsg->spi_rw.addr,
+				imsg->spi_rw.flags, msg->o.data, msg->i.data, (msg->i.size > msg->o.size) ? msg->o.size : msg->i.size);
 			break;
 
 		case spi_def:
