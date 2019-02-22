@@ -188,6 +188,9 @@ int uart_configure(int uart, char bits, char parity, unsigned int baud, char ena
 		else
 			*(uart_common[pos].base + cr1) &= ~(1 << 9);
 
+		*(uart_common[pos].base + sr) = 0;
+		(void)*(uart_common[pos].base + dr);
+
 		dataBarier();
 		if (enable) {
 			*(uart_common[pos].base + cr1) |= 0x2c;
