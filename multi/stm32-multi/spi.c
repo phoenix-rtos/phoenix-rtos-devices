@@ -83,7 +83,7 @@ static unsigned char _spi_readwrite(int spi, unsigned char txd)
 }
 
 
-int spi_transaction(int spi, int dir, unsigned char cmd, unsigned int addr, unsigned char flags, unsigned char *buff, size_t bufflen)
+int spi_transaction(int spi, int dir, unsigned char cmd, unsigned int addr, unsigned char flags, unsigned char *ibuff, unsigned char *obuff, size_t bufflen)
 {
 	int i;
 
@@ -110,11 +110,15 @@ int spi_transaction(int spi, int dir, unsigned char cmd, unsigned int addr, unsi
 
 	if (dir == spi_read) {
 		for (i = 0; i < bufflen; ++i)
-			buff[i] = _spi_readwrite(spi, 0);
+			ibuff[i] = _spi_readwrite(spi, 0);
+	}
+	else if (dir == spi_write) {
+		for (i = 0; i < bufflen; ++i)
+			_spi_readwrite(spi, obuff[i]);
 	}
 	else {
 		for (i = 0; i < bufflen; ++i)
-			_spi_readwrite(spi, buff[i]);
+			ibuff[i] = _spi_readwrite(spi, obuff[i]);
 	}
 
 	keepidle(0);

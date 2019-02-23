@@ -16,7 +16,7 @@
 
 enum { adc_get = 0, rtc_setcal, rtc_get, rtc_set, lcd_get, lcd_set, i2c_get,
 	i2c_set, gpio_def, gpio_get, gpio_set, uart_def, uart_get, uart_set,
-	flash_get, flash_set, spi_get, spi_set, spi_def };
+	flash_get, flash_set, spi_get, spi_set, spi_rw, spi_def };
 
 /* RTC */
 
