@@ -232,6 +232,9 @@ static void _lcd_showSymbols(unsigned int sym_mask)
 {
 	unsigned int i, symbol;
 
+	if (lcd_common.sym_mask & LCDSYM_SMALL_ONE)
+		sym_mask |= LCDSYM_SMALL_ONE;
+
 	for (i = 0; i < LCDSYM_TOTAL; i++) {
 		symbol = sym_mask & (1 << i);
 
