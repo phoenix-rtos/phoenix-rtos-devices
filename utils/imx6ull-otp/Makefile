@@ -6,5 +6,5 @@
 
 $(PREFIX_PROG)imx6ull-otp: $(PREFIX_O)utils/imx6ull-otp/imx6ull-otp.o
 	$(LINK)
-	
-all: $(PREFIX_PROG)imx6ull-otp
+
+all: $(PREFIX_PROG_STRIPPED)imx6ull-otp
