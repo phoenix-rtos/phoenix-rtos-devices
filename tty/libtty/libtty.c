@@ -355,7 +355,7 @@ int libtty_poll_status(libtty_common_t* tty)
 void libtty_signal_pgrp(libtty_common_t* tty, int signal)
 {
 	if (tty->pgrp > 0) {
-		log_warn("signal(%u): %d", tty->pgrp, signal);
+		log_debug("signal(%u): %d", tty->pgrp, signal);
 		kill(-tty->pgrp, signal);
 	}
 }
