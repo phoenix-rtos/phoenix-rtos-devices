@@ -58,6 +58,8 @@
 #define USB_CDC_GET_CRC_MODE   0x89
 #define USB_CDC_SET_CRC_MODE   0x8a
 
+#define RX_FIFO_SIZE (4 * SIZE_PAGE)
+
 
 typedef union {
 	unsigned int val;
@@ -325,13 +327,13 @@ int acm_control(int type, int request, int value, int index, void *buffer, int l
 
 int open_ttyacm(ttyacm_t *acm, int bulk_iface, int intr_iface, endpoint_desc_t *inep, endpoint_desc_t *outep, endpoint_desc_t *intrep)
 {
-	acm->fifo = malloc(sizeof(fifo_t) + SIZE_PAGE * sizeof(acm->fifo->data[0]));
+	acm->fifo = malloc(sizeof(fifo_t) + RX_FIFO_SIZE * sizeof(acm->fifo->data[0]));
 	if (acm->fifo == NULL) {
 		TRACE_FAIL("failed to allocate pipe");
 		return -ENOMEM;
 	}
 
-	fifo_init(acm->fifo, SIZE_PAGE);
+	fifo_init(acm->fifo, RX_FIFO_SIZE);
 
 	acm->ep_in = *inep;
 	acm->ep_out = *outep;
@@ -613,6 +615,9 @@ void _telit_input(ttyacm_t *acm, char *data, size_t size, int err)
 		TRACE("input %lu bytes to acm%d", size, acm->id);
 		for (i = 0; i < size && !fifo_is_full(acm->fifo); ++i)
 			fifo_push(acm->fifo, data[i]);
+
+		if (fifo_is_full(acm->fifo) && i < size)
+			TRACE_FAIL("RX fifo overflow");
 	}
 	condBroadcast(acm->cond);
 }
