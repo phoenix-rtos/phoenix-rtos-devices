@@ -37,7 +37,7 @@ struct qh;
 extern int ehci_qtdRemainingBytes(struct qtd *qtd);
 
 
-extern int ehci_dequeue(struct qh *qh, struct qtd *first, struct qtd *last);
+extern void ehci_continue(struct qh *qh, struct qtd *last);
 
 
 extern void ehci_enqueue(struct qh *qh, struct qtd *first, struct qtd *last);

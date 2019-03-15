@@ -412,10 +412,17 @@ void ehci_enqueue(struct qh *qh, struct qtd *first, struct qtd *last)
 	asm volatile ("dmb" ::: "memory");
 
 	prev_last->next.terminate = 0;
+}
 
-	if (!qh->transfer_overlay.active) {
-		TRACE("was not active");
-		qh->transfer_overlay.next = prev_last->next;
+
+void ehci_continue(struct qh *qh, struct qtd *last)
+{
+	if (qh->last == last) {
+		qh->last = &qh->transfer_overlay;
+		qh->last->next = last->next;
+	}
+	else if (qh->transfer_overlay.active == 0 && qh->current_qtd.pointer == va2pa(last) >> 5) {
+		qh->transfer_overlay.next = last->next;
 	}
 }
 
@@ -506,17 +513,6 @@ struct qh *ehci_allocQh(int address, int endpoint, int transfer, int speed, int 
 	result->last = &result->transfer_overlay;
 
 	return result;
-}
-
-
-int ehci_dequeue(struct qh *qh, struct qtd *first, struct qtd *last)
-{
-	FUN_TRACE;
-
-	if (qh->last == last)
-		qh->last = &qh->transfer_overlay;
-
-	return 0;
 }
 
 
