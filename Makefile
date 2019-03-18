@@ -20,7 +20,8 @@ BUILD_DIR ?= $(PREFIX_BUILD)/$(notdir $(TOPDIR))
 BUILD_DIR := $(abspath $(BUILD_DIR))
 
 # Compliation options for various architectures
-TARGET_FAMILY = $(firstword $(subst -, ,$(TARGET)-))
+TARGET_FAMILY ?= $(firstword $(subst -, ,$(TARGET)-))
+TARGET_SUBFAMILY ?= $(TARGET_FAMILY)-$(word 2,$(subst -, ,$(TARGET)-))
 include Makefile.$(TARGET_FAMILY)
 
 # build artifacts dir
@@ -83,5 +84,5 @@ ifneq ($(T1),)
 $(T1):
 	@echo >/dev/null
 else
-	include Makefile.$(TARGET)
+	include Makefile.$(TARGET_SUBFAMILY)
 endif
