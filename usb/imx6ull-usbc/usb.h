@@ -1,8 +1,6 @@
 /*
  * Phoenix-RTOS
  *
- * Operating system kernel
- *
  * dummyfs - usb device controller driver
  *
  * Copyright 2018 Phoenix Systems
@@ -13,9 +11,14 @@
  *
  * %LICENSE%
  */
+
 #ifndef _USB_H_
 #define _USB_H_
 
+
+typedef struct _mod_t mod_t;
+
+extern int fetch_modules(void);
 
 /* host/device cotroller register offsets */
 enum {

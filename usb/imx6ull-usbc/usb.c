@@ -1,8 +1,6 @@
 /*
  * Phoenix-RTOS
  *
- * Operating system kernel
- *
  * dummyfs - usb device controller driver
  *
  * Copyright 2018 Phoenix Systems
@@ -16,6 +14,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/stat.h> /* to set mode for /init */
 #include <sys/threads.h>
 #include <sys/mman.h>
 #include <sys/msg.h>
@@ -26,6 +25,7 @@
 #include <unistd.h>
 
 #include "usb.h"
+#include "dummyfs.h"
 
 #define USB_ADDR 0x02184000
 #define USB_SIZE 0x1000
@@ -82,7 +82,6 @@ static int dc_setup(setup_packet_t *setup)
 
 		case REQ_CLR_FEAT:
 		case REQ_GET_STS:
-		case REQ_GET_CONFIG:
 		case REQ_GET_INTF:
 		case REQ_SET_INTF:
 		case REQ_SET_FEAT:
@@ -90,11 +89,21 @@ static int dc_setup(setup_packet_t *setup)
 		case REQ_SYNCH_FRAME:
 			break;
 
+		case REQ_GET_CONFIG:
+			if (setup->val != 0 || setup->idx != 0 || setup->len != 1)
+				return res;
+			if (dc.status != DC_CONFIGURED)
+				OUT[0] = 0;
+			else
+				OUT[1] = 1;
+
+			dtd_exec(0, pOUT, setup->len, DIR_OUT);
+			break;
+
 		default:
-			if (*(u32 *)setup == 0xdeadc0de) {
+			if (*(u32 *)setup == 0xdeadc0de)
 				dc.op = DC_OP_EXIT;
-				dtd_exec(0, pIN, 0, DIR_IN);
-			} else {
+			else {
 				fsz = setup->val << 16;
 				fsz |= setup->idx;
 				dtd_exec(0, pOUT, setup->len, DIR_OUT);
@@ -105,6 +114,7 @@ static int dc_setup(setup_packet_t *setup)
 				dtd_exec(1, pOUT, 0x80, DIR_OUT);
 				strcpy(dc.mods[dc.mods_cnt].args, (const char *)OUT);
 				dc.op = DC_OP_RECEIVE;
+				dc.mods_cnt++;
 			}
 			break;
 	}
@@ -171,8 +181,10 @@ static int dc_lf_intr(void)
 
 static int dc_intr(unsigned int intr, void *data)
 {
+
 	dc_hf_intr();
 	dc_lf_intr();
+
 	return 0;
 }
 
@@ -189,7 +201,7 @@ static int ctrlqh_init(void)
 
 	memset((void *)dc.endptqh, 0, 0x1000);
 
-	qh_addr = (va2pa((void *)dc.endptqh)) & ~0xfff;
+	qh_addr = ((u32)va2pa((void *)dc.endptqh)) & ~0xfff;
 
 	dc.endptqh[0].caps =  0x40 << 16; /* max 64 bytes */
 	dc.endptqh[0].caps |= 0x1 << 29;
@@ -201,12 +213,12 @@ static int ctrlqh_init(void)
 	dc.endptqh[1].caps |=  0x1 << 15;
 	dc.endptqh[1].dtd_next = 1;
 
-	dc.endptqh[0].base = ((va2pa(dc.endptqh)) & ~0xfff) + (32 * sizeof(dqh_t));
+	dc.endptqh[0].base = (((u32)va2pa(dc.endptqh)) & ~0xfff) + (32 * sizeof(dqh_t));
 	dc.endptqh[0].size = 0x10;
 	dc.endptqh[0].head = (dtd_t *)(dc.endptqh + 32);
 	dc.endptqh[0].tail = (dtd_t *)(dc.endptqh + 32);
 
-	dc.endptqh[1].base = ((va2pa(dc.endptqh)) & ~0xfff) + (48 * sizeof(dqh_t));
+	dc.endptqh[1].base = (((u32)va2pa(dc.endptqh)) & ~0xfff) + (48 * sizeof(dqh_t));
 	dc.endptqh[1].size = 0x10;
 	dc.endptqh[1].head = (dtd_t *)(dc.endptqh + 48);
 	dc.endptqh[1].tail = (dtd_t *)(dc.endptqh + 48);
@@ -234,11 +246,11 @@ static int dtd_init(int endpt)
 
 	memset(buff, 0, 0x1000);
 
-	dc.endptqh[qh].base = ((va2pa(buff)) & ~0xfff);
+	dc.endptqh[qh].base = (((u32)va2pa(buff)) & ~0xfff);
 	dc.endptqh[qh].size = 0x40;
 	dc.endptqh[qh].head = buff;
 	dc.endptqh[qh].tail = buff;
-	dc.endptqh[++qh].base = ((va2pa(buff)) & ~0xfff) + (64 * sizeof(dqh_t));
+	dc.endptqh[++qh].base = (((u32)va2pa(buff)) & ~0xfff) + (64 * sizeof(dqh_t));
 	dc.endptqh[++qh].size = 0x40;
 	dc.endptqh[++qh].head = buff + 64;
 	dc.endptqh[++qh].tail = buff + 64;
@@ -280,21 +292,27 @@ static int dtd_build(dtd_t *dtd, u32 paddr, u32 size)
 }
 
 
-static int dtd_exec_chain(int endpt, u32 vaddr, int sz, int dir)
+static int dtd_exec_chain(int endpt, void *vaddr, int sz, int dir)
 {
 	u32 qh, offs, shift;
-	int i, dcnt = 1;
-	dtd_t *prev = NULL, *current, *first;
+	int i, dcnt, dtdn;
+	dtd_t *prev, *current, *first;
+	int size = sz;
+
+again:
+	prev = NULL;
+	dcnt = 1;
+	dtdn = 0;
 
 	first = dtd_get(endpt, dir);
 	current = first;
 
-	while (sz > 0) {
+	while (sz > 0 && dtdn < 64) {
 
 		if (prev != NULL) {
 			dcnt++;
 			current = dtd_get(endpt, dir);
-			prev->dtd_next = (((u32)va2pa(current)) & ~0xfff) + ((u32)current & 0xffe);
+			prev->dtd_next = ((va2pa(current)) & ~0xfff) + ((u32)current & 0xffe);
 		}
 
 		memset(current, 0, sizeof(dtd_t));
@@ -304,13 +322,14 @@ static int dtd_exec_chain(int endpt, u32 vaddr, int sz, int dir)
 		i = 0;
 
 		while (i < 4 && sz > 0) {
-			current->buff_ptr[i] = (((u32)va2pa((void *)vaddr)) & ~0xfff) + (vaddr & 0xfff);
-			vaddr = (vaddr & ~0xfff) + 0x1000;
+			current->buff_ptr[i] = ((va2pa((void *)vaddr)) & ~0xfff) + ((addr_t)vaddr & 0xfff);
+			vaddr = (void *)((addr_t)vaddr & ~0xfff) + 0x1000;
 			i++;
 			sz -= 0x1000;
 		}
 
 		prev = current;
+		dtdn++;
 	}
 
 	current->dtd_next = 1;
@@ -323,16 +342,18 @@ static int dtd_exec_chain(int endpt, u32 vaddr, int sz, int dir)
 	dc.endptqh[qh].dtd_token &= ~(1 << 6);
 	dc.endptqh[qh].dtd_token &= ~(1 << 7);
 
-	while (*(dc.base + endptprime) & (1 << shift));
+	/* prime the endpoint and wait for it to prime */
+	while ((*(dc.base + endptprime) & (1 << shift)));
 	*(dc.base + endptprime) |= 1 << shift;
 	while (!(*(dc.base + endptprime) & (1 << shift)) && (*(dc.base + endptstat) & (1 << shift)));
 
-	while (!(*(dc.base + endptcomplete) & (1 << shift)));
-	*(dc.base + endptcomplete) |= 1 << shift;
-	while (*(dc.base + usbsts) & 1);
-	*(dc.base + usbsts) |= 1;
+	while ((current->dtd_token >> 7) & 1) usleep(10000);
 	dc.endptqh[qh].head = dc.endptqh[qh].tail;
-	return 0;
+
+	if (sz > 0)
+		goto again;
+
+	return size;
 }
 
 
@@ -355,7 +376,7 @@ static int dtd_exec(int endpt, u32 paddr, u32 sz, int dir)
 	dc.endptqh[qh].dtd_token &= ~(1 << 7);
 
 	/* prime the endpoint and wait for it to prime */
-	while (*(dc.base + endptprime) & (1 << shift));
+	while ((*(dc.base + endptprime) & (1 << shift)));
 	*(dc.base + endptprime) |= 1 << shift;
 	while (!(*(dc.base + endptprime) & (1 << shift)) && (*(dc.base + endptstat) & (1 << shift)));
 
@@ -369,7 +390,7 @@ static int dtd_exec(int endpt, u32 paddr, u32 sz, int dir)
 }
 
 
-static int endpt_init(int endpt, endpt_init_t *endpt_init)
+int endpt_init(int endpt, endpt_init_t *endpt_init)
 {
 	u32 setup = 0;
 	int res;
@@ -427,8 +448,8 @@ static void init_desc(void *conf)
 	IN = conf + 0x500;
 	OUT = conf + 0x700;
 
-	pIN = (((u32)va2pa((void *)IN)) & ~0xfff) + ((u32)IN & 0xfff);
-	pOUT = (((u32)va2pa((void *)OUT)) & ~0xfff) + ((u32)OUT & 0xfff);
+	pIN = ((va2pa((void *)IN)) & ~0xfff) + ((u32)IN & 0xfff);
+	pOUT = ((va2pa((void *)OUT)) & ~0xfff) + ((u32)OUT & 0xfff);
 
 	dev->len = sizeof(dev_desc_t);
 	dev->desc_type = DESC_DEV;
@@ -474,101 +495,75 @@ static void init_desc(void *conf)
 }
 
 
-static void mod_lookup(void *arg)
+extern int dummyfs_create(oid_t *dir, const char *name, oid_t *oid, int type, int mode, oid_t *dev);
+extern int dummyfs_link(oid_t *dir, const char *name, oid_t *oid);
+extern int dummyfs_write(oid_t *oid, offs_t offs, char *buff, unsigned int len);
+extern int dummyfs_lookup(oid_t *dir, const char *name, oid_t *res, oid_t *dev);
+extern int dummyfs_setattr(oid_t *oid, int type, int attr);
+
+
+char __attribute__((aligned(8))) stack[4096];
+
+void exec_modules(void *arg)
 {
-	msg_t msg;
-	unsigned int rid;
-	int size, err;
-	int mod_no = 0;
-	u32 port = (u32)arg;
-
-	while (1) {
-
-		err = msgRecv(port, &msg, &rid);
-		if (err < 0) {
-			printf("recv(%u) error %d\n", port, err);
-			break;
-		}
-
-		switch (msg.type) {
-
-			case mtLookup:
-				msg.o.lookup.fil.id = mod_no;
-				msg.o.lookup.fil.port = port;
-				msg.o.lookup.dev.id = mod_no;
-				msg.o.lookup.dev.port = port;
-				break;
-			case mtRead:
-				if (msg.o.size > dc.mods[mod_no - 1].size - msg.i.io.offs)
-					size = dc.mods[mod_no - 1].size - msg.i.io.offs;
-				else
-					size = msg.o.size;
-				memcpy(msg.o.data, dc.mods[mod_no - 1].data + msg.i.io.offs, size);
-				msg.o.io.err = EOK;
-				break;
-			case mtGetAttr:
-				msg.o.attr.val = dc.mods[mod_no].size;
-				mod_no++;
-				break;
-			default:
-				break;
-		}
-
-		msgRespond(port, &msg, rid);
-	}
-
-	portDestroy((u32)arg);
-	endthread();
-}
-
-
-static void printf_mockup(void *arg)
-{
-	msg_t msg;
-	unsigned int rid;
-	int offs = 0;
-	int size, err;
-	char buff[16] = { 0 };
-	while (1) {
-		err = msgRecv(0, &msg, &rid);
-		if (err < 0) {
-			//printf("recv(%u) error %d\n", 0, err);
-			break;
-		}
-		offs = 0;
-		size = msg.i.size;
-		if (size > 0) {
-			if (size >= 15) {
-				memcpy(buff, msg.i.data + offs, 15);
-				buff[15] = 0;
-			} else {
-				memcpy(buff, msg.i.data + offs, size);
-				buff[size] = 0;
-			}
-			debug(buff);
-			offs += 15;
-			size -= 15;
-		}
-		msgRespond(0, &msg, rid);
-	}
-}
-
-char __attribute__((aligned(8))) stack0[2048];
-char __attribute__((aligned(8))) stack[2048];
-
-int main(void)
-{
-	endpt_init_t bulk_endpt;
-	int res;
-
-	oid_t oid;
 	char path[65];
 	char *arg_tok;
 	char *argv[16] = { 0 };
 	int argc;
-	u32 port;
-	u32 uart_port;
 	int cnt = 0;
+	int x;
+
+	oid_t toid = { 0 };
+	oid_t root = { 0 };
+	oid_t init = { 0 };
+	oid_t tmp;
+
+	memcpy(path, "/init/", 6);
+	dummyfs_lookup(NULL, ".", &tmp, &root);
+	dummyfs_create(&root, "init", &init, otDir, 0, NULL);
+	dummyfs_setattr(&init, atMode, S_IFDIR | 0777);
+
+	while (cnt < dc.mods_cnt) {
+		argc = 1;
+
+		x = 0;
+		if (dc.mods[cnt].name[0] == 'X')
+			x++;
+
+		if (dummyfs_create(&init, dc.mods[cnt].name + 1, &toid, otFile, S_IFREG, NULL) == EOK)
+			dummyfs_write(&toid, 0, dc.mods[cnt].data, dc.mods[cnt].size);
+
+		if (x) {
+
+			arg_tok = strtok(dc.mods[cnt].args, ",");
+
+			while (arg_tok != NULL && argc < 15){
+				argv[argc] = arg_tok;
+				arg_tok = strtok(NULL, ",");
+				argc++;
+			}
+			argv[argc] = NULL;
+
+			memcpy(&path[6], dc.mods[cnt].name + 1, strlen(dc.mods[cnt].name));
+			argv[0] = path;
+			if (vfork() == 0) {
+				if(execve(path, argv, NULL) != EOK)
+					printf("Failed to start %s\n", &path[6]);
+				endthread(); //prevent crash if execve fails
+			}
+		}
+
+		munmap(dc.mods[cnt].data, (dc.mods[dc.mods_cnt].size + 0xfff) & ~0xfff);
+		cnt++;
+	}
+	endthread();
+}
+
+
+int fetch_modules(void)
+{
+	endpt_init_t bulk_endpt;
+	int res, modn;
 
 	void *conf = mmap(NULL, 0x1000, PROT_WRITE | PROT_READ, MAP_UNCACHED, OID_NULL, 0);
 
@@ -596,12 +591,12 @@ int main(void)
 
 	dc.base = mmap(NULL, USB_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, USB_ADDR);
 
+	if (dc.base == MAP_FAILED)
+		return -ENOMEM;
+
 	dc.lock = 0;
 	dc.cond = 0;
 	dc.dev_addr = 0;
-
-	if (dc.base == MAP_FAILED)
-		return -ENOMEM;
 
 	if (mutexCreate(&dc.lock) != EOK)
 		return 0;
@@ -637,17 +632,16 @@ int main(void)
 		mutexUnlock(dc.lock);
 
 		if (dc.op == DC_OP_RECEIVE) {
-
-			if (dc.mods_cnt >= MOD_MAX) {
-				printf("Maximum modules number reached (%d), stopping usb...\n", MOD_MAX);
+			modn = dc.mods_cnt - 1;
+			if (modn >= MOD_MAX) {
+				printf("dummyfs: Maximum modules number reached (%d), stopping usb...\n", MOD_MAX);
 				break;
 			} else
 				dc.op = DC_OP_NONE;
 
-			dc.mods[dc.mods_cnt].data = mmap(NULL, (dc.mods[dc.mods_cnt].size + 0xfff) & ~0xfff, PROT_WRITE | PROT_READ, MAP_UNCACHED, OID_NULL, 0);
-			dtd_exec_chain(1, (u32)dc.mods[dc.mods_cnt].data, dc.mods[dc.mods_cnt].size, DIR_OUT);
 			dc.op = DC_OP_NONE;
-			dc.mods_cnt++;
+			dc.mods[modn].data = mmap(NULL, (dc.mods[modn].size + 0xfff) & ~0xfff, PROT_WRITE | PROT_READ, MAP_UNCACHED, OID_NULL, 0);
+			dtd_exec_chain(1, dc.mods[modn].data, dc.mods[modn].size, DIR_OUT);
 		} else if (dc.op == DC_OP_INIT && endpt_init(1, &bulk_endpt) != EOK) {
 			dc.op = DC_OP_NONE;
 			return 0;
@@ -656,7 +650,7 @@ int main(void)
 	}
 
 	if (dc.op == DC_OP_EXIT)
-		printf("Modules transfer done (%d), stopping usb...\n", dc.mods_cnt);
+		printf("dummyfs: Modules fetched (%d), stopping usb...\n", dc.mods_cnt);
 
 	/* stopping device controller */
 	*(dc.base + usbintr) = 0;
@@ -666,50 +660,7 @@ int main(void)
 	munmap((void *)((u32)dc.endptqh[2].head & ~0xfff), 0x1000);
 	munmap((void *)dc.endptqh, 0x1000);
 
-	if (portCreate(&uart_port) != EOK)
-		return 0;
-
-	if (portRegister(uart_port, "/printf", &oid) != EOK)
-		return 0;
-
-	if (beginthread(printf_mockup, 4, stack0, sizeof(stack0), (void *)port) != EOK)
-		return 0;
-
-	if (portCreate(&port) != EOK)
-		return 0;
-
-	if (portRegister(port, "/init", &oid) != EOK)
-		return 0;
-
-	if (beginthread(mod_lookup, 4, stack, sizeof(stack), (void *)port) != EOK)
-		return 0;
-
-	memcpy(path, "/init/", 6);
-
-	portDestroy(uart_port);
-
-	while (cnt < dc.mods_cnt) {
-		argc = 0;
-
-		argv[argc] = dc.mods[cnt].name;
-		argc++;
-		arg_tok = strtok(dc.mods[cnt].args, ",");
-
-		while (arg_tok != NULL && argc < 15){
-			argv[argc] = arg_tok;
-			arg_tok = strtok(NULL, ",");
-			argc++;
-		}
-		argv[argc] = NULL;
-
-		memcpy(&path[6], dc.mods[cnt].name, strlen(dc.mods[cnt].name) + 1);
-		if (vfork() == 0) {
-			if(execve(path, argv, NULL) != EOK)
-				printf("Failed to start %s\n", &path[6]);
-			return 0;
-		}
-		cnt++;
-	}
+	beginthread(exec_modules, 4, &stack, 4096, NULL);
 
 	return EOK;
 }
