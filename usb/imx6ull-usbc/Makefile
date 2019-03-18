@@ -7,8 +7,10 @@
 # Author: Kamil Amanowicz
 #
 
-PROGS_SRCS := usb.c
-PROGS := usb-imx
+$(PREFIX_A)libusb-imx6ull.a: $(addprefix $(PREFIX_O)usb/imx6ull-usbc/, usbclient.o)
+	$(ARCH)
 
-# include after all dependencies are set
-include $(TOPDIR)/Makefile.rules
+$(PREFIX_H)usbclient.h: usb/imx6ull-usbc/usbclient.h
+	$(HEADER)
+
+all: $(PREFIX_A)libusb-imx6ull.a $(PREFIX_H)usbclient.h

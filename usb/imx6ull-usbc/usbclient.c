@@ -24,15 +24,14 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "usb.h"
-#include "dummyfs.h"
+#include "usbclient.h"
 
 #define USB_ADDR 0x02184000
 #define USB_SIZE 0x1000
 #define PAGE_SIZE 4096
 
 
-static struct _usb_dc_t dc = { 0 };
+usb_dc_t dc = { 0 };
 
 addr_t pdev;
 addr_t pconf;
@@ -428,6 +427,7 @@ int endpt_init(int endpt, endpt_init_t *endpt_init)
 }
 
 
+
 static void init_desc(void *conf)
 {
 	dev_desc_t *dev;
@@ -495,11 +495,11 @@ static void init_desc(void *conf)
 }
 
 
-extern int dummyfs_create(oid_t *dir, const char *name, oid_t *oid, int type, int mode, oid_t *dev);
-extern int dummyfs_link(oid_t *dir, const char *name, oid_t *oid);
-extern int dummyfs_write(oid_t *oid, offs_t offs, char *buff, unsigned int len);
-extern int dummyfs_lookup(oid_t *dir, const char *name, oid_t *res, oid_t *dev);
-extern int dummyfs_setattr(oid_t *oid, int type, int attr);
+//extern int dummyfs_create(oid_t *dir, const char *name, oid_t *oid, int type, int mode, oid_t *dev);
+//extern int dummyfs_link(oid_t *dir, const char *name, oid_t *oid);
+//extern int dummyfs_write(oid_t *oid, offs_t offs, char *buff, unsigned int len);
+//extern int dummyfs_lookup(oid_t *dir, const char *name, oid_t *res, oid_t *dev);
+//extern int dummyfs_setattr(oid_t *oid, int type, int attr);
 
 
 char __attribute__((aligned(8))) stack[4096];
@@ -519,9 +519,9 @@ void exec_modules(void *arg)
 	oid_t tmp;
 
 	memcpy(path, "/init/", 6);
-	dummyfs_lookup(NULL, ".", &tmp, &root);
-	dummyfs_create(&root, "init", &init, otDir, 0, NULL);
-	dummyfs_setattr(&init, atMode, S_IFDIR | 0777);
+	//dummyfs_lookup(NULL, ".", &tmp, &root);
+	//dummyfs_create(&root, "init", &init, otDir, 0, NULL);
+	//dummyfs_setattr(&init, atMode, S_IFDIR | 0777);
 
 	while (cnt < dc.mods_cnt) {
 		argc = 1;
@@ -530,8 +530,8 @@ void exec_modules(void *arg)
 		if (dc.mods[cnt].name[0] == 'X')
 			x++;
 
-		if (dummyfs_create(&init, dc.mods[cnt].name + 1, &toid, otFile, S_IFREG, NULL) == EOK)
-			dummyfs_write(&toid, 0, dc.mods[cnt].data, dc.mods[cnt].size);
+		//if (dummyfs_create(&init, dc.mods[cnt].name + 1, &toid, otFile, S_IFREG, NULL) == EOK)
+		//	dummyfs_write(&toid, 0, dc.mods[cnt].data, dc.mods[cnt].size);
 
 		if (x) {
 
@@ -560,12 +560,13 @@ void exec_modules(void *arg)
 }
 
 
-int fetch_modules(void)
-{
-	endpt_init_t bulk_endpt;
-	int res, modn;
+static endpt_init_t bulk_endpt;
+static void *conf;
 
-	void *conf = mmap(NULL, 0x1000, PROT_WRITE | PROT_READ, MAP_UNCACHED, OID_NULL, 0);
+int init_usb(void)
+{
+    int res = 0;
+	conf = mmap(NULL, 0x1000, PROT_WRITE | PROT_READ, MAP_UNCACHED, OID_NULL, 0);
 
 	init_desc(conf);
 
@@ -624,34 +625,15 @@ int fetch_modules(void)
 	dc.status = DC_ATTACHED;
 	*(dc.base + usbcmd) |= 1;
 
-	while (dc.op != DC_OP_EXIT) {
+	return EOK;
+}
 
-		mutexLock(dc.lock);
-		while (dc.op == DC_OP_NONE)
-			condWait(dc.cond, dc.lock, 0);
-		mutexUnlock(dc.lock);
+int bulk_endpt_init(void) {
+	return endpt_init(1, &bulk_endpt);
+}
 
-		if (dc.op == DC_OP_RECEIVE) {
-			modn = dc.mods_cnt - 1;
-			if (modn >= MOD_MAX) {
-				printf("dummyfs: Maximum modules number reached (%d), stopping usb...\n", MOD_MAX);
-				break;
-			} else
-				dc.op = DC_OP_NONE;
-
-			dc.op = DC_OP_NONE;
-			dc.mods[modn].data = mmap(NULL, (dc.mods[modn].size + 0xfff) & ~0xfff, PROT_WRITE | PROT_READ, MAP_UNCACHED, OID_NULL, 0);
-			dtd_exec_chain(1, dc.mods[modn].data, dc.mods[modn].size, DIR_OUT);
-		} else if (dc.op == DC_OP_INIT && endpt_init(1, &bulk_endpt) != EOK) {
-			dc.op = DC_OP_NONE;
-			return 0;
-		} else if (dc.op != DC_OP_EXIT)
-			dc.op = DC_OP_NONE;
-	}
-
-	if (dc.op == DC_OP_EXIT)
-		printf("dummyfs: Modules fetched (%d), stopping usb...\n", dc.mods_cnt);
-
+void destroy_usb(void)
+{
 	/* stopping device controller */
 	*(dc.base + usbintr) = 0;
 	*(dc.base + usbcmd) &= ~1;
@@ -659,8 +641,4 @@ int fetch_modules(void)
 	munmap((void *)dc.base, 0x1000);
 	munmap((void *)((u32)dc.endptqh[2].head & ~0xfff), 0x1000);
 	munmap((void *)dc.endptqh, 0x1000);
-
-	beginthread(exec_modules, 4, &stack, 4096, NULL);
-
-	return EOK;
 }

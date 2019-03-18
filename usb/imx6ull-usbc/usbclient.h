@@ -15,10 +15,13 @@
 #ifndef _USB_H_
 #define _USB_H_
 
+#include <stdint.h>
 
 typedef struct _mod_t mod_t;
 
-extern int fetch_modules(void);
+extern int init_usb(void);
+extern int bulk_endpt_init(void);
+extern void destroy_usb(void);
 
 /* host/device cotroller register offsets */
 enum {
@@ -45,33 +48,33 @@ enum {
 
 /* data transfer descriptor */
 typedef struct _dtd_t {
-	u32 dtd_next;
-	u32 dtd_token;
-	u32 buff_ptr[5];
-	u8	padding[4];
+	uint32_t dtd_next;
+	uint32_t dtd_token;
+	uint32_t buff_ptr[5];
+	uint8_t	padding[4];
 } __attribute__((packed)) dtd_t;
 
 
 /* endpoint queue head */
 typedef struct _dqh_t {
-	u32 caps;
-	u32 dtd_current;
+	uint32_t caps;
+	uint32_t dtd_current;
 
 	/* overlay area for dtd */
-	u32 dtd_next;
-	u32 dtd_token;
-	u32 buff_ptr[5];
+	uint32_t dtd_next;
+	uint32_t dtd_token;
+	uint32_t buff_ptr[5];
 
-	u32 reserved;
+	uint32_t reserved;
 
 	/* setup packet buffer */
-	u32 setup_buff[2];
+	uint32_t setup_buff[2];
 
 	/* head and tail for dtd list */
 	dtd_t *head;
 	dtd_t *tail;
-	u32 base;
-	u32 size;
+	uint32_t base;
+	uint32_t size;
 } __attribute__((packed)) dqh_t;
 
 
@@ -104,7 +107,7 @@ enum {
 
 
 typedef struct _mod_t {
-	u32 size;
+	uint32_t size;
 	void *data;
 	char name[64];
 	char args[128];
@@ -114,18 +117,19 @@ typedef struct _mod_t {
 #define MOD_MAX 8
 
 typedef struct _usb_dc_t {
-	volatile u32 *base;
+	volatile uint32_t *base;
 	dqh_t *endptqh;
-	u32	status;
-	u32 dev_addr;
+	uint32_t status;
+	uint32_t dev_addr;
 	handle_t cond;
 	handle_t lock;
 	handle_t inth;
-	u32 mods_cnt;
+	uint32_t mods_cnt;
 	mod_t mods[MOD_MAX];
-	u8 op;
+	uint8_t op;
 } usb_dc_t;
 
+extern usb_dc_t dc;
 
 /* directions */
 enum {
@@ -135,18 +139,18 @@ enum {
 
 
 typedef struct _endpt_caps_t {
-	u8	mult;
-	u8	zlt;
-	u16 max_pkt_len;
-	u8  ios;
+	uint8_t  mult;
+	uint8_t  zlt;
+	uint16_t max_pkt_len;
+	uint8_t  ios;
 } endpt_caps_t;
 
 
 typedef struct _endpt_ctrl_t {
-	u8 type;
-	u8 data_toggle;
-	u8 data_inhibit;
-	u8 stall;
+	uint8_t type;
+	uint8_t data_toggle;
+	uint8_t data_inhibit;
+	uint8_t stall;
 } endpt_ctrl_t;
 
 
@@ -191,56 +195,56 @@ enum {
 
 /* setup packet structure */
 typedef struct _setup_packet_t {
-	u8	req_type;		/* reqest type */
-	u8	req_code;		/* request code */
-	u16 val;			/* value */
-	u16 idx;			/* index */
-	u16 len;			/* length */
+	uint8_t	req_type;		/* reqest type */
+	uint8_t	req_code;		/* request code */
+	uint16_t val;			/* value */
+	uint16_t idx;			/* index */
+	uint16_t len;			/* length */
 } __attribute__((packed)) setup_packet_t;
 
 
 /*device descriptor */
 typedef struct  _dev_desc_t {
-	u8	len;			/* size of descriptor */
-	u8	desc_type;		/* descriptor type */
-	u16 bcd_usb;		/* usb specification in BCD */
-	u8	dev_class;		/* device class code (USB-IF)*/
-	u8	dev_subclass;	/* device subclass code (USB-IF)*/
-	u8	dev_prot;		/* protocol code  (USB-IF)*/
-	u8	max_pkt_sz0;	/* max packet size for endpoint0 */
-	u16 vend_id;		/* vendor id (USB-IF) */
-	u16 prod_id;		/* product id */
-	u16 bcd_dev;		/* device release number in BCD */
-	u8	man_str;		/* manufacturer string index */
-	u8	prod_str;		/* product string index */
-	u8	sn_str;			/* serial number string index */
-	u8	num_conf;		/* number of possible configurations */
+	uint8_t	len;			/* size of descriptor */
+	uint8_t	desc_type;		/* descriptor type */
+	uint16_t bcd_usb;		/* usb specification in BCD */
+	uint8_t	dev_class;		/* device class code (USB-IF)*/
+	uint8_t	dev_subclass;	/* device subclass code (USB-IF)*/
+	uint8_t	dev_prot;		/* protocol code  (USB-IF)*/
+	uint8_t	max_pkt_sz0;	/* max packet size for endpoint0 */
+	uint16_t vend_id;		/* vendor id (USB-IF) */
+	uint16_t prod_id;		/* product id */
+	uint16_t bcd_dev;		/* device release number in BCD */
+	uint8_t	man_str;		/* manufacturer string index */
+	uint8_t	prod_str;		/* product string index */
+	uint8_t	sn_str;			/* serial number string index */
+	uint8_t	num_conf;		/* number of possible configurations */
 } __attribute__((packed)) dev_desc_t;
 
 
 /* device qualifier */
 typedef struct _dev_qual_desc_t {
-	u8	len;
-	u8	desc_type;
-	u16	bcd_usb;
-	u8	dev_class;
-	u8	dev_subclass;
-	u8	dev_prot;
-	u8	max_pkt_sz0;
-	u8	num_conf;
+	uint8_t	len;
+	uint8_t	desc_type;
+	uint16_t bcd_usb;
+	uint8_t	dev_class;
+	uint8_t	dev_subclass;
+	uint8_t	dev_prot;
+	uint8_t	max_pkt_sz0;
+	uint8_t	num_conf;
 } __attribute__((packed)) dev_qual_desc_t;
 
 
 /* configuration */
 typedef struct _conf_desc_t {
-	u8	len;
-	u8	desc_type;
-	u16 total_len;		/* total bytes returned for this configuration */
-	u8	num_intf;		/* number of interfaces supported */
-	u8	conf_val;		/* value to use for SET_CONFIGURATION request */
-	u8	conf_str;		/* configuration string index */
-	u8	attr_bmp;		/* attributes bitmap */
-	u8	max_pow;		/* maximum power consumption */
+	uint8_t	len;
+	uint8_t	desc_type;
+	uint16_t total_len;		/* total bytes returned for this configuration */
+	uint8_t	num_intf;		/* number of interfaces supported */
+	uint8_t	conf_val;		/* value to use for SET_CONFIGURATION request */
+	uint8_t	conf_str;		/* configuration string index */
+	uint8_t	attr_bmp;		/* attributes bitmap */
+	uint8_t	max_pow;		/* maximum power consumption */
 } __attribute__((packed)) conf_desc_t;
 
 
@@ -250,26 +254,26 @@ typedef struct _conf_desc_t {
 
 /* interface */
 typedef struct _intf_desc_t {
-	u8	len;
-	u8	desc_type;
-	u8	intf_num;		/* number of this interface */
-	u8	alt_set;		/* value for the alternate setting */
-	u8	num_endpt;		/* number of endpoints */
-	u8	intf_class;		/* interface class code */
-	u8	intf_subclass;	/* interface subclass code */
-	u8	intf_prot;		/* interface protocol code */
-	u8	intf_str;       /* interface string index */
+	uint8_t	len;
+	uint8_t	desc_type;
+	uint8_t	intf_num;		/* number of this interface */
+	uint8_t	alt_set;		/* value for the alternate setting */
+	uint8_t	num_endpt;		/* number of endpoints */
+	uint8_t	intf_class;		/* interface class code */
+	uint8_t	intf_subclass;	/* interface subclass code */
+	uint8_t	intf_prot;		/* interface protocol code */
+	uint8_t	intf_str;       /* interface string index */
 } __attribute__((packed)) intf_desc_t;
 
 
 /* endpoint */
 typedef struct _endpt_desc_t {
-	u8	len;
-	u8	desc_type;
-	u8	endpt_addr;		/* endpoint address */
-	u8	attr_bmp;		/* attributes bitmap */
-	u16 max_pkt_sz;		/* maximum packet size */
-	u8	interval;		/* polling interval for data transfers */
+	uint8_t	len;
+	uint8_t	desc_type;
+	uint8_t	endpt_addr;		/* endpoint address */
+	uint8_t	attr_bmp;		/* attributes bitmap */
+	uint16_t max_pkt_sz;		/* maximum packet size */
+	uint8_t	interval;		/* polling interval for data transfers */
 } __attribute__((packed)) endpt_desc_t;
 
 #endif /* _USB_H_ */

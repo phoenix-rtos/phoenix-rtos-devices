@@ -8,7 +8,7 @@
 
 CROSS ?= arm-phoenix-
 
-SUBDIRS = tty/libtty tty/imx6ull-uart storage/imx6ull-flash gpio/imx6ull-gpio utils/imx6ull-nandtool dma/imx6ull-sdma spi/imx6ull-ecspi utils/imx6ull-otp usb/imx6ull-ehci usb/telit-le910
+SUBDIRS = tty/libtty tty/imx6ull-uart storage/imx6ull-flash gpio/imx6ull-gpio utils/imx6ull-nandtool dma/imx6ull-sdma spi/imx6ull-ecspi utils/imx6ull-otp usb/imx6ull-ehci usb/imx6ull-ehci usb/telit-le910
 
 MKDEP = $(CROSS)gcc -MM
 MKDEPFLAGS = $(CFLAGS)
