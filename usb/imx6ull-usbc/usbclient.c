@@ -30,6 +30,139 @@
 #define USB_SIZE 0x1000
 #define PAGE_SIZE 4096
 
+/* host/device cotroller register offsets */
+enum {
+	/* identification regs */
+	id = 0x0, hwgeneral, hwhost, hwdevice, hwtxbuf, hwrxbuf,
+
+	/* operational regs */
+	gptimer0ld	= 0x20, gptimer0ctrl, gptimer1ld, gptimer1ctrl, sbuscfg,
+
+	/* capability regs */
+	caplength = 0x40, hciversion = 0x40, hcsparams, hccparams,
+	dciversion = 0x48, dccparams,
+
+	/* operational regs cont. */
+	usbcmd = 0x50, usbsts, usbintr, frindex,
+	periodiclistbase = 0x55, deviceaddr = 0x55, asynclistaddr = 0x56,
+	endpointlistaddr = 0x56, burstsize = 0x58, txfilltunning, endptnak = 0x5E,
+	endptnaken, configflag, portsc1, otgsc = 0x69, usbmode, endptsetupstat,
+	endptprime, endptflush, endptstat, endptcomplete, endptctrl0, endptctrl1,
+	endptctrl2, endptctrl3, endptctrl4, endptctrl5, endptctrl6, endptctrl7
+};
+
+/* device controller structures */
+
+/* data transfer descriptor */
+typedef struct _dtd_t {
+	uint32_t dtd_next;
+	uint32_t dtd_token;
+	uint32_t buff_ptr[5];
+	uint8_t	padding[4];
+} __attribute__((packed)) dtd_t;
+
+
+/* endpoint queue head */
+typedef struct _dqh_t {
+	uint32_t caps;
+	uint32_t dtd_current;
+
+	/* overlay area for dtd */
+	uint32_t dtd_next;
+	uint32_t dtd_token;
+	uint32_t buff_ptr[5];
+
+	uint32_t reserved;
+
+	/* setup packet buffer */
+	uint32_t setup_buff[2];
+
+	/* head and tail for dtd list */
+	dtd_t *head;
+	dtd_t *tail;
+	uint32_t base;
+	uint32_t size;
+} __attribute__((packed)) dqh_t;
+
+
+/* dcd structures */
+
+/* dc states */
+enum {
+	DC_POWERED,
+	DC_ATTACHED,
+	DC_DEFAULT,
+	DC_ADDRESS,
+	DC_CONFIGURED
+};
+
+/* dc operation */
+enum {
+	DC_OP_NONE,
+	DC_OP_RECEIVE,
+	DC_OP_EXIT,
+	DC_OP_INIT
+};
+
+/* usb spec related stuff */
+
+typedef struct _endpt_caps_t {
+	uint8_t  mult;
+	uint8_t  zlt;
+	uint16_t max_pkt_len;
+	uint8_t  ios;
+} endpt_caps_t;
+
+
+typedef struct _endpt_ctrl_t {
+	uint8_t type;
+	uint8_t data_toggle;
+	uint8_t data_inhibit;
+	uint8_t stall;
+} endpt_ctrl_t;
+
+
+typedef struct _endpt_init_t {
+	endpt_caps_t rx_caps;
+	endpt_ctrl_t rx_ctrl;
+	endpt_caps_t tx_caps;
+	endpt_ctrl_t tx_ctrl;
+} endpt_init_t;
+
+/* reqeuest codes */
+enum {
+	REQ_GET_STS = 0,
+	REQ_CLR_FEAT,
+	REQ_SET_FEAT = 3,
+	REQ_SET_ADDR = 5,
+	REQ_GET_DESC,
+	REQ_SET_DESC,
+	REQ_GET_CONFIG,
+	REQ_SET_CONFIG,
+	REQ_GET_INTF,
+	REQ_SET_INTF,
+	REQ_SYNCH_FRAME
+};
+
+/* setup packet structure */
+typedef struct _setup_packet_t {
+	uint8_t	req_type;		/* reqest type */
+	uint8_t	req_code;		/* request code */
+	uint16_t val;			/* value */
+	uint16_t idx;			/* index */
+	uint16_t len;			/* length */
+} __attribute__((packed)) setup_packet_t;
+
+typedef struct _usb_dc_t {
+	volatile uint32_t *base;
+	dqh_t *endptqh;
+	uint32_t status;
+	uint32_t dev_addr;
+	handle_t cond;
+	handle_t lock;
+	handle_t inth;
+	uint8_t op;
+} usb_dc_t;
 
 usb_dc_t dc = { 0 };
 
@@ -59,7 +192,7 @@ static int dc_setup(setup_packet_t *setup)
 				dc.dev_addr |= 1 << 24;
 				*(dc.base + deviceaddr) = dc.dev_addr;
 				dc.op = DC_OP_INIT;
-				dtd_exec(0, pIN, 0, DIR_IN);
+				dtd_exec(0, pIN, 0, USBCLIENT_ENDPT_DIR_IN);
 			} else if (dc.status != DC_CONFIGURED)
 				dc.status = DC_DEFAULT;
 			break;
@@ -67,16 +200,16 @@ static int dc_setup(setup_packet_t *setup)
 		case REQ_SET_CONFIG:
 			if (dc.status == DC_ADDRESS) {
 				dc.status = DC_CONFIGURED;
-				dtd_exec(0, pIN, 0, DIR_IN);
+				dtd_exec(0, pIN, 0, USBCLIENT_ENDPT_DIR_IN);
 			}
 			break;
 
 		case REQ_GET_DESC:
-			if (setup->val >> 8 == DESC_DEV)
-				dtd_exec(0, pdev, sizeof(dev_desc_t), DIR_IN);
+			if (setup->val >> 8 == USBCLIENT_DESC_TYPE_DEV)
+				dtd_exec(0, pdev, sizeof(usbclient_descriptor_device_t), USBCLIENT_ENDPT_DIR_IN);
 			else
-				dtd_exec(0, pconf, setup->len, DIR_IN);
-			dtd_exec(0, pOUT, 0x40, DIR_OUT);
+				dtd_exec(0, pconf, setup->len, USBCLIENT_ENDPT_DIR_IN);
+			dtd_exec(0, pOUT, 0x40, USBCLIENT_ENDPT_DIR_OUT);
 			break;
 
 		case REQ_CLR_FEAT:
@@ -96,7 +229,7 @@ static int dc_setup(setup_packet_t *setup)
 			else
 				OUT[1] = 1;
 
-			dtd_exec(0, pOUT, setup->len, DIR_OUT);
+			dtd_exec(0, pOUT, setup->len, USBCLIENT_ENDPT_DIR_OUT);
 			break;
 
 		default:
@@ -105,15 +238,15 @@ static int dc_setup(setup_packet_t *setup)
 			else {
 				fsz = setup->val << 16;
 				fsz |= setup->idx;
-				dtd_exec(0, pOUT, setup->len, DIR_OUT);
-				dtd_exec(0, pIN, 0, DIR_IN);
-				strcpy(dc.mods[dc.mods_cnt].name, (const char *)OUT);
-				dc.mods[dc.mods_cnt].size = fsz;
+				dtd_exec(0, pOUT, setup->len, USBCLIENT_ENDPT_DIR_OUT);
+				dtd_exec(0, pIN, 0, USBCLIENT_ENDPT_DIR_IN);
+				//strcpy(dc.mods[dc.mods_cnt].name, (const char *)OUT);
+				//dc.mods[dc.mods_cnt].size = fsz;
 				OUT[0] = 0;
-				dtd_exec(1, pOUT, 0x80, DIR_OUT);
-				strcpy(dc.mods[dc.mods_cnt].args, (const char *)OUT);
+				dtd_exec(1, pOUT, 0x80, USBCLIENT_ENDPT_DIR_OUT);
+				//strcpy(dc.mods[dc.mods_cnt].args, (const char *)OUT);
 				dc.op = DC_OP_RECEIVE;
-				dc.mods_cnt++;
+				//dc.mods_cnt++;
 			}
 			break;
 	}
@@ -393,8 +526,8 @@ int endpt_init(int endpt, endpt_init_t *endpt_init)
 {
 	u32 setup = 0;
 	int res;
-	int qh_rx = endpt * 2 + DIR_OUT;
-	int qh_tx = endpt * 2 + DIR_IN;
+	int qh_rx = endpt * 2 + USBCLIENT_ENDPT_DIR_OUT;
+	int qh_tx = endpt * 2 + USBCLIENT_ENDPT_DIR_IN;
 
 	if (endpt == 0)
 		return -EINVAL;
@@ -428,167 +561,86 @@ int endpt_init(int endpt, endpt_init_t *endpt_init)
 
 
 
-static void init_desc(void *conf)
+static void init_desc(usbclient_config_t* config, void *local_conf)
 {
-	dev_desc_t *dev;
-	conf_desc_t *cfg;
-	intf_desc_t *intf;
-	endpt_desc_t *endpt;
+	usbclient_descriptor_device_t *dev;
+	usbclient_descriptor_configuration_t *cfg;
+	usbclient_descriptor_interface_t *intf;
+	usbclient_descriptor_generic_t *hid;
+	usbclient_descriptor_endpoint_t *endpt;
 
-	memset(conf, 0, 0x1000);
+	memset(local_conf, 0, 0x1000);
 
-	dev = conf;
-	cfg = conf + sizeof(dev_desc_t);
-	intf = conf + sizeof(conf_desc_t) + sizeof(dev_desc_t);
-	endpt = conf + sizeof(conf_desc_t) + sizeof(intf_desc_t) + sizeof(dev_desc_t);
+	dev = local_conf;
+	cfg = local_conf + sizeof(usbclient_descriptor_device_t);
+	intf = local_conf + sizeof(usbclient_descriptor_configuration_t) + sizeof(usbclient_descriptor_device_t);
+	hid = local_conf + sizeof(usbclient_descriptor_configuration_t) + sizeof(usbclient_descriptor_interface_t) +
+		sizeof(usbclient_descriptor_device_t);
+	endpt = local_conf + 9 + sizeof(usbclient_descriptor_configuration_t) + sizeof(usbclient_descriptor_interface_t) +
+		sizeof(usbclient_descriptor_device_t);
+
+	//dev = local_conf;
+	//cfg = dev + sizeof(usbclient_descriptor_device_t);
+	//intf = cfg + sizeof(usbclient_descriptor_configuration_t);
+	//hid = intf + sizeof(usbclient_descriptor_interface_t);
+	//endpt = hid + 9;
 
 	pdev = (((u32)va2pa(dev)) & ~0xfff) + ((u32)dev & 0xfff);
 	pconf = (((u32)va2pa(cfg)) & ~0xfff) + ((u32)cfg & 0xfff);
 
-	IN = conf + 0x500;
-	OUT = conf + 0x700;
+	IN = local_conf + 0x500;
+	OUT = local_conf + 0x700;
 
 	pIN = ((va2pa((void *)IN)) & ~0xfff) + ((u32)IN & 0xfff);
 	pOUT = ((va2pa((void *)OUT)) & ~0xfff) + ((u32)OUT & 0xfff);
 
-	dev->len = sizeof(dev_desc_t);
-	dev->desc_type = DESC_DEV;
-	dev->bcd_usb = 0x200;
-	dev->dev_class = 0xff;
-	dev->dev_subclass = 0xc0;
-	dev->dev_prot = 0xde;
-	dev->max_pkt_sz0 = 64;
-	dev->vend_id = 0x15a2;
-	dev->prod_id = 0x007d;
-	dev->bcd_dev = 0x0001;
-	dev->man_str = 0;
-	dev->prod_str = 0;
-	dev->sn_str = 0;
-	dev->num_conf = 1;
-
-	cfg->len = 9;
-	cfg->desc_type = 2;
-	cfg->total_len = 25;
-	cfg->num_intf = 1;
-	cfg->conf_val = 1;
-	cfg->conf_str = 0;
-	cfg->attr_bmp = 0xC0;
-	cfg->max_pow = 10;
-
-	intf->len = 9;
-	intf->desc_type = 4;
-	intf->intf_num = 0;
-	intf->alt_set = 0;
-	intf->num_endpt = 1;
-	intf->intf_class = 0xff;
-	intf->intf_subclass = 0xb1;
-	intf->intf_prot = 0x7e;
-	intf->intf_str = 0;
-
-	endpt->len = 7;
-	endpt->desc_type = 5;
-	endpt->endpt_addr = 0x01;
-	endpt->attr_bmp = 0x02;
-	endpt->max_pkt_sz = 512;
-	endpt->interval = 0x06;
-
+	/* Extract mandatory descriptors to mapped memory */
+	usbclient_descriptor_list_t* it = config->descriptors_head;
+	for (; it != NULL; it = it->next) {
+		/* TODO: consider more than one descriptor in array */
+		switch(it->descriptors->desc_type) {
+			case USBCLIENT_DESC_TYPE_DEV:
+				memcpy(dev, &it->descriptors[0], sizeof(usbclient_descriptor_device_t));
+				break;
+			case USBCLIENT_DESC_TYPE_CFG:
+				memcpy(cfg, &it->descriptors[0], sizeof(usbclient_descriptor_configuration_t));
+				break;
+			case USBCLIENT_DESC_TYPE_INTF:
+				memcpy(intf, &it->descriptors[0], sizeof(usbclient_descriptor_interface_t));
+				break;
+			case USBCLIENT_DESC_TYPE_ENDPT:
+				memcpy(endpt, &it->descriptors[0], sizeof(usbclient_descriptor_endpoint_t));
+				break;
+			case USBCLIENT_DESC_TYPE_HID:
+				memcpy(hid, &it->descriptors[0], 9);
+				break;
+			case USBCLIENT_DESC_TYPE_STR:
+			case USBCLIENT_DESC_TYPE_DEV_QUAL:
+			case USBCLIENT_DESC_TYPE_OTH_SPD_CFG:
+			case USBCLIENT_DESC_TYPE_INTF_PWR:
+			default:
+				/* Not implemented yet */
+				break;
+		}
+	}
 }
-
-
-//extern int dummyfs_create(oid_t *dir, const char *name, oid_t *oid, int type, int mode, oid_t *dev);
-//extern int dummyfs_link(oid_t *dir, const char *name, oid_t *oid);
-//extern int dummyfs_write(oid_t *oid, offs_t offs, char *buff, unsigned int len);
-//extern int dummyfs_lookup(oid_t *dir, const char *name, oid_t *res, oid_t *dev);
-//extern int dummyfs_setattr(oid_t *oid, int type, int attr);
-
 
 char __attribute__((aligned(8))) stack[4096];
 
-void exec_modules(void *arg)
-{
-	char path[65];
-	char *arg_tok;
-	char *argv[16] = { 0 };
-	int argc;
-	int cnt = 0;
-	int x;
+static endpt_init_t bulk_endpt;
+static void *local_conf;
 
-	oid_t toid = { 0 };
-	oid_t root = { 0 };
-	oid_t init = { 0 };
-	oid_t tmp;
 
-	memcpy(path, "/init/", 6);
-	//dummyfs_lookup(NULL, ".", &tmp, &root);
-	//dummyfs_create(&root, "init", &init, otDir, 0, NULL);
-	//dummyfs_setattr(&init, atMode, S_IFDIR | 0777);
-
-	while (cnt < dc.mods_cnt) {
-		argc = 1;
-
-		x = 0;
-		if (dc.mods[cnt].name[0] == 'X')
-			x++;
-
-		//if (dummyfs_create(&init, dc.mods[cnt].name + 1, &toid, otFile, S_IFREG, NULL) == EOK)
-		//	dummyfs_write(&toid, 0, dc.mods[cnt].data, dc.mods[cnt].size);
-
-		if (x) {
-
-			arg_tok = strtok(dc.mods[cnt].args, ",");
-
-			while (arg_tok != NULL && argc < 15){
-				argv[argc] = arg_tok;
-				arg_tok = strtok(NULL, ",");
-				argc++;
-			}
-			argv[argc] = NULL;
-
-			memcpy(&path[6], dc.mods[cnt].name + 1, strlen(dc.mods[cnt].name));
-			argv[0] = path;
-			if (vfork() == 0) {
-				if(execve(path, argv, NULL) != EOK)
-					printf("Failed to start %s\n", &path[6]);
-				endthread(); //prevent crash if execve fails
-			}
-		}
-
-		munmap(dc.mods[cnt].data, (dc.mods[dc.mods_cnt].size + 0xfff) & ~0xfff);
-		cnt++;
-	}
-	endthread();
+int bulk_endpt_init(void) {
+	return endpt_init(1, &bulk_endpt);
 }
 
-
-static endpt_init_t bulk_endpt;
-static void *conf;
-
-int init_usb(void)
+int32_t usbclient_init(usbclient_config_t* config)
 {
-    int res = 0;
-	conf = mmap(NULL, 0x1000, PROT_WRITE | PROT_READ, MAP_UNCACHED, OID_NULL, 0);
+	int res = 0;
+	local_conf = mmap(NULL, 0x1000, PROT_WRITE | PROT_READ, MAP_UNCACHED, OID_NULL, 0);
 
-	init_desc(conf);
-
-	bulk_endpt.rx_caps.mult = 0;
-	bulk_endpt.rx_caps.zlt = 1;
-	bulk_endpt.rx_caps.max_pkt_len = 512;
-	bulk_endpt.rx_caps.ios = 0;
-
-	bulk_endpt.rx_ctrl.type = ENDPT_BULK;
-	bulk_endpt.rx_ctrl.data_toggle = 1;
-	bulk_endpt.rx_ctrl.data_inhibit = 0;
-	bulk_endpt.rx_ctrl.stall = 0;
-
-	bulk_endpt.tx_caps.mult = 0;
-	bulk_endpt.tx_caps.zlt = 1;
-	bulk_endpt.tx_caps.max_pkt_len = 512;
-	bulk_endpt.tx_caps.ios = 0;
-
-	bulk_endpt.tx_ctrl.type = ENDPT_BULK;
-	bulk_endpt.tx_ctrl.data_toggle = 1;
-	bulk_endpt.tx_ctrl.data_inhibit = 0;
-	bulk_endpt.tx_ctrl.stall = 0;
+	init_desc(config, local_conf);
 
 	dc.base = mmap(NULL, USB_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, USB_ADDR);
 
@@ -628,17 +680,23 @@ int init_usb(void)
 	return EOK;
 }
 
-int bulk_endpt_init(void) {
-	return endpt_init(1, &bulk_endpt);
-}
-
-void destroy_usb(void)
+void usbclient_destroy(void)
 {
 	/* stopping device controller */
 	*(dc.base + usbintr) = 0;
 	*(dc.base + usbcmd) &= ~1;
-	munmap(conf, 0x1000);
+	munmap(local_conf, 0x1000);
 	munmap((void *)dc.base, 0x1000);
 	munmap((void *)((u32)dc.endptqh[2].head & ~0xfff), 0x1000);
 	munmap((void *)dc.endptqh, 0x1000);
+}
+
+int32_t usbclient_send_data(usbclient_endpoint_t* endpoint, const uint8_t* data, uint32_t len) {
+	int32_t result = -1;
+	return result;
+}
+
+int32_t usbclient_receive_data(usbclient_endpoint_t* endpoint, uint8_t* data, uint32_t len) {
+	int32_t result = -1;
+	return result;
 }
