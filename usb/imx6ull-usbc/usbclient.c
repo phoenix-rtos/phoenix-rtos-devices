@@ -194,12 +194,15 @@ typedef struct _usb_dc_t {
 
 usb_dc_t dc = { 0 };
 
+/* Physical addresses for USB controller */
 addr_t pdev;
 addr_t pconf;
 
 addr_t pstr_0;
 addr_t pstr_man;
 addr_t pstr_prod;
+
+addr_t phid_reports;
 
 addr_t pIN;
 addr_t pOUT;
@@ -253,6 +256,8 @@ static int dc_setup(setup_packet_t *setup)
 				} else if ((setup->val & 0xff) == 2) {
 					dtd_exec(0, pstr_prod, 28, USBCLIENT_ENDPT_DIR_IN);
 				}
+			} else if (setup->val >> 8 == USBCLIENT_DESC_TYPE_HID_REPORT) {
+				dtd_exec(0, phid_reports, 76, USBCLIENT_ENDPT_DIR_IN);
 			}
 			dtd_exec(0, pOUT, 0x40, USBCLIENT_ENDPT_DIR_OUT);
 			break;
@@ -645,8 +650,11 @@ static void init_desc(usbclient_config_t* config, void *local_conf)
 	usbclient_descriptor_generic_t *str_man;
 	usbclient_descriptor_generic_t *str_prod;
 
+	usbclient_descriptor_generic_t *hid_reports;
+
 	memset(local_conf, 0, 0x1000);
 
+	/* Virtual addresses offsets */
 	dev = local_conf;
 	cfg = dev + 1;
 	intf = cfg + 1;
@@ -655,18 +663,18 @@ static void init_desc(usbclient_config_t* config, void *local_conf)
 	str_0 = endpt + 1;
 	str_man = str_0 + 1;
 	str_prod = ((uint8_t*)str_man) + 56;
+	hid_reports = ((uint8_t*)str_prod) + 28;
 
+	/* Physical addresses offsets */
 	pdev = (((u32)va2pa(dev)) & ~0xfff) + ((u32)dev & 0xfff);
 	pconf = (((u32)va2pa(cfg)) & ~0xfff) + ((u32)cfg & 0xfff);
 
 	pstr_0 = (((u32)va2pa(str_0)) & ~0xfff) + ((u32)str_0 & 0xfff);
 	pstr_man = (((u32)va2pa(str_man)) & ~0xfff) + ((u32)str_man & 0xfff);
 	pstr_prod = (((u32)va2pa(str_prod)) & ~0xfff) + ((u32)str_prod & 0xfff);
+	phid_reports = (((u32)va2pa(hid_reports)) & ~0xfff) + ((u32)hid_reports & 0xfff);
 
-	printf("str_0: %p, pstr_0: %p\n", str_0, pstr_0);
-	printf("str_man: %p, pstr_man: %p\n", str_man, pstr_man);
-	printf("str_prod: %p, pstr_prod: %p\n", str_prod, pstr_prod);
-
+	/* Endpoints */
 	IN = local_conf + 0x500;
 	OUT = local_conf + 0x700;
 
@@ -691,7 +699,7 @@ static void init_desc(usbclient_config_t* config, void *local_conf)
 			case USBCLIENT_DESC_TYPE_ENDPT:
 				memcpy(endpt, &it->descriptors[0], sizeof(usbclient_descriptor_endpoint_t));
 				/* Initialize endpoint */
-				/* For now hardcode only one */
+				/* For now hardcode only one endpoint */
 				in_endpt.rx_caps.mult = 0;
 				in_endpt.rx_caps.zlt = 1;
 				in_endpt.rx_caps.max_pkt_len = endpt->max_pkt_sz;
@@ -714,6 +722,10 @@ static void init_desc(usbclient_config_t* config, void *local_conf)
 				break;
 			case USBCLIENT_DESC_TYPE_HID:
 				memcpy(hid, &it->descriptors[0], 9);
+				break;
+			case USBCLIENT_DESC_TYPE_HID_REPORT:
+				/* Copy only data section, because HID report descriptor is sent raw */
+				memcpy(hid_reports, &it->descriptors[0].data, it->descriptors[0].len - 2);
 				break;
 			case USBCLIENT_DESC_TYPE_STR:
 				if (string_desc_count == 0) {
