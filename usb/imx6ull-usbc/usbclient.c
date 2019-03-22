@@ -174,8 +174,9 @@ addr_t pOUT;
 u8 *IN;
 u8 *OUT;
 
-
+static endpt_init_t in_endpt;
 static int dtd_exec(int endpt, u32 paddr, u32 sz, int dir);
+int endpt_init(int endpt, endpt_init_t *endpt_init);
 
 
 static int dc_setup(setup_packet_t *setup)
@@ -184,7 +185,6 @@ static int dc_setup(setup_packet_t *setup)
 	u32 fsz;
 
 	switch (setup->req_code) {
-
 		case REQ_SET_ADDR:
 			if (setup->val) {
 				dc.status = DC_ADDRESS;
@@ -560,7 +560,6 @@ int endpt_init(int endpt, endpt_init_t *endpt_init)
 }
 
 
-
 static void init_desc(usbclient_config_t* config, void *local_conf)
 {
 	usbclient_descriptor_device_t *dev;
@@ -610,6 +609,27 @@ static void init_desc(usbclient_config_t* config, void *local_conf)
 				break;
 			case USBCLIENT_DESC_TYPE_ENDPT:
 				memcpy(endpt, &it->descriptors[0], sizeof(usbclient_descriptor_endpoint_t));
+				/* Initialize endpoint */
+				/* For now hardcode only one */
+				in_endpt.rx_caps.mult = 0;
+				in_endpt.rx_caps.zlt = 1;
+				in_endpt.rx_caps.max_pkt_len = endpt->max_pkt_sz;
+				in_endpt.rx_caps.ios = 0;
+
+				in_endpt.rx_ctrl.type = USBCLIENT_ENDPT_TYPE_INTR; /* TODO: hardcoded value, extract form  descriptor */
+				in_endpt.rx_ctrl.data_toggle = 1;
+				in_endpt.rx_ctrl.data_inhibit = 0;
+				in_endpt.rx_ctrl.stall = 0;
+
+				in_endpt.tx_caps.mult = 0;
+				in_endpt.tx_caps.zlt = 1;
+				in_endpt.tx_caps.max_pkt_len = endpt->max_pkt_sz;
+				in_endpt.tx_caps.ios = 0;
+
+				in_endpt.tx_ctrl.type = USBCLIENT_ENDPT_TYPE_INTR; /* TODO: hardcoded value, extract form  descriptor */;
+				in_endpt.tx_ctrl.data_toggle = 1;
+				in_endpt.tx_ctrl.data_inhibit = 0;
+				in_endpt.tx_ctrl.stall = 0;
 				break;
 			case USBCLIENT_DESC_TYPE_HID:
 				memcpy(hid, &it->descriptors[0], 9);
@@ -627,13 +647,7 @@ static void init_desc(usbclient_config_t* config, void *local_conf)
 
 char __attribute__((aligned(8))) stack[4096];
 
-static endpt_init_t bulk_endpt;
 static void *local_conf;
-
-
-int bulk_endpt_init(void) {
-	return endpt_init(1, &bulk_endpt);
-}
 
 int32_t usbclient_init(usbclient_config_t* config)
 {
@@ -677,6 +691,7 @@ int32_t usbclient_init(usbclient_config_t* config)
 	dc.status = DC_ATTACHED;
 	*(dc.base + usbcmd) |= 1;
 
+	endpt_init(1, &in_endpt); /* hardcode endpoint initialization */
 	return EOK;
 }
 
