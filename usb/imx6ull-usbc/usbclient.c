@@ -169,6 +169,10 @@ usb_dc_t dc = { 0 };
 addr_t pdev;
 addr_t pconf;
 
+volatile addr_t pstr_0;
+volatile addr_t pstr_man;
+volatile addr_t pstr_prod;
+
 addr_t pIN;
 addr_t pOUT;
 u8 *IN;
@@ -207,8 +211,19 @@ static int dc_setup(setup_packet_t *setup)
 		case REQ_GET_DESC:
 			if (setup->val >> 8 == USBCLIENT_DESC_TYPE_DEV)
 				dtd_exec(0, pdev, sizeof(usbclient_descriptor_device_t), USBCLIENT_ENDPT_DIR_IN);
-			else
+			else if (setup->val >> 8 == USBCLIENT_DESC_TYPE_CFG)
 				dtd_exec(0, pconf, setup->len, USBCLIENT_ENDPT_DIR_IN);
+			else if (setup->val >> 8 == USBCLIENT_DESC_TYPE_STR) {
+				if ((setup->val & 0xff) == 0) {
+					dtd_exec(0, pstr_0, sizeof(usbclient_descriptor_string_zero_t), USBCLIENT_ENDPT_DIR_IN);
+				} else if ((setup->val & 0xff) == 1) {
+					dtd_exec(0, pstr_man, 56, USBCLIENT_ENDPT_DIR_IN);
+					//dtd_exec(0, pstr_0 + 4, 56, USBCLIENT_ENDPT_DIR_IN);
+				} else if ((setup->val & 0xff) == 2) {
+					dtd_exec(0, pstr_prod, 28, USBCLIENT_ENDPT_DIR_IN);
+					//dtd_exec(0, pstr_0 + 4 + 56, 28, USBCLIENT_ENDPT_DIR_IN);
+				}
+			}
 			dtd_exec(0, pOUT, 0x40, USBCLIENT_ENDPT_DIR_OUT);
 			break;
 
@@ -568,24 +583,31 @@ static void init_desc(usbclient_config_t* config, void *local_conf)
 	usbclient_descriptor_generic_t *hid;
 	usbclient_descriptor_endpoint_t *endpt;
 
+	usbclient_descriptor_string_zero_t *str_0;
+	usbclient_descriptor_generic_t *str_man;
+	usbclient_descriptor_generic_t *str_prod;
+
 	memset(local_conf, 0, 0x1000);
 
 	dev = local_conf;
-	cfg = local_conf + sizeof(usbclient_descriptor_device_t);
-	intf = local_conf + sizeof(usbclient_descriptor_configuration_t) + sizeof(usbclient_descriptor_device_t);
-	hid = local_conf + sizeof(usbclient_descriptor_configuration_t) + sizeof(usbclient_descriptor_interface_t) +
-		sizeof(usbclient_descriptor_device_t);
-	endpt = local_conf + 9 + sizeof(usbclient_descriptor_configuration_t) + sizeof(usbclient_descriptor_interface_t) +
-		sizeof(usbclient_descriptor_device_t);
-
-	//dev = local_conf;
-	//cfg = dev + sizeof(usbclient_descriptor_device_t);
-	//intf = cfg + sizeof(usbclient_descriptor_configuration_t);
-	//hid = intf + sizeof(usbclient_descriptor_interface_t);
-	//endpt = hid + 9;
+	cfg = dev + 1;
+	intf = cfg + 1;
+	hid = intf + 1;
+	endpt = ((uint8_t*)hid) + 9;
+	str_0 = endpt + 1;
+	str_man = str_0 + 1;
+	str_prod = ((uint8_t*)str_man) + 56;
 
 	pdev = (((u32)va2pa(dev)) & ~0xfff) + ((u32)dev & 0xfff);
 	pconf = (((u32)va2pa(cfg)) & ~0xfff) + ((u32)cfg & 0xfff);
+
+	pstr_0 = (((u32)va2pa(str_0)) & ~0xfff) + ((u32)str_0 & 0xfff);
+	pstr_man = (((u32)va2pa(str_man)) & ~0xfff) + ((u32)str_man & 0xfff);
+	pstr_prod = (((u32)va2pa(str_prod)) & ~0xfff) + ((u32)str_prod & 0xfff);
+
+	printf("str_0: %p, pstr_0: %p\n", str_0, pstr_0);
+	printf("str_man: %p, pstr_man: %p\n", str_man, pstr_man);
+	printf("str_prod: %p, pstr_prod: %p\n", str_prod, pstr_prod);
 
 	IN = local_conf + 0x500;
 	OUT = local_conf + 0x700;
@@ -593,6 +615,7 @@ static void init_desc(usbclient_config_t* config, void *local_conf)
 	pIN = ((va2pa((void *)IN)) & ~0xfff) + ((u32)IN & 0xfff);
 	pOUT = ((va2pa((void *)OUT)) & ~0xfff) + ((u32)OUT & 0xfff);
 
+	uint32_t string_desc_count = 0;
 	/* Extract mandatory descriptors to mapped memory */
 	usbclient_descriptor_list_t* it = config->descriptors_head;
 	for (; it != NULL; it = it->next) {
@@ -635,6 +658,18 @@ static void init_desc(usbclient_config_t* config, void *local_conf)
 				memcpy(hid, &it->descriptors[0], 9);
 				break;
 			case USBCLIENT_DESC_TYPE_STR:
+				if (string_desc_count == 0) {
+					printf("Copy string zero\n");
+					memcpy(str_0, &it->descriptors[0], sizeof(usbclient_descriptor_string_zero_t));
+				} else if (string_desc_count == 1) {
+					printf("Copy string man (%d, 0x%x)\n", it->descriptors[0].len, it->descriptors[0].len);
+					memcpy(str_man, &it->descriptors[0], it->descriptors[0].len);
+				} else if (string_desc_count == 2) {
+					printf("Copy string prod (%d, 0x%x)\n", it->descriptors[0].len, it->descriptors[0].len);
+					memcpy(str_prod, &it->descriptors[0], it->descriptors[0].len);
+				}
+				string_desc_count++;
+				break;
 			case USBCLIENT_DESC_TYPE_DEV_QUAL:
 			case USBCLIENT_DESC_TYPE_OTH_SPD_CFG:
 			case USBCLIENT_DESC_TYPE_INTF_PWR:

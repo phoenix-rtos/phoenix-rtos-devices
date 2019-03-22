@@ -86,6 +86,13 @@ typedef struct _usbclient_descriptor_endpoint_t {
 	uint8_t	interval;		/* polling interval for data transfers */
 } __attribute__((packed)) usbclient_descriptor_endpoint_t;
 
+/* String descriptor zero */
+typedef struct _usbclient_descriptor_string_zero_t {
+	uint8_t	len;
+	uint8_t	desc_type;
+	uint16_t w_langid0;
+} __attribute__((packed)) usbclient_descriptor_string_zero_t;
+
 /* Generic descriptor
  * Used when there is no defined descriptor (e.g. HID descriptor or Report descriptor) */
 typedef struct _usbclient_descriptor_generic_t {
