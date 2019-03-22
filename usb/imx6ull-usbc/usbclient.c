@@ -30,6 +30,16 @@
 #define USB_SIZE 0x1000
 #define PAGE_SIZE 4096
 
+#define MAX_SPRINT_BUF 1024
+volatile uint8_t sprint[MAX_SPRINT_BUF];
+volatile uint8_t *sprint_buf = &sprint;
+
+#define int_printf(...) \
+do { \
+	sprint_buf[0] = 1; \
+	sprintf(sprint_buf + 1, __VA_ARGS__); \
+} while(0);
+
 /* host/device cotroller register offsets */
 enum {
 	/* identification regs */
@@ -144,6 +154,24 @@ enum {
 	REQ_SYNCH_FRAME
 };
 
+/* class reqeuest codes */
+enum {
+	CLASS_REQ_GET_REPORT = 1,
+	CLASS_REQ_GET_IDLE,
+	CLASS_REQ_GET_PROTOCOL,
+	CLASS_REQ_SET_REPORT = 9,
+	CLASS_REQ_SET_IDLE,
+	CLASS_REQ_SET_PROTOCOL
+};
+
+enum {
+	REQ_TYPE_STANDARD,
+	REQ_TYPE_CLASS,
+	REQ_TYPE_VENDOR
+};
+
+#define EXTRACT_REQ_TYPE(req_type) (((req_type) >> 5) & 0x3)
+
 /* setup packet structure */
 typedef struct _setup_packet_t {
 	uint8_t	req_type;		/* reqest type */
@@ -169,9 +197,9 @@ usb_dc_t dc = { 0 };
 addr_t pdev;
 addr_t pconf;
 
-volatile addr_t pstr_0;
-volatile addr_t pstr_man;
-volatile addr_t pstr_prod;
+addr_t pstr_0;
+addr_t pstr_man;
+addr_t pstr_prod;
 
 addr_t pIN;
 addr_t pOUT;
@@ -185,6 +213,10 @@ int endpt_init(int endpt, endpt_init_t *endpt_init);
 
 static int dc_setup(setup_packet_t *setup)
 {
+	if (EXTRACT_REQ_TYPE(setup->req_type) != REQ_TYPE_STANDARD) {
+		return EOK;
+	}
+
 	int res = EOK;
 	u32 fsz;
 
@@ -218,10 +250,8 @@ static int dc_setup(setup_packet_t *setup)
 					dtd_exec(0, pstr_0, sizeof(usbclient_descriptor_string_zero_t), USBCLIENT_ENDPT_DIR_IN);
 				} else if ((setup->val & 0xff) == 1) {
 					dtd_exec(0, pstr_man, 56, USBCLIENT_ENDPT_DIR_IN);
-					//dtd_exec(0, pstr_0 + 4, 56, USBCLIENT_ENDPT_DIR_IN);
 				} else if ((setup->val & 0xff) == 2) {
 					dtd_exec(0, pstr_prod, 28, USBCLIENT_ENDPT_DIR_IN);
-					//dtd_exec(0, pstr_0 + 4 + 56, 28, USBCLIENT_ENDPT_DIR_IN);
 				}
 			}
 			dtd_exec(0, pOUT, 0x40, USBCLIENT_ENDPT_DIR_OUT);
@@ -269,6 +299,32 @@ static int dc_setup(setup_packet_t *setup)
 	return res;
 }
 
+static int dc_class_setup(setup_packet_t *setup)
+{
+	if (EXTRACT_REQ_TYPE(setup->req_type) != REQ_TYPE_CLASS) {
+		return EOK;
+	}
+
+	int_printf("class request (0x%02x), type (0x%02x)\n", EXTRACT_REQ_TYPE(setup->req_type), setup->req_code);
+
+	int res = EOK;
+	u32 fsz;
+
+	switch (setup->req_code) {
+		case CLASS_REQ_GET_REPORT:
+		case CLASS_REQ_SET_IDLE:
+			dtd_exec(0, pIN, 0, USBCLIENT_ENDPT_DIR_IN);
+			break;
+		case CLASS_REQ_GET_IDLE:
+		case CLASS_REQ_GET_PROTOCOL:
+		case CLASS_REQ_SET_REPORT:
+		case CLASS_REQ_SET_PROTOCOL:
+		default:
+			break;
+	}
+
+	return res;
+}
 
 /* high frequency interrupts */
 static int dc_hf_intr(void)
@@ -298,6 +354,7 @@ static int dc_hf_intr(void)
 		while (*(dc.base + endptsetupstat) & 1);
 
 		dc_setup(&setup);
+		dc_class_setup(&setup);
 	}
 
 	return 1;
@@ -441,6 +498,7 @@ static int dtd_build(dtd_t *dtd, u32 paddr, u32 size)
 
 static int dtd_exec_chain(int endpt, void *vaddr, int sz, int dir)
 {
+	printf("dtd_exec_chain: start\n");
 	u32 qh, offs, shift;
 	int i, dcnt, dtdn;
 	dtd_t *prev, *current, *first;
@@ -748,5 +806,38 @@ int32_t usbclient_send_data(usbclient_endpoint_t* endpoint, const uint8_t* data,
 
 int32_t usbclient_receive_data(usbclient_endpoint_t* endpoint, uint8_t* data, uint32_t len) {
 	int32_t result = -1;
+	int modn = 0;
+	while (dc.op != DC_OP_EXIT) {
+		printf("recv: wait in condWait\n");
+		mutexLock(dc.lock);
+		while (dc.op == DC_OP_NONE)
+			condWait(dc.cond, dc.lock, 0);
+		mutexUnlock(dc.lock);
+		printf("recv: returned from condWait\n");
+
+		if (dc.op == DC_OP_RECEIVE) {
+			printf("recv: got DC_OP_RECEIVE\n");
+			/* Copy data to buffer */
+
+			//modn = dc.mods_cnt - 1;
+			//if (modn >= MOD_MAX) {
+			//	printf("dummyfs: Maximum modules number reached (%d), stopping usb...\n", MOD_MAX);
+			//	break;
+			//} else
+			//	dc.op = DC_OP_NONE;
+
+			//dc.op = DC_OP_NONE;
+			//dc.mods[modn].data = mmap(NULL, (dc.mods[modn].size + 0xfff) & ~0xfff, PROT_WRITE | PROT_READ, MAP_UNCACHED, OID_NULL, 0);
+			// Bulk receive
+			//dtd_exec_chain(1, dc.mods[modn].data, dc.mods[modn].size, USBCLIENT_ENDPT_DIR_OUT);
+			result = dtd_exec_chain(1, data, len, USBCLIENT_ENDPT_DIR_OUT);
+			break;
+		}
+		//else if (dc.op == DC_OP_INIT && bulk_endpt_init() != EOK) {
+		//	dc.op = DC_OP_NONE;
+		//	return 0;
+		//} else if (dc.op != DC_OP_EXIT)
+		//	dc.op = DC_OP_NONE;
+	}
 	return result;
 }

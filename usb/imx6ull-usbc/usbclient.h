@@ -30,7 +30,8 @@ typedef enum {
 	USBCLIENT_DESC_TYPE_DEV_QUAL,		/* device qualifier */
 	USBCLIENT_DESC_TYPE_OTH_SPD_CFG,	/* other speed configuration */
 	USBCLIENT_DESC_TYPE_INTF_PWR,		/* interface power */
-	USBCLIENT_DESC_TYPE_HID = 0x21		/* HID */
+	USBCLIENT_DESC_TYPE_HID = 0x21,		/* HID */
+	USBCLIENT_DESC_TYPE_HID_REPORT		/* HID report */
 } usbclient_descriptor_type_t;
 
 /* Device descriptor */
