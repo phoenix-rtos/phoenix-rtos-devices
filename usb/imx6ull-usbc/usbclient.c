@@ -342,7 +342,6 @@ static int dc_class_setup(setup_packet_t *setup)
 			break;
 		case CLASS_REQ_SET_REPORT:
 			dtd_exec(0, pOUT, 64 + setup->len, USBCLIENT_ENDPT_DIR_OUT); /* read data to buffer with URB struct*/
-			memcpy(read_buffer.data, (const char *)OUT, setup->len); /* copy data to buffer */
 			read_buffer.length = setup->len;
 			dc.op = DC_OP_RECEIVE; /* mark that data is ready */
 			break;
@@ -384,7 +383,6 @@ static int dc_hf_intr(void)
 
 		while (*(dc.base + endptsetupstat) & 1);
 
-		int_printf("status (0x%04x), endpt (%d), req (0x%02x), type (0x%02x)\n", status, endpt, EXTRACT_REQ_TYPE(setup.req_type), setup.req_code);
 		dc_setup(&setup);
 		dc_class_setup(&setup);
 	}
@@ -858,20 +856,18 @@ int32_t usbclient_receive_data(usbclient_endpoint_t* endpoint, uint8_t* data, ui
 	int32_t result = -1;
 	int modn = 0;
 	while (dc.op != DC_OP_EXIT) {
-		//printf("recv: wait in condWait\n");
 		mutexLock(dc.lock);
 		while (dc.op == DC_OP_NONE)
 			condWait(dc.cond, dc.lock, 0);
 		mutexUnlock(dc.lock);
-		//printf("recv: returned from condWait\n");
 
-		print_msg();
 		if (dc.op == DC_OP_RECEIVE) {
-			printf("recv: DC_OP_RECEIVE, data (0x%p), len (%d), prb_data (0x%d)  rb.data (0x%p), rb.len (%d)\n",
-					data, len, pread_buffer, read_buffer.data, read_buffer.length);
 			/* Copy data to buffer */
-			memcpy(data, read_buffer.data, read_buffer.length);
+			/* TODO: take data len into account when copying */
+			memcpy(data, (const char *)OUT, read_buffer.length); /* copy data to buffer */
 			result = read_buffer.length;
+			read_buffer.length = 0;
+			dc.op = DC_OP_NONE;
 			dtd_exec(0, pIN, 0, USBCLIENT_ENDPT_DIR_IN); /* ACK */
 			break;
 		}
