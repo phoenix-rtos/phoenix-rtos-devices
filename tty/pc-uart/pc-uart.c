@@ -240,8 +240,10 @@ static int uart_write(u8 d, size_t len, char *buff)
 
 	/* Wait for transmitter */
 	while (serial->sp != serial->se)
-		if ((err = condWait(serial->scond, serial->mutex, 0)) < 0)
+		if ((err = condWait(serial->scond, serial->mutex, 0)) < 0) {
+			mutexUnlock(serial->mutex);
 			return err;
+		}
 
 	sp = serial->sp;
 	se = serial->se;
