@@ -5,7 +5,7 @@
 # Copyright 2001, 2005-2006 Pawel Pisarczyk
 #
 
-$(PREFIX_PROG)pc-uart: $(PREFIX_O)tty/pc-uart/pc-uart.o $(PREFIX_A)libtty.a
+$(PREFIX_PROG)pc-uart: $(PREFIX_O)tty/pc-uart/pc-uart.o
 	$(LINK)
 
 all: $(PREFIX_PROG_STRIPPED)pc-uart
