@@ -40,6 +40,14 @@ do { \
 	sprintf(sprint_buf + 1, __VA_ARGS__); \
 } while(0);
 
+#define print_msg() \
+do { \
+	if (sprint_buf[0]) { \
+		printf("%s", sprint_buf + 1); \
+		sprint_buf[0] = 0; \
+	} \
+} while(0);
+
 /* host/device cotroller register offsets */
 enum {
 	/* identification regs */
@@ -209,6 +217,18 @@ addr_t pOUT;
 u8 *IN;
 u8 *OUT;
 
+//#define BUFFER_SIZE (1025 + 64)
+#define BUFFER_SIZE (0x1000)
+typedef struct {
+	uint32_t length;
+	void *data;
+} buffer_t;
+
+static buffer_t read_buffer;
+addr_t pread_buffer;
+static buffer_t write_buffer;
+addr_t pwrite_buffer;
+
 static endpt_init_t in_endpt;
 static int dtd_exec(int endpt, u32 paddr, u32 sz, int dir);
 int endpt_init(int endpt, endpt_init_t *endpt_init);
@@ -219,6 +239,7 @@ static int dc_setup(setup_packet_t *setup)
 	if (EXTRACT_REQ_TYPE(setup->req_type) != REQ_TYPE_STANDARD) {
 		return EOK;
 	}
+	//int_printf("standard request (0x%02x), type (0x%02x)\n", EXTRACT_REQ_TYPE(setup->req_type), setup->req_code);
 
 	int res = EOK;
 	u32 fsz;
@@ -310,19 +331,24 @@ static int dc_class_setup(setup_packet_t *setup)
 		return EOK;
 	}
 
-	int_printf("class request (0x%02x), type (0x%02x)\n", EXTRACT_REQ_TYPE(setup->req_type), setup->req_code);
+	//int_printf("class rq (0x%02x), type (0x%02x)\n", EXTRACT_REQ_TYPE(setup->req_type), setup->req_code);
 
 	int res = EOK;
 	u32 fsz;
 
 	switch (setup->req_code) {
-		case CLASS_REQ_GET_REPORT:
 		case CLASS_REQ_SET_IDLE:
 			dtd_exec(0, pIN, 0, USBCLIENT_ENDPT_DIR_IN);
 			break;
+		case CLASS_REQ_SET_REPORT:
+			dtd_exec(0, pOUT, 64 + setup->len, USBCLIENT_ENDPT_DIR_OUT); /* read data to buffer with URB struct*/
+			memcpy(read_buffer.data, (const char *)OUT, setup->len); /* copy data to buffer */
+			read_buffer.length = setup->len;
+			dc.op = DC_OP_RECEIVE; /* mark that data is ready */
+			break;
 		case CLASS_REQ_GET_IDLE:
 		case CLASS_REQ_GET_PROTOCOL:
-		case CLASS_REQ_SET_REPORT:
+		case CLASS_REQ_GET_REPORT:
 		case CLASS_REQ_SET_PROTOCOL:
 		default:
 			break;
@@ -358,6 +384,7 @@ static int dc_hf_intr(void)
 
 		while (*(dc.base + endptsetupstat) & 1);
 
+		int_printf("status (0x%04x), endpt (%d), req (0x%02x), type (0x%02x)\n", status, endpt, EXTRACT_REQ_TYPE(setup.req_type), setup.req_code);
 		dc_setup(&setup);
 		dc_class_setup(&setup);
 	}
@@ -656,14 +683,14 @@ static void init_desc(usbclient_config_t* config, void *local_conf)
 
 	/* Virtual addresses offsets */
 	dev = local_conf;
-	cfg = dev + 1;
-	intf = cfg + 1;
-	hid = intf + 1;
-	endpt = ((uint8_t*)hid) + 9;
-	str_0 = endpt + 1;
-	str_man = str_0 + 1;
-	str_prod = ((uint8_t*)str_man) + 56;
-	hid_reports = ((uint8_t*)str_prod) + 28;
+	cfg = (usbclient_descriptor_configuration_t*)(dev + 1);
+	intf = (usbclient_descriptor_interface_t*)(cfg + 1);
+	hid = (usbclient_descriptor_generic_t*)(intf + 1);
+	endpt = (usbclient_descriptor_endpoint_t*)(((uint8_t*)hid) + 9);
+	str_0 = (usbclient_descriptor_string_zero_t*)(endpt + 1);
+	str_man = (usbclient_descriptor_generic_t*)(str_0 + 1);
+	str_prod = (usbclient_descriptor_generic_t*)(((uint8_t*)str_man) + 56);
+	hid_reports = (usbclient_descriptor_generic_t*)(((uint8_t*)str_prod) + 28);
 
 	/* Physical addresses offsets */
 	pdev = (((u32)va2pa(dev)) & ~0xfff) + ((u32)dev & 0xfff);
@@ -729,13 +756,10 @@ static void init_desc(usbclient_config_t* config, void *local_conf)
 				break;
 			case USBCLIENT_DESC_TYPE_STR:
 				if (string_desc_count == 0) {
-					printf("Copy string zero\n");
 					memcpy(str_0, &it->descriptors[0], sizeof(usbclient_descriptor_string_zero_t));
 				} else if (string_desc_count == 1) {
-					printf("Copy string man (%d, 0x%x)\n", it->descriptors[0].len, it->descriptors[0].len);
 					memcpy(str_man, &it->descriptors[0], it->descriptors[0].len);
 				} else if (string_desc_count == 2) {
-					printf("Copy string prod (%d, 0x%x)\n", it->descriptors[0].len, it->descriptors[0].len);
 					memcpy(str_prod, &it->descriptors[0], it->descriptors[0].len);
 				}
 				string_desc_count++;
@@ -757,6 +781,12 @@ static void *local_conf;
 int32_t usbclient_init(usbclient_config_t* config)
 {
 	int res = 0;
+	/* Buffers init */
+	read_buffer.data = mmap(NULL, BUFFER_SIZE, PROT_WRITE | PROT_READ, MAP_UNCACHED, OID_NULL, 0);
+	pread_buffer = (((u32)va2pa(read_buffer.data)) & ~0xfff) + ((u32)read_buffer.data & 0xfff);
+	write_buffer.data = mmap(NULL, BUFFER_SIZE, PROT_WRITE | PROT_READ, MAP_UNCACHED, OID_NULL, 0);
+	pwrite_buffer = (((u32)va2pa(write_buffer.data)) & ~0xfff) + ((u32)write_buffer.data & 0xfff);
+
 	local_conf = mmap(NULL, 0x1000, PROT_WRITE | PROT_READ, MAP_UNCACHED, OID_NULL, 0);
 
 	init_desc(config, local_conf);
@@ -796,7 +826,13 @@ int32_t usbclient_init(usbclient_config_t* config)
 	dc.status = DC_ATTACHED;
 	*(dc.base + usbcmd) |= 1;
 
-	endpt_init(1, &in_endpt); /* hardcode endpoint initialization */
+	while (dc.op != DC_OP_EXIT) {
+		print_msg();
+		if (dc.op == DC_OP_INIT) {
+			res = endpt_init(1, &in_endpt); /* hardcode endpoint initialization */
+			return res;
+		}
+	}
 	return EOK;
 }
 
@@ -811,45 +847,34 @@ void usbclient_destroy(void)
 	munmap((void *)dc.endptqh, 0x1000);
 }
 
-int32_t usbclient_send_data(usbclient_endpoint_t* endpoint, const uint8_t* data, uint32_t len) {
+int32_t usbclient_send_data(usbclient_endpoint_t* endpoint, const uint8_t* data, uint32_t len)
+{
 	int32_t result = -1;
 	return result;
 }
 
-int32_t usbclient_receive_data(usbclient_endpoint_t* endpoint, uint8_t* data, uint32_t len) {
+int32_t usbclient_receive_data(usbclient_endpoint_t* endpoint, uint8_t* data, uint32_t len)
+{
 	int32_t result = -1;
 	int modn = 0;
 	while (dc.op != DC_OP_EXIT) {
-		printf("recv: wait in condWait\n");
+		//printf("recv: wait in condWait\n");
 		mutexLock(dc.lock);
 		while (dc.op == DC_OP_NONE)
 			condWait(dc.cond, dc.lock, 0);
 		mutexUnlock(dc.lock);
-		printf("recv: returned from condWait\n");
+		//printf("recv: returned from condWait\n");
 
+		print_msg();
 		if (dc.op == DC_OP_RECEIVE) {
-			printf("recv: got DC_OP_RECEIVE\n");
+			printf("recv: DC_OP_RECEIVE, data (0x%p), len (%d), prb_data (0x%d)  rb.data (0x%p), rb.len (%d)\n",
+					data, len, pread_buffer, read_buffer.data, read_buffer.length);
 			/* Copy data to buffer */
-
-			//modn = dc.mods_cnt - 1;
-			//if (modn >= MOD_MAX) {
-			//	printf("dummyfs: Maximum modules number reached (%d), stopping usb...\n", MOD_MAX);
-			//	break;
-			//} else
-			//	dc.op = DC_OP_NONE;
-
-			//dc.op = DC_OP_NONE;
-			//dc.mods[modn].data = mmap(NULL, (dc.mods[modn].size + 0xfff) & ~0xfff, PROT_WRITE | PROT_READ, MAP_UNCACHED, OID_NULL, 0);
-			// Bulk receive
-			//dtd_exec_chain(1, dc.mods[modn].data, dc.mods[modn].size, USBCLIENT_ENDPT_DIR_OUT);
-			result = dtd_exec_chain(1, data, len, USBCLIENT_ENDPT_DIR_OUT);
+			memcpy(data, read_buffer.data, read_buffer.length);
+			result = read_buffer.length;
+			dtd_exec(0, pIN, 0, USBCLIENT_ENDPT_DIR_IN); /* ACK */
 			break;
 		}
-		//else if (dc.op == DC_OP_INIT && bulk_endpt_init() != EOK) {
-		//	dc.op = DC_OP_NONE;
-		//	return 0;
-		//} else if (dc.op != DC_OP_EXIT)
-		//	dc.op = DC_OP_NONE;
 	}
 	return result;
 }
