@@ -282,8 +282,10 @@ int uart_readchunk(uart_t *serial, char *buff, unsigned int len, int *repfl)
 	mutexLock(serial->mutex);
 
 	while ((serial->rp == serial->rb) || (!serial->ready)) {
-		if ((err = condWait(serial->rcond, serial->mutex, 0)) < 0)
+		if ((err = condWait(serial->rcond, serial->mutex, 0)) < 0) {
+			mutexUnlock(serial->mutex);
 			return err;
+		}
 	}
 
 	if (serial->rp > serial->rb) {
@@ -334,8 +336,9 @@ static int uart_read(u8 d, size_t len, char *buff)
 
 	while ((l < len) && repfl) {
 		if ((err = uart_readchunk(serial, buff + l, min(SIZE_SERIAL_CHUNK, len), &repfl)) < 0) {
-			mutexUnlock(serial->mutex);
-			return err;
+			if (!l)
+				return err;
+			break;
 		}
 		l += err;
 	}
