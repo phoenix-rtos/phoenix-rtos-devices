@@ -48,6 +48,8 @@ do { \
 	} \
 } while(0);
 
+#define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
+
 /* host/device cotroller register offsets */
 enum {
 	/* identification regs */
@@ -239,7 +241,6 @@ static int dc_setup(setup_packet_t *setup)
 	if (EXTRACT_REQ_TYPE(setup->req_type) != REQ_TYPE_STANDARD) {
 		return EOK;
 	}
-	//int_printf("standard request (0x%02x), type (0x%02x)\n", EXTRACT_REQ_TYPE(setup->req_type), setup->req_code);
 
 	int res = EOK;
 	u32 fsz;
@@ -270,12 +271,13 @@ static int dc_setup(setup_packet_t *setup)
 			else if (setup->val >> 8 == USBCLIENT_DESC_TYPE_CFG)
 				dtd_exec(0, pconf, setup->len, USBCLIENT_ENDPT_DIR_IN);
 			else if (setup->val >> 8 == USBCLIENT_DESC_TYPE_STR) {
+
 				if ((setup->val & 0xff) == 0) {
-					dtd_exec(0, pstr_0, sizeof(usbclient_descriptor_string_zero_t), USBCLIENT_ENDPT_DIR_IN);
+					dtd_exec(0, pstr_0, MIN(sizeof(usbclient_descriptor_string_zero_t), setup->len), USBCLIENT_ENDPT_DIR_IN);
 				} else if ((setup->val & 0xff) == 1) {
-					dtd_exec(0, pstr_man, 56, USBCLIENT_ENDPT_DIR_IN);
+					dtd_exec(0, pstr_man, MIN(56, setup->len), USBCLIENT_ENDPT_DIR_IN);
 				} else if ((setup->val & 0xff) == 2) {
-					dtd_exec(0, pstr_prod, 28, USBCLIENT_ENDPT_DIR_IN);
+					dtd_exec(0, pstr_prod, MIN(28, setup->len), USBCLIENT_ENDPT_DIR_IN);
 				}
 			} else if (setup->val >> 8 == USBCLIENT_DESC_TYPE_HID_REPORT) {
 				dtd_exec(0, phid_reports, 76, USBCLIENT_ENDPT_DIR_IN);
@@ -330,8 +332,6 @@ static int dc_class_setup(setup_packet_t *setup)
 	if (EXTRACT_REQ_TYPE(setup->req_type) != REQ_TYPE_CLASS) {
 		return EOK;
 	}
-
-	//int_printf("class rq (0x%02x), type (0x%02x)\n", EXTRACT_REQ_TYPE(setup->req_type), setup->req_code);
 
 	int res = EOK;
 	u32 fsz;
