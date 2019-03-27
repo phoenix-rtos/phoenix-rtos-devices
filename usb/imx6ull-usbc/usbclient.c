@@ -663,7 +663,7 @@ int endpt_init(int endpt, endpt_init_t *endpt_init)
 }
 
 
-static void init_desc(usbclient_conf_t *config, void *local_conf)
+static void init_desc(usbclient_conf_t *conf, void *local_conf)
 {
 	usbclient_desc_dev_t *dev;
 	usbclient_desc_conf_t *cfg;
@@ -708,7 +708,7 @@ static void init_desc(usbclient_conf_t *config, void *local_conf)
 
 	uint32_t string_desc_count = 0;
 	/* Extract mandatory descriptors to mapped memory */
-	usbclient_desc_list_t* it = config->descriptors_head;
+	usbclient_desc_list_t* it = conf->descriptors_head;
 	for (; it != NULL; it = it->next) {
 		/* TODO: consider more than one descriptor in array */
 		switch(it->descriptors->desc_type) {
@@ -776,7 +776,7 @@ char __attribute__((aligned(8))) stack[4096];
 
 static void *local_conf;
 
-int usbclient_init(usbclient_conf_t *config)
+int usbclient_init(usbclient_conf_t *conf)
 {
 	int res = 0;
 	/* Buffers init */
@@ -787,7 +787,7 @@ int usbclient_init(usbclient_conf_t *config)
 
 	local_conf = mmap(NULL, 0x1000, PROT_WRITE | PROT_READ, MAP_UNCACHED, OID_NULL, 0);
 
-	init_desc(config, local_conf);
+	init_desc(conf, local_conf);
 
 	dc.base = mmap(NULL, USB_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, USB_ADDR);
 
@@ -846,13 +846,13 @@ int usbclient_destroy(void)
 	return 0;
 }
 
-int usbclient_send_data(usbclient_ep_t *endpoint, const void *data, uint32_t len)
+int usbclient_send_data(usbclient_ep_t *ep, const void *data, uint32_t len)
 {
 	int32_t result = -1;
 	return result;
 }
 
-int usbclient_receive_data(usbclient_ep_t *endpoint, void *data, uint32_t len)
+int usbclient_receive_data(usbclient_ep_t *ep, void *data, uint32_t len)
 {
 	int32_t result = -1;
 	int modn = 0;
