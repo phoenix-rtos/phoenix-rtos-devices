@@ -846,13 +846,13 @@ int usbclient_destroy(void)
 	return 0;
 }
 
-int usbclient_send_data(usbclient_ep_t *ep, const void *data, uint32_t len)
+int usbclient_send_data(usbclient_ep_t *ep, const void *data, unsigned int len)
 {
 	int32_t result = -1;
 	return result;
 }
 
-int usbclient_receive_data(usbclient_ep_t *ep, void *data, uint32_t len)
+int usbclient_receive_data(usbclient_ep_t *ep, void *data, unsigned int len)
 {
 	int32_t result = -1;
 	int modn = 0;
