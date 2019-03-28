@@ -4,7 +4,6 @@
  * usbclient - usb device controller driver
  *
  * Copyright 2019 Phoenix Systems
- * Copyright 2007 Pawel Pisarczyk
  * Author: Kamil Amanowicz, Bartosz Ciesla
  *
  * This file is part of Phoenix-RTOS.

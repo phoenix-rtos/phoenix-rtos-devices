@@ -3,9 +3,8 @@
  *
  * dummyfs - usb device controller driver
  *
- * Copyright 2018 Phoenix Systems
- * Copyright 2007 Pawel Pisarczyk
- * Author: Kamil Amanowicz
+ * Copyright 2019 Phoenix Systems
+ * Author: Kamil Amanowicz, Bartosz Ciesla
  *
  * This file is part of Phoenix-RTOS.
  *
