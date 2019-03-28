@@ -152,8 +152,8 @@ extern int usbclient_init(usbclient_conf_t *conf);
 extern int usbclient_destroy(void);
 
 /* Send data on given endpoint - blocking */
-extern int usbclient_send_data(usbclient_ep_t *ep, const void *data, unsigned int len);
+extern int usbclient_send(usbclient_ep_t *ep, const void *data, unsigned int len);
 /* Receive data from given endpoint - blocking */
-extern int usbclient_receive_data(usbclient_ep_t *ep, void *data, unsigned int len);
+extern int usbclient_receive(usbclient_ep_t *ep, void *data, unsigned int len);
 
 #endif /* _USBCLIENT_H_ */
