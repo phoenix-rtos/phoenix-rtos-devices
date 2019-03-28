@@ -32,7 +32,7 @@
 
 #define MAX_SPRINT_BUF 1024
 volatile uint8_t sprint[MAX_SPRINT_BUF];
-volatile uint8_t *sprint_buf = &sprint;
+volatile uint8_t *sprint_buf = (volatile uint8_t *)&sprint;
 
 #define int_printf(...) \
 do { \
@@ -334,7 +334,6 @@ static int dc_class_setup(setup_packet_t *setup)
 	}
 
 	int res = EOK;
-	u32 fsz;
 
 	switch (setup->req_code) {
 		case CLASS_REQ_SET_IDLE:
@@ -523,72 +522,6 @@ static int dtd_build(dtd_t *dtd, u32 paddr, u32 size)
 	dtd->buff_ptr[0] = paddr;
 
 	return EOK;
-}
-
-
-static int dtd_exec_chain(int endpt, void *vaddr, int sz, int dir)
-{
-	printf("dtd_exec_chain: start\n");
-	u32 qh, offs, shift;
-	int i, dcnt, dtdn;
-	dtd_t *prev, *current, *first;
-	int size = sz;
-
-again:
-	prev = NULL;
-	dcnt = 1;
-	dtdn = 0;
-
-	first = dtd_get(endpt, dir);
-	current = first;
-
-	while (sz > 0 && dtdn < 64) {
-
-		if (prev != NULL) {
-			dcnt++;
-			current = dtd_get(endpt, dir);
-			prev->dtd_next = ((va2pa(current)) & ~0xfff) + ((u32)current & 0xffe);
-		}
-
-		memset(current, 0, sizeof(dtd_t));
-		current->dtd_token = (sz < 0x4000 ? sz : 0x4000) << 16;
-		current->dtd_token |= 1 << 7;
-
-		i = 0;
-
-		while (i < 4 && sz > 0) {
-			current->buff_ptr[i] = ((va2pa((void *)vaddr)) & ~0xfff) + ((addr_t)vaddr & 0xfff);
-			vaddr = (void *)((addr_t)vaddr & ~0xfff) + 0x1000;
-			i++;
-			sz -= 0x1000;
-		}
-
-		prev = current;
-		dtdn++;
-	}
-
-	current->dtd_next = 1;
-
-	qh = (endpt << 1)  + dir;
-	offs = (u32)first & (((dc.endptqh[qh].size) * sizeof(dtd_t)) - 1);
-	shift = endpt + ((qh & 1) ? 16 : 0);
-
-	dc.endptqh[qh].dtd_next = (dc.endptqh[qh].base + offs) & ~1;
-	dc.endptqh[qh].dtd_token &= ~(1 << 6);
-	dc.endptqh[qh].dtd_token &= ~(1 << 7);
-
-	/* prime the endpoint and wait for it to prime */
-	while ((*(dc.base + endptprime) & (1 << shift)));
-	*(dc.base + endptprime) |= 1 << shift;
-	while (!(*(dc.base + endptprime) & (1 << shift)) && (*(dc.base + endptstat) & (1 << shift)));
-
-	while ((current->dtd_token >> 7) & 1) usleep(10000);
-	dc.endptqh[qh].head = dc.endptqh[qh].tail;
-
-	if (sz > 0)
-		goto again;
-
-	return size;
 }
 
 
@@ -855,7 +788,6 @@ int usbclient_send_data(usbclient_ep_t *ep, const void *data, unsigned int len)
 int usbclient_receive_data(usbclient_ep_t *ep, void *data, unsigned int len)
 {
 	int32_t result = -1;
-	int modn = 0;
 	while (dc.op != DC_OP_EXIT) {
 		mutexLock(dc.lock);
 		while (dc.op == DC_OP_NONE)
