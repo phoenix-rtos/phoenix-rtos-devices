@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * dummyfs - usb device controller driver
+ * usbclient - usb device controller driver
  *
  * Copyright 2019 Phoenix Systems
  * Author: Kamil Amanowicz, Bartosz Ciesla
