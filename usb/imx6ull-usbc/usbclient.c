@@ -483,9 +483,9 @@ static int dtd_init(int endpt)
 	dc.endptqh[qh].head = buff;
 	dc.endptqh[qh].tail = buff;
 	dc.endptqh[++qh].base = (((u32)va2pa(buff)) & ~0xfff) + (64 * sizeof(dqh_t));
-	dc.endptqh[++qh].size = 0x40;
-	dc.endptqh[++qh].head = buff + 64;
-	dc.endptqh[++qh].tail = buff + 64;
+	dc.endptqh[qh].size = 0x40;
+	dc.endptqh[qh].head = buff + 64;
+	dc.endptqh[qh].tail = buff + 64;
 
 	return EOK;
 }
