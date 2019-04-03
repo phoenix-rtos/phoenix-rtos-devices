@@ -5,8 +5,8 @@
  *
  * telit-le910.c
  *
- * Copyright 2018 Phoenix Systems
- * Author: Kamil Amanowicz
+ * Copyright 2019 Phoenix Systems
+ * Author: Jan Sikorski, Kamil Amanowicz
  *
  * This file is part of Phoenix-RTOS.
  *

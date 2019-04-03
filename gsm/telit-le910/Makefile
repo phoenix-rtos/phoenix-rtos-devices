@@ -6,6 +6,9 @@
 
 $(PREFIX_PROG)telit-le910: $(PREFIX_O)gsm/telit-le910/telit-le910.o $(PREFIX_A)libusb.a
 	$(LINK)
-	
-all: $(PREFIX_PROG_STRIPPED)telit-le910
+
+$(PREFIX_PROG)sms: $(PREFIX_O)gsm/telit-le910/sms.o
+	$(LINK)
+
+all: $(PREFIX_PROG_STRIPPED)telit-le910 $(PREFIX_PROG_STRIPPED)sms
 
