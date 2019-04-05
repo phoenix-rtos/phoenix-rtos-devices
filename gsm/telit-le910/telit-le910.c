@@ -123,8 +123,7 @@ static struct {
 
 	request_t *queue;
 
-	ttyacm_t data[2];
-//	ttyacm_t monitor;
+	ttyacm_t data[3];
 } telit_common;
 
 
@@ -234,7 +233,7 @@ static void telit_msgThread(void *arg)
 			break;
 
 		case mtWrite:
-			if (id < 0 || id > 1) {
+			if (id < 0 || id > sizeof(telit_common.data) / sizeof(telit_common.data[0])) {
 				msg->o.io.err = -EINVAL;
 				break;
 			}
@@ -245,7 +244,7 @@ static void telit_msgThread(void *arg)
 			break;
 
 		case mtRead:
-			if (id < 0 || id > 1) {
+			if (id < 0 || id > sizeof(telit_common.data) / sizeof(telit_common.data[0])) {
 				msg->o.io.err = -EINVAL;
 				break;
 			}
@@ -267,7 +266,7 @@ static void telit_msgThread(void *arg)
 			break;
 
 		case mtGetAttr:
-			if (id < 0 || id > 1) {
+			if (id < 0 || id > sizeof(telit_common.data) / sizeof(telit_common.data[0])) {
 				msg->o.attr.val = -EINVAL;
 				break;
 			}
@@ -536,6 +535,22 @@ int telit_init_all(void)
 	if ((err = open_ttyacm(&telit_common.data[1], bulk_interface, intr_interface, inep, outep, intrep)) < 0)
 		return err;
 
+
+	telit_init_interface(8);
+
+	inep = find_endpoint(0x8a);
+	outep = find_endpoint(0xa);
+	intrep = find_endpoint(0x89);
+
+	if (inep == NULL || outep == NULL || intrep == NULL)
+		return -1;
+
+	intr_interface = 8;
+	bulk_interface = 9;
+
+	if ((err = open_ttyacm(&telit_common.data[2], bulk_interface, intr_interface, inep, outep, intrep)) < 0)
+		return err;
+
 	return EOK;
 }
 
@@ -554,6 +569,9 @@ int _telit_reset(void)
 	telit_common.data[1].intr_buffers = 0;
 	telit_common.data[1].read_buffers = 0;
 
+	telit_common.data[2].intr_buffers = 0;
+	telit_common.data[2].read_buffers = 0;
+
 	if (telit_init_device() < 0)
 		return -1;
 
@@ -563,9 +581,13 @@ int _telit_reset(void)
 	telit_common.resetting = 0;
 	telit_common.data[0].error = 0;
 	telit_common.data[1].error = 0;
+	telit_common.data[2].error = 0;
+
 	TRACE_FAIL("reset done");
+
 	condBroadcast(telit_common.data[0].cond);
 	condBroadcast(telit_common.data[1].cond);
+	condBroadcast(telit_common.data[2].cond);
 
 	return EOK;
 }
@@ -686,8 +708,10 @@ void event_cb(usb_event_t *usb_event, char *data, size_t size)
 
 		if (usb_event->completion.pipe < 4)
 			acm = telit_common.data;
-		else
+		else if (usb_event->completion.pipe < 7)
 			acm = telit_common.data + 1;
+		else
+			acm = telit_common.data + 2;
 
 		/* Ignore aborted transfers */
 		if (usb_event->completion.error > 0)
@@ -836,13 +860,14 @@ int telit_init(void)
 	ret |= condCreate(&telit_common.cond);
 	ret |= mutexCreate(&telit_common.lock);
 	ret |= portCreate(&telit_common.data[0].port);
-	telit_common.data[1].port = telit_common.data[0].port;
+	telit_common.data[2].port = telit_common.data[1].port = telit_common.data[0].port;
 	telit_common.state = TELIT_STATE_REMOVED;
 
 	telit_common.resetting = 0;
 
 	telit_common.data[0].id = 0;
 	telit_common.data[1].id = 1;
+	telit_common.data[2].id = 2;
 	return ret;
 }
 
@@ -912,15 +937,21 @@ int main(int argc, char **argv)
 
 	beginthread(telit_resubmitThread, 4, malloc(0x4000), 0x4000, telit_common.data);
 	beginthread(telit_resubmitThread, 4, malloc(0x4000), 0x4000, telit_common.data + 1);
+	beginthread(telit_resubmitThread, 4, malloc(0x4000), 0x4000, telit_common.data + 2);
 
 	beginthread(telit_readThread, 4, malloc(0x4000), 0x4000, telit_common.data);
 	beginthread(telit_readThread, 4, malloc(0x4000), 0x4000, telit_common.data + 1);
+	beginthread(telit_readThread, 4, malloc(0x4000), 0x4000, telit_common.data + 2);
 
 	oid = (oid_t){ .port = telit_common.data[0].port, .id = 0 };
 	create_dev(&oid, "/dev/ttyacm0");
 
 	oid = (oid_t){ .port = telit_common.data[0].port, .id = 1 };
 	create_dev(&oid, "/dev/ttyacm1");
+
+	oid = (oid_t){ .port = telit_common.data[0].port, .id = 2 };
+	create_dev(&oid, "/dev/ttyacm2");
+
 	TRACE("/dev/modem ready\n");
 
 	telit_msgThread((void *)telit_common.data[0].port);
