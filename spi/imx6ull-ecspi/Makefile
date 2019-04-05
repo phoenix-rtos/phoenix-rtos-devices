@@ -7,4 +7,7 @@
 $(PREFIX_A)libecspi.a: $(PREFIX_O)spi/imx6ull-ecspi/libecspi.o
 	$(ARCH)
 
-all: $(PREFIX_A)libecspi.a
+$(PREFIX_H)ecspi.h: spi/imx6ull-ecspi/ecspi.h
+	$(HEADER)
+
+all: $(PREFIX_A)libecspi.a $(PREFIX_H)ecspi.h
