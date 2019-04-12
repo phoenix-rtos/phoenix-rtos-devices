@@ -389,6 +389,11 @@ static void flashsrv_devThread(void *arg)
 			flashsrv_syncAll();
 			break;
 
+		case mtOpen:
+		case mtClose:
+			msg.o.io.err = EOK;
+			break;
+
 		default:
 			msg.o.io.err = -EINVAL;
 			break;
