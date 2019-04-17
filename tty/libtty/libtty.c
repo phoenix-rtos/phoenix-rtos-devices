@@ -260,6 +260,8 @@ ssize_t libtty_write(libtty_common_t *tty, const char *data, size_t size, unsign
 		return -EPIPE;
 	else if (fifo_is_full(tty->tx_fifo) && (mode & O_NONBLOCK))
 		return -EWOULDBLOCK;
+	else if (size == 0)
+		return 0;
 
 	mutexLock(tty->tx_mutex);
 
