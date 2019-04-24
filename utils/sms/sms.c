@@ -164,8 +164,8 @@ int main(int argc, char **argv)
 	if (argc < 2)
 		usage(argv[0]);
 
-	if ((fd = open("/dev/ttyacm1", O_RDWR)) < 0) {
-		fprintf(stderr, "error opening /dev/ttyacm1\n");
+	if ((fd = open("/dev/ttyacm2", O_RDWR)) < 0) {
+		fprintf(stderr, "error opening /dev/ttyacm2\n");
 		exit(EXIT_FAILURE);
 	}
 
