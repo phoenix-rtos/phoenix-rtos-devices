@@ -12,13 +12,14 @@
 
 #include "posix/utils.h"
 #include "posix/idtree.h"
+#include "flashsrv.h"
 #include "flashdrv.h"
 
 #include "../../../phoenix-rtos-filesystems/jffs2/libjffs2.h"
 
 #define PAGES_PER_BLOCK 64
 #define FLASH_PAGE_SIZE 0x1000
-
+#define ROOT_ID -1
 
 #define LOG_ERROR(str, ...) do { fprintf(stderr, __FILE__  ":%d error: " str "\n", __LINE__, ##__VA_ARGS__); } while (0)
 #define TRACE(str, ...) do { if (0) fprintf(stderr, __FILE__  ":%d trace: " str "\n", __LINE__, ##__VA_ARGS__); } while (0)
@@ -212,7 +213,7 @@ static int flashsrv_erase(size_t start, size_t end)
 	flashdrv_dma_t *dma;
 	int i, err;
 
-	TRACE("erase %d %d", start, end);
+	TRACE("Erase %d %d", start, end);
 
 	if (start % (FLASH_PAGE_SIZE * PAGES_PER_BLOCK))
 		return -EINVAL;
@@ -241,14 +242,48 @@ static int flashsrv_erase(size_t start, size_t end)
 }
 
 
-static int flashsrv_write(size_t start, char *data, size_t size)
+static int flashsrv_partoff(id_t id, size_t start, size_t size, size_t *partoff)
+{
+	flashsrv_partition_t *p = NULL;
+	id_t rootID = ROOT_ID;
+
+	if (id == rootID) {
+		*partoff = 0;
+		return EOK;
+	}
+
+	mutexLock(flashsrv_common.lock);
+	p = lib_treeof(flashsrv_partition_t, node, idtree_find(&flashsrv_common.partitions, id));
+	mutexUnlock(flashsrv_common.lock);
+
+	if (p == NULL)
+		return -EINVAL;
+
+	TRACE("Partition: size %d, start %d", p->size, p->start);
+	if ((start + size) > (p->size * PAGES_PER_BLOCK * FLASH_PAGE_SIZE))
+		return -EINVAL;
+
+	*partoff = p->start * FLASH_PAGE_SIZE * PAGES_PER_BLOCK;
+
+	return EOK;
+}
+
+
+static int flashsrv_write(id_t id, size_t start, char *data, size_t size)
 {
 	flashdrv_dma_t *dma;
 	int i, err;
 	char *databuf;
 	void *metabuf;
+	size_t partoff = 0;
+	size_t writesz = size;
 
-	TRACE("write %d %d %p", start, size, data);
+	if (flashsrv_partoff(id, start, size, &partoff) < 0)
+		return -EINVAL;
+
+	start += partoff;
+
+	TRACE("Write off: %d, size: %d, ptr: %p", start, size, data);
 
 	if (size & (FLASH_PAGE_SIZE - 1))
 		return -EINVAL;
@@ -276,23 +311,31 @@ static int flashsrv_write(size_t start, char *data, size_t size)
 
 		size -= FLASH_PAGE_SIZE;
 	}
+	writesz -= size;
 
-	return err;
+	return writesz;
 }
 
 
-static int flashsrv_read(size_t offset, char *data, size_t size)
+static int flashsrv_read(id_t id, size_t offset, char *data, size_t size)
 {
 	flashdrv_dma_t *dma;
 	char *databuf;
 	size_t rp, totalBytes = 0;
+	size_t partoff = 0;
 	int pageoffs, writesz, err = EOK;
 
 	dma = flashsrv_common.dma;
 	databuf = flashsrv_common.databuf;
 
+	if (flashsrv_partoff(id, offset, size, &partoff) < 0)
+		return -EINVAL;
+
+	offset += partoff;
 	rp = (offset & ~(FLASH_PAGE_SIZE - 1)) / FLASH_PAGE_SIZE;
 	pageoffs = offset & (FLASH_PAGE_SIZE - 1);
+
+	TRACE("Read off: %d, size: %d.", offset, size);
 
 	while (size) {
 		err = flashdrv_read(dma, rp, databuf, flashsrv_common.metabuf);
@@ -313,7 +356,7 @@ static int flashsrv_read(size_t offset, char *data, size_t size)
 		pageoffs = 0;
 	}
 
-	return err;
+	return totalBytes;
 }
 
 
@@ -363,6 +406,45 @@ static void flashsrv_syncAll(void)
 }
 
 
+static int flashsrv_devErase(flash_i_devctl_t *idevctl)
+{
+	size_t partoff = 0;
+	size_t start = 0;
+	size_t end = 0;
+
+	if (flashsrv_partoff(idevctl->erase.oid.id, idevctl->erase.offset, idevctl->erase.size, &partoff) < 0)
+		return -EINVAL;
+
+	start = idevctl->erase.offset + partoff;
+	end = start + idevctl->erase.size;
+
+	start /= FLASH_PAGE_SIZE * PAGES_PER_BLOCK;
+
+	if (end % (FLASH_PAGE_SIZE * PAGES_PER_BLOCK)) {
+		end /= FLASH_PAGE_SIZE * PAGES_PER_BLOCK;
+		++end;
+	}
+	else {
+		end /= FLASH_PAGE_SIZE * PAGES_PER_BLOCK;
+	}
+
+	return flashsrv_erase(start * FLASH_PAGE_SIZE * PAGES_PER_BLOCK, end * FLASH_PAGE_SIZE * PAGES_PER_BLOCK);
+}
+
+
+static void flashsrv_devCtrl(flash_i_devctl_t *idevctl, flash_o_devctl_t *odevctl)
+{
+	switch (idevctl->type) {
+	case flash_erase:
+		odevctl->err = flashsrv_devErase(idevctl);
+		break;
+
+	default:
+		odevctl->err = -EINVAL;
+		break;
+	}
+}
+
 static void flashsrv_devThread(void *arg)
 {
 	msg_t msg;
@@ -374,11 +456,13 @@ static void flashsrv_devThread(void *arg)
 
 		switch (msg.type) {
 		case mtRead:
-			msg.o.io.err = flashsrv_read(msg.i.io.offs, msg.i.data, msg.i.size);
+			TRACE("DEV read - id: %llu, size: %d, off: %llu ", msg.i.io.oid.id, msg.o.size, msg.i.io.offs);
+			msg.o.io.err = flashsrv_read(msg.i.io.oid.id, msg.i.io.offs, msg.o.data, msg.o.size);
 			break;
 
 		case mtWrite:
-			msg.o.io.err = flashsrv_write(msg.i.io.offs, msg.i.data, msg.i.size ? msg.i.size : msg.i.io.len);
+			TRACE("DEV write - id: %llu, size: %d, off: %llu", msg.i.io.oid.id, msg.i.size, msg.i.io.offs);
+			msg.o.io.err = flashsrv_write(msg.i.io.oid.id, msg.i.io.offs, msg.i.data, msg.i.size ? msg.i.size : msg.i.io.len);
 			break;
 
 		case mtMount:
@@ -389,12 +473,17 @@ static void flashsrv_devThread(void *arg)
 			flashsrv_syncAll();
 			break;
 
+		case mtDevCtl:
+			flashsrv_devCtrl((flash_i_devctl_t *)msg.i.raw, (flash_o_devctl_t *)msg.o.raw);
+			break;
+
 		case mtOpen:
 		case mtClose:
 			msg.o.io.err = EOK;
 			break;
 
 		default:
+			TRACE("DEV error");
 			msg.o.io.err = -EINVAL;
 			break;
 		}
@@ -543,7 +632,7 @@ int main(int argc, char **argv)
 	}
 
 	oid.port = port;
-	oid.id = -1;
+	oid.id = ROOT_ID;
 
 	if (rootfs == NULL) {
 		create_dev(&oid, "/dev/flashsrv");
