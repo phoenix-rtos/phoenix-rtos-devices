@@ -171,6 +171,37 @@ u8 uart_get(oid_t *oid)
 }
 
 
+static void uart_ioctl(unsigned port, msg_t *msg)
+{
+	uart_t *serial;
+	unsigned long request;
+	const void *in_data, *out_data;
+	pid_t pid;
+	int err;
+	oid_t oid;
+	u8 d;
+
+	oid.port = port;
+
+	in_data = ioctl_unpack(msg, &request, &oid.id);
+	out_data = NULL;
+	pid = ioctl_getSenderPid(msg);
+
+	d = uart_get(&oid);
+
+	if (d >= sizeof(uarts) / sizeof(uart_t *))
+		err = -EINVAL;
+
+	else if ((serial = uarts[d]) == NULL)
+		err = -ENOENT;
+
+	else
+		err = libtty_ioctl(&serial->tty, pid, request, in_data, &out_data);
+
+	ioctl_setResponse(msg, request, err, out_data);
+}
+
+
 int _uart_init(void *base, unsigned int irq, unsigned int speed, uart_t **uart)
 {
 	libtty_callbacks_t callbacks;
@@ -263,6 +294,9 @@ void poolthr(void *arg)
 				msg.o.attr.val = uart_poll_status(uart_get(&msg.i.io.oid));
 			else
 				msg.o.attr.val = -EINVAL;
+			break;
+		case mtDevCtl:
+			uart_ioctl(port, &msg);
 			break;
 		}
 
