@@ -308,9 +308,9 @@ static int flashsrv_write(id_t id, size_t start, char *data, size_t size)
 			LOG_ERROR("write error %d", err);
 			break;
 		}
-
 		size -= FLASH_PAGE_SIZE;
 	}
+
 	writesz -= size;
 
 	return writesz;
@@ -445,6 +445,28 @@ static void flashsrv_devCtrl(flash_i_devctl_t *idevctl, flash_o_devctl_t *odevct
 	}
 }
 
+
+static int flashsrv_fileAttr(int type, id_t id)
+{
+	flashsrv_partition_t *p = NULL;
+
+	mutexLock(flashsrv_common.lock);
+	p = lib_treeof(flashsrv_partition_t, node, idtree_find(&flashsrv_common.partitions, id));
+	mutexUnlock(flashsrv_common.lock);
+
+	if (p == NULL)
+		return -1;
+
+	switch (type) {
+	case atSize:
+		return p->size * FLASH_PAGE_SIZE * PAGES_PER_BLOCK;
+
+	default:
+		return -1;
+	}
+}
+
+
 static void flashsrv_devThread(void *arg)
 {
 	msg_t msg;
@@ -454,6 +476,7 @@ static void flashsrv_devThread(void *arg)
 		if (msgRecv(port, &msg, &rid) < 0)
 			continue;
 
+		TRACE("Type: %d", msg.type);
 		switch (msg.type) {
 		case mtRead:
 			TRACE("DEV read - id: %llu, size: %d, off: %llu ", msg.i.io.oid.id, msg.o.size, msg.i.io.offs);
@@ -477,7 +500,13 @@ static void flashsrv_devThread(void *arg)
 			flashsrv_devCtrl((flash_i_devctl_t *)msg.i.raw, (flash_o_devctl_t *)msg.o.raw);
 			break;
 
+		case mtGetAttr:
+			TRACE("DEV mtgetAttr");
+			msg.o.attr.val = flashsrv_fileAttr(msg.i.attr.type, msg.i.attr.oid.id);
+			break;
+
 		case mtOpen:
+			TRACE("DEV mtOpen");
 		case mtClose:
 			msg.o.io.err = EOK;
 			break;
