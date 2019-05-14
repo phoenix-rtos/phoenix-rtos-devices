@@ -24,6 +24,7 @@
 #include <sys/msg.h>
 #include <sys/mman.h>
 
+#include <libtty.h>
 #include "pc-uart.h"
 
 
@@ -31,25 +32,12 @@ typedef struct {
 	void *base;
 	unsigned int irq;
 
-	u8 rbuff[256];
-	unsigned int rbuffsz;
-	unsigned int rb;
-	unsigned int rp;
-	handle_t rcond;
-
-	u8 sbuff[256];
-	unsigned int sbuffsz;
-	unsigned int sp;
-	unsigned int se;
-	handle_t scond;
-
 	handle_t mutex;
 	handle_t intcond;
 	handle_t inth;
 
 	oid_t oid;
-
-	int ready;
+	libtty_common_t tty;
 } uart_t;
 
 
@@ -68,9 +56,24 @@ static int uart_interrupt(unsigned int n, void *arg)
 }
 
 
-//int uart_send(char c)
-//{
+static void set_baudrate(void* _uart, speed_t baud)
+{
+	/* TODO */
+}
 
+
+static void set_cflag(void *_uart, tcflag_t *cflag)
+{
+	/* TODO */
+}
+
+
+static void signal_txready(void *_uart)
+{
+	uart_t *uart = _uart;
+	outb(uart->base + REG_IMR, IMR_THRE | IMR_DR);
+	condSignal(uart->intcond);
+}
 
 
 void uart_intthr(void *arg)
@@ -79,9 +82,8 @@ void uart_intthr(void *arg)
 	u8 iir, lsr;
 	char c;
 
+	mutexLock(uart->mutex);
 	for (;;) {
-		mutexLock(uart->mutex);
-
 		while ((iir = inb(uart->base + REG_IIR)) & IIR_IRQPEND)
 			condWait(uart->intcond, uart->mutex, 0);
 
@@ -89,143 +91,32 @@ void uart_intthr(void *arg)
 		if ((iir & IIR_DR) == IIR_DR) {
 			while (1) {
 				lsr = inb(uart->base + REG_LSR);
-				/*if (lsr & 2)
-					over = 1;*/
 
 				if ((lsr & 1) == 0)
 					break;
 
 				c = inb(uart->base + REG_RBR);
-				if (c == 0xd) {
-					c = 0xa;
-					uart->ready = 1;
-				}
-
-				if (c ==  0x7f) {
-					c = 0;
-
-					if (uart->rp != uart->rb) {
-						uart->rp = ((uart->rp - 1) % uart->rbuffsz);
-						c = '\b';
-					}
-
-				}
-				else {
-					uart->rbuff[uart->rp] = c;
-					uart->rp = ((uart->rp + 1) % uart->rbuffsz);
-
-					if (uart->rp == uart->rb)
-						uart->rb = ((uart->rb + 1) % uart->rbuffsz);
-				}
-
-				/* echo */
-				if (c) {
-					if (uart->se == uart->sp)
-						outb(uart->base, c);
-					else
-						uart->sbuff[uart->se] = c;
-					uart->se = ((uart->se + 1) % uart->sbuffsz);
-
-					if (c == '\b') {
-						if (uart->se == uart->sp)
-							outb(uart->base, ' ');
-						else
-							uart->sbuff[uart->se] = ' ';
-						uart->se = ((uart->se + 1) % uart->sbuffsz);
-
-						if (uart->se == uart->sp)
-							outb(uart->base, '\b');
-						else
-							uart->sbuff[uart->se] = '\b';
-						uart->se = ((uart->se + 1) % uart->sbuffsz);
-					}
-				}
+				libtty_putchar(&uart->tty, c, NULL);
 			}
-
-			condSignal(uart->rcond);
 		}
 
 		/* Transmit */
 		if ((iir & IIR_THRE) == IIR_THRE) {
-			uart->sp = ((uart->sp + 1) % uart->sbuffsz);
-			if (uart->sp != uart->se) {
-//printf("T %c\n", uart->sbuff[uart->sp]);
-//for (;;);
-				outb(uart->base + REG_THR, uart->sbuff[uart->sp]);
+			if (libtty_txready(&uart->tty)) {
+				c = libtty_getchar(&uart->tty, NULL);
+				outb(uart->base + REG_THR, c);
 			}
-			else
-				condSignal(uart->scond);
+			else {
+				outb(uart->base + REG_IMR, IMR_DR);
+			}
 		}
-
-		mutexUnlock(uart->mutex);
 	}
-
-	return;
 }
 
 
-
-
-
-#if 0
-static int uart16550_poll(file_t *file, ktime_t timeout, int op)
-{
-	vnode_t *vnode = file->vnode;
-	uart16550_t *serial;
-	int err = EOK;
-
-	if (MINOR(vnode->dev) >= SIZE_SERIALS)
-		return -EINVAL;
-
-	if ((serial = serials[MINOR(vnode->dev)]) == NULL)
-		return -EINVAL;
-
-	/* Wait for data or for timeout */
-	if (op == POLL_READ) {
-		proc_spinlockSet(&serial->spinlock);
-
-		while (serial->rp == serial->rb) {
-			err = proc_threadCondWait(&serial->waitq, &serial->spinlock, timeout);
-			if (err == -ETIME)
-				break;
-			else if (err < 0)
-				return err;
-		}
-		proc_spinlockClear(&serial->spinlock, sopGetCycles);
-	}
-
-	/* Wait for end of sending process or for timeout */
-	else if (op == POLL_WRITE) {
-		proc_spinlockSet(&serial->spinlock);
-
-		while ((serial->se + 1) % serial->sbuffsz == serial->sp) {
-			err = proc_threadCondWait(&serial->waitq, &serial->spinlock, timeout);
-			if (err == -ETIME)
-				break;
-			else if (err < 0)
-				return err;
-		}
-		proc_spinlockClear(&serial->spinlock, sopGetCycles);
-	}
-
-	return err;
-}
-
-
-static int uart16550_ioctl(file_t *file, unsigned int cmd, unsigned long arg)
-{
-	return -ENOENT;
-}
-#endif
-
-
-static int uart_write(u8 d, size_t len, char *buff)
+static int uart_write(u8 d, size_t len, char *buff, int mode)
 {
 	uart_t *serial;
-	unsigned int sp, se;
-	unsigned int l;
-	unsigned int cnt;
-	int err;
 
 	if (d >= sizeof(uarts) / sizeof(uart_t *))
 		return -EINVAL;
@@ -236,96 +127,13 @@ static int uart_write(u8 d, size_t len, char *buff)
 	if (!len)
 		return 0;
 
-	mutexLock(serial->mutex);
-
-	/* Wait for transmitter */
-	while (serial->sp != serial->se)
-		if ((err = condWait(serial->scond, serial->mutex, 0)) < 0) {
-			mutexUnlock(serial->mutex);
-			return err;
-		}
-
-	sp = serial->sp;
-	se = serial->se;
-
-	if (sp > se)
-		l = min(sp - se, len);
-	else
-		l = min(serial->sbuffsz - se, len);
-
-	/* It is assumed that send buffer and its size are constant after initialization */
-	memcpy(&serial->sbuff[se], buff, l);
-
-	cnt = l;
-	if ((len > l) && (se >= sp)) {
-		memcpy(serial->sbuff, buff + l, min(len - l, sp));
-		cnt += min(len - l, sp);
-	}
-
-	/* Initialize sending process */
-
-	serial->se = ((se + cnt) % serial->sbuffsz);
-
-	if (se == sp)
-		outb(serial->base, serial->sbuff[sp]);
-
-	mutexUnlock(serial->mutex);
-
-	return cnt;
+	return libtty_write(&serial->tty, buff, len, mode);
 }
 
 
-int uart_readchunk(uart_t *serial, char *buff, unsigned int len, int *repfl)
-{
-	unsigned int l, cnt, bytes;
-	int err;
-
-	/* Wait for data or for timeout */
-	mutexLock(serial->mutex);
-
-	while ((serial->rp == serial->rb) || (!serial->ready)) {
-		if ((err = condWait(serial->rcond, serial->mutex, 0)) < 0) {
-			mutexUnlock(serial->mutex);
-			return err;
-		}
-	}
-
-	if (serial->rp > serial->rb) {
-		l = min(serial->rp - serial->rb, len);
-		bytes = serial->rp - serial->rb;
-	}
-	else {
-		l = min(serial->rbuffsz - serial->rb, len);
-		bytes = serial->rbuffsz - serial->rb + serial->rp;
-	}
-
-	memcpy(buff, &serial->rbuff[serial->rb], l);
-
-	cnt = l;
-	if ((len > l) && (serial->rp < serial->rb)) {
-		memcpy(buff + l, &serial->rbuff[0], min(len - l, serial->rp));
-		cnt += min(len - l, serial->rp);
-	}
-	serial->rb = ((serial->rb + cnt) % serial->rbuffsz);
-
-	/* Suggest repetition */
-	if (bytes - cnt)
-		*repfl = 1;
-	else
-		*repfl = 0;
-
-
-	mutexUnlock(serial->mutex);
-
-	return cnt;
-}
-
-
-static int uart_read(u8 d, size_t len, char *buff)
+static int uart_read(u8 d, size_t len, char *buff, int mode)
 {
 	uart_t *serial;
-	unsigned int l;
-	int err, repfl;
 
 	if (d >= sizeof(uarts) / sizeof(uart_t *))
 		return -EINVAL;
@@ -333,29 +141,13 @@ static int uart_read(u8 d, size_t len, char *buff)
 	if ((serial = uarts[d]) == NULL)
 		return -ENOENT;
 
-	l = 0;
-	repfl = 1;
-
-	while ((l < len) && repfl) {
-		if ((err = uart_readchunk(serial, buff + l, min(SIZE_SERIAL_CHUNK, len), &repfl)) < 0) {
-			if (!l)
-				return err;
-			break;
-		}
-		l += err;
-	}
-
-	if (repfl == 0)
-		serial->ready = 0;
-
-	return l;
+	return libtty_read(&serial->tty, buff, len, mode);
 }
 
 
 static int uart_poll_status(u8 d)
 {
 	uart_t *serial;
-	int revents = 0;
 
 	if (d >= sizeof(uarts) / sizeof(uart_t *))
 		return POLLNVAL;
@@ -363,14 +155,7 @@ static int uart_poll_status(u8 d)
 	if ((serial = uarts[d]) == NULL)
 		return POLLNVAL;
 
-	mutexLock(serial->mutex);
-	if ((serial->rp != serial->rb) && serial->ready)
-		revents |= POLLIN|POLLRDNORM;
-	if (serial->sp == serial->se)
-		revents |= POLLOUT|POLLWRNORM;
-	mutexUnlock(serial->mutex);
-
-	return revents;
+	return libtty_poll_status(&serial->tty);
 }
 
 
@@ -386,8 +171,41 @@ u8 uart_get(oid_t *oid)
 }
 
 
+static void uart_ioctl(unsigned port, msg_t *msg)
+{
+	uart_t *serial;
+	unsigned long request;
+	const void *in_data, *out_data;
+	pid_t pid;
+	int err;
+	oid_t oid;
+	u8 d;
+
+	oid.port = port;
+
+	in_data = ioctl_unpack(msg, &request, &oid.id);
+	out_data = NULL;
+	pid = ioctl_getSenderPid(msg);
+
+	d = uart_get(&oid);
+
+	if (d >= sizeof(uarts) / sizeof(uart_t *))
+		err = -EINVAL;
+
+	else if ((serial = uarts[d]) == NULL)
+		err = -ENOENT;
+
+	else
+		err = libtty_ioctl(&serial->tty, pid, request, in_data, &out_data);
+
+	ioctl_setResponse(msg, request, err, out_data);
+}
+
+
 int _uart_init(void *base, unsigned int irq, unsigned int speed, uart_t **uart)
 {
+	libtty_callbacks_t callbacks;
+
 	/* Test if device exist */
 	if (inb(base + REG_IIR) == 0xff)
 		return -ENOENT;
@@ -400,17 +218,15 @@ int _uart_init(void *base, unsigned int irq, unsigned int speed, uart_t **uart)
 
 	memset((*uart), 0, sizeof(uart_t));
 
+	callbacks.arg = *uart;
+	callbacks.set_baudrate = set_baudrate;
+	callbacks.set_cflag = set_cflag;
+	callbacks.signal_txready = signal_txready;
+
+	libtty_init(&(*uart)->tty, &callbacks, SIZE_PAGE);
+
 	(*uart)->base = base;
 	(*uart)->irq = irq;
-
-	(*uart)->rbuffsz = sizeof((*uart)->rbuff);
-	(*uart)->rb = (*uart)->rp = 0;
-
-	(*uart)->ready = 0;
-
-	(*uart)->sbuffsz = sizeof((*uart)->sbuff);
-	(*uart)->sp = (unsigned int)-1;
-	(*uart)->se = 0;
 
 	condCreate(&(*uart)->intcond);
 	mutexCreate(&(*uart)->mutex);
@@ -418,19 +234,16 @@ int _uart_init(void *base, unsigned int irq, unsigned int speed, uart_t **uart)
 	interrupt(irq, uart_interrupt, (*uart), (*uart)->intcond, &(*uart)->inth);
 
 	u8 *stack;
-	stack = (u8 *)malloc(4096);
+	stack = (u8 *)malloc(2 * 4096);
 
 //stack = mmap((void *)0, 4096 * 2, 0, 0, NULL, 0);
 //stack += 0x10;
-
-	condCreate(&(*uart)->rcond);
-	condCreate(&(*uart)->scond);
 
 //printf("user stack=%p\n", stack);
 
 //for (;;);
 
-	beginthread(uart_intthr, 1, stack, 4096, (void *)*uart);
+	beginthread(uart_intthr, 1, stack, 2 * 4096, (void *)*uart);
 
 //for (;;);
 
@@ -449,7 +262,7 @@ int _uart_init(void *base, unsigned int irq, unsigned int speed, uart_t **uart)
 	outb(base + REG_MCR, MCR_OUT2);
 
 	/* Set interrupt mask */
-	outb(base + REG_IMR, IMR_THRE | IMR_DR);
+	outb(base + REG_IMR, IMR_DR);
 
 	return EOK;
 }
@@ -469,10 +282,10 @@ void poolthr(void *arg)
 		case mtOpen:
 			break;
 		case mtWrite:
-			msg.o.io.err = uart_write(uart_get(&msg.i.io.oid), msg.i.size, msg.i.data);
+			msg.o.io.err = uart_write(uart_get(&msg.i.io.oid), msg.i.size, msg.i.data, msg.i.io.mode);
 			break;
 		case mtRead:
-			msg.o.io.err = uart_read(uart_get(&msg.i.io.oid), msg.o.size, msg.o.data);
+			msg.o.io.err = uart_read(uart_get(&msg.i.io.oid), msg.o.size, msg.o.data, msg.i.io.mode);
 			break;
 		case mtClose:
 			break;
@@ -481,6 +294,9 @@ void poolthr(void *arg)
 				msg.o.attr.val = uart_poll_status(uart_get(&msg.i.io.oid));
 			else
 				msg.o.attr.val = -EINVAL;
+			break;
+		case mtDevCtl:
+			uart_ioctl(port, &msg);
 			break;
 		}
 
