@@ -57,7 +57,7 @@ typedef struct {
 
 
 struct {
-	char poolStacks[1][4 * 4096] __attribute__((aligned(8)));
+	char poolStacks[4][4 * 4096] __attribute__((aligned(8)));
 
 	rbtree_t filesystems;
 	idtree_t partitions;
