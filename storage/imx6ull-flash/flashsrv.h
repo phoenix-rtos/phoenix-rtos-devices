@@ -14,7 +14,7 @@
 #ifndef _IMX6ULL_FLASHSRV_H_
 #define _IMX6ULL_FLASHSRV_H_
 
-enum { flash_erase = 0 };
+enum { flashsrv_devctl_erase = 0 };
 
 typedef struct {
 	int type;

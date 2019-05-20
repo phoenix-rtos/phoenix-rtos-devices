@@ -29,6 +29,8 @@
 #include "bcb.h"
 #include "test.h"
 
+#include "../../storage/imx6ull-flash/flashsrv.h"
+
 #define PAGES_PER_BLOCK 64
 #define FLASH_PAGE_SIZE 0x1000
 
@@ -409,12 +411,17 @@ void print_help(void)
 static int send_nandErase(unsigned port, unsigned start, unsigned end)
 {
 	msg_t msg = { 0 };
+	flash_i_devctl_t *devctl;
 	int err;
 
-	msg.type = mtWrite;
+	devctl = (flash_i_devctl_t *)&msg.i.raw;
 
-	msg.i.io.offs = start * PAGES_PER_BLOCK * SIZE_PAGE;
-	msg.i.io.len = (end - start) * PAGES_PER_BLOCK * SIZE_PAGE;
+	msg.type = mtDevCtl;
+	devctl->type = flashsrv_devctl_erase;
+	devctl->erase.offset = start * PAGES_PER_BLOCK	* SIZE_PAGE;
+	devctl->erase.size = (end - start) * PAGES_PER_BLOCK * SIZE_PAGE;
+	devctl->erase.oid.id = -1;
+	devctl->erase.oid.port = port;
 
 	err = msgSend(port, &msg);
 
@@ -432,6 +439,8 @@ static int send_nandFlash(unsigned port, unsigned offset, unsigned end, void *da
 
 	msg.type = mtWrite;
 
+	msg.i.io.oid.id = -1;
+	msg.i.io.oid.port = port;
 	msg.i.io.offs = offset * SIZE_PAGE;
 
 	msg.i.data = data;

@@ -435,7 +435,7 @@ static int flashsrv_devErase(flash_i_devctl_t *idevctl)
 static void flashsrv_devCtrl(flash_i_devctl_t *idevctl, flash_o_devctl_t *odevctl)
 {
 	switch (idevctl->type) {
-	case flash_erase:
+	case flashsrv_devctl_erase:
 		odevctl->err = flashsrv_devErase(idevctl);
 		break;
 
