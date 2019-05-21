@@ -419,6 +419,10 @@ static int send_nandErase(unsigned port, unsigned start, unsigned end)
 	msg.type = mtDevCtl;
 	devctl->type = flashsrv_devctl_erase;
 	devctl->erase.offset = start * PAGES_PER_BLOCK	* SIZE_PAGE;
+
+	if (start > end)
+		return -EINVAL;
+
 	devctl->erase.size = (end - start) * PAGES_PER_BLOCK * SIZE_PAGE;
 	devctl->erase.oid.id = -1;
 	devctl->erase.oid.port = port;
