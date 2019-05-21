@@ -20,6 +20,7 @@
 #define PAGES_PER_BLOCK 64
 #define FLASH_PAGE_SIZE 0x1000
 #define ROOT_ID -1
+#define ERASE_BLOCK_SIZE (FLASH_PAGE_SIZE * PAGES_PER_BLOCK)
 
 #define LOG_ERROR(str, ...) do { fprintf(stderr, __FILE__  ":%d error: " str "\n", __LINE__, ##__VA_ARGS__); } while (0)
 #define TRACE(str, ...) do { if (0) fprintf(stderr, __FILE__  ":%d trace: " str "\n", __LINE__, ##__VA_ARGS__); } while (0)
@@ -418,17 +419,10 @@ static int flashsrv_devErase(flash_i_devctl_t *idevctl)
 	start = idevctl->erase.offset + partoff;
 	end = start + idevctl->erase.size;
 
-	start /= FLASH_PAGE_SIZE * PAGES_PER_BLOCK;
+	if (end % ERASE_BLOCK_SIZE || start % ERASE_BLOCK_SIZE)
+		return -EINVAL;
 
-	if (end % (FLASH_PAGE_SIZE * PAGES_PER_BLOCK)) {
-		end /= FLASH_PAGE_SIZE * PAGES_PER_BLOCK;
-		++end;
-	}
-	else {
-		end /= FLASH_PAGE_SIZE * PAGES_PER_BLOCK;
-	}
-
-	return flashsrv_erase(start * FLASH_PAGE_SIZE * PAGES_PER_BLOCK, end * FLASH_PAGE_SIZE * PAGES_PER_BLOCK);
+	return flashsrv_erase(start, end);
 }
 
 
