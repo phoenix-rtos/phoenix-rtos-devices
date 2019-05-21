@@ -1,0 +1,10 @@
+#
+# Makefile for Phoenix-RTOS 3 device drivers
+#
+# iMX RT drivers
+#
+# Copyright 2019 Phoenix Systems
+#
+
+include tty/libtty/Makefile
+include multi/imxrt-multi/Makefile
