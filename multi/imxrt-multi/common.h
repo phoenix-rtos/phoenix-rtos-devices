@@ -24,10 +24,6 @@
 extern unsigned int multi_port;
 
 
-/* IDs of special files OIDs */
-enum { id_uart1 = 1, id_uart2, id_uart3, id_uart4, id_uart5, id_uart6, id_uart7, id_uart8 };
-
-
 static inline void common_dataBarrier(void)
 {
 	__asm__ volatile ("dmb");

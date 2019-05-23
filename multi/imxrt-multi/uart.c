@@ -241,7 +241,9 @@ int uart_handleMsg(msg_t *msg, int dev)
 	int err;
 	uart_t *uart;
 
-	if (dev > 8 || !uartConfig[dev])
+	dev -= id_uart1;
+
+	if (dev > 7 || !uartConfig[dev])
 		return -EINVAL;
 
 	uart = &uart_common.uarts[uartPos[dev]];

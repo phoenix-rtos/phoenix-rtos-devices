@@ -39,8 +39,45 @@ struct {
 } common;
 
 
-static void handleMsg(msg_t *msg)
+static void dispatchMsg(msg_t *msg)
 {
+	id_t id;
+
+	switch (msg->type) {
+		case mtRead:
+		case mtWrite:
+			id = msg->i.io.oid.id;
+			break;
+
+		case mtGetAttr:
+		case mtSetAttr:
+			id = msg->i.attr.oid.id;
+			break;
+
+		case mtDevCtl:
+			uart_handleMsg(msg, UART_CONSOLE - UART1 + id_uart1);
+			return;
+
+		default:
+			return;
+	}
+
+	switch (id) {
+		case id_console:
+			uart_handleMsg(msg, UART_CONSOLE - UART1 + id_uart1);
+			break;
+
+		case id_uart1:
+		case id_uart2:
+		case id_uart3:
+		case id_uart4:
+		case id_uart5:
+		case id_uart6:
+		case id_uart7:
+		case id_uart8:
+			uart_handleMsg(msg, id);
+			break;
+	}
 }
 
 
@@ -136,30 +173,31 @@ static void thread(void *arg)
 			;
 
 		switch (msg.type) {
+			case mtRead:
+			case mtWrite:
+			case mtGetAttr:
+			case mtSetAttr:
+			case mtDevCtl:
+				dispatchMsg(&msg);
+				break;
+
 			case mtOpen:
 			case mtClose:
 				msg.o.io.err = EOK;
 				break;
 
-			case mtRead:
-			case mtWrite:
-				uart_handleMsg(&msg, uart1);
-				break;
-
-			case mtDevCtl:
-				handleMsg(&msg);
-				break;
-
 			case mtCreate:
-				msg.o.create.err = -EINVAL;
+				msg.o.create.err = -ENOSYS;
 				break;
 
+			case mtTruncate:
+			case mtDestroy:
 			case mtLookup:
-				msg.o.lookup.err = -EINVAL;
-				break;
-
+			case mtLink:
+			case mtUnlink:
+			case mtReaddir:
 			default:
-				msg.o.io.err = -EINVAL;
+				msg.o.io.err = -ENOSYS;
 				break;
 		}
 
