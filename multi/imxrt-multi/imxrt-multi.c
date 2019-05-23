@@ -17,9 +17,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <unistd.h> /* For usleep */
+#include <sys/stat.h>
 #include <sys/threads.h>
+#include <sys/file.h>
 #include <sys/msg.h>
 #include <sys/pwman.h>
+#include <sys/debug.h>
 
 #include "common.h"
 
@@ -32,13 +36,93 @@
 
 struct {
 	char stack[THREADS_NO - 1][STACKSZ] __attribute__ ((aligned(8)));
-
-	unsigned int port;
 } common;
 
 
 static void handleMsg(msg_t *msg)
 {
+}
+
+
+static int mkFile(oid_t *dir, id_t id, char *name)
+{
+	msg_t msg;
+
+	msg.type = mtCreate;
+	msg.i.create.dir = *dir;
+	msg.i.create.type = otDev;
+	msg.i.create.mode = 0;
+	msg.i.create.dev.port = multi_port;
+	msg.i.create.dev.id = id;
+	msg.i.data = name;
+	msg.i.size = strlen(name) + 1;
+	msg.o.data = NULL;
+	msg.o.size = 0;
+
+	if (msgSend(dir->port, &msg) < 0 || msg.o.create.err != EOK)
+		return - 1;
+
+	return 0;
+}
+
+
+static int createSpecialFiles(void)
+{
+	int err;
+	oid_t dir;
+
+	while (lookup("/", NULL, &dir) < 0)
+		usleep(100000);
+
+	err = mkdir("/dev", 0);
+
+	if (err < 0 && err != -EEXIST)
+		return -1;
+
+	if (lookup("/dev", NULL, &dir) < 0)
+		return -1;
+
+#if UART1
+	if (mkFile(&dir, id_uart1, "uart1") < 0)
+		return -1;
+#endif
+
+#if UART2
+	if (mkFile(&dir, id_uart2, "uart2") < 0)
+		return -1;
+#endif
+
+#if UART3
+	if (mkFile(&dir, id_uart3, "uart3") < 0)
+		return -1;
+#endif
+
+#if UART4
+	if (mkFile(&dir, id_uart4, "uart4") < 0)
+		return -1;
+#endif
+
+#if UART5
+	if (mkFile(&dir, id_uart5, "uart5") < 0)
+		return -1;
+#endif
+
+#if UART6
+	if (mkFile(&dir, id_uart6, "uart6") < 0)
+		return -1;
+#endif
+
+#if UART7
+	if (mkFile(&dir, id_uart7, "uart7") < 0)
+		return -1;
+#endif
+
+#if UART8
+	if (mkFile(&dir, id_uart8, "uart8") < 0)
+		return -1;
+#endif
+
+	return 0;
 }
 
 
@@ -48,7 +132,7 @@ static void thread(void *arg)
 	unsigned int rid;
 
 	while (1) {
-		while (msgRecv(common.port, &msg, &rid) < 0)
+		while (msgRecv(multi_port, &msg, &rid) < 0)
 			;
 
 		switch (msg.type) {
@@ -79,7 +163,7 @@ static void thread(void *arg)
 				break;
 		}
 
-		msgRespond(common.port, &msg, rid);
+		msgRespond(multi_port, &msg, rid);
 	}
 }
 
@@ -87,20 +171,18 @@ static void thread(void *arg)
 int main(void)
 {
 	int i;
-	oid_t oid;
+
+	portCreate(&multi_port);
 
 	uart_init();
-
-	portCreate(&common.port);
-	portRegister(common.port, "/multi", &oid);
 
 	for (i = 0; i < THREADS_NO - 1; ++i)
 		beginthread(thread, THREADS_PRIORITY, common.stack[i], STACKSZ, (void *)i);
 
-while (1) {
-	char c = getc(stdin);
-	putc(c, stdout);
-}
+	if (createSpecialFiles() < 0) {
+		printf("imxrt-multi: createSpecialFiles failed\n");
+		return -1;
+	}
 
 	thread((void *)i);
 

@@ -15,6 +15,9 @@
 #include "common.h"
 
 
+unsigned int multi_port;
+
+
 int common_setClock(int dev, unsigned int state)
 {
 	platformctl_t pctl;
