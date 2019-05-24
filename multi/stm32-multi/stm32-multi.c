@@ -32,6 +32,7 @@
 #include "rtc.h"
 #include "uart.h"
 #include "spi.h"
+#include "exti.h"
 
 #define THREADS_NO 4
 #define THREADS_PRIORITY 2
@@ -138,6 +139,14 @@ static void handleMsg(msg_t *msg)
 			err = spi_configure(imsg->spi_def.spi, imsg->spi_def.mode, imsg->spi_def.bdiv, imsg->spi_def.enable);
 			break;
 
+		case exti_def:
+			err = exti_configure(imsg->exti_def.line, imsg->exti_def.mode, imsg->exti_def.edge);
+			break;
+
+		case exti_map:
+			err = syscfg_mapexti(imsg->exti_map.line, imsg->exti_map.port);
+			break;
+
 		default:
 			err = -EINVAL;
 	}
@@ -205,6 +214,7 @@ int main(void)
 	flash_init();
 	uart_init();
 	spi_init();
+	exti_init();
 
 	portCreate(&common.port);
 	portRegister(common.port, "/multi", &oid);

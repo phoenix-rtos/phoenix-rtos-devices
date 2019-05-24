@@ -14,9 +14,12 @@
 #ifndef _STM32_MULTI_H_
 #define _STM32_MULTI_H_
 
+#include <sys/interrupt.h>
+
+
 enum { adc_get = 0, rtc_setcal, rtc_get, rtc_set, lcd_get, lcd_set, i2c_get,
 	i2c_set, gpio_def, gpio_get, gpio_set, uart_def, uart_get, uart_set,
-	flash_get, flash_set, spi_get, spi_set, spi_rw, spi_def };
+	flash_get, flash_set, spi_get, spi_set, spi_rw, spi_def, exti_def, exti_map };
 
 /* RTC */
 
@@ -178,6 +181,28 @@ typedef struct {
 } spidef_t;
 
 
+/* EXTI */
+
+
+enum { exti_irq = 0, exti_event, exti_irqevent, exti_disabled };
+
+
+enum { exti_rising = 0, exti_falling, exti_risingfalling };
+
+
+typedef struct {
+	unsigned int line;
+	unsigned char mode;
+	unsigned char edge;
+} extidef_t;
+
+
+typedef struct {
+	unsigned int line;
+	int port;
+} extimap_t;
+
+
 /* MULTI */
 
 
@@ -198,6 +223,8 @@ typedef struct {
 		gpioset_t gpio_set;
 		spirw_t spi_rw;
 		spidef_t spi_def;
+		extidef_t exti_def;
+		extimap_t exti_map;
 		unsigned int flash_addr;
 	};
 } __attribute__((packed)) multi_i_t;
