@@ -125,6 +125,7 @@ typedef enum {
 
 /* Endpoint configuration */
 typedef struct _usbclient_ep_t {
+	u8 id;
 	usbclient_ep_type_t type;
 	usbclient_ep_dir_t direction; /* ignored for control endpoint */
 } usbclient_ep_t;
