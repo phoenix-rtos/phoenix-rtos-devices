@@ -34,6 +34,41 @@ enum { imr = 0, emr, rtsr, ftsr, swier, pr };
 enum { memrmp = 0, pmc, exticr1, exticr2, exticr3, exticr4 };
 
 
+static int exti0_handler(unsigned int n, void *arg)
+{
+	*(exti_common.base + pr) |= 0x1;
+	return -1;
+}
+
+
+static int exti1_handler(unsigned int n, void *arg)
+{
+	*(exti_common.base + pr) |= 0x2;
+	return -1;
+}
+
+
+static int exti2_handler(unsigned int n, void *arg)
+{
+	*(exti_common.base + pr) |= 0x4;
+	return -1;
+}
+
+
+static int exti3_handler(unsigned int n, void *arg)
+{
+	*(exti_common.base + pr) |= 0x8;
+	return -1;
+}
+
+
+static int exti4_handler(unsigned int n, void *arg)
+{
+	*(exti_common.base + pr) |= 0x10;
+	return -1;
+}
+
+
 static void _exti_setMode(unsigned int line, unsigned char mode)
 {
 	unsigned int tmp;
@@ -110,6 +145,12 @@ int exti_init(void)
 	exti_common.syscfg = (void *)0x40010000;
 
 	mutexCreate(&exti_common.lock);
+
+	interrupt(exti0_irq, exti0_handler, NULL, 0, NULL);
+	interrupt(exti1_irq, exti1_handler, NULL, 0, NULL);
+	interrupt(exti2_irq, exti2_handler, NULL, 0, NULL);
+	interrupt(exti3_irq, exti3_handler, NULL, 0, NULL);
+	interrupt(exti4_irq, exti4_handler, NULL, 0, NULL);
 
 	return 0;
 }
