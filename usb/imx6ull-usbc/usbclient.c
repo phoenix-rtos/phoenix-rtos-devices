@@ -4,7 +4,7 @@
  * usbclient - usb device controller driver
  *
  * Copyright 2019 Phoenix Systems
- * Author: Kamil Amanowicz, Bartosz Ciesla
+ * Author: Kamil Amanowicz, Bartosz Ciesla, Hubert Buczynski
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -218,7 +218,8 @@ addr_t pOUT;
 u8 *IN;
 u8 *OUT;
 
-//#define BUFFER_SIZE (1025 + 64)
+static void *local_conf;
+
 #define BUFFER_SIZE (0x1000)
 typedef struct {
 	uint32_t length;
@@ -231,6 +232,8 @@ static buffer_t write_buffer;
 addr_t pwrite_buffer;
 
 static endpt_init_t in_endpt;
+
+
 static int dtd_exec(int endpt, u32 paddr, u32 sz, int dir);
 int endpt_init(int endpt, endpt_init_t *endpt_init);
 
@@ -482,7 +485,8 @@ static int dtd_init(int endpt)
 	dc.endptqh[qh].size = 0x40;
 	dc.endptqh[qh].head = buff;
 	dc.endptqh[qh].tail = buff;
-	dc.endptqh[++qh].base = (((u32)va2pa(buff)) & ~0xfff) + (64 * sizeof(dqh_t));
+
+	dc.endptqh[++qh].base = (((u32)va2pa(buff)) & ~0xfff) + (64 * sizeof(dtd_t));
 	dc.endptqh[qh].size = 0x40;
 	dc.endptqh[qh].head = buff + 64;
 	dc.endptqh[qh].tail = buff + 64;
@@ -516,8 +520,8 @@ static int dtd_build(dtd_t *dtd, u32 paddr, u32 size)
 		dtd->dtd_token = size << 16;
 	else
 		dtd->dtd_token = 0;
-	dtd->dtd_token |= 1 << 7;
 
+	dtd->dtd_token |= 1 << 7;
 	dtd->buff_ptr[0] = paddr;
 
 	return EOK;
@@ -549,6 +553,7 @@ static int dtd_exec(int endpt, u32 paddr, u32 sz, int dir)
 
 	while (!(*(dc.base + endptcomplete) & (1 << shift)));
 	*(dc.base + endptcomplete) |= 1 << shift;
+
 	while (*(dc.base + usbsts) & 1);
 	*(dc.base + usbsts) |= 1;
 	dc.endptqh[qh].head += 1;
@@ -656,13 +661,14 @@ static void init_desc(usbclient_conf_t *conf, void *local_conf)
 			case USBCLIENT_DESC_TYPE_ENDPT:
 				memcpy(endpt, &it->descriptors[0], sizeof(usbclient_desc_ep_t));
 				/* Initialize endpoint */
+
 				/* For now hardcode only one endpoint */
 				in_endpt.rx_caps.mult = 0;
 				in_endpt.rx_caps.zlt = 1;
 				in_endpt.rx_caps.max_pkt_len = endpt->max_pkt_sz;
 				in_endpt.rx_caps.ios = 0;
 
-				in_endpt.rx_ctrl.type = USBCLIENT_ENDPT_TYPE_INTR; /* TODO: hardcoded value, extract form  descriptor */
+				in_endpt.rx_ctrl.type = (endpt->attr_bmp & 0x03);
 				in_endpt.rx_ctrl.data_toggle = 1;
 				in_endpt.rx_ctrl.data_inhibit = 0;
 				in_endpt.rx_ctrl.stall = 0;
@@ -672,7 +678,7 @@ static void init_desc(usbclient_conf_t *conf, void *local_conf)
 				in_endpt.tx_caps.max_pkt_len = endpt->max_pkt_sz;
 				in_endpt.tx_caps.ios = 0;
 
-				in_endpt.tx_ctrl.type = USBCLIENT_ENDPT_TYPE_INTR; /* TODO: hardcoded value, extract form  descriptor */;
+				in_endpt.tx_ctrl.type = (endpt->attr_bmp & 0x03);
 				in_endpt.tx_ctrl.data_toggle = 1;
 				in_endpt.tx_ctrl.data_inhibit = 0;
 				in_endpt.tx_ctrl.stall = 0;
@@ -704,9 +710,6 @@ static void init_desc(usbclient_conf_t *conf, void *local_conf)
 	}
 }
 
-char __attribute__((aligned(8))) stack[4096];
-
-static void *local_conf;
 
 int usbclient_init(usbclient_conf_t *conf)
 {
@@ -738,9 +741,12 @@ int usbclient_init(usbclient_conf_t *conf)
 	interrupt(75, dc_intr, NULL, dc.cond, &dc.inth);
 
 	*(dc.base + endptflush) = 0xffffffff;
+	/* Run/Stop bit */
 	*(dc.base + usbcmd) &= ~1;
+	/* Controller resets its internal pipelines, timers etc. */
 	*(dc.base + usbcmd) |= 1 << 1;
 	dc.status = DC_POWERED;
+	/* Run/Stop register is set to 0 when the reset process is complete. */
 	while (*(dc.base + usbcmd) & (1 << 1));
 
 	/* set usb mode to device */
@@ -763,6 +769,7 @@ int usbclient_init(usbclient_conf_t *conf)
 			return res;
 		}
 	}
+
 	return EOK;
 }
 
@@ -780,8 +787,16 @@ int usbclient_destroy(void)
 
 int usbclient_send(usbclient_ep_t *ep, const void *data, unsigned int len)
 {
-	int32_t result = -1;
-	return result;
+	if (len > PAGE_SIZE)
+		return -1;
+
+	if (ep->direction != USBCLIENT_ENDPT_DIR_IN)
+		return -1;
+
+	memcpy(IN, data, len);
+	dtd_exec(ep->id, pIN, len, ep->direction);
+
+	return len;
 }
 
 int usbclient_receive(usbclient_ep_t *ep, void *data, unsigned int len)
