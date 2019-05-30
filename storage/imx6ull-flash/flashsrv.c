@@ -17,11 +17,6 @@
 
 #include "../../../phoenix-rtos-filesystems/jffs2/libjffs2.h"
 
-#define PAGES_PER_BLOCK 64
-#define FLASH_PAGE_SIZE 0x1000
-#define ROOT_ID -1
-#define ERASE_BLOCK_SIZE (FLASH_PAGE_SIZE * PAGES_PER_BLOCK)
-
 #define LOG_ERROR(str, ...) do { fprintf(stderr, __FILE__  ":%d error: " str "\n", __LINE__, ##__VA_ARGS__); } while (0)
 #define TRACE(str, ...) do { if (0) fprintf(stderr, __FILE__  ":%d trace: " str "\n", __LINE__, ##__VA_ARGS__); } while (0)
 
@@ -67,6 +62,7 @@ struct {
 
 	flashdrv_dma_t *dma;
 	void *databuf;
+	void *rawdatabuf;
 	void *metabuf;
 } flashsrv_common;
 
@@ -260,7 +256,7 @@ static int flashsrv_partoff(id_t id, size_t start, size_t size, size_t *partoff)
 	if (p == NULL)
 		return -EINVAL;
 
-	TRACE("Partition: size %d, start %d", p->size, p->start);
+	TRACE("Partition: size %d, start %d", p->size * PAGES_PER_BLOCK * FLASH_PAGE_SIZE, p->start);
 	if ((start + size) > (p->size * PAGES_PER_BLOCK * FLASH_PAGE_SIZE))
 		return -EINVAL;
 
@@ -407,14 +403,16 @@ static void flashsrv_syncAll(void)
 }
 
 
-static int flashsrv_devErase(flash_i_devctl_t *idevctl)
+static int flashsrv_devErase(flash_i_devctl_t *idevctl, int type)
 {
 	size_t partoff = 0;
 	size_t start = 0;
 	size_t end = 0;
 
-	if (flashsrv_partoff(idevctl->erase.oid.id, idevctl->erase.offset, idevctl->erase.size, &partoff) < 0)
-		return -EINVAL;
+	if ( type == flashsrv_devctl_erase) {
+		if (flashsrv_partoff(idevctl->erase.oid.id, idevctl->erase.offset, idevctl->erase.size, &partoff) < 0)
+			return -EINVAL;
+	}
 
 	start = idevctl->erase.offset + partoff;
 	end = start + idevctl->erase.size;
@@ -426,11 +424,134 @@ static int flashsrv_devErase(flash_i_devctl_t *idevctl)
 }
 
 
-static void flashsrv_devCtrl(flash_i_devctl_t *idevctl, flash_o_devctl_t *odevctl)
+static int flashsrv_devWriteRaw(flash_i_devctl_t *idevctl, char *data)
 {
+	flashdrv_dma_t *dma;
+	int i, err;
+	char *databuf;
+	size_t size = idevctl->write.size;
+	size_t writesz = idevctl->write.size;
+
+	TRACE("RAW write off: %d, size: %d, ptr: %p", idevctl->write.address, idevctl->write.size, data);
+
+	if (size % RAW_FLASH_PAGE_SIZE)
+		return -EINVAL;
+
+	if (idevctl->write.address % RAW_FLASH_PAGE_SIZE)
+		return -EINVAL;
+
+	dma = flashsrv_common.dma;
+	databuf = flashsrv_common.databuf;
+
+	for (i = 0; size; i++) {
+		memcpy(databuf, data + RAW_FLASH_PAGE_SIZE * i, RAW_FLASH_PAGE_SIZE);
+		err = flashdrv_writeraw(dma, idevctl->write.address / RAW_FLASH_PAGE_SIZE + i, databuf, RAW_FLASH_PAGE_SIZE);
+
+		if (err) {
+			LOG_ERROR("raw write error %d", err);
+			break;
+		}
+		size -= RAW_FLASH_PAGE_SIZE;
+	}
+	writesz -= size;
+
+	return writesz;
+}
+
+
+static int flashsrv_devWriteMeta(flash_i_devctl_t *idevctl, char* data)
+{
+	flashdrv_dma_t *dma;
+	int i, err;
+	char *databuf;
+	size_t size = idevctl->write.size;
+	size_t writesz = idevctl->write.size;
+
+	if (size & (FLASH_PAGE_SIZE - 1))
+		return -EINVAL;
+
+	if (idevctl->write.address & (FLASH_PAGE_SIZE - 1))
+		return -EINVAL;
+
+	dma = flashsrv_common.dma;
+	databuf = flashsrv_common.databuf;
+
+	memcpy(databuf, data, FLASH_PAGE_SIZE);
+	for (i = 0; size; i++) {
+		err = flashdrv_write(dma, idevctl->write.address / FLASH_PAGE_SIZE + i, NULL, databuf);
+
+		if (err) {
+			LOG_ERROR("write error %d", err);
+			break;
+		}
+		size -= FLASH_PAGE_SIZE;
+	}
+
+	writesz -= size;
+
+	return writesz;
+}
+
+
+static int flashsrv_devReadRaw(flash_i_devctl_t *idevctl, char *data)
+{
+	flashdrv_dma_t *dma;
+	char *databuf;
+	size_t rp, totalBytes = 0;
+	size_t size = idevctl->readraw.size;
+	size_t offset = idevctl->readraw.address;
+	int err = EOK;
+
+	if ( (size % RAW_FLASH_PAGE_SIZE) || (offset % RAW_FLASH_PAGE_SIZE) )
+		return -EINVAL;
+
+	dma = flashsrv_common.dma;
+	databuf = flashsrv_common.rawdatabuf;
+	rp = offset / RAW_FLASH_PAGE_SIZE;
+
+	while (size) {
+		err = flashdrv_readraw(dma, rp, databuf, RAW_FLASH_PAGE_SIZE);
+		memcpy(data, databuf, RAW_FLASH_PAGE_SIZE);
+
+		if (err == flash_uncorrectable) {
+			LOG_ERROR("uncorrectable read");
+			err = -EIO;
+			break;
+		}
+
+		size -= RAW_FLASH_PAGE_SIZE;
+		totalBytes += RAW_FLASH_PAGE_SIZE;
+		rp++;
+	}
+
+	return totalBytes;
+}
+
+
+static void flashsrv_devCtrl(msg_t *msg)
+{
+	flash_i_devctl_t *idevctl = (flash_i_devctl_t *)msg->i.raw;
+	flash_o_devctl_t *odevctl = (flash_o_devctl_t *)msg->o.raw;
+
 	switch (idevctl->type) {
-	case flashsrv_devctl_erase:
-		odevctl->err = flashsrv_devErase(idevctl);
+	case flashsrv_devctl_erase :
+		odevctl->err = flashsrv_devErase(idevctl, flashsrv_devctl_erase);
+		break;
+
+	case flashsrv_devctl_chiperase :
+		odevctl->err = flashsrv_devErase(idevctl, flashsrv_devctl_chiperase);
+		break;
+
+	case flashsrv_devctl_writeraw :
+		odevctl->err = flashsrv_devWriteRaw(idevctl, msg->i.data);
+		break;
+
+	case flashsrv_devctl_writemeta :
+		odevctl->err = flashsrv_devWriteMeta(idevctl, msg->i.data);
+		break;
+
+	case flashsrv_devctl_readraw :
+		odevctl->err = flashsrv_devReadRaw(idevctl, msg->o.data);
 		break;
 
 	default:
@@ -455,6 +576,9 @@ static int flashsrv_fileAttr(int type, id_t id)
 	case atSize:
 		return p->size * FLASH_PAGE_SIZE * PAGES_PER_BLOCK;
 
+	case atDev:
+		return p->start * FLASH_PAGE_SIZE * PAGES_PER_BLOCK;
+
 	default:
 		return -1;
 	}
@@ -470,7 +594,6 @@ static void flashsrv_devThread(void *arg)
 		if (msgRecv(port, &msg, &rid) < 0)
 			continue;
 
-		TRACE("Type: %d", msg.type);
 		switch (msg.type) {
 		case mtRead:
 			TRACE("DEV read - id: %llu, size: %d, off: %llu ", msg.i.io.oid.id, msg.o.size, msg.i.io.offs);
@@ -491,7 +614,7 @@ static void flashsrv_devThread(void *arg)
 			break;
 
 		case mtDevCtl:
-			flashsrv_devCtrl((flash_i_devctl_t *)msg.i.raw, (flash_o_devctl_t *)msg.o.raw);
+			flashsrv_devCtrl(&msg);
 			break;
 
 		case mtGetAttr:
@@ -527,7 +650,7 @@ static int flashsrv_partition(size_t start, size_t size)
 
 	mutexLock(flashsrv_common.lock);
 	idtree_alloc(&flashsrv_common.partitions, &p->node);
-	TRACE("partition allocated at id %d", idtree_id(&p->node));
+	TRACE("partition allocated, start: %u, a:t id %d", start, idtree_id(&p->node));
 	mutexUnlock(flashsrv_common.lock);
 
 	return EOK;
@@ -602,6 +725,7 @@ int main(int argc, char **argv)
 	flashdrv_init();
 	flashsrv_common.dma = flashdrv_dmanew();
 	flashsrv_common.databuf = mmap(NULL, FLASH_PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, NULL, -1);
+	flashsrv_common.rawdatabuf = mmap(NULL, 2 * FLASH_PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, NULL, -1);
 	flashsrv_common.metabuf = mmap(NULL, FLASH_PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, NULL, -1);
 
 	for (i = 0; i < sizeof(flashsrv_common.poolStacks) / sizeof(flashsrv_common.poolStacks[0]); ++i)

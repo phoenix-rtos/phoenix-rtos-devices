@@ -10,4 +10,7 @@ $(PREFIX_PROG)imx6ull-flash: $(addprefix $(PREFIX_O)storage/imx6ull-flash/, flas
 $(PREFIX_A)libflashdrv.a: $(PREFIX_O)storage/imx6ull-flash/flashdrv.o
 	$(ARCH)
 
-all: $(PREFIX_PROG_STRIPPED)imx6ull-flash $(PREFIX_A)libflashdrv.a
+$(PREFIX_H)flashsrv.h: storage/imx6ull-flash/flashsrv.h
+	$(HEADER)
+
+all: $(PREFIX_PROG_STRIPPED)imx6ull-flash $(PREFIX_A)libflashdrv.a $(PREFIX_H)flashsrv.h
