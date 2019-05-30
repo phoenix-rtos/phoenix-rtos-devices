@@ -109,7 +109,7 @@ int test_erase(const char *path, size_t offset, size_t size)
 		return -1;
 	}
 
-	idevctl->type = flash_erase;
+	idevctl->type = flashsrv_devctl_erase;
 	idevctl->erase.oid = oid;
 	idevctl->erase.size = size;
 	idevctl->erase.offset = offset;
