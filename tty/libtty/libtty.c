@@ -94,9 +94,9 @@ static void termios_init(struct termios* term)
 {
 	memset(term, 0, sizeof(*term));
 
-	term->c_iflag = TTYDEF_IFLAG;
-	term->c_oflag = TTYDEF_OFLAG;
-	term->c_lflag = TTYDEF_LFLAG;
+	term->c_iflag = TTYDEF_IFLAG & TTYSUP_IFLAG;
+	term->c_oflag = TTYDEF_OFLAG & TTYSUP_OFLAG;
+	term->c_lflag = TTYDEF_LFLAG & TTYSUP_LFLAG;
 
 	term->c_ispeed = TTYDEF_SPEED;
 	term->c_ospeed = TTYDEF_SPEED;
