@@ -5,7 +5,8 @@
 #
 
 
-$(PREFIX_PROG)imxrt-multi: $(addprefix $(PREFIX_O)multi/imxrt-multi/, uart.o common.o imxrt-multi.o) $(PREFIX_A)libtty.a
+$(PREFIX_PROG)imxrt-multi: $(addprefix $(PREFIX_O)multi/imxrt-multi/, uart.o gpio.o common.o \
+	imxrt-multi.o) $(PREFIX_A)libtty.a
 	$(LINK)
 
 $(PREFIX_O)multi/imxrt-multi/imxrt-multi.o: $(PREFIX_H)libtty.h

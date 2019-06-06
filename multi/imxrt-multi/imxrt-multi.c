@@ -28,6 +28,7 @@
 #include "common.h"
 
 #include "uart.h"
+#include "gpio.h"
 
 #define THREADS_NO 4
 #define THREADS_PRIORITY 2
@@ -77,6 +78,18 @@ static void dispatchMsg(msg_t *msg)
 		case id_uart8:
 			uart_handleMsg(msg, id);
 			break;
+
+		case id_gpio1:
+		case id_gpio2:
+		case id_gpio3:
+		case id_gpio4:
+		case id_gpio5:
+		case id_gpio6:
+		case id_gpio7:
+		case id_gpio8:
+		case id_gpio9:
+			gpio_handleMsg(msg, id);
+			break;
 	}
 }
 
@@ -103,13 +116,16 @@ static int mkFile(oid_t *dir, id_t id, char *name)
 }
 
 
-static int createSpecialFiles(void)
+static int createDevFiles(void)
 {
-	int err;
+	int err, i;
 	oid_t dir;
+	char name[6];
 
 	while (lookup("/", NULL, &dir) < 0)
 		usleep(100000);
+
+	/* /dev */
 
 	err = mkdir("/dev", 0);
 
@@ -118,6 +134,8 @@ static int createSpecialFiles(void)
 
 	if (lookup("/dev", NULL, &dir) < 0)
 		return -1;
+
+	/* UARTs */
 
 #if UART1
 	if (mkFile(&dir, id_uart1, "uart1") < 0)
@@ -158,6 +176,14 @@ static int createSpecialFiles(void)
 	if (mkFile(&dir, id_uart8, "uart8") < 0)
 		return -1;
 #endif
+
+	/* GPIOs */
+
+	strcpy(name, "gpio1");
+	for (i = 1; i <= GPIO_PORTS; ++i, ++name[4]) {
+		if (mkFile(&dir, id_gpio1 + i - 1, name) < 0)
+			return -1;
+	}
 
 	return 0;
 }
@@ -213,11 +239,12 @@ int main(void)
 	portCreate(&multi_port);
 
 	uart_init();
+	gpio_init();
 
 	for (i = 0; i < THREADS_NO - 1; ++i)
 		beginthread(thread, THREADS_PRIORITY, common.stack[i], STACKSZ, (void *)i);
 
-	if (createSpecialFiles() < 0) {
+	if (createDevFiles() < 0) {
 		printf("imxrt-multi: createSpecialFiles failed\n");
 		return -1;
 	}
