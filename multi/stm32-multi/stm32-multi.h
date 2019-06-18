@@ -167,18 +167,18 @@ enum { spi_cmd = 0x1, spi_address = 0x2, spi_dummy = 0x4 };
 
 typedef struct {
 	int spi;
-	char cmd;
 	unsigned int addr;
 	unsigned int flags;
-} spirw_t;
+	char cmd;
+} __attribute__((packed)) spirw_t;
 
 
 typedef struct {
 	int spi;
+	int enable;
 	char mode;
 	char bdiv;
-	int enable;
-} spidef_t;
+} __attribute__((packed)) spidef_t;
 
 
 /* EXTI */
