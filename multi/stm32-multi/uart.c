@@ -37,6 +37,7 @@ struct {
 	volatile unsigned int *base;
 	unsigned int port;
 	unsigned int baud;
+	volatile int enabled;
 
 	volatile char *txbeg;
 	volatile char *txend;
@@ -54,9 +55,6 @@ struct {
 	handle_t txcond;
 	handle_t lock;
 } uart_common[UART_CNT];
-
-
-static const int uart2pctl[] = { pctl_usart1, pctl_usart2, pctl_usart3, pctl_uart4, pctl_uart5 };
 
 
 static const int uartConfig[] = { UART1, UART2, UART3, UART4, UART5 };
@@ -122,22 +120,6 @@ static int uart_rxirq(unsigned int n, void *arg)
 }
 
 
-static int uart_isEnabled(int uart)
-{
-	platformctl_t pctl;
-
-	if (uart < usart1 || uart > uart5 || !uartConfig[uart])
-		return -EINVAL;
-
-	pctl.action = pctl_get;
-	pctl.type = pctl_devclk;
-	pctl.devclk.dev = uart2pctl[uart - usart1];
-	platformctl(&pctl);
-
-	return !!pctl.devclk.state;
-}
-
-
 int uart_configure(int uart, char bits, char parity, unsigned int baud, char enable)
 {
 	int err = EOK, pos;
@@ -147,12 +129,12 @@ int uart_configure(int uart, char bits, char parity, unsigned int baud, char ena
 
 	pos = uartPos[uart];
 
+	uart_common[pos].enabled = 0;
+	condBroadcast(uart_common[pos].rxcond);
+
 	mutexLock(uart_common[pos].txlock);
 	mutexLock(uart_common[pos].rxlock);
-	mutexLock(uart_common[uart].lock);
-
-	if (!uart_isEnabled(uart))
-		rcc_devClk(uart2pctl[uart], 1);
+	mutexLock(uart_common[pos].lock);
 
 	*(uart_common[pos].base + cr1) &= ~(1 << 13);
 	*(uart_common[pos].base + cr1) &= ~0x2c;
@@ -196,12 +178,11 @@ int uart_configure(int uart, char bits, char parity, unsigned int baud, char ena
 			*(uart_common[pos].base + cr1) |= 0x2c;
 			dataBarier();
 			*(uart_common[pos].base + cr1) |= 1 << 13;
+			uart_common[pos].enabled = 1;
 		}
 	}
 
-	rcc_devClk(uart2pctl[uart], !!enable);
-
-	mutexUnlock(uart_common[uart].lock);
+	mutexUnlock(uart_common[pos].lock);
 	mutexUnlock(uart_common[pos].rxlock);
 	mutexUnlock(uart_common[pos].txlock);
 
@@ -216,12 +197,10 @@ int uart_write(int uart, void* buff, unsigned int bufflen)
 
 	uart = uartPos[uart];
 
-	mutexLock(uart_common[uart].txlock);
-
-	if (!uart_isEnabled(uart)) {
-		mutexUnlock(uart_common[uart].txlock);
+	if (!uart_common[uart].enabled)
 		return -EIO;
-	}
+
+	mutexLock(uart_common[uart].txlock);
 
 	keepidle(1);
 
@@ -252,13 +231,10 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 
 	uart = uartPos[uart];
 
-	mutexLock(uart_common[uart].rxlock);
-
-	if (!uart_isEnabled(uart)) {
-		mutexUnlock(uart_common[uart].rxlock);
+	if (!uart_common[uart].enabled)
 		return -EIO;
-	}
 
+	mutexLock(uart_common[uart].rxlock);
 	mutexLock(uart_common[uart].lock);
 
 	*(uart_common[uart].base + cr1) &= ~(1 << 5);
@@ -278,7 +254,7 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 	while (uart_common[uart].rxbeg != uart_common[uart].rxend) {
 		err = condWait(uart_common[uart].rxcond, uart_common[uart].lock, timeout);
 
-		if (mode == uart_mnblock || (timeout && err == -ETIME)) {
+		if (mode == uart_mnblock || (timeout && err == -ETIME) || !uart_common[uart].enabled) {
 			*(uart_common[uart].base + cr1) &= ~(1 << 5);
 			uart_common[uart].rxbeg = NULL;
 			uart_common[uart].rxend = NULL;
@@ -357,12 +333,10 @@ int uart_init(void)
 		/* UART enable */
 		*(uart_common[i].base + cr1) |= 1 << 13;
 
-		/* Left console uart enabled only */
-		if (uart != UART_CONSOLE - 1)
-			rcc_devClk(info[uart].dev, 0);
-
 		interrupt(info[uart].irq, uart_rxirq, (void *)i, uart_common[i].rxcond, NULL);
 		interrupt(info[uart].irq, uart_txirq, (void *)i, uart_common[i].txcond, NULL);
+
+		uart_common[i].enabled = 1;
 
 		++i;
 	}
