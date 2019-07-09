@@ -47,7 +47,7 @@ void usage(char *name)
 	fprintf(stderr, "usage:\n"
 		"\t%s show - display messages\n"
 		"\t%s send number text - send message containing text to number\n"
-		"\t%s delete index - delete message store at given index\n", name, name, name);
+		"\t%s delete index - delete message stored at given index\n", name, name, name);
 	exit(EXIT_FAILURE);
 }
 
@@ -160,32 +160,36 @@ static int at_send_cmd(const char *cmd, int timeout_ms)
 int main(int argc, char **argv)
 {
 	int index;
+	const char *acm_path;
 
 	if (argc < 2)
 		usage(argv[0]);
 
-	if ((fd = open("/dev/ttyacm2", O_RDWR)) < 0) {
-		fprintf(stderr, "error opening /dev/ttyacm2\n");
+	if ((acm_path = getenv("SMS_TTYACM_PATH")) == NULL)
+		acm_path = "/dev/ttyacm1";
+
+	if ((fd = open(acm_path, O_RDWR | O_NONBLOCK)) < 0) {
+		fprintf(stderr, "error opening %s\n", acm_path);
 		exit(EXIT_FAILURE);
 	}
 
-	if (at_send_cmd("ATE=0\r\n", 100) != AT_RESULT_OK) {
+	if (at_send_cmd("ATE=0\r\n", 300) != AT_RESULT_OK) {
 		fprintf(stderr, "error disabling echo\n");
 		exit(EXIT_FAILURE);
 	}
 
-	if (at_send_cmd("AT+CMGF=1\r\n", 100) != AT_RESULT_OK) {
+	if (at_send_cmd("AT+CMGF=1\r\n", 300) != AT_RESULT_OK) {
 		fprintf(stderr, "error changing PDU mode\n");
 		exit(EXIT_FAILURE);
 	}
 
 	if (!strcmp(argv[1], "show")) {
-		if (at_send_cmd("AT+CMGL=ALL\r\n", 100) != AT_RESULT_OK) {
+		if (at_send_cmd("AT+CMGL=ALL\r\n", 2000) != AT_RESULT_OK) {
 			fprintf(stderr, "error reading messages\n");
 			exit(EXIT_FAILURE);
 		}
 
-		printf(readbuf);
+		puts(readbuf);
 	}
 	else if (!strcmp(argv[1], "send")) {
 		if (argc != 4)
@@ -193,7 +197,7 @@ int main(int argc, char **argv)
 
 		snprintf(writebuf, sizeof(writebuf), "AT+CMGW=%s\r\n", argv[2]);
 
-		if (at_send_cmd(writebuf, 200) != AT_RESULT_PROMPT) {
+		if (at_send_cmd(writebuf, 300) != AT_RESULT_PROMPT) {
 			fprintf(stderr, "error getting prompt\n");
 			exit(EXIT_FAILURE);
 		}
@@ -208,7 +212,7 @@ int main(int argc, char **argv)
 		sscanf(readbuf, "\n+CMGW: %d", &index);
 		snprintf(writebuf, sizeof(writebuf), "AT+CMSS=%d\r\n", index);
 
-		if (at_send_cmd(writebuf, 500) != AT_RESULT_OK) {
+		if (at_send_cmd(writebuf, 10000) != AT_RESULT_OK) {
 			fprintf(stderr, "error sending\n");
 			exit(EXIT_FAILURE);
 		}
