@@ -159,7 +159,7 @@ static int at_send_cmd(const char *cmd, int timeout_ms)
 
 int main(int argc, char **argv)
 {
-	int index;
+	int index, err;
 	const char *acm_path;
 
 	if (argc < 2)
@@ -173,19 +173,19 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 
-	if (at_send_cmd("ATE=0\r\n", 300) != AT_RESULT_OK) {
-		fprintf(stderr, "error disabling echo\n");
+	if ((err = at_send_cmd("ATE=0\r\n", 300)) != AT_RESULT_OK) {
+		fprintf(stderr, "error disabling echo: %s\n", at_result_codes[err]);
 		exit(EXIT_FAILURE);
 	}
 
-	if (at_send_cmd("AT+CMGF=1\r\n", 300) != AT_RESULT_OK) {
-		fprintf(stderr, "error changing PDU mode\n");
+	if ((err = at_send_cmd("AT+CMGF=1\r\n", 300)) != AT_RESULT_OK) {
+		fprintf(stderr, "error changing PDU mode: %s\n", at_result_codes[err]);
 		exit(EXIT_FAILURE);
 	}
 
 	if (!strcmp(argv[1], "show")) {
-		if (at_send_cmd("AT+CMGL=ALL\r\n", 2000) != AT_RESULT_OK) {
-			fprintf(stderr, "error reading messages\n");
+		if ((err = at_send_cmd("AT+CMGL=ALL\r\n", 20000) != AT_RESULT_OK)) {
+			fprintf(stderr, "error reading messages: %s\n", at_result_codes[err]);
 			exit(EXIT_FAILURE);
 		}
 
@@ -197,23 +197,23 @@ int main(int argc, char **argv)
 
 		snprintf(writebuf, sizeof(writebuf), "AT+CMGW=%s\r\n", argv[2]);
 
-		if (at_send_cmd(writebuf, 300) != AT_RESULT_PROMPT) {
-			fprintf(stderr, "error getting prompt\n");
+		if ((err = at_send_cmd(writebuf, 300)) != AT_RESULT_PROMPT) {
+			fprintf(stderr, "error getting prompt: %s\n", at_result_codes[err]);
 			exit(EXIT_FAILURE);
 		}
 
 		snprintf(writebuf, sizeof(writebuf), "%s\032", argv[3]);
 
-		if (at_send_cmd(writebuf, 500) != AT_RESULT_OK) {
-			fprintf(stderr, "error writing\n");
+		if ((err = at_send_cmd(writebuf, 500)) != AT_RESULT_OK) {
+			fprintf(stderr, "error writing: %s\n", at_result_codes[err]);
 			exit(EXIT_FAILURE);
 		}
 
 		sscanf(readbuf, "\n+CMGW: %d", &index);
 		snprintf(writebuf, sizeof(writebuf), "AT+CMSS=%d\r\n", index);
 
-		if (at_send_cmd(writebuf, 10000) != AT_RESULT_OK) {
-			fprintf(stderr, "error sending\n");
+		if ((err = at_send_cmd(writebuf, 10000)) != AT_RESULT_OK) {
+			fprintf(stderr, "error sending: %s\n", at_result_codes[err]);
 			exit(EXIT_FAILURE);
 		}
 	}
@@ -223,8 +223,8 @@ int main(int argc, char **argv)
 
 		snprintf(writebuf, sizeof(writebuf), "AT+CMGD=%s\r\n", argv[2]);
 
-		if (at_send_cmd(writebuf, 500) != AT_RESULT_OK) {
-			fprintf(stderr, "error deleting\n");
+		if ((err = at_send_cmd(writebuf, 500)) != AT_RESULT_OK) {
+			fprintf(stderr, "error deleting: %s\n", at_result_codes[err]);
 			exit(EXIT_FAILURE);
 		}
 	}
