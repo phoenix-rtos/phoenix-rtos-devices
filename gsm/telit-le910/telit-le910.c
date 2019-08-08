@@ -141,7 +141,7 @@ int _telit_write(ttyacm_t *acm, char *data, size_t size)
 	urb.type = usb_transfer_bulk;
 	urb.pipe = acm->pipe_out;
 	urb.direction = usb_transfer_out;
-	urb.async = 1;
+	urb.async = 0;
 
 	if (acm->error || libusb_write(&urb, data, size) < 0) {
 		TRACE_FAIL("write");
