@@ -8,3 +8,4 @@
 
 include tty/libtty/Makefile
 include multi/imxrt-multi/Makefile
+include usb/device/Makefile
