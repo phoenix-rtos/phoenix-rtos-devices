@@ -790,5 +790,6 @@ int main(int argc, char **argv)
 		portRegister(rootfs->port, "/", &rootoid);
 	}
 
+	printf("flashsrv: initialized\n");
 	flashsrv_devThread((void *)port);
 }

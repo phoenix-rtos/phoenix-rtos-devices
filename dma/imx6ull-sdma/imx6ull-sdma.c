@@ -39,7 +39,7 @@
 #define LOG_IDENT "sdma-drv"
 #define LOG_TAG LOG_IDENT": "
 #define log_debug(fmt, ...)     do { log_printf(LOG_DEBUG, fmt "\n", ##__VA_ARGS__); } while (0)
-#define log_info(fmt, ...)      do { log_printf(LOG_INFO, COL_CYAN fmt COL_NORMAL "\n", ##__VA_ARGS__); } while (0)
+#define log_info(fmt, ...)      do { log_printf(LOG_INFO, fmt "\n", ##__VA_ARGS__); } while (0)
 #define log_warn(fmt, ...)      do { log_printf(LOG_WARNING, COL_YELLOW fmt COL_NORMAL "\n", ##__VA_ARGS__); } while (0)
 #define log_error(fmt, ...)     do { log_printf(LOG_ERR, COL_RED fmt COL_NORMAL "\n", ##__VA_ARGS__); } while (0)
 
@@ -634,7 +634,7 @@ static int dev_init(void)
 		common.channel[i].file_id = msg.i.create.dev.id;
 	}
 
-	log_info("device initialized");
+	log_info("initialized");
 
 	return 0;
 }

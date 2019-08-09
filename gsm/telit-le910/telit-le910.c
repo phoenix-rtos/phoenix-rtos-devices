@@ -952,7 +952,6 @@ int main(int argc, char **argv)
 	oid = (oid_t){ .port = telit_common.data[0].port, .id = 2 };
 	create_dev(&oid, "/dev/ttyacm2");
 
-	TRACE("/dev/modem ready\n");
-
+	printf("telit-le910: initialized\n");
 	telit_msgThread((void *)telit_common.data[0].port);
 }
