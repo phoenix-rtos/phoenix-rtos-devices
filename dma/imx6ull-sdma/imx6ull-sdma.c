@@ -31,12 +31,19 @@
 
 #include "sdma-api.h"
 
+#if 0
 #define COL_RED     "\033[1;31m"
 #define COL_CYAN    "\033[1;36m"
 #define COL_YELLOW  "\033[1;33m"
 #define COL_NORMAL  "\033[0m"
+#else
+#define COL_RED
+#define COL_CYAN
+#define COL_YELLOW
+#define COL_NORMAL
+#endif
 
-#define LOG_IDENT "sdma-drv"
+#define LOG_IDENT "imx6ull-sdma"
 #define LOG_TAG LOG_IDENT": "
 #define log_debug(fmt, ...)     do { log_printf(LOG_DEBUG, fmt "\n", ##__VA_ARGS__); } while (0)
 #define log_info(fmt, ...)      do { log_printf(LOG_INFO, fmt "\n", ##__VA_ARGS__); } while (0)
