@@ -600,14 +600,14 @@ static int dev_init(void)
 	}
 
 	res = mkdir("/dev", 0);
-	if (res < 0 && res != -EEXIST) {
-		log_error("mkdir /dev failed (%d)", res);
+	if (res < 0 && errno != EEXIST) {
+		log_error("mkdir /dev failed (%d)", -errno);
 		return -1;
 	}
 
 	res = mkdir(dirname, 0);
-	if (res < 0 && res != -EEXIST) {
-		log_error("mkdir %s failed (%d)", dirname, res);
+	if (res < 0 && errno != EEXIST) {
+		log_error("mkdir %s failed (%d)", dirname, -errno);
 		return -1;
 	}
 

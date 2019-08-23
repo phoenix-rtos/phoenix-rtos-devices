@@ -129,7 +129,7 @@ static int createDevFiles(void)
 
 	err = mkdir("/dev", 0);
 
-	if (err < 0 && err != -EEXIST)
+	if (err < 0 && errno != EEXIST)
 		return -1;
 
 	if (lookup("/dev", NULL, &dir) < 0)

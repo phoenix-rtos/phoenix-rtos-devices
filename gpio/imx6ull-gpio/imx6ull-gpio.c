@@ -71,7 +71,7 @@ int init(oid_t root)
 
 	err = mkdir("/dev", 0);
 
-	if (err < 0 && err != -EEXIST) {
+	if (err < 0 && errno != EEXIST) {
 		printf("gpiodrv: mkdir /dev failed\n");
 		return -1;
 	}
@@ -83,7 +83,7 @@ int init(oid_t root)
 
 		err = mkdir(dirname, 0);
 
-		if (err < 0 && err != -EEXIST) {
+		if (err < 0 && errno != EEXIST) {
 			printf("gpiodrv: Could not create %s\n", dirname);
 			return -1;
 		}

@@ -425,7 +425,7 @@ int main(int argc, char **argv)
 
 	err = mkdir("/dev", 0);
 
-	if (err < 0 && err != -EEXIST) {
+	if (err < 0 && errno != EEXIST) {
 		debug("imx6ull-uart: mkdir /dev failed\n");
 	}
 
