@@ -650,7 +650,7 @@ int main(int argc, char **argv)
 				return 0;
 
 			case 'U':
-				return flash_update_tool(argv + optind);
+				return flash_update_tool(argv + optind) < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 
 			case 'h':
 			default:
@@ -664,5 +664,5 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
-	return flash_image(NULL, path, start, 0, 0, raw, NULL);
+	return flash_image(NULL, path, start, 0, 0, raw, NULL) < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 }
