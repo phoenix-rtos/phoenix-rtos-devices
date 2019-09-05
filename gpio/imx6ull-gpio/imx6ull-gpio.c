@@ -49,7 +49,7 @@ static const addr_t paddr[] = { 0x0209c000, 0x020a0000, 0x020a4000, 0x020a8000, 
 static const int clocks[] = { pctl_clk_gpio1, pctl_clk_gpio2, pctl_clk_gpio3, pctl_clk_gpio4, pctl_clk_gpio5 };
 
 
-int init(oid_t root)
+int init(void)
 {
 	int i, err;
 	char dirname[11];
@@ -104,7 +104,7 @@ int init(oid_t root)
 		msg.o.data = NULL;
 		msg.o.size = 0;
 
-		if (msgSend(root.port, &msg) < 0 || msg.o.create.err != EOK) {
+		if (msgSend(dir.port, &msg) < 0 || msg.o.create.err != EOK) {
 			printf("gpiodrv: Could not create port file #%d (err %d)\n", i + 1, msg.o.create.err);
 			return - 1;
 		}
@@ -122,7 +122,7 @@ int init(oid_t root)
 		msg.o.data = NULL;
 		msg.o.size = 0;
 
-		if (msgSend(root.port, &msg) < 0 || msg.o.create.err != EOK) {
+		if (msgSend(dir.port, &msg) < 0 || msg.o.create.err != EOK) {
 			printf("gpiodrv: Could not create direction file #%d\n", i + 1);
 			return - 1;
 		}
@@ -283,7 +283,7 @@ int main(void)
 	while (write(1, "", 0) < 0)
 		usleep(10000);
 
-	if (init(root))
+	if (init())
 		return -EIO;
 
 	thread(NULL);
