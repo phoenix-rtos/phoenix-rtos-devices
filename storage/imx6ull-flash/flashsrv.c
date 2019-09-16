@@ -657,44 +657,6 @@ static int flashsrv_partition(size_t start, size_t size)
 }
 
 
-static int flashsrv_create_dev(flashsrv_filesystem_t *root, oid_t *oid, char *dir, char *name)
-{
-	oid_t dev;
-	msg_t msg = { 0 };
-
-	msg.type = mtLookup;
-	msg.i.lookup.dir.port = root->port;
-	msg.i.lookup.dir.id = root->root;
-	msg.i.data = dir;
-	msg.i.size = strlen(dir) + 1;
-
-	if (msgSend(root->port, &msg) < 0)
-		return -1;
-
-	dev = msg.o.lookup.dev;
-
-	memset(&msg, 0, sizeof(msg));
-
-	msg.type = mtCreate;
-	memcpy(&msg.i.create.dir, &dev, sizeof(oid_t));
-	memcpy(&msg.i.create.dev, oid, sizeof(oid_t));
-
-	msg.i.create.type = otDev;
-	msg.i.create.mode = S_IFCHR | 0666;
-
-	msg.i.data = name;
-	msg.i.size = strlen(name) + 1;
-
-	if (msgSend(dev.port, &msg) != EOK)
-		return -1;
-
-	if (msg.o.io.err < 0)
-		return -1;
-
-	return 0;
-}
-
-
 static void daemonize(void)
 {
 	/* TODO: required when we are not root */
@@ -768,27 +730,18 @@ int main(int argc, char **argv)
 		oid.id = idtree_id(&p->node);
 		oid.port = port;
 
-		if (rootfs == NULL) {
-			sprintf(path, "/dev/flash%lld", oid.id);
-			create_dev(&oid, path);
-		}
-		else {
-			sprintf(path, "flash%lld", oid.id);
-			flashsrv_create_dev(rootfs, &oid, "/dev", path);
-		}
+		sprintf(path, "flash%lld", oid.id);
+		create_dev(&oid, path);
 	}
 
 	oid.port = port;
 	oid.id = ROOT_ID;
 
-	if (rootfs == NULL) {
-		create_dev(&oid, "/dev/flashsrv");
+	create_dev(&oid, "flashsrv");
+	if (rootfs == NULL)
 		daemonize();
-	}
-	else {
-		flashsrv_create_dev(rootfs, &oid, "/dev", "flashsrv");
+	else
 		portRegister(rootfs->port, "/", &rootoid);
-	}
 
 	printf("imx6ull-flash: initialized\n");
 	flashsrv_devThread((void *)port);

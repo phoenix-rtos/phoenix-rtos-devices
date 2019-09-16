@@ -944,13 +944,13 @@ int main(int argc, char **argv)
 	beginthread(telit_readThread, 4, malloc(0x4000), 0x4000, telit_common.data + 2);
 
 	oid = (oid_t){ .port = telit_common.data[0].port, .id = 0 };
-	create_dev(&oid, "/dev/ttyacm0");
+	create_dev(&oid, "ttyacm0");
 
 	oid = (oid_t){ .port = telit_common.data[0].port, .id = 1 };
-	create_dev(&oid, "/dev/ttyacm1");
+	create_dev(&oid, "ttyacm1");
 
 	oid = (oid_t){ .port = telit_common.data[0].port, .id = 2 };
-	create_dev(&oid, "/dev/ttyacm2");
+	create_dev(&oid, "ttyacm2");
 
 	printf("telit-le910: initialized\n");
 	telit_msgThread((void *)telit_common.data[0].port);

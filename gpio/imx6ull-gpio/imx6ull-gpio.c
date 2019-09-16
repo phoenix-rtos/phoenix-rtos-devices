@@ -22,6 +22,7 @@
 #include <sys/msg.h>
 #include <sys/file.h>
 #include <sys/platform.h>
+#include <posix/utils.h>
 #include <phoenix/arch/imx6ull.h>
 
 #include "imx6ull-gpio.h"
@@ -52,10 +53,9 @@ static const int clocks[] = { pctl_clk_gpio1, pctl_clk_gpio2, pctl_clk_gpio3, pc
 int init(void)
 {
 	int i, err;
-	char dirname[11];
+	char devpath[11];
 	platformctl_t pctl;
-	oid_t dir;
-	msg_t msg;
+	oid_t dev;
 
 	for (i = 0; i < sizeof(common.gpio) / sizeof(common.gpio[0]); ++i) {
 		if ((common.gpio[i].base = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_DEVICE | MAP_UNCACHED, OID_PHYSMEM, paddr[i])) == MAP_FAILED) {
@@ -69,65 +69,31 @@ int init(void)
 		return -1;
 	}
 
-	err = mkdir("/dev", 0);
-
-	if (err < 0 && err != -EEXIST) {
-		printf("gpiodrv: mkdir /dev failed\n");
-		return -1;
-	}
-
-	strcpy(dirname, "/dev/gpiox");
-
 	for (i = 0; i < sizeof(common.gpio) / sizeof(common.gpio[0]); ++i) {
-		dirname[9] = '1' + i;
 
-		err = mkdir(dirname, 0);
+		sprintf(devpath, "gpio%d/port", i + 1);
 
-		if (err < 0 && err != -EEXIST) {
-			printf("gpiodrv: Could not create %s\n", dirname);
-			return -1;
-		}
+		dev.port = common.port;
+		dev.id = gpio1 + i;
 
-		if (lookup(dirname, NULL, &dir) < 0) {
-			printf("gpiodrv: %s lookup failed\n", dirname);
-			return -1;
-		}
-
-		msg.type = mtCreate;
-		msg.i.create.dir = dir;
-		msg.i.create.type = otDev;
-		msg.i.create.mode = 0;
-		msg.i.create.dev.port = common.port;
-		msg.i.create.dev.id = gpio1 + i;
-		msg.i.data = "port";
-		msg.i.size = sizeof("port");
-		msg.o.data = NULL;
-		msg.o.size = 0;
-
-		if (msgSend(dir.port, &msg) < 0 || msg.o.create.err != EOK) {
-			printf("gpiodrv: Could not create port file #%d (err %d)\n", i + 1, msg.o.create.err);
+		if ((err = create_dev(&dev, devpath)) != EOK) {
+			printf("gpiodrv: Could not create port file #%d (err %d)\n", i + 1, err);
 			return - 1;
 		}
 
-		common.gpio[i].port = msg.o.create.oid.id;
+		common.gpio[i].port = dev.id;
 
-		msg.type = mtCreate;
-		msg.i.create.dir = dir;
-		msg.i.create.type = otDev;
-		msg.i.create.mode = 0;
-		msg.i.create.dev.port = common.port;
-		msg.i.create.dev.id = dir1 + i;
-		msg.i.data = "dir";
-		msg.i.size = sizeof("dir");
-		msg.o.data = NULL;
-		msg.o.size = 0;
+		sprintf(devpath, "gpio%d/dir", i + 1);
 
-		if (msgSend(dir.port, &msg) < 0 || msg.o.create.err != EOK) {
-			printf("gpiodrv: Could not create direction file #%d\n", i + 1);
+		dev.port = common.port;
+		dev.id = dir1 + i;
+
+		if ((err = create_dev(&dev, devpath)) != EOK) {
+			printf("gpiodrv: Could not create direction file #%d (err %d)\n", i + 1, err);
 			return - 1;
 		}
 
-		common.gpio[i].dir = msg.o.create.oid.id;
+		common.gpio[i].dir = dev.id;
 
 		pctl.action = pctl_set;
 		pctl.type = pctl_devclock;

@@ -467,7 +467,7 @@ static int flash_update_tool(char **args)
 	size_t size;
 	oid_t oid;
 	FILE *f;
-	int result;
+	int result = 0;
 
 	lookup("/dev/flashsrv", NULL, &oid);
 	port = oid.port;

@@ -26,6 +26,7 @@
 #include <sys/mman.h>
 #include <sys/interrupt.h>
 #include <sys/file.h>
+#include <posix/utils.h>
 
 #include <phoenix/arch/imx6ull.h>
 
@@ -588,10 +589,8 @@ static int sdma_channel_configure(uint8_t channel_id, sdma_channel_config_t *cfg
 static int dev_init(void)
 {
 	int i, res;
-	oid_t dir;
-	msg_t msg;
-	const char *dirname = "/dev/sdma";
-	char filename[5];
+	oid_t dev;
+	char filename[10];
 
 	res = portCreate(&common.port);
 	if (res != EOK) {
@@ -599,46 +598,21 @@ static int dev_init(void)
 		return -1;
 	}
 
-	res = mkdir("/dev", 0);
-	if (res < 0 && res != -EEXIST) {
-		log_error("mkdir /dev failed (%d)", res);
-		return -1;
-	}
-
-	res = mkdir(dirname, 0);
-	if (res < 0 && res != -EEXIST) {
-		log_error("mkdir %s failed (%d)", dirname, res);
-		return -1;
-	}
-
-	if ((res = lookup(dirname, NULL, &dir)) < 0) {
-		log_error("%s lookup failed (%d)", dirname, res);
-		return -1;
-	}
-
 	/* Start from channel 1. Channel 0 is used for loading/dumping context,
 	 * scripts etc. */
 	for (i = 1; i < NUM_OF_SDMA_CHANNELS; i++) {
 
-		res = snprintf(filename, sizeof(filename), "ch%02u", (unsigned)i);
+		res = snprintf(filename, sizeof(filename), "sdma/ch%02u", (unsigned)i);
 
-		msg.type = mtCreate;
-		msg.i.create.type = otDev;
-		msg.i.create.mode = 0;
-		msg.i.create.dev.port = common.port;
-		msg.i.create.dev.id = i;
-		msg.i.create.dir = dir;
-		msg.i.data = filename;
-		msg.i.size = strlen(filename) + 1;
-		msg.o.data = NULL;
-		msg.o.size = 0;
+		dev.port = common.port;
+		dev.id = i;
 
-		if ((res = msgSend(dir.port, &msg)) < 0 || msg.o.create.err != EOK) {
-			log_error("could not create %s/%s (res=%d, err=%d)", dirname, filename, res, msg.o.create.err);
+		if ((res = create_dev(&dev, filename)) != EOK) {
+			log_error("could not create %s (res=%d)", filename, res);
 			return -1;
 		}
 
-		common.channel[i].file_id = msg.i.create.dev.id;
+		common.channel[i].file_id = dev.id;
 	}
 
 	log_info("initialized");

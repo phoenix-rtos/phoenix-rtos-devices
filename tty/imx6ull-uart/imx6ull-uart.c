@@ -26,6 +26,7 @@
 #include <sys/msg.h>
 #include <sys/stat.h>
 #include <sys/debug.h>
+#include <posix/utils.h>
 
 #include <libtty.h>
 
@@ -319,8 +320,7 @@ int main(int argc, char **argv)
 {
 	u32 port;
 	char uartn[sizeof("uartx") + 1];
-	oid_t dir, root;
-	msg_t msg;
+	oid_t dev;
 	int err;
 	speed_t baud = B115200;
 	int parity = 0;
@@ -420,35 +420,13 @@ int main(int argc, char **argv)
 	beginthread(uart_intrthr, 3, &stack0, 2048, NULL);
 	beginthread(uart_thr, 3, &stack, 2048, (void *)port);
 
-	while (lookup("/", NULL, &root) < 0)
-		usleep(100000);
-
-	err = mkdir("/dev", 0);
-
-	if (err < 0 && err != -EEXIST) {
-		debug("imx6ull-uart: mkdir /dev failed\n");
-	}
-
 	sprintf(uartn, "uart%u", uart.dev_no % 10);
 
-	if (lookup("/dev", NULL, &dir) < 0) {
-		debug("imx6ull-uart: /dev lookup failed");
-	}
+	dev.port = port;
+	dev.id = 0;
 
-	msg.type = mtCreate;
-	msg.i.create.dir = dir;
-	msg.i.create.type = otDev;
-	msg.i.create.mode = 0;
-	msg.i.create.dev.port = port;
-	msg.i.create.dev.id = 0;
-	msg.i.data = uartn;
-	msg.i.size = strlen(uartn) + 1;
-	msg.o.data = NULL;
-	msg.o.size = 0;
-
-	if (msgSend(dir.port, &msg) < 0 || msg.o.create.err != EOK) {
+	if ((err = create_dev(&dev, uartn)))
 		debug("imx6ull-uart: Could not create device file\n");
-	}
 
 	uart_thr((void *)port);
 
