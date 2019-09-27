@@ -51,13 +51,93 @@ otp_t otp = { 0 };
 struct common_s {
 	int blow_fuses;
 	int get_uid;
+	int blow_mac;
 	int display_usage;
 } common;
+
+
+int otp_write(unsigned addr, unsigned data)
+{
+	/*check busy */
+	if (*(otp.base + ocotp_ctrl) & OTP_BUSY) {
+		printf("otp busy\n");
+		return -1;
+	}
+
+	/* clear error */
+	if (*(otp.base + ocotp_ctrl) & OTP_ERROR)
+		*(otp.base + ocotp_ctrl) &= ~OTP_ERROR;
+
+	/* check address */
+	if (addr & ~0x7f) {
+		printf("invalid address\n");
+		return -1;
+	}
+
+	/* set address and data */
+	*(otp.base + ocotp_ctrl_set) = addr | OTP_WR_UNLOCK;
+	*(otp.base + ocotp_data) = data;
+
+	/* check error */
+	if (*(otp.base + ocotp_ctrl) & OTP_ERROR) {
+		printf("data write error\n");
+		return -1;
+	}
+
+	/* wait for completion */
+	while (*(otp.base + ocotp_ctrl) & OTP_BUSY) usleep(10000);
+	usleep(100000);
+
+	/* clear address */
+	*(otp.base + ocotp_ctrl_clr) = addr | OTP_WR_UNLOCK;
+
+	/* wait for completion */
+	while (*(otp.base + ocotp_ctrl) & OTP_BUSY) usleep(10000);
+	usleep(100000);
+
+	return 0;
+}
+
+
+int otp_reload(void)
+{
+	/* check busy */
+	if (*(otp.base + ocotp_ctrl) & OTP_BUSY) {
+		printf("otp busy\n");
+		return -1;
+	}
+
+	/* clear error */
+	if (*(otp.base + ocotp_ctrl) & OTP_ERROR)
+		*(otp.base + ocotp_ctrl) &= ~OTP_ERROR;
+
+	/* set reload */
+	*(otp.base + ocotp_ctrl_set) = OTP_RELOAD;
+
+	/* check error */
+	if (*(otp.base + ocotp_ctrl) & OTP_ERROR) {
+		printf("reload error\n");
+		return -1;
+	}
+
+	/*wait for completion */
+	while (*(otp.base + ocotp_ctrl) & (OTP_BUSY & OTP_RELOAD)) usleep(10000);
+	usleep(100000);
+
+	return 0;
+}
+
+
+int otp_write_reload(unsigned addr, unsigned data)
+{
+	return otp_write(addr, data) ? -1 : otp_reload();
+}
+
 
 int blow_fuses(void)
 {
 	if (*(otp.base + ocotp_ctrl) & OTP_ERROR) {
-		printf("OTP error\n");
+		printf("otp error\n");
 		return -1;
 	}
 	while (*(otp.base + ocotp_ctrl) & OTP_BUSY) usleep(10000);
@@ -66,7 +146,7 @@ int blow_fuses(void)
 	*(otp.base + ocotp_data) = 0x10;
 
 	if (*(otp.base + ocotp_ctrl) & OTP_ERROR) {
-		printf("BT_FUSE_SEL error\n");
+		printf("address select error\n");
 		return -1;
 	}
 	while (*(otp.base + ocotp_ctrl) & OTP_BUSY) usleep(10000);
@@ -80,7 +160,7 @@ int blow_fuses(void)
 	*(otp.base + ocotp_data) = 0x1090;
 
 	if (*(otp.base + ocotp_ctrl) & OTP_ERROR) {
-		printf("BOOT_CFG error\n");
+		printf("data write error\n");
 		return -1;
 	}
 	while (*(otp.base + ocotp_ctrl) & OTP_BUSY) usleep(10000);
@@ -89,7 +169,7 @@ int blow_fuses(void)
 	*(otp.base + ocotp_ctrl_set) = OTP_RELOAD;
 
 	if (*(otp.base + ocotp_ctrl) & OTP_ERROR) {
-		printf("RELOAD error\n");
+		printf("reaload error\n");
 		return -1;
 	}
 	while (*(otp.base + ocotp_ctrl) & OTP_BUSY) usleep(10000);
@@ -99,7 +179,7 @@ int blow_fuses(void)
 	return 0;
 }
 
-int get_unique_id(void)
+unsigned long long get_unique_id(void)
 {
 	uint64_t uid;
 
@@ -107,8 +187,25 @@ int get_unique_id(void)
 
 	printf("0x%llx\n", uid);
 
+	return uid;
+}
+
+int blow_mac(void) {
+	uint64_t uid = get_unique_id();
+
+	if (otp_write(0x22, (unsigned)((uid >> 16) & 0xffffff00) | 0x01))
+		return -1;
+
+	if (otp_write(0x23, (unsigned)(((uid) & 0xff000000) | (0x2 << 16 ) | ((uid >> 48) & 0x0000ffff))))
+		return -1;
+
+	if (otp_write_reload(0x24, (unsigned)((uid >> 32) & 0xffffffff)))
+		return -1;
+
+	printf("MAC addreses blown\n");
 	return 0;
 }
+
 
 int main(int argc, char **argv)
 {
@@ -120,7 +217,7 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
-	while ((res = getopt(argc, argv, "bu")) >= 0) {
+	while ((res = getopt(argc, argv, "bum")) >= 0) {
 		switch (res) {
 		case 'b':
 			common.blow_fuses = 1;
@@ -128,16 +225,20 @@ int main(int argc, char **argv)
 		case 'u':
 			common.get_uid = 1;
 			break;
+		case 'm':
+			common.blow_mac = 1;
+			break;
 		default:
 			common.display_usage = 1;
 			break;
 		}
 	}
 
-	if (common.display_usage || (!common.blow_fuses && !common.get_uid)) {
+	if (common.display_usage || (!common.blow_fuses && !common.get_uid && !common.blow_mac)) {
 		printf("Usage: imx6ull-otp [-b] [-u]\n\r");
 		printf("    -b    Blow fuses\n\r");
 		printf("    -u    Get unique ID\n\r");
+		printf("    -m    Blow mac addresses\n\r");
 		return 1;
 	}
 
@@ -146,6 +247,9 @@ int main(int argc, char **argv)
 
 	if (common.get_uid)
 		get_unique_id();
+
+	if (common.blow_mac)
+		blow_mac();
 
 	return 0;
 }
