@@ -49,7 +49,7 @@ otp_t otp = { 0 };
 #define OTP_WR_UNLOCK (0x3e77 << 16)
 
 struct common_s {
-	int blow_fuses;
+	int blow_boot;
 	int get_uid;
 	int blow_mac;
 	int display_usage;
@@ -134,50 +134,18 @@ int otp_write_reload(unsigned addr, unsigned data)
 }
 
 
-int blow_fuses(void)
+int blow_boot_fuses(void)
 {
-	if (*(otp.base + ocotp_ctrl) & OTP_ERROR) {
-		printf("otp error\n");
+	if (otp_write(0x5, 0x1090)) /* set nand options (64 pages per block, 4 fcb)*/
 		return -1;
-	}
-	while (*(otp.base + ocotp_ctrl) & OTP_BUSY) usleep(10000);
 
-	*(otp.base + ocotp_ctrl_set) = 0x6 | OTP_WR_UNLOCK;
-	*(otp.base + ocotp_data) = 0x10;
-
-	if (*(otp.base + ocotp_ctrl) & OTP_ERROR) {
-		printf("address select error\n");
+	if (otp_write_reload(0x6, 0x10)) /* set internal boot fuse */
 		return -1;
-	}
-	while (*(otp.base + ocotp_ctrl) & OTP_BUSY) usleep(10000);
-	usleep(100000);
 
-	*(otp.base + ocotp_ctrl_clr) = 0x6 | OTP_WR_UNLOCK;
-	while (*(otp.base + ocotp_ctrl) & OTP_BUSY) usleep(10000);
-	usleep(100000);
-
-	*(otp.base + ocotp_ctrl_set) = 0x5 | OTP_WR_UNLOCK;
-	*(otp.base + ocotp_data) = 0x1090;
-
-	if (*(otp.base + ocotp_ctrl) & OTP_ERROR) {
-		printf("data write error\n");
-		return -1;
-	}
-	while (*(otp.base + ocotp_ctrl) & OTP_BUSY) usleep(10000);
-	usleep(100000);
-
-	*(otp.base + ocotp_ctrl_set) = OTP_RELOAD;
-
-	if (*(otp.base + ocotp_ctrl) & OTP_ERROR) {
-		printf("reaload error\n");
-		return -1;
-	}
-	while (*(otp.base + ocotp_ctrl) & OTP_BUSY) usleep(10000);
-	usleep(100000);
-
-	printf("Fuses blown\n");
+	printf("Boot fuses blown\n");
 	return 0;
 }
+
 
 unsigned long long get_unique_id(void)
 {
@@ -190,7 +158,7 @@ unsigned long long get_unique_id(void)
 	return uid;
 }
 
-int blow_mac(void) {
+int blow_mac_fuses(void) {
 	uint64_t uid = get_unique_id();
 
 	if (otp_write(0x22, (unsigned)((uid >> 16) & 0xffffff00) | 0x01))
@@ -202,7 +170,7 @@ int blow_mac(void) {
 	if (otp_write_reload(0x24, (unsigned)((uid >> 32) & 0xffffffff)))
 		return -1;
 
-	printf("MAC addreses blown\n");
+	printf("MAC addresses fuses blown\n");
 	return 0;
 }
 
@@ -220,7 +188,7 @@ int main(int argc, char **argv)
 	while ((res = getopt(argc, argv, "bum")) >= 0) {
 		switch (res) {
 		case 'b':
-			common.blow_fuses = 1;
+			common.blow_boot = 1;
 			break;
 		case 'u':
 			common.get_uid = 1;
@@ -234,22 +202,22 @@ int main(int argc, char **argv)
 		}
 	}
 
-	if (common.display_usage || (!common.blow_fuses && !common.get_uid && !common.blow_mac)) {
-		printf("Usage: imx6ull-otp [-b] [-u]\n\r");
-		printf("    -b    Blow fuses\n\r");
+	if (common.display_usage || (!common.blow_boot && !common.get_uid && !common.blow_mac)) {
+		printf("Usage: imx6ull-otp [-b] [-u] [-m]\n\r");
+		printf("    -b    Blow boot fuses\n\r");
 		printf("    -u    Get unique ID\n\r");
-		printf("    -m    Blow mac addresses\n\r");
+		printf("    -m    Blow MAC addresses\n\r");
 		return 1;
 	}
 
-	if (common.blow_fuses)
-		blow_fuses();
+	if (common.blow_boot)
+		blow_boot_fuses();
 
 	if (common.get_uid)
 		get_unique_id();
 
 	if (common.blow_mac)
-		blow_mac();
+		blow_mac_fuses();
 
 	return 0;
 }
