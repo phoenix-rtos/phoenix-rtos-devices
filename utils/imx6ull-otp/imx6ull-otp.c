@@ -1,4 +1,4 @@
-#/*
+/*
  * Phoenix-RTOS
  *
  * IMX6ULL NAND tool.
@@ -158,16 +158,42 @@ unsigned long long get_unique_id(void)
 	return uid;
 }
 
-int blow_mac_fuses(void) {
-	uint64_t uid = get_unique_id();
+int blow_mac_fuses(char *mac1_str, char *mac2_str) {
+	unsigned mac1[6] = { 0 };
+	unsigned mac2[6] = { 0 };
 
-	if (otp_write(0x22, (unsigned)((uid >> 16) & 0xffffff00) | 0x01))
+	if (mac1_str == NULL || mac2_str == NULL) {
+		printf("Invalid argument\n");
+		return -1;
+	}
+
+	if (sscanf(mac1_str, "%2x:%2x:%2x:%2x:%2x:%2x",
+		&mac1[0], &mac1[1], &mac1[2], &mac1[3], &mac1[4], &mac1[5]) != 6) {
+		printf("Invalid MAC address format\n");
+		return -1;
+	}
+
+	if (sscanf(mac2_str, "%2x:%2x:%2x:%2x:%2x:%2x",
+		&mac2[0], &mac2[1], &mac2[2], &mac2[3], &mac2[4], &mac2[5]) != 6) {
+		printf("Invalid MAC address format\n");
+		return -1;
+	}
+
+	printf("MAC addr 1: %x:%x:%x:%x:%x:%x\n",
+		mac1[0], mac1[1], mac1[2], mac1[3], mac1[4], mac1[5]);
+	printf("MAC addr 2: %x:%x:%x:%x:%x:%x\n",
+		mac2[0], mac2[1], mac2[2], mac2[3], mac2[4], mac2[5]);
+
+	if (otp_write(0x22, (unsigned)(mac1[5] | mac1[4] << 8 | mac1[3] << 16 | mac1[2] << 24)))
 		return -1;
 
-	if (otp_write(0x23, (unsigned)(((uid) & 0xff000000) | (0x2 << 16 ) | ((uid >> 48) & 0x0000ffff))))
+	if (otp_write(0x23, (unsigned)(mac1[1] | mac1[0] << 8 | mac2[5] << 16 | mac2[4] << 24)))
 		return -1;
 
-	if (otp_write_reload(0x24, (unsigned)((uid >> 32) & 0xffffffff)))
+	if (otp_write(0x24, (unsigned)(mac2[3] | mac2[2] << 8 | mac2[1] << 16 | mac2[0] << 24)))
+		return -1;
+
+	if (otp_reload())
 		return -1;
 
 	printf("MAC addresses fuses blown\n");
@@ -178,6 +204,7 @@ int blow_mac_fuses(void) {
 int main(int argc, char **argv)
 {
 	int res;
+	char *mac[2] = { 0 };
 
 	otp.base = mmap(NULL, 0x1000, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, OTP_BASE_ADDR);
 	if (otp.base == NULL) {
@@ -185,7 +212,7 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
-	while ((res = getopt(argc, argv, "bum")) >= 0) {
+	while ((res = getopt(argc, argv, "bum:")) >= 0) {
 		switch (res) {
 		case 'b':
 			common.blow_boot = 1;
@@ -194,6 +221,13 @@ int main(int argc, char **argv)
 			common.get_uid = 1;
 			break;
 		case 'm':
+			mac[0] = argv[optind - 1];
+			if (argv[optind] == NULL || argv[optind][0] == '-') {
+				common.display_usage = 1;
+				break;
+			}
+			mac[1] = argv[optind];
+			optind++;
 			common.blow_mac = 1;
 			break;
 		default:
@@ -203,10 +237,10 @@ int main(int argc, char **argv)
 	}
 
 	if (common.display_usage || (!common.blow_boot && !common.get_uid && !common.blow_mac)) {
-		printf("Usage: imx6ull-otp [-b] [-u] [-m]\n\r");
-		printf("    -b    Blow boot fuses\n\r");
-		printf("    -u    Get unique ID\n\r");
-		printf("    -m    Blow MAC addresses\n\r");
+		printf("Usage: imx6ull-otp [-b] [-u] [-m MAC1 MAC2]\n\r");
+		printf("    -b              Blow boot fuses\n\r");
+		printf("    -u              Get unique ID\n\r");
+		printf("    -m MAC1 MAC2    Blow MAC addresses (MAC format XX:XX:XX:XX:XX:XX)\n\r");
 		return 1;
 	}
 
@@ -217,7 +251,7 @@ int main(int argc, char **argv)
 		get_unique_id();
 
 	if (common.blow_mac)
-		blow_mac_fuses();
+		blow_mac_fuses(mac[0], mac[1]);
 
 	return 0;
 }
