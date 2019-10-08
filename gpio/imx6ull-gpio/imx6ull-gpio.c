@@ -12,6 +12,7 @@
  */
 
 #include <errno.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -36,13 +37,13 @@ enum { dr = 0, gdir, psr, icr1, icr2, imr, isr, edge };
 
 struct {
 	struct {
-		volatile u32 *base;
+		volatile uint32_t *base;
 		id_t port;
 		id_t dir;
 		handle_t lock;
 	} gpio[5];
 
-	u32 port;
+	uint32_t port;
 } common;
 
 
@@ -115,7 +116,7 @@ int init(void)
 }
 
 
-int gpioread(int d, u32 *val)
+int gpioread(int d, uint32_t *val)
 {
 	if (d < gpio1 || d > gpio5)
 		return -EINVAL;
@@ -128,9 +129,9 @@ int gpioread(int d, u32 *val)
 }
 
 
-int gpiowrite(int d, u32 val, u32 mask)
+int gpiowrite(int d, uint32_t val, uint32_t mask)
 {
-	u32 t;
+	uint32_t t;
 
 	if (d < gpio1 || d > gpio5)
 		return -EINVAL;
@@ -144,7 +145,7 @@ int gpiowrite(int d, u32 val, u32 mask)
 }
 
 
-int gpiogetdir(int d, u32 *dir)
+int gpiogetdir(int d, uint32_t *dir)
 {
 	if (d < dir1 || d > dir5)
 		return -EINVAL;
@@ -157,9 +158,9 @@ int gpiogetdir(int d, u32 *dir)
 }
 
 
-int gpiosetdir(int d, u32 dir, u32 mask)
+int gpiosetdir(int d, uint32_t dir, uint32_t mask)
 {
-	u32 t;
+	uint32_t t;
 
 	if (d < dir1 || d > dir5)
 		return -EINVAL;
@@ -178,7 +179,7 @@ void thread(void *arg)
 	msg_t msg;
 	unsigned int rid;
 	int d;
-	u32 val, mask;
+	uint32_t val, mask;
 
 	while (1) {
 		if (msgRecv(common.port, &msg, &rid) < 0)
@@ -193,31 +194,31 @@ void thread(void *arg)
 				break;
 
 			case mtRead:
-				if (msg.o.data != NULL && msg.o.size >= sizeof(u32)) {
+				if (msg.o.data != NULL && msg.o.size >= sizeof(uint32_t)) {
 					d = msg.i.io.oid.id;
 
 					if (d >= gpio1 && d <= gpio5) {
 						msg.o.io.err = gpioread(d, &val);
-						memcpy(msg.o.data, &val, sizeof(u32));
+						memcpy(msg.o.data, &val, sizeof(uint32_t));
 					}
 					else if (d >= dir1 && d <= dir5) {
 						msg.o.io.err = gpiogetdir(d, &val);
-						memcpy(msg.o.data, &val, sizeof(u32));
+						memcpy(msg.o.data, &val, sizeof(uint32_t));
 					}
 
 					if (msg.o.io.err == EOK)
-						msg.o.io.err = sizeof(u32);
+						msg.o.io.err = sizeof(uint32_t);
 				}
 				break;
 
 			case mtWrite:
-				if (msg.i.data != NULL && msg.i.size >= sizeof(u32)) {
-					memcpy(&val, msg.i.data, sizeof(u32));
+				if (msg.i.data != NULL && msg.i.size >= sizeof(uint32_t)) {
+					memcpy(&val, msg.i.data, sizeof(uint32_t));
 
-					if (msg.i.size >= sizeof(u32) << 1)
-						memcpy(&mask, msg.i.data + sizeof(u32), sizeof(u32));
+					if (msg.i.size >= sizeof(uint32_t) << 1)
+						memcpy(&mask, msg.i.data + sizeof(uint32_t), sizeof(uint32_t));
 					else
-						mask = (u32)-1;
+						mask = (uint32_t)-1;
 
 					d = msg.i.io.oid.id;
 
@@ -227,7 +228,7 @@ void thread(void *arg)
 						msg.o.io.err = gpiosetdir(d, val, mask);
 
 					if (msg.o.io.err == EOK)
-						msg.o.io.err = (msg.i.size >= (sizeof(u32) << 1)) ? sizeof(u32) << 1 : sizeof(u32);
+						msg.o.io.err = (msg.i.size >= (sizeof(uint32_t) << 1)) ? sizeof(uint32_t) << 1 : sizeof(uint32_t);
 				}
 				break;
 		}

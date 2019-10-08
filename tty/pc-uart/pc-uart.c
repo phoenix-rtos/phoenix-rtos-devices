@@ -14,6 +14,7 @@
 
 #include <errno.h>
 #include <poll.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -48,7 +49,7 @@ static int uart_interrupt(unsigned int n, void *arg)
 {
 	uart_t *uart = (uart_t *)arg;
 /*
-	u8 iir;
+	uint8_t iir;
 	if ((iir = inb(uart->base + REG_IIR)) & IIR_IRQPEND)
 		return 0;
 */
@@ -159,7 +160,7 @@ static int uart_poll_status(u8 d)
 }
 
 
-u8 uart_get(oid_t *oid)
+uint8_t uart_get(oid_t *oid)
 {
 	unsigned int i;
 
@@ -179,7 +180,7 @@ static void uart_ioctl(unsigned port, msg_t *msg)
 	pid_t pid;
 	int err;
 	oid_t oid;
-	u8 d;
+	uint8_t d;
 
 	oid.port = port;
 
@@ -210,7 +211,7 @@ int _uart_init(void *base, unsigned int irq, unsigned int speed, uart_t **uart)
 	if (inb(base + REG_IIR) == 0xff)
 		return -ENOENT;
 
-	printf("pc-uart: Detected interface on 0x%x irq=%d\n", (u32)base, irq);
+	printf("pc-uart: Detected interface on 0x%x irq=%d\n", (uint32_t)base, irq);
 
 	/* Allocate and map memory for driver structures */
 	if ((*uart = malloc(sizeof(uart_t))) == NULL)
@@ -270,7 +271,7 @@ int _uart_init(void *base, unsigned int irq, unsigned int speed, uart_t **uart)
 
 void poolthr(void *arg)
 {
-	u32 port = (u32)arg;
+	uint32_t port = (uint32_t)arg;
 	msg_t msg;
 	unsigned int rid;
 
@@ -309,7 +310,7 @@ int main(void)
 {
 	void *base = (void *)0x3f8;
 	unsigned int n = 4;
-	u32 port;
+	uint32_t port;
 
 	printf("pc-uart: Initializing UART 16550 driver %s\n", "");
 

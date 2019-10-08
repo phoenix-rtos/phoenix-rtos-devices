@@ -15,6 +15,7 @@
 
 #include <errno.h>
 #include <unistd.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -37,7 +38,7 @@ enum { ocotp_ctrl, ocotp_ctrl_set, ocotp_ctrl_clr, ocotp_ctrl_tog, ocotp_timing,
 	};
 
 typedef struct _otp_t {
-	volatile u32 *base;
+	volatile uint32_t *base;
 } otp_t;
 
 otp_t otp = { 0 };

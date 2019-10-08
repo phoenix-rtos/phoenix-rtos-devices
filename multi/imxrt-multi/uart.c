@@ -13,6 +13,7 @@
 
 
 #include <string.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -52,9 +53,9 @@
 typedef struct uart_s {
 	char stack[1024] __attribute__ ((aligned(8)));
 
-	volatile u32 *base;
-	u32 mode;
-	u16 dev_no;
+	volatile uint32_t *base;
+	uint32_t mode;
+	uint16_t dev_no;
 
 	handle_t cond;
 	handle_t inth;
@@ -151,7 +152,7 @@ static void signal_txready(void *_uart)
 static void set_cflag(void *_uart, tcflag_t* cflag)
 {
 	uart_t *uartptr = (uart_t *)_uart;
-	u32 t;
+	uint32_t t;
 
 	/* disable TX and RX */
 	*(uartptr->base + ctrlr) &= ~((1 << 19) | (1 << 18));
@@ -187,7 +188,7 @@ static void set_cflag(void *_uart, tcflag_t* cflag)
 }
 
 
-static u32 calculate_baudrate(speed_t baud)
+static uint32_t calculate_baudrate(speed_t baud)
 {
 	int osr, sbr, bestSbr = 0, bestOsr = 0, bestErr = 1000, t, baud_rate = libtty_baudrate_to_int(baud);
 
@@ -221,7 +222,7 @@ static u32 calculate_baudrate(speed_t baud)
 
 static void set_baudrate(void *_uart, speed_t baud)
 {
-	u32 reg, t;
+	uint32_t reg, t;
 	uart_t *uartptr = (uart_t *)_uart;
 
 	reg = calculate_baudrate(baud);
@@ -395,12 +396,12 @@ static void uart_initPins(void)
 int uart_init(void)
 {
 	int i, dev;
-	u32 t;
+	uint32_t t;
 	uart_t *uart;
 	libtty_callbacks_t callbacks;
 	static const size_t fifoSzLut[] = { 1, 4, 8, 16, 32, 64, 128, 256 };
 	static const struct {
-		volatile u32 *base;
+		volatile uint32_t *base;
 		int dev;
 		unsigned irq;
 	} info[] = {

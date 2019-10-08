@@ -14,6 +14,7 @@
 
 #include <sys/threads.h>
 #include <sys/pwman.h>
+#include <stdint.h>
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
@@ -63,7 +64,7 @@ static inline void _flash_clearFlags(void)
 }
 
 
-static inline int eeprom_isValidAdress(u32 addr, size_t size)
+static inline int eeprom_isValidAdress(uint32_t addr, size_t size)
 {
 	return (addr >= FLASH_EEPROM_1_ADDR && addr + size <= (FLASH_EEPROM_2_ADDR + FLASH_EEPROM_SIZE));
 }
@@ -87,27 +88,27 @@ static void _eeprom_unlock(void)
 }
 
 
-static int _eeprom_eraseByte(u32 addr)
+static int _eeprom_eraseByte(uint32_t addr)
 {
 	int err;
 
 	_flash_clearFlags();
 
 	if ((err = _flash_wait()) == 0)
-		*(volatile u8 *) addr = 0x0;
+		*(volatile uint8_t *) addr = 0x0;
 
 	return err;
 }
 
 
-static int _eeprom_writeByte(u32 addr, char value)
+static int _eeprom_writeByte(uint32_t addr, char value)
 {
 	int err;
 
 	_flash_clearFlags();
 
 	if ((err = _flash_wait()) == 0) {
-		*(volatile u8 *) addr = value;
+		*(volatile uint8_t *) addr = value;
 		err = _flash_wait();
 	}
 
@@ -115,20 +116,20 @@ static int _eeprom_writeByte(u32 addr, char value)
 }
 
 
-static size_t eeprom_readData(u32 offset, char *buff, size_t size)
+static size_t eeprom_readData(uint32_t offset, char *buff, size_t size)
 {
 	unsigned int i;
 
 	mutexLock(flash_common.lock);
 	for (i = 0; i < size; ++i)
-		buff[i] = *((volatile u8 *) offset + i);
+		buff[i] = *((volatile uint8_t *) offset + i);
 	mutexUnlock(flash_common.lock);
 
 	return i;
 }
 
 
-static size_t eeprom_writeData(u32 offset, const char *buff, size_t size)
+static size_t eeprom_writeData(uint32_t offset, const char *buff, size_t size)
 {
 	unsigned int i;
 
@@ -146,7 +147,7 @@ static size_t eeprom_writeData(u32 offset, const char *buff, size_t size)
 }
 
 
-static inline int ob_isValidAdress(u32 addr)
+static inline int ob_isValidAdress(uint32_t addr)
 {
 	/* Address must be even. */
 	if (addr & 1)
@@ -184,11 +185,11 @@ static void _ob_unlock(void)
 }
 
 
-static int ob_writeByte(u32 addr, char value)
+static int ob_writeByte(uint32_t addr, char value)
 {
 	int err;
-	volatile u32 word;
-	volatile u32 *wordAddr = (u32 *) (addr & ~((u32) 0x3));
+	volatile uint32_t word;
+	volatile uint32_t *wordAddr = (uint32_t *) (addr & ~((uint32_t) 0x3));
 
 	mutexLock(flash_common.lock);
 	_ob_unlock();
@@ -198,13 +199,13 @@ static int ob_writeByte(u32 addr, char value)
 		word = *wordAddr;
 		if (addr & (1 << 0)) {
 			word &= 0x00ff00ff;
-			word |= ((u32) value) << 8;
-			word |= ((u32) ~value) << 24;
+			word |= ((uint32_t) value) << 8;
+			word |= ((uint32_t) ~value) << 24;
 		}
 		else {
 			word &= 0xff00ff00;
-			word |= ((u32) value);
-			word |= ((u32) ~value) << 16;
+			word |= ((uint32_t) value);
+			word |= ((uint32_t) ~value) << 16;
 		}
 
 		*wordAddr = word;
@@ -218,14 +219,14 @@ static int ob_writeByte(u32 addr, char value)
 }
 
 
-static size_t ob_readData(u32 offset, char *buff, size_t size)
+static size_t ob_readData(uint32_t offset, char *buff, size_t size)
 {
 	unsigned int i;
 
 	mutexLock(flash_common.lock);
 
 	for (i = 0; i < size; ++i)
-		buff[i] = *((volatile u8 *) offset + i);
+		buff[i] = *((volatile uint8_t *) offset + i);
 
 	mutexUnlock(flash_common.lock);
 
@@ -233,7 +234,7 @@ static size_t ob_readData(u32 offset, char *buff, size_t size)
 }
 
 
-static size_t ob_writeData(u32 offset, const char *buff, size_t size)
+static size_t ob_writeData(uint32_t offset, const char *buff, size_t size)
 {
 	if (size != 1)
 		return 0;
@@ -244,7 +245,7 @@ static size_t ob_writeData(u32 offset, const char *buff, size_t size)
 }
 
 
-static inline int program_isValidAddress(u32 addr, size_t size)
+static inline int program_isValidAddress(uint32_t addr, size_t size)
 {
 	if (addr >= FLASH_PROGRAM_1_ADDR && addr + size <= (FLASH_PROGRAM_1_ADDR + FLASH_PROGRAM_SIZE))
 		return 1;
@@ -277,7 +278,7 @@ static void _program_unlock(void)
 }
 
 
-static int _program_erasePage(u32 addr)
+static int _program_erasePage(uint32_t addr)
 {
 	int err;
 
@@ -289,7 +290,7 @@ static int _program_erasePage(u32 addr)
 		*(flash_common.flash + flash_pecr) |= ((1 << 9) | (1 << 3));
 
 		/* Erase page. */
-		*(volatile u32 *) addr = 0x0;
+		*(volatile uint32_t *) addr = 0x0;
 		err = _flash_wait();
 
 		/* Disable the ERASE and PROG bits. */
@@ -302,10 +303,10 @@ static int _program_erasePage(u32 addr)
 }
 
 
-static int _program_writeWord(u32 addr, u32 value)
+static int _program_writeWord(uint32_t addr, uint32_t value)
 {
 	int err;
-	volatile u32 *current = (volatile u32 *) addr;
+	volatile uint32_t *current = (volatile uint32_t *) addr;
 
 	_program_unlock();
 	_flash_clearFlags();
@@ -326,14 +327,14 @@ static int _program_writeWord(u32 addr, u32 value)
 }
 
 
-static size_t _program_readData(u32 offset, char *buff, size_t size)
+static size_t _program_readData(uint32_t offset, char *buff, size_t size)
 {
 	unsigned int i, j, n = 0;
 	unsigned int prefixBytes = min(4 - (offset & 0x3), size);
 	unsigned int suffixBytes = (size - prefixBytes) % 4;
 	unsigned int middleBytes = size - prefixBytes - suffixBytes;
-	volatile u32 *addr = (u32 *) (offset & ~((u32) 0x3));
-	volatile u32 value;
+	volatile uint32_t *addr = (uint32_t *) (offset & ~((uint32_t) 0x3));
+	volatile uint32_t value;
 
 	/* Read prefix word. */
 	value = *addr++;
@@ -358,7 +359,7 @@ static size_t _program_readData(u32 offset, char *buff, size_t size)
 }
 
 
-static size_t program_readData(u32 offset, char *buff, size_t size)
+static size_t program_readData(uint32_t offset, char *buff, size_t size)
 {
 	size_t ret;
 
@@ -370,9 +371,9 @@ static size_t program_readData(u32 offset, char *buff, size_t size)
 }
 
 
-static size_t program_writeData(u32 offset, const char *buff, size_t size)
+static size_t program_writeData(uint32_t offset, const char *buff, size_t size)
 {
-	u32 word, pageAddr, addr = offset;
+	uint32_t word, pageAddr, addr = offset;
 	size_t n = 0;
 	int i;
 
@@ -380,7 +381,7 @@ static size_t program_writeData(u32 offset, const char *buff, size_t size)
 
 	while (n < size) {
 		/* Read page into buffer and erase it. */
-		pageAddr = addr & ~((u32) (FLASH_PAGE_SIZE - 1));
+		pageAddr = addr & ~((uint32_t) (FLASH_PAGE_SIZE - 1));
 		_program_readData(pageAddr, flash_common.page, FLASH_PAGE_SIZE);
 		_program_erasePage(pageAddr);
 
@@ -403,7 +404,7 @@ static size_t program_writeData(u32 offset, const char *buff, size_t size)
 }
 
 
-size_t flash_readData(u32 offset, char *buff, size_t size)
+size_t flash_readData(uint32_t offset, char *buff, size_t size)
 {
 	if (program_isValidAddress(offset, size))
 		return program_readData(offset, buff, size);
@@ -418,7 +419,7 @@ size_t flash_readData(u32 offset, char *buff, size_t size)
 }
 
 
-size_t flash_writeData(u32 offset, const char *buff, size_t size)
+size_t flash_writeData(uint32_t offset, const char *buff, size_t size)
 {
 	if (program_isValidAddress(offset, size))
 		return program_writeData(offset, buff, size);
@@ -437,7 +438,7 @@ void flash_bankBreak(void)
 {
 	spinlock_t spinlock;
 	char buff[4] = { 0x11, 0x11, 0x11, 0x11 };
-	u32 currentBankAddress = flash_activeBank() ? FLASH_PROGRAM_2_ADDR : FLASH_PROGRAM_1_ADDR;
+	uint32_t currentBankAddress = flash_activeBank() ? FLASH_PROGRAM_2_ADDR : FLASH_PROGRAM_1_ADDR;
 
 	/* Set option bytes so boot bank will be choosen on startup based on bank first word */
 	ob_writeByte(0x1ff80004, 0x78);

@@ -14,7 +14,7 @@
 #ifndef _COMMON_H_
 #define _COMMON_H_
 
-
+#include <stdint.h>
 #include <stdio.h>
 #include <phoenix/arch/stm32l1.h>
 
@@ -60,9 +60,9 @@ static inline void dataBarier(void)
 }
 
 
-static inline u32 getPC(void)
+static inline uint32_t getPC(void)
 {
-	u32 ret;
+	uint32_t ret;
 
 	__asm__ volatile ("mov %0, pc" : "=r" (ret));
 

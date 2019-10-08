@@ -13,6 +13,7 @@
 
 
 #include <string.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -33,7 +34,7 @@ enum { gpio_dr = 0, gpio_gdir, gpio_psr, gpio_icr1, gpio_icr2, gpio_imr,
 
 
 struct {
-	volatile u32 *base[GPIO_PORTS];
+	volatile uint32_t *base[GPIO_PORTS];
 	handle_t lock;
 } gpio_common;
 

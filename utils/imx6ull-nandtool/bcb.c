@@ -13,6 +13,7 @@
  * %LICENSE%
  */
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -23,10 +24,10 @@
 #include "bch.h"
 
 
-u32 bcb_checksum(u8 *bcb, int size)
+uint32_t bcb_checksum(uint8_t *bcb, int size)
 {
 	int i;
-	u32 checksum = 0;
+	uint32_t checksum = 0;
 
 	for (i = 0; i <= size; i++)
 		checksum += bcb[i];
@@ -43,7 +44,7 @@ void dbbt_fingerprint(dbbt_t *dbbt)
 }
 
 
-int dbbt_block_is_bad(dbbt_t *dbbt, u32 block_num)
+int dbbt_block_is_bad(dbbt_t *dbbt, uint32_t block_num)
 {
 	int i;
 
@@ -62,7 +63,7 @@ int dbbt_block_is_bad(dbbt_t *dbbt, u32 block_num)
 int dbbt_flash(flashdrv_dma_t *dma, dbbt_t *dbbt)
 {
 	int i, err;
-	u32 page_num = DBBT_START;
+	uint32_t page_num = DBBT_START;
 	void *data = mmap(NULL, PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0);
 	void *meta = mmap(NULL, PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0);
 
@@ -134,7 +135,7 @@ void fcb_init(fcb_t *fcb)
 	fcb->bbm_spare_offset		= 0;
 	fcb->disable_bbm_search		= 1;
 
-	fcb->checksum = bcb_checksum(((u8 *)fcb) + 4, sizeof(fcb_t) - 4);
+	fcb->checksum = bcb_checksum(((uint8_t *)fcb) + 4, sizeof(fcb_t) - 4);
 }
 
 int fcb_flash(flashdrv_dma_t *dma, fcb_t *fcb_ret)

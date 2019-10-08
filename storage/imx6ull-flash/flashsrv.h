@@ -14,6 +14,9 @@
 #ifndef _IMX6ULL_FLASHSRV_H_
 #define _IMX6ULL_FLASHSRV_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #define PAGES_PER_BLOCK 64
 #define FLASH_PAGE_SIZE 0x1000
 #define RAW_FLASH_PAGE_SIZE 4320
@@ -42,13 +45,13 @@ typedef struct {
 
 		struct {
 			oid_t oid;
-			u32 address;
+			uint32_t address;
 			size_t size;
 		} write;
 
 		struct {
 			oid_t oid;
-			u32 address;
+			uint32_t address;
 			size_t size;
 		} readraw;
 	};

@@ -51,27 +51,27 @@ flashdrv_dma_t deinitializer.
 This function resets the NAND chip.
 
 
-    extern int flashdrv_write(flashdrv_dma_t *dma, u32 paddr, void *data, char *metadata);
+    extern int flashdrv_write(flashdrv_dma_t *dma, uint32_t paddr, void *data, char *metadata);
 
 This function writes one page of data to the NAND.
 
 
-    extern int flashdrv_read(flashdrv_dma_t *dma, u32 paddr, void *data, flashdrv_meta_t *meta);
+    extern int flashdrv_read(flashdrv_dma_t *dma, uint32_t paddr, void *data, flashdrv_meta_t *meta);
 
 This function reads one page of data from the NAND.
 
 
-    extern int flashdrv_erase(flashdrv_dma_t *dma, u32 paddr);
+    extern int flashdrv_erase(flashdrv_dma_t *dma, uint32_t paddr);
 
 This function erases one block of the NAND.
 
 
-    extern int flashdrv_writeraw(flashdrv_dma_t *dma, u32 paddr, void *data, int sz);
+    extern int flashdrv_writeraw(flashdrv_dma_t *dma, uint32_t paddr, void *data, int sz);
 
 Analogue to flashdrv_write, but ignores metadata.
 
 
-    extern int flashdrv_readraw(flashdrv_dma_t *dma, u32 paddr, void *data, int sz);
+    extern int flashdrv_readraw(flashdrv_dma_t *dma, uint32_t paddr, void *data, int sz);
 
 Analogue to flashdrv_read, but ignores metadata.
 

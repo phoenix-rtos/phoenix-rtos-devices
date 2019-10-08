@@ -15,6 +15,7 @@
 
 #include <errno.h>
 #include <unistd.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -69,7 +70,7 @@ static inline int check_block(char *raw_block)
 }
 
 
-int flash_image(void *arg, char *path, u32 start, u32 block_offset, int silent, int raw, dbbt_t *dbbt)
+int flash_image(void *arg, char *path, uint32_t start, uint32_t block_offset, int silent, int raw, dbbt_t *dbbt)
 {
 	int ret = 0;
 	int imgfd, pgsz, offs = 0;
@@ -77,7 +78,7 @@ int flash_image(void *arg, char *path, u32 start, u32 block_offset, int silent, 
 	void *img;
 	void *img_buf;
 	void *meta_buf;
-	u32 page_num, block_num;
+	uint32_t page_num, block_num;
 	flashdrv_dma_t *dma;
 
 	nand_msg(silent, "\n------ FLASH ------\n");
@@ -163,8 +164,8 @@ int flash_check_range(void *arg, int start, int end, int silent, dbbt_t **dbbt)
 	int bad = 0;
 	int err = 0;
 	void *raw_data = mmap(NULL, 2 * PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_PHYSMEM, 0x900000);
-	u32 bbt[256] = { 0 };
-	u32 bbtn = 0;
+	uint32_t bbt[256] = { 0 };
+	uint32_t bbtn = 0;
 	int dbbtsz;
 
 	if (raw_data == MAP_FAILED) {
@@ -212,10 +213,10 @@ int flash_check_range(void *arg, int start, int end, int silent, dbbt_t **dbbt)
 	nand_msg(silent, "------------------\n");
 
 	if (dbbt != NULL && bbtn < BB_MAX) {
-		dbbtsz = (sizeof(dbbt_t) + (sizeof(u32) * bbtn) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+		dbbtsz = (sizeof(dbbt_t) + (sizeof(uint32_t) * bbtn) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 		*dbbt = malloc(dbbtsz);
 		memset(*dbbt, 0, dbbtsz);
-		memcpy(&((*dbbt)->bad_block), &bbt, sizeof(u32) * bbtn);
+		memcpy(&((*dbbt)->bad_block), &bbt, sizeof(uint32_t) * bbtn);
 		(*dbbt)->entries_num = bbtn;
 	}
 

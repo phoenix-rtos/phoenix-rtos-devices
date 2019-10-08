@@ -13,6 +13,7 @@
 
 #include <errno.h>
 #include <unistd.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -56,11 +57,11 @@ enum {
 
 
 typedef struct {
-	u32 next;
-	u16 flags;
-	u16 bufsz;
-	u32 buffer;
-	u32 pio[];
+	uint32_t next;
+	uint16_t flags;
+	uint16_t bufsz;
+	uint32_t buffer;
+	uint32_t pio[];
 } dma_t;
 
 
@@ -120,26 +121,26 @@ enum {
 
 typedef struct {
 	dma_t dma;
-	u32 ctrl0;
+	uint32_t ctrl0;
 } gpmi_dma1_t;
 
 
 typedef struct {
 	dma_t dma;
-	u32 ctrl0;
-	u32 compare;
-	u32 eccctrl;
+	uint32_t ctrl0;
+	uint32_t compare;
+	uint32_t eccctrl;
 } gpmi_dma3_t;
 
 
 typedef struct {
 	dma_t dma;
-	u32 ctrl0;
-	u32 compare;
-	u32 eccctrl;
-	u32 ecccount;
-	u32 payload;
-	u32 auxiliary;
+	uint32_t ctrl0;
+	uint32_t compare;
+	uint32_t eccctrl;
+	uint32_t ecccount;
+	uint32_t payload;
+	uint32_t auxiliary;
 } gpmi_dma6_t;
 
 
@@ -193,10 +194,10 @@ typedef struct _flashdrv_dma_t {
 
 
 struct {
-	volatile u32 *gpmi;
-	volatile u32 *bch;
-	volatile u32 *dma;
-	volatile u32 *mux;
+	volatile uint32_t *gpmi;
+	volatile uint32_t *bch;
+	volatile uint32_t *dma;
+	volatile uint32_t *mux;
 
 	handle_t mutex, wait_mutex, bch_cond, dma_cond;
 	handle_t intbch, intdma, intgpmi;
@@ -214,7 +215,7 @@ static inline int dma_pio(int pio)
 
 static inline int dma_size(dma_t *dma)
 {
-	return sizeof(dma_t) + ((dma->flags >> 12) & 0xf) * sizeof(u32);
+	return sizeof(dma_t) + ((dma->flags >> 12) & 0xf) * sizeof(uint32_t);
 }
 
 
@@ -223,7 +224,7 @@ static int dma_terminate(dma_t *dma, int err)
 	memset(dma, 0, sizeof(*dma));
 
 	dma->flags = dma_irqcomp | dma_decrsema | dma_noxfer;
-	dma->buffer = (u32)err;
+	dma->buffer = (uint32_t)err;
 
 	return sizeof(*dma);
 }
@@ -234,7 +235,7 @@ static int dma_check(dma_t *dma, dma_t *fail)
 	memset(dma, 0, sizeof(*dma));
 
 	dma->flags = dma_hot | dma_sense;
-	dma->buffer = (u32)va2pa(fail);
+	dma->buffer = (uint32_t)va2pa(fail);
 
 	return sizeof(*dma);
 }
@@ -244,14 +245,14 @@ static void dma_sequence(dma_t *prev, dma_t *next)
 {
 	if (prev != NULL) {
 		prev->flags |= dma_chain;
-		prev->next = (u32)va2pa(next);
+		prev->next = (uint32_t)va2pa(next);
 	}
 }
 
 
 static void dma_run(dma_t *dma, int channel)
 {
-	*(flashdrv_common.dma + apbh_ch0_nxtcmdar + channel * apbh_next_channel) = (u32)va2pa(dma);
+	*(flashdrv_common.dma + apbh_ch0_nxtcmdar + channel * apbh_next_channel) = (uint32_t)va2pa(dma);
 	*(flashdrv_common.dma + apbh_ch0_sema + channel * apbh_next_channel) = 1;
 }
 
@@ -285,13 +286,13 @@ static int gpmi_irqHandler(unsigned int n, void *data)
 
 
 
-static int nand_cmdaddr(gpmi_dma3_t *cmd, int chip, void *buffer, u16 addrsz)
+static int nand_cmdaddr(gpmi_dma3_t *cmd, int chip, void *buffer, uint16_t addrsz)
 {
 	memset(cmd, 0, sizeof(*cmd));
 
 	cmd->dma.flags = dma_hot | dma_w4endcmd | dma_nandlock | dma_read | dma_pio(3);
 	cmd->dma.bufsz = (addrsz & 0x7) + 1;
-	cmd->dma.buffer = (u32)va2pa(buffer);
+	cmd->dma.buffer = (uint32_t)va2pa(buffer);
 
 	cmd->ctrl0 = chip * gpmi_chip | gpmi_write | gpmi_command_bytes | gpmi_lock_cs | gpmi_8bit | cmd->dma.bufsz;
 
@@ -302,13 +303,13 @@ static int nand_cmdaddr(gpmi_dma3_t *cmd, int chip, void *buffer, u16 addrsz)
 }
 
 
-static int nand_read(gpmi_dma3_t *cmd, int chip, void *buffer, u16 bufsz)
+static int nand_read(gpmi_dma3_t *cmd, int chip, void *buffer, uint16_t bufsz)
 {
 	memset(cmd, 0, sizeof(*cmd));
 
 	cmd->dma.flags = dma_hot | dma_nandlock | dma_w4endcmd | dma_write | dma_pio(3);
 	cmd->dma.bufsz = bufsz;
-	cmd->dma.buffer = (u32)va2pa(buffer);
+	cmd->dma.buffer = (uint32_t)va2pa(buffer);
 
 	cmd->ctrl0 = chip * gpmi_chip | gpmi_read | gpmi_data_bytes | gpmi_8bit | cmd->dma.bufsz;
 
@@ -316,7 +317,7 @@ static int nand_read(gpmi_dma3_t *cmd, int chip, void *buffer, u16 bufsz)
 }
 
 
-static int nand_readcompare(gpmi_dma3_t *cmd, int chip, u16 mask, u16 value)
+static int nand_readcompare(gpmi_dma3_t *cmd, int chip, uint16_t mask, uint16_t value)
 {
 	memset(cmd, 0, sizeof(*cmd));
 
@@ -329,7 +330,7 @@ static int nand_readcompare(gpmi_dma3_t *cmd, int chip, u16 mask, u16 value)
 }
 
 
-static int nand_ecread(gpmi_dma6_t *cmd, int chip, void *payload, void *auxiliary, u16 bufsz)
+static int nand_ecread(gpmi_dma6_t *cmd, int chip, void *payload, void *auxiliary, uint16_t bufsz)
 {
 	int eccmode = (payload == NULL) ? 0x100 : 0x1ff;
 	memset(cmd, 0, sizeof(*cmd));
@@ -343,8 +344,8 @@ static int nand_ecread(gpmi_dma6_t *cmd, int chip, void *payload, void *auxiliar
 	cmd->eccctrl = 1 << 12 | eccmode;
 	cmd->ecccount = bufsz;
 	if (payload != NULL)
-		cmd->payload = (u32)va2pa(payload);
-	cmd->auxiliary = (u32)va2pa(auxiliary);
+		cmd->payload = (uint32_t)va2pa(payload);
+	cmd->auxiliary = (uint32_t)va2pa(auxiliary);
 
 	return sizeof(*cmd);
 }
@@ -361,13 +362,13 @@ static int nand_disablebch(gpmi_dma3_t *cmd, int chip)
 }
 
 
-static int nand_write(gpmi_dma3_t *cmd, int chip, void *buffer, u16 bufsz)
+static int nand_write(gpmi_dma3_t *cmd, int chip, void *buffer, uint16_t bufsz)
 {
 	memset(cmd, 0, sizeof(*cmd));
 
 	cmd->dma.flags = dma_hot | dma_nandlock | dma_w4endcmd | dma_read | dma_pio(3);
 	cmd->dma.bufsz = bufsz;
-	cmd->dma.buffer = (u32)va2pa(buffer);
+	cmd->dma.buffer = (uint32_t)va2pa(buffer);
 
 	cmd->ctrl0 = chip * gpmi_chip | gpmi_write | gpmi_lock_cs | gpmi_data_bytes | gpmi_8bit | cmd->dma.bufsz;
 
@@ -375,7 +376,7 @@ static int nand_write(gpmi_dma3_t *cmd, int chip, void *buffer, u16 bufsz)
 }
 
 
-static int nand_ecwrite(gpmi_dma6_t *cmd, int chip, void *payload, void *auxiliary, u16 bufsz)
+static int nand_ecwrite(gpmi_dma6_t *cmd, int chip, void *payload, void *auxiliary, uint16_t bufsz)
 {
 	int eccmode = (payload == NULL) ? 0x100 : 0x1ff;
 
@@ -390,8 +391,8 @@ static int nand_ecwrite(gpmi_dma6_t *cmd, int chip, void *payload, void *auxilia
 	cmd->eccctrl = 1 << 13 | 1 << 12 | eccmode;
 	cmd->ecccount = bufsz;
 	if (payload != NULL)
-		cmd->payload = (u32)va2pa(payload);
-	cmd->auxiliary = (u32)va2pa(auxiliary);
+		cmd->payload = (uint32_t)va2pa(payload);
+	cmd->auxiliary = (uint32_t)va2pa(auxiliary);
 
 	return sizeof(*cmd);
 }
@@ -590,7 +591,7 @@ int flashdrv_readback(flashdrv_dma_t *dma, int chip, int bufsz, void *buf, void 
 }
 
 
-int flashdrv_readcompare(flashdrv_dma_t *dma, int chip, u16 mask, u16 value, int err)
+int flashdrv_readcompare(flashdrv_dma_t *dma, int chip, uint16_t mask, uint16_t value, int err)
 {
 	void *next = dma->last, *terminator;
 	int sz;
@@ -645,7 +646,7 @@ int flashdrv_reset(flashdrv_dma_t *dma)
 }
 
 
-int flashdrv_write(flashdrv_dma_t *dma, u32 paddr, void *data, char *aux)
+int flashdrv_write(flashdrv_dma_t *dma, uint32_t paddr, void *data, char *aux)
 {
 	int chip = 0, channel = 0, sz;
 	char addr[5] = { 0 };
@@ -700,7 +701,7 @@ int flashdrv_write(flashdrv_dma_t *dma, u32 paddr, void *data, char *aux)
 }
 
 
-int flashdrv_read(flashdrv_dma_t *dma, u32 paddr, void *data, flashdrv_meta_t *aux)
+int flashdrv_read(flashdrv_dma_t *dma, uint32_t paddr, void *data, flashdrv_meta_t *aux)
 {
 	int chip = 0, channel = 0, sz = 0, result;
 	char addr[5] = { 0 };
@@ -741,7 +742,7 @@ int flashdrv_read(flashdrv_dma_t *dma, u32 paddr, void *data, flashdrv_meta_t *a
 }
 
 
-int flashdrv_erase(flashdrv_dma_t *dma, u32 paddr)
+int flashdrv_erase(flashdrv_dma_t *dma, uint32_t paddr)
 {
 	int chip = 0, channel = 0, result;
 	dma->first = NULL;
@@ -769,7 +770,7 @@ int flashdrv_erase(flashdrv_dma_t *dma, u32 paddr)
 }
 
 
-int flashdrv_writeraw(flashdrv_dma_t *dma, u32 paddr, void *data, int sz)
+int flashdrv_writeraw(flashdrv_dma_t *dma, uint32_t paddr, void *data, int sz)
 {
 	int chip = 0, channel = 0, err;
 	char addr[5] = { 0 };
@@ -801,7 +802,7 @@ int flashdrv_writeraw(flashdrv_dma_t *dma, u32 paddr, void *data, int sz)
 }
 
 
-int flashdrv_readraw(flashdrv_dma_t *dma, u32 paddr, void *data, int sz)
+int flashdrv_readraw(flashdrv_dma_t *dma, uint32_t paddr, void *data, int sz)
 {
 	int chip = 0, channel = 0, err;
 	char addr[5] = { 0 };

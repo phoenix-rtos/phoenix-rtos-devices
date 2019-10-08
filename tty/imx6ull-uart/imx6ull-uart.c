@@ -13,6 +13,7 @@
  * %LICENSE%
  */
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -35,10 +36,10 @@
 enum { urxd = 0, utxd = 16, ucr1 = 32, ucr2, ucr3, ucr4, ufcr, usr1, usr2,
 	uesc, utim, ubir, ubmr, ubrc, onems, uts, umcr };
 
-u32 uart_addr[8] = { 0x02020000, 0x021E8000, 0x021EC000, 0x021F0000,
+uint32_t uart_addr[8] = { 0x02020000, 0x021E8000, 0x021EC000, 0x021F0000,
 	0x021F4000, 0x021FC000, 0x02018000, 0x02284000 };
 
-u32 uart_pctl_clk[8] = { pctl_clk_uart1, pctl_clk_uart2, pctl_clk_uart3, pctl_clk_uart4,
+uint32_t uart_pctl_clk[8] = { pctl_clk_uart1, pctl_clk_uart2, pctl_clk_uart3, pctl_clk_uart4,
 	pctl_clk_uart5, pctl_clk_uart6, pctl_clk_uart7, pctl_clk_uart8 };
 
 typedef struct {
@@ -71,9 +72,9 @@ uart_pctl_t uart_pctl_isel[8][2] = {
 unsigned uart_intr_number[8] = { 58, 59, 60, 61, 62, 49, 71, 72 };
 
 typedef struct {
-	volatile u32 *base;
-	u32 mode;
-	u16 dev_no;
+	volatile uint32_t *base;
+	uint32_t mode;
+	uint16_t dev_no;
 
 	handle_t cond;
 	handle_t inth;
@@ -90,7 +91,7 @@ uart_t uart = { 0 };
 
 void uart_thr(void *arg)
 {
-	u32 port = (u32)arg;
+	uint32_t port = (uint32_t)arg;
 	msg_t msg;
 	unsigned int rid;
 
@@ -318,7 +319,7 @@ static void print_usage(const char* progname) {
 
 int main(int argc, char **argv)
 {
-	u32 port;
+	uint32_t port;
 	char uartn[sizeof("uartx") + 1];
 	oid_t dev;
 	int err;

@@ -14,6 +14,8 @@
 #ifndef _IMX6ULL_FLASHDRV_H_
 #define _IMX6ULL_FLASHDRV_H_
 
+#include <stdint.h>
+
 typedef struct _flashdrv_dma_t flashdrv_dma_t;
 
 
@@ -53,19 +55,19 @@ extern void flashdrv_dmadestroy(flashdrv_dma_t *dma);
 extern int flashdrv_reset(flashdrv_dma_t *dma);
 
 
-extern int flashdrv_write(flashdrv_dma_t *dma, u32 paddr, void *data, char *metadata);
+extern int flashdrv_write(flashdrv_dma_t *dma, uint32_t paddr, void *data, char *metadata);
 
 
-extern int flashdrv_read(flashdrv_dma_t *dma, u32 paddr, void *data, flashdrv_meta_t *meta);
+extern int flashdrv_read(flashdrv_dma_t *dma, uint32_t paddr, void *data, flashdrv_meta_t *meta);
 
 
-extern int flashdrv_erase(flashdrv_dma_t *dma, u32 paddr);
+extern int flashdrv_erase(flashdrv_dma_t *dma, uint32_t paddr);
 
 
-extern int flashdrv_writeraw(flashdrv_dma_t *dma, u32 paddr, void *data, int sz);
+extern int flashdrv_writeraw(flashdrv_dma_t *dma, uint32_t paddr, void *data, int sz);
 
 
-extern int flashdrv_readraw(flashdrv_dma_t *dma, u32 paddr, void *data, int sz);
+extern int flashdrv_readraw(flashdrv_dma_t *dma, uint32_t paddr, void *data, int sz);
 
 
 extern void flashdrv_init(void);

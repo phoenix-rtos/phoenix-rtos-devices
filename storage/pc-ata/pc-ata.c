@@ -13,6 +13,7 @@
 
 #include <errno.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <unistd.h>
 
@@ -42,7 +43,7 @@ ata_opt_t ata_defaults = {
 struct ata_bus buses[8] = {};
 int buses_cnt = 0;
 pci_device_t pci_dev[8] = {};
-u32 port;
+uint32_t port;
 
 static int ata_interrupt(unsigned int irq, void *dev_instance);
 
@@ -50,11 +51,11 @@ static int ata_interrupt(unsigned int irq, void *dev_instance);
 #define ata_ch_write(ac, reg, data) outb((void *)0 + (ac)->reg_addr[(reg)], (data))
 #define ata_ch_read_buffer(ac, reg, buff, quads) insl((void *)0 + (ac)->reg_addr[(reg)], (buff), (quads))
 
-static inline void insl(void *addr, void *buffer, u32 quads)\
+static inline void insl(void *addr, void *buffer, uint32_t quads)\
 {
 	int i;
 	for (i = 0; i < quads; i += 1)
-		*(u32*)(buffer + (i * 4)) = inl(addr);
+		*(uint32_t*)(buffer + (i * 4)) = inl(addr);
 }
 
 void ata_chInitRegs(struct ata_channel *ac)
@@ -100,14 +101,14 @@ void ata_chInitRegs(struct ata_channel *ac)
  * advanced_check = 1 reads ATA_REG_STATUS
  * advanced_check = 2 reads ATA_REG_ALTSTATUS
  */
-int ata_polling(struct ata_channel *ac, u8 advanced_check)
+int ata_polling(struct ata_channel *ac, uint8_t advanced_check)
 {
 	ATA_WASTE400MS(ac);
 
 	while (ata_ch_read(ac, ATA_REG_STATUS) & ATA_SR_BSY);
 
 	if (advanced_check) {
-		u8 state = ata_ch_read(ac, (advanced_check == 2 ? ATA_REG_ALTSTATUS : ATA_REG_STATUS));
+		uint8_t state = ata_ch_read(ac, (advanced_check == 2 ? ATA_REG_ALTSTATUS : ATA_REG_STATUS));
 
 		if (state & ATA_SR_ERR)
 			return -1; // Error.
@@ -122,7 +123,7 @@ int ata_polling(struct ata_channel *ac, u8 advanced_check)
 	return 0;
 }
 
-int ata_wait(struct ata_channel *ac, u8 irq)
+int ata_wait(struct ata_channel *ac, uint8_t irq)
 {
 	int err = 0;
 
@@ -143,19 +144,19 @@ int ata_wait(struct ata_channel *ac, u8 irq)
 
 /* TODO: divide to dma_setup, command_setup, pio_access, dma_access */
 
-int ata_access(u8 direction, struct ata_dev *ad, u32 lba, u8 numsects, void *buffer)
+int ata_access(uint8_t direction, struct ata_dev *ad, uint32_t lba, uint8_t numsects, void *buffer)
 {
 	struct ata_channel *ac = ad->ac;
 
-	u8 lba_mode = 0; /* 0: CHS, 1:LBA28, 2: LBA48 */
-	u8 cmd;
-	u8 astatus = 0;
-	u8 slavebit = ad->drive;
-	u8 lba_io[6] = { 0 };
-	u8 head, sect;
-	u16 bus = ac->base;
-	u16 words = 256;
-	u16 cyl, i, b;
+	uint8_t lba_mode = 0; /* 0: CHS, 1:LBA28, 2: LBA48 */
+	uint8_t cmd;
+	uint8_t astatus = 0;
+	uint8_t slavebit = ad->drive;
+	uint8_t lba_io[6] = { 0 };
+	uint8_t head, sect;
+	uint16_t bus = ac->base;
+	uint16_t words = 256;
+	uint16_t cyl, i, b;
 
 	int err = 0;
 
@@ -214,7 +215,7 @@ int ata_access(u8 direction, struct ata_dev *ad, u32 lba, u8 numsects, void *buf
 
 			if ((ac->status & (ATA_SR_BSY | ATA_SR_DRQ)) == ATA_SR_DRQ) {
 				for (b = 0; b < words; b++) {
-					*(u16*)(buffer + (b * 2)) = inw((void *)0 + bus);
+					*(uint16_t*)(buffer + (b * 2)) = inw((void *)0 + bus);
 				}
 				buffer += (words * 2);
 				i++;
@@ -236,7 +237,7 @@ int ata_access(u8 direction, struct ata_dev *ad, u32 lba, u8 numsects, void *buf
 
 			if ((ac->status & (ATA_SR_BSY | ATA_SR_DRQ)) == ATA_SR_DRQ ) {
 				for (b = 0; b < words; b++) {
-					outw((void *)0 + bus, *((u16*)(buffer + (b*2))));
+					outw((void *)0 + bus, *((uint16_t*)(buffer + (b*2))));
 				}
 				buffer += (words * 2);
 				i++;
@@ -275,9 +276,9 @@ int ata_access(u8 direction, struct ata_dev *ad, u32 lba, u8 numsects, void *buf
 // TODO: fixme 64 bits
 static int ata_io(struct ata_dev *ad, offs_t offs, char *buff, unsigned int len, int direction)
 {
-	u32 begin_lba = 0;
-	u32 sectors = 0;
-	u32 ret = 0;
+	uint32_t begin_lba = 0;
+	uint32_t sectors = 0;
+	uint32_t ret = 0;
 
 	if (ad == NULL)
 		return -EINVAL;
@@ -285,17 +286,17 @@ static int ata_io(struct ata_dev *ad, offs_t offs, char *buff, unsigned int len,
 	if (!ad->reserved)
 		return -ENOENT;
 
-	if (((u32)offs % ad->sector_size) || (len % ad->sector_size)) {
+	if (((uint32_t)offs % ad->sector_size) || (len % ad->sector_size)) {
 		printf("panic on the disco sector %s\n", "");
 		return -EINVAL;
 	}
 
-	begin_lba = (u32)offs / ad->sector_size; // starting sector
+	begin_lba = (uint32_t)offs / ad->sector_size; // starting sector
 	sectors = len / ad->sector_size;
 
 	for (; sectors >= ATA_MAX_PIO_DRQ; sectors -= ATA_MAX_PIO_DRQ) {
 		// sectors actually read
-		ata_access(direction, ad, begin_lba, (u8)ATA_MAX_PIO_DRQ, buff); // FIXME: BUG: TODO: ATA_MAX_PIO_DRQ is getting squashed to 8bits here!!!
+		ata_access(direction, ad, begin_lba, (uint8_t)ATA_MAX_PIO_DRQ, buff); // FIXME: BUG: TODO: ATA_MAX_PIO_DRQ is getting squashed to 8bits here!!!
 
 		begin_lba += ATA_MAX_PIO_DRQ;
 		buff += ATA_MAX_PIO_DRQ * ad->sector_size;
@@ -303,7 +304,7 @@ static int ata_io(struct ata_dev *ad, offs_t offs, char *buff, unsigned int len,
 	}
 
 	if (sectors) {
-		ata_access(direction, ad, begin_lba, (u8)sectors, buff);
+		ata_access(direction, ad, begin_lba, (uint8_t)sectors, buff);
 		ret += sectors * ad->sector_size;
 	}
 
@@ -329,12 +330,12 @@ static int ata_interrupt(unsigned int irq, void *dev_instance)
 
 int ata_init_bus(struct ata_bus *ab)
 {
-	u8 i, j;
-	u32 B0 = ab->dev->resources[0].base;
-	u32 B1 = ab->dev->resources[1].base;
-	u32 B2 = ab->dev->resources[2].base;
-	u32 B3 = ab->dev->resources[3].base;
-	u32 B4 = ab->dev->resources[4].base;
+	uint8_t i, j;
+	uint32_t B0 = ab->dev->resources[0].base;
+	uint32_t B1 = ab->dev->resources[1].base;
+	uint32_t B2 = ab->dev->resources[2].base;
+	uint32_t B3 = ab->dev->resources[3].base;
+	uint32_t B4 = ab->dev->resources[4].base;
 
 	ab->ac[ATA_PRIMARY].no_int = ab->config.use_int ? 0 : 1;
 	ab->ac[ATA_SECONDARY].no_int = ab->config.use_int ? 0 : 1;
@@ -377,7 +378,7 @@ int ata_init_bus(struct ata_bus *ab)
 		//ab->ac[i].bmstatus = ata_ch_read(&(ab->ac[i]), ATA_REG_BMSTATUS) & 0x60;
 
 		for (j = 0; j < 2; j++) {
-			u8 err = 0, status = 0;
+			uint8_t err = 0, status = 0;
 
 			ab->ac[i].devices[j].ac = &ab->ac[i];
 			ab->ac[i].devices[j].reserved = 0;

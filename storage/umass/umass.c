@@ -11,6 +11,7 @@
  * %LICENSE%
  */
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -49,21 +50,21 @@
 #define MAX_SCSI_RETRIES  4
 
 typedef struct _bulk_cbw_t {
-	u32 sig;
-	u32 tag;
-	u32 dlen;
-	u8  flags;
-	u8  lun;
-	u8  clen;
-	u8  cmd[16];
+	uint32_t sig;
+	uint32_t tag;
+	uint32_t dlen;
+	uint8_t  flags;
+	uint8_t  lun;
+	uint8_t  clen;
+	uint8_t  cmd[16];
 } __attribute__((packed)) bulk_cbw_t;
 
 
 typedef struct _bulk_csw_t {
-	u32 sig;
-	u32 tag;
-	u32 dr;
-	u8  status;
+	uint32_t sig;
+	uint32_t tag;
+	uint32_t dr;
+	uint8_t  status;
 } __attribute__((packed)) bulk_csw_t;
 
 typedef union {

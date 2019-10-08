@@ -13,6 +13,7 @@
 
 
 #include <errno.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <sys/threads.h>
 #include <sys/pwman.h>
@@ -282,7 +283,7 @@ int uart_init(void)
 {
 	int i, uart;
 	const struct {
-		volatile u32 *base;
+		volatile uint32_t *base;
 		int dev;
 		unsigned irq;
 	} info[] = {

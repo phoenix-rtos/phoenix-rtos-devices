@@ -14,6 +14,7 @@
  * %LICENSE%
  */
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,7 +42,7 @@ static int ttypc_read(unsigned int d, offs_t offs, char *buff, unsigned int len)
 
 static int ttypc_write(unsigned int d, offs_t offs, char *buff, unsigned int len)
 {
-	ttypc_virt_sput(&ttypc_common.virtuals[d], (u8 *)buff, len);
+	ttypc_virt_sput(&ttypc_common.virtuals[d], (uint8_t *)buff, len);
 	return len;
 }
 
@@ -119,7 +120,7 @@ static int ttypc_open(vnode_t *vnode, file_t* file)
 
 void poolthr(void *arg)
 {
-	u32 port = (u32)arg;
+	uint32_t port = (uint32_t)arg;
 	msg_t msg;
 	unsigned int rid;
 
@@ -151,7 +152,7 @@ int main(int argc, char *argv[])
 {
 	unsigned int i;
 	oid_t toid;
-	u32 port;
+	uint32_t port;
 	void *stack;
 
 	printf("pc-tty: Initializing VGA VT220 terminal emulator (test) %s\n", "");

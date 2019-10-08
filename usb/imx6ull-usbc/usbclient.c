@@ -11,6 +11,7 @@
  * %LICENSE%
  */
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h> /* to set mode for /init */
@@ -215,8 +216,8 @@ addr_t phid_reports;
 
 addr_t pIN;
 addr_t pOUT;
-u8 *IN;
-u8 *OUT;
+uint8_t *IN;
+uint8_t *OUT;
 
 static void *local_conf;
 
@@ -234,7 +235,7 @@ addr_t pwrite_buffer;
 static endpt_init_t in_endpt;
 
 
-static int dtd_exec(int endpt, u32 paddr, u32 sz, int dir);
+static int dtd_exec(int endpt, uint32_t paddr, uint32_t sz, int dir);
 int endpt_init(int endpt, endpt_init_t *endpt_init);
 
 
@@ -245,7 +246,7 @@ static int dc_setup(setup_packet_t *setup)
 	}
 
 	int res = EOK;
-	u32 fsz;
+	uint32_t fsz;
 
 	switch (setup->req_code) {
 		case REQ_SET_ADDR:
@@ -308,7 +309,7 @@ static int dc_setup(setup_packet_t *setup)
 			break;
 
 		default:
-			if (*(u32 *)setup == 0xdeadc0de)
+			if (*(uint32_t *)setup == 0xdeadc0de)
 				dc.op = DC_OP_EXIT;
 			else {
 				fsz = setup->val << 16;
@@ -361,7 +362,7 @@ static int dc_class_setup(setup_packet_t *setup)
 static int dc_hf_intr(void)
 {
 	setup_packet_t setup;
-	u32 status;
+	uint32_t status;
 	int endpt = 0;
 
 	if ((status = *(dc.base + endptsetupstat)) & 0x1) {
@@ -426,7 +427,7 @@ static int dc_intr(unsigned int intr, void *data)
 
 static int ctrlqh_init(void)
 {
-	u32 qh_addr;
+	uint32_t qh_addr;
 
 	/* map queue head list */
 	dc.endptqh = mmap(NULL, 0x1000, PROT_WRITE | PROT_READ, MAP_UNCACHED, OID_NULL, 0);
@@ -436,7 +437,7 @@ static int ctrlqh_init(void)
 
 	memset((void *)dc.endptqh, 0, 0x1000);
 
-	qh_addr = ((u32)va2pa((void *)dc.endptqh)) & ~0xfff;
+	qh_addr = ((uint32_t)va2pa((void *)dc.endptqh)) & ~0xfff;
 
 	dc.endptqh[0].caps =  0x40 << 16; /* max 64 bytes */
 	dc.endptqh[0].caps |= 0x1 << 29;
@@ -448,12 +449,12 @@ static int ctrlqh_init(void)
 	dc.endptqh[1].caps |=  0x1 << 15;
 	dc.endptqh[1].dtd_next = 1;
 
-	dc.endptqh[0].base = (((u32)va2pa(dc.endptqh)) & ~0xfff) + (32 * sizeof(dqh_t));
+	dc.endptqh[0].base = (((uint32_t)va2pa(dc.endptqh)) & ~0xfff) + (32 * sizeof(dqh_t));
 	dc.endptqh[0].size = 0x10;
 	dc.endptqh[0].head = (dtd_t *)(dc.endptqh + 32);
 	dc.endptqh[0].tail = (dtd_t *)(dc.endptqh + 32);
 
-	dc.endptqh[1].base = (((u32)va2pa(dc.endptqh)) & ~0xfff) + (48 * sizeof(dqh_t));
+	dc.endptqh[1].base = (((uint32_t)va2pa(dc.endptqh)) & ~0xfff) + (48 * sizeof(dqh_t));
 	dc.endptqh[1].size = 0x10;
 	dc.endptqh[1].head = (dtd_t *)(dc.endptqh + 48);
 	dc.endptqh[1].tail = (dtd_t *)(dc.endptqh + 48);
@@ -481,12 +482,12 @@ static int dtd_init(int endpt)
 
 	memset(buff, 0, 0x1000);
 
-	dc.endptqh[qh].base = (((u32)va2pa(buff)) & ~0xfff);
+	dc.endptqh[qh].base = (((uint32_t)va2pa(buff)) & ~0xfff);
 	dc.endptqh[qh].size = 0x40;
 	dc.endptqh[qh].head = buff;
 	dc.endptqh[qh].tail = buff;
 
-	dc.endptqh[++qh].base = (((u32)va2pa(buff)) & ~0xfff) + (64 * sizeof(dtd_t));
+	dc.endptqh[++qh].base = (((uint32_t)va2pa(buff)) & ~0xfff) + (64 * sizeof(dtd_t));
 	dc.endptqh[qh].size = 0x40;
 	dc.endptqh[qh].head = buff + 64;
 	dc.endptqh[qh].tail = buff + 64;
@@ -498,19 +499,19 @@ static int dtd_init(int endpt)
 static dtd_t *dtd_get(int endpt, int dir)
 {
 	int qh = endpt * 2 + dir;
-	u32 base_addr;
+	uint32_t base_addr;
 	dtd_t *ret;
 
-	base_addr = ((u32)dc.endptqh[qh].head & ~((dc.endptqh[qh].size * sizeof(dtd_t)) - 1));
+	base_addr = ((uint32_t)dc.endptqh[qh].head & ~((dc.endptqh[qh].size * sizeof(dtd_t)) - 1));
 
 	ret = dc.endptqh[qh].tail++;
-	dc.endptqh[qh].tail = (dtd_t *)(base_addr | ((u32)dc.endptqh[qh].tail & (((dc.endptqh[qh].size) * sizeof(dtd_t)) - 1)));
+	dc.endptqh[qh].tail = (dtd_t *)(base_addr | ((uint32_t)dc.endptqh[qh].tail & (((dc.endptqh[qh].size) * sizeof(dtd_t)) - 1)));
 
 	return ret;
 }
 
 
-static int dtd_build(dtd_t *dtd, u32 paddr, u32 size)
+static int dtd_build(dtd_t *dtd, uint32_t paddr, uint32_t size)
 {
 	if (size > 0x1000)
 		return -EINVAL;
@@ -528,10 +529,10 @@ static int dtd_build(dtd_t *dtd, u32 paddr, u32 size)
 }
 
 
-static int dtd_exec(int endpt, u32 paddr, u32 sz, int dir)
+static int dtd_exec(int endpt, uint32_t paddr, uint32_t sz, int dir)
 {
 	int shift;
-	u32 offs;
+	uint32_t offs;
 	dtd_t *dtd;
 	int qh = (endpt << 1) + dir;
 
@@ -540,7 +541,7 @@ static int dtd_exec(int endpt, u32 paddr, u32 sz, int dir)
 	dtd_build(dtd, paddr, sz);
 
 	shift = endpt + ((qh & 1) ? 16 : 0);
-	offs = (u32)dtd & (((dc.endptqh[qh].size) * sizeof(dtd_t)) - 1);
+	offs = (uint32_t)dtd & (((dc.endptqh[qh].size) * sizeof(dtd_t)) - 1);
 
 	dc.endptqh[qh].dtd_next = (dc.endptqh[qh].base + offs) & ~1;
 	dc.endptqh[qh].dtd_token &= ~(1 << 6);
@@ -564,7 +565,7 @@ static int dtd_exec(int endpt, u32 paddr, u32 sz, int dir)
 
 int endpt_init(int endpt, endpt_init_t *endpt_init)
 {
-	u32 setup = 0;
+	uint32_t setup = 0;
 	int res;
 	int qh_rx = endpt * 2 + USBCLIENT_ENDPT_DIR_OUT;
 	int qh_tx = endpt * 2 + USBCLIENT_ENDPT_DIR_IN;
@@ -628,20 +629,20 @@ static void init_desc(usbclient_conf_t *conf, void *local_conf)
 	hid_reports = (usbclient_desc_gen_t*)(((uint8_t*)str_prod) + 28);
 
 	/* Physical addresses offsets */
-	pdev = (((u32)va2pa(dev)) & ~0xfff) + ((u32)dev & 0xfff);
-	pconf = (((u32)va2pa(cfg)) & ~0xfff) + ((u32)cfg & 0xfff);
+	pdev = (((uint32_t)va2pa(dev)) & ~0xfff) + ((uint32_t)dev & 0xfff);
+	pconf = (((uint32_t)va2pa(cfg)) & ~0xfff) + ((uint32_t)cfg & 0xfff);
 
-	pstr_0 = (((u32)va2pa(str_0)) & ~0xfff) + ((u32)str_0 & 0xfff);
-	pstr_man = (((u32)va2pa(str_man)) & ~0xfff) + ((u32)str_man & 0xfff);
-	pstr_prod = (((u32)va2pa(str_prod)) & ~0xfff) + ((u32)str_prod & 0xfff);
-	phid_reports = (((u32)va2pa(hid_reports)) & ~0xfff) + ((u32)hid_reports & 0xfff);
+	pstr_0 = (((uint32_t)va2pa(str_0)) & ~0xfff) + ((uint32_t)str_0 & 0xfff);
+	pstr_man = (((uint32_t)va2pa(str_man)) & ~0xfff) + ((uint32_t)str_man & 0xfff);
+	pstr_prod = (((uint32_t)va2pa(str_prod)) & ~0xfff) + ((uint32_t)str_prod & 0xfff);
+	phid_reports = (((uint32_t)va2pa(hid_reports)) & ~0xfff) + ((uint32_t)hid_reports & 0xfff);
 
 	/* Endpoints */
 	IN = local_conf + 0x500;
 	OUT = local_conf + 0x700;
 
-	pIN = ((va2pa((void *)IN)) & ~0xfff) + ((u32)IN & 0xfff);
-	pOUT = ((va2pa((void *)OUT)) & ~0xfff) + ((u32)OUT & 0xfff);
+	pIN = ((va2pa((void *)IN)) & ~0xfff) + ((uint32_t)IN & 0xfff);
+	pOUT = ((va2pa((void *)OUT)) & ~0xfff) + ((uint32_t)OUT & 0xfff);
 
 	uint32_t string_desc_count = 0;
 	/* Extract mandatory descriptors to mapped memory */
@@ -716,9 +717,9 @@ int usbclient_init(usbclient_conf_t *conf)
 	int res = 0;
 	/* Buffers init */
 	read_buffer.data = mmap(NULL, BUFFER_SIZE, PROT_WRITE | PROT_READ, MAP_UNCACHED, OID_NULL, 0);
-	pread_buffer = (((u32)va2pa(read_buffer.data)) & ~0xfff) + ((u32)read_buffer.data & 0xfff);
+	pread_buffer = (((uint32_t)va2pa(read_buffer.data)) & ~0xfff) + ((uint32_t)read_buffer.data & 0xfff);
 	write_buffer.data = mmap(NULL, BUFFER_SIZE, PROT_WRITE | PROT_READ, MAP_UNCACHED, OID_NULL, 0);
-	pwrite_buffer = (((u32)va2pa(write_buffer.data)) & ~0xfff) + ((u32)write_buffer.data & 0xfff);
+	pwrite_buffer = (((uint32_t)va2pa(write_buffer.data)) & ~0xfff) + ((uint32_t)write_buffer.data & 0xfff);
 
 	local_conf = mmap(NULL, 0x1000, PROT_WRITE | PROT_READ, MAP_UNCACHED, OID_NULL, 0);
 
@@ -780,7 +781,7 @@ int usbclient_destroy(void)
 	*(dc.base + usbcmd) &= ~1;
 	munmap(local_conf, 0x1000);
 	munmap((void *)dc.base, 0x1000);
-	munmap((void *)((u32)dc.endptqh[2].head & ~0xfff), 0x1000);
+	munmap((void *)((uint32_t)dc.endptqh[2].head & ~0xfff), 0x1000);
 	munmap((void *)dc.endptqh, 0x1000);
 	return 0;
 }

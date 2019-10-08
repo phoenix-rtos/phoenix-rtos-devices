@@ -15,6 +15,7 @@
 #define _FLASH_H_
 
 #include ARCH
+#include <stdint.h>
 #include "rtc.h"
 #include "common.h"
 #include "config.h"
@@ -29,7 +30,7 @@
 
 static inline int flash_activeBank(void)
 {
-	u32 pc = getPC();
+	uint32_t pc = getPC();
 
 	if (pc < FLASH_PROGRAM_1_ADDR)
 		pc += FLASH_PROGRAM_1_ADDR;
@@ -38,10 +39,10 @@ static inline int flash_activeBank(void)
 }
 
 
-extern size_t flash_readData(u32 offset, char *buff, size_t size);
+extern size_t flash_readData(uint32_t offset, char *buff, size_t size);
 
 
-extern size_t flash_writeData(u32 offset, const char *buff, size_t size);
+extern size_t flash_writeData(uint32_t offset, const char *buff, size_t size);
 
 
 extern int flash_init(void);

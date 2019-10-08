@@ -14,6 +14,7 @@
  */
 
 #include <stdlib.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
@@ -91,7 +92,7 @@ typedef struct {
 
 
 typedef struct _ttyacm_t {
-	u32 port;
+	uint32_t port;
 	int id;
 
 	int bulk_interface, intr_interface;
@@ -115,7 +116,7 @@ static struct {
 
 	int state;
 	int device_id;
-	u32 port, monitor_port;
+	uint32_t port, monitor_port;
 	configuration_desc_t *conf_descriptor;
 	device_desc_t dev_descriptor;
 
