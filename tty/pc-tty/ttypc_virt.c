@@ -15,8 +15,10 @@
  */
 
 #include <sys/threads.h>
+#include <sys/minmax.h>
 #include <sys/mman.h>
 #include <errno.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -26,7 +28,7 @@
 #include "ttypc_vga.h"
 
 
-u16 csd_ascii[CSSIZE] = {
+uint16_t csd_ascii[CSSIZE] = {
 /* 20 */	0x20 | CSL, 0x21 | CSL, 0x22 | CSL, 0x23 | CSL,
 /* 24 */	0x24 | CSL, 0x25 | CSL, 0x26 | CSL, 0x27 | CSL,
 /* 28 */	0x28 | CSL, 0x29 | CSL, 0x2A | CSL, 0x2B | CSL,
@@ -60,7 +62,7 @@ u16 csd_ascii[CSSIZE] = {
 
 
 /* DEC Supplemental Graphic Characterset */
-u16 csd_supplemental[CSSIZE] = {
+uint16_t csd_supplemental[CSSIZE] = {
 /* 20 */	0x20 | CSL, 0xAD | CSL, 0x9B | CSL, 0x9C | CSL,
 /* 24 */	0x20 | CSL, 0x9D | CSL, 0x20 | CSL, 0x20 | CSL,
 /* 28 */	0x20 | CSL, 0x20 | CSL, 0xA6 | CSL, 0xAE | CSL,
@@ -127,7 +129,7 @@ static void _ttypc_virt_scroll(ttypc_virt_t *virt)
 
 
 /* Function put char ch to the screen according to video state given by svsp */
-static void _ttypc_virt_writechar(ttypc_virt_t *virt, u16 attrib, u16 ch)
+static void _ttypc_virt_writechar(ttypc_virt_t *virt, uint16_t attrib, uint16_t ch)
 {
 
 	if ((ch >= 0x20) && (ch <= 0x7f))	{           /* use GL if ch >= 0x20 */
@@ -150,9 +152,9 @@ static void _ttypc_virt_writechar(ttypc_virt_t *virt, u16 attrib, u16 ch)
 
 
 /* Emulator main entry */
-int ttypc_virt_sput(ttypc_virt_t *virt, u8 *s, int len)
+int ttypc_virt_sput(ttypc_virt_t *virt, uint8_t *s, int len)
 {
-	u16 ch;
+	uint16_t ch;
 	int ret;
 
 	mutexLock(virt->mutex);
@@ -671,7 +673,7 @@ int ttypc_virt_sput(ttypc_virt_t *virt, u8 *s, int len)
 }
 
 
-int ttypc_virt_sadd(ttypc_virt_t *virt, u8 *s, unsigned int len)
+int ttypc_virt_sadd(ttypc_virt_t *virt, uint8_t *s, unsigned int len)
 {
 	unsigned int l, i;
 
@@ -773,7 +775,7 @@ int _ttypc_virt_init(ttypc_virt_t *virt, size_t rbuffsz, ttypc_t *ttypc)
 
 	/* Prepare input buffer */
 	virt->rbuffsz = rbuffsz;
-	if ((virt->rbuff = (u8 *)malloc(virt->rbuffsz)) == NULL) {
+	if ((virt->rbuff = (uint8_t *)malloc(virt->rbuffsz)) == NULL) {
 		munmap(virt->mem, 4096);
 		return -ENOMEM;
 	}

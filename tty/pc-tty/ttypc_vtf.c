@@ -12,6 +12,8 @@
  * %LICENSE%
  */
 
+#include <sys/minmax.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -74,7 +76,7 @@
 
 /* color displays */
 
-u8 sgr_tab_color[16] = {
+uint8_t sgr_tab_color[16] = {
 	(BG_BLACK     | FG_LIGHTGREY),             /* normal               */
 	(BG_BLUE      | FG_LIGHTGREY),             /* bold                 */
 	(BG_BROWN     | FG_LIGHTGREY),             /* underline            */
@@ -95,7 +97,7 @@ u8 sgr_tab_color[16] = {
 
 /* monochrome displays (VGA version, no intensity) */
 
-u8 sgr_tab_mono[16] = {
+uint8_t sgr_tab_mono[16] = {
 	(BG_BLACK     | FG_LIGHTGREY),            /* normal               */
 	(BG_BLACK     | FG_UNDERLINE),            /* bold                 */
 	(BG_BLACK     | FG_UNDERLINE),            /* underline            */
@@ -116,14 +118,14 @@ u8 sgr_tab_mono[16] = {
 
 
 /* foreground ANSI color -> pc */
-u8 fgansitopc[] = {
+uint8_t fgansitopc[] = {
 	FG_BLACK, FG_RED, FG_GREEN, FG_BROWN, FG_BLUE,
 	FG_MAGENTA, FG_CYAN, FG_LIGHTGREY
 };
 
 
 /* background ANSI color -> pc */
-u8 bgansitopc[] = {
+uint8_t bgansitopc[] = {
 	BG_BLACK, BG_RED, BG_GREEN, BG_BROWN, BG_BLUE,
 	BG_MAGENTA, BG_CYAN, BG_LIGHTGREY
 };
@@ -245,7 +247,7 @@ void _ttypc_vtf_rc(ttypc_virt_t *virt)
 void _ttypc_vtf_da(ttypc_virt_t *virt)
 {
 #if 0
-	static u8 *response = (u_char *)DA_VT220;
+	static uint8_t *response = (u_char *)DA_VT220;
 
 	svsp->report_chars = response;
 	svsp->report_count = 18;
@@ -577,7 +579,7 @@ void _ttypc_vtf_sgr(ttypc_virt_t *virt)
 {
 	ttypc_t *ttypc = virt->ttypc;
 	register int i = 0;
-	u16 setcolor = 0;
+	uint16_t setcolor = 0;
 	char colortouched = 0;
 
 	do {
@@ -655,13 +657,13 @@ void _ttypc_vtf_sgr(ttypc_virt_t *virt)
 void _ttypc_vtf_dsr(ttypc_virt_t *virt)
 {
 #if 0
-	static u8 *answr = (u8 *)"\033[0n";
-	static u8 *panswr = (u8 *)"\033[?13n";      /* Printer Unattached */
-	static u8 *udkanswr = (u8 *)"\033[?21n";    /* UDK Locked */
-	static u8 *langanswr = (u8 *)"\033[?27;1n"; /* North American*/
+	static uint8_t *answr = (uint8_t *)"\033[0n";
+	static uint8_t *panswr = (uint8_t *)"\033[?13n";      /* Printer Unattached */
+	static uint8_t *udkanswr = (uint8_t *)"\033[?21n";    /* UDK Locked */
+	static uint8_t *langanswr = (uint8_t *)"\033[?27;1n"; /* North American*/
 #endif
 #if 0
-	static u8 buffer[16];
+	static uint8_t buffer[16];
 
 	int i = 0;
 
@@ -827,7 +829,7 @@ void _ttypc_vtf_reset_ansi(ttypc_virt_t *virt)
 /* request terminal parameters */
 void _ttypc_vtf_reqtparm(ttypc_virt_t *virt)
 {
-	/* static u8 *answr = (u8 *)"\033[3;1;1;120;120;1;0x"; */
+	/* static uint8_t *answr = (uint8_t *)"\033[3;1;1;120;120;1;0x"; */
 
 	/* respond(answr); */
 }

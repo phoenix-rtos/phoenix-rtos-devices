@@ -13,9 +13,11 @@
  */
 
 #include <errno.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/io.h>
 #include <sys/threads.h>
 #include <sys/interrupt.h>
 
@@ -159,9 +161,9 @@ keymap_t scan_codes[] = {
 
 
 /* Function gets characters from keyboard */
-u8 *_ttypc_kbd_get(ttypc_t *ttypc)
+uint8_t *_ttypc_kbd_get(ttypc_t *ttypc)
 {
-	u8 dt;
+	uint8_t dt;
 	char *more = NULL;
 
 	dt = inb(ttypc->inp_base);
@@ -307,7 +309,7 @@ u8 *_ttypc_kbd_get(ttypc_t *ttypc)
 	}
 	ttypc->extended = 0;
 
-	return (u8 *)more;
+	return (uint8_t *)more;
 }
 
 
@@ -325,7 +327,7 @@ static int ttypc_kbd_interrupt(unsigned int n, void *arg)
 void ttypc_kbd_ctlthr(void *arg)
 {
 	ttypc_t *ttypc = (ttypc_t *)arg;
-	u8 *s;
+	uint8_t *s;
 
 	for (;;) {
 		mutexLock(ttypc->rlock);
@@ -373,7 +375,7 @@ int _ttypc_kbd_init(ttypc_t *ttypc)
 	condCreate(&ttypc->rcond);
 
 	/* Allocate memory for character buffer */
-	if ((ttypc->rbuff = (u8 **)malloc(sizeof(u8 *) * 128)) == NULL)
+	if ((ttypc->rbuff = (uint8_t **)malloc(sizeof(uint8_t *) * 128)) == NULL)
 		return -ENOMEM;
 
 	ttypc->rbuffsz = 128;

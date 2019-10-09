@@ -14,6 +14,7 @@
 #ifndef _IMX6ULL_FLASHSRV_H_
 #define _IMX6ULL_FLASHSRV_H_
 
+#include <sys/types.h>
 #include <stddef.h>
 #include <stdint.h>
 

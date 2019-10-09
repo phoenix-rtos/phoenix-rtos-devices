@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/io.h>
 #include <sys/mman.h>
 #include <sys/threads.h>
 #include <sys/msg.h>

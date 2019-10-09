@@ -1,4 +1,5 @@
 #include <sys/msg.h>
+#include <sys/minmax.h>
 #include <sys/list.h>
 #include <sys/rb.h>
 #include <sys/threads.h>

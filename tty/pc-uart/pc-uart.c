@@ -20,6 +20,7 @@
 #include <string.h>
 #include <sys/threads.h>
 #include <sys/interrupt.h>
+#include <sys/io.h>
 #include <sys/file.h>
 #include <unistd.h>
 #include <sys/msg.h>
@@ -80,7 +81,7 @@ static void signal_txready(void *_uart)
 void uart_intthr(void *arg)
 {
 	uart_t *uart = (uart_t *)arg;
-	u8 iir, lsr;
+	uint8_t iir, lsr;
 	char c;
 
 	mutexLock(uart->mutex);
@@ -115,7 +116,7 @@ void uart_intthr(void *arg)
 }
 
 
-static int uart_write(u8 d, size_t len, char *buff, int mode)
+static int uart_write(uint8_t d, size_t len, char *buff, int mode)
 {
 	uart_t *serial;
 
@@ -132,7 +133,7 @@ static int uart_write(u8 d, size_t len, char *buff, int mode)
 }
 
 
-static int uart_read(u8 d, size_t len, char *buff, int mode)
+static int uart_read(uint8_t d, size_t len, char *buff, int mode)
 {
 	uart_t *serial;
 
@@ -146,7 +147,7 @@ static int uart_read(u8 d, size_t len, char *buff, int mode)
 }
 
 
-static int uart_poll_status(u8 d)
+static int uart_poll_status(uint8_t d)
 {
 	uart_t *serial;
 
@@ -234,8 +235,8 @@ int _uart_init(void *base, unsigned int irq, unsigned int speed, uart_t **uart)
 
 	interrupt(irq, uart_interrupt, (*uart), (*uart)->intcond, &(*uart)->inth);
 
-	u8 *stack;
-	stack = (u8 *)malloc(2 * 4096);
+	uint8_t *stack;
+	stack = (uint8_t *)malloc(2 * 4096);
 
 //stack = mmap((void *)0, 4096 * 2, 0, 0, NULL, 0);
 //stack += 0x10;
