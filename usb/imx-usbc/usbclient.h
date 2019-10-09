@@ -4,7 +4,7 @@
  * usbclient - usb device controller driver
  *
  * Copyright 2019 Phoenix Systems
- * Author: Kamil Amanowicz, Bartosz Ciesla
+ * Author: Kamil Amanowicz, Bartosz Ciesla, Hubert Buczynski
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -33,6 +33,7 @@ typedef enum {
 	USBCLIENT_DESC_TYPE_HID_REPORT		/* HID report */
 } usbclient_descriptor_type_t;
 
+
 /* Device descriptor */
 typedef struct _usbclient_desc_dev_t {
 	uint8_t	len;			/* size of descriptor */
@@ -51,6 +52,7 @@ typedef struct _usbclient_desc_dev_t {
 	uint8_t	num_conf;		/* number of possible configurations */
 } __attribute__((packed)) usbclient_desc_dev_t;
 
+
 /* Configuration descriptor */
 typedef struct _usbclient_desc_conf_t {
 	uint8_t	len;
@@ -62,6 +64,7 @@ typedef struct _usbclient_desc_conf_t {
 	uint8_t	attr_bmp;		/* attributes bitmap */
 	uint8_t	max_pow;		/* maximum power consumption */
 } __attribute__((packed)) usbclient_desc_conf_t;
+
 
 /* Interface descriptor */
 typedef struct _usbclient_desc_intf_t {
@@ -76,6 +79,7 @@ typedef struct _usbclient_desc_intf_t {
 	uint8_t	intf_str;       /* interface string index */
 } __attribute__((packed)) usbclient_desc_intf_t;
 
+
 /* Endpoint descriptor */
 typedef struct _usbclient_desc_ep_t {
 	uint8_t	len;
@@ -86,12 +90,14 @@ typedef struct _usbclient_desc_ep_t {
 	uint8_t	interval;		/* polling interval for data transfers */
 } __attribute__((packed)) usbclient_desc_ep_t;
 
+
 /* String descriptor zero */
 typedef struct _usbclient_desc_str_zr_t {
 	uint8_t	len;
 	uint8_t	desc_type;
 	uint16_t w_langid0;
 } __attribute__((packed)) usbclient_desc_str_zr_t;
+
 
 /* Generic descriptor
  * Used when there is no defined descriptor (e.g. HID descriptor or Report descriptor) */
@@ -101,12 +107,14 @@ typedef struct _usbclient_desc_gen_t {
 	uint8_t	data[0];	/* other fields */
 } __attribute__((packed)) usbclient_desc_gen_t;
 
+
 /* Descriptor list of arrays */
 typedef struct _usbclient_desc_list_t {
 	uint32_t size;									/* array size */
 	usbclient_desc_gen_t* descriptors;	/* array containing all descriptors for given type*/
 	struct _usbclient_desc_list_t* next;		/* pointer to next descriptor type */
 } usbclient_desc_list_t;
+
 
 /* Endpoints */
 /* Endpoint types */
@@ -117,11 +125,13 @@ typedef enum {
 	USBCLIENT_ENDPT_TYPE_INTR
 } usbclient_ep_type_t;
 
+
 /* Endpoint direction */
 typedef enum {
 	USBCLIENT_ENDPT_DIR_OUT,
 	USBCLIENT_ENDPT_DIR_IN
 } usbclient_ep_dir_t;
+
 
 /* Endpoint configuration */
 typedef struct _usbclient_ep_t {
@@ -130,9 +140,11 @@ typedef struct _usbclient_ep_t {
 	usbclient_ep_dir_t direction; /* ignored for control endpoint */
 } usbclient_ep_t;
 
+
 /* High speed device can have 15 IN and 15 OUT endpoints
  * in addition to control endpoint (mandatory, both in and out) */
 #define USBCLIENT_MAX_ENDPOINTS 31
+
 
 /* Endpoints configuration list */
 typedef struct _usbclient_ep_list_t {
@@ -140,20 +152,28 @@ typedef struct _usbclient_ep_list_t {
 	usbclient_ep_t endpoints[USBCLIENT_MAX_ENDPOINTS];
 } usbclient_ep_list_t;
 
+
 /* Library configuration structure */
 typedef struct _usbclient_conf_t {
 	usbclient_ep_list_t endpoint_list;
 	usbclient_desc_list_t* descriptors_head;
 } usbclient_conf_t;
 
+
 /* Initialize library with given configuration */
 extern int usbclient_init(usbclient_conf_t *conf);
+
+
 /* Cleanup data */
 extern int usbclient_destroy(void);
 
+
 /* Send data on given endpoint - blocking */
 extern int usbclient_send(usbclient_ep_t *ep, const void *data, unsigned int len);
+
+
 /* Receive data from given endpoint - blocking */
 extern int usbclient_receive(usbclient_ep_t *ep, void *data, unsigned int len);
+
 
 #endif /* _USBCLIENT_H_ */
