@@ -11,4 +11,4 @@ CFLAGS += -DTARGET_IMXRT
 include tty/libtty/Makefile
 include multi/imxrt-multi/Makefile
 include usb/imxrt-usbc/Makefile
-
+include storage/imxrt-flash/Makefile
