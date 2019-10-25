@@ -24,6 +24,7 @@ static int flash_getProperties(flash_context_t *context)
 	switch (context->address) {
 		case FLEXSPI_DATA_ADDRESS :
 			/* TO DO */
+			return -1;
 			break;
 
 		case FLEXSPI2_DATA_ADDRESS :
