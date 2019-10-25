@@ -7,6 +7,6 @@
 #
 
 include tty/libtty/Makefile
-include tty/pc-tty/Makefile
+#include tty/pc-tty/Makefile
 include tty/pc-uart/Makefile
-include storage/pc-ata/Makefile
+#include storage/pc-ata/Makefile

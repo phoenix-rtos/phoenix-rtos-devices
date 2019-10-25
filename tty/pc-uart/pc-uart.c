@@ -127,6 +127,7 @@ static ssize_t uart_write(uint8_t d, size_t len, const char *buff, int mode, int
 
 	if (d >= sizeof(uarts) / sizeof(uart_t *))
 		*status = -EINVAL;
+
 	else if ((serial = uarts[d]) == NULL)
 		*status = -ENOENT;
 
@@ -304,13 +305,14 @@ void poolthr(void *arg)
 
 		switch (msg.type) {
 		case mtOpen:
+			msg.o.open = msg.object;
 			err = EOK;
 			break;
 		case mtWrite:
-			msg.o.io = uart_write(uart_get(&msg.object), msg.i.io.offs, msg.i.data, msg.i.io.flags, &err);
+			msg.o.io = uart_write(uart_get(&msg.object), msg.i.size, msg.i.data, msg.i.io.flags, &err);
 			break;
 		case mtRead:
-			msg.o.io = uart_read(uart_get(&msg.object), msg.i.io.offs, msg.o.data, msg.i.io.flags, &err);
+			msg.o.io = uart_read(uart_get(&msg.object), msg.o.size, msg.o.data, msg.i.io.flags, &err);
 			break;
 		case mtClose:
 			err = EOK;
@@ -327,7 +329,6 @@ void poolthr(void *arg)
 			uart_ioctl(port, &msg);
 			break;
 		}
-
 		msgRespond(port, err, &msg, rid);
 	}
 }
@@ -341,7 +342,6 @@ int main(void)
 
 	printf("pc-uart: Initializing UART 16550 driver %s\n", "");
 
-	_uart_init(base, n, BPS_115200, &uarts[0]);
 
 	dev.port = PORT_DESCRIPTOR;
 	dev.id = 0;
@@ -352,6 +352,12 @@ int main(void)
 //for (;;);
 		return -1;
 	}
+
+	if (fork())
+		exit(EXIT_SUCCESS);
+	setsid();
+
+	_uart_init(base, n, BPS_115200, &uarts[0]);
 	/*if (portRegister(port, "/dev/ttyS1", &uarts[1]->oid) < 0) {
 		printf("Can't register port %d\n", port);
 		return -1;
