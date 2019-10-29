@@ -130,4 +130,7 @@ int flexspi_norFlashErase(uint32_t instance, flexspi_norConfig_t *config, uint32
 int flexspi_norFlashRead(uint32_t instance, flexspi_norConfig_t *config, uint32_t *dst, uint32_t start, uint32_t bytes);
 
 
+int flexspi_getVendorID(uint32_t instance, uint32_t *manID);
+
+
 #endif

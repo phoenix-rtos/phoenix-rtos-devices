@@ -31,13 +31,14 @@ typedef struct _flash_properties_t {
 
 
 typedef struct _flash_context_t {
-	int id;
+	int sectorID;
 	int counter;
 
 	char *buff;
 
 	uint32_t address;
 	uint32_t instance;
+	uint32_t flashID;
 
 	flash_properties_t properties;
 	serial_norConfigOption_t option;

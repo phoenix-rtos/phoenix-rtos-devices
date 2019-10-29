@@ -7,10 +7,10 @@
 # Author: Hubert Buczynski
 #
 
-$(PREFIX_PROG)imxrt-flash: $(addprefix $(PREFIX_O)storage/imxrt-flash/, flashsrv.o flashdrv.o rom_api.o)
+$(PREFIX_PROG)imxrt-flash: $(addprefix $(PREFIX_O)storage/imxrt-flash/, flashsrv.o flashdrv.o rom_api.o flash_config.o)
 	$(LINK)
 
-$(PREFIX_A)libflashdrv.a: $(addprefix $(PREFIX_O)storage/imxrt-flash/, flashdrv.o rom_api.o)
+$(PREFIX_A)libflashdrv.a: $(addprefix $(PREFIX_O)storage/imxrt-flash/, flashdrv.o rom_api.o flash_config.o)
 	$(ARCH)
 
 $(PREFIX_H)flashsrv.h: storage/imxrt-flash/flashsrv.h
