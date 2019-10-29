@@ -12,10 +12,15 @@
  */
 
 
+#include <errno.h>
 #include "rom_api.h"
 
 
 #define FLEXSPI_DRIVER_API_ADDRESS 0x00201a60
+
+#define FLEX_SPI_LUT_INSTR(opcode1, pads1, operand1, opcode0, pads0, operand0) \
+	(((opcode1 & 0x3f) << 26) | ((pads1 & 0x3) << 24) | (operand1 & 0xff) << 16) \
+	| (((opcode0 & 0x3f) << 10) | ((pads0 & 0x3) << 8) | (operand0 & 0xff))
 
 
 typedef struct {
@@ -33,6 +38,18 @@ typedef struct {
 
 
 static volatile flexspi_norDriverInterface_t *flexspi_norApi = (void *)FLEXSPI_DRIVER_API_ADDRESS;
+
+
+static int flexspi_executeSeq(uint32_t instance, flexspi_xfer_t *xfer)
+{
+	return flexspi_norApi->xfer(instance, xfer);
+}
+
+
+static int flexspi_updateLut(uint32_t instance, uint32_t seqIndex, const uint32_t *lutBase, uint32_t seqNumber)
+{
+	return flexspi_norApi->update_lut(instance, seqIndex, lutBase, seqNumber);
+}
 
 
 int flexspi_norFlashInit(uint32_t instance, flexspi_norConfig_t *config)
@@ -69,3 +86,29 @@ int flexspi_norFlashRead(uint32_t instance, flexspi_norConfig_t *config, uint32_
 {
 	return flexspi_norApi->read(instance, config, dst, start, bytes);
 }
+
+
+int flexspi_getVendorID(uint32_t instance, uint32_t *manID)
+{
+	int err = EOK;
+	flexspi_xfer_t xfer;
+	const uint8_t seqID = 8;
+	const uint32_t lutSeq[] = { FLEX_SPI_LUT_INSTR(0x9, 0, 0x04, 0x1, 0, 0x9f), 0, 0, 0 };
+
+	xfer.rxSize = 3;
+	xfer.rxBuffer = manID;
+	xfer.baseAddress = instance;
+	xfer.operation = kFlexSpiOperation_Read;
+	xfer.seqId = seqID;
+	xfer.seqNum = 1;
+	xfer.isParallelModeEnable = 0;
+
+	if ((err = flexspi_updateLut(instance, seqID, lutSeq, 1)) != 0)
+		return -err;
+
+	if ((err = flexspi_executeSeq(instance, &xfer)) != 0)
+		return -err;
+
+	return err;
+}
+

@@ -14,31 +14,29 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+#include <phoenix/arch/imxrt.h>
+
 
 #include "flashdrv.h"
 #include "rom_api.h"
 
+#include "flash_config.h"
 
-static int flash_getProperties(flash_context_t *context)
+
+#define QSPI_FREQ_133MHZ 0xc0000008
+
+
+static int flash_defineFlexSPI(flash_context_t *context)
 {
 	switch (context->address) {
 		case FLEXSPI_DATA_ADDRESS :
-			/* TO DO */
-			return -1;
+			context->instance = 0;
+			context->option.option0 = QSPI_FREQ_133MHZ;
 			break;
 
 		case FLEXSPI2_DATA_ADDRESS :
 			context->instance = 1;
-			context->option.option0 = 0xc0000008;
-
-			context->properties.size = 0x400000;
-			context->properties.page_size = 0x100;
-			context->properties.sector_size = 0x1000;
-
-			context->buff = malloc(context->properties.sector_size);
-
-			if (context->buff == NULL)
-				return -ENOMEM;
+			context->option.option0 = QSPI_FREQ_133MHZ;
 			break;
 
 		default:
@@ -63,8 +61,8 @@ size_t flash_readData(flash_context_t *context, uint32_t offset, char *buff, siz
 	if (flash_isValidAddress(context, offset, size))
 		return 0;
 
-	volatile uint32_t *addr = (void *)(context->address + offset);
-	memcpy(buff, (void *)addr, size);
+	if (flexspi_norFlashRead(context->instance, &context->config, (uint32_t *)buff, offset, size) < 0)
+		return 0;
 
 	return size;
 }
@@ -87,7 +85,7 @@ size_t flash_writeDataPage(flash_context_t *context, uint32_t offset, const char
 		sector_id = pageAddr / context->properties.sector_size;
 
 		/* If sector_id has changed, data from previous sector have to be saved and new sector is read. */
-		if (sector_id != context->id) {
+		if (sector_id != context->sectorID) {
 			flash_sync(context);
 
 			if (flash_readData(context, context->properties.sector_size * sector_id, context->buff, context->properties.sector_size) <= 0)
@@ -96,8 +94,8 @@ size_t flash_writeDataPage(flash_context_t *context, uint32_t offset, const char
 			if (flexspi_norFlashErase(context->instance, &context->config, context->properties.sector_size * sector_id, context->properties.sector_size) != 0)
 				return savedBytes;
 
-			context->id = sector_id;
-			context->counter = offset - context->properties.sector_size * context->id;
+			context->sectorID = sector_id;
+			context->counter = offset - context->properties.sector_size * context->sectorID;
 		}
 
 		memcpy(context->buff + context->counter, buff + savedBytes, context->properties.page_size);
@@ -125,14 +123,14 @@ void flash_sync(flash_context_t *context)
 		return;
 
 	for (i = 0; i < pagesNumber; ++i) {
-		dstAddr = context->id * context->properties.sector_size + i * context->properties.page_size;
+		dstAddr = context->sectorID * context->properties.sector_size + i * context->properties.page_size;
 		src = (const uint32_t *)(context->buff + i * context->properties.page_size);
 
 		flexspi_norFlashPageProgram(context->instance, &context->config, dstAddr, src);
 	}
 
 	context->counter = 0;
-	context->id = -1;
+	context->sectorID = -1;
 }
 
 
@@ -140,7 +138,7 @@ int flash_init(flash_context_t *context)
 {
 	int res = EOK;
 
-	if ((res = flash_getProperties(context)) < 0)
+	if ((res = flash_defineFlexSPI(context)) < 0)
 		return res;
 
 	if (flexspi_norGetConfig(context->instance, &context->config, &context->option) != 0)
@@ -149,7 +147,13 @@ int flash_init(flash_context_t *context)
 	if (flexspi_norFlashInit(context->instance, &context->config) != 0)
 		return -ENXIO;
 
-	context->id = -1;
+	if (flexspi_getVendorID(context->instance, &context->flashID) != 0)
+		return -ENXIO;
+
+	if (flash_getConfig(context) != 0)
+		return -ENXIO;
+
+	context->sectorID = -1;
 	context->counter = 0;
 
 	return res;
