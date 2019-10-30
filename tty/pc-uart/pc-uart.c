@@ -194,7 +194,7 @@ uint8_t uart_get(id_t *id)
 }
 
 
-static void uart_ioctl(uint32_t port, msg_t *msg)
+static int uart_ioctl(uint32_t port, msg_t *msg)
 {
 	uart_t *serial;
 	unsigned long request;
@@ -223,6 +223,7 @@ static void uart_ioctl(uint32_t port, msg_t *msg)
 		err = libtty_ioctl(&serial->tty, pid, request, in_data, &out_data);
 
 	ioctl_setResponse(msg, request, err, out_data);
+	return err;
 }
 
 
@@ -326,7 +327,7 @@ void poolthr(void *arg)
 			*/
 			break;
 		case mtDevCtl:
-			uart_ioctl(port, &msg);
+			err = uart_ioctl(port, &msg);
 			break;
 		}
 		msgRespond(port, err, &msg, rid);
