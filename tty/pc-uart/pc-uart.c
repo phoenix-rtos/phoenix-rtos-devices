@@ -41,13 +41,15 @@ typedef struct {
 	handle_t intcond;
 	handle_t inth;
 
-	oid_t oid;
+	id_t id;
 	libtty_common_t tty;
 } uart_t;
 
 
 static uart_t *uarts[4];
 
+uint8_t uart_get(id_t *id);
+static int uart_poll_status(uint8_t d);
 
 static int uart_interrupt(unsigned int n, void *arg)
 {
@@ -115,6 +117,12 @@ void uart_intthr(void *arg)
 				outb(uart->base + REG_IMR, IMR_DR);
 			}
 		}
+	/*  POLL
+		oid_t oid;
+		oid.port = 2;
+		oid.id = uart->id;
+		eventRegister(&oid, libtty_poll_status(&uart->tty);
+	*/
 	}
 }
 
@@ -187,38 +195,30 @@ uint8_t uart_get(id_t *id)
 	unsigned int i;
 
 	for (i = 0; i < sizeof(uarts) / sizeof(uart_t); i++) {
-		if (uarts[i]->oid.id == *id)
+		if (uarts[i]->id == *id)
 			return i;
 	}
 	return 0;
 }
 
 
-static int uart_ioctl(uint32_t port, msg_t *msg)
+static int uart_ioctl(uint8_t d, msg_t *msg)
 {
 	uart_t *serial;
 	unsigned long request;
 	const void *in_data, *out_data;
 	pid_t pid;
 	int err;
-	oid_t oid;
-	uint8_t d;
-
-	oid.port = port;
 
 	request = msg->i.devctl;
 	in_data = msg->i.data;
 	out_data = NULL;
 	pid = msg->pid;
 
-	d = uart_get(&oid.id);
-
 	if (d >= sizeof(uarts) / sizeof(uart_t *))
 		err = -EINVAL;
-
 	else if ((serial = uarts[d]) == NULL)
 		err = -ENOENT;
-
 	else
 		err = libtty_ioctl(&serial->tty, pid, request, in_data, &out_data);
 
@@ -319,15 +319,17 @@ void poolthr(void *arg)
 			err = EOK;
 			break;
 		case mtGetAttr:
-			/* TODO: implement?
-			if (msg.i.attr.type == atPollStatus)
-				msg.o.attr.val = uart_poll_status(uart_get(&msg.i.io.oid));
-			else
-				msg.o.attr.val = -EINVAL;
-			*/
+		/*	POLL
+			if (msg.i.attr == atEvents) {
+				if (msg.o.size >= sizeof(int))
+					*(int *)msg.o.data = uart_poll_status(uart_get(&msg.object));
+				else
+					err = -EINVAL;
+			} else
+				err = -EINVAL; */
 			break;
 		case mtDevCtl:
-			err = uart_ioctl(port, &msg);
+			err = uart_ioctl(uart_get(&msg.object), &msg);
 			break;
 		}
 		msgRespond(port, err, &msg, rid);
@@ -341,24 +343,20 @@ int main(void)
 	void *base = (void *)0x3f8;
 	unsigned int n = 4;
 
-	printf("pc-uart: Initializing UART 16550 driver %s\n", "");
-
-
-	dev.port = PORT_DESCRIPTOR;
-	dev.id = 0;
-
-	if (create_dev(&dev, "/dev/ttyS0") < 0) {
-		debug("pc-uart: Could not create device file\n");
-
-//for (;;);
-		return -1;
-	}
+	printf("pc-uart: Initializing UART 16550 driver\n");
 
 	if (fork())
 		exit(EXIT_SUCCESS);
 	setsid();
 
 	_uart_init(base, n, BPS_115200, &uarts[0]);
+	dev.port = PORT_DESCRIPTOR;
+	dev.id = uarts[0]->id;
+
+	if (create_dev(&dev, "/dev/ttyS0") < 0) {
+		debug("pc-uart: Could not create device file\n");
+		return -1;
+	}
 	/*if (portRegister(port, "/dev/ttyS1", &uarts[1]->oid) < 0) {
 		printf("Can't register port %d\n", port);
 		return -1;
