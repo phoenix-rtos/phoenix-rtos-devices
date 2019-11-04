@@ -152,7 +152,7 @@ static void _ttypc_virt_writechar(ttypc_virt_t *virt, uint16_t attrib, uint16_t 
 
 
 /* Emulator main entry */
-int ttypc_virt_sput(ttypc_virt_t *virt, uint8_t *s, int len)
+int ttypc_virt_sput(ttypc_virt_t *virt, const uint8_t *s, int len)
 {
 	uint16_t ch;
 	int ret;
@@ -749,7 +749,7 @@ int _ttypc_virt_init(ttypc_virt_t *virt, size_t rbuffsz, ttypc_t *ttypc)
 	 * (MOD) add mapping attributes
 	 */
 	virt->ttypc = ttypc;
-	virt->mem = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE, NULL, 0);
+	virt->mem = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
 	virt->memsz = 4096;
 	virt->attr = 0x7 << 8;
 

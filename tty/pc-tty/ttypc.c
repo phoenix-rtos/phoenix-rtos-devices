@@ -14,37 +14,51 @@
  * %LICENSE%
  */
 
+#include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/io.h>
+#include <sys/debug.h>
 #include <sys/mman.h>
 #include <sys/threads.h>
 #include <sys/msg.h>
+#include <posix/utils.h>
 
 #include "ttypc.h"
 #include "ttypc_vga.h"
 #include "ttypc_kbd.h"
 
+#define PORT_DESCRIPTOR 3
 
 ttypc_t ttypc_common;
 
 
-static int ttypc_read(unsigned int d, offs_t offs, char *buff, unsigned int len)
+static int ttypc_read(unsigned int d, offs_t offs, char *buff, unsigned int len, int *err)
 {
-	int err = 0;
+	int outlen = 0;
+	*err = EOK;
 
-	err = ttypc_virt_sget(&ttypc_common.virtuals[d], buff, len);
-	return err;
+	if ((outlen = ttypc_virt_sget(&ttypc_common.virtuals[d], buff, len)) < 0) {
+		*err = outlen;
+		return 0;
+	}
+	return outlen;
 }
 
 
-static int ttypc_write(unsigned int d, offs_t offs, char *buff, unsigned int len)
+static int ttypc_write(unsigned int d, offs_t offs, const char *buff, unsigned int len, int *err)
 {
-	ttypc_virt_sput(&ttypc_common.virtuals[d], (uint8_t *)buff, len);
-	return len;
+	int outlen = 0;
+	*err = EOK;
+	if ((outlen = ttypc_virt_sput(&ttypc_common.virtuals[d], (const uint8_t*)buff, len)) < 0) {
+		*err = outlen;
+		return 0;
+	}
+
+	return outlen;
 }
 
 
@@ -121,29 +135,31 @@ static int ttypc_open(vnode_t *vnode, file_t* file)
 
 void poolthr(void *arg)
 {
-	uint32_t port = (uint32_t)arg;
+	uint32_t port = PORT_DESCRIPTOR;
 	msg_t msg;
 	unsigned int rid;
+	int err = 0;
 
 	for (;;) {
 		msgRecv(port, &msg, &rid);
 
 		switch (msg.type) {
 		case mtOpen:
+			msg.o.open = msg.object;
+			err = EOK;
 			break;
 		case mtWrite:
-			msg.o.io.err = ttypc_write(0, 0, msg.i.data, msg.i.size);
+			msg.o.io = ttypc_write(0, 0, msg.i.data, msg.i.size, &err);
 			break;
 		case mtRead:
-			msg.o.io.err = 0;
-			msg.o.size = 1;
-			msg.o.io.err = ttypc_read(0, 0, msg.o.data, msg.o.size);
+			msg.o.io = ttypc_read(0, 0, msg.o.data, msg.o.size, &err);
 			break;
 		case mtClose:
+			err = EOK;
 			break;
 		}
 
-		msgRespond(port, &msg, rid);
+		msgRespond(port, err, &msg, rid);
 	}
 	return;
 }
@@ -152,17 +168,20 @@ void poolthr(void *arg)
 int main(int argc, char *argv[])
 {
 	unsigned int i;
-	oid_t toid;
-	uint32_t port;
+	oid_t dev;
 	void *stack;
 
 	printf("pc-tty: Initializing VGA VT220 terminal emulator (test) %s\n", "");
+
+	if (fork())
+		exit(EXIT_SUCCESS);
+	setsid();
 
 	/* Test monitor type */
 	memset(&ttypc_common, 0, sizeof(ttypc_t));
 	ttypc_common.color = (inb((void *)0x3cc) & 0x01);
 
-	ttypc_common.out_base = mmap(NULL, 0x1000, PROT_READ | PROT_WRITE, 0, OID_PHYSMEM, ttypc_common.color ? 0xb8000 : 0xb0000);
+	ttypc_common.out_base = mmap(NULL, 0x1000, PROT_READ | PROT_WRITE, 0, FD_PHYSMEM, ttypc_common.color ? 0xb8000 : 0xb0000);
 	ttypc_common.out_crtc = ttypc_common.color ? (void *)0x3d4 : (void *)0x3b4;
 
 	/* Initialize virutal terminals and register devices */
@@ -190,17 +209,18 @@ int main(int argc, char *argv[])
 
 	/* Register port in the namespace */
 
-	portCreate(&port);
-	toid.port = port;
-	if (portRegister(port, "/dev/tty0", &toid) < 0) {
-		printf("Can't register port %d\n", port);
+	dev.port = PORT_DESCRIPTOR;
+	dev.id = 0;
+
+	if (create_dev(&dev, "/dev/tty0") < 0) {
+		debug("pc-tty: Could not create device file\n");
 		return -1;
 	}
 
 	/* Run threads */
 	stack = malloc(2048);
-	beginthread(poolthr, 1, stack, 2048, (void *)port);
-	poolthr((void *)port);
+	beginthread(poolthr, 1, stack, 2048, NULL);
+	poolthr(NULL);
 
 	return 0;
 }

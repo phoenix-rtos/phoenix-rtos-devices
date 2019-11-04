@@ -141,7 +141,7 @@ extern uint16_t csd_supplemental[CSSIZE];
 
 
 /* Emulator main entry */
-extern int ttypc_virt_sput(ttypc_virt_t *virt, uint8_t *s, int len);
+extern int ttypc_virt_sput(ttypc_virt_t* virt, const uint8_t* s, int len);
 
 
 /* Function adds characters to input buffer */
