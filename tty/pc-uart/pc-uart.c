@@ -27,11 +27,10 @@
 #include <sys/msg.h>
 #include <sys/mman.h>
 #include <posix/utils.h>
+#include <sys/stat.h>
 
 #include <libtty.h>
 #include "pc-uart.h"
-
-#define PORT_DESCRIPTOR 3
 
 typedef struct {
 	void *base;
@@ -339,7 +338,6 @@ void poolthr(void *arg)
 
 int main(void)
 {
-	oid_t dev;
 	void *base = (void *)0x3f8;
 	unsigned int n = 4;
 
@@ -350,10 +348,8 @@ int main(void)
 	setsid();
 
 	_uart_init(base, n, BPS_115200, &uarts[0]);
-	dev.port = PORT_DESCRIPTOR;
-	dev.id = uarts[0]->id;
 
-	if (create_dev(&dev, "/dev/ttyS0") < 0) {
+	if (create_dev(PORT_DESCRIPTOR, uarts[0]->id, "/dev/ttyS0", S_IFCHR) < 0) {
 		debug("pc-uart: Could not create device file\n");
 		return -1;
 	}
