@@ -3,29 +3,30 @@
  *
  * Generic ata controller driver
  *
- * Copyright 2012, 2018 Phoenix Systems
+ * Copyright 2012, 2018, 2019 Phoenix Systems
  * Author: Marcin Stragowski, Kamil Amanowicz
  *
  * This file is part of Phoenix-RTOS.
  *
  * %LICENSE%
  */
-
-#include <errno.h>
-#include <stdlib.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
-
 #include <string.h>
-#include <arch/ia32/io.h>
+#include <arch.h>
+#include <errno.h>
+
 #include <sys/threads.h>
 #include <sys/msg.h>
 #include <sys/interrupt.h>
 #include <sys/platform.h>
 
-#include "pc-ata.h"
+#include <arch/ia32/io.h>
 
+#include "atasrv.h"
+#include "atadrv.h"
 
 static pci_id_t ata_pci_tbl[] = {
 	{ PCI_ANY, PCI_ANY, PCI_ANY, PCI_ANY, 0x0101},
@@ -143,7 +144,6 @@ int ata_wait(struct ata_channel *ac, uint8_t irq)
 
 
 /* TODO: divide to dma_setup, command_setup, pio_access, dma_access */
-
 int ata_access(uint8_t direction, struct ata_dev *ad, uint32_t lba, uint8_t numsects, void *buffer)
 {
 	struct ata_channel *ac = ad->ac;
@@ -214,9 +214,9 @@ int ata_access(uint8_t direction, struct ata_dev *ad, uint32_t lba, uint8_t nums
 			if (err) break;
 
 			if ((ac->status & (ATA_SR_BSY | ATA_SR_DRQ)) == ATA_SR_DRQ) {
-				for (b = 0; b < words; b++) {
+				for (b = 0; b < words; b++)
 					*(uint16_t*)(buffer + (b * 2)) = inw((void *)0 + bus);
-				}
+
 				buffer += (words * 2);
 				i++;
 				ATA_WASTE400MS(ac);
@@ -236,9 +236,9 @@ int ata_access(uint8_t direction, struct ata_dev *ad, uint32_t lba, uint8_t nums
 		while (i < numsects) {
 
 			if ((ac->status & (ATA_SR_BSY | ATA_SR_DRQ)) == ATA_SR_DRQ ) {
-				for (b = 0; b < words; b++) {
+				for (b = 0; b < words; b++)
 					outw((void *)0 + bus, *((uint16_t*)(buffer + (b*2))));
-				}
+
 				buffer += (words * 2);
 				i++;
 				ATA_WASTE400MS(ac);
@@ -253,7 +253,6 @@ int ata_access(uint8_t direction, struct ata_dev *ad, uint32_t lba, uint8_t nums
 			if ((err = ata_wait(ac, !ac->no_int)) != 0)
 				ata_polling(ac, 1); // Polling.
 
-
 			if (ac->no_int || err)
 				astatus = ac->status = ata_ch_read(ac, ATA_REG_STATUS);
 			else
@@ -264,9 +263,8 @@ int ata_access(uint8_t direction, struct ata_dev *ad, uint32_t lba, uint8_t nums
 		ata_ch_write(ac, ATA_REG_COMMAND, ATA_CMD_CACHE_FLUSH);
 
 		if (!ac->no_int) {
-			if ((err = ata_wait(ac, 1)) != 0) {
+			if ((err = ata_wait(ac, 1)) != 0)
 				ata_polling(ac, 1); // Polling.
-			}
 		}
 	}
 
@@ -294,13 +292,12 @@ static int ata_io(struct ata_dev *ad, offs_t offs, char *buff, unsigned int len,
 	begin_lba = (uint32_t)offs / ad->sector_size; // starting sector
 	sectors = len / ad->sector_size;
 
-	for (; sectors >= ATA_MAX_PIO_DRQ; sectors -= ATA_MAX_PIO_DRQ) {
-		// sectors actually read
-		ata_access(direction, ad, begin_lba, (uint8_t)ATA_MAX_PIO_DRQ, buff); // FIXME: BUG: TODO: ATA_MAX_PIO_DRQ is getting squashed to 8bits here!!!
+	for (; sectors >= ATA_MAX_PIO_DRQ - 1; sectors -= ATA_MAX_PIO_DRQ - 1) {
+		ata_access(direction, ad, begin_lba, (uint8_t)ATA_MAX_PIO_DRQ - 1, buff);
 
-		begin_lba += ATA_MAX_PIO_DRQ;
-		buff += ATA_MAX_PIO_DRQ * ad->sector_size;
-		ret += ATA_MAX_PIO_DRQ * ad->sector_size;
+		begin_lba += ATA_MAX_PIO_DRQ - 1;
+		buff += (ATA_MAX_PIO_DRQ - 1) * ad->sector_size;
+		ret += (ATA_MAX_PIO_DRQ - 1) * ad->sector_size;
 	}
 
 	if (sectors) {
@@ -309,6 +306,18 @@ static int ata_io(struct ata_dev *ad, offs_t offs, char *buff, unsigned int len,
 	}
 
 	return ret;
+}
+
+
+int ata_read(ata_dev_t *dev, offs_t offs, char *buff, unsigned int len)
+{
+	return ata_io(dev, offs, buff, len, ATA_READ);
+}
+
+
+int ata_write(ata_dev_t *dev, offs_t offs, const char *buff, unsigned int len)
+{
+	return ata_io(dev, offs, (char *)buff, len, ATA_WRITE);
 }
 
 
@@ -383,7 +392,7 @@ int ata_init_bus(struct ata_bus *ab)
 			ab->ac[i].devices[j].ac = &ab->ac[i];
 			ab->ac[i].devices[j].reserved = 0;
 
-			//ata_ch_write(&(ab->ac[i]), ATA_REG_HDDEVSEL, 0xA0 | (j << 4));
+			ata_ch_write(&(ab->ac[i]), ATA_REG_HDDEVSEL, 0xA0 | (j << 4));
 
 			ata_ch_write(&(ab->ac[i]), ATA_REG_COMMAND, ATA_CMD_IDENTIFY);
 
@@ -416,7 +425,8 @@ int ata_init_bus(struct ata_bus *ab)
 
 			ab->ac[i].devices[j].size = ab->ac[i].devices[j].info.lba28_totalsectors;
 
-			printf("[%d:%d] %.5f GiB\n", i, j, (double)ab->ac[i].devices[j].size * ab->ac[i].devices[j].sector_size / 1000 / 1000 / 1000);
+			atasrv_registerDevice(&ab->ac[i].devices[j]);
+			//printf("[%d:%d] %.5f GiB\n", i, j, (double)ab->ac[i].devices[j].size * ab->ac[i].devices[j].sector_size / 1000 / 1000 / 1000);
 		}
 	}
 
@@ -466,64 +476,20 @@ int ata_generic_init(ata_opt_t *opt)
 			break;
 		pci_dev[devs_found] = pctl.pci.dev;
 
-		printf("ata :%2u:%2u:%2u-->%6u,%6u-->%3u,%3u \n",
-				pci_dev[devs_found].b, pci_dev[devs_found].d,
-				pci_dev[devs_found].f, pci_dev[devs_found].device & 0xFFFF,
-				pci_dev[devs_found].vendor & 0xFFFF,
-				(pci_dev[devs_found].cl >> 8) & 0xFF,pci_dev[devs_found].cl & 0xFF);
-
 		if (!ata_init_one(&pci_dev[devs_found], aopt)) {
 			devs_found++;
 		}
 	}
 	if (!devs_found) {
-		printf("ata: no devices found %s\n", "");
+		printf("ata: no ata devices found\n");
 		return -ENOENT;
 	}
 
 	return devs_found;
 }
 
-static void ata_run(void *arg)
+
+int ata_init(void)
 {
-	msg_t msg;
-	ata_msg_t *atamsg;
-	unsigned int rid;
-	struct ata_dev ad;
-
-	for (;;) {
-		msgRecv(port, &msg, &rid);
-		atamsg = msg.i.data;
-		ad = buses[atamsg->bus].ac[atamsg->channel].devices[atamsg->device];
-
-		switch (msg.type) {
-			case mtRead:
-				msg.o.io.err = ata_io(&ad, atamsg->offset, msg.o.data, msg.o.size, ATA_READ);
-				break;
-			case mtWrite:
-				msg.o.io.err = ata_io(&ad, atamsg->offset, atamsg->data, atamsg->len, ATA_WRITE);
-				break;
-			default:
-				break;
-		}
-		msgRespond(port, &msg, rid);
-	}
-}
-
-int main(void)
-{
-	oid_t toid;
-
-	printf("ata: Initializing %s\n","");
-	ata_generic_init(NULL);
-
-	portCreate(&port);
-	if (portRegister(port, "/dev/ata", &toid) < 0) {
-		printf("ata: Can't register port %d\n", port);
-		return -1;
-	}
-
-	ata_run(NULL);
-
-	return 0;
+	return ata_generic_init(NULL) <= 0;
 }
