@@ -26,6 +26,7 @@
 #include <sys/threads.h>
 #include <sys/msg.h>
 #include <posix/utils.h>
+#include <phoenix/stat.h>
 
 #include "ttypc.h"
 #include "ttypc_vga.h"
@@ -168,7 +169,6 @@ void poolthr(void *arg)
 int main(int argc, char *argv[])
 {
 	unsigned int i;
-	oid_t dev;
 	void *stack;
 
 	printf("pc-tty: Initializing VGA VT220 terminal emulator (test) %s\n", "");
@@ -208,11 +208,7 @@ int main(int argc, char *argv[])
 	_ttypc_kbd_init(&ttypc_common);
 
 	/* Register port in the namespace */
-
-	dev.port = PORT_DESCRIPTOR;
-	dev.id = 0;
-
-	if (create_dev(&dev, "/dev/tty0") < 0) {
+	if (create_dev(PORT_DESCRIPTOR, 0, "/dev/tty0", S_IFCHR) < 0) {
 		debug("pc-tty: Could not create device file\n");
 		return -1;
 	}
