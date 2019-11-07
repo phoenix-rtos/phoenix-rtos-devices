@@ -35,6 +35,7 @@
 #define ATASRV_DEV_TYPE_HDD 0xFF
 #define ATASRV_DEV_TYPE_PART 0x01
 
+
 typedef struct _atasrv_partition atasrv_partition_t;
 
 
@@ -178,12 +179,13 @@ static void atasrv_poolThread(void *arg)
 }
 
 
-int atasrv_registerDevice(ata_dev_t *ataDev)
+int atasrv_registerDevice(void *data)
 {
 	atasrv_device_t *dev, *part;
 	mbr_t *mbr;
 	char devName[16];
 	int i, err = 0;
+	ata_dev_t *ataDev = data;
 
 	if (!ataDev)
 		return -EINVAL;

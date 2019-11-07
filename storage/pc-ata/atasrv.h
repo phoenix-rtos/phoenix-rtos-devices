@@ -14,11 +14,6 @@
 #ifndef _PC_ATASRV_H_
 #define _PC_ATASRV_H_
 
-#include "atadrv.h"
-
-
-int atasrv_registerDevice(ata_dev_t *ataDev);
-
 
 int atasrv_read(id_t *devId, offs_t offs, char *buff, size_t len, int *err);
 

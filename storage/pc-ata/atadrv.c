@@ -25,8 +25,8 @@
 
 #include <arch/ia32/io.h>
 
-#include "atasrv.h"
 #include "atadrv.h"
+#include "atasrv_priv.h"
 
 static pci_id_t ata_pci_tbl[] = {
 	{ PCI_ANY, PCI_ANY, PCI_ANY, PCI_ANY, 0x0101},
