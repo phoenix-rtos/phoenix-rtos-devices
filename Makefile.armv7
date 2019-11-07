@@ -20,10 +20,19 @@ else
 	CFLAGS += -O2 -DNDEBUG
 endif
 
-CFLAGS += -Wall -Wstrict-prototypes -g -I$(SRCDIR) -nostartfiles -nostdlib\
-	-mcpu=cortex-m3 -mthumb -fomit-frame-pointer -ffreestanding -mno-unaligned-access\
-	-fpic -fpie -msingle-pic-base -mno-pic-data-is-text-relative\
-	-DVERSION=\"$(VERSION)\" -DARCH=\"arch/armv7/arch.h\" -DNOMMU
+ifneq (, $(findstring imxrt, $(TARGET)))
+	#FIXME: -mfpu=fpv5-d16 does not work with current toolchain
+	CFLAGS += -Wall -Wstrict-prototypes -g -I$(SRCDIR) -nostartfiles -nostdlib\
+		-mcpu=cortex-m7 -mfloat-abi=hard -mfpu=fpv5-sp-d16 -mthumb -fomit-frame-pointer\
+		-ffreestanding -mno-unaligned-access\
+		-fpic -fpie -msingle-pic-base -mno-pic-data-is-text-relative\
+		-DVERSION=\"$(VERSION)\" -DARCH=\"arch/armv7/arch.h\" -DNOMMU
+else
+	CFLAGS += -Wall -Wstrict-prototypes -g -I$(SRCDIR) -nostartfiles -nostdlib\
+		-mcpu=cortex-m3 -mthumb -fomit-frame-pointer -ffreestanding -mno-unaligned-access\
+		-fpic -fpie -msingle-pic-base -mno-pic-data-is-text-relative\
+		-DVERSION=\"$(VERSION)\" -DARCH=\"arch/armv7/arch.h\" -DNOMMU
+endif
 
 CFLAGS += -fdata-sections -ffunction-sections
 
