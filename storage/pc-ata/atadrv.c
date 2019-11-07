@@ -309,13 +309,13 @@ static int ata_io(struct ata_dev *ad, offs_t offs, char *buff, unsigned int len,
 }
 
 
-int ata_read(ata_dev_t *dev, offs_t offs, char *buff, unsigned int len)
+int atadrv_read(ata_dev_t *dev, offs_t offs, char *buff, unsigned int len)
 {
 	return ata_io(dev, offs, buff, len, ATA_READ);
 }
 
 
-int ata_write(ata_dev_t *dev, offs_t offs, const char *buff, unsigned int len)
+int atadrv_write(ata_dev_t *dev, offs_t offs, const char *buff, unsigned int len)
 {
 	return ata_io(dev, offs, (char *)buff, len, ATA_WRITE);
 }

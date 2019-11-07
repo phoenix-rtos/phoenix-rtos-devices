@@ -43,7 +43,7 @@ typedef struct {
 	uint16_t			boot_sign;  /* mbr signature */
 } mbr_t;
 
-mbr_t *alloc_mbr(ata_dev_t *dev);
+int read_mbr(ata_dev_t *dev, mbr_t *mbr);
 
 
 #endif /* mbr.h */

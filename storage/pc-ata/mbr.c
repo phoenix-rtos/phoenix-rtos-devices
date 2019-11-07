@@ -16,26 +16,29 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <errno.h>
 #include <sys/msg.h>
 
 #include "mbr.h"
 
 
-mbr_t *alloc_mbr(ata_dev_t *dev)
+int read_mbr(ata_dev_t *dev, mbr_t *mbr)
 {
 	int ret = 0;
-	mbr_t *mbr = malloc(sizeof(mbr_t));
 
-	ret = ata_read(dev, 0, (char *)mbr, sizeof(mbr_t));
+	if (!mbr || !dev)
+		return -EINVAL;
+
+	ret = atadrv_read(dev, 0, (char *)mbr, sizeof(mbr_t));
 	if (ret != sizeof(mbr_t)) {
 		free(mbr);
-		return NULL;
+		return -EIO;
 	}
 
 	if (mbr->boot_sign != MBR_SIGNATURE) {
 		free(mbr);
-		return NULL;
+		return -ENOENT;
 	}
 
-	return mbr;
+	return EOK;
 }

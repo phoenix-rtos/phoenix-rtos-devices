@@ -29,7 +29,7 @@
 #define LOG_ERROR(str, ...) do { fprintf(stderr, __FILE__  ":%d error: " str "\n", __LINE__, ##__VA_ARGS__); } while (0)
 #define TRACE(str, ...) do { if (0) fprintf(stderr, __FILE__  ":%d trace: " str "\n", __LINE__, ##__VA_ARGS__); } while (0)
 
-#define ATASRV_DEV_NAME_BASE "hd"
+#define ATASRV_DEV_NAME_BASE "/dev/hd"
 #define ATASRV_DEV_NAME_CHAR 'a'
 
 #define ATASRV_DEV_TYPE_HDD 0xFF
@@ -50,8 +50,8 @@ typedef struct {
 
 typedef struct _atasrv_filesystem {
 	struct _atasrv_filesystem *next;
-	int (*handler)(void *, void *, msg_t *);
-	int (*mount)(void *, void **);
+	int (*handler)(void *, msg_t *);
+	int (*mount)(id_t *, void **);
 	int (*unmount)(void *);
 	char name[16];
 	uint8_t type;
@@ -170,7 +170,7 @@ static void atasrv_poolThread(void *arg)
 			condWait(atasrv_common.cond, atasrv_common.lock, 0);
 		mutexUnlock(atasrv_common.lock);
 
-		err = req->fs->handler(req->srvData, req->fsData, &req->msg);
+		err = req->fs->handler(req->fsData, &req->msg);
 
 		msgRespond(req->portfd, err, &req->msg, req->rid);
 		atasrv_freeRequest(req);
@@ -183,7 +183,7 @@ int atasrv_registerDevice(ata_dev_t *ataDev)
 	atasrv_device_t *dev, *part;
 	mbr_t *mbr;
 	char devName[16];
-	int i;
+	int i, err = 0;
 
 	if (!ataDev)
 		return -EINVAL;
@@ -199,10 +199,16 @@ int atasrv_registerDevice(ata_dev_t *ataDev)
 	idtree_alloc(&atasrv_common.devices, &dev->node);
 
 	sprintf(devName, "%s%c", ATASRV_DEV_NAME_BASE, ATASRV_DEV_NAME_CHAR + idtree_id(&dev->node));
-	create_dev(atasrv_common.portfd, idtree_id(&dev->node), devName, S_IFBLK);
+	err = create_dev(atasrv_common.portfd, idtree_id(&dev->node), devName, S_IFBLK);
+	if (err)
+		return err;
 
-	mbr = alloc_mbr(dev->ataDev);
-	if (mbr) {
+	mbr = malloc(sizeof(mbr_t));
+	if (!mbr)
+		return -ENOMEM;
+
+	err = read_mbr(dev->ataDev, mbr);
+	if (!err) {
 		for (i = 0; i < 4; i++) {
 			if (mbr->pent[i].type) {
 				part = calloc(1, sizeof(atasrv_device_t));
@@ -223,29 +229,37 @@ int atasrv_registerDevice(ata_dev_t *ataDev)
 
 				idtree_alloc(&atasrv_common.devices, &part->node);
 				sprintf(devName, "%s%c%d", ATASRV_DEV_NAME_BASE, ATASRV_DEV_NAME_CHAR + idtree_id(&dev->node), i);
-				create_dev(atasrv_common.portfd, idtree_id(&part->node), devName, S_IFBLK);
+				err = create_dev(atasrv_common.portfd, idtree_id(&part->node), devName, S_IFBLK);
+				if (err) {
+					/* TODO: log error? */
+				}
+
 			}
 		}
 	}
 	free(mbr);
-	return EOK;
+	return err;
 }
 
 
-static int atasrv_read(atasrv_device_t *dev, offs_t offs, char *buff, size_t len, int *err)
+int atasrv_read(id_t *devId, offs_t offs, char *buff, size_t len, int *err)
 {
+	atasrv_device_t *dev;
+
+	dev = lib_treeof(atasrv_device_t, node, idtree_find(&atasrv_common.devices, *devId));
+
 	if (!dev) {
-		*err = EINVAL;
-		return -EINVAL;
+		*err = ENXIO;
+		return 0;
 	}
 
 	switch(dev->type) {
 		case ATASRV_DEV_TYPE_HDD:
-			*err = ata_read(dev->ataDev, offs, buff, len);
+			*err = atadrv_read(dev->ataDev, offs, buff, len);
 		break;
 
 		case ATASRV_DEV_TYPE_PART:
-			*err = ata_read(dev->ataDev, dev->partition->start + offs, buff, len);
+			*err = atadrv_read(dev->ataDev, dev->partition->start + offs, buff, len);
 		break;
 
 		default:
@@ -262,21 +276,27 @@ static int atasrv_read(atasrv_device_t *dev, offs_t offs, char *buff, size_t len
 }
 
 
-static int atasrv_write(atasrv_device_t *dev, offs_t offs, const char *buff, size_t len, int *err)
+int atasrv_write(id_t *devId, offs_t offs, const char *buff, size_t len, int *err)
 {
+	atasrv_device_t *dev;
+
+	dev = lib_treeof(atasrv_device_t, node, idtree_find(&atasrv_common.devices, *devId));
+
 	if (!dev) {
-		*err = EINVAL;
-		return -EINVAL;
+		*err = ENXIO;
+		return 0;
 	}
+
+	/*TODO: checks checks checks */
 
 	switch(dev->type) {
 		case ATASRV_DEV_TYPE_HDD:
-			*err = ata_write(dev->ataDev, offs, buff, len);
-		break;
+			*err = atadrv_write(dev->ataDev, offs, buff, len);
+			break;
 
 		case ATASRV_DEV_TYPE_PART:
-			*err = ata_write(dev->ataDev, dev->partition->start + offs, buff, len);
-		break;
+			*err = atadrv_write(dev->ataDev, dev->partition->start + offs, buff, len);
+			break;
 
 		default:
 			*err = EINVAL;
@@ -297,25 +317,18 @@ static void atasrv_msgLoop(void)
 	msg_t msg;
 	int err;
 	unsigned rid, portfd = PORT_DESCRIPTOR;
-	atasrv_device_t *dev = NULL;
 
 	for (;;) {
 		if (msgRecv(portfd, &msg, &rid) < 0)
 			continue;
 
-		dev = lib_treeof(atasrv_device_t, node, idtree_find(&atasrv_common.devices, msg.object));
-		if (!dev) {
-			msgRespond(portfd, -EBADF, &msg, rid);
-			continue;
-		}
-
 		switch (msg.type) {
 		case mtRead:
-			msg.o.io = atasrv_read(dev, msg.i.io.offs, msg.o.data, msg.o.size, &err);
+			msg.o.io = atasrv_read(&msg.object, msg.i.io.offs, msg.o.data, msg.o.size, &err);
 			break;
 
 		case mtWrite:
-			msg.o.io = atasrv_write(dev, msg.i.io.offs, msg.i.data, msg.i.size, &err);
+			msg.o.io = atasrv_write(&msg.object, msg.i.io.offs, msg.i.data, msg.i.size, &err);
 			break;
 
 	/*	TBD

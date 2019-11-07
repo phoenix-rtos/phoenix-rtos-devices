@@ -259,10 +259,10 @@ struct ata_bus {
 int ata_init(void);
 
 
-int ata_read(ata_dev_t *dev, offs_t offs, char *buff, unsigned int len);
+int atadrv_read(ata_dev_t *dev, offs_t offs, char *buff, unsigned int len);
 
 
-int ata_write(ata_dev_t *dev, offs_t offs, const char *buff, unsigned int len);
+int atadrv_write(ata_dev_t *dev, offs_t offs, const char *buff, unsigned int len);
 
 
 #endif

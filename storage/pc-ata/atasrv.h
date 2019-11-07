@@ -16,16 +16,13 @@
 
 #include "atadrv.h"
 
-typedef struct _ata_msg_t {
-	uint16_t bus;
-	uint16_t channel;
-	uint16_t device;
-	offs_t offset;
-	uint16_t len;
-	char data[];
-} __attribute__((packed)) ata_msg_t;
-
 
 int atasrv_registerDevice(ata_dev_t *ataDev);
+
+
+int atasrv_read(id_t *devId, offs_t offs, char *buff, size_t len, int *err);
+
+
+int atasrv_write(id_t *devId, offs_t offs, const char *buff, size_t len, int *err);
 
 #endif
