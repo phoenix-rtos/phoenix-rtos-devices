@@ -136,10 +136,9 @@ int gpio_init(void)
 {
 	int i;
 	platformctl_t pctl;
-	static const unsigned int addresses[] = { 0x401b8000, 0x401bc000, 0x401c0000,
-		0x401c4000, 0x400c0000, 0x42000000, 0x42040000, 0x42080000, 0x420c0000 };
-	static const unsigned int clocks[] = { pctl_clk_gpio1, pctl_clk_gpio2, pctl_clk_gpio3,
-		pctl_clk_gpio4, pctl_clk_gpio5 };
+	static const void *addresses[] = { GPIO1_BASE, GPIO2_BASE, GPIO3_BASE, GPIO4_BASE,
+		GPIO5_BASE, GPIO6_BASE, GPIO7_BASE, GPIO8_BASE, GPIO9_BASE};
+	static const unsigned int clocks[] = { GPIO1_CLK, GPIO2_CLK, GPIO3_CLK, GPIO4_CLK, GPIO5_CLK };
 
 	pctl.action = pctl_set;
 	pctl.type = pctl_devclock;

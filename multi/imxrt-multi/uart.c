@@ -45,8 +45,6 @@
 
 #define UART_CNT (UART1 + UART2 + UART3 + UART4 + UART5 + UART6 + UART7 + UART8)
 
-#define MODULE_CLK 80000000
-
 #define BUFSIZE 256
 
 
@@ -196,9 +194,9 @@ static uint32_t calculate_baudrate(speed_t baud)
 		return 0;
 
 	for (osr = 3; osr < 32; ++osr) {
-		sbr = MODULE_CLK / (baud_rate * (osr + 1));
+		sbr = UART_CLK / (baud_rate * (osr + 1));
 		sbr &= 0xfff;
-		t = MODULE_CLK / (sbr * (osr + 1));
+		t = UART_CLK / (sbr * (osr + 1));
 
 		if (t > baud_rate)
 			t = ((t - baud_rate) * 1000) / baud_rate;
@@ -286,6 +284,22 @@ int uart_handleMsg(msg_t *msg, int dev)
 }
 
 
+#ifdef TARGET_IMXRT1170
+static int uart_getIsel(int mux, int *isel, int *val)
+{
+	/* TODO */
+	return -1;
+}
+
+
+static int uart_muxVal(int mux)
+{
+	/* TODO */
+	return 0;
+}
+
+
+#else
 static int uart_muxVal(int mux)
 {
 	switch (mux) {
@@ -350,6 +364,7 @@ static int uart_getIsel(int mux, int *isel, int *val)
 
 	return 0;
 }
+#endif
 
 
 static void uart_initPins(void)
@@ -405,14 +420,14 @@ int uart_init(void)
 		int dev;
 		unsigned irq;
 	} info[] = {
-		{ (void *)0x40184000, pctl_clk_lpuart1, 20 + 16 },
-		{ (void *)0x40188000, pctl_clk_lpuart2, 21 + 16 },
-		{ (void *)0x4018c000, pctl_clk_lpuart3, 22 + 16 },
-		{ (void *)0x40190000, pctl_clk_lpuart4, 23 + 16 },
-		{ (void *)0x40194000, pctl_clk_lpuart5, 24 + 16 },
-		{ (void *)0x40198000, pctl_clk_lpuart6, 25 + 16 },
-		{ (void *)0x4019c000, pctl_clk_lpuart7, 26 + 16 },
-		{ (void *)0x401a0000, pctl_clk_lpuart8, 27 + 16 }
+		{ UART1_BASE, UART1_CLK, UART1_IRQ },
+		{ UART2_BASE, UART2_CLK, UART2_IRQ },
+		{ UART3_BASE, UART3_CLK, UART3_IRQ },
+		{ UART4_BASE, UART4_CLK, UART4_IRQ },
+		{ UART5_BASE, UART5_CLK, UART5_IRQ },
+		{ UART6_BASE, UART6_CLK, UART6_IRQ },
+		{ UART7_BASE, UART7_CLK, UART7_IRQ },
+		{ UART8_BASE, UART8_CLK, UART8_IRQ }
 	};
 
 	uart_initPins();

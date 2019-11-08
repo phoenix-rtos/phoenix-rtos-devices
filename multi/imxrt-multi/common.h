@@ -14,7 +14,6 @@
 #ifndef _COMMON_H_
 #define _COMMON_H_
 
-#include <phoenix/arch/imxrt.h>
 #include <arch.h>
 
 #include "config.h"

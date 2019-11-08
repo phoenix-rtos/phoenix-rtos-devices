@@ -8,6 +8,14 @@
 
 CFLAGS += -DTARGET_IMXRT
 
+ifneq (, $(findstring 117, $(TARGET)))
+	CFLAGS += -DTARGET_IMXRT1170
+else ifneq (, $(findstring 105, $(TARGET)))
+	CFLAGS += -DTARGET_IMXRT1050
+else ifneq (, $(findstring 104, $(TARGET)))
+	CFLAGS += -DTARGET_IMXRT1060
+endif
+
 include tty/libtty/Makefile
 include multi/imxrt-multi/Makefile
 include usb/imxrt-usbc/Makefile

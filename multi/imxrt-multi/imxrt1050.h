@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * i.MX RT common
+ * i.MX RT1050 definitions
  *
  * Copyright 2019 Phoenix Systems
  * Author: Aleksander Kaminski
@@ -11,8 +11,10 @@
  * %LICENSE%
  */
 
-#include <sys/platform.h>
-#include "common.h"
 
+#ifndef _IMXRT1050_H_
+#define _IMXRT1050_H_
 
-unsigned int multi_port;
+#include "imxrt1060.h"
+
+#endif
