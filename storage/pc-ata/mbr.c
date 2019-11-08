@@ -30,15 +30,11 @@ int read_mbr(ata_dev_t *dev, mbr_t *mbr)
 		return -EINVAL;
 
 	ret = atadrv_read(dev, 0, (char *)mbr, sizeof(mbr_t));
-	if (ret != sizeof(mbr_t)) {
-		free(mbr);
+	if (ret != sizeof(mbr_t))
 		return -EIO;
-	}
 
-	if (mbr->boot_sign != MBR_SIGNATURE) {
-		free(mbr);
+	if (mbr->boot_sign != MBR_SIGNATURE)
 		return -ENOENT;
-	}
 
 	return EOK;
 }

@@ -90,6 +90,7 @@ struct {
 	atasrv_filesystem_t *filesystems;
 	atasrv_request_t *queue;
 	int portfd;
+	int devices_cnt;
 	handle_t lock, cond;
 
 	char poolStacks[1][4 * 4096] __attribute__((aligned(8)));
@@ -181,10 +182,9 @@ static void atasrv_poolThread(void *arg)
 
 int atasrv_registerDevice(void *data)
 {
-	atasrv_device_t *dev, *part;
-	mbr_t *mbr;
+	atasrv_device_t *dev;
 	char devName[16];
-	int i, err = 0;
+	int err = 0;
 	ata_dev_t *ataDev = data;
 
 	if (!ataDev)
@@ -202,47 +202,74 @@ int atasrv_registerDevice(void *data)
 
 	sprintf(devName, "%s%c", ATASRV_DEV_NAME_BASE, ATASRV_DEV_NAME_CHAR + idtree_id(&dev->node));
 	err = create_dev(atasrv_common.portfd, idtree_id(&dev->node), devName, S_IFBLK);
-	if (err)
-		return err;
+
+	if (!err)
+		atasrv_common.devices_cnt++;
+	else
+		idtree_remove(&atasrv_common.devices, &dev->node);
+
+	return err;
+}
+
+static int atasrv_discoverPartitions(void)
+{
+	int j, i = 0, err = 0;
+	atasrv_device_t *dev, *part;
+	mbr_t *mbr;
+	char devName[16];
 
 	mbr = malloc(sizeof(mbr_t));
 	if (!mbr)
 		return -ENOMEM;
 
-	err = read_mbr(dev->ataDev, mbr);
-	if (!err) {
-		for (i = 0; i < 4; i++) {
-			if (mbr->pent[i].type) {
-				part = calloc(1, sizeof(atasrv_device_t));
-				if (!part)
-					return -ENOMEM;
+	for (j = 0; j < atasrv_common.devices_cnt; j++) {
 
-				part->type = ATASRV_DEV_TYPE_PART;
-				part->partition = calloc(1, sizeof(atasrv_partition_t));
-				if (!part->partition) {
-					free(part);
-					return -ENOMEM;
+		dev = lib_treeof(atasrv_device_t, node, idtree_find(&atasrv_common.devices, j));
+
+		if (!dev)
+			continue;
+
+		memset(mbr, 0, sizeof(mbr_t));
+		err = read_mbr(dev->ataDev, mbr);
+		if (!err) {
+			for (i = 0; i < 4; i++) {
+				if (mbr->pent[i].type) {
+					part = calloc(1, sizeof(atasrv_device_t));
+					if (!part) {
+						err = -ENOMEM;
+						break;
+					}
+
+					part->type = ATASRV_DEV_TYPE_PART;
+					part->partition = calloc(1, sizeof(atasrv_partition_t));
+					if (!part->partition) {
+						free(part);
+						err = -ENOMEM;
+						break;
+					}
+
+					part->partition->start = mbr->pent[i].first_sect_lba;
+					part->partition->size = mbr->pent[i].sector_count;
+					part->partition->type = mbr->pent[i].type;
+					part->partition->dev = dev;
+
+					idtree_alloc(&atasrv_common.devices, &part->node);
+					sprintf(devName, "%s%c%d", ATASRV_DEV_NAME_BASE, ATASRV_DEV_NAME_CHAR + idtree_id(&dev->node), i + 1);
+					err = create_dev(atasrv_common.portfd, idtree_id(&part->node), devName, S_IFBLK);
+					if (err) {
+						/* TODO: log error? */
+						free(part->partition);
+						free(part);
+					}
+
 				}
-
-				part->partition->start = mbr->pent[i].first_sect_lba;
-				part->partition->size = mbr->pent[i].sector_count;
-				part->partition->type = mbr->pent[i].type;
-				part->partition->dev = dev;
-
-				idtree_alloc(&atasrv_common.devices, &part->node);
-				sprintf(devName, "%s%c%d", ATASRV_DEV_NAME_BASE, ATASRV_DEV_NAME_CHAR + idtree_id(&dev->node), i);
-				err = create_dev(atasrv_common.portfd, idtree_id(&part->node), devName, S_IFBLK);
-				if (err) {
-					/* TODO: log error? */
-				}
-
 			}
 		}
 	}
+
 	free(mbr);
 	return err;
 }
-
 
 int atasrv_read(id_t *devId, offs_t offs, char *buff, size_t len, int *err)
 {
@@ -375,7 +402,6 @@ static void atasrv_init(void)
 
 int main(void)
 {
-	TRACE("initializing");
 	int pid, sid;
 
 	pid = fork();
@@ -392,6 +418,8 @@ int main(void)
 	atasrv_init();
 	if (ata_init())
 		return -ENXIO;
+
+	atasrv_discoverPartitions();
 
 	atasrv_msgLoop();
 

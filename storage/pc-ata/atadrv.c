@@ -480,10 +480,6 @@ int ata_generic_init(ata_opt_t *opt)
 			devs_found++;
 		}
 	}
-	if (!devs_found) {
-		printf("ata: no ata devices found\n");
-		return -ENOENT;
-	}
 
 	return devs_found;
 }
