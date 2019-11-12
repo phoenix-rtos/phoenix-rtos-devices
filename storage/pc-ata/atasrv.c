@@ -23,6 +23,8 @@
 #include <phoenix/msg.h>
 #include <phoenix/stat.h>
 
+#include <libext2.h>
+
 #include "atasrv.h"
 #include "mbr.h"
 
@@ -34,6 +36,19 @@
 
 #define ATASRV_DEV_TYPE_HDD 0xFF
 #define ATASRV_DEV_TYPE_PART 0x01
+
+#define ATASRV_REGISTER_FS(NAME) do { 								\
+	atasrv_filesystem_t *fs = calloc(1, sizeof(atasrv_partition_t));\
+	if (!fs)														\
+		return -ENOMEM;												\
+	strcpy(fs->name, LIB##NAME##_NAME);								\
+	fs->type = LIB##NAME##_TYPE;									\
+	fs->handler = &LIB##NAME##_HANDLER;								\
+	fs->mount = &LIB##NAME##_MOUNT;									\
+	fs->unmount = &LIB##NAME##_UNMOUNT;								\
+	fs->next = atasrv_common.filesystems;							\
+	atasrv_common.filesystems = fs;									\
+} while (0)
 
 
 typedef struct _atasrv_partition atasrv_partition_t;
@@ -81,7 +96,6 @@ typedef struct {
 	unsigned rid;
 	atasrv_filesystem_t *fs;
 	void *fsData;
-	void *srvData;
 } atasrv_request_t;
 
 
@@ -97,14 +111,13 @@ struct {
 } atasrv_common;
 
 
-static atasrv_request_t *atasrv_newRequest(int portfd, atasrv_filesystem_t *fs, void *fsData, void *srvData)
+static atasrv_request_t *atasrv_newRequest(int portfd, atasrv_filesystem_t *fs, void *fsData)
 {
 	atasrv_request_t *req;
 
 	if ((req = calloc(1, sizeof(*req))) != NULL) {
 		req->fsData = fsData;
 		req->fs = fs;
-		req->srvData = srvData;
 		req->portfd = portfd;
 	}
 
@@ -141,7 +154,7 @@ static void atasrv_partThread(void *arg)
 	atasrv_request_t *req;
 
 	for (;;) {
-		req = atasrv_newRequest(p->portfd, p->fs, p->fsData, p);
+		req = atasrv_newRequest(p->portfd, p->fs, p->fsData);
 
 		if (msgRecv(p->portfd, &req->msg, &req->rid) < 0)
 			continue;
@@ -392,17 +405,21 @@ static void atasrv_msgLoop(void)
 }
 
 
-static void atasrv_init(void)
+static int atasrv_init(void)
 {
 	memset(&atasrv_common, 0, sizeof(atasrv_common));
 	idtree_init(&atasrv_common.devices);
 	atasrv_common.portfd = PORT_DESCRIPTOR;
+
+	ATASRV_REGISTER_FS(EXT2);
+
+	return 0;
 }
 
 
 int main(void)
 {
-	int pid, sid;
+	int pid, sid, err;
 
 	pid = fork();
 	if (pid < 0)
@@ -415,13 +432,14 @@ int main(void)
 	if (sid < 0)
 		exit(EXIT_FAILURE);
 
-	atasrv_init();
+	if ((err = atasrv_init()))
+		return err;
+
 	if (ata_init())
 		return -ENXIO;
 
 	atasrv_discoverPartitions();
 
 	atasrv_msgLoop();
-
 	return 0;
 }

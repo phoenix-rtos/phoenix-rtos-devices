@@ -4,7 +4,7 @@
 # Copyright 2018, 2019 Phoenix Systems
 #
 
-$(PREFIX_PROG)pc-ata: $(addprefix $(PREFIX_O)storage/pc-ata/, atadrv.o atasrv.o mbr.o) #$(PREFIX_A)libext2.a
+$(PREFIX_PROG)pc-ata: $(addprefix $(PREFIX_O)storage/pc-ata/, atadrv.o atasrv.o mbr.o) $(PREFIX_A)libext2.a
 	$(LINK)
 
 $(PREFIX_A)libatadrv.a: $(PREFIX_O)storage/pc-ata/atadrv.o
