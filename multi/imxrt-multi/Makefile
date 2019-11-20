@@ -5,10 +5,14 @@
 #
 
 
-$(PREFIX_PROG)imxrt-multi: $(addprefix $(PREFIX_O)multi/imxrt-multi/, uart.o gpio.o common.o \
+$(PREFIX_PROG)imxrt-multi: $(addprefix $(PREFIX_O)multi/imxrt-multi/, uart.o gpio.o common.o spi.o \
 	imxrt-multi.o) $(PREFIX_A)libtty.a
 	$(LINK)
 
 $(PREFIX_O)multi/imxrt-multi/imxrt-multi.o: $(PREFIX_H)libtty.h
 
-all: $(PREFIX_PROG_STRIPPED)imxrt-multi
+
+$(PREFIX_PROG)multi-tests: $(addprefix $(PREFIX_O)multi/imxrt-multi/tests/, multi_tests.o spi_tests.o)
+	$(LINK)
+
+all: $(PREFIX_PROG_STRIPPED)imxrt-multi $(PREFIX_PROG_STRIPPED)multi-tests

@@ -63,6 +63,21 @@
 #define GPIO4_CLK pctl_clk_gpio4
 #define GPIO5_CLK pctl_clk_gpio5
 
+#define LPSPI1_BASE ((void *)0x40394000)
+#define LPSPI2_BASE ((void *)0x40398000)
+#define LPSPI3_BASE ((void *)0x4039c000)
+#define LPSPI4_BASE ((void *)0x403a0000)
+
+#define LPSPI1_CLK pctl_clk_lpspi1
+#define LPSPI2_CLK pctl_clk_lpspi2
+#define LPSPI3_CLK pctl_clk_lpspi3
+#define LPSPI4_CLK pctl_clk_lpspi4
+
+#define LPSPI1_IRQ 32 + 16
+#define LPSPI2_IRQ 33 + 16
+#define LPSPI3_IRQ 34 + 16
+#define LPSPI4_IRQ 35 + 16
+
 #define UART1_TX_PIN ad_b0_12
 #define UART1_RX_PIN ad_b0_13
 #define UART1_RTS_PIN ad_b0_15
@@ -156,6 +171,61 @@
 #endif
 #define UART8_RTS_PIN sd_b0_03
 #define UART8_CTS_PIN sd_b0_02
+
+#ifndef SPI1_SCK
+#define SPI1_SCK sd_b0_00
+#endif
+#ifndef SPI1_SD0
+#define SPI1_SD0 sd_b0_02
+#endif
+#ifndef SPI1_SDI
+#define SPI1_SDI sd_b0_03
+#endif
+#ifndef SPI1_PCS0
+#define SPI1_PCS0 sd_b0_01
+#endif
+
+
+#ifndef SPI2_SCK
+#define SPI2_SCK sd_b1_07
+#endif
+#ifndef SPI2_SD0
+#define SPI2_SD0 sd_b1_08
+#endif
+#ifndef SPI2_SDI
+#define SPI2_SDI sd_b1_09
+#endif
+#ifndef SPI2_PCS0
+#define SPI2_PCS0 sd_b1_06
+#endif
+
+
+#ifndef SPI3_SCK
+#define SPI3_SCK ad_b0_00
+#endif
+#ifndef SPI3_SD0
+#define SPI3_SD0 ad_b0_01
+#endif
+#ifndef SPI3_SDI
+#define SPI3_SDI ad_b0_02
+#endif
+#ifndef SPI3_PCS0
+#define SPI3_PCS0 ad_b0_03
+#endif
+
+
+#ifndef SPI4_SCK
+#define SPI4_SCK b0_03
+#endif
+#ifndef SPI4_SD0
+#define SPI4_SD0 b0_02
+#endif
+#ifndef SPI4_SDI
+#define SPI4_SDI b0_01
+#endif
+#ifndef SPI4_PCS0
+#define SPI4_PCS0 b0_00
+#endif
 
 
 static inline int common_setClock(int dev, unsigned int state)

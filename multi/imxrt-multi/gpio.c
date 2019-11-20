@@ -39,15 +39,15 @@ struct {
 } gpio_common;
 
 
- int gpio_handleWrite(int port, gpio_i_msg_t *imsg)
+ int gpio_handleWrite(int port, multi_i_t *imsg)
 {
 	unsigned int set, clr, t;
 
-	switch (imsg->type) {
+	switch (imsg->gpio.type) {
 		case gpio_port:
 			/* DR_SET & DR_CLEAR registers are not functional */
-			set = imsg->port.val & imsg->port.mask;
-			clr = ~imsg->port.val & imsg->port.mask;
+			set = imsg->gpio.port.val & imsg->gpio.port.mask;
+			clr = ~imsg->gpio.port.val & imsg->gpio.port.mask;
 
 			mutexLock(gpio_common.lock);
 			t = *(gpio_common.base[port] + gpio_dr) & ~clr;
@@ -56,8 +56,8 @@ struct {
 			break;
 
 		case gpio_dir:
-			set = imsg->dir.val & imsg->dir.mask;
-			clr = ~imsg->dir.val & imsg->dir.mask;
+			set = imsg->gpio.dir.val & imsg->gpio.dir.mask;
+			clr = ~imsg->gpio.dir.val & imsg->gpio.dir.mask;
 
 			mutexLock(gpio_common.lock);
 			t = *(gpio_common.base[port] + gpio_gdir) & ~clr;
@@ -73,11 +73,11 @@ struct {
 }
 
 
- int gpio_handleRead(int port, gpio_i_msg_t *imsg, gpio_o_msg_t *omsg)
+ int gpio_handleRead(int port, multi_i_t *imsg, multi_o_t *omsg)
 {
 	omsg->err = EOK;
 
-	switch (imsg->type) {
+	switch (imsg->gpio.type) {
 		case gpio_port:
 			omsg->val = *(gpio_common.base[port] + gpio_dr);
 			break;
@@ -98,10 +98,10 @@ struct {
 
 int gpio_handleMsg(msg_t *msg, int dev)
 {
-	gpio_i_msg_t *imsg = (void *)msg->i.data;
-	gpio_o_msg_t *omsg = (void *)msg->o.data;
+	multi_i_t *imsg = (void *)msg->i.data;
+	multi_o_t *omsg = (void *)msg->o.data;
 
-	if (imsg == NULL || msg->i.size < sizeof(gpio_i_msg_t))
+	if (imsg == NULL || msg->i.size < sizeof(multi_i_t))
 		return -EINVAL;
 
 	dev -= id_gpio1;

@@ -4,7 +4,7 @@
  * i.MX RT common
  *
  * Copyright 2017, 2018 Phoenix Systems
- * Author: Aleksander Kaminski
+ * Author: Aleksander Kaminski, Hubert Buczynski
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -18,6 +18,10 @@
 
 #include "config.h"
 #include "imxrt-multi.h"
+
+#define CONCATENATE(x, y) x##y
+#define PIN2MUX(x) CONCATENATE(pctl_mux_gpio_, x)
+#define PIN2PAD(x) CONCATENATE(pctl_pad_gpio_, x)
 
 
 extern unsigned int multi_port;

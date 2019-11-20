@@ -30,9 +30,6 @@
 #include "common.h"
 #include "uart.h"
 
-#define CONCATENATE(x, y) x##y
-#define PIN2MUX(x) CONCATENATE(pctl_mux_gpio_, x)
-#define PIN2PAD(x) CONCATENATE(pctl_pad_gpio_, x)
 
 #define UART1_POS 0
 #define UART2_POS (UART1_POS + UART1)
