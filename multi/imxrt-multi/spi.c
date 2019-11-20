@@ -129,7 +129,7 @@ static void spi_rxBytes(int spi, uint8_t *rxBuff, int bytesNumber)
 }
 
 
-static int spi_transmitData(int spi, const uint8_t *txBuff, uint8_t *rxBuff, int len)
+static int spi_transmitData(int spi, unsigned char cs, const uint8_t *txBuff, uint8_t *rxBuff, int len)
 {
 	int size = len;
 	int rxTotalBytes = 0;
@@ -143,7 +143,7 @@ static int spi_transmitData(int spi, const uint8_t *txBuff, uint8_t *rxBuff, int
 		return -EINVAL;
 
 	/* Initialize Transmit Command Register */
-	*(spi_common[spi].base + spi_tcr) = (spi_common[spi].tcr & ~(0x7ff)) | (len * 8 - 1);
+	*(spi_common[spi].base + spi_tcr) = (spi_common[spi].tcr & ~(0x7ff)) | ((cs & 0x3) << 24) | (len * 8 - 1);
 
 	/* Wait until Transmit Command will be taken from  TX fifo */
 	txWordsCnt = *(spi_common[spi].base + spi_fsr) & 0x1f;
@@ -265,7 +265,7 @@ static void spi_handleDevCtl(msg_t *msg, int dev)
 			break;
 
 		case spi_transmit:
-			odevctl->err = spi_transmitData(dev, txBuff, rxBuff, idevctl->spi.transmit.frameSize);
+			odevctl->err = spi_transmitData(dev, idevctl->spi.transmit.cs, txBuff, rxBuff, idevctl->spi.transmit.frameSize);
 			break;
 
 		default:
@@ -364,19 +364,67 @@ static void spi_initPins(void)
 	int i, isel, val;
 	static const int muxes[] = {
 #if SPI1
-		PIN2MUX(SPI1_SCK), PIN2MUX(SPI1_SD0), PIN2MUX(SPI1_SDI), PIN2MUX(SPI1_PCS0),
+		PIN2MUX(SPI1_SCK), PIN2MUX(SPI1_SD0), PIN2MUX(SPI1_SDI),
+#ifdef SPI1_PCS0
+		PIN2MUX(SPI1_PCS0),
+#endif
+#ifdef SPI1_PCS1
+		PIN2MUX(SPI1_PCS1),
+#endif
+#ifdef SPI1_PCS2
+		PIN2MUX(SPI1_PCS2),
+#endif
+#ifdef SPI1_PCS3
+		PIN2MUX(SPI1_PCS3),
+#endif
 #endif
 
 #if SPI2
-		PIN2MUX(SPI2_SCK), PIN2MUX(SPI2_SD0), PIN2MUX(SPI2_SDI), PIN2MUX(SPI2_PCS0),
+		PIN2MUX(SPI2_SCK), PIN2MUX(SPI2_SD0), PIN2MUX(SPI2_SDI),
+#ifdef SPI2_PCS0
+		PIN2MUX(SPI2_PCS0),
 #endif
+#ifdef SPI2_PCS1
+		PIN2MUX(SPI2_PCS1),
+#endif
+#ifdef SPI2_PCS2
+		PIN2MUX(SPI2_PCS2),
+#endif
+#ifdef SPI2_PCS3
+		PIN2MUX(SPI2_PCS3),
+#endif
+#endif		
 
 #if SPI3
-		PIN2MUX(SPI3_SCK), PIN2MUX(SPI3_SD0), PIN2MUX(SPI3_SDI), PIN2MUX(SPI3_PCS0),
+		PIN2MUX(SPI3_SCK), PIN2MUX(SPI3_SD0), PIN2MUX(SPI3_SDI),
+#ifdef SPI3_PCS0
+		PIN2MUX(SPI3_PCS0),
+#endif
+#ifdef SPI3_PCS1
+		PIN2MUX(SPI3_PCS1),
+#endif
+#ifdef SPI3_PCS2
+		PIN2MUX(SPI3_PCS2),
+#endif
+#ifdef SPI3_PCS3
+		PIN2MUX(SPI3_PCS3),
+#endif
 #endif
 
 #if SPI4
-		PIN2MUX(SPI4_SCK), PIN2MUX(SPI4_SD0), PIN2MUX(SPI4_SDI), PIN2MUX(SPI4_PCS0),
+		PIN2MUX(SPI4_SCK), PIN2MUX(SPI4_SD0), PIN2MUX(SPI4_SDI),
+#ifdef SPI4_PCS0
+		PIN2MUX(SPI4_PCS0),
+#endif
+#ifdef SPI4_PCS1
+		PIN2MUX(SPI4_PCS1),
+#endif
+#ifdef SPI4_PCS2
+		PIN2MUX(SPI4_PCS2),
+#endif
+#ifdef SPI4_PCS3
+		PIN2MUX(SPI4_PCS3),
+#endif
 #endif
 	};
 

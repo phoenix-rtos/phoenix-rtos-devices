@@ -67,6 +67,7 @@ typedef struct {
 
 		struct {
 			unsigned int frameSize;
+			unsigned char cs;
 		} transmit;
 	};
 

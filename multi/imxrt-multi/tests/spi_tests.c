@@ -89,6 +89,7 @@ static int test_spiTransmit(oid_t dir, uint8_t *tx, uint8_t *rx, int sz)
 	idevctl->type = dir.id;
 	idevctl->spi.type = spi_transmit;
 	idevctl->spi.transmit.frameSize = sz;
+	idevctl->spi.transmit.cs = 0;
 
 	odevctl = (multi_o_t *)msg.o.raw;
 
