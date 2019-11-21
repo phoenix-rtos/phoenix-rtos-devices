@@ -5,9 +5,9 @@
  *
  * PC 101-key keyboard handler derived from the BSD 4.4 Lite kernel.
  *
- * Copyright 2012 Phoenix Systems
+ * Copyright 2012, 2019 Phoenix Systems
  * Copyright 2001, 2006 Pawel Pisarczyk
- * Author: Pawel Pisarczyk
+ * Author: Pawel Pisarczyk, Lukasz Kosinski
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -16,6 +16,8 @@
 
 #ifndef _TTYPC_KBD_H_
 #define _TTYPC_KBD_H_
+
+#include "ttypc.h"
 
 
 #define KB_NONE    1
@@ -42,7 +44,7 @@ typedef struct _keymap_t {
 
 
 /* Function initializes ttypc keyboard handler */
-extern int _ttypc_kbd_init(struct _ttypc_t *ttypc);
+extern int _ttypc_kbd_init(ttypc_t *ttypc);
 
 
 #endif
