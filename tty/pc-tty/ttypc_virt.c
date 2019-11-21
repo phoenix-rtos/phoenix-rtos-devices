@@ -5,9 +5,9 @@
  *
  * ttypc VT220 emulator (based on FreeBSD 4.4 pcvt)
  *
- * Copyright 2012, 2018 Phoenix Systems
+ * Copyright 2012, 2018, 2019 Phoenix Systems
  * Copyright 2007-2008 Pawel Pisarczyk
- * Author: Pawel Pisarczyk
+ * Author: Pawel Pisarczyk, Lukasz Kosinski
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -23,7 +23,6 @@
 #include <string.h>
 
 #include "ttypc.h"
-#include "ttypc_virt.h"
 #include "ttypc_vtf.h"
 #include "ttypc_vga.h"
 
@@ -95,6 +94,31 @@ uint16_t csd_supplemental[CSSIZE] = {
 };
 
 
+/* character is a control character */
+#define CTL_VALID(c) ((unsigned char)(c) < 0x20 || (c) == 0x7f)
+
+
+static void set_baudrate(void *_virt, speed_t baud)
+{
+	/* TODO */
+}
+
+
+static void set_cflag(void *_virt, tcflag_t *cflag)
+{
+	/* TODO */
+}
+
+
+static void signal_txready(void *_virt)
+{
+	ttypc_virt_t *virt = (ttypc_virt_t *)_virt;
+
+	while (libtty_txready(&virt->tty))
+		ttypc_virt_sput(virt, libtty_getchar(&virt->tty, NULL));
+}
+
+
 #if 0
 static int check_scrollback(video_state_t *svsp)
 {
@@ -128,542 +152,511 @@ static void _ttypc_virt_scroll(ttypc_virt_t *virt)
 #define video (virt->vram + virt->cur_offset)
 
 
-/* Function put char ch to the screen according to video state given by svsp */
-static void _ttypc_virt_writechar(ttypc_virt_t *virt, uint16_t attrib, uint16_t ch)
+/* Function put char c to the screen according to video state given by svsp */
+static void _ttypc_virt_writechar(ttypc_virt_t *virt, uint16_t attrib, uint16_t c)
 {
+	if ((c >= 0x20) && (c <= 0x7f)) {               /* use GL if ch >= 0x20 */
+		*video = attrib | (*virt->GL)[c - 0x20];
 
-	if ((ch >= 0x20) && (ch <= 0x7f))	{           /* use GL if ch >= 0x20 */
-		if (!virt->ss)                              /* single shift G2/G3 -> GL ? */
-			*video = attrib | (*virt->GL)[ch - 0x20];
-		else {
-			*video = attrib | (*virt->GL)[ch - 0x20];
+		if (virt->ss)
 			virt->ss = 0;
-		}
 	}
 	else {
 		virt->ss = 0;
 
-		if (ch >= 0xa0)                             /* display controls C1 */
-			*video = attrib | (*virt->GR)[ch - 0xa0];
-		else				                                /* display controls C0 */
-			*video = attrib | ch;
+		if (c >= 0xa0)                             /* display controls C1 */
+			*video = attrib | (*virt->GR)[c - 0xa0];
+		else                                       /* display controls C0 */
+			*video = attrib | c;
 	}
 }
 
 
-/* Emulator main entry */
-int ttypc_virt_sput(ttypc_virt_t *virt, uint8_t *s, int len)
+int ttypc_virt_sput(ttypc_virt_t *virt, char c)
 {
-	uint16_t ch;
-	int ret;
+	int ret = 1;
 
 	mutexLock(virt->mutex);
 
-	if (virt->rb == virt->rp)
-		virt->ready = 0;
+	/* always process control-chars in the range 0x00..0x1f, 0x7f !!! */
+	if (CTL_VALID(c)) {
 
-	ret = len;
-	while (len-- > 0) {
-		if ((ch = *(s++)) == 0)
+		switch (c) {
+		case 0x00:  /* NUL */
+		case 0x01:  /* SOH */
+		case 0x02:  /* STX */
+		case 0x03:  /* ETX */
+		case 0x04:  /* EOT */
+		case 0x05:  /* ENQ */
+		case 0x06:  /* ACK */
+		case 0x07:  /* BEL */
 			break;
 
-		/* always process control-chars in the range 0x00..0x1f, 0x7f !!! */
-		if ((ch <= 0x1f) || (ch == 0x7f)) {
+		case 0x08:  /* BS  */
+			if (virt->col) {
+				virt->cur_offset--;
+				virt->col--;
+			}
+			ret = 0;
+			break;
 
-			switch (ch) {
-			case 0x00:  /* NUL */
-			case 0x01:  /* SOH */
-			case 0x02:  /* STX */
-			case 0x03:  /* ETX */
-			case 0x04:  /* EOT */
-			case 0x05:  /* ENQ */
-			case 0x06:  /* ACK */
-				break;
-			case 0x07:  /* BEL */
-				break;
+		case 0x09:  /* TAB */
+			while (virt->col < virt->maxcol - 1) {
+				virt->cur_offset++;
+				if (virt->tab_stops[++virt->col])
+					break;
+			}
+			break;
 
-			case 0x08:  /* BS */
-
-				if (virt->rp == virt->rb && ret) {
-					mutexUnlock(virt->mutex);
-					return 0;
-				}
-
-				if (virt->col) {
-					virt->cur_offset--;
-					virt->col--;
-				}
-
-				if (virt->rp != virt->rb && ret) {
-					ret = 0;
-					virt->rp = ((virt->rp - 1) % virt->rbuffsz);
-				}
-				break;
-
-			case 0x09:  /* TAB */
-				while (virt->col < virt->maxcol - 1) {
-					virt->cur_offset++;
-					if (virt->tab_stops[++virt->col])
-						break;
-				}
-				break;
-
-			case 0x0a:  /* LF */
-				virt->ready = 1;
-			case 0x0b:  /* VT */
-			case 0x0c:  /* FF */
+		case 0x0a:  /* LF */
+		case 0x0b:  /* VT */
+		case 0x0c:  /* FF */
 #if 0
-				if (ttypc_virt_scrollback(virt)) {
-					extra = (svsp->cur_offset % svsp->maxcol) ? svsp->col : 0;
-					hal_memcpy(svsp->scrollback + svsp->scr_offset * svsp->maxcol,
-					           svsp->crtat + svsp->cur_offset - extra,
-					           svsp->maxcol * CHR);
+			if (ttypc_virt_scrollback(virt)) {
+				extra = (svsp->cur_offset % svsp->maxcol) ? svsp->col : 0;
+				hal_memcpy(svsp->scrollback + svsp->scr_offset * svsp->maxcol,
+				           svsp->crtat + svsp->cur_offset - extra,
+				           svsp->maxcol * CHR);
+			}
+#endif
+			virt->cur_offset += virt->maxcol;
+
+			_ttypc_virt_scroll(virt);
+			break;
+
+		case 0x0d:  /* CR */
+			virt->cur_offset -= virt->col;
+			virt->col = 0;
+			break;
+
+		case 0x0e:  /* SO */
+			virt->GL = &virt->G1;
+			break;
+		case 0x0f:  /* SI */
+			virt->GL = &virt->G0;
+			break;
+
+		case 0x10:  /* DLE */
+		case 0x11:  /* DC1/XON */
+		case 0x12:  /* DC2 */
+		case 0x13:  /* DC3/XOFF */
+		case 0x14:  /* DC4 */
+		case 0x15:  /* NAK */
+		case 0x16:  /* SYN */
+		case 0x17:  /* ETB */
+			break;
+
+		case 0x18:  /* CAN */
+			virt->state = STATE_INIT;
+			_ttypc_vtf_clrparms(virt);
+			break;
+		
+		case 0x19:  /* EM */
+			break;
+
+		case 0x1a:  /* SUB */
+			virt->state = STATE_INIT;
+			_ttypc_vtf_clrparms(virt);
+			break;
+
+		case 0x1b:  /* ESC */
+			virt->state = STATE_ESC;
+			_ttypc_vtf_clrparms(virt);
+			break;
+
+		case 0x1c:  /* FS */
+		case 0x1d:  /* GS */
+		case 0x1e:  /* RS */
+		case 0x1f:  /* US */
+		case 0x7f:  /* DEL */
+			break;
+		}
+	}
+	
+	/* char range 0x20...0x73, 0x80...0xff processing depends on current state */
+	else {
+		switch (virt->state) {
+
+		case STATE_INIT:
+			if (virt->lastchar && virt->m_awm && (virt->lastrow == virt->row)) {
+				virt->cur_offset++;
+				virt->col = 0;
+				virt->lastchar = 0;
+#if 0
+				if (_ttypc_virt_scrollback(virt)) {
+					hal_memcpy(virt->scrollback + (virt->scr_offset * virt->maxcol),
+					           virt->vram + virt->cur_offset - virt->maxcol,
+					           virt->maxcol * CHR);
 				}
 #endif
-				if (virt->m_lnm) {
-					virt->cur_offset -= virt->col;
-					virt->cur_offset += virt->maxcol;
-					virt->col = 0;
-				}
-				else
-					virt->cur_offset += virt->maxcol;
-
 				_ttypc_virt_scroll(virt);
-				break;
+			}
 
-			case 0x0d:  /* CR */
-				virt->cur_offset -= virt->col;
-				virt->col = 0;
-				break;
-	
-			case 0x0e:  /* SO */
-				virt->GL = &virt->G1;
-				break;
-			case 0x0f:  /* SI */
-				virt->GL = &virt->G0;
-				break;
+			if (virt->m_irm)
+				memcpy(virt->vram + virt->cur_offset + 1, virt->vram + virt->cur_offset, (virt->maxcol - 1 - virt->col) * CHR);
 
-			case 0x10:  /* DLE */
-			case 0x11:  /* DC1/XON */
-			case 0x12:  /* DC2 */
-			case 0x13:  /* DC3/XOFF */
-			case 0x14:  /* DC4 */
-			case 0x15:  /* NAK */
-			case 0x16:  /* SYN */
-			case 0x17:  /* ETB */
-				break;
+			_ttypc_virt_writechar(virt, virt->attr, (uint16_t)c);
+			//_ttypc_vtf_selattr(virt);
 
-			case 0x18:  /* CAN */
+			if (virt->col >= virt->maxcol - 1) {
+				virt->lastchar = 1;
+				virt->lastrow = virt->row;
+			}
+			else {
+				virt->lastchar = 0;
+				virt->cur_offset++;
+				virt->col++;
+			}
+			break;
+
+		case STATE_ESC:
+
+			switch(c) {
+			case ' ':                             /* ESC sp family */
+				virt->state = STATE_BLANK;
+				break;
+			case '#':                             /* ESC # family */
+				virt->state = STATE_HASH;
+				break;
+			case '&':                             /* ESC & family (HP) */
 				virt->state = STATE_INIT;
-				_ttypc_vtf_clrparms(virt);
 				break;
-			
-			case 0x19:  /* EM */
+			case '(':                             /* ESC ( family */
+				virt->state = STATE_BROPN;
 				break;
-
-			case 0x1a:  /* SUB */
+			case ')':                             /* ESC ) family */
+				virt->state = STATE_BRCLO;
+				break;
+			case '*':                             /* ESC * family */
+				virt->state = STATE_STAR;
+				break;
+			case '+':                             /* ESC + family */
+				virt->state = STATE_PLUS;
+				break;
+			case '-':                             /* ESC - family */
+				virt->state = STATE_MINUS;
+				break;
+			case '.':                             /* ESC . family */
+				virt->state = STATE_DOT;
+				break;
+			case '/':                             /* ESC / family */
+				virt->state = STATE_SLASH;
+				break;
+			case '7':                             /* SAVE CURSOR */
+				_ttypc_vtf_sc(virt);
 				virt->state = STATE_INIT;
-				_ttypc_vtf_clrparms(virt);
 				break;
-
-			case 0x1b:  /* ESC */
-				virt->state = STATE_ESC;
-				_ttypc_vtf_clrparms(virt);
+			case '8':                             /* RESTORE CURSOR */
+				_ttypc_vtf_rc(virt);
+				virt->state = STATE_INIT;
 				break;
-
-			case 0x1c:  /* FS */
-			case 0x1d:  /* GS */
-			case 0x1e:  /* RS */
-			case 0x1f:  /* US */
-			case 0x7f:  /* DEL */
+			case '=':                             /* keypad application mode */
+				_ttypc_vtf_keyappl(virt);
+				virt->state = STATE_INIT;
+				break;
+			case '>':                             /* keypad numeric mode */
+				_ttypc_vtf_keynum(virt);
+				virt->state = STATE_INIT;
+				break;
+			case 'D':                             /* INDEX */
+				_ttypc_vtf_ind(virt);
+				virt->state = STATE_INIT;
+				break;
+			case 'E':                             /* NEXT LINE */
+				_ttypc_vtf_nel(virt);
+				virt->state = STATE_INIT;
+				break;
+			case 'H':                             /* set TAB at current col */
+				virt->tab_stops[virt->col] = 1;
+				virt->state = STATE_INIT;
+				break;
+			case 'M':                             /* REVERSE INDEX */
+				_ttypc_vtf_ri(virt);
+				virt->state = STATE_INIT;
+				break;
+			case 'N':                             /* SINGLE SHIFT G2 */
+				virt->Gs = &virt->G2;
+				virt->ss = 1;
+				virt->state = STATE_INIT;
+				break;
+			case 'O':                             /* SINGLE SHIFT G3 */
+				virt->Gs = &virt->G3;
+				virt->ss = 1;
+				virt->state = STATE_INIT;
+				break;
+#if 0
+			case 'P':                             /* DCS detected */
+				virt->dcs_state = DCS_INIT;
+				virt->state = STATE_DCS;
+				break;
+#endif
+			case 'Z':                             /* What are you = ESC [ c */
+				_ttypc_vtf_da(virt);
+				virt->state = STATE_INIT;
+				break;
+			case '[':                             /* CSI detected */
+				_ttypc_vtf_clrparms(virt);
+				virt->state = STATE_CSI;
+				break;
+			case '\\':                            /* String Terminator */
+				virt->state = STATE_INIT;
+				break;
+			case 'c':                             /* hard reset */
+				_ttypc_vtf_ris(virt);
+				virt->state = STATE_INIT;
+				break;
+			case 'd':                             /* set color sgr */
+				virt->state = STATE_INIT;
+				break;
+			case 'n':                             /* lock Shift G2 -> GL */
+				virt->GL = &virt->G2;
+				virt->state = STATE_INIT;
+				break;
+			case 'o':                             /* Lock Shift G3 -> GL */
+				virt->GL = &virt->G3;
+				virt->state = STATE_INIT;
+				break;
+			case '}':                             /* Lock Shift G2 -> GR */
+				virt->GR = &virt->G2;
+				virt->state = STATE_INIT;
+				break;
+			case '|':                             /* Lock Shift G3 -> GR */
+				virt->GR = &virt->G3;
+				virt->state = STATE_INIT;
+				break;
+			case '~':                             /* Lock Shift G1 -> GR */
+				virt->GR = &virt->G1;
+				virt->state = STATE_INIT;
+				break;
+			default:
+				virt->state = STATE_INIT;
 				break;
 			}
-		}
+			break;
+
+		case STATE_BLANK:                         /* ESC space [FG], which are */
+			virt->state = STATE_INIT;             /* currently ignored*/
+			break;
 		
-		/* char range 0x20...0x73, 0x80...0xff processing depends on current state */
-		else {
-			switch (virt->state) {
+		case STATE_HASH:
+			switch(c) {
+			case '3':                             /* double height top half */
+			case '4':                             /* double height bottom half */
+			case '5':                             /* single width sngle height */
+			case '6':                             /* double width sngle height */
+			case '8':                             /* fill sceen with 'E's */
+			default:                              /* anything else */
+				virt->state = STATE_INIT;
+				break;
+			}
+			break;
 
-			case STATE_INIT:
-				if (virt->lastchar && virt->m_awm && (virt->lastrow == virt->row)) {
-					virt->cur_offset++;
-					virt->col = 0;
-					virt->lastchar = 0;
-#if 0
-					if (_ttypc_virt_scrollback(virt)) {
-						hal_memcpy(virt->scrollback + (virt->scr_offset * virt->maxcol),
-						           virt->vram + virt->cur_offset - virt->maxcol,
-						           virt->maxcol * CHR);
-					}
-#endif
-					_ttypc_virt_scroll(virt);
-				}
+		case STATE_BROPN:                       /* designate G0 */
+		case STATE_BRCLO:                       /* designate G1 */
+		case STATE_STAR:                        /* designate G2 */
+		case STATE_PLUS:                        /* designate G3 */
+		case STATE_MINUS:                       /* designate G1 (96) */
+		case STATE_DOT:                         /* designate G2 (96) */
+		case STATE_SLASH:                       /* designate G3 (96) */
+			virt->state = STATE_INIT;
+			break;
 
-				if (virt->m_irm)
-					memcpy(virt->vram + virt->cur_offset + 1, virt->vram + virt->cur_offset, (virt->maxcol - 1 - virt->col) * CHR);
+		case STATE_CSI:
+			switch (c) {
 
-				_ttypc_virt_writechar(virt, virt->attr, ch);
-				//_ttypc_vtf_selattr(virt);
-
-				if (virt->col >= virt->maxcol - 1) {
-					virt->lastchar = 1;
-					virt->lastrow = virt->row;
-				}
-				else {
-					virt->lastchar = 0;
-					virt->cur_offset++;
-					virt->col++;
-				}
+			/* parameters */
+			case '0':
+			case '1':
+			case '2':
+			case '3':
+			case '4':
+			case '5':
+			case '6':
+			case '7':
+			case '8':
+			case '9':
+				virt->parms[virt->parmi] *= 10;
+				virt->parms[virt->parmi] += (c - '0');
+				break;
+			case ';':
+				virt->parmi = (virt->parmi + 1 < MAXPARMS) ? virt->parmi + 1 : virt->parmi;
 				break;
 
-			case STATE_ESC:
-
-				switch(ch) {
-				case ' ':                             /* ESC sp family */
-					virt->state = STATE_BLANK;
-					break;
-				case '#':                             /* ESC # family */
-					virt->state = STATE_HASH;
-					break;
-				case '&':                             /* ESC & family (HP) */
-					virt->state = STATE_INIT;
-					break;
-				case '(':                             /* ESC ( family */
-					virt->state = STATE_BROPN;
-					break;
-				case ')':                             /* ESC ) family */
-					virt->state = STATE_BRCLO;
-					break;
-				case '*':                             /* ESC * family */
-					virt->state = STATE_STAR;
-					break;
-				case '+':                             /* ESC + family */
-					virt->state = STATE_PLUS;
-					break;
-				case '-':                             /* ESC - family */
-					virt->state = STATE_MINUS;
-					break;
-				case '.':                             /* ESC . family */
-					virt->state = STATE_DOT;
-					break;
-				case '/':                             /* ESC / family */
-					virt->state = STATE_SLASH;
-					break;
-				case '7':                             /* SAVE CURSOR */
-					_ttypc_vtf_sc(virt);
-					virt->state = STATE_INIT;
-					break;
-				case '8':                             /* RESTORE CURSOR */
-					_ttypc_vtf_rc(virt);
-					virt->state = STATE_INIT;
-					break;
-				case '=':                             /* keypad application mode */
-					_ttypc_vtf_keyappl(virt);
-					virt->state = STATE_INIT;
-					break;
-				case '>':                             /* keypad numeric mode */
-					_ttypc_vtf_keynum(virt);
-					virt->state = STATE_INIT;
-					break;
-				case 'D':                             /* INDEX */
-					_ttypc_vtf_ind(virt);
-					virt->state = STATE_INIT;
-					break;
-				case 'E':                             /* NEXT LINE */
-					_ttypc_vtf_nel(virt);
-					virt->state = STATE_INIT;
-					break;
-				case 'H':                             /* set TAB at current col */
-					virt->tab_stops[virt->col] = 1;
-					virt->state = STATE_INIT;
-					break;
-				case 'M':                             /* REVERSE INDEX */
-					_ttypc_vtf_ri(virt);
-					virt->state = STATE_INIT;
-					break;
-				case 'N':                             /* SINGLE SHIFT G2 */
-					virt->Gs = &virt->G2;
-					virt->ss = 1;
-					virt->state = STATE_INIT;
-					break;
-				case 'O':                             /* SINGLE SHIFT G3 */
-					virt->Gs = &virt->G3;
-					virt->ss = 1;
-					virt->state = STATE_INIT;
-					break;
-#if 0
-				case 'P':                             /* DCS detected */
-					virt->dcs_state = DCS_INIT;
-					virt->state = STATE_DCS;
-					break;
-#endif
-				case 'Z':                             /* What are you = ESC [ c */
-					_ttypc_vtf_da(virt);
-					virt->state = STATE_INIT;
-					break;
-				case '[':                             /* CSI detected */
-					_ttypc_vtf_clrparms(virt);
-					virt->state = STATE_CSI;
-					break;
-				case '\\':                            /* String Terminator */
-					virt->state = STATE_INIT;
-					break;
-				case 'c':                             /* hard reset */
-					_ttypc_vtf_ris(virt);
-					virt->state = STATE_INIT;
-					break;
-				case 'd':                             /* set color sgr */
-					virt->state = STATE_INIT;
-					break;
-				case 'n':                             /* lock Shift G2 -> GL */
-					virt->GL = &virt->G2;
-					virt->state = STATE_INIT;
-					break;
-				case 'o':                             /* Lock Shift G3 -> GL */
-					virt->GL = &virt->G3;
-					virt->state = STATE_INIT;
-					break;
-				case '}':                             /* Lock Shift G2 -> GR */
-					virt->GR = &virt->G2;
-					virt->state = STATE_INIT;
-					break;
-				case '|':                             /* Lock Shift G3 -> GR */
-					virt->GR = &virt->G3;
-					virt->state = STATE_INIT;
-					break;
-				case '~':                             /* Lock Shift G1 -> GR */
-					virt->GR = &virt->G1;
-					virt->state = STATE_INIT;
-					break;
-				default:
-					virt->state = STATE_INIT;
-					break;
-				}
+			case '@':                             /* insert char */
+				_ttypc_vtf_ic(virt);
+				virt->state = STATE_INIT;
+				break;
+			case '"':                             /* select char attribute */
+				virt->state = STATE_SCA;
+				break;
+			case '!':                             /* soft terminal reset */
+				virt->state = STATE_STR;
 				break;
 
-			case STATE_BLANK:                         /* ESC space [FG], which are */
-				virt->state = STATE_INIT;             /* currently ignored*/
+			case 'A':                             /* cursor up */
+				_ttypc_vtf_cuu(virt);
+				virt->state = STATE_INIT;
 				break;
-			
-			case STATE_HASH:
-				switch(ch) {
-				case '3':                             /* double height top half */
-				case '4':                             /* double height bottom half */
-				case '5':                             /* single width sngle height */
-				case '6':                             /* double width sngle height */
-				case '8':                             /* fill sceen with 'E's */
-				default:                              /* anything else */
-					virt->state = STATE_INIT;
-					break;
-				}
+			case 'B':                             /* cursor down */
+				_ttypc_vtf_cud(virt);
+				virt->state = STATE_INIT;
 				break;
-
-			case STATE_BROPN:                       /* designate G0 */
-			case STATE_BRCLO:                       /* designate G1 */
-			case STATE_STAR:                        /* designate G2 */
-			case STATE_PLUS:                        /* designate G3 */
-			case STATE_MINUS:                       /* designate G1 (96) */
-			case STATE_DOT:                         /* designate G2 (96) */
-			case STATE_SLASH:                       /* designate G3 (96) */
+			case 'C':                             /* cursor forward */
+				_ttypc_vtf_cuf(virt);
+				virt->state = STATE_INIT;
+				break;
+			case 'D':                             /* cursor backward */
+				_ttypc_vtf_cub(virt);
+				virt->state = STATE_INIT;
+				break;
+			case 'H':                             /* direct cursor addressing*/
+				_ttypc_vtf_curadr(virt);
 				virt->state = STATE_INIT;
 				break;
 
-			case STATE_CSI:
-				switch (ch) {
-
-				/* parameters */
-				case '0':
-				case '1':
-				case '2':
-				case '3':
-				case '4':
-				case '5':
-				case '6':
-				case '7':
-				case '8':
-				case '9':
-					virt->parms[virt->parmi] *= 10;
-					virt->parms[virt->parmi] += (ch - '0');
-					break;
-				case ';':
-					virt->parmi = (virt->parmi + 1 < MAXPARMS) ? virt->parmi + 1 : virt->parmi;
-					break;
-
-				case '@':                             /* insert char */
-					_ttypc_vtf_ic(virt);
-					virt->state = STATE_INIT;
-					break;
-				case '"':                             /* select char attribute */
-					virt->state = STATE_SCA;
-					break;
-				case '!':                             /* soft terminal reset */
-					virt->state = STATE_STR;
-					break;
-	
-				case 'A':                             /* cursor up */
-					_ttypc_vtf_cuu(virt);
-					virt->state = STATE_INIT;
-					break;
-				case 'B':                             /* cursor down */
-					_ttypc_vtf_cud(virt);
-					virt->state = STATE_INIT;
-					break;
-				case 'C':                             /* cursor forward */
-					_ttypc_vtf_cuf(virt);
-					virt->state = STATE_INIT;
-					break;
-				case 'D':                             /* cursor backward */
-					_ttypc_vtf_cub(virt);
-					virt->state = STATE_INIT;
-					break;
-				case 'H':                             /* direct cursor addressing*/
-					_ttypc_vtf_curadr(virt);
-					virt->state = STATE_INIT;
-					break;
-
-				case 'J':                             /* erase screen */
-					_ttypc_vtf_clreos(virt);
-					virt->state = STATE_INIT;
-					break;
-				case 'K':                             /* erase line */
-					_ttypc_vtf_clreol(virt);
-					virt->state = STATE_INIT;
-					if (virt->scr_offset > 0 && virt->active)
-						virt->scr_offset--;
-					break;
-
-				case 'L':                             /* insert line */
-					_ttypc_vtf_il(virt);
-					virt->state = STATE_INIT;
-					break;
-				case 'M':                             /* delete line */
-					_ttypc_vtf_dl(virt);
-					virt->state = STATE_INIT;
-					break;
-				case 'P':                             /* delete character */
-					_ttypc_vtf_dch(virt);
-					virt->state = STATE_INIT;
-					break;
-
-				case 'S':                             /* scroll up */
-					_ttypc_vtf_su(virt);
-					virt->state = STATE_INIT;
-					break;
-				case 'T':	                          /* scroll down */
-					_ttypc_vtf_sd(virt);
-					virt->state = STATE_INIT;
-					break;
-
-				case 'X':                             /* erase character */
-					_ttypc_vtf_ech(virt);
-					virt->state = STATE_INIT;
-					break;
-
-				case 'c':                             /* device attributes */
-					_ttypc_vtf_da(virt);
-					virt->state = STATE_INIT;
-					break;
-
-				case 'f':                             /* direct cursor addressing*/
-					_ttypc_vtf_curadr(virt);
-					virt->state = STATE_INIT;
-					break;
-
-				case 'g':                             /* clear tabs */
-					_ttypc_vtf_clrtab(virt);
-					virt->state = STATE_INIT;
-					break;
-
-				case 'h':                             /* set mode(s) */
-					_ttypc_vtf_set_ansi(virt);
-					virt->state = STATE_INIT;
-					break;
-
-				case 'i':                             /* media copy */
-					_ttypc_vtf_mc(virt);
-					virt->state = STATE_INIT;
-					break;
-
-				case 'l':                             /* reset mode(s) */
-					_ttypc_vtf_reset_ansi(virt);
-					virt->state = STATE_INIT;
-					break;
-
-				case 'm':                             /* select graphic rendition*/
-					_ttypc_vtf_sgr(virt);
-					virt->state = STATE_INIT;
-					break;
-
-				case 'n':                             /* reports */
-					_ttypc_vtf_dsr(virt);
-					virt->state = STATE_INIT;
-					break;
-
-				case 'r':                             /* set scrolling region */
-					_ttypc_vtf_stbm(virt);
-					virt->state = STATE_INIT;
-					break;
-
-				case 'x':                             /* request/report parameters */
-					_ttypc_vtf_reqtparm(virt);
-					virt->state = STATE_INIT;
-					break;
-
-				case 'y':                             /* invoke selftest(s) */
-					_ttypc_vtf_tst(virt);
-					virt->state = STATE_INIT;
-					break;
-
-				default:
-					virt->state = STATE_INIT;
-					break;
-				}
+			case 'J':                             /* erase screen */
+				_ttypc_vtf_clreos(virt);
+				virt->state = STATE_INIT;
+				break;
+			case 'K':                             /* erase line */
+				_ttypc_vtf_clreol(virt);
+				virt->state = STATE_INIT;
+				if (virt->scr_offset > 0 && virt->active)
+					virt->scr_offset--;
 				break;
 
-#if 0
-			case STATE_DCS:
-					_ttypc_vtf_dcsentry(ch, svsp);
-					break;
-#endif
-
-			case STATE_SCA:
-				switch(ch) {
-				case 'q':
-					_ttypc_vtf_sca(virt);
-					virt->state = STATE_INIT;
-					break;
-				default:
-					virt->state = STATE_INIT;
-					break;
-				}
+			case 'L':                             /* insert line */
+				_ttypc_vtf_il(virt);
+				virt->state = STATE_INIT;
+				break;
+			case 'M':                             /* delete line */
+				_ttypc_vtf_dl(virt);
+				virt->state = STATE_INIT;
+				break;
+			case 'P':                             /* delete character */
+				_ttypc_vtf_dch(virt);
+				virt->state = STATE_INIT;
 				break;
 
-			/* soft terminal reset */
-			case STATE_STR:
-				switch(ch) {
-					case 'p':
-						_ttypc_vtf_str(virt);
-						virt->state = STATE_INIT;
-						break;
-					default:
-						virt->state = STATE_INIT;
-						break;
-					}
-					break;
+			case 'S':                             /* scroll up */
+				_ttypc_vtf_su(virt);
+				virt->state = STATE_INIT;
+				break;
+			case 'T':	                          /* scroll down */
+				_ttypc_vtf_sd(virt);
+				virt->state = STATE_INIT;
+				break;
+
+			case 'X':                             /* erase character */
+				_ttypc_vtf_ech(virt);
+				virt->state = STATE_INIT;
+				break;
+
+			case 'c':                             /* device attributes */
+				_ttypc_vtf_da(virt);
+				virt->state = STATE_INIT;
+				break;
+
+			case 'f':                             /* direct cursor addressing*/
+				_ttypc_vtf_curadr(virt);
+				virt->state = STATE_INIT;
+				break;
+
+			case 'g':                             /* clear tabs */
+				_ttypc_vtf_clrtab(virt);
+				virt->state = STATE_INIT;
+				break;
+
+			case 'h':                             /* set mode(s) */
+				_ttypc_vtf_set_ansi(virt);
+				virt->state = STATE_INIT;
+				break;
+
+			case 'i':                             /* media copy */
+				_ttypc_vtf_mc(virt);
+				virt->state = STATE_INIT;
+				break;
+
+			case 'l':                             /* reset mode(s) */
+				_ttypc_vtf_reset_ansi(virt);
+				virt->state = STATE_INIT;
+				break;
+
+			case 'm':                             /* select graphic rendition*/
+				_ttypc_vtf_sgr(virt);
+				virt->state = STATE_INIT;
+				break;
+
+			case 'n':                             /* reports */
+				_ttypc_vtf_dsr(virt);
+				virt->state = STATE_INIT;
+				break;
+
+			case 'r':                             /* set scrolling region */
+				_ttypc_vtf_stbm(virt);
+				virt->state = STATE_INIT;
+				break;
+
+			case 'x':                             /* request/report parameters */
+				_ttypc_vtf_reqtparm(virt);
+				virt->state = STATE_INIT;
+				break;
+
+			case 'y':                             /* invoke selftest(s) */
+				_ttypc_vtf_tst(virt);
+				virt->state = STATE_INIT;
+				break;
 
 			default:
 				virt->state = STATE_INIT;
 				break;
 			}
-		}
-			
-		virt->row = virt->cur_offset / virt->maxcol;
+			break;
 
-		/* take care of last character on line behaviour */
-		if (virt->lastchar && (virt->col < (virt->maxcol - 1)))
-			virt->lastchar = 0;
+#if 0
+		case STATE_DCS:
+				_ttypc_vtf_dcsentry(c, svsp);
+				break;
+#endif
+
+		case STATE_SCA:
+			switch(c) {
+			case 'q':
+				_ttypc_vtf_sca(virt);
+				virt->state = STATE_INIT;
+				break;
+			default:
+				virt->state = STATE_INIT;
+				break;
+			}
+			break;
+
+		/* soft terminal reset */
+		case STATE_STR:
+			switch(c) {
+				case 'p':
+					_ttypc_vtf_str(virt);
+					virt->state = STATE_INIT;
+					break;
+				default:
+					virt->state = STATE_INIT;
+					break;
+				}
+				break;
+
+		default:
+			virt->state = STATE_INIT;
+			break;
+		}
 	}
 
+	virt->row = virt->cur_offset / virt->maxcol;
+
+	/* take care of last character on line behaviour */
+	if (virt->lastchar && (virt->col < (virt->maxcol - 1)))
+		virt->lastchar = 0;
+
+	/* update cursor */
 	if (virt->active)
 		_ttypc_vga_cursor(virt);
 
@@ -673,76 +666,53 @@ int ttypc_virt_sput(ttypc_virt_t *virt, uint8_t *s, int len)
 }
 
 
-int ttypc_virt_sadd(ttypc_virt_t *virt, uint8_t *s, unsigned int len)
+int ttypc_virt_swrite(ttypc_virt_t *virt, char *buff, size_t len)
 {
-	unsigned int l, i;
+	size_t i;
+	int ret = 0;
 
-	if (virt->m_echo == 1)
-		len = ttypc_virt_sput(virt, s, len);
+	for (i = 0; i < len; i++)
+		ret += ttypc_virt_sput(virt, *(buff + i));
 
-	mutexLock(virt->mutex);
-
-	if (virt->rp >= virt->rb)
-		l = virt->rbuffsz - (virt->rp - virt->rb);
-	else
-		l = virt->rb - virt->rp;
-
-	if (l < len) {
-		mutexUnlock(virt->mutex);
-		return -ENOMEM;
-	}
-
-	for (i = 0; i < len; i++) {
-		virt->rbuff[virt->rp] = *(s + i);
-		virt->rp = ((virt->rp + 1) % virt->rbuffsz);
-	}
-
-	condSignal(virt->cond);
-	mutexUnlock(virt->mutex);
-	return EOK;
+	return ret;
 }
 
 
-int ttypc_virt_sget(ttypc_virt_t *virt, char *buff, unsigned int len)
+int ttypc_virt_sadd(ttypc_virt_t *virt, char *buff, size_t len, int mode)
 {
-	int err;
-	unsigned int l, cnt;
-	unsigned int bytes;
-
-	mutexLock(virt->mutex);
-
-	while ((virt->rp == virt->rb) || (!virt->ready)) {
-		if ((err = condWait(virt->cond, virt->mutex, 0)) < 0)
-			return err;
-	}
-
-	if (virt->rp > virt->rb) {
-		l = min(virt->rp - virt->rb, len);
-		bytes = virt->rp - virt->rb;
-	} else {
-		l = min(virt->rbuffsz - virt->rb, len);
-		bytes = virt->rbuffsz - virt->rb + virt->rp;
-	}
-
-	memcpy(buff, &virt->rbuff[virt->rb], l);
-
-	cnt = l;
-	if ((len > l) && (virt->rp < virt->rb)) {
-		memcpy(buff + l, &virt->rbuff[0], min(len - l, virt->rp));
-		cnt += min(len - l, virt->rp);
-	}
-	virt->rb = ((virt->rb + cnt) % virt->rbuffsz);
-
-	if (bytes - cnt == 0)
-		virt->ready = 0;
-
-	mutexUnlock(virt->mutex);
-	return cnt;
+	return libtty_write(&virt->tty, buff, len, mode);
 }
 
 
-int _ttypc_virt_init(ttypc_virt_t *virt, size_t rbuffsz, ttypc_t *ttypc)
+int ttypc_virt_sget(ttypc_virt_t *virt, char *buff, size_t len, int mode)
 {
+	return libtty_read(&virt->tty, buff, len, mode);
+}
+
+
+int ttypc_virt_poll_status(ttypc_virt_t *virt)
+{
+	return libtty_poll_status(&virt->tty);
+}
+
+
+int ttypc_virt_ioctl(ttypc_virt_t *virt, pid_t sender_pid, unsigned int cmd, const void *in_arg, const void **out_arg)
+{
+	return libtty_ioctl(&virt->tty, sender_pid, cmd, in_arg, out_arg);
+}
+
+
+int _ttypc_virt_init(ttypc_virt_t *virt, unsigned int bufsize, ttypc_t *ttypc)
+{
+	libtty_callbacks_t callbacks;
+
+	callbacks.arg = virt;
+	callbacks.set_baudrate = set_baudrate;
+	callbacks.set_cflag = set_cflag;
+	callbacks.signal_txready = signal_txready;
+
+	libtty_init(&virt->tty, &callbacks, bufsize);
+
 	virt->active = 0;
 
 	/*
@@ -759,11 +729,6 @@ int _ttypc_virt_init(ttypc_virt_t *virt, size_t rbuffsz, ttypc_t *ttypc)
 	virt->rows = 25;
 	virt->maxcol = 80;
 
-	virt->m_ckm = 1;   /* normal cursor key mode */
-	virt->m_irm = 0;   /* replace mode */
-	virt->m_lnm = 1;   /* CR only */
-	virt->m_echo = 1;
-	
 	virt->cur_offset = 0;
 	virt->state = STATE_INIT;
 
@@ -771,20 +736,9 @@ int _ttypc_virt_init(ttypc_virt_t *virt, size_t rbuffsz, ttypc_t *ttypc)
 	virt->Gs = NULL;
 
 	mutexCreate(&virt->mutex);
-	condCreate(&virt->cond);
-
-	/* Prepare input buffer */
-	virt->rbuffsz = rbuffsz;
-	if ((virt->rbuff = (uint8_t *)malloc(virt->rbuffsz)) == NULL) {
-		munmap(virt->mem, 4096);
-		return -ENOMEM;
-	}
-	virt->rp = 0;
-	virt->rb = 0;
-	virt->ready = 0;
 
 	/* init emulator */
 	_ttypc_vtf_str(virt);
 
-	return EOK;
+	return 0;
 }

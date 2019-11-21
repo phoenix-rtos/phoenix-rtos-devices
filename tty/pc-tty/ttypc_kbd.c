@@ -3,9 +3,9 @@
  *
  * ttypc - keyboard handler (map derived from BSD 4.4 Lite kernel).
  *
- * Copyright 2012, 2017 Phoenix Systems
+ * Copyright 2012, 2017, 2019 Phoenix Systems
  * Copyright 2001, 2007-2008 Pawel Pisarczyk
- * Author: Pawel Pisarczyk
+ * Author: Pawel Pisarczyk, Lukasz Kosinski
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -21,10 +21,8 @@
 #include <sys/threads.h>
 #include <sys/interrupt.h>
 
-#include "ttypc.h"
 #include "ttypc_kbd.h"
 #include "ttypc_vga.h"
-
 
 /* U.S 101 keys keyboard map */
 keymap_t scan_codes[] = {
@@ -161,12 +159,12 @@ keymap_t scan_codes[] = {
 
 
 /* Function gets characters from keyboard */
-uint8_t *_ttypc_kbd_get(ttypc_t *ttypc)
+static char *_ttypc_kbd_get(ttypc_t *ttypc)
 {
 	uint8_t dt;
 	char *more = NULL;
 
-	dt = inb(ttypc->inp_base);
+	dt = inb(ttypc->base);
 
 	/* Key is released */
 	if (dt & 0x80) {
@@ -251,7 +249,7 @@ uint8_t *_ttypc_kbd_get(ttypc_t *ttypc)
 				if (ttypc->shiftst & KB_SHIFT)
 					more = scan_codes[dt].shift_altgr;
 				else
-					more = scan_codes[dt].altgr;								
+					more = scan_codes[dt].altgr;
 			}
 			
 			/* Shift */
@@ -269,14 +267,14 @@ uint8_t *_ttypc_kbd_get(ttypc_t *ttypc)
 					more = scan_codes[dt].shift;
 			}
 
-			ttypc->extended = 0;	
+			ttypc->extended = 0;
 			break;
 		
-		/* Key without meaning */	
+		/* Key without meaning */
 		case KB_NONE:
 			break;
 			
-		/* Function key */	
+		/* Function key */
 		case KB_FUNC: {
 			if (ttypc->shiftst & KB_SHIFT)
 				more = scan_codes[dt].shift;
@@ -309,13 +307,11 @@ uint8_t *_ttypc_kbd_get(ttypc_t *ttypc)
 	}
 	ttypc->extended = 0;
 
-	return (uint8_t *)more;
+	return more;
 }
 
 
 /* Keyboard interrupt handler */
-
-
 static int ttypc_kbd_interrupt(unsigned int n, void *arg)
 {
 	ttypc_t *ttypc = (ttypc_t *)arg;
@@ -327,46 +323,42 @@ static int ttypc_kbd_interrupt(unsigned int n, void *arg)
 void ttypc_kbd_ctlthr(void *arg)
 {
 	ttypc_t *ttypc = (ttypc_t *)arg;
-	uint8_t *s;
+	unsigned int i, len;
+	char *s;
 
+	mutexLock(ttypc->rlock);
 	for (;;) {
-		mutexLock(ttypc->rlock);
-
-		while (inb(ttypc->inp_base + 4) != 0x1d) {
+		while (inb(ttypc->base + 4) != 0x1d)
 			condWait(ttypc->rcond, ttypc->rlock, 0);
-		}
 
-		/* Put characters received from keyboard to fifo */
-		if ((s = _ttypc_kbd_get(ttypc)) == NULL) {
-			mutexUnlock(ttypc->rlock);
-			continue;
-		}
+		s = _ttypc_kbd_get(ttypc);
 
-		mutexUnlock(ttypc->rlock);
-
-		/* Put data into virtual terminal input buffer */
 		if (s != NULL) {
-
-			if (!strcmp((char *)s, "\033[k"))
+			if (!strcmp(s, "\033[k")) {
 				ttypc_vga_switch(&ttypc->virtuals[0]);
-			else if (!strcmp((char *)s, "\033[l"))
+			}
+			else if (!strcmp(s, "\033[l")) {
 				ttypc_vga_switch(&ttypc->virtuals[1]);
-			else if (!strcmp((char *)s, "\033[m"))
+			}
+			else if (!strcmp(s, "\033[m")) {
 				ttypc_vga_switch(&ttypc->virtuals[2]);
-			else if (!strcmp((char *)s, "\033[n"))
+			}
+			else if (!strcmp(s, "\033[n")) {
 				ttypc_vga_switch(&ttypc->virtuals[3]);
-			else
-				ttypc_virt_sadd(ttypc->cv, s, strlen((char *)s));
+			}
+			else {
+				len = strlen(s);
+
+				for (i = 0; i < len; i++)
+					libtty_putchar(&ttypc->cv->tty, *(s + i), NULL);
+			}
 		}
 	}
-	return;
 }
 
 
 int _ttypc_kbd_init(ttypc_t *ttypc)
 {
-	void *stack;
-
 	ttypc->extended = 0;
 	ttypc->lockst = 0;
 	ttypc->shiftst = 0;
@@ -374,23 +366,12 @@ int _ttypc_kbd_init(ttypc_t *ttypc)
 	mutexCreate(&ttypc->rlock);
 	condCreate(&ttypc->rcond);
 
-	/* Allocate memory for character buffer */
-	if ((ttypc->rbuff = (uint8_t **)malloc(sizeof(uint8_t *) * 128)) == NULL)
-		return -ENOMEM;
-
-	ttypc->rbuffsz = 128;
-	ttypc->rb = 0;
-	ttypc->rp = 0;
-
 	/* Attach interrupt and launch interrupt thread */
-	if ((stack = malloc(2048)) == NULL)
-		return -ENOMEM;
-	beginthread(ttypc_kbd_ctlthr, 1, stack, 2048, (void *)ttypc);
-
-	interrupt(1, ttypc_kbd_interrupt, ttypc, ttypc->rcond, &ttypc->inth);
+	interrupt(ttypc->irq, ttypc_kbd_interrupt, ttypc, ttypc->rcond, &ttypc->inth);
+	beginthread(ttypc_kbd_ctlthr, 1, &ttypc->kbdthr_stack, sizeof(ttypc->kbdthr_stack), (void *)ttypc);
 
 	/* Read byte from controller (reset is neccessary) */
-	inb(ttypc->inp_base);
+	inb(ttypc->base);
 
-	return EOK;
+	return 0;
 }

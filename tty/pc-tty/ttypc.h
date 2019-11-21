@@ -3,10 +3,11 @@
  *
  * ttypc VT220 emulator (based on FreeBSD 4.4 pcvt)
  *
- * Virtual consoel implementation
+ * Virtual console implementation
  *
- * Copyright 217 Pawel Pisarczyk
- * Author: Pawel Pisarczyk
+ * Copyright 2019 Phoenix Systems
+ * Copyright 2017 Pawel Pisarczyk
+ * Author: Pawel Pisarczyk, Lukasz Kosinski
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -16,19 +17,23 @@
 #ifndef _TTYPC_H_
 #define _TTYPC_H_
 
-#include <stdio.h>
+#include <sys/types.h>
 
 #include "ttypc_virt.h"
 
 
 typedef struct _ttypc_t {
 	handle_t mutex;
+
+	char poolthr_stack[2048] __attribute__ ((aligned(8)));
+	char kbdthr_stack[2048] __attribute__ ((aligned(8)));
+
 	ttypc_virt_t virtuals[4];
 	ttypc_virt_t *cv;
 
 	int color;
-	unsigned int inp_irq;
-	void *inp_base;
+	unsigned int irq;
+	void *base;
 	void *out_base;
 	void *out_crtc;
 	
@@ -39,10 +44,6 @@ typedef struct _ttypc_t {
 	handle_t rlock;
 	handle_t rcond;
 	handle_t inth;
-	unsigned char **rbuff;
-	unsigned int rbuffsz;
-	unsigned int rb;
-	unsigned int rp;
 } ttypc_t;
 
 

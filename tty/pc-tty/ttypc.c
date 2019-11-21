@@ -5,9 +5,9 @@
  *
  * Driver initialization
  *
- * Copyright 2012, 2017 Phoenix Systems
+ * Copyright 2012, 2017, 2019 Phoenix Systems
  * Copyright 2006, 2008 Pawel Pisarczyk
- * Author: Pawel Pisarczyk, Pawel Kolodziej, Janusz Gralak
+ * Author: Pawel Pisarczyk, Pawel Kolodziej, Janusz Gralak, Lukasz Kosinski
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -19,7 +19,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <poll.h>
+#include <errno.h>
 #include <sys/io.h>
+#include <sys/file.h>
 #include <sys/mman.h>
 #include <sys/threads.h>
 #include <sys/msg.h>
@@ -32,131 +35,78 @@
 ttypc_t ttypc_common;
 
 
-static int ttypc_read(unsigned int d, offs_t offs, char *buff, unsigned int len)
-{
-	int err = 0;
-
-	err = ttypc_virt_sget(&ttypc_common.virtuals[d], buff, len);
-	return err;
-}
-
-
-static int ttypc_write(unsigned int d, offs_t offs, char *buff, unsigned int len)
-{
-	ttypc_virt_sput(&ttypc_common.virtuals[d], (uint8_t *)buff, len);
-	return len;
-}
-
-
-#if 0
-static int ttypc_poll(file_t *file, ktime_t timeout, int op)
-{
-	return EOK;
-}
-
-
-static int ttypc_select_poll(file_t *file, unsigned *ready)
-{
-	vnode_t *vnode = file->vnode;
-	unsigned int minor;
-	*ready = 0;
-
-	if ((minor = MINOR(vnode->dev)) >= SIZE_VIRTUALS)
-		return -EINVAL;
-	if(ttypc_common.virtuals[minor].rp != ttypc_common.virtuals[minor].rb)
-		*ready |= FS_READY_READ;
-	*ready |= FS_READY_WRITE;
-	return EOK;
-}
-
-
-static int ttypc_ioctl(file_t *file, unsigned int cmd, unsigned long arg)
-{
-	vnode_t *vnode = file->vnode;
-	unsigned int minor;
-	struct termios *termios_p = (struct termios *)arg;
-
-	struct winsize *ws = (struct winsize*)arg;
-	switch(cmd){
-		case TIOCGWINSZ:
-			ws->ws_row = 24;
-			ws->ws_col = 80;
-			break;
-		default:
-			return -EINVAL;
-	}
-	  
-	return 0;
-	
-	if ((minor = MINOR(vnode->dev)) >= SIZE_VIRTUALS)
-		return -EINVAL;
-
-	switch (cmd) {
-	   	case TCSETS:
-   			ttypc_common.virtuals[minor].m_echo = ((termios_p->c_lflag & ECHO) == ECHO);
-	   		break;
-		case TCGETS:
-			termios_p->c_lflag = ttypc_common.virtuals[minor].m_echo ? ECHO : 0;
-			break;
-	   	default:
-			/* main_printf(ATTR_DEBUG, "%s: unsupported cmd %d", __FUNCTION__, cmd); */
-			break;
-	}
-
-	if ((minor = MINOR(vnode->dev)) >= SIZE_VIRTUALS)
-		return -EINVAL;
-
-	return 0;
-}
-
-
-static int ttypc_open(vnode_t *vnode, file_t* file)
-{
-	assert(vnode != NULL);
-	vnode->flags |= VNODE_TTY;
-	return 0;
-}
-#endif
-
-
-void poolthr(void *arg)
-{
-	uint32_t port = (uint32_t)arg;
-	msg_t msg;
-	unsigned int rid;
-
-	for (;;) {
-		msgRecv(port, &msg, &rid);
-
-		switch (msg.type) {
-		case mtOpen:
-			break;
-		case mtWrite:
-			msg.o.io.err = ttypc_write(0, 0, msg.i.data, msg.i.size);
-			break;
-		case mtRead:
-			msg.o.io.err = 0;
-			msg.o.size = 1;
-			msg.o.io.err = ttypc_read(0, 0, msg.o.data, msg.o.size);
-			break;
-		case mtClose:
-			break;
-		}
-
-		msgRespond(port, &msg, rid);
-	}
-	return;
-}
-
-
-int main(int argc, char *argv[])
+static unsigned int ttypc_virt_get(oid_t *oid)
 {
 	unsigned int i;
-	oid_t toid;
-	uint32_t port;
-	void *stack;
 
-	printf("pc-tty: Initializing VGA VT220 terminal emulator (test) %s\n", "");
+	for (i = 0; i < sizeof(ttypc_common.virtuals) / sizeof(ttypc_virt_t); i++) {
+		if ((ttypc_common.virtuals[i].oid.id == oid->id) && (ttypc_common.virtuals[i].oid.port == oid->port))
+			return i;
+	}
+
+	return 0;
+}
+
+
+static int ttypc_read(unsigned int d, char *buff, size_t len, int mode)
+{
+	if (d >= sizeof(ttypc_common.virtuals) / sizeof(ttypc_virt_t))
+		return -EINVAL;
+
+	return ttypc_virt_sget(&ttypc_common.virtuals[d], buff, len, mode);
+}
+
+
+static int ttypc_write(unsigned int d, char *buff, size_t len, int mode)
+{
+	if (d >= sizeof(ttypc_common.virtuals) / sizeof(ttypc_virt_t))
+		return -EINVAL;
+
+	if (!len)
+		return 0;
+
+	return ttypc_virt_sadd(&ttypc_common.virtuals[d], buff, len, mode);
+}
+
+
+static int ttypc_poll_status(unsigned int d)
+{
+	if (d >= sizeof(ttypc_common.virtuals) / sizeof(ttypc_virt_t))
+		return POLLNVAL;
+
+	return ttypc_virt_poll_status(&ttypc_common.virtuals[d]);
+}
+
+
+static void ttypc_ioctl(unsigned int port, msg_t *msg)
+{
+	unsigned long request;
+	const void *in_data, *out_data;
+	pid_t pid;
+	int err;
+	oid_t oid;
+	unsigned int d;
+
+	oid.port = port;
+
+	in_data = ioctl_unpack(msg, &request, &oid.id);
+	out_data = NULL;
+	pid = ioctl_getSenderPid(msg);
+
+	d = ttypc_virt_get(&oid);
+
+	if (d >= sizeof(ttypc_common.virtuals) / sizeof(ttypc_virt_t))
+		err = -EINVAL;
+	else
+		err = ttypc_virt_ioctl(&ttypc_common.virtuals[d], pid, request, in_data, &out_data);
+
+	ioctl_setResponse(msg, request, err, out_data);
+}
+
+
+static int _ttypc_init(void *base, unsigned int irq)
+{
+	unsigned int i;
 
 	/* Test monitor type */
 	memset(&ttypc_common, 0, sizeof(ttypc_t));
@@ -165,41 +115,89 @@ int main(int argc, char *argv[])
 	ttypc_common.out_base = mmap(NULL, 0x1000, PROT_READ | PROT_WRITE, 0, OID_PHYSMEM, ttypc_common.color ? 0xb8000 : 0xb0000);
 	ttypc_common.out_crtc = ttypc_common.color ? (void *)0x3d4 : (void *)0x3b4;
 
-	/* Initialize virutal terminals and register devices */
+	/* Initialize virtual terminals */
 	for (i = 0; i < sizeof(ttypc_common.virtuals) / sizeof(ttypc_virt_t); i++) {
-		if (_ttypc_virt_init(&ttypc_common.virtuals[i], 128 * 4, &ttypc_common) < 0) {
+		if (_ttypc_virt_init(&ttypc_common.virtuals[i], _PAGE_SIZE, &ttypc_common) < 0) {
 			printf("ttypc: Can't initialize virtual terminal %d!\n", i);
 			return -1;
 		}
 	}
 
-	ttypc_common.virtuals[0].active = 1;
 	ttypc_common.cv = &ttypc_common.virtuals[0];
 	ttypc_common.cv->vram = ttypc_common.out_base;
+	ttypc_common.cv->active = 1;
 
 	_ttypc_vga_getcursor(ttypc_common.cv);
 	memsetw(ttypc_common.out_base + ttypc_common.cv->cur_offset * 2, 0x0700, 2000 - ttypc_common.cv->cur_offset);
 
-	ttypc_common.inp_irq = 1;
-	ttypc_common.inp_base = (void *)0x60;
+	ttypc_common.irq = irq;
+	ttypc_common.base = base;
 
 	mutexCreate(&ttypc_common.mutex);
 
 	/* Initialize keyboard */
 	_ttypc_kbd_init(&ttypc_common);
 
-	/* Register port in the namespace */
+	return 0;
+}
 
+
+static void poolthr(void *arg)
+{
+	uint32_t port = (uint32_t)arg;
+	msg_t msg;
+	unsigned int rid;
+
+	for (;;) {
+		if (msgRecv(port, &msg, &rid) < 0)
+			continue;
+
+		switch (msg.type) {
+		case mtOpen:
+			break;
+		case mtWrite:
+			msg.o.io.err = ttypc_write(ttypc_virt_get(&msg.i.io.oid), msg.i.data, msg.i.size, msg.i.io.mode);
+			break;
+		case mtRead:
+			msg.o.io.err = ttypc_read(ttypc_virt_get(&msg.i.io.oid), msg.o.data, msg.o.size, msg.i.io.mode);
+			break;
+		case mtClose:
+			break;
+		case mtGetAttr:
+			if (msg.i.attr.type == atPollStatus)
+				msg.o.attr.val = ttypc_poll_status(ttypc_virt_get(&msg.i.io.oid));
+			else
+				msg.o.attr.val = -EINVAL;
+			break;
+		case mtDevCtl:
+			ttypc_ioctl(port, &msg);
+			break;
+		}
+
+		msgRespond(port, &msg, rid);
+	}
+}
+
+
+int main(void)
+{
+	void *base = (void *)0x60;
+	unsigned int n = 1;
+	uint32_t port;
+
+	printf("pc-tty: Initializing VGA VT220 terminal emulator %s\n", "");
+
+	_ttypc_init(base, n);
+
+	/* Register port in the namespace */
 	portCreate(&port);
-	toid.port = port;
-	if (portRegister(port, "/dev/tty0", &toid) < 0) {
+	if (portRegister(port, "/dev/tty0", &ttypc_common.virtuals[0].oid) < 0) {
 		printf("Can't register port %d\n", port);
 		return -1;
 	}
 
 	/* Run threads */
-	stack = malloc(2048);
-	beginthread(poolthr, 1, stack, 2048, (void *)port);
+	beginthread(poolthr, 1, &ttypc_common.poolthr_stack, sizeof(ttypc_common.poolthr_stack), (void *)port);
 	poolthr((void *)port);
 
 	return 0;
