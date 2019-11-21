@@ -5,9 +5,9 @@
  *
  * ttypc VT220 functions (based on FreeBSD 4.4 pcvt)
  *
- * Copyright 2012 Phoenix Systems
+ * Copyright 2012, 2019 Phoenix Systems
  * Copyright 2008 Pawel Pisarczyk
- * Author: Pawel Pisarczyk
+ * Author: Pawel Pisarczyk, Lukasz Kosinski
  *
  * %LICENSE%
  */
@@ -540,7 +540,6 @@ void _ttypc_vtf_ris(ttypc_virt_t *virt)
 	virt->cur_offset = 0;
 	virt->col = 0;
 	virt->row = 0;
-	virt->m_lnm = 0;
 
 	memsetw(virt->vram + virt->cur_offset, ' ' | virt->attr, virt->maxcol * virt->rows);
 
@@ -782,9 +781,7 @@ void _ttypc_vtf_set_ansi(ttypc_virt_t *virt)
 	case 17:	/* SATM - selected area transfer mode */
 	case 18:	/* TSM - tabulation stop mode */
 	case 19:	/* EBM - editing boundary mode */
-		break;
 	case 20:	/* LNM - line feed / newline mode */
-		virt->m_lnm = 1;
 		break;
 	}
 }
@@ -817,10 +814,7 @@ void _ttypc_vtf_reset_ansi(ttypc_virt_t *virt)
 	case 17:	/* SATM - selected area transfer mode */
 	case 18:	/* TSM - tabulation stop mode */
 	case 19:	/* EBM - editing boundary mode */
-		break;
-
 	case 20:	/* LNM - line feed / newline mode */
-		virt->m_lnm = 0;
 		break;
 	}
 }

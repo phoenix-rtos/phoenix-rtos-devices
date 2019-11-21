@@ -3,10 +3,11 @@
  *
  * ttypc VT220 emulator (based on FreeBSD 4.4 pcvt)
  *
- * Virtual consoel implementation
+ * Virtual console implementation
  *
+ * Copyright 2019 Phoenix Systems
  * Copyright 2006-2008 Pawel Pisarczyk
- * Author: Pawel Pisarczyk
+ * Author: Pawel Pisarczyk, Lukasz Kosinski
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -16,14 +17,16 @@
 #ifndef _TTYPC_VIRT_H_
 #define _TTYPC_VIRT_H_
 
-#include <stdio.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <sys/types.h>
 
-#include "ttypc.h"
+#include <libtty.h>
 
 
 /* escape detection state machine */
-#define STATE_INIT   0  /* normal	*/
-#define	STATE_ESC    1  /* got ESC */
+#define STATE_INIT   0  /* normal */
+#define STATE_ESC    1  /* got ESC */
 #define STATE_BLANK  2  /* got ESC space */
 #define STATE_HASH   3  /* got ESC # */
 #define STATE_BROPN  4  /* got ESC ( */
@@ -42,8 +45,7 @@
 
 
 #define MAXTAB   132      /* no of possible tab stops */
-#define MAXPARMS  10      /* for storing escape sequence parameters */
-
+#define MAXPARMS 10       /* for storing escape sequence parameters */
 #define CHR      2        /* bytes per word in screen mem */
 
 
@@ -52,12 +54,11 @@
 #define CSH     0x0800    /* ega/vga charset, upper half of 512 */
 #define CSSIZE  96        /* (physical) size of a character set */
 
+typedef struct _ttypc_t ttypc_t;
 
 typedef struct _ttypc_virt_t {
 	char active;
-
 	handle_t mutex;
-	handle_t cond;
 
 	uint16_t *vram;                    /* video page start addr */
 	uint16_t *mem;                     /* malloc'ed memory start address */
@@ -66,8 +67,6 @@ typedef struct _ttypc_virt_t {
 	uint8_t m_awm;                     /* flag, vt100 mode, auto wrap */
 	uint8_t m_ckm;                     /* true = cursor key normal mode */
 	uint8_t m_irm;                     /* true = insert mode */
-	uint8_t m_lnm;                     /* Line Feed/New Line Mode */
-	uint8_t m_echo;					  /* true = echo mode */
 
 	uint8_t row;
 	uint8_t col;                       /* current presentation component position */
@@ -77,7 +76,7 @@ typedef struct _ttypc_virt_t {
 
 	uint8_t rows;
 	uint8_t maxcol;
-	char tab_stops[MAXTAB];       /* table of active tab stops */
+	char tab_stops[MAXTAB];            /* table of active tab stops */
 
 	uint8_t scrr_beg;                  /* scrolling region, begin */
 	uint8_t scrr_len;                  /* scrolling region, length */
@@ -107,7 +106,7 @@ typedef struct _ttypc_virt_t {
 
 	uint16_t scr_offset;               /* current scrollback offset (lines) */
 //	uint16_t scrollback_pages;         /* size of scrollback buffer */
-//	short scrolling;              /* current scrollback page */
+//	short scrolling;                   /* current scrollback page */
 //	uint16_t max_off;                  /* maximum scrollback offset */
 
 	uint8_t sc_flag;
@@ -123,14 +122,10 @@ typedef struct _ttypc_virt_t {
 	uint16_t *sc_G3;
 	uint16_t **sc_GL;
 	uint16_t **sc_GR;
-  
-	uint8_t *rbuff;
-	unsigned int rbuffsz;
-	unsigned int rb;
-	unsigned int rp;
-	unsigned int ready;
 
-	struct _ttypc_t *ttypc;
+	oid_t oid;
+	libtty_common_t tty;
+	ttypc_t *ttypc;
 } ttypc_virt_t;
 
 
@@ -140,19 +135,28 @@ extern uint16_t csd_ascii[CSSIZE];
 extern uint16_t csd_supplemental[CSSIZE];
 
 
-/* Emulator main entry */
-extern int ttypc_virt_sput(ttypc_virt_t *virt, uint8_t *s, int len);
+/* Function emulates a character */
+extern int ttypc_virt_sput(ttypc_virt_t *virt, char c);
+
+
+/* Function emulates a buffer */
+extern int ttypc_virt_swrite(ttypc_virt_t *virt, char *buff, size_t len);
 
 
 /* Function adds characters to input buffer */
-extern int ttypc_virt_sadd(ttypc_virt_t *virt, uint8_t *s, unsigned int len);
+extern int ttypc_virt_sadd(ttypc_virt_t *virt, char *buff, size_t len, int mode);
 
 
-extern int ttypc_virt_sget(ttypc_virt_t *virt, char *buff, unsigned int len);
+/* Function gets characters from input buffer */
+extern int ttypc_virt_sget(ttypc_virt_t *virt, char *buff, size_t len, int mode);
+
+
+extern int ttypc_virt_poll_status(ttypc_virt_t *virt);
+extern int ttypc_virt_ioctl(ttypc_virt_t *virt, pid_t sender_pid, unsigned int cmd, const void *in_arg, const void **out_arg);
 
 
 /* Function initializes ttypc virtual terminal handler */
-extern int _ttypc_virt_init(ttypc_virt_t *virt, size_t rbuffsz, struct _ttypc_t *ttypc);
+extern int _ttypc_virt_init(ttypc_virt_t *virt, unsigned int bufsize, ttypc_t *ttypc);
 
 
 #endif

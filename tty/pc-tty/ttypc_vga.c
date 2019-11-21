@@ -5,9 +5,9 @@
  *
  * ttypc VGA support (implemented after reading FreeBSD 4.4 pcvt driver)
  *
- * Copyright 2017, 2012 Phoenix Systems
+ * Copyright 2017, 2012, 2019 Phoenix Systems
  * Copyright 2008 Pawel Pisarczyk
- * Author: Pawel Pisarczyk
+ * Author: Pawel Pisarczyk, Lukasz Kosinski
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -46,8 +46,6 @@ void _ttypc_vga_getcursor(ttypc_virt_t *virt)
 	
 	outb(ttypc->out_crtc, crtcCursorL);
 	virt->cur_offset |= inb(ttypc->out_crtc + 1);
-
-	return;
 }
 
 
