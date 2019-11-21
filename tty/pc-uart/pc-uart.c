@@ -58,7 +58,7 @@ static int uart_interrupt(unsigned int n, void *arg)
 }
 
 
-static void set_baudrate(void* _uart, speed_t baud)
+static void set_baudrate(void *_uart, speed_t baud)
 {
 	/* TODO */
 }
@@ -225,7 +225,7 @@ int _uart_init(void *base, unsigned int irq, unsigned int speed, uart_t **uart)
 	callbacks.set_cflag = set_cflag;
 	callbacks.signal_txready = signal_txready;
 
-	libtty_init(&(*uart)->tty, &callbacks, SIZE_PAGE);
+	libtty_init(&(*uart)->tty, &callbacks, _PAGE_SIZE);
 
 	(*uart)->base = base;
 	(*uart)->irq = irq;
