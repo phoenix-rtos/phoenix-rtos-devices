@@ -47,14 +47,14 @@ typedef struct {
 /* SPI */
 
 
-enum { msb = 0, lsb = 1};
+enum { spi_msb = 0, spi_lsb = 1};
 
 
 enum { spi_mode_0 = 0, spi_mode_1, spi_mode_2, spi_mode_3 };
 
 
 typedef struct {
-	enum { spi_config = 0, spi_transmit } type;
+	enum { spi_config = 0, spi_transaction } type;
 
 	union {
 		struct {
@@ -68,7 +68,7 @@ typedef struct {
 		struct {
 			unsigned int frameSize;
 			unsigned char cs;
-		} transmit;
+		} transaction;
 	};
 
 } spi_t;

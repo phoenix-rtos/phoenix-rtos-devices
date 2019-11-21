@@ -51,7 +51,7 @@ static void multi_dispatchMsg(msg_t *msg)
 
 	switch (msg->type) {
 		case mtRead:
-			case mtWrite:
+		case mtWrite:
 			id = msg->i.io.oid.id;
 			break;
 

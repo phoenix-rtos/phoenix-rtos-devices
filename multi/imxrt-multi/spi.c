@@ -36,13 +36,6 @@
 #define WORD_SIZE sizeof(uint32_t)
 #define MAX_FIFOSZ_BYTES 16 * WORD_SIZE
 
-#define DESERIALIZE_WORD(buff) \
-	buff[3] | (buff[2] << 8) | (buff[1] << 16) | (buff[0] << 24)
-
-#define SERIALIZE_WORD(buff, word, start)		\
-	for (int i = start - 1; i >= 0; --i) 		\
-		*buff++ = (word >> (i * 8)) & 0xff;
-
 
 enum { spi_verid = 0, spi_param, spi_cr = 0x4, spi_sr, spi_ier, spi_der, spi_cfgr0, spi_cfgr1, spi_dmr0 = 0xc,
 	   spi_dmr1, spi_ccr = 0x10, spi_fcr = 0x16, spi_fsr, spi_tcr, spi_tdr, spi_rsr = 0x1c, spi_rdr };
@@ -66,6 +59,23 @@ static const int spiConfig[] = { SPI1, SPI2, SPI3, SPI4 };
 
 
 static const int spiPos[] = { SPI1_POS, SPI2_POS, SPI3_POS, SPI4_POS };
+
+
+static inline uint32_t spi_deserializeWord(const uint8_t *buff)
+{
+	uint32_t word = 0;
+
+	word = buff[3] | (buff[2] << 8) | (buff[1] << 16) | (buff[0] << 24);
+
+	return word;
+}
+
+
+static inline void spi_serializeWord(uint8_t *buff, uint32_t word, int8_t start)
+{
+	for (int i = start - 1; i >= 0; --i)
+		*buff++ = (word >> (i * 8)) & 0xff;
+}
 
 
 static int spi_irqHandler(unsigned int n, void *arg)
@@ -97,7 +107,7 @@ static void spi_txBytes(int spi, const uint8_t *txBuff, int bytesNumber)
 	uint32_t word;
 
 	while (bytesNumber / WORD_SIZE) {
-		*(spi_common[spi].base + spi_tdr) = DESERIALIZE_WORD(txBuff);
+		*(spi_common[spi].base + spi_tdr) = spi_deserializeWord(txBuff);
 		txBuff += WORD_SIZE;
 		bytesNumber -= WORD_SIZE;
 	}
@@ -118,18 +128,20 @@ static void spi_rxBytes(int spi, uint8_t *rxBuff, int bytesNumber)
 	/* Get data from RX Fifo */
 	while (bytesNumber / WORD_SIZE) {
 		word = *(spi_common[spi].base + spi_rdr);
-		SERIALIZE_WORD(rxBuff, word, WORD_SIZE);
+		spi_serializeWord(rxBuff, word, WORD_SIZE);
+		rxBuff += WORD_SIZE;
 		bytesNumber -= WORD_SIZE;
 	}
 
 	if (bytesNumber) {
 		word = *(spi_common[spi].base + spi_rdr);
-		SERIALIZE_WORD(rxBuff, word, bytesNumber);
+		spi_serializeWord(rxBuff, word, bytesNumber);
+		rxBuff += bytesNumber;
 	}
 }
 
 
-static int spi_transmitData(int spi, unsigned char cs, const uint8_t *txBuff, uint8_t *rxBuff, int len)
+static int spi_performTranscation(int spi, unsigned char cs, const uint8_t *txBuff, uint8_t *rxBuff, int len)
 {
 	int size = len;
 	int rxTotalBytes = 0;
@@ -141,6 +153,8 @@ static int spi_transmitData(int spi, unsigned char cs, const uint8_t *txBuff, ui
 
 	if ((len * 8) > MAX_FRAME_SZ)
 		return -EINVAL;
+
+	mutexLock(spi_common[spi].mutex);
 
 	/* Initialize Transmit Command Register */
 	*(spi_common[spi].base + spi_tcr) = (spi_common[spi].tcr & ~(0x7ff)) | ((cs & 0x3) << 24) | (len * 8 - 1);
@@ -195,6 +209,8 @@ static int spi_transmitData(int spi, unsigned char cs, const uint8_t *txBuff, ui
 		}
 	}
 
+	mutexUnlock(spi_common[spi].mutex);
+
 	return rxTotalBytes;
 }
 
@@ -213,6 +229,8 @@ static int spi_configure(uint32_t spi, uint32_t bdiv, uint32_t prescaler, uint32
 		return -EINVAL;
 
 	i = spiPos[spi];
+
+	mutexLock(spi_common[spi].mutex);
 
 	/* Disable module */
 	*(spi_common[i].base + spi_cr) = 0;
@@ -243,7 +261,7 @@ static int spi_configure(uint32_t spi, uint32_t bdiv, uint32_t prescaler, uint32
 	*(spi_common[i].base + spi_tcr) &= ~(1 << 26); /* reset register */
 	spi_common[i].tcr = *(spi_common[i].base + spi_tcr) | ((mode & 0x3) << 30) | ((cs & 0x3) << 24) | ((endian & 0x1) << 23) | (prescaler << 27);
 
-	interrupt(spi_common[i].irq, spi_irqHandler, (void *)i, spi_common[i].cond, &spi_common[i].inth);
+	mutexUnlock(spi_common[spi].mutex);
 
 	return EOK;
 }
@@ -264,8 +282,8 @@ static void spi_handleDevCtl(msg_t *msg, int dev)
 			odevctl->err = spi_configure(dev, idevctl->spi.config.sckDiv, idevctl->spi.config.prescaler, idevctl->spi.config.endian, idevctl->spi.config.mode, idevctl->spi.config.cs);
 			break;
 
-		case spi_transmit:
-			odevctl->err = spi_transmitData(dev, idevctl->spi.transmit.cs, txBuff, rxBuff, idevctl->spi.transmit.frameSize);
+		case spi_transaction:
+			odevctl->err = spi_performTranscation(dev, idevctl->spi.transaction.cs, txBuff, rxBuff, idevctl->spi.transaction.frameSize);
 			break;
 
 		default:
@@ -341,17 +359,48 @@ static int spi_getIsel(int mux, int *isel, int *val)
 static int spi_muxVal(int mux)
 {
 	switch (mux) {
-		case  pctl_mux_gpio_ad_b0_00 :
-		case  pctl_mux_gpio_ad_b0_01 :
-		case  pctl_mux_gpio_ad_b0_02 :
-		case  pctl_mux_gpio_ad_b0_03 :
-			return 7;
+		case pctl_mux_gpio_b1_04 :
+		case pctl_mux_gpio_b1_05 :
+		case pctl_mux_gpio_b1_06 :
+		case pctl_mux_gpio_b1_07 :
+			return 1;
+
+		case pctl_mux_gpio_ad_b1_12 :
+		case pctl_mux_gpio_ad_b1_13 :
+		case pctl_mux_gpio_ad_b1_14 :
+		case pctl_mux_gpio_ad_b1_15 :
+		case pctl_mux_gpio_emc_00 :
+		case pctl_mux_gpio_emc_01 :
+		case pctl_mux_gpio_emc_02 :
+		case pctl_mux_gpio_emc_03 :
+		case pctl_mux_gpio_emc_40 :
+		case pctl_mux_gpio_emc_41 :
+		case pctl_mux_gpio_b1_02 :
+		case pctl_mux_gpio_b1_03 :
+			return 2;
 
 		case pctl_mux_gpio_b0_00 :
 		case pctl_mux_gpio_b0_01 :
 		case pctl_mux_gpio_b0_02 :
 		case pctl_mux_gpio_b0_03 :
+		case pctl_mux_gpio_emc_27 :
+		case pctl_mux_gpio_emc_28 :
+		case pctl_mux_gpio_emc_29 :
+		case pctl_mux_gpio_emc_30 :
+		case pctl_mux_gpio_emc_31 :
 			return 3;
+
+		case pctl_mux_gpio_b1_11 :
+			return 6;
+
+		case pctl_mux_gpio_ad_b0_00 :
+		case pctl_mux_gpio_ad_b0_01 :
+		case pctl_mux_gpio_ad_b0_02 :
+		case pctl_mux_gpio_ad_b0_03 :
+		case pctl_mux_gpio_ad_b0_04 :
+		case pctl_mux_gpio_ad_b0_05 :
+		case pctl_mux_gpio_ad_b0_06 :
+			return 7;
 
 		default :
 			return 4;
@@ -448,9 +497,9 @@ int spi_init(void)
 		int irq;
 	} spiInfo[] = {
 		{ LPSPI1_BASE, LPSPI1_CLK, LPSPI1_IRQ },
-		{ LPSPI2_BASE, LPSPI2_CLK, LPSPI1_IRQ },
-		{ LPSPI3_BASE, LPSPI3_CLK, LPSPI1_IRQ },
-		{ LPSPI4_BASE, LPSPI4_CLK, LPSPI1_IRQ }
+		{ LPSPI2_BASE, LPSPI2_CLK, LPSPI2_IRQ },
+		{ LPSPI3_BASE, LPSPI3_CLK, LPSPI3_IRQ },
+		{ LPSPI4_BASE, LPSPI4_CLK, LPSPI4_IRQ }
 	};
 
 	spi_initPins();
@@ -479,6 +528,8 @@ int spi_init(void)
 		spi_common[i].ready = 1;
 		spi_common[i].irq = spiInfo[spi].irq;
 		spi_common[i].base = (void *)spiInfo[spi].base;
+
+		interrupt(spi_common[i].irq, spi_irqHandler, (void *)i, spi_common[i].cond, &spi_common[i].inth);
 
 		/* Disable module */
 		*(spi_common[i].base + spi_cr) = 0;
