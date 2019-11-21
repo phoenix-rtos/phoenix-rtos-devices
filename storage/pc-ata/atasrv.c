@@ -354,6 +354,59 @@ int atasrv_write(id_t *devId, offs_t offs, const char *buff, size_t len, int *er
 }
 
 
+static int atasrv_mount(id_t id, unsigned port, id_t *newid, mode_t *mode, const char *type, size_t len)
+{
+	atasrv_filesystem_t *fs;
+	atasrv_device_t *device;
+	int err;
+
+	if ((device = lib_treeof(atasrv_device_t, node, idtree_find(&atasrv_common.devices, id))) == NULL) {
+		LOG_ERROR("device not found: %llu", id);
+		return -ENODEV;
+	}
+
+	for (fs = atasrv_common.filesystems; fs != NULL; fs = fs->next) {
+		if (!strncmp(type, fs->name, sizeof(fs->name)))
+			break;
+	}
+
+	if (fs == NULL) {
+		LOG_ERROR("filesystem '%s' not found", type);
+		return -EINVAL;
+	}
+
+	device->partition->fs = fs;
+
+	if ((device->partition->portfd = portGet(port)) < 0) {
+		LOG_ERROR("portGet()");
+		return device->partition->portfd;
+	}
+
+	if ((device->partition->stack = malloc(2 * _PAGE_SIZE)) == NULL) {
+		close(device->partition->portfd);
+		LOG_ERROR("stack alloc");
+		return -ENOMEM;
+	}
+
+	if ((err = fs->mount(&id, &device->partition->fsData)) < 0) {
+		close(device->partition->portfd);
+		free(device->partition->stack);
+		LOG_ERROR("fs mount");
+		return err;
+	}
+
+	if ((err = beginthread(atasrv_partThread, 4, device->partition->stack, 2 * _PAGE_SIZE, device->partition)) < 0) {
+		close(device->partition->portfd);
+		free(device->partition->stack);
+		fs->unmount(device->partition->fsData);
+		LOG_ERROR("beginthread()");
+		return err;
+	}
+
+	return EOK;
+}
+
+
 static void atasrv_msgLoop(void)
 {
 	msg_t msg;
@@ -373,11 +426,11 @@ static void atasrv_msgLoop(void)
 			msg.o.io = atasrv_write(&msg.object, msg.i.io.offs, msg.i.data, msg.i.size, &err);
 			break;
 
-	/*	TBD
 		case mtMount:
-			err = -ENOSYS;
+			err = atasrv_mount(msg.object, msg.i.mount.port, &msg.o.mount.id, &msg.o.mount.mode, msg.i.data, msg.i.size);
 			break;
 
+	/*	TBD
 		case mtSync:
 			err = -ENOSYS;
 			break;
