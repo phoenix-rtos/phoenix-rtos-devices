@@ -4,7 +4,7 @@
  * iMX RT multi driver config.
  *
  * Copyright 2019 Phoenix Systems
- * Author: Aleksander Kaminski
+ * Author: Aleksander Kaminski, Hubert Buczynski
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -63,5 +63,24 @@
 #ifndef UART_CONSOLE
 #define UART_CONSOLE 1
 #endif
+
+/* SPI */
+
+#ifndef SPI1
+#define SPI1 1
+#endif
+
+#ifndef SPI2
+#define SPI2 0
+#endif
+
+#ifndef SPI3
+#define SPI3 0
+#endif
+
+#ifndef SPI4
+#define SPI4 0
+#endif
+
 
 #endif
