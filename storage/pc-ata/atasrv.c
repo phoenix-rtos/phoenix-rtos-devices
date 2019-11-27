@@ -115,7 +115,7 @@ static atasrv_request_t *atasrv_newRequest(int portfd, atasrv_filesystem_t *fs, 
 {
 	atasrv_request_t *req;
 
-	if ((req = calloc(1, sizeof(*req))) != NULL) {
+	if ((req = calloc(1, sizeof(atasrv_request_t))) != NULL) {
 		req->fsData = fsData;
 		req->fs = fs;
 		req->portfd = portfd;
@@ -301,7 +301,7 @@ int atasrv_read(id_t *devId, offs_t offs, char *buff, size_t len, int *err)
 		break;
 
 		case ATASRV_DEV_TYPE_PART:
-			*err = atadrv_read(dev->ataDev, dev->partition->start + offs, buff, len);
+			*err = atadrv_read(dev->partition->dev->ataDev, (dev->partition->start * dev->partition->dev->ataDev->sector_size) + offs, buff, len);
 		break;
 
 		default:
@@ -337,7 +337,7 @@ int atasrv_write(id_t *devId, offs_t offs, const char *buff, size_t len, int *er
 			break;
 
 		case ATASRV_DEV_TYPE_PART:
-			*err = atadrv_write(dev->ataDev, dev->partition->start + offs, buff, len);
+			*err = atadrv_write(dev->partition->dev->ataDev, (dev->partition->start * dev->partition->dev->ataDev->sector_size) + offs, buff, len);
 			break;
 
 		default:
@@ -394,6 +394,8 @@ static int atasrv_mount(id_t id, unsigned port, id_t *newid, mode_t *mode, const
 		LOG_ERROR("fs mount");
 		return err;
 	}
+
+	*newid = err;
 
 	if ((err = beginthread(atasrv_partThread, 4, device->partition->stack, 2 * _PAGE_SIZE, device->partition)) < 0) {
 		close(device->partition->portfd);
@@ -472,7 +474,15 @@ static int atasrv_init(void)
 
 int main(void)
 {
-	int pid, sid, err;
+	int pid, sid, err, i;
+
+	if ((err = atasrv_init()))
+		return err;
+
+	if (ata_init())
+		return -ENXIO;
+
+	atasrv_discoverPartitions();
 
 	pid = fork();
 	if (pid < 0)
@@ -485,13 +495,9 @@ int main(void)
 	if (sid < 0)
 		exit(EXIT_FAILURE);
 
-	if ((err = atasrv_init()))
-		return err;
 
-	if (ata_init())
-		return -ENXIO;
-
-	atasrv_discoverPartitions();
+	for (i = 0; i < sizeof(atasrv_common.poolStacks) / sizeof(atasrv_common.poolStacks[0]); ++i)
+		beginthread(atasrv_poolThread, 4, atasrv_common.poolStacks[i], sizeof(atasrv_common.poolStacks[i]), NULL);
 
 	atasrv_msgLoop();
 	return 0;
