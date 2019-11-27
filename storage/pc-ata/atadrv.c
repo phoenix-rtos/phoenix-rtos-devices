@@ -36,7 +36,7 @@ static pci_id_t ata_pci_tbl[] = {
 
 ata_opt_t ata_defaults = {
 	.force = 0,
-	.use_int = 1,
+	.use_int = 0,
 	.use_dma = 0,
 	.use_multitransfer = 0
 };
@@ -131,7 +131,7 @@ int ata_wait(struct ata_channel *ac, uint8_t irq)
 	if (irq) {
 		mutexLock(ac->irq_spin);
 		if (ac->irq_invoked == 0) {
-			if ((err = condWait(ac->waitq, ac->irq_spin, /* 5sec */ 5000)) < 0) {
+			if ((err = condWait(ac->waitq, ac->irq_spin, 0)) < 0) {
 				mutexUnlock(ac->irq_spin);
 				return err;
 			}
@@ -333,7 +333,7 @@ static int ata_interrupt(unsigned int irq, void *dev_instance)
 
 	ac->irq_invoked = 1;
 
-	return res;
+	return ac->waitq;
 }
 
 
