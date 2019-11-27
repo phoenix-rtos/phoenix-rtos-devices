@@ -111,7 +111,7 @@ static void uart_dispatchMsg(msg_t *msg)
 			break;
 
 		case mtDevCtl:
-			uart_handleMsg(msg, UART_CONSOLE - UART1 + id_uart1);
+			uart_handleMsg(msg, UART_CONSOLE - 1 + id_uart1);
 			return;
 
 		default:
@@ -120,7 +120,7 @@ static void uart_dispatchMsg(msg_t *msg)
 
 	switch (id) {
 		case id_console:
-			uart_handleMsg(msg, UART_CONSOLE - UART1 + id_uart1);
+			uart_handleMsg(msg, UART_CONSOLE - 1 + id_uart1);
 			break;
 
 		case id_uart1:
