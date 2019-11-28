@@ -7,10 +7,10 @@
 # Author: Kamil Amanowicz, Hubert Buczynski
 #
 
-$(PREFIX_A)libusb.a: $(addprefix $(PREFIX_O)usb/, imx-usbc/imxdevice.o imx6ull-usbc/imx6ull-usbclient.o)
+$(PREFIX_A)libusbc.a: $(addprefix $(PREFIX_O)usb/, imx-usbc/imxdevice.o imx6ull-usbc/imx6ull-usbclient.o)
 	$(ARCH)
 
 $(PREFIX_H)usbclient.h: usb/imx-usbc/usbclient.h
 	$(HEADER)
 
-all: $(PREFIX_A)libusb.a $(PREFIX_H)usbclient.h
+all: $(PREFIX_A)libusbc.a $(PREFIX_H)usbclient.h
