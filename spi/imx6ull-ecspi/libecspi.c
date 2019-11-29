@@ -10,6 +10,7 @@
  */
 
 #include <stdio.h>
+#include <stddef.h>
 #include <sys/interrupt.h>
 #include <sys/mman.h>
 #include <sys/platform.h>
@@ -20,11 +21,19 @@
 #include "ecspi.h"
 
 
+#define BYTES_2_RXTHRESHOLD(LEN) (((LEN) + 3) / 4 - 1)
+#define BITS_2_BYTES_ROUND_UP(LEN) (((LEN) + 7) / 8)
+#define GET_BURST_IN_BYTES(ECSPI) (BITS_2_BYTES_ROUND_UP((*((ECSPI)->base + conreg) >> 20) + 1))
+
+
 enum { rxdata = 0, txdata, conreg, configreg, intreg, dmareg, statreg, periodreg, testreg, msgdata = 16 };
+
+typedef enum { mode_sync_exchange, mode_async_write, mode_async_exchange, mode_async_periodical } ecspi_mode_t;
 
 typedef struct {
 	volatile uint32_t *base;
 	uint8_t chan_msk;
+	ecspi_mode_t mode;
 
 	handle_t inth;
 	handle_t cond;
@@ -63,14 +72,100 @@ uint32_t ecspi_pctl_clk[4] = { pctl_clk_ecspi1, pctl_clk_ecspi2, pctl_clk_ecspi3
 static ecspi_t ecspi[4] = {0};
 
 
+#define RESET_ECSPI(ECSPI) do { \
+	uint32_t reg_backup[3]; \
+	reg_backup[0] = *((ECSPI)->base + configreg); \
+	reg_backup[1] = *((ECSPI)->base + intreg); \
+	reg_backup[2] = *((ECSPI)->base + periodreg); \
+	*((ECSPI)->base + conreg) &= ~(1 << 0); \
+	*((ECSPI)->base + conreg) |= (1 << 0); \
+	*((ECSPI)->base + configreg) = reg_backup[0]; \
+	*((ECSPI)->base + intreg) = reg_backup[1]; \
+	*((ECSPI)->base + periodreg) = reg_backup[2]; \
+} while (0)
+
+
+static void readFifo(int dev_no, uint8_t *in, size_t len);
+
+
+static void writeFifo(int dev_no, const uint8_t *out, size_t len);
+
+
 static int ecspi_irqHandler(unsigned int n, void *arg)
 {
+	(void) n;
+
 	ecspi_t *e = &ecspi[(int) arg];
 
-	/* Disable Transfer Completed interrupt. */
-	*(e->base + intreg) &= ~(1 << 7);
+	if (e->mode != mode_sync_exchange) {
+		return -1;
+	}
+	else {
+		/* Disable Transfer Completed interrupt. */
+		*(e->base + intreg) &= ~(1 << 7);
+		return 1;
+	}
+}
 
-	return 1;
+
+static int ecspi_irqHandlerAsync(unsigned int n, void *arg)
+{
+	(void) n;
+
+	size_t count;
+	int res = -1;
+	int res_writer;
+
+	ecspi_ctx_t *ctx = arg;
+	ecspi_t *e = &ecspi[ctx->dev_no - 1];
+
+	if (e->mode == mode_sync_exchange) {
+		return -1;
+	}
+
+	if (*(e->base + statreg) & (1 << 7)) {
+		/* Clear Transfer Completed bit. */
+		*(e->base + statreg) |= (1 << 7);
+
+		if (e->mode == mode_async_write) {
+			/* Disable Transfer Completed interrupt. */
+			*(e->base + intreg) &= ~(1 << 7);
+			/* Discarding rxfifo words. The only ways are: read all words from rxfifo, or reset ECSPI. */
+			RESET_ECSPI(e);
+
+			res = 1;
+		}
+		else if (e->mode == mode_async_exchange) {
+			/* Disable Transfer Completed interrupt. */
+			*(e->base + intreg) &= ~(1 << 7);
+
+			ctx->rx_count += GET_BURST_IN_BYTES(e);
+			*(e->base + conreg) |= (1 << 2);
+
+			res = 1;
+		}
+		else if (e->mode == mode_async_periodical) {
+			count = GET_BURST_IN_BYTES(e);
+
+			readFifo(ctx->dev_no, ctx->in_periodical, count);
+			res_writer = ctx->writer_proc(ctx->in_periodical, count, ctx->out_periodical);
+
+			if (res_writer < 0) {
+				/* Disable Transfer Completed interrupt. */
+				*(e->base + intreg) &= ~(1 << 7);
+				ecspi_setSSDelay(ctx->dev_no, ctx->prev_wait_states);
+				/* The only way to reset the internal period counter is to reenable the ECSPI. */
+				RESET_ECSPI(e);
+				res = 1;
+			} else {
+				writeFifo(ctx->dev_no, ctx->out_periodical, count);
+				*(e->base + conreg) |= (1 << 2);
+				res = -1;
+			}
+		}
+	}
+
+	return res;
 }
 
 
@@ -133,11 +228,11 @@ static void set_clk(int dev_no)
 }
 
 
-static void ecspi_writeFifo(int dev_no, const uint8_t *out, uint32_t len)
+static void writeFifo(int dev_no, const uint8_t *out, size_t len)
 {
 	uint32_t word;
 	ecspi_t *e = &ecspi[dev_no - 1];
-	uint8_t fill_len = len % 4;
+	size_t fill_len = len % 4;
 
 	if (fill_len > 0) {
 		word = 0;
@@ -162,11 +257,11 @@ static void ecspi_writeFifo(int dev_no, const uint8_t *out, uint32_t len)
 }
 
 
-static void ecspi_readFifo(int dev_no, uint8_t *in, uint32_t len)
+static void readFifo(int dev_no, uint8_t *in, size_t len)
 {
 	uint32_t word;
 	ecspi_t *e = &ecspi[dev_no - 1];
-	uint8_t len_fill = len % 4;
+	size_t len_fill = len % 4;
 
 	if (len_fill > 0) {
 		word = *(e->base + rxdata);
@@ -188,6 +283,22 @@ static void ecspi_readFifo(int dev_no, uint8_t *in, uint32_t len)
 
 		len -= 4;
 	}
+}
+
+
+int ecspi_readFifo(ecspi_ctx_t *ctx, uint8_t *buf, size_t len)
+{
+	if (ctx->dev_no < 1 || ctx->dev_no > 4) {
+		return -1;
+	}
+
+	if (len > (64 * 4)) {
+		return -2;
+	}
+
+	readFifo(ctx->dev_no, buf, len);
+
+	return len;
 }
 
 
@@ -263,7 +374,7 @@ int ecspi_setCSDelay(int dev_no, uint8_t delay)
 }
 
 
-int ecspi_exchange(int dev_no, const uint8_t *out, uint8_t *in, uint16_t len)
+int ecspi_setSSDelay(int dev_no, uint16_t delay)
 {
 	ecspi_t *e;
 
@@ -271,17 +382,43 @@ int ecspi_exchange(int dev_no, const uint8_t *out, uint8_t *in, uint16_t len)
 		return -1;
 	}
 
-	if (len > (64*4)) {
-		return -2; /* Not supported yet */
+	e = &ecspi[dev_no - 1];
+	*(e->base + periodreg) = (*(e->base + periodreg) & ~0x7FFF) | (delay & 0x7FFF);
+
+	return 0;
+}
+
+
+int ecspi_exchange(int dev_no, const uint8_t *out, uint8_t *in, size_t len)
+{
+	ecspi_t *e;
+
+	if (dev_no < 1 || dev_no > 4) {
+		return -1;
+	}
+
+	if (len > (64 * 4) || len == 0) {
+		return -2;
 	}
 
 	e = &ecspi[dev_no - 1];
+	// Wait until the previous transaction has ended.
+	while ((*(e->base + conreg) & (1 << 2)) || (*(e->base + testreg) & 0x7F) != 0) {
+		;
+	}
+
+	e->mode = mode_sync_exchange;
+
+	/* Single burst mode */
+	*(e->base + configreg) &= ~(0xF << 8);
 
 	ecspi_setBurst(dev_no, len * 8);
-	ecspi_writeFifo(dev_no, out, len);
+	writeFifo(dev_no, out, len);
 
 	mutexLock(e->irqlock);
 
+	/* Clear Transfer Completed bit. */
+	*(e->base + statreg) |= (1 << 7);
 	/* Enable Transfer Completed interrupt. */
 	*(e->base + intreg) |= (1 << 7);
 	/* Begin transmission. */
@@ -293,12 +430,207 @@ int ecspi_exchange(int dev_no, const uint8_t *out, uint8_t *in, uint16_t len)
 
 	/* Clear Transfer Completed bit. */
 	*(e->base + statreg) |= (1 << 7);
-
 	mutexUnlock(e->irqlock);
 
-	ecspi_readFifo(dev_no, in, len);
+	readFifo(dev_no, in, len);
 
 	return 0;
+}
+
+
+
+int ecspi_exchangeBusy(int dev_no, const uint8_t *out, uint8_t *in, size_t len)
+{
+	ecspi_t *e;
+
+	if (dev_no < 1 || dev_no > 4) {
+		return -1;
+	}
+
+	if (len > (64 * 4) || len == 0) {
+		return -2;
+	}
+
+	e = &ecspi[dev_no - 1];
+
+	/* Wait until the previous transaction has completed. */
+	while ((*(e->base + conreg) & (1 << 2)) || (*(e->base + testreg) & 0x7F) != 0) {
+		;
+	}
+
+	ecspi_setBurst(dev_no, len * 8);
+	writeFifo(dev_no, out, len);
+
+	/* Clear Transfer Completed bit. */
+	*(e->base + statreg) |= (1 << 7);
+	/* Begin transmission. */
+	*(e->base + conreg) |= (1 << 2);
+
+	/* Wait until the transaction has completed. */
+	while (!(*(e->base + statreg) & (1 << 7))) {
+		;
+	}
+
+	/* Clear Transfer Completed bit. */
+	*(e->base + statreg) |= (1 << 7);
+
+	readFifo(dev_no, in, len);
+
+	return 0;
+}
+
+
+int ecspi_registerContext(int dev_no, ecspi_ctx_t *ctx, handle_t cond)
+{
+	*ctx = (ecspi_ctx_t) {
+		.dev_no = dev_no,
+	};
+
+	return interrupt(ecspi_intr_number[dev_no - 1], ecspi_irqHandlerAsync, (void *) ctx, cond, &ctx->inth);
+}
+
+
+int ecspi_exchangeAsync(ecspi_ctx_t *ctx, const uint8_t *out, size_t len)
+{
+	ecspi_t *e;
+	uint16_t current_burst;
+	uint8_t txfifo_word_cnt;
+	uint8_t rxfifo_word_cnt;
+	size_t written = 0;
+
+	if (ctx->dev_no < 1 || ctx->dev_no > 4) {
+		return -1;
+	}
+
+	if (len > (64 * 4)) {
+		return -2;
+	}
+
+	e = &ecspi[ctx->dev_no - 1];
+	txfifo_word_cnt = *(e->base + testreg) & 0x7F;
+
+	if (!(*(e->base + conreg) & (1 << 2)) && txfifo_word_cnt == 0) {
+		e->mode = mode_async_exchange;
+		ctx->rx_count = 0;
+
+		ecspi_setBurst(ctx->dev_no, len * 8);
+
+		/* One burst mode */
+		*(e->base + configreg) &= ~(0xF << 8);
+		/* Clear Transfer Completed bit. */
+		*(e->base + statreg) |= (1 << 7);
+		/* Enable Transfer Completed interrupt. */
+		*(e->base + intreg) |= (1 << 7);
+
+		writeFifo(ctx->dev_no, out, len);
+		*(e->base + conreg) |= (1 << 2);
+
+		written = len;
+	}
+	else if (e->mode == mode_async_exchange) {
+		current_burst = (*(e->base + conreg) >> 20) + 1;
+		rxfifo_word_cnt = (*(e->base + testreg) >> 8) & 0x7F;
+
+		if (current_burst == (len * 8) && (int) (len / 4) <= (64 - txfifo_word_cnt) && (int) (len / 4) < (64 - rxfifo_word_cnt)) {
+			writeFifo(ctx->dev_no, out, len);
+			*(e->base + conreg) |= (1 << 2);
+			written = len;
+		}
+	}
+
+	return written;
+}
+
+
+int ecspi_exchangePeriodically(ecspi_ctx_t *ctx, uint8_t *out, uint8_t *in, size_t len, unsigned int wait_states, ecspi_writerProc_t writer_proc)
+{
+	ecspi_t *e;
+	uint8_t txfifo_word_cnt;
+	size_t written = 0;
+
+	if (ctx->dev_no < 1 || ctx->dev_no > 4) {
+		return -1;
+	}
+
+	if (len > (64 * 4)) {
+		return -2;
+	}
+
+	e = &ecspi[ctx->dev_no - 1];
+	txfifo_word_cnt = *(e->base + testreg) & 0x7F;
+
+	if (!(*(e->base + conreg) & (1 << 2)) && txfifo_word_cnt == 0 && !(*(e->base + intreg) & (1 << 7))) {
+		e->mode = mode_async_periodical;
+		ecspi_setBurst(ctx->dev_no, len * 8);
+		ctx->prev_wait_states = (*(e->base + periodreg) & 0x7FFF);
+		ecspi_setSSDelay(ctx->dev_no, wait_states);
+		ctx->writer_proc = writer_proc;
+		ctx->out_periodical = out;
+		ctx->in_periodical = in;
+
+		/* One burst mode */
+		*(e->base + configreg) &= ~(0xF << 8);
+		/* Clear Transfer Completed bit. */
+		*(e->base + statreg) |= (1 << 7);
+		/* Enable Transfer Completed interrupt. */
+		*(e->base + intreg) |= (1 << 7);
+
+		writeFifo(ctx->dev_no, out, len);
+		*(e->base + conreg) |= (1 << 2);
+
+		written = len;
+	}
+
+	return written;
+}
+
+
+int ecspi_writeAsync(ecspi_ctx_t *ctx, const uint8_t *out, size_t len)
+{
+	ecspi_t *e;
+	uint16_t current_burst;
+	uint8_t txfifo_word_cnt;
+	size_t written = 0;
+
+	if (ctx->dev_no < 1 || ctx->dev_no > 4) {
+		return -1;
+	}
+
+	if (len > (64 * 4)) {
+		return -2;
+	}
+
+	e = &ecspi[ctx->dev_no - 1];
+
+	txfifo_word_cnt = *(e->base + testreg) & 0x7F;
+
+	if (!(*(e->base + conreg) & (1 << 2)) && txfifo_word_cnt == 0) {
+		e->mode = mode_async_write;
+
+		/* Multiple (auto) burst mode */
+		*(e->base + configreg) |= (0xF << 8);
+		/* Clear Transfer Completed bit. */
+		*(e->base + statreg) |= (1 << 7);
+		/* Enable Transfer Completed interrupt. */
+		*(e->base + intreg) |= (1 << 7);
+
+		ecspi_setBurst(ctx->dev_no, len * 8);
+		writeFifo(ctx->dev_no, out, len);
+		*(e->base + conreg) |= (1 << 2);
+		written = len;
+	}
+	else if (e->mode == mode_async_write) {
+		current_burst = (*(e->base + conreg) >> 20) + 1;
+
+		if (current_burst == (len * 8) && (int) (len / 4) <= (64 - txfifo_word_cnt)) {
+			writeFifo(ctx->dev_no, out, len);
+			*(e->base + conreg) |= (1 << 2);
+
+			written = len;
+		}
+	}
+
+	return written;
 }
 
 
@@ -324,8 +656,9 @@ int ecspi_init(int dev_no, uint8_t chan_msk)
 
 	e = &ecspi[dev_no - 1];
 	e->chan_msk = chan_msk;
+	e->mode = mode_sync_exchange;
 
-	if ((e->base = mmap(NULL, SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, ecspi_addr[dev_no - 1])) == MAP_FAILED) {
+	if ((e->base = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, ecspi_addr[dev_no - 1])) == MAP_FAILED) {
 		printf("ecspi: could not map ecspi%d paddr %p.\n", dev_no, (void*) ecspi_addr[dev_no - 1]);
 		return -1;
 	}
