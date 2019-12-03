@@ -116,12 +116,10 @@ void uart_intthr(void *arg)
 				outb(uart->base + REG_IMR, IMR_DR);
 			}
 		}
-	/*  POLL
 		oid_t oid;
 		oid.port = 2;
 		oid.id = uart->id;
-		eventRegister(&oid, libtty_poll_status(&uart->tty);
-	*/
+		eventRegister(&oid, libtty_poll_status(&uart->tty));
 	}
 }
 
