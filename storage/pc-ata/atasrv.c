@@ -465,6 +465,8 @@ static int atasrv_init(void)
 	memset(&atasrv_common, 0, sizeof(atasrv_common));
 	idtree_init(&atasrv_common.devices);
 	atasrv_common.portfd = PORT_DESCRIPTOR;
+	mutexCreate(&atasrv_common.lock);
+	condCreate(&atasrv_common.cond);
 
 	ATASRV_REGISTER_FS(EXT2);
 
