@@ -311,13 +311,23 @@ static int ata_io(struct ata_dev *ad, offs_t offs, char *buff, unsigned int len,
 
 int atadrv_read(ata_dev_t *dev, offs_t offs, char *buff, unsigned int len)
 {
-	return ata_io(dev, offs, buff, len, ATA_READ);
+	int ret;
+
+	mutexLock(dev->ac->access_lock);
+	ret = ata_io(dev, offs, buff, len, ATA_READ);
+	mutexUnlock(dev->ac->access_lock);
+	return ret;
 }
 
 
 int atadrv_write(ata_dev_t *dev, offs_t offs, const char *buff, unsigned int len)
 {
-	return ata_io(dev, offs, (char *)buff, len, ATA_WRITE);
+	int ret;
+
+	mutexLock(dev->ac->access_lock);
+	ret = ata_io(dev, offs, buff, len, ATA_WRITE);
+	mutexUnlock(dev->ac->access_lock);
+	return ret;
 }
 
 
@@ -378,6 +388,10 @@ int ata_init_bus(struct ata_bus *ab)
 
 	mutexCreate(&(ab->ac[ATA_PRIMARY].irq_spin));
 	mutexCreate(&(ab->ac[ATA_SECONDARY].irq_spin));
+
+	mutexCreate(&(ab->ac[ATA_PRIMARY].access_lock));
+	mutexCreate(&(ab->ac[ATA_SECONDARY].access_lock));
+
 
 	/* Detect ATA-ATAPI Devices: */
 	for (i = 0; i < 2; i++) {

@@ -243,6 +243,7 @@ struct ata_channel {
 	volatile uint8_t irq_invoked;
 	handle_t waitq;
 	handle_t inth;
+	handle_t access_lock;
 
 	struct ata_bus *ab;
 	struct ata_dev devices[2];
