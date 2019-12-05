@@ -365,8 +365,11 @@ static int atasrv_mount(id_t id, unsigned port, id_t *newid, mode_t *mode, const
 		return -ENODEV;
 	}
 
+	if (len > sizeof(fs->name))
+		len = sizeof(fs->name);
+
 	for (fs = atasrv_common.filesystems; fs != NULL; fs = fs->next) {
-		if (!strncmp(type, fs->name, sizeof(fs->name)))
+		if (!strncmp(type, fs->name, len))
 			break;
 	}
 
