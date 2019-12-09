@@ -47,44 +47,77 @@ struct {
 } imxdevice_common;
 
 
-void init_desc(usbclient_conf_t *conf, usb_common_data_t *usb_data_in, usb_dc_t *dc_in)
+static void init_endpt(usbclient_desc_ep_t *endpt)
 {
-	imxdevice_common.usb_data = usb_data_in;
-	imxdevice_common.dc = dc_in;
+	imxdevice_common.usb_data->in_endpt[imxdevice_common.usb_data->endNb].rx_caps.mult = 0;
+	imxdevice_common.usb_data->in_endpt[imxdevice_common.usb_data->endNb].rx_caps.zlt = 1;
+	imxdevice_common.usb_data->in_endpt[imxdevice_common.usb_data->endNb].rx_caps.max_pkt_len = endpt->max_pkt_sz;
+	imxdevice_common.usb_data->in_endpt[imxdevice_common.usb_data->endNb].rx_caps.ios = 0;
 
-	usbclient_desc_dev_t *dev;
-	usbclient_desc_conf_t *cfg;
-	usbclient_desc_intf_t *intf;
-	usbclient_desc_gen_t *hid;
-	usbclient_desc_ep_t *endpt;
+	imxdevice_common.usb_data->in_endpt[imxdevice_common.usb_data->endNb].rx_ctrl.type = endpt->attr_bmp & 0x03;
+	imxdevice_common.usb_data->in_endpt[imxdevice_common.usb_data->endNb].rx_ctrl.data_toggle = 1;
+	imxdevice_common.usb_data->in_endpt[imxdevice_common.usb_data->endNb].rx_ctrl.data_inhibit = 0;
+	imxdevice_common.usb_data->in_endpt[imxdevice_common.usb_data->endNb].rx_ctrl.stall = 0;
 
+	imxdevice_common.usb_data->in_endpt[imxdevice_common.usb_data->endNb].tx_caps.mult = 0;
+	imxdevice_common.usb_data->in_endpt[imxdevice_common.usb_data->endNb].tx_caps.zlt = 1;
+	imxdevice_common.usb_data->in_endpt[imxdevice_common.usb_data->endNb].tx_caps.max_pkt_len = endpt->max_pkt_sz;
+	imxdevice_common.usb_data->in_endpt[imxdevice_common.usb_data->endNb].tx_caps.ios = 0;
+
+	imxdevice_common.usb_data->in_endpt[imxdevice_common.usb_data->endNb].tx_ctrl.type = endpt->attr_bmp & 0x03;
+	imxdevice_common.usb_data->in_endpt[imxdevice_common.usb_data->endNb].tx_ctrl.data_toggle = 1;
+	imxdevice_common.usb_data->in_endpt[imxdevice_common.usb_data->endNb].tx_ctrl.data_inhibit = 0;
+	imxdevice_common.usb_data->in_endpt[imxdevice_common.usb_data->endNb].tx_ctrl.stall = 0;
+
+	imxdevice_common.usb_data->endNb++;
+}
+
+
+static void init_strDesc(usbclient_desc_list_t *it, int *localOffset, int strOrder)
+{
 	usbclient_desc_str_zr_t *str_0;
 	usbclient_desc_gen_t *str_man;
 	usbclient_desc_gen_t *str_prod;
 
+	switch (strOrder) {
+		case 0:
+			str_0 = imxdevice_common.usb_data->local_conf + *localOffset;
+			imxdevice_common.pstr_0 = (((uint32_t)va2pa(str_0)) & ~0xfff) + ((uint32_t)str_0 & 0xfff);
+			memcpy(str_0, &it->descriptors[0], sizeof(usbclient_desc_str_zr_t));
+			*localOffset += it->descriptors[0].len;
+			break;
+		case 1:
+			str_man = imxdevice_common.usb_data->local_conf + *localOffset;
+			imxdevice_common.pstr_man = (((uint32_t)va2pa(str_man)) & ~0xfff) + ((uint32_t)str_man & 0xfff);
+			memcpy(str_man, &it->descriptors[0], it->descriptors[0].len);
+			*localOffset += it->descriptors[0].len;
+			break;
+		case 2:
+			str_prod = imxdevice_common.usb_data->local_conf + *localOffset;
+			imxdevice_common.pstr_prod = (((uint32_t)va2pa(str_prod)) & ~0xfff) + ((uint32_t)str_prod & 0xfff);
+			memcpy(str_prod, &it->descriptors[0], it->descriptors[0].len);
+			*localOffset += it->descriptors[0].len;
+		default:
+			break;
+	}
+}
+
+
+int init_desc(usbclient_conf_t *conf, usb_common_data_t *usb_data_in, usb_dc_t *dc_in)
+{
+	int localOffset = 0;
+	uint32_t string_desc_count = 0;
+
+	usbclient_desc_dev_t *dev;
+	usbclient_desc_conf_t *cfg;
 	usbclient_desc_gen_t *hid_reports;
 
+	usbclient_desc_list_t *it;
+
+	imxdevice_common.dc = dc_in;
+	imxdevice_common.usb_data = usb_data_in;
+
 	memset(imxdevice_common.usb_data->local_conf, 0, USB_BUFFER_SIZE);
-
-	/* Virtual addresses offsets */
-	dev = imxdevice_common.usb_data->local_conf;
-	cfg = (usbclient_desc_conf_t *)(dev + 1);
-	intf = (usbclient_desc_intf_t *)(cfg + 1);
-	hid = (usbclient_desc_gen_t *)(intf + 1);
-	endpt = (usbclient_desc_ep_t *)(((uint8_t*)hid) + 9);
-	str_0 = (usbclient_desc_str_zr_t *)(endpt + 1);
-	str_man = (usbclient_desc_gen_t *)(str_0 + 1);
-	str_prod = (usbclient_desc_gen_t *)(((uint8_t*)str_man) + 56);
-	hid_reports = (usbclient_desc_gen_t *)(((uint8_t*)str_prod) + 28);
-
-	/* Physical addresses offsets */
-	imxdevice_common.pdev = (((uint32_t)va2pa(dev)) & ~0xfff) + ((uint32_t)dev & 0xfff);
-	imxdevice_common.pconf = (((uint32_t)va2pa(cfg)) & ~0xfff) + ((uint32_t)cfg & 0xfff);
-
-	imxdevice_common.pstr_0 = (((uint32_t)va2pa(str_0)) & ~0xfff) + ((uint32_t)str_0 & 0xfff);
-	imxdevice_common.pstr_man = (((uint32_t)va2pa(str_man)) & ~0xfff) + ((uint32_t)str_man & 0xfff);
-	imxdevice_common.pstr_prod = (((uint32_t)va2pa(str_prod)) & ~0xfff) + ((uint32_t)str_prod & 0xfff);
-	imxdevice_common.phid_reports = (((uint32_t)va2pa(hid_reports)) & ~0xfff) + ((uint32_t)hid_reports & 0xfff);
 
 	/* Endpoints */
 	imxdevice_common.IN = imxdevice_common.usb_data->local_conf + 0x500;
@@ -93,71 +126,72 @@ void init_desc(usbclient_conf_t *conf, usb_common_data_t *usb_data_in, usb_dc_t 
 	imxdevice_common.pIN = ((va2pa((void *)imxdevice_common.IN)) & ~0xfff) + ((uint32_t)imxdevice_common.IN & 0xfff);
 	imxdevice_common.pOUT = ((va2pa((void *)imxdevice_common.OUT)) & ~0xfff) + ((uint32_t)imxdevice_common.OUT & 0xfff);
 
-
-	uint32_t string_desc_count = 0;
 	/* Extract mandatory descriptors to mapped memory */
-	usbclient_desc_list_t *it = conf->descriptors_head;
+	it = conf->descriptors_head;
 	for (; it != NULL; it = it->next) {
+		/* Control data cannot be bigger than 0x500 */
+		if (localOffset > 0x500)
+			return -ENOMEM	;
+
 		switch(it->descriptors->desc_type) {
 			case USBCLIENT_DESC_TYPE_DEV:
+				dev = imxdevice_common.usb_data->local_conf + localOffset;
+				imxdevice_common.pdev = (((uint32_t)va2pa(dev)) & ~0xfff) + ((uint32_t)dev & 0xfff);
 				memcpy(dev, &it->descriptors[0], sizeof(usbclient_desc_dev_t));
+				localOffset += dev->len;
 				break;
+
 			case USBCLIENT_DESC_TYPE_CFG:
+				cfg = imxdevice_common.usb_data->local_conf + localOffset;
+				imxdevice_common.pconf = (((uint32_t)va2pa(cfg)) & ~0xfff) + ((uint32_t)cfg & 0xfff);
 				memcpy(cfg, &it->descriptors[0], sizeof(usbclient_desc_conf_t));
+				localOffset += cfg->len;
 				break;
+
 			case USBCLIENT_DESC_TYPE_INTF:
-				memcpy(intf, &it->descriptors[0], sizeof(usbclient_desc_intf_t));
+				memcpy(imxdevice_common.usb_data->local_conf + localOffset, &it->descriptors[0], it->descriptors[0].len);
+				localOffset += it->descriptors[0].len;
 				break;
+
 			case USBCLIENT_DESC_TYPE_ENDPT:
-				memcpy(endpt, &it->descriptors[0], sizeof(usbclient_desc_ep_t));
-				/* Initialize endpoint */
-
-				/* For now hardcode only one endpoint */
-				imxdevice_common.usb_data->in_endpt.rx_caps.mult = 0;
-				imxdevice_common.usb_data->in_endpt.rx_caps.zlt = 1;
-				imxdevice_common.usb_data->in_endpt.rx_caps.max_pkt_len = endpt->max_pkt_sz;
-				imxdevice_common.usb_data->in_endpt.rx_caps.ios = 0;
-
-				imxdevice_common.usb_data->in_endpt.rx_ctrl.type = (endpt->attr_bmp & 0x03);
-				imxdevice_common.usb_data->in_endpt.rx_ctrl.data_toggle = 1;
-				imxdevice_common.usb_data->in_endpt.rx_ctrl.data_inhibit = 0;
-				imxdevice_common.usb_data->in_endpt.rx_ctrl.stall = 0;
-
-				imxdevice_common.usb_data->in_endpt.tx_caps.mult = 0;
-				imxdevice_common.usb_data->in_endpt.tx_caps.zlt = 1;
-				imxdevice_common.usb_data->in_endpt.tx_caps.max_pkt_len = endpt->max_pkt_sz;
-				imxdevice_common.usb_data->in_endpt.tx_caps.ios = 0;
-
-				imxdevice_common.usb_data->in_endpt.tx_ctrl.type = (endpt->attr_bmp & 0x03);
-				imxdevice_common.usb_data->in_endpt.tx_ctrl.data_toggle = 1;
-				imxdevice_common.usb_data->in_endpt.tx_ctrl.data_inhibit = 0;
-				imxdevice_common.usb_data->in_endpt.tx_ctrl.stall = 0;
+				memcpy(imxdevice_common.usb_data->local_conf + localOffset, &it->descriptors[0], it->descriptors[0].len);
+				localOffset += it->descriptors[0].len;
+				init_endpt((usbclient_desc_ep_t *)&it->descriptors[0]);
 				break;
+
 			case USBCLIENT_DESC_TYPE_HID:
-				memcpy(hid, &it->descriptors[0], 9);
+				memcpy(imxdevice_common.usb_data->local_conf + localOffset, &it->descriptors[0], it->descriptors[0].len);
+				localOffset += it->descriptors[0].len;
 				break;
-			case USBCLIENT_DESC_TYPE_HID_REPORT:
-				/* Copy only data section, because HID report descriptor is sent raw */
-				memcpy(hid_reports, &it->descriptors[0].data, it->descriptors[0].len - 2);
-				break;
-			case USBCLIENT_DESC_TYPE_STR:
-				if (string_desc_count == 0)
-					memcpy(str_0, &it->descriptors[0], sizeof(usbclient_desc_str_zr_t));
-				else if (string_desc_count == 1)
-					memcpy(str_man, &it->descriptors[0], it->descriptors[0].len);
-				else if (string_desc_count == 2)
-					memcpy(str_prod, &it->descriptors[0], it->descriptors[0].len);
 
-				string_desc_count++;
+			case USB_DESCRIPTOR_TYPE_CDC_CS_INTERFACE:
+				memcpy(imxdevice_common.usb_data->local_conf + localOffset, &it->descriptors[0], it->descriptors[0].len);
+				localOffset += it->descriptors[0].len;
 				break;
+
+			case USBCLIENT_DESC_TYPE_HID_REPORT:
+				hid_reports = imxdevice_common.usb_data->local_conf + localOffset;
+				imxdevice_common.phid_reports = (((uint32_t)va2pa(hid_reports)) & ~0xfff) + ((uint32_t)hid_reports & 0xfff);
+				memcpy(hid_reports, &it->descriptors[0].data, it->descriptors[0].len - 2);
+				localOffset += it->descriptors[0].len - 2;
+				break;
+
+			case USBCLIENT_DESC_TYPE_STR:
+				init_strDesc(it, &localOffset, string_desc_count++);
+				break;
+
 			case USBCLIENT_DESC_TYPE_DEV_QUAL:
 			case USBCLIENT_DESC_TYPE_OTH_SPD_CFG:
 			case USBCLIENT_DESC_TYPE_INTF_PWR:
-			default:
 				/* Not implemented yet */
+				break;
+
+			default:
 				break;
 		}
 	}
+
+	return EOK;
 }
 
 
@@ -270,12 +304,17 @@ int dc_setup(setup_packet_t *setup)
 				else if ((setup->val & 0xff) == 1)
 					dtd_exec(0, imxdevice_common.pstr_man, MIN(56, setup->len), USBCLIENT_ENDPT_DIR_IN);
 				else if ((setup->val & 0xff) == 2)
-					dtd_exec(0, imxdevice_common.pstr_prod, MIN(28, setup->len), USBCLIENT_ENDPT_DIR_IN);
+					dtd_exec(0, imxdevice_common.pstr_prod, MIN(30, setup->len), USBCLIENT_ENDPT_DIR_IN);
+				else if ((setup->val & 0xff) == 4) {
+					dtd_exec(0, imxdevice_common.pIN, 0, USBCLIENT_ENDPT_DIR_IN);
+					dtd_exec(0, imxdevice_common.pOUT, 71, USBCLIENT_ENDPT_DIR_OUT);
+					break;
+				}
 			}
 			else if (setup->val >> 8 == USBCLIENT_DESC_TYPE_HID_REPORT) {
 				dtd_exec(0, imxdevice_common.phid_reports, 76, USBCLIENT_ENDPT_DIR_IN);
 			}
-			dtd_exec(0, imxdevice_common.pOUT, 0x40, USBCLIENT_ENDPT_DIR_OUT);
+			dtd_exec(0, imxdevice_common.pOUT, 0x40	, USBCLIENT_ENDPT_DIR_OUT);
 			break;
 
 		case REQ_CLR_FEAT:
@@ -342,6 +381,20 @@ int dc_class_setup(setup_packet_t *setup)
 		case CLASS_REQ_GET_PROTOCOL:
 		case CLASS_REQ_GET_REPORT:
 		case CLASS_REQ_SET_PROTOCOL:
+			break;
+
+		case CLASS_REQ_SET_LINE_CODING:
+			dtd_exec(0, imxdevice_common.pOUT, 64 + setup->len, USBCLIENT_ENDPT_DIR_OUT); /* read data to buffer with URB struct*/
+			imxdevice_common.usb_data->read_buffer.length = setup->len;
+			imxdevice_common.dc->op = DC_OP_RECEIVE; /* mark that data is ready */
+			break;
+
+		case CLASS_REQ_SET_CONTROL_LINE_STATE:
+//			dtd_exec(0, imxdevice_common.pOUT, 64 + setup->len, USBCLIENT_ENDPT_DIR_OUT); /* read data to buffer with URB struct*/
+			imxdevice_common.usb_data->read_buffer.length = setup->len;
+			imxdevice_common.dc->op = DC_OP_RECEIVE; /* mark that data is ready */
+			break;
+
 		default:
 			break;
 	}

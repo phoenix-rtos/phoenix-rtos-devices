@@ -215,10 +215,13 @@ static int init_buffers(void)
 
 int usbclient_init(usbclient_conf_t *conf)
 {
+	int i = 1;
 	int res = 0;
+
 	dc.lock = 0;
 	dc.cond = 0;
 	dc.dev_addr = 0;
+	usb_data.endNb = 0;
 
 	if ((res = init_buffers()) < 0)
 		return res;
@@ -234,7 +237,8 @@ int usbclient_init(usbclient_conf_t *conf)
 		return -ENOENT;
 	}
 
-	init_desc(conf, &usb_data, &dc);
+	if (init_desc(conf, &usb_data, &dc) < 0)
+		return -ENOMEM;
 
 	interrupt(75, dc_intr, NULL, dc.cond, &dc.inth);
 
@@ -267,10 +271,14 @@ int usbclient_init(usbclient_conf_t *conf)
 
 	while (dc.op != DC_OP_EXIT) {
 		if (dc.op == DC_OP_INIT) {
-			if ((res = endpt_init(1, &usb_data.in_endpt)) < 0) /* hardcode endpoint initialization */
-				destroy_buffers();
-
-			return res;
+			while (i <= usb_data.endNb) {
+				if ((res = endpt_init(i, &usb_data.in_endpt[i-1])) != EOK) {
+					destroy_buffers();
+					return res;
+				}
+				i++;
+			}
+			return EOK;
 		}
 	}
 

@@ -165,10 +165,12 @@ static int setClock(int dev, unsigned int state)
 
 int usbclient_init(usbclient_conf_t *conf)
 {
+	int i = 1;
 	int res = 0;
 
 	setClock(pctl_clk_usboh3, clk_state_run);
 
+	usb_data.endNb = 0;
 	usb_data.read_buffer.data = (void *)(OCRAM2_BASE_ADRR + USB_BUFFER_SIZE * counter_OCRAM2++);
 	usb_data.pread_buffer = (uint32_t)usb_data.read_buffer.data;
 	usb_data.write_buffer.data = (void *)(OCRAM2_BASE_ADRR + USB_BUFFER_SIZE * counter_OCRAM2++);
@@ -176,7 +178,8 @@ int usbclient_init(usbclient_conf_t *conf)
 
 	usb_data.local_conf = (void *)(OCRAM2_BASE_ADRR + USB_BUFFER_SIZE * counter_OCRAM2++);
 
-	init_desc(conf, &usb_data, &dc);
+	if (init_desc(conf, &usb_data, &dc) < 0)
+		return -ENOMEM;
 
 	dc.base = (void *)USB_BASE_ADDR;
 	dc.lock = 0;
@@ -222,7 +225,11 @@ int usbclient_init(usbclient_conf_t *conf)
 
 	while (dc.op != DC_OP_EXIT) {
 		if (dc.op == DC_OP_INIT) {
-			res = endpt_init(1, &usb_data.in_endpt); /* hardcode endpoint initialization */
+			while (i <= usb_data.endNb) {
+				if ((res = endpt_init(i, &usb_data.in_endpt[i-1])) != EOK)
+					return res;
+				i++;
+			}
 			return res;
 		}
 	}

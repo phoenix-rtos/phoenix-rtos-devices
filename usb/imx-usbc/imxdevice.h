@@ -15,6 +15,7 @@
 #define _IMXDEVICE_H_
 
 #define USB_BUFFER_SIZE 0x1000
+#define ENDPOINT_NUMBER 15
 
 #include <sys/types.h>
 #include "usbclient.h"
@@ -123,7 +124,9 @@ enum {
 	CLASS_REQ_GET_PROTOCOL,
 	CLASS_REQ_SET_REPORT = 9,
 	CLASS_REQ_SET_IDLE,
-	CLASS_REQ_SET_PROTOCOL
+	CLASS_REQ_SET_PROTOCOL,
+	CLASS_REQ_SET_LINE_CODING = 0x20,
+	CLASS_REQ_SET_CONTROL_LINE_STATE = 0x22
 };
 
 
@@ -174,7 +177,8 @@ typedef struct{
 	addr_t pwrite_buffer;
 
 	void *local_conf;
-	endpt_init_t in_endpt;
+	endpt_init_t in_endpt[ENDPOINT_NUMBER];
+	int endNb;
 } usb_common_data_t;
 
 
@@ -200,7 +204,7 @@ enum {
 };
 
 
-extern void init_desc(usbclient_conf_t *conf, usb_common_data_t *usb_data_in, usb_dc_t *dc_in);
+extern int init_desc(usbclient_conf_t *conf, usb_common_data_t *usb_data_in, usb_dc_t *dc_in);
 
 
 extern int dc_lf_intr(void);
