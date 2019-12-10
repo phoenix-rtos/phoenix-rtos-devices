@@ -128,7 +128,7 @@ int cdc_recv(char *data, unsigned int len)
 
 int cdc_send(const char *data, unsigned int len)
 {
-	return usbclient_send(&cdc_common.config.endpoint_list.endpoints[1], data, len);
+	return usbclient_send(&cdc_common.config.endpoint_list.endpoints[2], data, len);
 }
 
 
@@ -147,8 +147,8 @@ int cdc_init(void)
 		.endpoints = {
 			{ .id = 0, .type = USBCLIENT_ENDPT_TYPE_CONTROL, .direction = 0 },
 			{ .id = 1, .type = USBCLIENT_ENDPT_TYPE_INTR, .direction = USBCLIENT_ENDPT_DIR_IN },
-			{ .id = 2, .type = USBCLIENT_ENDPT_TYPE_BULK, .direction = USBCLIENT_ENDPT_DIR_OUT },
-			{ .id = 3, .type = USBCLIENT_ENDPT_TYPE_BULK, .direction = USBCLIENT_ENDPT_DIR_IN }
+			{ .id = 2, .type = USBCLIENT_ENDPT_TYPE_BULK, .direction = USBCLIENT_ENDPT_DIR_IN },
+			{ .id = 3, .type = USBCLIENT_ENDPT_TYPE_BULK, .direction = USBCLIENT_ENDPT_DIR_OUT }
 		}
 	};
 

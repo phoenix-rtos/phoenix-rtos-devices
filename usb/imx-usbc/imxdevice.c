@@ -390,7 +390,6 @@ int dc_class_setup(setup_packet_t *setup)
 			break;
 
 		case CLASS_REQ_SET_CONTROL_LINE_STATE:
-//			dtd_exec(0, imxdevice_common.pOUT, 64 + setup->len, USBCLIENT_ENDPT_DIR_OUT); /* read data to buffer with URB struct*/
 			imxdevice_common.usb_data->read_buffer.length = setup->len;
 			imxdevice_common.dc->op = DC_OP_RECEIVE; /* mark that data is ready */
 			break;

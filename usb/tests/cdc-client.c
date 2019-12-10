@@ -28,7 +28,7 @@
 
 struct {
 	char buff[BUFF_SIZE];
-} cdc_common;
+} client_common;
 
 
 static void cdc_enabelCache(unsigned char enable)
@@ -48,12 +48,12 @@ static void cdc_fillBuff(void)
 	int i, hd;
 
 	for (i = 0, hd = 64; i < hd; ++i)
-		cdc_common.buff[i] = 'f';
+		client_common.buff[i] = 'f';
 
 	for (i = hd; i < BUFF_SIZE; ++i)
-		cdc_common.buff[i] = 'a';
+		client_common.buff[i] = 'a';
 
-	cdc_common.buff[0] = '\n';
+	client_common.buff[0] = '\n';
 }
 
 
@@ -71,26 +71,26 @@ int main(int argc, char **argv)
 	LOG("initialized.");
 
 	/* SET Line Coding Request */
-	cdc_recv((char *)cdc_common.buff, 0x20);
-	memcpy((void *)&lineCoding, (void *)cdc_common.buff, sizeof(cdc_line_coding_t));
+	cdc_recv((char *)client_common.buff, 0x20);
+	memcpy((void *)&lineCoding, (void *)client_common.buff, sizeof(cdc_line_coding_t));
 	LOG("basic attributes: \nSpeed: %d [bps] \tStop bits: %d \tParity: %d \tData length: %d", lineCoding.line_speed, lineCoding.stop_bits, lineCoding.parity, lineCoding.len);
 
 	/* SET Control Line State */
-	cdc_recv((char *)cdc_common.buff, 0x20);
+	cdc_recv((char *)client_common.buff, 0x20);
 
 	/* SET Line Coding Request - this packet is received only if the ttyACM is opened with additional attributes */
-	cdc_recv((char *)cdc_common.buff, 0x20);
-	memcpy((void *)&lineCoding, (void *)cdc_common.buff, sizeof(cdc_line_coding_t));
+	cdc_recv((char *)client_common.buff, 0x20);
+	memcpy((void *)&lineCoding, (void *)client_common.buff, sizeof(cdc_line_coding_t));
 	LOG("new attributes: \nSpeed: %d [bps] \tStop bits: %d \tParity: %d \tData length: %d", lineCoding.line_speed, lineCoding.stop_bits, lineCoding.parity, lineCoding.len);
 
 	cdc_fillBuff();
 
 	/* Send example data
 	 * CDC Header is ommited. Due to this fact, the packet's protocol is unknown. */
-//	cdc_send((char *)cdc_common.buff, BUFF_SIZE);
-//	cdc_send((char *)cdc_common.buff, BUFF_SIZE);
-//	cdc_send((char *)cdc_common.buff, BUFF_SIZE);
-//	cdc_send((char *)cdc_common.buff, BUFF_SIZE);
+	cdc_send((char *)client_common.buff, BUFF_SIZE);
+	cdc_send((char *)client_common.buff, BUFF_SIZE);
+	cdc_send((char *)client_common.buff, BUFF_SIZE);
+	cdc_send((char *)client_common.buff, BUFF_SIZE);
 
 	LOG("Transaction completed.");
 
