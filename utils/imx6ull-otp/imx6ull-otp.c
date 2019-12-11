@@ -35,8 +35,9 @@ enum { ocotp_ctrl, ocotp_ctrl_set, ocotp_ctrl_clr, ocotp_ctrl_tog, ocotp_timing 
 	ocotp_cfg0 = 0x104, ocotp_cfg1 = 0x108, ocotp_cfg2 = 0x10c, ocopt_cfg3 = 0x110, ocotp_cfg4 = 0x114, ocotp_cfg5 = 0x118,
 	ocotp_cfg6 = 0x11c, ocotp_mem0 = 0x120, ocotp_mem1 = 0x124, ocotp_mem2 = 0x128, ocotp_mem3 = 0x12c, ocotp_mem4 = 0x130,
 	ocotp_ana0 = 0x134, ocotp_ana1 = 0x138, ocotp_ana2 = 0x13c /* fast forward */, ocotp_mac0 = 0x188, ocotp_mac1 = 0x18c,
-	ocotp_mac = 0x190 /* ff */, ocotp_gp3_0 = 0x220, ocotp_gp3_1 = 0x224, ocotp_gp3_2 = 0x228, ocotp_gp3_3 = 0x22c
-	//TODO: rest of otp shadow regs
+	ocotp_mac = 0x190, ocotp_gp1 = 0x198, ocotp_gp2 = 0x19c, ocotp_sw_gp0 = 0x1a0, ocotp_sw_gp1 = 0x1a4, ocotp_sw_gp2 = 0x1a8,
+	ocotp_sw_gp3 = 0x1ac, ocotp_sw_gp4 = 0x1b0, /* ff */ ocotp_gp3_0 = 0x220, ocotp_gp3_1 = 0x224,
+	ocotp_gp3_2 = 0x228, ocotp_gp3_3 = 0x22c //TODO: rest of otp shadow regs
 	};
 
 typedef struct _otp_t {
@@ -363,10 +364,10 @@ int read_sn(int silent)
 		return -1;
 	}
 
-	sn0 = *(otp.base + ocotp_gp3_0);
-	sn1 = *(otp.base + ocotp_gp3_1);
-	sn2 = *(otp.base + ocotp_gp3_2);
-	sn3 = *(otp.base + ocotp_gp3_3);
+	sn0 = *(otp.base + ocotp_sw_gp0);
+	sn1 = *(otp.base + ocotp_sw_gp1);
+	sn2 = *(otp.base + ocotp_sw_gp2);
+	sn3 = *(otp.base + ocotp_sw_gp3);
 
 	if (!sn0 && !sn1 && !sn2 && !sn3)
 		res = 0;
@@ -447,10 +448,10 @@ int write_sn(const char *sn)
 		return -1;
 	}
 
-	ret |= otp_write(0x38, sn0);
-	ret |= otp_write(0x39, sn1);
-	ret |= otp_write(0x3A, sn2);
-	ret |= otp_write(0x3B, sn3);
+	ret |= otp_write(0x28, sn0);
+	ret |= otp_write(0x29, sn1);
+	ret |= otp_write(0x2A, sn2);
+	ret |= otp_write(0x2B, sn3);
 
 	otp_reload();
 
