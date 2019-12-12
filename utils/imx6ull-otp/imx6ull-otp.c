@@ -47,12 +47,30 @@ typedef struct _otp_t {
 otp_t otp = { 0 };
 
 
+/* otp op type */
+#define OTP_OP_WRITE 1
+#define OTP_OP_READ 2
+
+
+/* serial number otp addresses */
+#define OTP_ADDR_SN0	0x28
+#define OTP_ADDR_SN1 	0x29
+#define OTP_ADDR_SN2 	0x2a
+#define OTP_ADDR_SN3 	0x2b
+
+/* MAC otp addresses */
+#define OTP_ADDR_MAC0 	0x22
+#define OTP_ADDR_MAC1 	0x23
+#define OTP_ADDR_MAC2 	0x24
+
+
+/* otp ctrl flags */
 #define OTP_NONE	0x0
 #define OTP_BUSY	0x100
 #define OTP_ERROR	0x200
 #define OTP_RELOAD	0x400
-
 #define OTP_WR_UNLOCK (0x3e77 << 16)
+
 
 struct common_s {
 	int blow_boot;
@@ -100,7 +118,7 @@ int otp_write(unsigned addr, unsigned data)
 {
 	int ret = 0;
 
-	/*check busy */
+	/* check busy */
 	otp_wait(OTP_NONE);
 
 	/* clear error */
@@ -116,7 +134,7 @@ int otp_write(unsigned addr, unsigned data)
 	*(otp.base + ocotp_ctrl_set) = addr | OTP_WR_UNLOCK;
 	*(otp.base + ocotp_data) = data;
 
-	/* check error */
+	/* check and clear error */
 	if (otp_cnc_err()) {
 		printf("Write at 0x%x failed\n", addr);
 		ret = -1;
@@ -137,6 +155,7 @@ int otp_write(unsigned addr, unsigned data)
 
 int otp_reload(void)
 {
+	/* check busy */
 	otp_wait(OTP_NONE);
 
 	/* clear error */
@@ -145,7 +164,7 @@ int otp_reload(void)
 	/* set reload */
 	*(otp.base + ocotp_ctrl_set) = OTP_RELOAD;
 
-	/* check error */
+	/* check and clear error */
 	if (otp_cnc_err()) {
 		printf("Reload error\n");
 		return -1;
@@ -302,9 +321,9 @@ int write_mac(char *mac1_str, char *mac2_str) {
 			sscanf(mac2[i], "%X", &m2[i]);
 		}
 
-		ret |= otp_write(0x22, (unsigned)(m1[5] | m1[4] << 8 | m1[3] << 16 | m1[2] << 24));
-		ret |= otp_write(0x23, (unsigned)(m1[1] | m1[0] << 8 | m2[5] << 16 | m2[4] << 24));
-		ret |= otp_write(0x24, (unsigned)(m2[3] | m2[2] << 8 | m2[1] << 16 | m2[0] << 24));
+		ret |= otp_write(OTP_ADDR_MAC0, (unsigned)(m1[5] | m1[4] << 8 | m1[3] << 16 | m1[2] << 24));
+		ret |= otp_write(OTP_ADDR_MAC1, (unsigned)(m1[1] | m1[0] << 8 | m2[5] << 16 | m2[4] << 24));
+		ret |= otp_write(OTP_ADDR_MAC2, (unsigned)(m2[3] | m2[2] << 8 | m2[1] << 16 | m2[0] << 24));
 
 		otp_reload();
 	}
@@ -448,10 +467,10 @@ int write_sn(const char *sn)
 		return -1;
 	}
 
-	ret |= otp_write(0x28, sn0);
-	ret |= otp_write(0x29, sn1);
-	ret |= otp_write(0x2A, sn2);
-	ret |= otp_write(0x2B, sn3);
+	ret |= otp_write(OTP_ADDR_SN0, sn0);
+	ret |= otp_write(OTP_ADDR_SN1, sn1);
+	ret |= otp_write(OTP_ADDR_SN2, sn2);
+	ret |= otp_write(OTP_ADDR_SN3, sn3);
 
 	otp_reload();
 
@@ -492,17 +511,17 @@ int main(int argc, char **argv)
 			}
 			mac[1] = argv[optind];
 			optind++;
-			common.rw_mac = 1;
+			common.rw_mac = OTP_OP_WRITE;
 			break;
 		case 'M':
-			common.rw_mac = 2;
+			common.rw_mac = OTP_OP_READ;
 			break;
 		case 's':
 			sn = optarg;
-			common.rw_sn = 1;
+			common.rw_sn = OTP_OP_WRITE;
 			break;
 		case 'S':
-			common.rw_sn = 2;
+			common.rw_sn = OTP_OP_READ;
 			break;
 		default:
 			common.display_usage = 1;
@@ -521,10 +540,10 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	if (common.rw_sn == 1)
+	if (common.rw_sn == OTP_OP_WRITE)
 		write_sn(sn);
 
-	if (common.rw_sn == 2)
+	if (common.rw_sn == OTP_OP_READ)
 		read_sn(0);
 
 	if (common.blow_boot)
@@ -533,10 +552,10 @@ int main(int argc, char **argv)
 	if (common.get_uid)
 		get_unique_id();
 
-	if (common.rw_mac == 1)
+	if (common.rw_mac == OTP_OP_WRITE)
 		write_mac(mac[0], mac[1]);
 
-	if (common.rw_mac == 2)
+	if (common.rw_mac == OTP_OP_WRITE)
 		read_mac(0);
 
 	return 0;
