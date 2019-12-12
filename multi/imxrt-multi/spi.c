@@ -81,6 +81,7 @@ static inline void spi_serializeWord(uint8_t *buff, uint32_t word, int8_t start)
 static int spi_irqHandler(unsigned int n, void *arg)
 {
 	int spi = (int)arg;
+
 	*(spi_common[spi].base + spi_ier) &= ~(1 << 0);
 	spi_common[spi].ready = 1;
 
@@ -93,7 +94,7 @@ static void spi_initTransmition(int spi)
 	mutexLock(spi_common[spi].irqLock);
 	spi_common[spi].ready = 0;
 
-	*(spi_common[0].base + spi_ier) |= 1;
+	*(spi_common[spi].base + spi_ier) |= 1;
 
 	while (!spi_common[spi].ready)
 		condWait(spi_common[spi].cond, spi_common[spi].irqLock, 0);
@@ -146,13 +147,15 @@ static int spi_performTranscation(int spi, unsigned char cs, const uint8_t *txBu
 	int size = len;
 	int rxTotalBytes = 0;
 	int txFifoBytes, rxFifoBytes;
-	volatile uint32_t txWordsCnt, rxWordsCnt;
+	uint32_t txWordsCnt, rxWordsCnt;
 
 	if (!spiConfig[spi])
 		return -EINVAL;
 
 	if ((len * 8) > MAX_FRAME_SZ)
 		return -EINVAL;
+
+	spi = spiPos[spi];
 
 	mutexLock(spi_common[spi].mutex);
 
@@ -230,7 +233,7 @@ static int spi_configure(uint32_t spi, uint32_t bdiv, uint32_t prescaler, uint32
 
 	i = spiPos[spi];
 
-	mutexLock(spi_common[spi].mutex);
+	mutexLock(spi_common[i].mutex);
 
 	/* Disable module */
 	*(spi_common[i].base + spi_cr) = 0;
@@ -261,7 +264,7 @@ static int spi_configure(uint32_t spi, uint32_t bdiv, uint32_t prescaler, uint32
 	*(spi_common[i].base + spi_tcr) &= ~(1 << 26); /* reset register */
 	spi_common[i].tcr = *(spi_common[i].base + spi_tcr) | ((mode & 0x3) << 30) | ((cs & 0x3) << 24) | ((endian & 0x1) << 23) | (prescaler << 27);
 
-	mutexUnlock(spi_common[spi].mutex);
+	mutexUnlock(spi_common[i].mutex);
 
 	return EOK;
 }
