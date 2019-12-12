@@ -555,7 +555,7 @@ int main(int argc, char **argv)
 	if (common.rw_mac == OTP_OP_WRITE)
 		write_mac(mac[0], mac[1]);
 
-	if (common.rw_mac == OTP_OP_WRITE)
+	if (common.rw_mac == OTP_OP_READ)
 		read_mac(0);
 
 	return 0;
