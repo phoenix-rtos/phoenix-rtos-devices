@@ -116,10 +116,7 @@ void uart_intthr(void *arg)
 				outb(uart->base + REG_IMR, IMR_DR);
 			}
 		}
-		oid_t oid;
-		oid.port = 2;
-		oid.id = uart->id;
-		eventRegister(&oid, libtty_poll_status(&uart->tty));
+		portEvent(PORT_DESCRIPTOR, uart->id, libtty_poll_status(&uart->tty));
 	}
 }
 
@@ -316,14 +313,14 @@ void poolthr(void *arg)
 			err = EOK;
 			break;
 		case mtGetAttr:
-		/*	POLL
+		/*	POLL */
 			if (msg.i.attr == atEvents) {
 				if (msg.o.size >= sizeof(int))
 					*(int *)msg.o.data = uart_poll_status(uart_get(&msg.object));
 				else
 					err = -EINVAL;
 			} else
-				err = -EINVAL; */
+				err = -EINVAL;
 			break;
 		case mtDevCtl:
 			err = uart_ioctl(uart_get(&msg.object), &msg);

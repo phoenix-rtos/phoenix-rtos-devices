@@ -21,6 +21,8 @@
 #include <sys/threads.h>
 #include <sys/interrupt.h>
 
+#include <poll.h>
+
 #include "ttypc_kbd.h"
 #include "ttypc_vga.h"
 
@@ -194,7 +196,7 @@ static char *_ttypc_kbd_get(ttypc_t *ttypc)
 			break;
 		}
 	}
-	
+
 	/* Key is pressed */
 	else {
 		switch (scan_codes[dt].type) {
@@ -236,14 +238,14 @@ static char *_ttypc_kbd_get(ttypc_t *ttypc)
 		case KB_CTL:
 			ttypc->shiftst |= KB_CTL;
 			break;
-		
+
 		/* Regular ASCII */
 		case KB_ASCII:
 
 			/* Control is pressed */
 			if (ttypc->shiftst & KB_CTL)
 				more = scan_codes[dt].ctl;
-			
+
 			/* Right alt and right alt with shift */
 			else if (ttypc->shiftst & KB_ALTGR) {
 				if (ttypc->shiftst & KB_SHIFT)
@@ -251,7 +253,7 @@ static char *_ttypc_kbd_get(ttypc_t *ttypc)
 				else
 					more = scan_codes[dt].altgr;
 			}
-			
+
 			/* Shift */
 			else if (ttypc->shiftst & KB_SHIFT)
 				more = scan_codes[dt].shift;
@@ -269,11 +271,11 @@ static char *_ttypc_kbd_get(ttypc_t *ttypc)
 
 			ttypc->extended = 0;
 			break;
-		
+
 		/* Key without meaning */
 		case KB_NONE:
 			break;
-			
+
 		/* Function key */
 		case KB_FUNC: {
 			if (ttypc->shiftst & KB_SHIFT)
@@ -282,21 +284,21 @@ static char *_ttypc_kbd_get(ttypc_t *ttypc)
 				more = scan_codes[dt].ctl;
 			else
 				more = scan_codes[dt].unshift;
-			
+
 			ttypc->extended = 0;
 			break;
 		}
-		
+
 		/* Keypad */
 		case KB_KP:
-			
+
 			/* Reboot sequence */
-						
+
 			/*
 			if ((ttypcv->shiftst & KB_ALT) && (ttypcv->shiftst & KB_CTL) && (dt == 83)) {
 				return ttypcv->capchar;
 			}*/
-			
+
 			if (ttypc->shiftst & (KB_SHIFT | KB_CTL) || (ttypc->lockst & KB_NUM) == 0 || ttypc->extended)
 				more = scan_codes[dt].shift;
 			else
@@ -349,8 +351,10 @@ void ttypc_kbd_ctlthr(void *arg)
 			else {
 				len = strlen(s);
 
-				for (i = 0; i < len; i++)
+				for (i = 0; i < len; i++) {
 					libtty_putchar(&ttypc->cv->tty, *(s + i), NULL);
+				}
+				portEvent(3 /* PORT_DESCRIPTOR - FIXME */, 0, POLLIN);
 			}
 		}
 	}

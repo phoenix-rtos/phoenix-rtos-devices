@@ -1,4 +1,4 @@
-/* 
+/*
  * Phoenix-RTOS
  *
  * ttypc VT220 emulator (based on FreeBSD 4.4 pcvt)
@@ -25,8 +25,8 @@
 typedef struct _ttypc_t {
 	handle_t mutex;
 
-	char poolthr_stack[2048] __attribute__ ((aligned(8)));
-	char kbdthr_stack[2048] __attribute__ ((aligned(8)));
+	char poolthr_stack[2][2 * 4096] __attribute__ ((aligned(8)));
+	char kbdthr_stack[2 * 4096] __attribute__ ((aligned(8)));
 
 	ttypc_virt_t virtuals[4];
 	ttypc_virt_t *cv;
@@ -36,7 +36,7 @@ typedef struct _ttypc_t {
 	void *base;
 	void *out_base;
 	void *out_crtc;
-	
+
 	unsigned char extended;
 	unsigned int lockst;
 	unsigned int shiftst;

@@ -399,6 +399,7 @@ static int atasrv_mount(id_t id, unsigned port, id_t *newid, mode_t *mode, const
 	}
 
 	*newid = err;
+	*mode = S_IFDIR;
 
 	if ((err = beginthread(atasrv_partThread, 4, device->partition->stack, 2 * _PAGE_SIZE, device->partition)) < 0) {
 		close(device->partition->portfd);

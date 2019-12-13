@@ -87,18 +87,15 @@ static void ttypc_ioctl(unsigned int port, msg_t *msg)
 {
 	unsigned long request;
 	const void *in_data, *out_data;
-	pid_t pid;
+	pid_t pid = msg->pid;
 	int err;
-	oid_t oid;
 	unsigned int d;
 
-	oid.port = port;
-
-	in_data = ioctl_unpack(msg, &request, &oid.id);
+	request = msg->i.devctl;
+	in_data = msg->i.data; //ioctl_unpack(msg, &request, &oid.id);
 	out_data = NULL;
-	pid = ioctl_getSenderPid(msg);
 
-	d = ttypc_virt_get(&oid);
+	d = ttypc_virt_get(&msg->object);
 
 	if (d >= sizeof(ttypc_common.virtuals) / sizeof(ttypc_virt_t))
 		err = -EINVAL;
@@ -117,7 +114,7 @@ static int _ttypc_init(void *base, unsigned int irq)
 	memset(&ttypc_common, 0, sizeof(ttypc_t));
 	ttypc_common.color = (inb((void *)0x3cc) & 0x01);
 
-	ttypc_common.out_base = mmap(NULL, 0x1000, PROT_READ | PROT_WRITE, 0, OID_PHYSMEM, ttypc_common.color ? 0xb8000 : 0xb0000);
+	ttypc_common.out_base = mmap(NULL, 0x1000, PROT_READ | PROT_WRITE, 0, FD_PHYSMEM, ttypc_common.color ? 0xb8000 : 0xb0000);
 	ttypc_common.out_crtc = ttypc_common.color ? (void *)0x3d4 : (void *)0x3b4;
 
 	/* Initialize virtual terminals */
@@ -185,13 +182,15 @@ static void poolthr(void *arg)
 			err = EOK;
 			break;
 		case mtGetAttr:
-			if (msg.i.attr == atEvents)
+			if (msg.i.attr == atEvents) {
 				*(int *)msg.o.data = ttypc_poll_status(ttypc_virt_get(&msg.object));
+			}
 			else
 				err = -EINVAL;
 			break;
 		case mtDevCtl:
 			ttypc_ioctl(port, &msg);
+			err = msg.o.io;
 			break;
 		}
 
@@ -206,22 +205,23 @@ int main(void)
 	unsigned int n = 1;
 	uint32_t port;
 
-	if (fork())
-		exit(EXIT_SUCCESS);
-	setsid();
-
-	debug("pc-tty: Initializing VGA VT220 terminal emulator %s\n");
-
-	_ttypc_init(base, n);
+	debug("pc-tty: Initializing VGA VT220 terminal emulator\n");
 
 	/* Register port in the namespace */
-	if (create_dev(PORT_DESCRIPTOR, 0, "/dev/tty0", S_IFCHR) < 0) {
+	if (create_dev(PORT_DESCRIPTOR, 0, "/dev/ttyS0", S_IFCHR) < 0) {
 		debug("pc-tty: Could not create device file\n");
 		return -1;
 	}
 
+	if (fork())
+		exit(EXIT_SUCCESS);
+	setsid();
+
+	_ttypc_init(base, n);
+
 	/* Run threads */
-	beginthread(poolthr, 1, &ttypc_common.poolthr_stack, sizeof(ttypc_common.poolthr_stack), (void *)port);
+	beginthread(poolthr, 3, &ttypc_common.poolthr_stack[0], sizeof(ttypc_common.poolthr_stack[0]), (void *)port);
+	beginthread(poolthr, 3, &ttypc_common.poolthr_stack[1], sizeof(ttypc_common.poolthr_stack[1]), (void *)port);
 	poolthr((void *)port);
 
 	return 0;
