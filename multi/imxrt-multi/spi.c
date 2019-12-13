@@ -340,8 +340,8 @@ static int spi_getIsel(int mux, int *isel, int *val)
 		case pctl_mux_gpio_ad_b1_12 :  *isel = pctl_isel_lpspi3_pcs0; *val = 1; break;
 		case pctl_mux_gpio_ad_b0_00 :  *isel = pctl_isel_lpspi3_sck; *val = 0; break;
 		case pctl_mux_gpio_ad_b1_15 :  *isel = pctl_isel_lpspi3_sck; *val = 1; break;
-		case pctl_mux_gpio_ad_b1_13 :  *isel = pctl_isel_lpspi3_sdi; *val = 0; break;
-		case pctl_mux_gpio_ad_b0_02 :  *isel = pctl_isel_lpspi3_sdi; *val = 1; break;
+		case pctl_mux_gpio_ad_b1_13 :  *isel = pctl_isel_lpspi3_sdi; *val = 1; break;
+		case pctl_mux_gpio_ad_b0_02 :  *isel = pctl_isel_lpspi3_sdi; *val = 0; break;
 		case pctl_mux_gpio_ad_b1_14 :  *isel = pctl_isel_lpspi3_sdo; *val = 0; break;
 		case pctl_mux_gpio_ad_b0_01 :  *isel = pctl_isel_lpspi3_sdo; *val = 1; break;
 		case pctl_mux_gpio_b0_00 :     *isel = pctl_isel_lpspi4_pcs0; *val = 0; break;
