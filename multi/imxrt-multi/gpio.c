@@ -4,7 +4,7 @@
  * i.MX RT GPIO driver
  *
  * Copyright 2019 Phoenix Systems
- * Author: Aleksander Kaminski
+ * Author: Aleksander Kaminski, Hubert Buczynski
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -29,6 +29,7 @@
 #include "gpio.h"
 
 
+
 enum { gpio_dr = 0, gpio_gdir, gpio_psr, gpio_icr1, gpio_icr2, gpio_imr,
 	gpio_isr, gpio_edge_sel, gpio_dr_set, gpio_dr_clear, gpio_dr_toggle };
 
@@ -39,12 +40,17 @@ struct {
 } gpio_common;
 
 
- int gpio_handleWrite(int port, multi_i_t *imsg)
+static void gpio_handleDevCtl(msg_t *msg, int port)
 {
 	unsigned int set, clr, t;
 
+	multi_i_t *imsg = (multi_i_t *)msg->i.raw;
+	multi_o_t *omsg = (multi_o_t *)msg->o.raw;
+
+	omsg->err = EOK;
+
 	switch (imsg->gpio.type) {
-		case gpio_port:
+		case gpio_set_port :
 			/* DR_SET & DR_CLEAR registers are not functional */
 			set = imsg->gpio.port.val & imsg->gpio.port.mask;
 			clr = ~imsg->gpio.port.val & imsg->gpio.port.mask;
@@ -55,9 +61,13 @@ struct {
 			mutexUnlock(gpio_common.lock);
 			break;
 
-		case gpio_dir:
+		case gpio_get_port :
+			omsg->val = *(gpio_common.base[port] + gpio_dr);
+			break;
+
+		case gpio_set_dir :
 			set = imsg->gpio.dir.val & imsg->gpio.dir.mask;
-			clr = ~imsg->gpio.dir.val & imsg->gpio.dir.mask;
+			clr = ~imsg->gpio.port.val & imsg->gpio.port.mask;
 
 			mutexLock(gpio_common.lock);
 			t = *(gpio_common.base[port] + gpio_gdir) & ~clr;
@@ -65,66 +75,40 @@ struct {
 			mutexUnlock(gpio_common.lock);
 			break;
 
-		default:
-			return -EINVAL;
-	}
-
-	return sizeof(*imsg);
-}
-
-
- int gpio_handleRead(int port, multi_i_t *imsg, multi_o_t *omsg)
-{
-	omsg->err = EOK;
-
-	switch (imsg->gpio.type) {
-		case gpio_port:
-			omsg->val = *(gpio_common.base[port] + gpio_dr);
-			break;
-
-		case gpio_dir:
+		case gpio_get_dir :
 			omsg->val = *(gpio_common.base[port] + gpio_gdir);
 			break;
 
 		default:
-			omsg->err = -EINVAL;
-			return -EINVAL;
+			omsg->err = -ENOSYS;
 			break;
 	}
-
-	return sizeof(*omsg);
 }
 
 
 int gpio_handleMsg(msg_t *msg, int dev)
 {
-	multi_i_t *imsg = (void *)msg->i.data;
-	multi_o_t *omsg = (void *)msg->o.data;
-
-	if (imsg == NULL || msg->i.size < sizeof(multi_i_t))
-		return -EINVAL;
-
 	dev -= id_gpio1;
 
 	if (dev >= GPIO_PORTS)
 		return -EINVAL;
 
 	switch (msg->type) {
+		case mtGetAttr:
 		case mtOpen:
 		case mtClose:
+		case mtSetAttr :
+		case mtWrite:
+		case mtRead:
 			msg->o.io.err = EOK;
 			break;
 
-		case mtWrite:
-			msg->o.io.err = gpio_handleWrite(dev, imsg);
+		case mtDevCtl:
+			gpio_handleDevCtl(msg, dev);
 			break;
 
-		case mtRead:
-			msg->o.io.err = gpio_handleRead(dev, imsg, omsg);
-			break;
-
-		case mtGetAttr:
-			msg->o.attr.val = -EINVAL;
+		default:
+			msg->o.io.err = -ENOSYS;
 			break;
 	}
 
