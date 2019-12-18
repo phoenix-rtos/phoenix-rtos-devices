@@ -49,25 +49,8 @@ static void multi_dispatchMsg(msg_t *msg)
 	id_t id;
 	multi_i_t *imsg;
 
-	switch (msg->type) {
-		case mtRead:
-		case mtWrite:
-			id = msg->i.io.oid.id;
-			break;
-
-		case mtGetAttr:
-		case mtSetAttr:
-			id = msg->i.attr.oid.id;
-			break;
-
-		case mtDevCtl:
-			imsg = (multi_i_t *)msg->i.raw;
-			id = imsg->type;
-			break;
-
-		default:
-			return;
-	}
+	imsg = (multi_i_t *)msg->i.raw;
+	id = imsg->id;
 
 	switch (id) {
 		case id_gpio1:

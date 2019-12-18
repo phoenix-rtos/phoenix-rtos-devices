@@ -53,7 +53,7 @@ static int test_spiConfig(oid_t dir)
 	msg.o.size = 0;
 
 	idevctl = (multi_i_t *)msg.i.raw;
-	idevctl->type = dir.id;
+	idevctl->id = dir.id;
 	idevctl->spi.type = spi_config;
 	idevctl->spi.config.cs = 0;
 	idevctl->spi.config.endian = spi_msb;
@@ -86,7 +86,7 @@ static int test_spiTransmit(oid_t dir, uint8_t *tx, uint8_t *rx, int sz)
 	msg.o.size = 0;
 
 	idevctl = (multi_i_t *)msg.i.raw;
-	idevctl->type = dir.id;
+	idevctl->id = dir.id;
 	idevctl->spi.type = spi_transaction;
 	idevctl->spi.transaction.frameSize = sz;
 	idevctl->spi.transaction.cs = 0;
