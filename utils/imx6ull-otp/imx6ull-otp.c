@@ -79,6 +79,7 @@ struct common_s {
 	int blow_boot;
 	int get_uid;
 	int rw_mac;
+	int r_mac_no;
 	int rw_sn;
 	int display_usage;
 } common;
@@ -235,7 +236,7 @@ int verify_mac(char *mac[])
 }
 
 
-int read_mac(int silent)
+int read_mac(int silent, int mac_no)
 {
 	unsigned int mac0, mac1, mac, res = 1, plc0, plc1;
 	unsigned m1[6] = { 0 };
@@ -275,12 +276,15 @@ int read_mac(int silent)
 
 
 	if (!silent) {
-		printf("MAC1: %02X:%02X:%02X:%02X:%02X:%02X\n",
-			m1[0], m1[1], m1[2], m1[3], m1[4], m1[5]);
-		printf("MAC2: %02X:%02X:%02X:%02X:%02X:%02X\n",
-			m2[0], m2[1], m2[2], m2[3], m2[4], m2[5]);
-		printf("PLC: %02X:%02X:%02X:%02X:%02X:%02X\n",
-			m3[0], m3[1], m3[2], m3[3], m3[4], m3[5]);
+		if (!mac_no || mac_no == 1)
+			printf("%s%02X:%02X:%02X:%02X:%02X:%02X\n", !mac_no ? "MAC1: " : "",
+				m1[0], m1[1], m1[2], m1[3], m1[4], m1[5]);
+		if (!mac_no || mac_no == 2)
+			printf("%s%02X:%02X:%02X:%02X:%02X:%02X\n", !mac_no ? "MAC2: " : "",
+				m2[0], m2[1], m2[2], m2[3], m2[4], m2[5]);
+		if (!mac_no || mac_no == 3)
+			printf("%s%02X:%02X:%02X:%02X:%02X:%02X\n", !mac_no ? "PLC: " : "",
+				m3[0], m3[1], m3[2], m3[3], m3[4], m3[5]);
 	}
 
 	return res;
@@ -297,7 +301,7 @@ int write_mac(char *mac1_str, char *mac2_str, char *mac3_str) {
 	unsigned m2[6] = { 0 };
 	unsigned m3[6] = { 0 };
 
-	if (read_mac(1)) {
+	if (read_mac(1, 0)) {
 		printf("MACs are already written\n");
 		return -1;
 	}
@@ -447,10 +451,10 @@ int read_sn(int silent)
 	sn[15] = (char)((sn3) & 0xFF);
 
 	if (strlen(sn) == 0)
-		sprintf(sn, "(null)");
+		sprintf(sn, "DEV000001");
 
 	if (!silent)
-		printf("S/N: %s\n", sn);
+		printf("%s\n", sn);
 
 	return res;
 }
@@ -559,6 +563,16 @@ int main(int argc, char **argv)
 			common.rw_mac = OTP_OP_WRITE;
 			break;
 		case 'M':
+			if (argv[optind] == NULL || argv[optind][0] == '-') {
+				common.r_mac_no = 0;
+			}
+			else if (sscanf(argv[optind], "%d", &common.r_mac_no) == 1) {
+				if (common.r_mac_no <= 0 || common.r_mac_no > 3)
+					common.display_usage = 1;
+			}
+			else {
+				common.display_usage = 1;
+			}
 			common.rw_mac = OTP_OP_READ;
 			break;
 		case 's':
@@ -579,7 +593,7 @@ int main(int argc, char **argv)
 		printf("\t-b\t\tBlow boot fuses\n\r");
 		printf("\t-u\t\tGet unique ID\n\r");
 		printf("\t-m MAC1 MAC2 PLC_MAC\twrite MAC addresses (MAC format XX:XX:XX:XX:XX:XX)\n\r");
-		printf("\t-M\t\tprint MAC addresses (MAC format XX:XX:XX:XX:XX:XX)\n\r");
+		printf("\t-M [1 - 3]\t\tprint MAC address [1 = MAC1, 2 = MAC2, 3 = PLC] or all [no arg]\n\r");
 		printf("\t-s S/N\t\twrite serial number\n\r");
 		printf("\t-S\t\tprint serial number\n\r");
 		return 1;
@@ -601,7 +615,7 @@ int main(int argc, char **argv)
 		write_mac(mac[0], mac[1], mac[2]);
 
 	if (common.rw_mac == OTP_OP_READ)
-		read_mac(0);
+		read_mac(0, common.r_mac_no);
 
 	return 0;
 }
