@@ -158,7 +158,7 @@ typedef struct _usb_dc_t {
 	handle_t cond;
 	handle_t lock;
 	handle_t inth;
-	uint8_t op;
+	volatile uint8_t op;
 	setup_packet_t setup;
 } usb_dc_t;
 

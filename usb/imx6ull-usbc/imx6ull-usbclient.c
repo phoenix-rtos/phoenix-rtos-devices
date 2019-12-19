@@ -226,6 +226,9 @@ int usbclient_init(usbclient_conf_t *conf)
 	if ((res = init_buffers()) < 0)
 		return res;
 
+	if (init_desc(conf, &usb_data, &dc) < 0)
+		return -ENOMEM;
+
 	if (mutexCreate(&dc.lock) != EOK) {
 		destroy_buffers();
 		return -ENOENT;
@@ -237,17 +240,13 @@ int usbclient_init(usbclient_conf_t *conf)
 		return -ENOENT;
 	}
 
-	if (init_desc(conf, &usb_data, &dc) < 0)
-		return -ENOMEM;
-
-	interrupt(75, dc_intr, NULL, dc.cond, &dc.inth);
-
 	*(dc.base + endptflush) = 0xffffffff;
 	/* Run/Stop bit */
 	*(dc.base + usbcmd) &= ~1;
 	/* Controller resets its internal pipelines, timers etc. */
 	*(dc.base + usbcmd) |= 1 << 1;
 	dc.status = DC_POWERED;
+
 	/* Run/Stop register is set to 0 when the reset process is complete. */
 	while (*(dc.base + usbcmd) & (1 << 1));
 
@@ -255,6 +254,12 @@ int usbclient_init(usbclient_conf_t *conf)
 	*(dc.base + usbmode) |= 2;
 	/* trip wire mode (setup lockout mode disabled) */
 	*(dc.base + usbmode) |= 1 << 3;
+
+	*(dc.base + usbintr) |= 0x57;
+
+	dc.status = DC_ATTACHED;
+	*(dc.base + usbcmd) |= 1;
+
 	/* map queue heads list and init control endpoint */
 	if ((res = ctrlqh_init()) != EOK) {
 		destroy_buffers();
@@ -264,10 +269,7 @@ int usbclient_init(usbclient_conf_t *conf)
 		return res;
 	}
 
-	*(dc.base + usbintr) |= 0x57;
-
-	dc.status = DC_ATTACHED;
-	*(dc.base + usbcmd) |= 1;
+	interrupt(75, dc_intr, NULL, dc.cond, &dc.inth);
 
 	while (dc.op != DC_OP_EXIT) {
 		if (dc.op == DC_OP_INIT) {
