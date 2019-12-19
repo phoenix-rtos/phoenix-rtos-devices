@@ -590,12 +590,12 @@ int main(int argc, char **argv)
 
 	if (common.display_usage || (!common.blow_boot && !common.get_uid && !common.rw_mac && !common.rw_sn)) {
 		printf("Usage: imx6ull-otp [-b] [-u] [-m MAC1 MAC2]\n\r");
-		printf("\t-b\t\tBlow boot fuses\n\r");
-		printf("\t-u\t\tGet unique ID\n\r");
+		printf("\t-b\t\t\tBlow boot fuses\n\r");
+		printf("\t-u\t\t\tGet unique ID\n\r");
 		printf("\t-m MAC1 MAC2 PLC_MAC\twrite MAC addresses (MAC format XX:XX:XX:XX:XX:XX)\n\r");
 		printf("\t-M [1 - 3]\t\tprint MAC address [1 = MAC1, 2 = MAC2, 3 = PLC] or all [no arg]\n\r");
-		printf("\t-s S/N\t\twrite serial number\n\r");
-		printf("\t-S\t\tprint serial number\n\r");
+		printf("\t-s S/N\t\t\twrite serial number\n\r");
+		printf("\t-S\t\t\tprint serial number\n\r");
 		return 1;
 	}
 
