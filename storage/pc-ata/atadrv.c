@@ -24,6 +24,7 @@
 #include <sys/platform.h>
 
 #include <arch/ia32/io.h>
+#include <phoenix/arch/ia32.h>
 
 #include "atadrv.h"
 #include "atasrv_priv.h"
@@ -477,22 +478,30 @@ int ata_generic_init(ata_opt_t *opt)
 	ata_opt_t *aopt = (opt ? opt : &ata_defaults);
 	unsigned int i = 0;
 	int devs_found = 0;
-	platformctl_t pctl;
+	platformctl_t pctl = { 0 };
 
 	pctl.action = pctl_get;
 	pctl.type = pctl_pci;
 
 	buses_cnt = 0;
 	/* iterate through pci to find ata-bus devices */
-	for (i = 0; ata_pci_tbl[i].cl != 0; i++) {
+	for (i = 0; ata_pci_tbl[i].class_code != 0; i++) {
 		pctl.pci.id = ata_pci_tbl[i];
-		if (platformctl(&pctl) != EOK)
-			break;
+		if (platformctl(&pctl) != EOK) {
+			pctl.pci.dev.bus = 0;
+			pctl.pci.dev.device = 0;
+			pctl.pci.dev.function = 0;
+			continue;
+		}
+
 		pci_dev[devs_found] = pctl.pci.dev;
 
-		if (!ata_init_one(&pci_dev[devs_found], aopt)) {
+		if (!ata_init_one(&pci_dev[devs_found], aopt))
 			devs_found++;
-		}
+
+		pctl.pci.dev.bus = 0;
+		pctl.pci.dev.device = 0;
+		pctl.pci.dev.function = 0;
 	}
 
 	return devs_found;
