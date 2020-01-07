@@ -18,13 +18,13 @@
 
 #define WINDBOND_W25Q32JV_IQ 0x4016
 #define ISSI_DEV_IS25WP064A 0x7017
-#define MICRON_MT25QL512ABB 0xffff
+#define MICRON_MT25QL512ABB 0xba20
 
 #define GET_MANUFACTURE_ID(flashID) (flashID & 0xff)
 #define GET_DEVICE_ID(flashID) (((flashID >> 16) & 0xff) | (flashID & (0xff << 8)))
 
 
-enum { flash_windbond = 0xef, flash_issi = 0x9d, flash_micron = 0x20 };
+enum {	flash_windbond = 0xef, flash_issi = 0x9d, flash_micron = 0x20 };
 
 
 static int flash_getWindbondConfig(flash_context_t *context)
@@ -73,7 +73,13 @@ static int flash_getMicronConfig(flash_context_t *context)
 {
 	switch (GET_DEVICE_ID(context->flashID)) {
 		case MICRON_MT25QL512ABB :
-			/* TO DO */
+			context->properties.size = 0x400000;
+			context->properties.page_size = 0x100;
+			context->properties.sector_size = 0x1000;
+			context->buff = malloc(context->properties.sector_size);
+
+			if (context->buff == NULL)
+				return -ENOMEM;
 			break;
 
 		default :

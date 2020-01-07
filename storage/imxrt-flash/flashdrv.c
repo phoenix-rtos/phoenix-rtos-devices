@@ -47,6 +47,46 @@ static int flash_defineFlexSPI(flash_context_t *context)
 }
 
 
+static void flash_setLutTable(flash_context_t *context)
+{
+	/* QUAD Fast Read */
+	context->config.memConfig.lookupTable[0] = 0xa1804eb;
+	context->config.memConfig.lookupTable[1] = 0x26043206;
+	context->config.memConfig.lookupTable[2] = 0;
+	context->config.memConfig.lookupTable[3] = 0;
+
+	/* Read Status Register */
+	context->config.memConfig.lookupTable[4] = 0x24040405;
+	context->config.memConfig.lookupTable[5] = 0;
+	context->config.memConfig.lookupTable[6] = 0;
+	context->config.memConfig.lookupTable[7] = 0;
+
+	/* Sector Erase */
+	context->config.memConfig.lookupTable[20] = 0x8180420;
+	context->config.memConfig.lookupTable[21] = 0;
+	context->config.memConfig.lookupTable[22] = 0;
+	context->config.memConfig.lookupTable[23] = 0;
+
+	/* Block Erase */
+	context->config.memConfig.lookupTable[32] = 0x81804d8;
+	context->config.memConfig.lookupTable[33] = 0;
+	context->config.memConfig.lookupTable[34] = 0;
+	context->config.memConfig.lookupTable[35] = 0;
+
+	/* Page Program */
+	context->config.memConfig.lookupTable[36] = 0x8180402;
+	context->config.memConfig.lookupTable[37] = 0x2004;
+	context->config.memConfig.lookupTable[38] = 0;
+	context->config.memConfig.lookupTable[39] = 0;
+
+	/* Chip Erase */
+	context->config.memConfig.lookupTable[44] = 0x460;
+	context->config.memConfig.lookupTable[45] = 0;
+	context->config.memConfig.lookupTable[46] = 0;
+	context->config.memConfig.lookupTable[47] = 0;
+}
+
+
 static int flash_isValidAddress(flash_context_t *context, uint32_t addr, size_t size)
 {
 	if ((addr + size) <= context->properties.size)
@@ -146,6 +186,9 @@ int flash_init(flash_context_t *context)
 
 	if (flexspi_norFlashInit(context->instance, &context->config) != 0)
 		return -ENXIO;
+
+	/* Basic LUT table uses by ROM API. */
+	flash_setLutTable(context);
 
 	if (flexspi_getVendorID(context->instance, &context->flashID) != 0)
 		return -ENXIO;
