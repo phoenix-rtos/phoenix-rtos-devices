@@ -32,15 +32,15 @@ static dma_buf_t *dma_allocBuffer(void)
 	char *p;
 	dma_buf_t *buf;
 
-	buf = mmap(NULL, SIZE_PAGE, PROT_WRITE | PROT_READ, MAP_ANONYMOUS | MAP_UNCACHED, OID_NULL, 0);
+	buf = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_ANONYMOUS | MAP_UNCACHED, OID_NULL, 0);
 
 	if (buf == MAP_FAILED)
 		return NULL;
 
 	buf->next = NULL;
-	buf->freesz = SIZE_PAGE - 64;
+	buf->freesz = _PAGE_SIZE - 64;
 
-	for (p = buf->start; p < (char *)buf + SIZE_PAGE; p += 64)
+	for (p = buf->start; p < (char *)buf + _PAGE_SIZE; p += 64)
 		*(void **)p = p + 64;
 
 	*(void **)(p - 64) = NULL;
@@ -72,7 +72,7 @@ static void *dma_alloc64From(dma_buf_t *buf)
 
 void dma_free64(void *ptr)
 {
-	dma_buf_t *buf = (void *)((uintptr_t)ptr & ~(SIZE_PAGE - 1));
+	dma_buf_t *buf = (void *)((uintptr_t)ptr & ~(_PAGE_SIZE - 1));
 	*(void **)ptr = buf->free;
 	buf->free = ptr;
 	buf->freesz += 64;

@@ -107,8 +107,8 @@ static int endpt_init(int endpt, endpt_init_t *endpt_init)
 {
 	uint32_t setup = 0;
 	int res;
-	int qh_rx = endpt * 2 + USBCLIENT_ENDPT_DIR_OUT;
-	int qh_tx = endpt * 2 + USBCLIENT_ENDPT_DIR_IN;
+	int qh_rx = endpt * 2 + USB_ENDPT_DIR_OUT;
+	int qh_tx = endpt * 2 + USB_ENDPT_DIR_IN;
 
 	if (endpt == 0)
 		return -EINVAL;
@@ -163,7 +163,7 @@ static int setClock(int dev, unsigned int state)
 }
 
 
-int usbclient_init(usbclient_conf_t *conf)
+int usbclient_init(usb_conf_t *conf)
 {
 	int i = 1;
 	int res = 0;
