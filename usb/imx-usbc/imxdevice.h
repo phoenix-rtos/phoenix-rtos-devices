@@ -18,6 +18,7 @@
 #define ENDPOINT_NUMBER 15
 
 #include <sys/types.h>
+
 #include "usbclient.h"
 
 /* device controller structures */
@@ -101,55 +102,6 @@ typedef struct _endpt_init_t {
 } endpt_init_t;
 
 
-/* reqeuest codes */
-enum {
-	REQ_GET_STS = 0,
-	REQ_CLR_FEAT,
-	REQ_SET_FEAT = 3,
-	REQ_SET_ADDR = 5,
-	REQ_GET_DESC,
-	REQ_SET_DESC,
-	REQ_GET_CONFIG,
-	REQ_SET_CONFIG,
-	REQ_GET_INTF,
-	REQ_SET_INTF,
-	REQ_SYNCH_FRAME
-};
-
-
-/* class reqeuest codes */
-enum {
-	CLASS_REQ_GET_REPORT = 1,
-	CLASS_REQ_GET_IDLE,
-	CLASS_REQ_GET_PROTOCOL,
-	CLASS_REQ_SET_REPORT = 9,
-	CLASS_REQ_SET_IDLE,
-	CLASS_REQ_SET_PROTOCOL,
-	CLASS_REQ_SET_LINE_CODING = 0x20,
-	CLASS_REQ_SET_CONTROL_LINE_STATE = 0x22
-};
-
-
-enum {
-	REQ_TYPE_STANDARD,
-	REQ_TYPE_CLASS,
-	REQ_TYPE_VENDOR
-};
-
-
-#define EXTRACT_REQ_TYPE(req_type) (((req_type) >> 5) & 0x3)
-
-
-/* setup packet structure */
-typedef struct _setup_packet_t {
-	uint8_t	req_type;		/* reqest type */
-	uint8_t	req_code;		/* request code */
-	uint16_t val;			/* value */
-	uint16_t idx;			/* index */
-	uint16_t len;			/* length */
-} __attribute__((packed)) setup_packet_t;
-
-
 typedef struct _usb_dc_t {
 	volatile uint32_t *base;
 	dqh_t *endptqh;
@@ -159,7 +111,7 @@ typedef struct _usb_dc_t {
 	handle_t lock;
 	handle_t inth;
 	volatile uint8_t op;
-	setup_packet_t setup;
+	usb_setup_packet_t setup;
 } usb_dc_t;
 
 
@@ -204,7 +156,7 @@ enum {
 };
 
 
-extern int init_desc(usbclient_conf_t *conf, usb_common_data_t *usb_data_in, usb_dc_t *dc_in);
+extern int init_desc(usb_conf_t *conf, usb_common_data_t *usb_data_in, usb_dc_t *dc_in);
 
 
 extern int dc_lf_intr(void);
@@ -213,10 +165,10 @@ extern int dc_lf_intr(void);
 extern int dc_hf_intr(void);
 
 
-extern int dc_class_setup(setup_packet_t *setup);
+extern int dc_class_setup(usb_setup_packet_t *setup);
 
 
-extern int dc_setup(setup_packet_t *setup);
+extern int dc_setup(usb_setup_packet_t *setup);
 
 
 #endif /* _IMXDEVICE_H_ */
