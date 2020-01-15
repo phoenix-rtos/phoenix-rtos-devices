@@ -29,7 +29,7 @@
 /* UART */
 
 #ifndef UART1
-#define UART1 1
+#define UART1 0
 #endif
 
 #ifndef UART2
@@ -67,7 +67,7 @@
 /* SPI */
 
 #ifndef SPI1
-#define SPI1 1
+#define SPI1 0
 #endif
 
 #ifndef SPI2
