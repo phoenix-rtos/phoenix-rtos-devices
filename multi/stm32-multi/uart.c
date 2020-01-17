@@ -63,18 +63,82 @@ static const int uartConfig[] = { UART1, UART2, UART3, UART4, UART5 };
 
 static const int uartPos[] = { UART1_POS, UART2_POS, UART3_POS, UART4_POS, UART5_POS };
 
+#define TARGET_STM32L4
+
+#ifdef TARGET_STM32L4
+
+#define WORDLEN_BIT 28
+
+enum { cr1 = 0, cr2, cr3, brr, gtpr, rtor, rqr, isr, icr, rdr, tdr };
+
+
+static inline uint8_t uart_getData(int uart)
+{
+	return *(uart_common[uart].base + rdr);
+}
+
+
+static inline void uart_putData(int uart, uint8_t data)
+{
+	*(uart_common[uart].base + tdr) = data;
+}
+
+
+static inline int uart_isTxIrq(int uart)
+{
+	return !!(*(uart_common[uart].base + isr) & (1 << 7));
+}
+
+
+static inline int uart_isRxIrq(int uart)
+{
+	return !!(*(uart_common[uart].base + isr) & ((1 << 5) | (1 << 3)));
+}
+
+#endif
+
+
+#ifdef TARGET_STM32L1
+
+#define WORDLEN_BIT 12
 
 enum { sr = 0, dr, brr, cr1, cr2, cr3, gtpr };
+
+
+static inline uint8_t uart_getData(int uart)
+{
+	return *(uart_common[uart].base + dr);
+}
+
+
+static inline void uart_putData(int uart, uint8_t data)
+{
+	*(uart_common[uart].base + dr) = data;
+}
+
+
+static inline int uart_isTxIrq(int uart)
+{
+	return !!(*(uart_common[uart].base + sr) & (1 << 7));
+}
+
+
+static inline int uart_isRxIrq(int uart)
+{
+	return !!(*(uart_common[uart].base + sr) & ((1 << 5) | (1 << 3)));
+}
+
+#endif
 
 
 static int uart_txirq(unsigned int n, void *arg)
 {
 	int uart = (int)arg, release = -1;
 
-	if ((*(uart_common[uart].base + sr) & (1 << 7))) {
+	if (uart_isTxIrq(uart)) {
 		/* Txd buffer empty */
 		if (uart_common[uart].txbeg != uart_common[uart].txend) {
-			*(uart_common[uart].base + dr) = *(uart_common[uart].txbeg++);
+			uart_putData(uart, *(uart_common[uart].txbeg++));
 		}
 		else {
 			*(uart_common[uart].base + cr1) &= ~(1 << 7);
@@ -92,9 +156,9 @@ static int uart_rxirq(unsigned int n, void *arg)
 {
 	int uart = (int)arg, release = -1;
 
-	if (*(uart_common[uart].base + sr) & ((1 << 5) | (1 << 3))) {
+	if (uart_isRxIrq(uart)) {
 		/* Rxd buffer not empty */
-		uart_common[uart].rxdfifo[uart_common[uart].rxdw++] = *(uart_common[uart].base + dr);
+		uart_common[uart].rxdfifo[uart_common[uart].rxdw++] = uart_getData(uart);
 		uart_common[uart].rxdw %= sizeof(uart_common[uart].rxdfifo);
 
 		if (uart_common[uart].rxdr == uart_common[uart].rxdw)
@@ -137,8 +201,7 @@ int uart_configure(int uart, char bits, char parity, unsigned int baud, char ena
 	mutexLock(uart_common[pos].rxlock);
 	mutexLock(uart_common[pos].lock);
 
-	*(uart_common[pos].base + cr1) &= ~(1 << 13);
-	*(uart_common[pos].base + cr1) &= ~0x2c;
+	*(uart_common[pos].base + cr1) = 0;
 	dataBarier();
 
 	uart_common[pos].txbeg = NULL;
@@ -151,9 +214,9 @@ int uart_configure(int uart, char bits, char parity, unsigned int baud, char ena
 	uart_common[pos].rxdw = 0;
 
 	if (bits == 8 && parity != uart_parnone)
-		*(uart_common[pos].base + cr1) |= 1 << 12;
+		*(uart_common[pos].base + cr1) |= 1 << WORDLEN_BIT;
 	else if ((bits == 7 && parity != uart_parnone) || (bits == 8 && parity == uart_parnone))
-		*(uart_common[pos].base + cr1) &= ~(1 << 12);
+		*(uart_common[pos].base + cr1) &= ~(1 << WORDLEN_BIT);
 	else
 		err = -EINVAL;
 
@@ -171,15 +234,29 @@ int uart_configure(int uart, char bits, char parity, unsigned int baud, char ena
 		else
 			*(uart_common[pos].base + cr1) &= ~(1 << 9);
 
+#ifdef TARGET_STM32L1
 		*(uart_common[pos].base + sr) = 0;
 		(void)*(uart_common[pos].base + dr);
+#endif
+
+#ifdef TARGET_STM32L4
+		*(uart_common[pos].base + icr) &= ~0;
+		(void)*(uart_common[pos].base + rdr);
+#endif
 
 		dataBarier();
 		if (enable) {
+#ifdef TARGET_STM32L1
 			*(uart_common[pos].base + cr1) |= 0x2c;
 			dataBarier();
 			*(uart_common[pos].base + cr1) |= 1 << 13;
+#endif
+#ifdef TARGET_STM32L4
+			*(uart_common[pos].base + cr1) |= (1 << 5) | (1 << 3) | (1 << 2);
+			dataBarier();
+			*(uart_common[pos].base + cr1) |= 1;
 			uart_common[pos].enabled = 1;
+#endif
 		}
 	}
 
@@ -267,7 +344,7 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 	mutexUnlock(uart_common[uart].lock);
 
 	mutexLock(uart_common[uart].lock);
-	if (!(*(uart_common[uart].base + cr1) & (1 << 12)) && (*(uart_common[uart].base + cr1) & (1 << 10))) {
+	if (!(*(uart_common[uart].base + cr1) & (1 << WORDLEN_BIT)) && (*(uart_common[uart].base + cr1) & (1 << 10))) {
 		for (i = 0; i < read; ++i)
 			((char *)buff)[i] &= 0x7f;
 	}
@@ -287,11 +364,11 @@ int uart_init(void)
 		int dev;
 		unsigned irq;
 	} info[] = {
-		{ (void *)0x40013800, pctl_usart1, 37 + 16 },
-		{ (void *)0x40004400, pctl_usart2, 38 + 16 },
-		{ (void *)0x40004800, pctl_usart3, 39 + 16 },
-		{ (void *)0x40004c00, pctl_uart4, 48 + 16 },
-		{ (void *)0x40005000, pctl_uart5, 49 + 16 },
+		{ (void *)0x40013800, pctl_usart1, usart1_irq },
+		{ (void *)0x40004400, pctl_usart2, usart2_irq },
+		{ (void *)0x40004800, pctl_usart3, usart3_irq },
+		{ (void *)0x40004c00, pctl_uart4, uart4_irq },
+		{ (void *)0x40005000, pctl_uart5, uart5_irq },
 	};
 
 	for (i = 0, uart = 0; uart < 5; ++uart) {
@@ -320,19 +397,7 @@ int uart_init(void)
 
 		/* Set up UART to 9600,8,n,1 16-bit oversampling */
 
-		/* disable UART */
-		*(uart_common[i].base + cr1) &= ~(1 << 13);
-		/* 9600 baudrate */
-		*(uart_common[i].base + brr) = rcc_getCpufreq() / 9600;
-		uart_common[i].baud = 9600;
-		/* 1 start, 1 stop bit */
-		*(uart_common[i].base + cr2) = 0;
-		/* enable receiver, enable transmitter, enable rxd irq*/
-		*(uart_common[i].base + cr1) = 0x2c;
-		/* no aditional settings */
-		*(uart_common[i].base + cr3) = 0;
-		/* UART enable */
-		*(uart_common[i].base + cr1) |= 1 << 13;
+		uart_configure(i, 8, uart_parnone, 9600, 1);
 
 		interrupt(info[uart].irq, uart_rxirq, (void *)i, uart_common[i].rxcond, NULL);
 		interrupt(info[uart].irq, uart_txirq, (void *)i, uart_common[i].txcond, NULL);

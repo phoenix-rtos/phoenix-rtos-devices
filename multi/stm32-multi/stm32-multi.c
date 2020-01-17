@@ -53,6 +53,7 @@ static void handleMsg(msg_t *msg)
 	int err = EOK;
 
 	switch (imsg->type) {
+#ifdef TARGET_STM32L1
 		case adc_get:
 			omsg->adc_val = adc_conversion(imsg->adc_channel);
 			break;
@@ -98,20 +99,6 @@ static void handleMsg(msg_t *msg)
 			err = gpio_setPort(imsg->gpio_set.port, imsg->gpio_set.mask, imsg->gpio_set.state);
 			break;
 
-		case uart_def:
-			err = uart_configure(imsg->uart_def.uart, imsg->uart_def.bits, imsg->uart_def.parity,
-				imsg->uart_def.baud, imsg->uart_def.enable);
-			break;
-
-		case uart_get:
-			err = uart_read(imsg->uart_get.uart, msg->o.data, msg->o.size,
-				imsg->uart_get.mode, imsg->uart_get.timeout);
-			break;
-
-		case uart_set:
-			err = uart_write(imsg->uart_set.uart, msg->i.data, msg->i.size);
-			break;
-
 		case flash_get:
 			err = flash_readData(imsg->flash_addr, msg->o.data, msg->o.size);
 			break;
@@ -145,6 +132,20 @@ static void handleMsg(msg_t *msg)
 
 		case exti_map:
 			err = syscfg_mapexti(imsg->exti_map.line, imsg->exti_map.port);
+			break;
+#endif
+		case uart_def:
+			err = uart_configure(imsg->uart_def.uart, imsg->uart_def.bits, imsg->uart_def.parity,
+				imsg->uart_def.baud, imsg->uart_def.enable);
+			break;
+
+		case uart_get:
+			err = uart_read(imsg->uart_get.uart, msg->o.data, msg->o.size,
+				imsg->uart_get.mode, imsg->uart_get.timeout);
+			break;
+
+		case uart_set:
+			err = uart_write(imsg->uart_set.uart, msg->i.data, msg->i.size);
 			break;
 
 		default:
@@ -206,15 +207,18 @@ int main(void)
 	oid_t oid;
 
 	rcc_init();
+	uart_init();
+
+#ifdef TARGET_STM32L1
 	rtc_init();
 	gpio_init();
 	lcd_init();
 	adc_init();
 	i2c_init();
 	flash_init();
-	uart_init();
 	spi_init();
 	exti_init();
+#endif
 
 	portCreate(&common.port);
 	portRegister(common.port, "/multi", &oid);

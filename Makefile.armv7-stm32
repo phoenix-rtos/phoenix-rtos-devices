@@ -3,7 +3,15 @@
 #
 # STM32 drivers
 #
-# Copyright 2019 Phoenix Systems
+# Copyright 2019, 2020 Phoenix Systems
 #
+
+CFLAGS += -DTARGET_STM32
+
+ifneq (, $(findstring l4, $(TARGET)))
+	CFLAGS += -DTARGET_STM32L4
+else ifneq (, $(findstring l1, $(TARGET)))
+	CFLAGS += -DTARGET_STM32L1
+endif
 
 include multi/stm32-multi/Makefile
