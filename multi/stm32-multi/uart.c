@@ -63,8 +63,6 @@ static const int uartConfig[] = { UART1, UART2, UART3, UART4, UART5 };
 
 static const int uartPos[] = { UART1_POS, UART2_POS, UART3_POS, UART4_POS, UART5_POS };
 
-#define TARGET_STM32L4
-
 #ifdef TARGET_STM32L4
 
 #define WORDLEN_BIT 28
