@@ -86,19 +86,6 @@ static void handleMsg(msg_t *msg)
 			err = i2c_transaction(_i2c_write, imsg->i2c_msg.addr, imsg->i2c_msg.reg, msg->i.data, msg->i.size);
 			break;
 
-		case gpio_def:
-			err = gpio_configPin(imsg->gpio_def.port, imsg->gpio_def.pin, imsg->gpio_def.mode,
-				imsg->gpio_def.af, imsg->gpio_def.otype, imsg->gpio_def.ospeed, imsg->gpio_def.pupd);
-			break;
-
-		case gpio_get:
-			err = gpio_getPort(imsg->gpio_get.port, &omsg->gpio_get);
-			break;
-
-		case gpio_set:
-			err = gpio_setPort(imsg->gpio_set.port, imsg->gpio_set.mask, imsg->gpio_set.state);
-			break;
-
 		case flash_get:
 			err = flash_readData(imsg->flash_addr, msg->o.data, msg->o.size);
 			break;
@@ -134,6 +121,19 @@ static void handleMsg(msg_t *msg)
 			err = syscfg_mapexti(imsg->exti_map.line, imsg->exti_map.port);
 			break;
 #endif
+		case gpio_def:
+			err = gpio_configPin(imsg->gpio_def.port, imsg->gpio_def.pin, imsg->gpio_def.mode,
+				imsg->gpio_def.af, imsg->gpio_def.otype, imsg->gpio_def.ospeed, imsg->gpio_def.pupd);
+			break;
+
+		case gpio_get:
+			err = gpio_getPort(imsg->gpio_get.port, &omsg->gpio_get);
+			break;
+
+		case gpio_set:
+			err = gpio_setPort(imsg->gpio_set.port, imsg->gpio_set.mask, imsg->gpio_set.state);
+			break;
+
 		case uart_def:
 			err = uart_configure(imsg->uart_def.uart, imsg->uart_def.bits, imsg->uart_def.parity,
 				imsg->uart_def.baud, imsg->uart_def.enable);
@@ -208,10 +208,10 @@ int main(void)
 
 	rcc_init();
 	uart_init();
+	gpio_init();
 
 #ifdef TARGET_STM32L1
 	rtc_init();
-	gpio_init();
 	lcd_init();
 	adc_init();
 	i2c_init();

@@ -3,7 +3,7 @@
  *
  * STM32L1 GPIO driver
  *
- * Copyright 2017, 2018 Phoenix Systems
+ * Copyright 2017, 2018, 2020 Phoenix Systems
  * Author: Aleksander Kaminski
  *
  * This file is part of Phoenix-RTOS.
@@ -20,26 +20,36 @@
 #include "common.h"
 #include "rcc.h"
 
-
-enum { moder = 0, otyper, ospeedr, pupdr, idr, odr, bsrr, lckr, afrl, afrh, brr };
-
-
-struct {
-	volatile unsigned int *base[8];
-
-	handle_t lock;
-} gpio_common;
-
+#ifdef TARGET_STM32L1
+#define LAST_GPIO gpioh
 
 static const int gpio2pctl[] = { pctl_gpioa, pctl_gpiob, pctl_gpioc, pctl_gpiod, pctl_gpioe,
 	pctl_gpiof, pctl_gpiog, pctl_gpioh };
+#endif
+
+#ifdef TARGET_STM32L4
+#define LAST_GPIO gpioi
+
+static const int gpio2pctl[] = { pctl_gpioa, pctl_gpiob, pctl_gpioc, pctl_gpiod, pctl_gpioe,
+	pctl_gpiof, pctl_gpiog, pctl_gpioh, pctl_gpioi };
+#endif
+
+
+enum { moder = 0, otyper, ospeedr, pupdr, idr, odr, bsrr, lckr, afrl, afrh, brr, ascr };
+
+
+struct {
+	volatile unsigned int *base[9];
+
+	handle_t lock;
+} gpio_common;
 
 
 int gpio_setPort(int port, unsigned int mask, unsigned int val)
 {
 	unsigned int t;
 
-	if (port < gpioa || port > gpioh)
+	if (port < gpioa || port > LAST_GPIO)
 		return -EINVAL;
 
 	t = (mask & val) & 0xffff;
@@ -53,7 +63,7 @@ int gpio_setPort(int port, unsigned int mask, unsigned int val)
 
 int gpio_getPort(int port, unsigned int *val)
 {
-	if (port < gpioa || port > gpioh)
+	if (port < gpioa || port > LAST_GPIO)
 		return -EINVAL;
 
 	(*val) = *(gpio_common.base[port - gpioa] + idr) & 0xffff;
@@ -67,7 +77,7 @@ int gpio_configPin(int port, char pin, char mode, char af, char otype, char ospe
 	volatile unsigned int *base;
 	unsigned int t;
 
-	if (port < gpioa || port > gpioh || pin > 16)
+	if (port < gpioa || port > LAST_GPIO || pin > 16)
 		return -EINVAL;
 
 	/* Enable GPIO port's clock */
@@ -97,6 +107,13 @@ int gpio_configPin(int port, char pin, char mode, char af, char otype, char ospe
 		*(base + afrh) = t | (af & 0xf) << ((pin - 8) << 2);
 	}
 
+#ifdef TARGET_STM32L4
+	if ((mode & 0x3) == 0x3)
+		*(base + ascr) |= 1 << pin;
+	else
+		*(base + ascr) &= ~(1 << pin);
+#endif
+
 	mutexUnlock(gpio_common.lock);
 
 	return EOK;
@@ -105,6 +122,7 @@ int gpio_configPin(int port, char pin, char mode, char af, char otype, char ospe
 
 int gpio_init(void)
 {
+#ifdef TARGET_STM32L1
 	gpio_common.base[0] = (void *)0x40020000;
 	gpio_common.base[1] = (void *)0x40020400;
 	gpio_common.base[2] = (void *)0x40020800;
@@ -113,6 +131,20 @@ int gpio_init(void)
 	gpio_common.base[5] = (void *)0x40021800;
 	gpio_common.base[6] = (void *)0x40021c00;
 	gpio_common.base[7] = (void *)0x40021400;
+	gpio_common.base[8] = NULL;
+#endif
+
+#ifdef TARGET_STM32L4
+	gpio_common.base[0] = (void *)0x48000000;
+	gpio_common.base[1] = (void *)0x48000400;
+	gpio_common.base[2] = (void *)0x48000800;
+	gpio_common.base[3] = (void *)0x48000c00;
+	gpio_common.base[4] = (void *)0x48001000;
+	gpio_common.base[5] = (void *)0x48001400;
+	gpio_common.base[6] = (void *)0x48001800;
+	gpio_common.base[7] = (void *)0x48001c00;
+	gpio_common.base[8] = (void *)0x48002000;
+#endif
 
 	mutexCreate(&gpio_common.lock);
 
