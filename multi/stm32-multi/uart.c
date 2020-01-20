@@ -211,12 +211,32 @@ int uart_configure(int uart, char bits, char parity, unsigned int baud, char ena
 	uart_common[pos].rxdr = 0;
 	uart_common[pos].rxdw = 0;
 
+#ifdef TARGET_STM32L1
 	if (bits == 8 && parity != uart_parnone)
-		*(uart_common[pos].base + cr1) |= 1 << WORDLEN_BIT;
+		*(uart_common[pos].base + cr1) |= 1 << 12;
 	else if ((bits == 7 && parity != uart_parnone) || (bits == 8 && parity == uart_parnone))
-		*(uart_common[pos].base + cr1) &= ~(1 << WORDLEN_BIT);
+		*(uart_common[pos].base + cr1) &= ~(1 << 12);
 	else
 		err = -EINVAL;
+#endif
+
+#ifdef TARGET_STM32L4
+	if ((bits == 9) || ((bits == 8) && (parity != uart_parnone))) {
+		*(uart_common[pos].base + cr1) |= 1 << 12;
+		*(uart_common[pos].base + cr1) &= ~(1 << 28);
+	}
+	else if ((bits == 8) || ((bits == 7) && (parity != uart_parnone))) {
+		*(uart_common[pos].base + cr1) &= ~(1 << 12);
+		*(uart_common[pos].base + cr1) &= ~(1 << 28);
+	}
+	else {
+		*(uart_common[pos].base + cr1) &= ~(1 << 12);
+		*(uart_common[pos].base + cr1) |= 1 << 28;
+	}
+#endif
+
+	if (bits == 9 && parity != uart_parnone)
+		return -EINVAL;
 
 	if (err == EOK) {
 		uart_common[pos].baud = baud;
