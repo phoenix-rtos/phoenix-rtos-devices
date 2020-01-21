@@ -28,6 +28,7 @@
 #include <sys/mman.h>
 #include <posix/utils.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 
 #include <libtty.h>
 #include "pc-uart.h"
@@ -136,7 +137,7 @@ static ssize_t uart_write(uint8_t d, size_t len, const char *buff, int mode, int
 	if (len == 0 || *status != EOK)
 		return 0;
 
-	outlen = libtty_write(&serial->tty, buff, len, mode);
+	outlen = libtty_write(&serial->tty, buff, len, mode | O_NONBLOCK);
 	if (outlen < 0) {
 		*status = outlen;
 		return 0;
@@ -160,7 +161,7 @@ static ssize_t uart_read(uint8_t d, size_t len, char *buff, int mode, int *statu
 	if (len == 0 || *status != EOK)
 		return 0;
 
-	outlen = libtty_read(&serial->tty, buff, len, mode);
+	outlen = libtty_read(&serial->tty, buff, len, mode | O_NONBLOCK);
 	if (outlen < 0) {
 		*status = outlen;
 		return 0;

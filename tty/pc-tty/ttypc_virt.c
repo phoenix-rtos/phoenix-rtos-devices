@@ -21,6 +21,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
 
 #include "ttypc.h"
 #include "ttypc_vtf.h"
@@ -680,13 +681,13 @@ int ttypc_virt_swrite(ttypc_virt_t *virt, char *buff, size_t len)
 
 int ttypc_virt_sadd(ttypc_virt_t *virt, char *buff, size_t len, int mode)
 {
-	return libtty_write(&virt->tty, buff, len, mode);
+	return libtty_write(&virt->tty, buff, len, mode | O_NONBLOCK);
 }
 
 
 int ttypc_virt_sget(ttypc_virt_t *virt, char *buff, size_t len, int mode)
 {
-	return libtty_read(&virt->tty, buff, len, mode);
+	return libtty_read(&virt->tty, buff, len, mode | O_NONBLOCK);
 }
 
 
