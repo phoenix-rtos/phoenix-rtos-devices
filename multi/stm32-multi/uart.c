@@ -262,7 +262,6 @@ int uart_configure(int uart, char bits, char parity, unsigned int baud, char ena
 		(void)*(uart_common[pos].base + rdr);
 #endif
 
-		dataBarier();
 		if (enable) {
 #ifdef TARGET_STM32L1
 			*(uart_common[pos].base + cr1) |= 0x2c;
@@ -273,9 +272,11 @@ int uart_configure(int uart, char bits, char parity, unsigned int baud, char ena
 			*(uart_common[pos].base + cr1) |= (1 << 5) | (1 << 3) | (1 << 2);
 			dataBarier();
 			*(uart_common[pos].base + cr1) |= 1;
-			uart_common[pos].enabled = 1;
 #endif
+			uart_common[pos].enabled = 1;
 		}
+
+		dataBarier();
 	}
 
 	mutexUnlock(uart_common[pos].lock);
