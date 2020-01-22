@@ -40,6 +40,7 @@ enum { moder = 0, otyper, ospeedr, pupdr, idr, odr, bsrr, lckr, afrl, afrh, brr,
 
 struct {
 	volatile unsigned int *base[9];
+	uint32_t enableMask;
 
 	handle_t lock;
 } gpio_common;
@@ -74,44 +75,47 @@ int gpio_getPort(int port, unsigned int *val)
 
 int gpio_configPin(int port, char pin, char mode, char af, char otype, char ospeed, char pupd)
 {
-	volatile unsigned int *base;
+	volatile unsigned int *reg;
 	unsigned int t;
 
 	if (port < gpioa || port > LAST_GPIO || pin > 16)
 		return -EINVAL;
 
-	/* Enable GPIO port's clock */
-	rcc_devClk(gpio2pctl[port - gpioa], 1);
-
-	base = gpio_common.base[port - gpioa];
+	reg = gpio_common.base[port - gpioa];
 
 	mutexLock(gpio_common.lock);
 
-	t = *(base + moder) & ~(0x3 << (pin << 1));
-	*(base + moder) = t | (mode & 0x3) << (pin << 1);
+	/* Enable GPIO port's clock */
+	if (!(gpio_common.enableMask & (1 << (port - gpioa)))) {
+		rcc_devClk(gpio2pctl[port - gpioa], 1);
+		gpio_common.enableMask |= (1 << (port - gpioa));
+	}
 
-	t = *(base + otyper) & ~(1 << pin);
-	*(base + otyper) = t | (otype & 1) << pin;
+	t = *(reg + moder) & ~(0x3 << (pin << 1));
+	*(reg + moder) = t | (mode & 0x3) << (pin << 1);
 
-	t = *(base + ospeedr) & ~(0x3 << (pin << 1));
-	*(base + ospeedr) = t | (ospeed & 0x3) << (pin << 1);
+	t = *(reg + otyper) & ~(1 << pin);
+	*(reg + otyper) = t | (otype & 1) << pin;
 
-	t = *(base + pupdr) & ~(0x03 << (pin << 1));
-	*(base + pupdr) = t | (pupd & 0x3) << (pin << 1);
+	t = *(reg + ospeedr) & ~(0x3 << (pin << 1));
+	*(reg + ospeedr) = t | (ospeed & 0x3) << (pin << 1);
+
+	t = *(reg + pupdr) & ~(0x03 << (pin << 1));
+	*(reg + pupdr) = t | (pupd & 0x3) << (pin << 1);
 
 	if (pin < 8) {
-		t = *(base + afrl) & ~(0xf << (pin << 2));
-		*(base + afrl) = t | (af & 0xf) << (pin << 2);
+		t = *(reg + afrl) & ~(0xf << (pin << 2));
+		*(reg + afrl) = t | (af & 0xf) << (pin << 2);
 	} else {
-		t = *(base + afrh) & ~(0xf << ((pin - 8) << 2));
-		*(base + afrh) = t | (af & 0xf) << ((pin - 8) << 2);
+		t = *(reg + afrh) & ~(0xf << ((pin - 8) << 2));
+		*(reg + afrh) = t | (af & 0xf) << ((pin - 8) << 2);
 	}
 
 #ifdef TARGET_STM32L4
 	if ((mode & 0x3) == 0x3)
-		*(base + ascr) |= 1 << pin;
+		*(reg + ascr) |= 1 << pin;
 	else
-		*(base + ascr) &= ~(1 << pin);
+		*(reg + ascr) &= ~(1 << pin);
 #endif
 
 	mutexUnlock(gpio_common.lock);
@@ -146,6 +150,7 @@ int gpio_init(void)
 	gpio_common.base[8] = (void *)0x48002000;
 #endif
 
+	gpio_common.enableMask = 0;
 	mutexCreate(&gpio_common.lock);
 
 	return EOK;
