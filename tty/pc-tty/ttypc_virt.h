@@ -136,7 +136,7 @@ extern uint16_t csd_supplemental[CSSIZE];
 
 
 /* Function emulates a character */
-extern int ttypc_virt_sput(ttypc_virt_t *virt, char c);
+extern int ttypc_virt_sput(ttypc_virt_t *virt, unsigned char c);
 
 
 /* Function emulates a buffer */

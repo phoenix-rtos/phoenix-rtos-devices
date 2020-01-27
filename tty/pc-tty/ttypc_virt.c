@@ -173,7 +173,7 @@ static void _ttypc_virt_writechar(ttypc_virt_t *virt, uint16_t attrib, uint16_t 
 }
 
 
-int ttypc_virt_sput(ttypc_virt_t *virt, char c)
+int ttypc_virt_sput(ttypc_virt_t *virt, unsigned char c)
 {
 	int ret = 1;
 
