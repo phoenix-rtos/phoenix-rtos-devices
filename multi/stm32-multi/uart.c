@@ -155,6 +155,10 @@ static int uart_rxirq(unsigned int n, void *arg)
 	int uart = (int)arg, release = -1;
 
 	if (uart_isRxIrq(uart)) {
+		/* Clear overrun error bit */
+#ifdef TARGET_STM32L4
+		*(uart_common[uart].base + icr) |= (1 << 3);
+#endif
 		/* Rxd buffer not empty */
 		uart_common[uart].rxdfifo[uart_common[uart].rxdw++] = uart_getData(uart);
 		uart_common[uart].rxdw %= sizeof(uart_common[uart].rxdfifo);
@@ -175,7 +179,6 @@ static int uart_rxirq(unsigned int n, void *arg)
 			uart_common[uart].rxend = NULL;
 			uart_common[uart].read = NULL;
 		}
-
 		release = 1;
 	}
 
@@ -258,7 +261,7 @@ int uart_configure(int uart, char bits, char parity, unsigned int baud, char ena
 #endif
 
 #ifdef TARGET_STM32L4
-		*(uart_common[pos].base + icr) &= ~0;
+		*(uart_common[pos].base + icr) = -1;
 		(void)*(uart_common[pos].base + rdr);
 #endif
 
