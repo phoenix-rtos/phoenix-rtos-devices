@@ -17,13 +17,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#ifdef TARGET_STM32L1
 #include <phoenix/arch/stm32l1.h>
-#endif
-
-#ifdef TARGET_STM32L4
-#include <phoenix/arch/stm32l4.h>
-#endif
 
 #include "config.h"
 

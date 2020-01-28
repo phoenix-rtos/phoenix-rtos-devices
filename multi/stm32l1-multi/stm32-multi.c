@@ -53,7 +53,6 @@ static void handleMsg(msg_t *msg)
 	int err = EOK;
 
 	switch (imsg->type) {
-#ifdef TARGET_STM32L1
 		case adc_get:
 			omsg->adc_val = adc_conversion(imsg->adc_channel);
 			break;
@@ -120,7 +119,7 @@ static void handleMsg(msg_t *msg)
 		case exti_map:
 			err = syscfg_mapexti(imsg->exti_map.line, imsg->exti_map.port);
 			break;
-#endif
+
 		case gpio_def:
 			err = gpio_configPin(imsg->gpio_def.port, imsg->gpio_def.pin, imsg->gpio_def.mode,
 				imsg->gpio_def.af, imsg->gpio_def.otype, imsg->gpio_def.ospeed, imsg->gpio_def.pupd);
@@ -209,8 +208,6 @@ int main(void)
 	rcc_init();
 	uart_init();
 	gpio_init();
-
-#ifdef TARGET_STM32L1
 	rtc_init();
 	lcd_init();
 	adc_init();
@@ -218,7 +215,6 @@ int main(void)
 	flash_init();
 	spi_init();
 	exti_init();
-#endif
 
 	portCreate(&common.port);
 	portRegister(common.port, "/multi", &oid);
