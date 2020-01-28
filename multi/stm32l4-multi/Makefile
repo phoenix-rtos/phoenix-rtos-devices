@@ -9,7 +9,7 @@ ifneq (, $(findstring l1, $(TARGET)))
 	MULTIDRV_OBJS += adc.o i2c.o lcd.o rtc.o flash.o spi.o exti.o
 endif
 
-$(PREFIX_PROG)stm32-multi: $(addprefix $(PREFIX_O)multi/stm32-multi/, $(MULTIDRV_OBJS))
+$(PREFIX_PROG)stm32-multi: $(addprefix $(PREFIX_O)multi/stm32l4-multi/, $(MULTIDRV_OBJS))
 	$(LINK)
 
 all: $(PREFIX_PROG_STRIPPED)stm32-multi
