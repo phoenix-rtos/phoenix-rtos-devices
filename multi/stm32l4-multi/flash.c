@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * STM32L1 internal flash driver
+ * STM32L4 internal flash driver
  *
  * Copyright 2017, 2018 Phoenix Systems
  * Author: Aleksander Kaminski, Jakub Sejdak

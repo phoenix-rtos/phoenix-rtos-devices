@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * STM32L1 GPIO driver
+ * STM32L4 GPIO driver
  *
  * Copyright 2017, 2018, 2020 Phoenix Systems
  * Author: Aleksander Kaminski
@@ -20,19 +20,9 @@
 #include "common.h"
 #include "rcc.h"
 
-#ifdef TARGET_STM32L1
-#define LAST_GPIO gpioh
-
-static const int gpio2pctl[] = { pctl_gpioa, pctl_gpiob, pctl_gpioc, pctl_gpiod, pctl_gpioe,
-	pctl_gpiof, pctl_gpiog, pctl_gpioh };
-#endif
-
-#ifdef TARGET_STM32L4
-#define LAST_GPIO gpioi
 
 static const int gpio2pctl[] = { pctl_gpioa, pctl_gpiob, pctl_gpioc, pctl_gpiod, pctl_gpioe,
 	pctl_gpiof, pctl_gpiog, pctl_gpioh, pctl_gpioi };
-#endif
 
 
 enum { moder = 0, otyper, ospeedr, pupdr, idr, odr, bsrr, lckr, afrl, afrh, brr, ascr };
@@ -50,7 +40,7 @@ int gpio_setPort(int port, unsigned int mask, unsigned int val)
 {
 	unsigned int t;
 
-	if (port < gpioa || port > LAST_GPIO)
+	if (port < gpioa || port > gpioi)
 		return -EINVAL;
 
 	t = (mask & val) & 0xffff;
@@ -64,7 +54,7 @@ int gpio_setPort(int port, unsigned int mask, unsigned int val)
 
 int gpio_getPort(int port, unsigned int *val)
 {
-	if (port < gpioa || port > LAST_GPIO)
+	if (port < gpioa || port > gpioi)
 		return -EINVAL;
 
 	(*val) = *(gpio_common.base[port - gpioa] + idr) & 0xffff;
@@ -78,7 +68,7 @@ int gpio_configPin(int port, char pin, char mode, char af, char otype, char ospe
 	volatile unsigned int *reg;
 	unsigned int t;
 
-	if (port < gpioa || port > LAST_GPIO || pin > 16)
+	if (port < gpioa || port > gpioi || pin > 16)
 		return -EINVAL;
 
 	reg = gpio_common.base[port - gpioa];
@@ -111,12 +101,10 @@ int gpio_configPin(int port, char pin, char mode, char af, char otype, char ospe
 		*(reg + afrh) = t | (af & 0xf) << ((pin - 8) << 2);
 	}
 
-#ifdef TARGET_STM32L4
 	if ((mode & 0x3) == 0x3)
 		*(reg + ascr) |= 1 << pin;
 	else
 		*(reg + ascr) &= ~(1 << pin);
-#endif
 
 	mutexUnlock(gpio_common.lock);
 
@@ -126,19 +114,6 @@ int gpio_configPin(int port, char pin, char mode, char af, char otype, char ospe
 
 int gpio_init(void)
 {
-#ifdef TARGET_STM32L1
-	gpio_common.base[0] = (void *)0x40020000;
-	gpio_common.base[1] = (void *)0x40020400;
-	gpio_common.base[2] = (void *)0x40020800;
-	gpio_common.base[3] = (void *)0x40020c00;
-	gpio_common.base[4] = (void *)0x40021000;
-	gpio_common.base[5] = (void *)0x40021800;
-	gpio_common.base[6] = (void *)0x40021c00;
-	gpio_common.base[7] = (void *)0x40021400;
-	gpio_common.base[8] = NULL;
-#endif
-
-#ifdef TARGET_STM32L4
 	gpio_common.base[0] = (void *)0x48000000;
 	gpio_common.base[1] = (void *)0x48000400;
 	gpio_common.base[2] = (void *)0x48000800;
@@ -148,7 +123,6 @@ int gpio_init(void)
 	gpio_common.base[6] = (void *)0x48001800;
 	gpio_common.base[7] = (void *)0x48001c00;
 	gpio_common.base[8] = (void *)0x48002000;
-#endif
 
 	gpio_common.enableMask = 0;
 	mutexCreate(&gpio_common.lock);

@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * STM32L1 SPI driver
+ * STM32L4 SPI driver
  *
  * Copyright 2018 Phoenix Systems
  * Author: Aleksander Kaminski

@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * STM32L1 ADC driver
+ * STM32L4 ADC driver
  *
  * Copyright 2017, 2018 Phoenix Systems
  * Author: Aleksander Kaminski

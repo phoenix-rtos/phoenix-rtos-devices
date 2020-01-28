@@ -1,9 +1,9 @@
 /*
  * Phoenix-RTOS
  *
- * STM32L1 multi driver main
+ * STM32L4 multi driver main
  *
- * Copyright 2018 Phoenix Systems
+ * Copyright 2018, 2020 Phoenix Systems
  * Author: Aleksander Kaminski
  *
  * This file is part of Phoenix-RTOS.
@@ -53,7 +53,7 @@ static void handleMsg(msg_t *msg)
 	int err = EOK;
 
 	switch (imsg->type) {
-#ifdef TARGET_STM32L1
+#if 0
 		case adc_get:
 			omsg->adc_val = adc_conversion(imsg->adc_channel);
 			break;
@@ -210,7 +210,7 @@ int main(void)
 	uart_init();
 	gpio_init();
 
-#ifdef TARGET_STM32L1
+/*
 	rtc_init();
 	lcd_init();
 	adc_init();
@@ -218,7 +218,7 @@ int main(void)
 	flash_init();
 	spi_init();
 	exti_init();
-#endif
+*/
 
 	portCreate(&common.port);
 	portRegister(common.port, "/multi", &oid);

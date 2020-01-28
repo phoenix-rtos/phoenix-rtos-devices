@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * STM32L1 I2C driver
+ * STM32L4 I2C driver
  *
  * Copyright 2017, 2018 Phoenix Systems
  * Author: Aleksander Kaminski

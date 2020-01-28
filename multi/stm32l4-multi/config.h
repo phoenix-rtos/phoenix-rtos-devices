@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * STM32L1 multi driver config.
+ * STM32L4 multi driver config.
  *
  * Copyright 2018 Phoenix Systems
  * Author: Aleksander Kaminski

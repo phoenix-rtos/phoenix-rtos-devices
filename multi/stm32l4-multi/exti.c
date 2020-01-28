@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * STM32L1 external interrupts driver
+ * STM32L4 external interrupts driver
  *
  * Copyright 2019 Phoenix Systems
  * Author: Daniel Sawka

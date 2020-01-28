@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * STM32L1 RTC driver
+ * STM32L4 RTC driver
  *
  * Copyright 2017, 2018 Phoenix Systems
  * Author: Jakub Sejdak, Aleksander Kaminski

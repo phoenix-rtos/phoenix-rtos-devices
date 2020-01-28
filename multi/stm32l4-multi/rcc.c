@@ -1,9 +1,9 @@
 /*
  * Phoenix-RTOS
  *
- * STM32L1 reset and clock controler driver
+ * STM32L4 reset and clock controler driver
  *
- * Copyright 2017, 2018 Phoenix Systems
+ * Copyright 2017, 2018, 2020 Phoenix Systems
  * Author: Aleksander Kaminski
  *
  * This file is part of Phoenix-RTOS.
@@ -20,14 +20,6 @@
 
 #include "common.h"
 #include "rtc.h"
-
-#ifdef TARGET_STM32L1
-#define RCC_BASE (void *)0x40023800
-#endif
-
-#ifdef TARGET_STM32L4
-#define RCC_BASE (void *)0x40021000
-#endif
 
 
 struct {
@@ -163,7 +155,7 @@ void pwr_unlock(void)
 
 int rcc_init(void)
 {
-	rcc_common.base = RCC_BASE;
+	rcc_common.base = (void *)0x40021000;
 	rcc_common.pwr = (void *)0x40007000;
 	rcc_common.hsiState = 0;
 

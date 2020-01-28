@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * STM32L1 multidriver common
+ * STM32L4 multidriver common
  *
  * Copyright 2017, 2018 Phoenix Systems
  * Author: Aleksander Kaminski
@@ -16,14 +16,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
-
-#ifdef TARGET_STM32L1
-#include <phoenix/arch/stm32l1.h>
-#endif
-
-#ifdef TARGET_STM32L4
 #include <phoenix/arch/stm32l4.h>
-#endif
 
 #include "config.h"
 

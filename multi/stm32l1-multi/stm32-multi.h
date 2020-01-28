@@ -97,7 +97,7 @@ typedef struct {
 /* GPIO */
 
 
-enum { gpioa = 0, gpiob, gpioc, gpiod, gpioe, gpiof, gpiog, gpioh, gpioi };
+enum { gpioa = 0, gpiob, gpioc, gpiod, gpioe, gpiof, gpiog, gpioh };
 
 
 typedef struct {
