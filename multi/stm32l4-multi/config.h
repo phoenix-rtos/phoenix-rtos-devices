@@ -49,10 +49,6 @@
 #define SPI3 0
 #endif
 
-#ifndef LCD
-#define LCD 1
-#endif
-
 #ifndef FLASH_PROGRAM_1_ADDR
 #define FLASH_PROGRAM_1_ADDR 0x08000000
 #endif

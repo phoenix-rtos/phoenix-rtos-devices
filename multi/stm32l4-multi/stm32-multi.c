@@ -27,7 +27,6 @@
 #include "flash.h"
 #include "gpio.h"
 #include "i2c.h"
-#include "lcd.h"
 #include "rcc.h"
 #include "rtc.h"
 #include "uart.h"
@@ -69,15 +68,7 @@ static void handleMsg(msg_t *msg)
 		case rtc_set:
 			rtc_setTime(&imsg->rtc_timestamp);
 			break;
-#if LCD
-		case lcd_get:
-			lcd_getDisplay(&imsg->lcd_msg);
-			break;
 
-		case lcd_set:
-			lcd_setDisplay(&imsg->lcd_msg);
-			break;
-#endif
 		case i2c_get:
 			err = i2c_transaction(_i2c_read, imsg->i2c_msg.addr, imsg->i2c_msg.reg, msg->o.data, msg->o.size);
 			break;
@@ -212,7 +203,6 @@ int main(void)
 
 /*
 	rtc_init();
-	lcd_init();
 	adc_init();
 	i2c_init();
 	flash_init();
