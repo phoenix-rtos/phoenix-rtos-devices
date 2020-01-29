@@ -9,4 +9,7 @@ MULTIDRV_OBJS = stm32-multi.o uart.o rcc.o gpio.o adc.o i2c.o lcd.o rtc.o flash.
 $(PREFIX_PROG)stm32-multi: $(addprefix $(PREFIX_O)multi/stm32l1-multi/, $(MULTIDRV_OBJS))
 	$(LINK)
 
-all: $(PREFIX_PROG_STRIPPED)stm32-multi
+$(PREFIX_H)stm32-multi.h: multi/stm32l1-multi/stm32-multi.h
+	$(HEADER)
+
+all: $(PREFIX_PROG_STRIPPED)stm32-multi $(PREFIX_H)stm32-multi.h
