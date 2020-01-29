@@ -85,6 +85,14 @@ static void handleMsg(msg_t *msg)
 			err = flash_writeData(imsg->flash_addr, msg->i.data, msg->i.size);
 			break;
 
+		case exti_def:
+			err = exti_configure(imsg->exti_def.line, imsg->exti_def.mode, imsg->exti_def.edge);
+			break;
+
+		case exti_map:
+			err = syscfg_mapexti(imsg->exti_map.line, imsg->exti_map.port);
+			break;
+#endif
 		case spi_get:
 			err = spi_transaction(imsg->spi_rw.spi, spi_read, imsg->spi_rw.cmd, imsg->spi_rw.addr,
 				imsg->spi_rw.flags, msg->o.data, NULL, msg->o.size);
@@ -104,14 +112,6 @@ static void handleMsg(msg_t *msg)
 			err = spi_configure(imsg->spi_def.spi, imsg->spi_def.mode, imsg->spi_def.bdiv, imsg->spi_def.enable);
 			break;
 
-		case exti_def:
-			err = exti_configure(imsg->exti_def.line, imsg->exti_def.mode, imsg->exti_def.edge);
-			break;
-
-		case exti_map:
-			err = syscfg_mapexti(imsg->exti_map.line, imsg->exti_map.port);
-			break;
-#endif
 		case gpio_def:
 			err = gpio_configPin(imsg->gpio_def.port, imsg->gpio_def.pin, imsg->gpio_def.mode,
 				imsg->gpio_def.af, imsg->gpio_def.otype, imsg->gpio_def.ospeed, imsg->gpio_def.pupd);
@@ -200,13 +200,13 @@ int main(void)
 	rcc_init();
 	uart_init();
 	gpio_init();
+	spi_init();
 
 /*
 	rtc_init();
 	adc_init();
 	i2c_init();
 	flash_init();
-	spi_init();
 	exti_init();
 */
 

@@ -3,7 +3,7 @@
  *
  * STM32L4 SPI driver
  *
- * Copyright 2018 Phoenix Systems
+ * Copyright 2018, 2020 Phoenix Systems
  * Author: Aleksander Kaminski
  *
  * This file is part of Phoenix-RTOS.
@@ -50,7 +50,7 @@ static const int spiConfig[] = { SPI1, SPI2, SPI3 };
 static const int spiPos[] = { SPI1_POS, SPI2_POS, SPI3_POS };
 
 
-enum { cr1 = 0, cr2, sr, dr, crcpr, rxcrcr, txcrcr, i2scfgr, i2spr };
+enum { cr1 = 0, cr2, sr, dr, crcpr, rxcrcr, txcrcr };
 
 
 static int spi_irqHandler(unsigned int n, void *arg)
@@ -165,7 +165,7 @@ void spi_init(void)
 	static const struct {
 		unsigned int base;
 		int irq;
-	} spiinfo[3] = { { 0x40013000, 35 }, { 0x40003800, 36 }, { 0x40003c00, 47 } };
+	} spiinfo[3] = { { 0x40013000, spi1_irq }, { 0x40003800, spi2_irq }, { 0x40003c00, spi3_irq } };
 
 	for (i = 0, spi = 0; spi < 3; ++spi) {
 		if (!spiConfig[spi])
@@ -190,13 +190,10 @@ void spi_init(void)
 		/* Motorola frame format, SS output enable */
 		*(spi_common[i].base + cr2) = (1 << 2);
 
-		/* SPI mode enabled */
-		*(spi_common[i].base + i2scfgr) = 0;
-
 		/* Enable SPI */
 		*(spi_common[i].base + cr1) |= 1 << 6;
 
-		interrupt(16 + spiinfo[spi].irq, spi_irqHandler, (void *)i, spi_common[i].cond, &spi_common[i].inth);
+		interrupt(spiinfo[spi].irq, spi_irqHandler, (void *)i, spi_common[i].cond, &spi_common[i].inth);
 
 		++i;
 	}
