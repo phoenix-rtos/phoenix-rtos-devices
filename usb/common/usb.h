@@ -85,19 +85,14 @@
 /* endpoint feature */
 #define USB_ENDPOINT_HALT 0
 
-/* high speed device can have 15 IN and 15 OUT endpoints
- * in addition to control endpoint (mandatory, both in and out) */
-#define USB_MAX_ENDPOINTS 31
-
 /* class specific desctriptors */
 #define USB_DESC_CS_INTERFACE 0x24
 #define USB_DESC_CS_ENDPOINT 0x25
 
-
 #define USB_TIMEOUT 5000000
 
-
 enum { pid_out = 0xe1, pid_in = 0x69, pid_setup = 0x2d };
+
 
 enum { out_token = 0, in_token, setup_token };
 
