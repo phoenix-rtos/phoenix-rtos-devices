@@ -141,12 +141,18 @@ static void flashsrv_fsThread(void *arg)
 {
 	flashsrv_filesystem_t *fs = arg;
 	flashsrv_request_t *req;
+	int logmask;
+
+	/* turn off logging to avoid possible deadlock */
+	logmask = setlogmask(0x80000000);
 
 	if (fs->mount(fs->data) < 0) {
 		LOG_ERROR("mount partition %d", fs->port);
+		setlogmask(logmask);
 		/* TODO: cleanup */
 		endthread();
 	}
+	setlogmask(logmask ? logmask : 0xffffffff);
 
 	for (;;) {
 		req = flashsrv_newRequest(fs->port, fs->handler, fs->data);
