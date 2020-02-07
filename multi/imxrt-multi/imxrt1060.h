@@ -78,6 +78,21 @@
 #define LPSPI3_IRQ 34 + 16
 #define LPSPI4_IRQ 35 + 16
 
+#define I2C1_BASE ((void *)0x403f0000)
+#define I2C2_BASE ((void *)0x403f4000)
+#define I2C3_BASE ((void *)0x403f8000)
+#define I2C4_BASE ((void *)0x403fc000)
+
+#define I2C1_CLK pctl_clk_lpi2c1
+#define I2C2_CLK pctl_clk_lpi2c2
+#define I2C3_CLK pctl_clk_lpi2c3
+#define I2C4_CLK pctl_clk_lpi2c4
+
+#define I2C1_IRQ 28 + 16
+#define I2C2_IRQ 29 + 16
+#define I2C3_IRQ 30 + 16
+#define I2C4_IRQ 31 + 16
+
 #define UART1_TX_PIN ad_b0_12
 #define UART1_RX_PIN ad_b0_13
 #define UART1_RTS_PIN ad_b0_15
@@ -225,6 +240,45 @@
 #endif
 #ifndef SPI4_PCS0
 #define SPI4_PCS0 b0_00
+#endif
+
+
+#ifndef I2C1_SCL_PIN
+#define I2C1_SCL_PIN ad_b1_00
+//#define I2C1_SCL_PIN sd_b1_04
+#endif
+#ifndef I2C1_SDA_PIN
+#define I2C1_SDA_PIN ad_b1_01
+//#define I2C1_SDA_PIN sd_b1_05
+#endif
+
+#ifndef I2C2_SCL_PIN
+#define I2C2_SCL_PIN b0_04
+//#define I2C2_SCL_PIN sd_b1_11
+#endif
+#ifndef I2C2_SDA_PIN
+#define I2C2_SDA_PIN b0_05
+//#define I2C2_SDA_PIN sd_b1_10
+#endif
+
+#ifndef I2C3_SCL_PIN
+#define I2C3_SCL_PIN ad_b1_07
+//#define I2C3_SCL_PIN emc_22
+//#define I2C3_SCL_PIN sd_b0_00
+#endif
+#ifndef I2C3_SDA_PIN
+#define I2C3_SDA_PIN ad_b1_06
+//#define I2C3_SDA_PIN emc_21
+//#define I2C3_SDA_PIN sd_b0_01
+#endif
+
+#ifndef I2C4_SCL_PIN
+#define I2C4_SCL_PIN ad_b0_12
+//#define I2C4_SCL_PIN emc_12
+#endif
+#ifndef I2C4_SDA_PIN
+#define I2C4_SDA_PIN ad_b0_13
+//#define I2C4_SDA_PIN emc_11
 #endif
 
 

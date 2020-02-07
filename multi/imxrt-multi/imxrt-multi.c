@@ -30,6 +30,7 @@
 #include "uart.h"
 #include "gpio.h"
 #include "spi.h"
+#include "i2c.h"
 
 #define MULTI_THREADS_NO 2
 #define UART_THREADS_NO 2
@@ -70,6 +71,13 @@ static void multi_dispatchMsg(msg_t *msg)
 		case id_spi3:
 		case id_spi4:
 			spi_handleMsg(msg, id);
+			break;
+
+		case id_i2c1:
+		case id_i2c2:
+		case id_i2c3:
+		case id_i2c4:
+			i2c_handleMsg(msg, id);
 			break;
 
 		default:
@@ -232,6 +240,28 @@ static int createDevFiles(void)
 
 #if SPI4
 	if (mkFile(&dir, id_spi4, "spi4", multi_port) < 0)
+#endif
+
+
+/* I2Cs */
+
+#if I2C1
+	if (mkFile(&dir, id_i2c1, "i2c1", multi_port) < 0)
+		return -1;
+#endif
+
+#if I2C2
+	if (mkFile(&dir, id_i2c2, "i2c2", multi_port) < 0)
+		return -1;
+#endif
+
+#if I2C3
+	if (mkFile(&dir, id_i2c3, "i2c3", multi_port) < 0)
+		return -1;
+#endif
+
+#if I2C4
+	if (mkFile(&dir, id_i2c4, "i2c4", multi_port) < 0)
 		return -1;
 #endif
 
