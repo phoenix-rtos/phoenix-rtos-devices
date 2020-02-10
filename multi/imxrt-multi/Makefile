@@ -15,4 +15,7 @@ $(PREFIX_O)multi/imxrt-multi/imxrt-multi.o: $(PREFIX_H)libtty.h
 $(PREFIX_PROG)multi-tests: $(addprefix $(PREFIX_O)multi/imxrt-multi/tests/, multi_tests.o spi_tests.o)
 	$(LINK)
 
-all: $(PREFIX_PROG_STRIPPED)imxrt-multi $(PREFIX_PROG_STRIPPED)multi-tests
+$(PREFIX_H)imxrt-multi.h: multi/imxrt-multi/imxrt-multi.h
+	$(HEADER)
+
+all: $(PREFIX_PROG_STRIPPED)imxrt-multi $(PREFIX_PROG_STRIPPED)multi-tests $(PREFIX_H)imxrt-multi.h
