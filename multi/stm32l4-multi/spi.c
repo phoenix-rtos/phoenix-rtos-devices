@@ -187,8 +187,8 @@ void spi_init(void)
 		/* 1 MHz baudrate, master, mode 0 */
 		*(spi_common[i].base + cr1) = (1 << 2);
 
-		/* Motorola frame format, SS output enable */
-		*(spi_common[i].base + cr2) = (1 << 2);
+		/* 8 bits, motorola frame format */
+		*(spi_common[i].base + cr2) = (0x7 << 8) | (1 << 2);
 
 		/* Enable SPI */
 		*(spi_common[i].base + cr1) |= 1 << 6;
