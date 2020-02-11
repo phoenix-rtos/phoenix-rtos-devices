@@ -18,6 +18,7 @@
 #include <sys/interrupt.h>
 #include <unistd.h>
 #include <errno.h>
+#include <stdint.h>
 
 #include "stm32-multi.h"
 #include "common.h"
@@ -31,7 +32,7 @@
 
 
 struct {
-	volatile unsigned int *base;
+	volatile uint16_t *base;
 	volatile int ready;
 
 	handle_t mutex;
@@ -50,7 +51,7 @@ static const int spiConfig[] = { SPI1, SPI2, SPI3 };
 static const int spiPos[] = { SPI1_POS, SPI2_POS, SPI3_POS };
 
 
-enum { cr1 = 0, cr2, sr, dr, crcpr, rxcrcr, txcrcr };
+enum { cr1 = 0, cr2 = 2, sr = 4, dr = 6, crcpr = 8, rxcrcr = 10, txcrcr = 12 };
 
 
 static int spi_irqHandler(unsigned int n, void *arg)
@@ -69,7 +70,7 @@ static unsigned char _spi_readwrite(int spi, unsigned char txd)
 	spi_common[spi].ready = 0;
 
 	/* Initiate transmission */
-	*(spi_common[spi].base + dr) = txd;
+	*((uint8_t *)(spi_common[spi].base + dr)) = txd;
 	*(spi_common[spi].base + cr2) |= 1 << 7;
 
 	mutexLock(spi_common[spi].irqLock);
@@ -77,7 +78,7 @@ static unsigned char _spi_readwrite(int spi, unsigned char txd)
 		condWait(spi_common[spi].cond, spi_common[spi].irqLock, 1);
 	mutexUnlock(spi_common[spi].irqLock);
 
-	rxd = *(spi_common[spi].base + dr);
+	rxd = *((uint8_t *)(spi_common[spi].base + dr));
 
 	return rxd;
 }
