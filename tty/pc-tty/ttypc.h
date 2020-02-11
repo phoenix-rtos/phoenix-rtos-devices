@@ -25,7 +25,6 @@
 typedef struct _ttypc_t {
 	handle_t mutex;
 
-	char poolthr_stack[2][2 * 4096] __attribute__ ((aligned(8)));
 	char kbdthr_stack[2 * 4096] __attribute__ ((aligned(8)));
 
 	ttypc_virt_t virtuals[4];

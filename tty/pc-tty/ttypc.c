@@ -184,6 +184,7 @@ static void poolthr(void *arg)
 		case mtGetAttr:
 			if (msg.i.attr == atEvents) {
 				*(int *)msg.o.data = ttypc_poll_status(ttypc_virt_get(&msg.object));
+				err = EOK;
 			}
 			else
 				err = -EINVAL;
@@ -220,8 +221,6 @@ int main(void)
 	_ttypc_init(base, n);
 
 	/* Run threads */
-	beginthread(poolthr, 3, &ttypc_common.poolthr_stack[0], sizeof(ttypc_common.poolthr_stack[0]), (void *)port);
-	beginthread(poolthr, 3, &ttypc_common.poolthr_stack[1], sizeof(ttypc_common.poolthr_stack[1]), (void *)port);
 	poolthr((void *)port);
 
 	return 0;
