@@ -27,11 +27,14 @@
 #include <sys/msg.h>
 #include <sys/stat.h>
 #include <sys/debug.h>
+#include <fcntl.h>
 #include <posix/utils.h>
 
 #include <libtty.h>
 
 #include <phoenix/arch/imx6ull.h>
+
+extern int portEvent(int, id_t, int);
 
 enum { urxd = 0, utxd = 16, ucr1 = 32, ucr2, ucr3, ucr4, ufcr, usr1, usr2,
 	uesc, utim, ubir, ubmr, ubrc, onems, uts, umcr };
@@ -94,46 +97,60 @@ void uart_thr(void *arg)
 	uint32_t port = (uint32_t)arg;
 	msg_t msg;
 	unsigned int rid;
+	int error;
 
 	for (;;) {
-
-		if (msgRecv(port, &msg, &rid) < 0) {
-			memset(&msg, 0, sizeof(msg));
-			msgRespond(port, &msg, rid);
+		if (msgRecv(port, &msg, &rid) < 0)
 			continue;
-		}
 
+		error = EOK;
 		switch (msg.type) {
 		case mtOpen:
-			// TODO: set PGID?
+			msg.o.open = uart.dev_no;
 			break;
 		case mtWrite:
-			msg.o.io.err = libtty_write(&uart.tty_common, msg.i.data, msg.i.size, msg.i.io.mode);
+			if ((msg.o.io = libtty_write(&uart.tty_common, msg.i.data, msg.i.size, msg.i.io.flags | O_NONBLOCK)) < 0) {
+				error = msg.o.io;
+				msg.o.io = 0;
+			}
 			break;
 		case mtRead:
-			msg.o.io.err = libtty_read(&uart.tty_common, msg.o.data, msg.o.size, msg.i.io.mode);
+			if ((msg.o.io = libtty_read(&uart.tty_common, msg.o.data, msg.o.size, msg.i.io.flags | O_NONBLOCK)) < 0) {
+				error = msg.o.io;
+				msg.o.io = 0;
+			}
 			break;
 		case mtClose:
 			break;
 		case mtGetAttr:
-			if (msg.i.attr.type == atPollStatus)
-				msg.o.attr.val = libtty_poll_status(&uart.tty_common);
-			else
-				msg.o.attr.val = -EINVAL;
+			if (msg.i.attr == atEvents) {
+				if (msg.o.size >= sizeof(int))
+					*(int *)msg.o.data = libtty_poll_status(&uart.tty_common);
+				else
+					error = -EINVAL;
+			} else {
+				error = -EINVAL;
+			}
 			break;
 		case mtDevCtl: { /* ioctl */
 				unsigned long request;
-				const void *in_data = ioctl_unpack(&msg, &request, NULL);
-				const void *out_data = NULL;
-				pid_t pid = ioctl_getSenderPid(&msg);
+				const void *in_data, *out_data;
+				pid_t pid;
+				int err;
 
-				int err = libtty_ioctl(&uart.tty_common, pid, request, in_data, &out_data);
+				request = msg.i.devctl;
+				in_data = msg.i.data;
+				out_data = NULL;
+				pid = msg.pid;
+
+				err = libtty_ioctl(&uart.tty_common, pid, request, in_data, &out_data);
+
 				ioctl_setResponse(&msg, request, err, out_data);
 			}
 			break;
 		}
 
-		msgRespond(port, &msg, rid);
+		msgRespond(port, error, &msg, rid);
 	}
 	return;
 }
@@ -178,6 +195,8 @@ static void uart_intrthr(void *arg)
 			}
 			*(uart.base + utxd) = libtty_getchar(&uart.tty_common, NULL);
 		}
+
+		portEvent(PORT_DESCRIPTOR, uart.dev_no, libtty_poll_status(&uart.tty_common));
 	}
 }
 
@@ -319,24 +338,13 @@ static void print_usage(const char* progname) {
 
 int main(int argc, char **argv)
 {
-	uint32_t port;
-	char uartn[sizeof("uartx") + 1];
-	oid_t dev;
+	uint32_t port = 3; /* configured in pinit */
+	char uartn[sizeof("/dev/ttySXXX") + 1];
 	int err;
 	speed_t baud = B115200;
 	int parity = 0;
 	int is_cooked = 1;
 	int use_rts_cts = 0;
-
-	libtty_callbacks_t callbacks = {
-		.arg = &uart,
-		.set_baudrate = &set_baudrate,
-		.set_cflag = &set_cflag,
-		.signal_txready = &signal_txready,
-	};
-
-	if (libtty_init(&uart.tty_common, &callbacks, BUFSIZE) < 0)
-		return -1;
 
 	if (argc == 1) {
 		uart.dev_no = 1;
@@ -350,6 +358,26 @@ int main(int argc, char **argv)
 		print_usage(argv[0]);
 		return 0;
 	}
+
+	sprintf(uartn, "/dev/ttyS%d", uart.dev_no - 1);
+
+	if ((err = create_dev(port, uart.dev_no, uartn, S_IFCHR)))
+		debug("imx6ull-uart: Could not create device file\n");
+
+	if (fork())
+		exit(EXIT_SUCCESS);
+
+	setsid();
+
+	libtty_callbacks_t callbacks = {
+		.arg = &uart,
+		.set_baudrate = &set_baudrate,
+		.set_cflag = &set_cflag,
+		.signal_txready = &signal_txready,
+	};
+
+	if (libtty_init(&uart.tty_common, &callbacks, BUFSIZE) < 0)
+		return -1;
 
 	if (baud < 0) {
 		printf("Invalid baud rate!\n");
@@ -375,10 +403,7 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	if (portCreate(&port) != EOK)
-		return 2;
-
-	uart.base = mmap(NULL, 0x1000, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, uart_addr[uart.dev_no - 1]);
+	uart.base = mmap(NULL, 0x1000, PROT_WRITE | PROT_READ, MAP_DEVICE, FD_PHYSMEM, uart_addr[uart.dev_no - 1]);
 
 	if (uart.base == MAP_FAILED)
 		return 2;
@@ -420,14 +445,6 @@ int main(int argc, char **argv)
 
 	beginthread(uart_intrthr, 3, &stack0, 2048, NULL);
 	beginthread(uart_thr, 3, &stack, 2048, (void *)port);
-
-	sprintf(uartn, "uart%u", uart.dev_no % 10);
-
-	dev.port = port;
-	dev.id = 0;
-
-	if ((err = create_dev(&dev, uartn)))
-		debug("imx6ull-uart: Could not create device file\n");
 
 	uart_thr((void *)port);
 
