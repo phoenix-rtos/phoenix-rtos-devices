@@ -21,6 +21,8 @@
 #define LOG_ERROR(str, ...) do { fprintf(stderr, __FILE__  ":%d error: " str "\n", __LINE__, ##__VA_ARGS__); } while (0)
 #define TRACE(str, ...) do { if (0) fprintf(stderr, __FILE__  ":%d trace: " str "\n", __LINE__, ##__VA_ARGS__); } while (0)
 
+extern int portGet(unsigned id);
+
 typedef struct {
 	void *next, *prev;
 
@@ -122,6 +124,7 @@ static flashsrv_request_t *flashsrv_getRequest(void)
 static void flashsrv_poolThread(void *arg)
 {
 	flashsrv_request_t *req;
+	int error;
 
 	for (;;) {
 		mutexLock(flashsrv_common.lock);
@@ -129,9 +132,8 @@ static void flashsrv_poolThread(void *arg)
 			condWait(flashsrv_common.cond, flashsrv_common.lock, 0);
 		mutexUnlock(flashsrv_common.lock);
 
-		req->handler(req->data, &req->msg);
-
-		msgRespond(req->port, &req->msg, req->rid);
+		error = req->handler(req->data, &req->msg);
+		msgRespond(req->port, error, &req->msg, req->rid);
 		flashsrv_freeRequest(req);
 	}
 }
@@ -165,44 +167,6 @@ static void flashsrv_fsThread(void *arg)
 
 		condSignal(flashsrv_common.cond);
 	}
-}
-
-
-static flashsrv_filesystem_t *flashsrv_mountFs(flashsrv_partition_t *partition, unsigned mode, char *name)
-{
-	flashsrv_filesystem_t *fs;
-
-	TRACE("mountFs called");
-
-	if ((fs = calloc(1, sizeof(*fs))) == NULL) {
-		LOG_ERROR("out of memory");
-		return NULL;
-	}
-
-	strncpy(fs->name, name, sizeof(fs->name));
-
-	if (!strcmp(fs->name, "jffs2")) {
-		fs->handler = jffs2lib_message_handler;
-		portCreate(&fs->port);
-		TRACE("creating jffs2 partition at port %d", fs->port);
-		fs->data = jffs2lib_create_partition(partition->start, partition->start + partition->size, mode, fs->port, &fs->root);
-		fs->mount = jffs2lib_mount_partition;
-
-		if (beginthreadex(flashsrv_fsThread, 4, fs->stack, sizeof(fs->stack), fs, &fs->tid) < 0) {
-			LOG_ERROR("beginthread");
-			/* TODO: cleanup */
-			return NULL;
-		}
-
-		mutexLock(flashsrv_common.lock);
-		lib_rbInsert(&flashsrv_common.filesystems, &fs->node);
-		mutexUnlock(flashsrv_common.lock);
-
-		return fs;
-	}
-
-	LOG_ERROR("bad fs type");
-	return NULL;
 }
 
 
@@ -240,34 +204,25 @@ static int flashsrv_erase(size_t start, size_t end)
 }
 
 
-static int flashsrv_partoff(id_t id, size_t start, size_t size, size_t *partoff)
+static int flashsrv_partoff(flashsrv_partition_t *p, off_t offset, size_t size, size_t *partoff)
 {
-	flashsrv_partition_t *p = NULL;
-	id_t rootID = ROOT_ID;
-
-	if (id == rootID) {
+	if (p == NULL) {
 		*partoff = 0;
 		return EOK;
 	}
 
-	mutexLock(flashsrv_common.lock);
-	p = lib_treeof(flashsrv_partition_t, node, idtree_find(&flashsrv_common.partitions, id));
-	mutexUnlock(flashsrv_common.lock);
-
-	if (p == NULL)
-		return -EINVAL;
-
 	TRACE("Partition: size %d, start %d", p->size * PAGES_PER_BLOCK * FLASH_PAGE_SIZE, p->start);
-	if ((start + size) > (p->size * PAGES_PER_BLOCK * FLASH_PAGE_SIZE))
-		return -EINVAL;
+	if ((offset + size) > (p->size * PAGES_PER_BLOCK * FLASH_PAGE_SIZE)) {
+		LOG_ERROR("offset out of bounds");
+		return -ENXIO;
+	}
 
 	*partoff = p->start * FLASH_PAGE_SIZE * PAGES_PER_BLOCK;
-
 	return EOK;
 }
 
 
-static int flashsrv_write(id_t id, size_t start, char *data, size_t size)
+static int flashsrv_write(flashsrv_partition_t *partition, off_t offset, const char *data, size_t size)
 {
 	flashdrv_dma_t *dma;
 	int i, err;
@@ -276,21 +231,21 @@ static int flashsrv_write(id_t id, size_t start, char *data, size_t size)
 	size_t partoff = 0;
 	size_t writesz = size;
 
-	if (flashsrv_partoff(id, start, size, &partoff) < 0)
-		return -EINVAL;
+	if ((err = flashsrv_partoff(partition, offset, size, &partoff)) < 0)
+		return err;
 
-	start += partoff;
+	offset += partoff;
 
-	TRACE("Write off: %d, size: %d, ptr: %p", start, size, data);
+	TRACE("Write off: %ld, size: %d, ptr: %p", offset, size, data);
 
 	if (size & (FLASH_PAGE_SIZE - 1))
 		return -EINVAL;
 
-	if (start & (FLASH_PAGE_SIZE - 1))
+	if (offset & (FLASH_PAGE_SIZE - 1))
 		return -EINVAL;
 
 	if (data == NULL)
-		return flashsrv_erase(start, start + size);
+		return flashsrv_erase(offset, offset + size);
 
 	dma = flashsrv_common.dma;
 	databuf = flashsrv_common.databuf;
@@ -300,7 +255,7 @@ static int flashsrv_write(id_t id, size_t start, char *data, size_t size)
 
 	for (i = 0; size; i++) {
 		memcpy(databuf, data + FLASH_PAGE_SIZE * i, FLASH_PAGE_SIZE);
-		err = flashdrv_write(dma, start / FLASH_PAGE_SIZE + i, databuf, metabuf);
+		err = flashdrv_write(dma, offset / FLASH_PAGE_SIZE + i, databuf, metabuf);
 
 		if (err) {
 			LOG_ERROR("write error %d", err);
@@ -315,7 +270,7 @@ static int flashsrv_write(id_t id, size_t start, char *data, size_t size)
 }
 
 
-static int flashsrv_read(id_t id, size_t offset, char *data, size_t size)
+static int flashsrv_read(flashsrv_partition_t *partition, off_t offset, char *data, size_t size)
 {
 	flashdrv_dma_t *dma;
 	char *databuf;
@@ -326,14 +281,14 @@ static int flashsrv_read(id_t id, size_t offset, char *data, size_t size)
 	dma = flashsrv_common.dma;
 	databuf = flashsrv_common.databuf;
 
-	if (flashsrv_partoff(id, offset, size, &partoff) < 0)
-		return -EINVAL;
+	if ((err = flashsrv_partoff(partition, offset, size, &partoff)) < 0)
+		return err;
 
 	offset += partoff;
 	rp = (offset & ~(FLASH_PAGE_SIZE - 1)) / FLASH_PAGE_SIZE;
 	pageoffs = offset & (FLASH_PAGE_SIZE - 1);
 
-	TRACE("Read off: %d, size: %d.", offset, size);
+	TRACE("Read off: %ld, size: %zu", offset, size);
 
 	while (size) {
 		err = flashdrv_read(dma, rp, databuf, flashsrv_common.metabuf);
@@ -358,34 +313,59 @@ static int flashsrv_read(id_t id, size_t offset, char *data, size_t size)
 }
 
 
-static int flashsrv_mount(mount_msg_t *mnt, oid_t *oid)
+static flashsrv_partition_t *flashsrv_getPartition(id_t id)
+{
+	flashsrv_partition_t *p;
+	mutexLock(flashsrv_common.lock);
+	p = lib_treeof(flashsrv_partition_t, node, idtree_find(&flashsrv_common.partitions, id));
+	mutexUnlock(flashsrv_common.lock);
+	return p;
+}
+
+
+static int flashsrv_mount(flashsrv_partition_t *partition, unsigned port, id_t *newid, mode_t *mode, const char *type, size_t len)
 {
 	flashsrv_filesystem_t *fs;
-	flashsrv_partition_t *p;
-	TRACE("mount received");
+	int error;
 
-	mutexLock(flashsrv_common.lock);
-	p = lib_treeof(flashsrv_partition_t, node, idtree_find(&flashsrv_common.partitions, mnt->id));
-	mutexUnlock(flashsrv_common.lock);
-
-	if (p == NULL) {
-		LOG_ERROR("partition %ld not found", mnt->id);
-		return -ENOENT;
+	if (len > sizeof(fs->name)) {
+		len = sizeof(fs->name);
 	}
 
-	fs = flashsrv_mountFs(p, mnt->mode, mnt->fstype);
+	if (!strncmp(type, "jffs2", len)) {
+		if ((fs = calloc(1, sizeof(*fs))) == NULL) {
+			LOG_ERROR("out of memory");
+			return -ENOMEM;
+		}
 
-	if (fs != NULL) {
-		oid->port = fs->port;
-		oid->id = fs->root;
-	}
-	else {
-		LOG_ERROR("mount failed");
-		oid->port = -1;
-		oid->id = 0;
+		strncpy(fs->name, type, len);
+
+		fs->handler = jffs2lib_message_handler;
+		if ((fs->port = portGet(port)) < 0) {
+			LOG_ERROR("port create");
+			return fs->port;
+		}
+
+		fs->data = jffs2lib_create_partition(partition->start, partition->start + partition->size, 0, fs->port, &fs->root);
+		fs->mount = jffs2lib_mount_partition;
+
+		if ((error = beginthreadex(flashsrv_fsThread, 4, fs->stack, sizeof(fs->stack), fs, &fs->tid)) < 0) {
+			LOG_ERROR("beginthread");
+			/* TODO: jffs2lib_destroy_partition? */
+			return error;
+		}
+
+		mutexLock(flashsrv_common.lock);
+		lib_rbInsert(&flashsrv_common.filesystems, &fs->node);
+		mutexUnlock(flashsrv_common.lock);
+
+		*newid = fs->root;
+		*mode = S_IFDIR;
+		return EOK;
 	}
 
-	return EOK;
+	LOG_ERROR("bad filesystem type: %*s", len, type);
+	return -EINVAL;
 }
 
 
@@ -404,19 +384,18 @@ static void flashsrv_syncAll(void)
 }
 
 
-static int flashsrv_devErase(flash_i_devctl_t *idevctl, int type)
+static int flashsrv_devErase(flashsrv_partition_t *p, size_t offset, size_t size)
 {
 	size_t partoff = 0;
 	size_t start = 0;
 	size_t end = 0;
+	int error;
 
-	if ( type == flashsrv_devctl_erase) {
-		if (flashsrv_partoff(idevctl->erase.oid.id, idevctl->erase.offset, idevctl->erase.size, &partoff) < 0)
-			return -EINVAL;
-	}
+	if ((error = flashsrv_partoff(p, offset, size, &partoff)) < 0)
+		return error;
 
-	start = idevctl->erase.offset + partoff;
-	end = start + idevctl->erase.size;
+	start = offset + partoff;
+	end = start + size;
 
 	if (end % ERASE_BLOCK_SIZE || start % ERASE_BLOCK_SIZE)
 		return -EINVAL;
@@ -425,7 +404,8 @@ static int flashsrv_devErase(flash_i_devctl_t *idevctl, int type)
 }
 
 
-static int flashsrv_devWriteRaw(flash_i_devctl_t *idevctl, char *data)
+#if 0      /* TODO */
+static int flashsrv_devWriteRaw(flash_i_devctl_t *idevctl, const char *data)
 {
 	flashdrv_dma_t *dma;
 	int i, err;
@@ -527,51 +507,33 @@ static int flashsrv_devReadRaw(flash_i_devctl_t *idevctl, char *data)
 
 	return totalBytes;
 }
+#endif
 
 
-static void flashsrv_devCtrl(msg_t *msg)
+static int flashsrv_devCtrl(flashsrv_partition_t *p, msg_t *msg)
 {
-	flash_i_devctl_t *idevctl = (flash_i_devctl_t *)msg->i.raw;
-	flash_o_devctl_t *odevctl = (flash_o_devctl_t *)msg->o.raw;
+	int error;
+	unsigned long type = msg->i.devctl;
+	flash_erase_t *erase = (void *)msg->i.data;
 
-	switch (idevctl->type) {
-	case flashsrv_devctl_erase :
-		odevctl->err = flashsrv_devErase(idevctl, flashsrv_devctl_erase);
-		break;
-
-	case flashsrv_devctl_chiperase :
-		odevctl->err = flashsrv_devErase(idevctl, flashsrv_devctl_chiperase);
-		break;
-
-	case flashsrv_devctl_writeraw :
-		odevctl->err = flashsrv_devWriteRaw(idevctl, msg->i.data);
-		break;
-
-	case flashsrv_devctl_writemeta :
-		odevctl->err = flashsrv_devWriteMeta(idevctl, msg->i.data);
-		break;
-
-	case flashsrv_devctl_readraw :
-		odevctl->err = flashsrv_devReadRaw(idevctl, msg->o.data);
+	switch (type) {
+	case flashsrv_devctl_erase:
+		error = flashsrv_devErase(p, erase->offset, erase->size);
 		break;
 
 	default:
-		odevctl->err = -EINVAL;
+		error = -EINVAL;
 		break;
 	}
+
+	return error;
 }
 
 
-static int flashsrv_fileAttr(int type, id_t id)
+static int flashsrv_fileAttr(flashsrv_partition_t *p, int type)
 {
-	flashsrv_partition_t *p = NULL;
-
-	mutexLock(flashsrv_common.lock);
-	p = lib_treeof(flashsrv_partition_t, node, idtree_find(&flashsrv_common.partitions, id));
-	mutexUnlock(flashsrv_common.lock);
-
 	if (p == NULL)
-		return -1;
+		return -EOPNOTSUPP;
 
 	switch (type) {
 	case atSize:
@@ -581,7 +543,7 @@ static int flashsrv_fileAttr(int type, id_t id)
 		return p->start * FLASH_PAGE_SIZE * PAGES_PER_BLOCK;
 
 	default:
-		return -1;
+		return -EINVAL;
 	}
 }
 
@@ -590,52 +552,65 @@ static void flashsrv_devThread(void *arg)
 {
 	msg_t msg;
 	unsigned rid, port = (unsigned)arg;
+	flashsrv_partition_t *partition;
+	int error;
 
 	for (;;) {
 		if (msgRecv(port, &msg, &rid) < 0)
 			continue;
 
-		switch (msg.type) {
-		case mtRead:
-			TRACE("DEV read - id: %llu, size: %d, off: %llu ", msg.i.io.oid.id, msg.o.size, msg.i.io.offs);
-			msg.o.io.err = flashsrv_read(msg.i.io.oid.id, msg.i.io.offs, msg.o.data, msg.o.size);
-			break;
+		if ((partition = flashsrv_getPartition(msg.object)) == NULL && msg.object != ROOT_ID) {
+			error = -ENODEV;
+		}
+		else {
+			error = EOK;
+			switch (msg.type) {
+			case mtRead:
+				if ((msg.o.io = flashsrv_read(partition, msg.i.io.offs, msg.o.data, msg.o.size)) < 0) {
+					error = msg.o.io;
+					msg.o.io = 0;
+				}
+				break;
 
-		case mtWrite:
-			TRACE("DEV write - id: %llu, size: %d, off: %llu", msg.i.io.oid.id, msg.i.size, msg.i.io.offs);
-			msg.o.io.err = flashsrv_write(msg.i.io.oid.id, msg.i.io.offs, msg.i.data, msg.i.size ? msg.i.size : msg.i.io.len);
-			break;
+			case mtWrite:
+				if ((msg.o.io = flashsrv_write(partition, msg.i.io.offs, msg.i.data, msg.i.size)) < 0) {
+					error = msg.o.io;
+					msg.o.io = 0;
+				}
+				break;
 
-		case mtMount:
-			flashsrv_mount((mount_msg_t *)msg.i.raw, (oid_t *)msg.o.raw);
-			break;
+			case mtMount:
+				error = flashsrv_mount(partition, msg.i.mount.port, &msg.o.mount.id, &msg.o.mount.mode, msg.i.data, msg.i.size);
+				break;
 
-		case mtSync:
-			flashsrv_syncAll();
-			break;
+			case mtSync:
+				flashsrv_syncAll();
+				break;
 
-		case mtDevCtl:
-			flashsrv_devCtrl(&msg);
-			break;
+			case mtDevCtl:
+				flashsrv_devCtrl(partition, &msg);
+				break;
 
-		case mtGetAttr:
-			TRACE("DEV mtgetAttr");
-			msg.o.attr.val = flashsrv_fileAttr(msg.i.attr.type, msg.i.attr.oid.id);
-			break;
+			case mtGetAttr:
+				TRACE("DEV mtgetAttr");
+				*(int *)msg.o.data = flashsrv_fileAttr(partition, msg.i.attr);
+				break;
 
-		case mtOpen:
-			TRACE("DEV mtOpen");
-		case mtClose:
-			msg.o.io.err = EOK;
-			break;
+			case mtOpen:
+				TRACE("DEV mtOpen");
+				msg.o.open = msg.object;
+				/* fallthrough */
+			case mtClose:
+				break;
 
-		default:
-			TRACE("DEV error");
-			msg.o.io.err = -EINVAL;
-			break;
+			default:
+				TRACE("DEV error");
+				error = -EINVAL;
+				break;
+			}
 		}
 
-		msgRespond(port, &msg, rid);
+		msgRespond(port, error, &msg, rid);
 	}
 }
 
@@ -658,91 +633,60 @@ static int flashsrv_partition(size_t start, size_t size)
 }
 
 
-static void daemonize(void)
-{
-	/* TODO: required when we are not root */
-}
-
-
 int main(int argc, char **argv)
 {
 	int i, c;
-	oid_t oid = {0, 0}, rootoid;
-	flashsrv_filesystem_t *rootfs = NULL;
+	id_t id;
 	flashsrv_partition_t *p;
 	rbnode_t *n;
 	unsigned port;
 	char path[32];
 
-	portCreate(&port);
-
-	TRACE("got port %d", port);
-
-	condCreate(&flashsrv_common.cond);
-	mutexCreate(&flashsrv_common.lock);
+	port = PORT_DESCRIPTOR;
 	lib_rbInit(&flashsrv_common.filesystems, flashsrv_fscmp, NULL);
 	idtree_init(&flashsrv_common.partitions);
-
 	flashsrv_common.queue = NULL;
+	condCreate(&flashsrv_common.cond);
+	mutexCreate(&flashsrv_common.lock);
 
-	flashdrv_init();
-	flashsrv_common.dma = flashdrv_dmanew();
-	flashsrv_common.databuf = mmap(NULL, FLASH_PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, NULL, -1);
-	flashsrv_common.rawdatabuf = mmap(NULL, 2 * FLASH_PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, NULL, -1);
-	flashsrv_common.metabuf = mmap(NULL, FLASH_PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, NULL, -1);
-
-	for (i = 0; i < sizeof(flashsrv_common.poolStacks) / sizeof(flashsrv_common.poolStacks[0]); ++i)
-		beginthread(flashsrv_poolThread, 4, flashsrv_common.poolStacks[i], sizeof(flashsrv_common.poolStacks[i]), NULL);
-
-	while ((c = getopt(argc, argv, "r:p:")) != -1) {
+	while ((c = getopt(argc, argv, "p:")) != -1) {
 		switch (c) {
-		case 'r':
-			p = lib_treeof(flashsrv_partition_t, node, idtree_find(&flashsrv_common.partitions, atoi(argv[optind])));
-
-			if (p == NULL) {
-				LOG_ERROR("partition %d not found", atoi(argv[optind]));
-				return -1;
-			}
-
-			rootfs = flashsrv_mountFs(p, 0, argv[optind - 1]);
-			optind += 1;
-
-			if (rootfs == NULL) {
-				LOG_ERROR("failed to mount root partition");
-				return -1;
-			}
-
-			rootoid.port = rootfs->port;
-			rootoid.id = rootfs->root;
-			break;
-
 		case 'p':
 			flashsrv_partition(atoi(argv[optind - 1]), atoi(argv[optind]));
 			optind += 1;
 			break;
 
 		default:
+			LOG_ERROR("imx6ull-flash: invalid argument \"%s\"", argv[optind - 1]);
+			exit(EXIT_FAILURE);
 			break;
 		}
 	}
 
 	for (n = lib_rbMinimum(flashsrv_common.partitions.root); n; n = lib_rbNext(n)) {
 		p = lib_treeof(flashsrv_partition_t, node, n);
-		oid.id = idtree_id(&p->node);
-		oid.port = port;
+		id = idtree_id(&p->node);
 
-		sprintf(path, "flash%lld", oid.id);
-		create_dev(&oid, path);
+		sprintf(path, "/dev/flash%lld", id);
+		create_dev(port, id, path, S_IFBLK);
 	}
 
-	oid.port = port;
-	oid.id = ROOT_ID;
+	create_dev(port, ROOT_ID, "/dev/flashsrv", S_IFCHR);
 
-	create_dev(&oid, "flashsrv");
-	if (rootfs == NULL)
-		daemonize();
-	else
-		portRegister(rootfs->port, "/", &rootoid);
+	if (fork())
+		exit(EXIT_SUCCESS);
+	setsid();
+
+	TRACE("got port %d", port);
+
+	flashdrv_init();
+	flashsrv_common.dma = flashdrv_dmanew();
+	flashsrv_common.databuf = mmap(NULL, FLASH_PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_UNCACHED, -1, 0);
+	flashsrv_common.rawdatabuf = mmap(NULL, 2 * FLASH_PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_UNCACHED, -1, 0);
+	flashsrv_common.metabuf = mmap(NULL, FLASH_PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_UNCACHED, -1, 0);
+
+	for (i = 0; i < sizeof(flashsrv_common.poolStacks) / sizeof(flashsrv_common.poolStacks[0]); ++i)
+		beginthread(flashsrv_poolThread, 4, flashsrv_common.poolStacks[i], sizeof(flashsrv_common.poolStacks[i]), NULL);
 
 	printf("imx6ull-flash: initialized\n");
 	flashsrv_devThread((void *)port);

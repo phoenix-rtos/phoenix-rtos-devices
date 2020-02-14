@@ -30,37 +30,8 @@ enum { flashsrv_devctl_erase = 0, flashsrv_devctl_chiperase, flashsrv_devctl_wri
 	 flashsrv_devctl_readraw };
 
 typedef struct {
-	int type;
-
-	union {
-		struct {
-			size_t size;
-			size_t offset;
-			oid_t oid;
-		} erase;
-
-		struct {
-			size_t size;
-			size_t offset;
-		} chiperase;
-
-		struct {
-			oid_t oid;
-			uint32_t address;
-			size_t size;
-		} write;
-
-		struct {
-			oid_t oid;
-			uint32_t address;
-			size_t size;
-		} readraw;
-	};
-} __attribute__((packed)) flash_i_devctl_t;
-
-
-typedef struct {
-	int err;
-} __attribute__((packed)) flash_o_devctl_t;
+	size_t size;
+	size_t offset;
+} __attribute__((packed)) flash_erase_t;
 
 #endif
