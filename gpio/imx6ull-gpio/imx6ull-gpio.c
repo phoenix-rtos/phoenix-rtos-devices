@@ -13,6 +13,7 @@
 
 #include <errno.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -43,7 +44,7 @@ struct {
 		handle_t lock;
 	} gpio[5];
 
-	uint32_t port;
+	int port;
 } common;
 
 
@@ -54,47 +55,47 @@ static const int clocks[] = { pctl_clk_gpio1, pctl_clk_gpio2, pctl_clk_gpio3, pc
 int init(void)
 {
 	int i, err;
-	char devpath[11];
+	char devpath[16];
 	platformctl_t pctl;
-	oid_t dev;
 
 	for (i = 0; i < sizeof(common.gpio) / sizeof(common.gpio[0]); ++i) {
-		if ((common.gpio[i].base = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_DEVICE | MAP_UNCACHED, OID_PHYSMEM, paddr[i])) == MAP_FAILED) {
+		if ((common.gpio[i].base = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_DEVICE | MAP_UNCACHED, FD_PHYSMEM, paddr[i])) == MAP_FAILED) {
 			printf("gpiodrv: Could not map gpio%d paddr %p\n", i + 1, (void*) paddr[i]);
 			return -1;
 		}
 	}
 
-	if (portCreate(&common.port) != EOK) {
-		printf("gpiodrv: Could not create port\n");
-		return -1;
+	if (portEvent(3, 0, 0) < 0) {
+		if ((common.port = portCreate(0)) < 0) {
+			printf("gpiodrv: Could not create port\n");
+			return -1;
+		}
+	}
+	else {
+		common.port = 3;
 	}
 
 	for (i = 0; i < sizeof(common.gpio) / sizeof(common.gpio[0]); ++i) {
+		sprintf(devpath, "/dev/gpio%d", i + 1);
+		mkdir(devpath, 0750);
+	
+		sprintf(devpath, "/dev/gpio%d/port", i + 1);
 
-		sprintf(devpath, "gpio%d/port", i + 1);
-
-		dev.port = common.port;
-		dev.id = gpio1 + i;
-
-		if ((err = create_dev(&dev, devpath)) != EOK) {
+		if ((err = create_dev(common.port, gpio1 + i, devpath, S_IFCHR)) != EOK) {
 			printf("gpiodrv: Could not create port file #%d (err %d)\n", i + 1, err);
 			return - 1;
 		}
 
-		common.gpio[i].port = dev.id;
+		common.gpio[i].port = gpio1 + i;
 
-		sprintf(devpath, "gpio%d/dir", i + 1);
+		sprintf(devpath, "/dev/gpio%d/dir", i + 1);
 
-		dev.port = common.port;
-		dev.id = dir1 + i;
-
-		if ((err = create_dev(&dev, devpath)) != EOK) {
+		if ((err = create_dev(common.port, dir1 + i, devpath, S_IFCHR)) != EOK) {
 			printf("gpiodrv: Could not create direction file #%d (err %d)\n", i + 1, err);
 			return - 1;
 		}
 
-		common.gpio[i].dir = dev.id;
+		common.gpio[i].dir = dir1 + i;
 
 		pctl.action = pctl_set;
 		pctl.type = pctl_devclock;
@@ -180,34 +181,39 @@ void thread(void *arg)
 	unsigned int rid;
 	int d;
 	uint32_t val, mask;
+	int error;
 
 	while (1) {
 		if (msgRecv(common.port, &msg, &rid) < 0)
 			continue;
 
-		msg.o.io.err = -EINVAL;
+		error = -EINVAL;
 
 		switch (msg.type) {
 			case mtOpen:
+				msg.o.open = msg.object;
+				/* fallthrough */
 			case mtClose:
-				msg.o.io.err = msg.i.openclose.oid.id < gpio1 || msg.i.openclose.oid.id > dir5 ? -ENOENT : EOK;
+				error = msg.object < gpio1 || msg.object > dir5 ? -ENXIO : EOK;
 				break;
 
 			case mtRead:
 				if (msg.o.data != NULL && msg.o.size >= sizeof(uint32_t)) {
-					d = msg.i.io.oid.id;
+					d = msg.object;
 
 					if (d >= gpio1 && d <= gpio5) {
-						msg.o.io.err = gpioread(d, &val);
+						error = gpioread(d, &val);
 						memcpy(msg.o.data, &val, sizeof(uint32_t));
 					}
 					else if (d >= dir1 && d <= dir5) {
-						msg.o.io.err = gpiogetdir(d, &val);
+						error = gpiogetdir(d, &val);
 						memcpy(msg.o.data, &val, sizeof(uint32_t));
 					}
 
-					if (msg.o.io.err == EOK)
-						msg.o.io.err = sizeof(uint32_t);
+					if (error == EOK)
+						msg.o.io = sizeof(uint32_t);
+					else
+						msg.o.io = 0;
 				}
 				break;
 
@@ -220,20 +226,22 @@ void thread(void *arg)
 					else
 						mask = (uint32_t)-1;
 
-					d = msg.i.io.oid.id;
+					d = msg.object;
 
 					if (d >= gpio1 && d <= gpio5)
-						msg.o.io.err = gpiowrite(d, val, mask);
+						error = gpiowrite(d, val, mask);
 					else if (d >= dir1 && d <= dir5)
-						msg.o.io.err = gpiosetdir(d, val, mask);
+						error = gpiosetdir(d, val, mask);
 
-					if (msg.o.io.err == EOK)
-						msg.o.io.err = (msg.i.size >= (sizeof(uint32_t) << 1)) ? sizeof(uint32_t) << 1 : sizeof(uint32_t);
+					if (error == EOK)
+						msg.o.io = (msg.i.size >= (sizeof(uint32_t) << 1)) ? sizeof(uint32_t) << 1 : sizeof(uint32_t);
+					else
+						msg.o.io = 0;
 				}
 				break;
 		}
 
-		msgRespond(common.port, &msg, rid);
+		msgRespond(common.port, error, &msg, rid);
 	}
 }
 
@@ -242,16 +250,12 @@ int main(void)
 {
 	oid_t root;
 
-	/* Wait for the filesystem */
-	while (lookup("/", NULL, &root) < 0)
-		usleep(10000);
-
-	/* Wait for the console */
-	while (write(1, "", 0) < 0)
-		usleep(10000);
-
 	if (init())
 		return -EIO;
+
+	if (fork())
+		_exit(0);
+	setsid();
 
 	thread(NULL);
 

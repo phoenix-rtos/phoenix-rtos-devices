@@ -287,6 +287,7 @@ static int sdma_context_dump(uint8_t channel_id, sdma_context_t *context)
 
 addr_t sdma_ocram_alloc(size_t size)
 {
+
 	unsigned n = (size + SIZE_PAGE - 1)/SIZE_PAGE;
 	addr_t paddr = 0;
 
@@ -301,17 +302,21 @@ addr_t sdma_ocram_alloc(size_t size)
 void *sdma_alloc_uncached(size_t size, addr_t *paddr, int ocram)
 {
 	uint32_t n = (size + SIZE_PAGE - 1)/SIZE_PAGE;
-	oid_t *oid = OID_NULL;
+	int mapfd = -1;
 	addr_t _paddr = 0;
+	int flags = MAP_UNCACHED;
 
 	if (ocram) {
-		oid = OID_PHYSMEM;
+		mapfd = FD_PHYSMEM;
 		_paddr = sdma_ocram_alloc(n*SIZE_PAGE);
 		if (!_paddr)
 			return NULL;
 	}
+	else {
+		flags |= MAP_ANONYMOUS;
+	}
 
-	void *vaddr = mmap(NULL, n*SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_UNCACHED, oid, _paddr);
+	void *vaddr = mmap(NULL, n*SIZE_PAGE, PROT_READ | PROT_WRITE, flags, mapfd, _paddr);
 	if (vaddr == MAP_FAILED)
 		return NULL;
 
@@ -589,30 +594,26 @@ static int sdma_channel_configure(uint8_t channel_id, sdma_channel_config_t *cfg
 static int dev_init(void)
 {
 	int i, res;
-	oid_t dev;
-	char filename[10];
+	char filename[20];
 
-	res = portCreate(&common.port);
-	if (res != EOK) {
-		log_error("could not create port: %d", res);
+	common.port = portCreate(555);
+	if (common.port < 0) {
+		log_error("could not create port: %d", common.port);
 		return -1;
 	}
 
 	/* Start from channel 1. Channel 0 is used for loading/dumping context,
 	 * scripts etc. */
+	mkdir("/dev/sdma", 0750);
 	for (i = 1; i < NUM_OF_SDMA_CHANNELS; i++) {
+		res = snprintf(filename, sizeof(filename), "/dev/sdma/ch%02u", (unsigned)i);
 
-		res = snprintf(filename, sizeof(filename), "sdma/ch%02u", (unsigned)i);
-
-		dev.port = common.port;
-		dev.id = i;
-
-		if ((res = create_dev(&dev, filename)) != EOK) {
+		if ((res = create_dev(common.port, i, filename, S_IFCHR)) != EOK) {
 			log_error("could not create %s (res=%d)", filename, res);
 			return -1;
 		}
 
-		common.channel[i].file_id = dev.id;
+		common.channel[i].file_id = i;
 	}
 
 	log_info("initialized");
@@ -667,7 +668,7 @@ static int dev_ctl(msg_t *msg)
 	sdma_dev_ctl_t dev_ctl;
 	sdma_context_t *context;
 
-	memcpy(&dev_ctl, msg->o.raw, sizeof(sdma_dev_ctl_t));
+	memcpy(&dev_ctl, msg->i.raw, sizeof(sdma_dev_ctl_t));
 
 	if ((channel = oid_to_channel(&dev_ctl.oid)) < 0) {
 		log_error("dev_ctl: failed to get channel corresponding to this oid");
@@ -736,6 +737,7 @@ static void worker_thread(void *arg)
 {
 	msg_t msg;
 	unsigned rid;
+	int error;
 
 	(void)arg;
 
@@ -745,29 +747,45 @@ static void worker_thread(void *arg)
 
 		switch (msg.type) {
 			case mtOpen:
-				msg.o.io.err = dev_open(&msg.i.openclose.oid, msg.i.openclose.flags);
+				msg.o.open = msg.object;
+				error = EOK;
+//				msg.o.io.err = dev_open(&msg.i.openclose.oid, msg.i.openclose.flags);
 				break;
 
 			case mtClose:
-				msg.o.io.err = dev_close(&msg.i.openclose.oid, msg.i.openclose.flags);
+//				msg.o.io.err = dev_close(&msg.i.openclose.oid, msg.i.openclose.flags);
+				error = EOK;
 				break;
 
-			case mtRead:
-				msg.o.io.err = dev_read(&msg.i.io.oid, msg.o.data, msg.o.size);
+			case mtRead: {
+				oid_t oid;
+				oid.port = common.port;
+				oid.id = msg.object;
+
+				error = dev_read(&oid, msg.o.data, msg.o.size);
+
+				if (error > 0) {
+					msg.o.io = error;
+					error = EOK;
+				}
+				else if (!error) {
+					error = -EAGAIN;
+				}
 				break;
+			}
 
 			case mtWrite:
-				msg.o.io.err = -ENOSYS;
+				error = -ENOSYS;
 				break;
 
-			case mtDevCtl:
+			case mtRaw:
 				mutexLock(common.lock);
-				msg.o.io.err = dev_ctl(&msg);
+				error = dev_ctl(&msg);
 				mutexUnlock(common.lock);
 				break;
 		}
 
-		msgRespond(common.port, &msg, rid);
+		msgRespond(common.port, error, &msg, rid);
 	}
 }
 
@@ -1041,9 +1059,10 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	/* Wait for the filesystem */
-	while (lookup("/", NULL, &root) < 0)
-		usleep(10000);
+	/* TODO: create device nodes first */
+	if (fork())
+		_exit(0);
+	setsid();
 
 	if (init())
 		return -EIO;

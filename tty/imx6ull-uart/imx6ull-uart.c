@@ -113,11 +113,18 @@ void uart_thr(void *arg)
 				error = msg.o.io;
 				msg.o.io = 0;
 			}
+			else if (!msg.o.io) {
+				error = -EAGAIN;
+			}
+
 			break;
 		case mtRead:
 			if ((msg.o.io = libtty_read(&uart.tty_common, msg.o.data, msg.o.size, msg.i.io.flags | O_NONBLOCK)) < 0) {
 				error = msg.o.io;
 				msg.o.io = 0;
+			}
+			else if (!msg.o.io) {
+				error = -EAGAIN;
 			}
 			break;
 		case mtClose:
@@ -363,6 +370,11 @@ int main(int argc, char **argv)
 
 	if ((err = create_dev(port, uart.dev_no, uartn, S_IFCHR)))
 		debug("imx6ull-uart: Could not create device file\n");
+
+	sprintf(uartn, "/dev/uart%d", uart.dev_no);
+
+	if ((err = create_dev(port, uart.dev_no, uartn, S_IFCHR)))
+		debug("imx6ull-uart: Could not create secondary device file\n");
 
 	if (fork())
 		exit(EXIT_SUCCESS);

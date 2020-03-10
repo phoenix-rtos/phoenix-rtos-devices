@@ -528,8 +528,8 @@ int main(int argc, char **argv)
 	char *mac[3] = { 0 };
 	char *sn = NULL;
 
-	otp.base = mmap(NULL, 0x1000, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, OTP_BASE_ADDR);
-	if (otp.base == NULL) {
+	otp.base = mmap(NULL, 0x1000, PROT_WRITE | PROT_READ, MAP_DEVICE, FD_PHYSMEM, OTP_BASE_ADDR);
+	if (otp.base == MAP_FAILED) {
 		printf("OTP mmap failed\n");
 		return -1;
 	}

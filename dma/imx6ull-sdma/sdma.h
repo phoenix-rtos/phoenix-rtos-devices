@@ -17,7 +17,8 @@
 #include "sdma-api.h"
 
 typedef struct {
-	oid_t oid;
+	int fd;
+	int port;
 } sdma_t;
 
 int sdma_open(sdma_t *s, const char *dev_name);

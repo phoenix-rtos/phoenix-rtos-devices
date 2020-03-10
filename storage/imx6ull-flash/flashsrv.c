@@ -153,8 +153,9 @@ static void flashsrv_fsThread(void *arg)
 	for (;;) {
 		req = flashsrv_newRequest(fs->port, fs->handler, fs->data);
 
-		if (msgRecv(fs->port, &req->msg, &req->rid) < 0)
-			continue;
+		while (msgRecv(fs->port, &req->msg, &req->rid) < 0) {
+			LOG_ERROR("msgRecv error!");
+		}
 
 		/* TODO: handle umount here? */
 		if (req->msg.type == mtUmount) {
@@ -580,6 +581,7 @@ static void flashsrv_devThread(void *arg)
 				break;
 
 			case mtMount:
+//				LOG_ERROR("info actually: mounting: %llu\n", msg.i.mount.port);
 				error = flashsrv_mount(partition, msg.i.mount.port, &msg.o.mount.id, &msg.o.mount.mode, msg.i.data, msg.i.size);
 				break;
 

@@ -673,12 +673,12 @@ void ehci_init(void *event_callback, handle_t common_lock)
 	mutexCreate(&ehci_common.irq_lock);
 	mutexCreate(&ehci_common.async_lock);
 
-	ehci_common.periodic_list = mmap(NULL, SIZE_PAGE, PROT_WRITE | PROT_READ, MAP_ANONYMOUS | MAP_UNCACHED, OID_NULL, 0);
+	ehci_common.periodic_list = mmap(NULL, SIZE_PAGE, PROT_WRITE | PROT_READ, MAP_ANONYMOUS | MAP_UNCACHED, -1, 0);
 
 	for (i = 0; i < 1024; ++i)
 		ehci_common.periodic_list[i] = (link_pointer_t) { .type = 0, .zero = 0, .pointer = 0, .terminate = 1 };
 
-	ehci_common.base = mmap(NULL, 4 * SIZE_PAGE, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, USB_ADDR);
+	ehci_common.base = mmap(NULL, 4 * SIZE_PAGE, PROT_WRITE | PROT_READ, MAP_DEVICE, FD_PHYSMEM, USB_ADDR);
 
 	/* Offset into USB2 */
 	ehci_common.usb2 = ehci_common.base + 128;
