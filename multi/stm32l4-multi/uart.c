@@ -40,14 +40,14 @@ struct {
 	unsigned int baud;
 	volatile int enabled;
 
-	volatile char *txbeg;
-	volatile char *txend;
+	volatile char * volatile txbeg;
+	volatile char * volatile txend;
 
 	volatile char rxdfifo[64];
 	volatile unsigned int rxdr;
 	volatile unsigned int rxdw;
-	volatile char *rxbeg;
-	volatile char *rxend;
+	volatile char * volatile rxbeg;
+	volatile char * volatile rxend;
 	volatile unsigned int *read;
 
 	handle_t rxlock;
@@ -245,6 +245,9 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 
 	if (!uart_common[uart].enabled)
 		return -EIO;
+
+	if (!count)
+		return 0;
 
 	mutexLock(uart_common[uart].rxlock);
 	mutexLock(uart_common[uart].lock);
