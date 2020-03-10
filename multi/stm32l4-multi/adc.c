@@ -3,7 +3,7 @@
  *
  * STM32L4 ADC driver
  *
- * Copyright 2017, 2018 Phoenix Systems
+ * Copyright 2020 Phoenix Systems
  * Author: Aleksander Kaminski
  *
  * This file is part of Phoenix-RTOS.
@@ -13,140 +13,206 @@
 
 
 #include <errno.h>
+#include <unistd.h>
 #include <sys/threads.h>
-#include <sys/interrupt.h>
 #include <sys/platform.h>
+#include <sys/pwman.h>
 
 #include "common.h"
 #include "rcc.h"
+#include "stm32-multi.h"
+
+enum { adc1_offs = 0, adc2_offs = 64, adc3_offs = 128, common_offs = 192 };
+
+enum { isr = 0, ier, cr, cfgr, cfgr2, smpr1, smpr2, tr1 = smpr2 + 2, tr2, tr3, sqr1 = tr3 + 2, sqr2, sqr3, sqr4, dr,
+	jsqr = dr + 3, ofr1 = jsqr + 5, ofr2, ofr3, ofr4, jdr1 = ofr4 + 5, jdr2, jdr3, jdr4, awd2cr = jdr4 + 5 , awd3cr,
+	difsel = awd3cr + 3, calfact };
+
+enum { common_csr = common_offs, common_ccr = common_csr + 2, common_cdr };
 
 
-enum { sr = 0, cr1, cr2, smpr1, smpr2, smpr3, jofr1, jofr2, jofr3, jofr4, htr, ltr, sqr1,
-	sqr2, sqr3, sqr4, sqr5, jsqr, jdr1, jdr2, jdr3, jdr4, dr, smpr0, csr = 192, ccr };
+//static const unsigned short * const ts_cal1 = (void *)0x1fff75a8;
+//static const unsigned short * const ts_cal2 = (void *)0x1fff75ca;
+static const unsigned short * const vrefint = (void *)0x1fff75aa;
 
 
 struct {
 	volatile unsigned int *base;
+	unsigned int calibration[3];
 
-	handle_t lock;
-	handle_t irqLock;
-	handle_t cond;
+	handle_t lock[3];
 } adc_common;
 
 
-static int adc_irqEoc(unsigned int n, void *arg)
+static void adc_delay(int delay)
 {
-	*(adc_common.base + cr1) &= ~(1 << 5);
+	volatile int i;
 
-	return 1;
+	for (i = 0; i < delay; ++i)
+		__asm__ volatile ("nop");
 }
 
 
-unsigned short adc_conversion(char channel)
+static int adc_getOffs(int adc)
 {
-	unsigned short conv;
-	unsigned int t;
+	if (adc == adc1)
+		return adc1_offs;
+	else if (adc == adc2)
+		return adc2_offs;
+	else
+		return adc3_offs;
+}
 
-	mutexLock(adc_common.lock);
 
-	/* Enable HSI */
-	rcc_setHsi(1);
+static void adc_wakeup(int adc)
+{
+	volatile unsigned int *base = adc_common.base + adc_getOffs(adc);
 
-	/* Enable ADC */
-	*(adc_common.base + cr2) |= 1;
+	mutexLock(adc_common.lock[adc]);
+	keepidle(1);
 
-	/* Wait for ADONS to be one */
-	while (!(*(adc_common.base + sr) & (1 << 6)));
+	/* Exit deep power down */
+	*(base + cr) &= ~(1 << 29);
+	dataBarier();
+	*(base + cr) |= 1 << 28;
+	dataBarier();
 
-	/* Internal voltage and temperature measurement on */
-	if (channel == 16 || channel == 17)
-		*(adc_common.base + ccr) |= 1 << 23;
+	/* Wait for ~20 us */
+	adc_delay(100);
 
-	/* Select bank */
-	t = *(adc_common.base + cr2) & ~(!(channel & 0x20) << 2);
-	*(adc_common.base + cr2) = t | (!!(channel & 0x20) << 2);
+	*(base + cfgr) = (1 << 31) | (1 << 12);
+	*(base + smpr1) = 0xbfffffff;
+	*(base + smpr2) = 0x07ffffff;
+}
 
-	/* Select channel */
-	t = *(adc_common.base + sqr5) & 0xc0000000;
-	*(adc_common.base + sqr5) = t | (channel & 0x1f);
+
+static void adc_disable(int adc)
+{
+	volatile unsigned int *base = adc_common.base + adc_getOffs(adc);
+
+	if (*(base + cr) & 1) {
+		*(base + cr) |= 1 << 1;
+		dataBarier();
+
+		while (*(base + cr) & 1)
+			usleep(0);
+	}
+
+	*(base + cr) |= 1 << 29;
+	dataBarier();
+
+	keepidle(0);
+	mutexUnlock(adc_common.lock[adc]);
+}
+
+
+static void adc_calibration(int adc)
+{
+	volatile unsigned int *base = adc_common.base + adc_getOffs(adc);
+	useconds_t sleep = 1 * 1000;
+
+	*(base + cr) &= ~(1 << 30);
+	*(base + cr) |= 1 << 31;
+
+	/* No intterupt for calibration done. Have to wait manually... */
+	while (*(base + cr) & (1 << 31)) {
+		usleep(sleep);
+		if (sleep < 200 * 1000)
+			sleep *= 2;
+	}
+
+	adc_common.calibration[adc] = *(base + calfact);
+}
+
+
+static unsigned short adc_probeChannel(int adc, char chan)
+{
+	volatile unsigned int *base = adc_common.base + adc_getOffs(adc);
+
+	/* Two conversions in regular sequence */
+	*(base + sqr1) = (chan << 12) | (chan << 6) | 1;
+	dataBarier();
+
+	*(base + cr) |= 1 << 2;
+	dataBarier();
+
+	/* Errata DM00264473 2.7.2 - we need to get data withing 1 ms of previous conversion */
+	/* so we make two conversion and allow overrun, removing result from the first one. */
+
+	/* Wait for overrun */
+	while (!(*(base + isr) & (1 << 4)))
+		usleep(0);
 
 	/* Clear flags */
-	*(adc_common.base + sr) &= ~((1 << 2) | (1 << 1));
+	*(base + isr) |= 0x7ff;
 
-	/* Enable interrupt */
-	*(adc_common.base + cr1) |= 1 << 5;
+	return *(base + dr);
+}
 
-	/* Start conversion */
-	*(adc_common.base + cr2) |= 1 << 30;
 
-	mutexLock(adc_common.irqLock);
-	while (!(*(adc_common.base + sr) & ((1 << 2) | (1 << 1))))
-		condWait(adc_common.cond, adc_common.lock, 0);
-	mutexUnlock(adc_common.irqLock);
+static void adc_enable(int adc)
+{
+	volatile unsigned int *base = adc_common.base + adc_getOffs(adc);
 
-	/* Read result */
-	conv = *(adc_common.base + dr) & 0xffff;
+	/* Enable ADC */
+	*(base + cr) |= 1;
+	dataBarier();
 
-	/* Internal voltage and temperature measurement off */
-	*(adc_common.base + ccr) &= ~(1 << 23);
+	/* It's quick, no need for an interrupt */
+	while (!(*(base + isr) & 1))
+		usleep(0);
 
-	/* Turn off everything */
-	*(adc_common.base + cr2) &= ~1;
+	/* Inject calibration */
+	*(base + calfact) = adc_common.calibration[adc];
+}
 
-	/* Disable HSI clock */
-	rcc_setHsi(0);
 
-	mutexUnlock(adc_common.lock);
+unsigned short adc_conversion(int adc, char chan)
+{
+	unsigned short vref, val;
+	unsigned int out;
 
-	return conv;
+	adc_wakeup(adc);
+	adc_calibration(adc);
+	adc_enable(adc);
+
+	if (adc != adc1) {
+		adc_wakeup(adc1);
+		adc_calibration(adc1);
+		adc_enable(adc1);
+	}
+
+	chan &= 0x1f;
+
+	vref = adc_probeChannel(adc1, 0);
+	val = adc_probeChannel(adc, chan);
+
+	out = (3000 * (*vrefint)) / vref;
+	out = (out * val) / ((1 << 12) - 1);
+
+	adc_disable(adc);
+	if (adc != adc1)
+		adc_disable(adc1);
+
+	return out;
 }
 
 
 int adc_init(void)
 {
-	int i = 0;
+	int i;
 
-	adc_common.base = (void *)0x40012400;
+	adc_common.base = (void *)0x50040000;
+	rcc_devClk(pctl_adc, 1);
 
-	/* Enable HSI and ADC clock */
-	rcc_setHsi(1);
-	rcc_devClk(pctl_adc1, 1);
+	*(adc_common.base + common_ccr) = (1 << 22) | (0xe << 18) | (0x3 << 16) | (0xf << 8);
 
-	mutexCreate(&adc_common.lock);
-	mutexCreate(&adc_common.irqLock);
-	condCreate(&adc_common.cond);
-
-	/* 12 bit resolution, power down when idle, interrupts on, */
-	*(adc_common.base + cr1) |= (1 << 17) | (1 << 7);
-	*(adc_common.base + cr1) &= ~(1 << 8);
-
-	*(adc_common.base + sr) |= 1 << 5;
-
-	/* Data aligned to the left, EOC at the end of conversion, single conversion mode */
-	*(adc_common.base + cr2) |= (1 << 11) | (1 << 10);
-	*(adc_common.base + cr2) &= ~2;
-
-	/* One conversion in sequence */
-	*(adc_common.base + sqr1) &= ~(0x1f << 20);
-
-	/* Set sampling time to 48 cycles */
-	*(adc_common.base + smpr0) = 055;
-	*(adc_common.base + smpr1) = 05555555555;
-	*(adc_common.base + smpr2) = 05555555555;
-	*(adc_common.base + smpr3) = 05555555555;
-
-	/* Turn off ADC */
-	*(adc_common.base + cr2) &= ~1;
-	while (*(adc_common.base + sr) & (1 << 6)) {
-		if (++i > 500)
-			break;
+	for (i = adc1; i <= adc3; ++i) {
+		mutexCreate(&adc_common.lock[i]);
+		adc_wakeup(i);
+		adc_calibration(i);
+		adc_disable(i);
 	}
-
-	/* Disable HSI clock */
-	rcc_setHsi(0);
-
-	/* Register end of conversion interrupt */
-	interrupt(adc1_irq, adc_irqEoc, NULL, adc_common.cond, NULL);
 
 	return EOK;
 }

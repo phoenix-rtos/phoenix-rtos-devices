@@ -154,6 +154,18 @@ typedef struct {
 } extimap_t;
 
 
+/* ADC */
+
+
+enum { adc1 = 0, adc2, adc3 };
+
+
+typedef struct {
+	int adcno;
+	int channel;
+} adcget_t;
+
+
 /* MULTI */
 
 
@@ -161,7 +173,7 @@ typedef struct {
 	int type;
 
 	union {
-		int adc_channel;
+		adcget_t adc_get;
 		int rtc_calib;
 		rtctimestamp_t rtc_timestamp;
 		i2cmsg_t i2c_msg;
@@ -184,7 +196,7 @@ typedef struct {
 	int err;
 
 	union {
-		unsigned short adc_val;
+		unsigned short adc_valmv;
 		rtctimestamp_t rtc_timestamp;
 		unsigned int gpio_get;
 	};

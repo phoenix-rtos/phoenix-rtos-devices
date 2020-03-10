@@ -27,11 +27,17 @@ ifneq (, $(findstring imxrt, $(TARGET)))
 		-ffreestanding -mno-unaligned-access\
 		-fpic -fpie -msingle-pic-base -mno-pic-data-is-text-relative\
 		-DVERSION=\"$(VERSION)\" -DARCH=\"arch/armv7/arch.h\" -DNOMMU
-else
+else ifneq (, $(findstring stm32, $(TARGET)))
 	CFLAGS += -Wall -Wstrict-prototypes -g -I$(SRCDIR) -nostartfiles -nostdlib\
-		-mcpu=cortex-m3 -mthumb -fomit-frame-pointer -ffreestanding -mno-unaligned-access\
+		-mthumb -fomit-frame-pointer -ffreestanding -mno-unaligned-access\
 		-fpic -fpie -msingle-pic-base -mno-pic-data-is-text-relative\
-		-DVERSION=\"$(VERSION)\" -DARCH=\"arch/armv7/arch.h\" -DNOMMU
+		-DVERSION=\"$(VERSION)\" -DARCH=\"arch/armv7/arch.h\" -DNOMMU -fstack-usage
+
+	ifneq (, $(findstring l4, $(TARGET)))
+		CFLAGS += -mcpu=cortex-m4
+	else ifneq (, $(findstring l1, $(TARGET)))
+		CFLAGS += -mcpu=cortex-m3
+	endif
 endif
 
 CFLAGS += -fdata-sections -ffunction-sections

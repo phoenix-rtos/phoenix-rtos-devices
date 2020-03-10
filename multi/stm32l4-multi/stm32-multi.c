@@ -53,10 +53,6 @@ static void handleMsg(msg_t *msg)
 
 	switch (imsg->type) {
 #if 0
-		case adc_get:
-			omsg->adc_val = adc_conversion(imsg->adc_channel);
-			break;
-
 		case rtc_setcal:
 			rtc_setCalib(imsg->rtc_calib);
 			break;
@@ -93,6 +89,10 @@ static void handleMsg(msg_t *msg)
 			err = syscfg_mapexti(imsg->exti_map.line, imsg->exti_map.port);
 			break;
 #endif
+		case adc_get:
+			omsg->adc_valmv = adc_conversion(imsg->adc_get.adcno, imsg->adc_get.channel);
+			break;
+
 		case spi_get:
 			err = spi_transaction(imsg->spi_rw.spi, spi_read, imsg->spi_rw.cmd, imsg->spi_rw.addr,
 				imsg->spi_rw.flags, msg->o.data, NULL, msg->o.size);
@@ -201,10 +201,10 @@ int main(void)
 	uart_init();
 	gpio_init();
 	spi_init();
+	adc_init();
 
 /*
 	rtc_init();
-	adc_init();
 	i2c_init();
 	flash_init();
 	exti_init();
