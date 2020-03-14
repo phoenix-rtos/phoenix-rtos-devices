@@ -186,6 +186,7 @@ static flashsrv_filesystem_t *flashsrv_mountFs(flashsrv_partition_t *partition, 
 	}
 
 	strncpy(fs->name, name, sizeof(fs->name));
+	fs->name[sizeof(fs->name) - 1] ='\0';
 
 	if (!strcmp(fs->name, "jffs2")) {
 		fs->handler = jffs2lib_message_handler;
@@ -660,6 +661,7 @@ static int flashsrv_partition(size_t start, size_t size)
 	TRACE("partition allocated, start: %u, a:t id %d", start, idtree_id(&p->node));
 	mutexUnlock(flashsrv_common.lock);
 
+	free(p);
 	return EOK;
 }
 
@@ -703,6 +705,10 @@ int main(int argc, char **argv)
 	while ((c = getopt(argc, argv, "r:p:")) != -1) {
 		switch (c) {
 		case 'r':
+			if (argv[optind] == NULL) {
+				LOG_ERROR("invalid number of arguments");
+				return -1;
+			}
 			p = lib_treeof(flashsrv_partition_t, node, idtree_find(&flashsrv_common.partitions, atoi(argv[optind])));
 
 			if (p == NULL) {
@@ -723,6 +729,10 @@ int main(int argc, char **argv)
 			break;
 
 		case 'p':
+			if (argv[optind] == NULL) {
+				LOG_ERROR("invalid number of arguments");
+				return -1;
+			}
 			flashsrv_partition(atoi(argv[optind - 1]), atoi(argv[optind]));
 			optind += 1;
 			break;
