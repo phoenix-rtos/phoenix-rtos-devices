@@ -192,8 +192,11 @@ int libtty_init(libtty_common_t* tty, libtty_callbacks_t* callbacks, unsigned in
 
 	tty->tx_fifo = malloc(sizeof(fifo_t) + bufsize * sizeof(tty->tx_fifo->data[0]));
 	tty->rx_fifo = malloc(sizeof(fifo_t) + bufsize * sizeof(tty->tx_fifo->data[0]));
-	if (tty->tx_fifo == NULL || tty->rx_fifo == NULL)
+	if (tty->tx_fifo == NULL || tty->rx_fifo == NULL) {
+		free(tty->tx_fifo);
+		free(tty->rx_fifo);
 		return -1;
+	}
 
 	if (condCreate(&tty->tx_waitq) != EOK)
 		return -1;
