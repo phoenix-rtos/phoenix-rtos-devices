@@ -716,6 +716,7 @@ void ehci_shutdown(void)
 }
 #endif
 
+
 void ehci_dumpRegisters(FILE *stream)
 {
 	fprintf(stream, "%18s: %08x", "id", *(ehci_common.usb2 + id));
@@ -807,11 +808,6 @@ void ehci_dumpQueue(FILE *stream, struct qh *qh)
 	fprintf(stream, "%18s: %08x\n", "data_toggle", qh->transfer_overlay.data_toggle);
 
 }
-
-
-
-
-
 
 
 void ehci_activate(struct qh *qh) {
