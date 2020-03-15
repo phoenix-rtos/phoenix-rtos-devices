@@ -246,7 +246,7 @@ void flash_test(int test_no, void * arg)
 
 	init_tests();
 
-	if (test_no >= test_cnt || test_no >= 15) {
+	if (test_no < 0 || test_no >= test_cnt || test_no >= 15) {
 		printf("Invalid test number\n");
 		return;
 	}
@@ -270,8 +270,10 @@ void flash_erase(void *arg, int start, int end, int silent)
 
 	nand_msg(silent, "\n------ ERASE ------\n");
 
-	if (end < start)
-		nand_msg(silent, "Invalid range (%d-%d)\n", start, end);
+	if (start < 0 || end < start) {
+		printf("Invalid range (%d-%d)\n", start, end);
+		return;
+	}
 
 	printf("Erasing blocks from %d to %d\n", start, end);
 	if (arg == NULL) {
@@ -316,6 +318,7 @@ int flash_write_cleanmarkers(void *arg, int start, int end)
 
 	return ret;
 }
+
 
 void set_nandboot(char *primary, char *secondary, char *rootfs, size_t rootfssz, int rwfs_erase)
 {
@@ -398,14 +401,14 @@ void set_nandboot(char *primary, char *secondary, char *rootfs, size_t rootfssz,
 void print_help(void)
 {
 	printf("Usage:\n" \
-			"\t-i (path) - file path (requires -s option)\n" \
-			"\t-r (path) - just like -i option but raw\n" \
-			"\t-s (number) - start flashing from page (requires -i option)\n" \
-			"\t-c - search for bad blocks from factory and print summary\n" \
-			"\t-h - print this message\n" \
-			"\t-t (number) - run test #no\n" \
-			"\t-e (start:end) - erase blocks form start to end\n" \
-			"\t-f (fw1) (fw2) (rootfs) - set flash for internal booting\n");
+		"\t-i (path)       - file path (requires -s option)\n"
+		"\t-r (path)       - just like -i option but raw\n"
+		"\t-s (number)     - start flashing from page (requires -i option)\n"
+		"\t-c              - search for bad blocks from factory and print summary\n"
+		"\t-h              - print this message\n"
+		"\t-t (number)     - run test #no\n"
+		"\t-e (start:end)  - erase blocks form start to end\n"
+		"\t-f (fw1) (fw2) (rootfs) - set flash for internal booting\n");
 }
 
 
@@ -558,105 +561,100 @@ static int flash_update_tool(char **args)
 }
 
 
+static char *create_path(const char *p, char *arg)
+{
+	char *path;
+	int len, i;
+
+	len = strlen(arg);
+	for (i = len; i >= 0 && arg[i] != '/'; --i);
+	i++;
+
+	path = malloc(strlen(p) + strlen(arg + i) + 1);
+	if (path != NULL) {
+		strcpy(path, p);
+		strcat(path, arg + i);
+	}
+
+	return path;
+}
+
+
 int main(int argc, char **argv)
 {
 	int c;
 	char *path = NULL;
 	int start = -1;
 	char *tok, *primary, *secondary, *rootfs;
-	int len, i, raw = 0;
+	int raw = 0;
 	size_t rootfssz = 64, erase_data = 0;
 
 	while ((c = getopt(argc, argv, "i:r:s:hct:e:f:U")) != -1) {
 		switch (c) {
+		case 'i':
+			path = optarg;
+			raw = 0;
+			break;
 
-			case 'i':
-				path = optarg;
-				raw = 0;
-				break;
+		case 'r':
+			path = optarg;
+			raw = 1;
+			break;
 
-			case 'r':
-				path = optarg;
-				raw = 1;
-				break;
+		case 'c':
+			flash_check(NULL, 0, NULL);
+			return 0;
 
-			case 'c':
-				flash_check(NULL, 0, NULL);
-				return 0;
+		case 's':
+			start = atoi(optarg);
+			break;
 
-			case 's':
-				start = atoi(optarg);
-				break;
+		case 't':
+			flash_test(atoi(optarg), NULL);
+			return 0;
 
-			case 't':
-				if (optarg != NULL)
-					flash_test(atoi(optarg), NULL);
-				return 0;
-			case 'e':
-				if (optarg != NULL) {
-					tok = strtok(optarg,":");
-					start = atoi(tok);
-					tok = strtok(NULL,":");
-					if (tok != NULL)
-						flash_erase(NULL, start, atoi(tok), 0);
-					else
-						flash_erase(NULL, start, start, 0);
-				} else
-					print_help();
-				return 0;
-			case 'f':
-				if (argc < 5) {
-					if (optarg != NULL)
-						rootfssz = atoi(optarg);
-					if (argv[optind] != NULL)
-						erase_data = atoi(argv[optind]);
-					primary = "/init/primary.img";
-					secondary = "/init/secondary.img";
-					rootfs = "/init/rootfs.img";
+		case 'e':
+			tok = strtok(optarg,":");
+			start = atoi(tok);
+			tok = strtok(NULL,":");
+			if (tok != NULL)
+				flash_erase(NULL, start, atoi(tok), 0);
+			else
+				flash_erase(NULL, start, start, 0);
+			return 0;
+
+		case 'f':
+			if ((argc - optind) < 2) {
+				rootfssz = atoi(optarg);
+				if (argv[optind] != NULL)
+					erase_data = atoi(argv[optind]);
+				primary = "/init/primary.img";
+				secondary = "/init/secondary.img";
+				rootfs = "/init/rootfs.img";
+				set_nandboot(primary, secondary, rootfs, rootfssz, erase_data);
+			} else if ((argc - optind) == 2) {
+
+				primary = create_path("/init/", optarg);
+				secondary = create_path("/init/", argv[optind]);
+				rootfs = create_path("/init/", argv[optind + 1]);
+				if (primary == NULL || secondary == NULL || rootfs == NULL)
+					fprintf(stderr, "memory allocation error\n");
+				else
 					set_nandboot(primary, secondary, rootfs, rootfssz, erase_data);
-				} else if (argc == 5) {
-
-					len = strlen(argv[optind]);
-					for (i = len; i >= 0 && argv[optind][i] != '/'; --i);
-
-					primary = malloc(strlen("/init/") + strlen(argv[optind] + i + 1));
-					primary[0] = 0;
-					strcat(primary, "/init/");
-					strcat(primary, argv[optind++] + i + 1);
-
-					len = strlen(argv[optind]);
-					for (i = len; i >= 0 && argv[optind][i] != '/'; --i);
-
-					secondary = malloc(strlen("/init/") + strlen(argv[optind] + i + 1));
-					secondary[0] = 0;
-					strcat(secondary, "/init/");
-					strcat(secondary, argv[optind++] + i + 1);
-
-					len = strlen(argv[optind]);
-					for (i = len; i >= 0 && argv[optind][i] != '/'; --i);
-
-					rootfs = malloc(strlen("/init/") + strlen(argv[optind] + i + 1));
-					rootfs[0] = 0;
-					strcat(rootfs, "/init/");
-					strcat(rootfs, argv[optind] + i + 1);
-
-					set_nandboot(primary, secondary, rootfs, rootfssz, erase_data);
-
-					free(primary);
-					free(secondary);
-					free(rootfs);
-
-					return 0;
-				}
+				free(primary);
+				free(secondary);
+				free(rootfs);
 				return 0;
+			}
+			return 0;
 
-			case 'U':
-				return flash_update_tool(argv + optind) < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
+		case 'U':
+			return flash_update_tool(argv + optind) < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 
-			case 'h':
-			default:
-				print_help();
-				return 0;
+		case 'h':
+		default:
+			print_help();
+			return 0;
 		}
 	}
 
