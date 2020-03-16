@@ -53,18 +53,6 @@ static void handleMsg(msg_t *msg)
 
 	switch (imsg->type) {
 #if 0
-		case rtc_setcal:
-			rtc_setCalib(imsg->rtc_calib);
-			break;
-
-		case rtc_get:
-			rtc_getTime(&omsg->rtc_timestamp);
-			break;
-
-		case rtc_set:
-			rtc_setTime(&imsg->rtc_timestamp);
-			break;
-
 		case i2c_get:
 			err = i2c_transaction(_i2c_read, imsg->i2c_msg.addr, imsg->i2c_msg.reg, msg->o.data, msg->o.size);
 			break;
@@ -89,6 +77,18 @@ static void handleMsg(msg_t *msg)
 			err = syscfg_mapexti(imsg->exti_map.line, imsg->exti_map.port);
 			break;
 #endif
+		case rtc_setcal:
+			rtc_setCalib(imsg->rtc_calib);
+			break;
+
+		case rtc_get:
+			rtc_getTime(&omsg->rtc_timestamp);
+			break;
+
+		case rtc_set:
+			rtc_setTime(&imsg->rtc_timestamp);
+			break;
+
 		case adc_get:
 			omsg->adc_valmv = adc_conversion(imsg->adc_get.adcno, imsg->adc_get.channel);
 			break;
@@ -202,9 +202,9 @@ int main(void)
 	gpio_init();
 	spi_init();
 	adc_init();
+	rtc_init();
 
 /*
-	rtc_init();
 	i2c_init();
 	flash_init();
 	exti_init();

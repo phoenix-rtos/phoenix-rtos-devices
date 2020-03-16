@@ -3,7 +3,7 @@
  *
  * STM32L4 RTC driver
  *
- * Copyright 2017, 2018 Phoenix Systems
+ * Copyright 2017, 2018, 2020 Phoenix Systems
  * Author: Jakub Sejdak, Aleksander Kaminski
  *
  * This file is part of Phoenix-RTOS.
@@ -24,7 +24,8 @@
 enum { pwr_cr = 0, pwr_csr };
 
 
-enum { tr = 0, dr, cr, isr, prer, wutr, calibr, wpr = 9, ssr};
+enum { tr = 0, dr, cr, isr, prer, wutr, alrmar = wutr + 2, alrmbr, wpr, ssr, shiftr, tstr, tsdr, tsssr, calr,
+	tampcr, alrmassr, alrmbssr, or, bkp0r};
 
 
 struct {
@@ -74,6 +75,7 @@ static void _rtc_unlock(void)
 
 void rtc_setCalib(int value)
 {
+#if 0
 	unsigned int t;
 
 	mutexLock(rtc_common.lock);
@@ -98,6 +100,7 @@ void rtc_setCalib(int value)
 
 	_rtc_lock();
 	mutexUnlock(rtc_common.lock);
+#endif
 }
 
 
@@ -146,6 +149,7 @@ int rtc_setTime(rtctimestamp_t *timestamp)
 
 	if (!(*(rtc_common.base + isr) & (1 << 6))) {
 		*(rtc_common.base + isr) |= (1 << 7);
+		dataBarier();
 		while (!(*(rtc_common.base + isr) & (1 << 6)));
 	}
 
