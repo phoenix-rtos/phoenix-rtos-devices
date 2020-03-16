@@ -73,34 +73,35 @@ static void _rtc_unlock(void)
 }
 
 
+/* CAUTION - not tested */
 void rtc_setCalib(int value)
 {
-#if 0
-	unsigned int t;
+	unsigned int t = *(rtc_common.base + calr);
+
+	t &= ~((0x7 << 13) | 0x1ff);
+
+	if (value > 488)
+		value = 488;
+
+	if (value < -487)
+		value = -487;
+
+	/* ppm to value */
+	value = (10000 * value) / 954;
+	value = (value + 5) / 10;
+
+	if (value > 0)
+		t |= 1 << 15;
+	else
+		value = -value;
+
+	t |= (unsigned int)value;
 
 	mutexLock(rtc_common.lock);
 	_rtc_unlock();
-
-	t = *(rtc_common.base + calibr) & ~((1 << 7) | 0x1f);
-
-	value /= 2;
-
-	if (value < 0) {
-		t |= 1 << 7;
-		value = -value;
-	}
-	else {
-		++value;
-		value /= 2;
-	}
-
-	t |= value & 0x1f;
-
-	*(rtc_common.base + calibr) = t;
-
+	*(rtc_common.base + calr) = t;
 	_rtc_lock();
 	mutexUnlock(rtc_common.lock);
-#endif
 }
 
 
