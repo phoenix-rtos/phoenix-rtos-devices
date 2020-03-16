@@ -100,9 +100,9 @@ int flash_image(void *arg, char *path, uint32_t start, uint32_t block_offset, in
 		return -1;
 	}
 
-	img = mmap(NULL, (stat->st_size + 0xfff) & ~0xfff, PROT_READ | PROT_WRITE, 0, OID_NULL, 0);
+	img = mmap(NULL, (stat->st_size + 0xfff) & ~0xfff, PROT_READ | PROT_WRITE, MAP_ANONYMOUS, -1, 0);
 
-	img_buf = mmap(NULL, 2 * PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_PHYSMEM, 0x900000);
+	img_buf = mmap(NULL, 2 * PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, FD_PHYSMEM, 0x900000);
 	meta_buf = img_buf + PAGE_SIZE;
 
 	memset(meta_buf, 0xff, sizeof(flashdrv_meta_t));
@@ -163,7 +163,7 @@ int flash_check_range(void *arg, int start, int end, int silent, dbbt_t **dbbt)
 	int i, ret = 0;
 	int bad = 0;
 	int err = 0;
-	void *raw_data = mmap(NULL, 2 * PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_PHYSMEM, 0x900000);
+	void *raw_data = mmap(NULL, 2 * PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, FD_PHYSMEM, 0x900000);
 	uint32_t bbt[256] = { 0 };
 	uint32_t bbtn = 0;
 	int dbbtsz;
@@ -307,7 +307,7 @@ int flash_write_cleanmarkers(void *arg, int start, int end)
 	else
 		dma = (flashdrv_dma_t *)arg;
 
-	metabuf = mmap(NULL, PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0);
+	metabuf = mmap(NULL, PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_ANONYMOUS, -1, 0);
 	memset(metabuf, 0xff, PAGE_SIZE);
 	memcpy(metabuf, &oob_cleanmarker, 8);
 	for (i = start; i < end; i++) {
@@ -409,8 +409,18 @@ void print_help(void)
 }
 
 
-static int send_nandErase(unsigned port, unsigned start, unsigned end)
+static int send_nandErase(int handle, unsigned start, unsigned end)
 {
+	flash_erase_t erase;
+
+	if (start > end)
+		return -EINVAL;
+
+	erase.offset = start * PAGES_PER_BLOCK	* PAGE_SIZE;
+	erase.size = (end - start) * PAGES_PER_BLOCK * PAGE_SIZE;
+	return fileIoctl(handle, flashsrv_devctl_erase, &erase, sizeof(erase), NULL, 0);
+
+#if 0
 	msg_t msg = { 0 };
 	flash_i_devctl_t *devctl;
 	int err;
@@ -419,12 +429,12 @@ static int send_nandErase(unsigned port, unsigned start, unsigned end)
 
 	msg.type = mtDevCtl;
 	devctl->type = flashsrv_devctl_erase;
-	devctl->erase.offset = start * PAGES_PER_BLOCK	* SIZE_PAGE;
+	devctl->erase.offset = start * PAGES_PER_BLOCK	* PAGE_SIZE;
 
 	if (start > end)
 		return -EINVAL;
 
-	devctl->erase.size = (end - start) * PAGES_PER_BLOCK * SIZE_PAGE;
+	devctl->erase.size = (end - start) * PAGES_PER_BLOCK * PAGE_SIZE;
 	devctl->erase.oid.id = -1;
 	devctl->erase.oid.port = port;
 
@@ -433,12 +443,15 @@ static int send_nandErase(unsigned port, unsigned start, unsigned end)
 	if (err)
 		return err;
 
-	return msg.o.io.err;
+	return msg.error;
+#endif
 }
 
 
-static int send_nandFlash(unsigned port, unsigned offset, unsigned end, void *data, size_t size)
+static int send_nandFlash(int handle, unsigned offset, void *data, size_t size)
 {
+	return pwrite(handle, data, size, offset * PAGE_SIZE);
+#if 0
 	msg_t msg = { 0 };
 	int err;
 
@@ -446,7 +459,7 @@ static int send_nandFlash(unsigned port, unsigned offset, unsigned end, void *da
 
 	msg.i.io.oid.id = -1;
 	msg.i.io.oid.port = port;
-	msg.i.io.offs = offset * SIZE_PAGE;
+	msg.i.io.offs = offset * PAGE_SIZE;
 
 	msg.i.data = data;
 	msg.i.size = size;
@@ -457,6 +470,7 @@ static int send_nandFlash(unsigned port, unsigned offset, unsigned end, void *da
 		return err;
 
 	return msg.o.io.err;
+#endif
 }
 
 
@@ -469,9 +483,14 @@ static int flash_update_tool(char **args)
 	oid_t oid;
 	FILE *f;
 	int result = 0;
+	int handle;
 
-	lookup("/dev/flashsrv", NULL, &oid);
-	port = oid.port;
+//	lookup("/dev/flashsrv", NULL, &oid);
+	handle = open("/dev/flashsrv", O_WRONLY);
+//	port = oid.port;
+
+	if (handle < 0)
+		return -errno;
 
 	if ((arg = *(args++)) == NULL)
 		return -EINVAL;
@@ -492,7 +511,7 @@ static int flash_update_tool(char **args)
 			return -EINVAL;
 		}
 
-		result = send_nandErase(port, start, end);
+		result = send_nandErase(handle, start, end);
 
 		if (result < 0)
 			fprintf(stderr, "flash: error while erasing\n");
@@ -534,13 +553,13 @@ static int flash_update_tool(char **args)
 			if (!size)
 				break;
 
-			if (size & (SIZE_PAGE - 1)) {
-				memset(data + size, 0xff, SIZE_PAGE - (size & (SIZE_PAGE - 1)));
-				size = (size + SIZE_PAGE - 1) & ~(SIZE_PAGE - 1);
+			if (size & (PAGE_SIZE - 1)) {
+				memset(data + size, 0xff, PAGE_SIZE - (size & (PAGE_SIZE - 1)));
+				size = (size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 			}
 
-			result = send_nandFlash(port, offset, end, data, size);
-			offset += size / SIZE_PAGE;
+			result = send_nandFlash(handle, offset, data, size);
+			offset += size / PAGE_SIZE;
 
 			if (result < 0) {
 				fprintf(stderr, "flash: error while writing\n");

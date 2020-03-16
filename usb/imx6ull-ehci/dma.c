@@ -32,7 +32,7 @@ static dma_buf_t *dma_allocBuffer(void)
 	char *p;
 	dma_buf_t *buf;
 
-	buf = mmap(NULL, SIZE_PAGE, PROT_WRITE | PROT_READ, MAP_ANONYMOUS | MAP_UNCACHED, OID_NULL, 0);
+	buf = mmap(NULL, SIZE_PAGE, PROT_WRITE | PROT_READ, MAP_ANONYMOUS | MAP_UNCACHED, -1, 0);
 
 	if (buf == MAP_FAILED)
 		return NULL;
