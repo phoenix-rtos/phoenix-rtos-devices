@@ -888,7 +888,7 @@ static int create_flag_file(const char *path)
 {
 	int res;
 
-	res = open(path, O_WRONLY | O_CREAT | O_TRUNC);
+	res = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0777);
 	if (res < 0) {
 		log_error("create_flag_file: open failed (res=%d, errno=%s)", res, strerror(errno));
 		return -1;
