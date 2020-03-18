@@ -18,6 +18,7 @@
 #include <string.h>
 #include <syslog.h>
 #include <fcntl.h>
+#include <limits.h>
 
 #include <sys/stat.h>
 #include <sys/msg.h>
@@ -288,12 +289,12 @@ static int sdma_context_dump(uint8_t channel_id, sdma_context_t *context)
 addr_t sdma_ocram_alloc(size_t size)
 {
 
-	unsigned n = (size + SIZE_PAGE - 1)/SIZE_PAGE;
+	unsigned n = (size + _PAGE_SIZE - 1)/_PAGE_SIZE;
 	addr_t paddr = 0;
 
-	if (common.ocram_next + n*SIZE_PAGE <= OCRAM_END) {
+	if (common.ocram_next + n*_PAGE_SIZE <= OCRAM_END) {
 		paddr = common.ocram_next;
-		common.ocram_next += n*SIZE_PAGE;
+		common.ocram_next += n*_PAGE_SIZE;
 	}
 
 	return paddr;
@@ -301,14 +302,14 @@ addr_t sdma_ocram_alloc(size_t size)
 
 void *sdma_alloc_uncached(size_t size, addr_t *paddr, int ocram)
 {
-	uint32_t n = (size + SIZE_PAGE - 1)/SIZE_PAGE;
+	uint32_t n = (size + _PAGE_SIZE - 1)/_PAGE_SIZE;
 	int mapfd = -1;
 	addr_t _paddr = 0;
 	int flags = MAP_UNCACHED;
 
 	if (ocram) {
 		mapfd = FD_PHYSMEM;
-		_paddr = sdma_ocram_alloc(n*SIZE_PAGE);
+		_paddr = sdma_ocram_alloc(n*_PAGE_SIZE);
 		if (!_paddr)
 			return NULL;
 	}
@@ -316,7 +317,7 @@ void *sdma_alloc_uncached(size_t size, addr_t *paddr, int ocram)
 		flags |= MAP_ANONYMOUS;
 	}
 
-	void *vaddr = mmap(NULL, n*SIZE_PAGE, PROT_READ | PROT_WRITE, flags, mapfd, _paddr);
+	void *vaddr = mmap(NULL, n*_PAGE_SIZE, PROT_READ | PROT_WRITE, flags, mapfd, _paddr);
 	if (vaddr == MAP_FAILED)
 		return NULL;
 
@@ -331,9 +332,9 @@ void *sdma_alloc_uncached(size_t size, addr_t *paddr, int ocram)
 
 static int sdma_free_uncached(void *vaddr, size_t size)
 {
-	unsigned n = (size + SIZE_PAGE - 1)/SIZE_PAGE;
+	unsigned n = (size + _PAGE_SIZE - 1)/_PAGE_SIZE;
 
-	return munmap(vaddr, n*SIZE_PAGE);
+	return munmap(vaddr, n*_PAGE_SIZE);
 }
 
 static int __attribute__((unused)) sdma_program_memory_dump(uint16_t addr,
@@ -414,7 +415,7 @@ static int sdma_init_structs(void)
 	if (common.channel[0].bd == NULL)
 		goto fail;
 
-	common.tmp_size = SIZE_PAGE;
+	common.tmp_size = _PAGE_SIZE;
 	common.tmp = sdma_alloc_uncached(common.tmp_size, &common.tmp_paddr, 0);
 	if (common.tmp == NULL)
 		goto fail;
@@ -424,7 +425,7 @@ static int sdma_init_structs(void)
 fail:
 	if (common.ccb != NULL) sdma_free_uncached(common.ccb, sizeof(sdma_channel_ctrl_t) * NUM_OF_SDMA_CHANNELS);
 	if (common.channel[0].bd != NULL) sdma_free_uncached(common.channel[0].bd, sizeof(sdma_buffer_desc_t));
-	if (common.tmp != NULL) sdma_free_uncached(common.tmp, SIZE_PAGE);
+	if (common.tmp != NULL) sdma_free_uncached(common.tmp, _PAGE_SIZE);
 
 	return -ENOMEM;
 }
@@ -501,7 +502,7 @@ static int sdma_init(void)
 	unsigned handle;
 
 	const addr_t sdma_paddr = 0x20ec000;
-	common.regs = mmap(NULL, SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, sdma_paddr);
+	common.regs = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, FD_PHYSMEM, sdma_paddr);
 	if (common.regs == MAP_FAILED) {
 		log_error("sdma_init: mmap failed");
 		return -errno;
@@ -534,8 +535,8 @@ static int sdma_set_bd_array(uint8_t channel_id, addr_t paddr, unsigned cnt)
 	sdma_buffer_desc_t *bd;
 
 	size_t size = cnt * sizeof(sdma_buffer_desc_t);
-	unsigned n = (size + SIZE_PAGE - 1)/SIZE_PAGE;
-	bd = mmap(NULL, n*SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, paddr);
+	unsigned n = (size + _PAGE_SIZE - 1)/_PAGE_SIZE;
+	bd = mmap(NULL, n*_PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, FD_PHYSMEM, paddr);
 	if (bd == MAP_FAILED) {
 		log_error("sdma_set_bd_array: mmap failed");
 		return -errno;
