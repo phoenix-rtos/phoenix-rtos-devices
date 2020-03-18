@@ -661,7 +661,6 @@ static int flashsrv_partition(size_t start, size_t size)
 	TRACE("partition allocated, start: %u, a:t id %d", start, idtree_id(&p->node));
 	mutexUnlock(flashsrv_common.lock);
 
-	free(p);
 	return EOK;
 }
 
