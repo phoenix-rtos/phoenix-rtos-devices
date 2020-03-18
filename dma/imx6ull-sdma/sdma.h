@@ -19,6 +19,7 @@
 typedef struct {
 	int fd;
 	int port;
+	id_t id;
 } sdma_t;
 
 int sdma_open(sdma_t *s, const char *dev_name);

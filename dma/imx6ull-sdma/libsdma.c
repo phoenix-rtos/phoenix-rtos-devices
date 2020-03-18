@@ -34,6 +34,7 @@ static int sdma_dev_ctl(sdma_t *s, sdma_dev_ctl_t *dev_ctl, void *data, size_t s
 	msg.o.size = size;
 	memcpy(msg.i.raw, dev_ctl, sizeof(sdma_dev_ctl_t));
 
+	msg.object = s->id;
 	if ((res = msgSend(s->port, &msg)) < 0) {
 		fprintf(stderr, "msgSend failed (%d)\n\r", res);
 		return -1;
@@ -61,11 +62,10 @@ int sdma_open(sdma_t *s, const char *dev_name)
 	if (fstat(s->fd, &sbuf) < 0)
 		return -3;
 
-fprintf(stderr, "sdma port: %d\n", sbuf.st_rdev);
-
 	if ((s->port = portGet(sbuf.st_rdev)) < 0)
 		return -4;
 
+	s->id = sbuf.st_devid;
 	return 0;
 }
 

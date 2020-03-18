@@ -670,6 +670,7 @@ static int dev_ctl(msg_t *msg)
 
 	memcpy(&dev_ctl, msg->i.raw, sizeof(sdma_dev_ctl_t));
 
+	dev_ctl.oid.id = msg->object;
 	if ((channel = oid_to_channel(&dev_ctl.oid)) < 0) {
 		log_error("dev_ctl: failed to get channel corresponding to this oid");
 		return -EIO;
@@ -783,6 +784,8 @@ static void worker_thread(void *arg)
 				error = dev_ctl(&msg);
 				mutexUnlock(common.lock);
 				break;
+			default:
+				error = -ENOSYS;
 		}
 
 		msgRespond(common.port, error, &msg, rid);
