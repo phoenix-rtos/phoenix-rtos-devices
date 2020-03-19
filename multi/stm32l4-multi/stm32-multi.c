@@ -50,6 +50,7 @@ static void handleMsg(msg_t *msg)
 	multi_i_t *imsg = (multi_i_t *)msg->i.raw;
 	multi_o_t *omsg = (multi_o_t *)msg->o.raw;
 	int err = EOK;
+	unsigned int t;
 
 	switch (imsg->type) {
 #if 0
@@ -118,7 +119,8 @@ static void handleMsg(msg_t *msg)
 			break;
 
 		case gpio_get:
-			err = gpio_getPort(imsg->gpio_get.port, &omsg->gpio_get);
+			err = gpio_getPort(imsg->gpio_get.port, &t);
+			omsg->gpio_get = t;
 			break;
 
 		case gpio_set:
