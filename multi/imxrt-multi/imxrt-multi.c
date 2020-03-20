@@ -25,6 +25,8 @@
 #include <sys/pwman.h>
 #include <sys/debug.h>
 
+#include <phoenix/ioctl.h>
+
 #include "common.h"
 
 #include "uart.h"
@@ -89,6 +91,7 @@ static void multi_dispatchMsg(msg_t *msg)
 static void uart_dispatchMsg(msg_t *msg)
 {
 	id_t id;
+	ioctl_in_t *ioctl;
 
 	switch (msg->type) {
 		case mtRead:
@@ -102,8 +105,9 @@ static void uart_dispatchMsg(msg_t *msg)
 			break;
 
 		case mtDevCtl:
-			uart_handleMsg(msg, UART_CONSOLE - 1 + id_uart1);
-			return;
+			ioctl = (ioctl_in_t *)msg->i.raw;
+			id = ioctl->id;
+			break;
 
 		default:
 			return;
