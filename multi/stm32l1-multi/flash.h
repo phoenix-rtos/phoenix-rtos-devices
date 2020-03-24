@@ -14,7 +14,6 @@
 #ifndef _FLASH_H_
 #define _FLASH_H_
 
-#include ARCH
 #include <stdint.h>
 #include "rtc.h"
 #include "common.h"
