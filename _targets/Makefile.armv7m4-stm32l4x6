@@ -1,0 +1,17 @@
+#
+# Makefile for Phoenix-RTOS 3 device drivers
+#
+# STM32 drivers
+#
+# Copyright 2019, 2020 Phoenix Systems
+#
+
+CFLAGS += -DTARGET_STM32
+
+ifneq (, $(findstring l4, $(TARGET)))
+	CFLAGS += -DTARGET_STM32L4
+	include multi/stm32l4-multi/Makefile
+else ifneq (, $(findstring l1, $(TARGET)))
+	CFLAGS += -DTARGET_STM32L1
+	include multi/stm32l1-multi/Makefile
+endif
