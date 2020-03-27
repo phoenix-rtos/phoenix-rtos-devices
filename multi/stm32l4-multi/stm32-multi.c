@@ -62,14 +62,6 @@ static void handleMsg(msg_t *msg)
 			err = i2c_transaction(_i2c_write, imsg->i2c_msg.addr, imsg->i2c_msg.reg, msg->i.data, msg->i.size);
 			break;
 
-		case flash_get:
-			err = flash_readData(imsg->flash_addr, msg->o.data, msg->o.size);
-			break;
-
-		case flash_set:
-			err = flash_writeData(imsg->flash_addr, msg->i.data, msg->i.size);
-			break;
-
 		case exti_def:
 			err = exti_configure(imsg->exti_def.line, imsg->exti_def.mode, imsg->exti_def.edge);
 			break;
@@ -78,6 +70,14 @@ static void handleMsg(msg_t *msg)
 			err = syscfg_mapexti(imsg->exti_map.line, imsg->exti_map.port);
 			break;
 #endif
+		case flash_get:
+			err = flash_readData(imsg->flash_addr, msg->o.data, msg->o.size);
+			break;
+
+		case flash_set:
+			err = flash_writeData(imsg->flash_addr, msg->i.data, msg->i.size);
+			break;
+
 		case rtc_setcal:
 			rtc_setCalib(imsg->rtc_calib);
 			break;
@@ -205,10 +205,10 @@ int main(void)
 	spi_init();
 	adc_init();
 	rtc_init();
+	flash_init();
 
 /*
 	i2c_init();
-	flash_init();
 	exti_init();
 */
 
