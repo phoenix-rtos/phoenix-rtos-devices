@@ -6,12 +6,6 @@
 # Copyright 2019, 2020 Phoenix Systems
 #
 
-CFLAGS += -DTARGET_STM32
+CFLAGS += -DTARGET_STM32 -DTARGET_STM32L1
 
-ifneq (, $(findstring l4, $(TARGET)))
-	CFLAGS += -DTARGET_STM32L4
-	include multi/stm32l4-multi/Makefile
-else ifneq (, $(findstring l1, $(TARGET)))
-	CFLAGS += -DTARGET_STM32L1
-	include multi/stm32l1-multi/Makefile
-endif
+include multi/stm32l1-multi/Makefile
