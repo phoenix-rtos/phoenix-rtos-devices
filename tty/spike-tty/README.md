@@ -1,3 +1,3 @@
-# pc-uart
+# spike-tty
 
-This server provides TTY functionality for IBM PC compatible 16550 UART.
+This server implements TTY functionality for HTIF console emulated by RISCV Spike emulator.
