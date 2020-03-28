@@ -7,4 +7,4 @@
 #
 
 include tty/libtty/Makefile
-include tty/pc-uart/Makefile
+include tty/spike-tty/Makefile
