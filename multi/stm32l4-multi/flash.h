@@ -14,18 +14,14 @@
 #ifndef _FLASH_H_
 #define _FLASH_H_
 
-#include ARCH
 #include <stdint.h>
-#include "rtc.h"
 #include "common.h"
 #include "config.h"
 
-#define FLASH_PAGE_SIZE         256
-#define FLASH_PROGRAM_SIZE      (FLASH_PROGRAM_2_ADDR - FLASH_PROGRAM_1_ADDR)
-#define FLASH_EEPROM_SIZE       (FLASH_EEPROM_2_ADDR - FLASH_EEPROM_1_ADDR)
-#define FLASH_OB_1_ADDR         0x1ff80000
-#define FLASH_OB_2_ADDR         0x1ff80080
-#define FLASH_OB_SIZE           32
+#define FLASH_PAGE_SIZE         2048
+#define FLASH_OB_1_ADDR         0x1fff7800
+#define FLASH_OB_2_ADDR         0x1ffff800
+#define FLASH_OB_SIZE           16
 
 
 static inline int flash_activeBank(void)
