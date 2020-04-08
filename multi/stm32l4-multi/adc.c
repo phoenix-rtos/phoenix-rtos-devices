@@ -185,10 +185,13 @@ unsigned short adc_conversion(int adc, char chan)
 	chan &= 0x1f;
 
 	vref = adc_probeChannel(adc1, 0);
-	val = adc_probeChannel(adc, chan);
 
 	out = (3000 * (*vrefint)) / vref;
-	out = (out * val) / ((1 << 12) - 1);
+
+	if (adc != adc1 || chan != 0) {
+		val = adc_probeChannel(adc, chan);
+		out = (out * val) / ((1 << 12) - 1);
+	}
 
 	adc_disable(adc);
 	if (adc != adc1)
