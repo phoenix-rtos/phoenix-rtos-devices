@@ -1,39 +1,29 @@
 /*
  * Phoenix-RTOS
  *
- * ext2
+ * Master Boot Record
  *
- * mbr.c
- *
- * Copyright 2017 Phoenix Systems
- * Author: Kamil Amanowicz
+ * Copyright 2017, 2020 Phoenix Systems
+ * Author: Kamil Amanowicz, Lukasz Kosinski
  *
  * This file is part of Phoenix-RTOS.
  *
  * %LICENSE%
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
 #include <errno.h>
-#include <sys/msg.h>
 
 #include "mbr.h"
 
 
 int read_mbr(ata_dev_t *dev, mbr_t *mbr)
 {
-	int ret = 0;
+	ssize_t ret;
 
-	if (!mbr || !dev)
-		return -EINVAL;
-
-	ret = atadrv_read(dev, 0, (char *)mbr, sizeof(mbr_t));
-	if (ret != sizeof(mbr_t))
+	if ((ret = ata_read(dev, 0, (char *)mbr, sizeof(mbr_t))) != sizeof(mbr_t))
 		return -EIO;
 
-	if (mbr->boot_sign != MBR_SIGNATURE)
+	if (mbr->magic != MBR_MAGIC)
 		return -ENOENT;
 
 	return EOK;
