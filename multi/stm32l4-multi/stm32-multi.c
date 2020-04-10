@@ -61,7 +61,7 @@ static void handleMsg(msg_t *msg)
 		case i2c_set:
 			err = i2c_transaction(_i2c_write, imsg->i2c_msg.addr, imsg->i2c_msg.reg, msg->i.data, msg->i.size);
 			break;
-
+#endif
 		case exti_def:
 			err = exti_configure(imsg->exti_def.line, imsg->exti_def.mode, imsg->exti_def.edge);
 			break;
@@ -69,7 +69,7 @@ static void handleMsg(msg_t *msg)
 		case exti_map:
 			err = syscfg_mapexti(imsg->exti_map.line, imsg->exti_map.port);
 			break;
-#endif
+
 		case flash_get:
 			err = flash_readData(imsg->flash_addr, msg->o.data, msg->o.size);
 			break;
@@ -206,10 +206,10 @@ int main(void)
 	adc_init();
 	rtc_init();
 	flash_init();
+	exti_init();
 
 /*
 	i2c_init();
-	exti_init();
 */
 
 	portCreate(&common.port);

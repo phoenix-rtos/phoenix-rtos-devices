@@ -4,7 +4,7 @@
 # Copyright 2018, 2020 Phoenix Systems
 #
 
-MULTIDRV_OBJS = stm32-multi.o uart.o rcc.o gpio.o spi.o adc.o rtc.o flash.o #i2c.o exti.o
+MULTIDRV_OBJS = stm32-multi.o uart.o rcc.o gpio.o spi.o adc.o rtc.o flash.o exti.o #i2c.o
 
 $(PREFIX_PROG)stm32-multi: $(addprefix $(PREFIX_O)multi/stm32l4-multi/, $(MULTIDRV_OBJS))
 	$(LINK)
