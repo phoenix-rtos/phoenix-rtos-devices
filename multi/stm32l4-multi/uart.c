@@ -333,8 +333,7 @@ int uart_init(void)
 		uart_common[i].rxdw = 0;
 
 		/* Set up UART to 9600,8,n,1 16-bit oversampling */
-
-		uart_configure(i, 8, uart_parnone, 9600, 1);
+		uart_configure(uart, 8, uart_parnone, 9600, 1);
 
 		interrupt(info[uart].irq, uart_rxirq, (void *)i, uart_common[i].rxcond, NULL);
 		interrupt(info[uart].irq, uart_txirq, (void *)i, uart_common[i].txcond, NULL);
