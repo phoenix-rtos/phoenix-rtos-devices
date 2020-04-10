@@ -31,8 +31,9 @@
 #define UART3_POS (UART2_POS + UART2)
 #define UART4_POS (UART3_POS + UART3)
 #define UART5_POS (UART4_POS + UART4)
+#define LPUART1_POS (UART5_POS + UART5)
 
-#define UART_CNT (UART1 + UART2 + UART3 + UART4 + UART5)
+#define UART_CNT (UART1 + UART2 + UART3 + UART4 + UART5 + LPUART1)
 
 struct {
 	volatile unsigned int *base;
@@ -58,10 +59,10 @@ struct {
 } uart_common[UART_CNT];
 
 
-static const int uartConfig[] = { UART1, UART2, UART3, UART4, UART5 };
+static const int uartConfig[] = { UART1, UART2, UART3, UART4, UART5, LPUART1 };
 
 
-static const int uartPos[] = { UART1_POS, UART2_POS, UART3_POS, UART4_POS, UART5_POS };
+static const int uartPos[] = { UART1_POS, UART2_POS, UART3_POS, UART4_POS, UART5_POS, LPUART1_POS };
 
 
 enum { cr1 = 0, cr2, cr3, brr, gtpr, rtor, rqr, isr, icr, rdr, tdr };
@@ -91,6 +92,10 @@ static int uart_txirq(unsigned int n, void *arg)
 static int uart_rxirq(unsigned int n, void *arg)
 {
 	int uart = (int)arg, release = -1;
+
+	/* Clear wakeup from stop mode flag */
+	if (n == lpuart1_irq)
+		*(uart_common[uart].base + icr) |= 1 << 20;
 
 	if (*(uart_common[uart].base + isr) & ((1 << 5) | (1 << 3))) {
 		/* Clear overrun error bit */
@@ -126,8 +131,9 @@ static int uart_rxirq(unsigned int n, void *arg)
 int uart_configure(int uart, char bits, char parity, unsigned int baud, char enable)
 {
 	int err = EOK, pos;
+	int baseClk = (uart == lpuart1) ? (256 * 32768) : rcc_getCpufreq();
 
-	if (uart < usart1 || uart > uart5 || !uartConfig[uart])
+	if (uart < usart1 || uart > lpuart1 || !uartConfig[uart])
 		return -EINVAL;
 
 	pos = uartPos[uart];
@@ -169,7 +175,7 @@ int uart_configure(int uart, char bits, char parity, unsigned int baud, char ena
 
 	if (err == EOK) {
 		uart_common[pos].baud = baud;
-		*(uart_common[pos].base + brr) = rcc_getCpufreq() / baud;
+		*(uart_common[pos].base + brr) = baseClk / baud;
 
 		if (parity != uart_parnone)
 			*(uart_common[pos].base + cr1) |= 1 << 10;
@@ -204,7 +210,7 @@ int uart_configure(int uart, char bits, char parity, unsigned int baud, char ena
 
 int uart_write(int uart, void* buff, unsigned int bufflen)
 {
-	if (uart < usart1 || uart > uart5 || !uartConfig[uart])
+	if (uart < usart1 || uart > lpuart1 || !uartConfig[uart])
 		return -EINVAL;
 
 	uart = uartPos[uart];
@@ -238,7 +244,7 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 	int i, err;
 	volatile unsigned int read = 0;
 
-	if (uart < usart1 || uart > uart5 || !uartConfig[uart])
+	if (uart < usart1 || uart > lpuart1 || !uartConfig[uart])
 		return -EINVAL;
 
 	uart = uartPos[uart];
@@ -306,9 +312,10 @@ int uart_init(void)
 		{ (void *)0x40004800, pctl_usart3, usart3_irq },
 		{ (void *)0x40004c00, pctl_uart4, uart4_irq },
 		{ (void *)0x40005000, pctl_uart5, uart5_irq },
+		{ (void *)0x40008000, pctl_lpuart1, lpuart1_irq }
 	};
 
-	for (i = 0, uart = 0; uart < 5; ++uart) {
+	for (i = 0, uart = 0; uart < sizeof(info) / sizeof(info[0]); ++uart) {
 		if (!uartConfig[uart])
 			continue;
 
@@ -339,6 +346,11 @@ int uart_init(void)
 		interrupt(info[uart].irq, uart_txirq, (void *)i, uart_common[i].txcond, NULL);
 
 		uart_common[i].enabled = 1;
+
+		if (uart == lpuart1) {
+			/* Enable and clock wakeup from STOP mode */
+			*(uart_common[i].base + cr3) |= (1 << 23) | (0x3 << 20);
+		}
 
 		++i;
 	}

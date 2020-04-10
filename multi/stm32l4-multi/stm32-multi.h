@@ -77,7 +77,7 @@ typedef struct {
 /* UART */
 
 
-enum { usart1 = 0, usart2, usart3, uart4, uart5 };
+enum { usart1 = 0, usart2, usart3, uart4, uart5, lpuart1 };
 
 
 enum { uart_mnormal = 0, uart_mnblock };
