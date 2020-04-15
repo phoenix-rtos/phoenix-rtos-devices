@@ -1,12 +1,10 @@
 /*
  * Phoenix-RTOS
  *
- * libphoenix
+ * Master Boot Record
  *
- * stdio.h
- *
- * Copyright 2017 Phoenix Systems
- * Author: Kamil Amanowicz
+ * Copyright 2017, 2020 Phoenix Systems
+ * Author: Kamil Amanowicz, Lukasz Kosinski
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -15,35 +13,47 @@
 
 
 #ifndef _MBR_H_
-#define _MBR_H_ /* mbr.h */
+#define _MBR_H_
 
 #include <stdint.h>
 
-#include "atadrv.h"
+#include "ata.h"
 
-#define PENTRY_LINUX 0x83       /* any native linux partition */
-#define PENTRY_PROTECTIVE 0xEE  /* protective mbr mode for gpt partition table */
 
-/* partition entry structure */
+/* MBR definitions */
+#define MBR_MAGIC 0xAA55
+
+
+/* Partition types */
+enum {
+	PENTRY_LINUX      = 0x83, /* Any native Linux partition */
+	PENTRY_PROTECTIVE = 0xEE  /* Protective MBR mode for GPT partition table */
+};
+
+
+typedef struct pentry_t pentry_t;
+
+
+/* Partition entry */
 struct pentry_t {
-	uint8_t      status;
-	uint8_t      first_sect[3]; /* chs */
-	uint8_t      type;
-	uint8_t      last_sect[3];  /* chs */
-	uint32_t     first_sect_lba;
-	uint32_t     sector_count;
+	uint8_t status;   /* Partition status */
+	uint8_t first[3]; /* First sector (CHS) */
+	uint8_t type;     /* Partition type */
+	uint8_t last[3];  /* Last sector (CHS) */
+	uint32_t start;   /* Partition start (LBA) */
+	uint32_t sectors; /* Number of sectors */
 } __attribute__((packed));
 
-#define MBR_SIGNATURE 0xAA55
 
-/* master boot record structure */
+/* Master Boot Record */
 typedef struct {
-	char            	bca[446];   /* bootstrap code area */
-	struct pentry_t 	pent[4];    /* partition entries */
-	uint16_t			boot_sign;  /* mbr signature */
+	char bca[446];    /* Bootstrap Code Area */
+	pentry_t pent[4]; /* Partition entries */
+	uint16_t magic;   /* MBR magic */
 } mbr_t;
+
 
 int read_mbr(ata_dev_t *dev, mbr_t *mbr);
 
 
-#endif /* mbr.h */
+#endif
