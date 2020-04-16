@@ -34,7 +34,7 @@
 #include "exti.h"
 
 #define THREADS_NO 4
-#define THREADS_PRIORITY 2
+#define THREADS_PRIORITY 0
 #define STACKSZ 512
 
 
@@ -158,6 +158,8 @@ static void thread(void *arg)
 		while (msgRecv(common.port, &msg, &rid) < 0)
 			;
 
+		priority(msg.priority);
+
 		switch (msg.type) {
 			case mtOpen:
 			case mtClose:
@@ -190,6 +192,8 @@ static void thread(void *arg)
 		}
 
 		msgRespond(common.port, &msg, rid);
+
+		priority(THREADS_PRIORITY);
 	}
 }
 
@@ -219,6 +223,8 @@ int main(void)
 
 	for (i = 0; i < THREADS_NO - 1; ++i)
 		beginthread(thread, THREADS_PRIORITY, common.stack[i], STACKSZ, (void *)i);
+
+	priority(THREADS_PRIORITY);
 
 	thread((void *)i);
 
