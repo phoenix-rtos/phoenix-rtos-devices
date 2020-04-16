@@ -261,7 +261,7 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 	*(uart_common[uart].base + cr1) &= ~(1 << 5);
 
 	uart_common[uart].read = &read;
-	uart_common[uart].rxend = buff + count;
+	uart_common[uart].rxend = (char *)buff + count;
 	uart_common[uart].rxbeg = buff;
 
 	*(uart_common[uart].base + cr1) |= 1 << 5;
@@ -284,9 +284,7 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 			break;
 		}
 	}
-	mutexUnlock(uart_common[uart].lock);
 
-	mutexLock(uart_common[uart].lock);
 	if (!(*(uart_common[uart].base + cr1) & (1 << 28)) && (*(uart_common[uart].base + cr1) & (1 << 10))) {
 		for (i = 0; i < read; ++i)
 			((char *)buff)[i] &= 0x7f;
@@ -348,7 +346,8 @@ int uart_init(void)
 		uart_common[i].enabled = 1;
 
 		if (uart == lpuart1) {
-			/* Enable and clock wakeup from STOP mode */
+			/* Enable clock and wakeup from STOP mode */
+			*(uart_common[i].base + cr1) |= (1 << 1);
 			*(uart_common[i].base + cr3) |= (1 << 23) | (0x3 << 20);
 		}
 
