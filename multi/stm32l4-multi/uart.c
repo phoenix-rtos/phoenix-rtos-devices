@@ -157,6 +157,9 @@ int uart_configure(int uart, char bits, char parity, unsigned int baud, char ena
 	uart_common[pos].rxdr = 0;
 	uart_common[pos].rxdw = 0;
 
+	if (uart == lpuart1)
+		*(uart_common[pos].base + cr1) |= (1 << 1);
+
 	if ((bits == 9) || ((bits == 8) && (parity != uart_parnone))) {
 		*(uart_common[pos].base + cr1) |= 1 << 12;
 		*(uart_common[pos].base + cr1) &= ~(1 << 28);
@@ -337,6 +340,11 @@ int uart_init(void)
 		uart_common[i].rxdr = 0;
 		uart_common[i].rxdw = 0;
 
+		if (uart == lpuart1) {
+			/* Enable clock and wakeup from STOP mode */
+			*(uart_common[i].base + cr3) |= (1 << 23) | (1 << 22) | (0x3 << 20);
+		}
+
 		/* Set up UART to 9600,8,n,1 16-bit oversampling */
 		uart_configure(uart, 8, uart_parnone, 9600, 1);
 
@@ -344,12 +352,6 @@ int uart_init(void)
 		interrupt(info[uart].irq, uart_txirq, (void *)i, uart_common[i].txcond, NULL);
 
 		uart_common[i].enabled = 1;
-
-		if (uart == lpuart1) {
-			/* Enable clock and wakeup from STOP mode */
-			*(uart_common[i].base + cr1) |= (1 << 1);
-			*(uart_common[i].base + cr3) |= (1 << 23) | (0x3 << 20);
-		}
 
 		++i;
 	}
