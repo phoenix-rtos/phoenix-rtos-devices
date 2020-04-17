@@ -40,6 +40,7 @@ struct {
 	unsigned int port;
 	unsigned int baud;
 	volatile int enabled;
+	int bits;
 
 	volatile char * volatile txbeg;
 	volatile char * volatile txend;
@@ -132,6 +133,8 @@ int uart_configure(int uart, char bits, char parity, unsigned int baud, char ena
 {
 	int err = EOK, pos;
 	int baseClk = (uart == lpuart1) ? (256 * 32768) : rcc_getCpufreq();
+	unsigned int tcr1 = 0;
+	char tbits = bits;
 
 	if (uart < usart1 || uart > lpuart1 || !uartConfig[uart])
 		return -EINVAL;
@@ -145,7 +148,6 @@ int uart_configure(int uart, char bits, char parity, unsigned int baud, char ena
 	mutexLock(uart_common[pos].rxlock);
 	mutexLock(uart_common[pos].lock);
 
-	*(uart_common[pos].base + cr1) = 0;
 	dataBarier();
 
 	uart_common[pos].txbeg = NULL;
@@ -158,32 +160,42 @@ int uart_configure(int uart, char bits, char parity, unsigned int baud, char ena
 	uart_common[pos].rxdw = 0;
 
 	if (uart == lpuart1)
-		*(uart_common[pos].base + cr1) |= (1 << 1);
+		tcr1 |= (1 << 1);
 
-	if ((bits == 9) || ((bits == 8) && (parity != uart_parnone))) {
-		*(uart_common[pos].base + cr1) |= 1 << 12;
-		*(uart_common[pos].base + cr1) &= ~(1 << 28);
-	}
-	else if ((bits == 8) || ((bits == 7) && (parity != uart_parnone))) {
-		*(uart_common[pos].base + cr1) &= ~(1 << 12);
-		*(uart_common[pos].base + cr1) &= ~(1 << 28);
-	}
-	else {
-		*(uart_common[pos].base + cr1) &= ~(1 << 12);
-		*(uart_common[pos].base + cr1) |= 1 << 28;
+	if (parity != uart_parnone) {
+		tcr1 |= 1 << 10;
+		tbits += 1; /* We need one extra for parity */
 	}
 
-	if (bits == 9 && parity != uart_parnone)
-		return -EINVAL;
+	switch (tbits) {
+	case 9:
+		tcr1 &= ~(1 << 28);
+		tcr1 |= (1 << 12);
+		break;
+
+	case 8:
+		tcr1 &= ~((1 << 28) | (1 << 12));
+		break;
+
+	case 7:
+		tcr1 &= ~(1 << 12);
+		tcr1 |= (1 << 28);
+		break;
+
+	default:
+		err = -1;
+		break;
+	}
 
 	if (err == EOK) {
+		uart_common[pos].bits = bits;
+
+		*(uart_common[pos].base + cr1) &= ~1;
+		dataBarier();
+		*(uart_common[pos].base + cr1) = tcr1;
+
 		uart_common[pos].baud = baud;
 		*(uart_common[pos].base + brr) = baseClk / baud;
-
-		if (parity != uart_parnone)
-			*(uart_common[pos].base + cr1) |= 1 << 10;
-		else
-			*(uart_common[pos].base + cr1) &= ~(1 << 10);
 
 		if (parity == uart_parodd)
 			*(uart_common[pos].base + cr1) |= 1 << 9;
@@ -246,6 +258,7 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 {
 	int i, err;
 	volatile unsigned int read = 0;
+	char mask = 0x7f;
 
 	if (uart < usart1 || uart > lpuart1 || !uartConfig[uart])
 		return -EINVAL;
@@ -288,9 +301,12 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 		}
 	}
 
-	if (!(*(uart_common[uart].base + cr1) & (1 << 28)) && (*(uart_common[uart].base + cr1) & (1 << 10))) {
+	if (uart_common[uart].bits < 8) {
+		if (uart_common[uart].bits == 6)
+			mask = 0x3f;
+
 		for (i = 0; i < read; ++i)
-			((char *)buff)[i] &= 0x7f;
+			((char *)buff)[i] &= mask;
 	}
 	mutexUnlock(uart_common[uart].lock);
 
