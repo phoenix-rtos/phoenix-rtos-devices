@@ -86,7 +86,12 @@ static int exti15_10_handler(unsigned int n, void *arg)
 static void _exti_setMode(unsigned int line, unsigned char mode)
 {
 	unsigned int tmp;
-	int regoffs = (line > 31) ? imr2 : 0;
+	int regoffs = 0;
+
+	if (line > 31) {
+		regoffs = imr2;
+		line -= 32;
+	}
 
 	tmp = *(exti_common.base + imr1 + regoffs) & ~(1 << line);
 	*(exti_common.base + imr1 + regoffs) = tmp | ((mode == exti_irq || mode == exti_irqevent) << line);
@@ -99,7 +104,12 @@ static void _exti_setMode(unsigned int line, unsigned char mode)
 static void _exti_setEdge(unsigned int line, unsigned char edge)
 {
 	unsigned int tmp;
-	int regoffs = (line > 31) ? imr2 : 0;
+	int regoffs = 0;
+
+	if (line > 31) {
+		regoffs = imr2;
+		line -= 32;
+	}
 
 	tmp = *(exti_common.base + rtsr1 + regoffs) & ~(1 << line);
 	*(exti_common.base + rtsr1 + regoffs) = tmp | ((edge != exti_falling) << line);
