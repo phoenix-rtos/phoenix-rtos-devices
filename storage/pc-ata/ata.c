@@ -145,16 +145,16 @@ static void ata_select(ata_dev_t *dev, uint8_t devnum, uint64_t lba, uint16_t ns
 
 	/* Select addressing mode */
 	switch (mode) {
-	case AMODE_CHS:
+	case CHS:
 		/* Convert LBA to CHS */
 		c = (uint16_t)(lba / ((uint64_t)dev->heads * dev->sectors));
 		h = (uint16_t)(lba / dev->sectors % dev->heads) & DEVSEL_HEAD;
 		s = (uint16_t)(lba % dev->sectors) + 1;
 		break;
 
-	case AMODE_LBA28:
+	case LBA28:
 		h = (uint16_t)(lba >> 24) & DEVSEL_HEAD;
-	case AMODE_LBA48:
+	case LBA48:
 		c = (uint16_t)(lba >> 8);
 		h |= DEVSEL_LBA;
 		s = (uint16_t)(lba >> 0);
@@ -170,7 +170,7 @@ static void ata_select(ata_dev_t *dev, uint8_t devnum, uint64_t lba, uint16_t ns
 	ata_writereg(base, REG_FEATURES, 0, 1);
 
 	/* Write other registers */
-	if (mode == AMODE_LBA48) {
+	if (mode == LBA48) {
 		ata_writereg(base, REG_NSECTORS,  (nsectors >>  8) & 0xFF, 1);
 		ata_writereg(base, REG_SECTOR,    (lba      >> 24) & 0xFF, 1);
 		ata_writereg(base, REG_LCYLINDER, (lba      >> 32) & 0xFF, 1);
@@ -216,7 +216,7 @@ static ssize_t ata_pio(ata_dev_t *dev, uint16_t nsectors, uint8_t *buff, uint8_t
 			return err;
 
 		switch (dir) {
-		case DIR_READ:
+		case READ:
 			/* Read one sector */
 			for (j = 0; j < dev->secsize; j += 2) {
 				data = (uint16_t)ata_readreg(base, REG_DATA, 2);
@@ -225,7 +225,7 @@ static ssize_t ata_pio(ata_dev_t *dev, uint16_t nsectors, uint8_t *buff, uint8_t
 			}
 			break;
 
-		case DIR_WRITE:
+		case WRITE:
 			/* Write one sector */
 			for (j = 0; j < dev->secsize; j += 2) {
 				data  = (buff + ret)[j + 0] << 0;
@@ -266,16 +266,16 @@ static ssize_t _ata_access(ata_dev_t *dev, uint64_t lba, uint16_t nsectors, uint
 	switch (cmd) {
 	case CMD_READ_PIO:
 	case CMD_READ_PIO_EXT:
-		ret = ata_pio(dev, nsectors, buff, DIR_READ);
+		ret = ata_pio(dev, nsectors, buff, READ);
 		break;
 
 	case CMD_WRITE_PIO:
 	case CMD_WRITE_PIO_EXT:
-		if ((ret = ata_pio(dev, nsectors, buff, DIR_WRITE)) < 0)
+		if ((ret = ata_pio(dev, nsectors, buff, WRITE)) < 0)
 			break;
 
 		/* Flush the hardware cache */
-		cmd = (dev->mode == AMODE_LBA48) ? CMD_CACHE_FLUSH_EXT : CMD_CACHE_FLUSH;
+		cmd = (dev->mode == LBA48) ? CMD_CACHE_FLUSH_EXT : CMD_CACHE_FLUSH;
 		ata_writereg(base, REG_CMD, cmd, 1);
 		break;
 	}
@@ -290,12 +290,12 @@ ssize_t ata_read(ata_dev_t *dev, offs_t offs, char *buff, size_t len)
 	ssize_t ret;
 
 	switch (dev->mode) {
-	case AMODE_CHS:
-	case AMODE_LBA28:
+	case CHS:
+	case LBA28:
 		cmd = CMD_READ_PIO;
 		break;
 
-	case AMODE_LBA48:
+	case LBA48:
 		cmd = CMD_READ_PIO_EXT;
 		break;
 
@@ -317,12 +317,12 @@ ssize_t ata_write(ata_dev_t *dev, offs_t offs, const char *buff, size_t len)
 	ssize_t ret;
 
 	switch (dev->mode) {
-	case AMODE_CHS:
-	case AMODE_LBA28:
+	case CHS:
+	case LBA28:
 		cmd = CMD_WRITE_PIO;
 		break;
 
-	case AMODE_LBA48:
+	case LBA48:
 		cmd = CMD_WRITE_PIO_EXT;
 		break;
 
@@ -341,7 +341,7 @@ ssize_t ata_write(ata_dev_t *dev, offs_t offs, const char *buff, size_t len)
 static int ata_initdev(ata_bus_t *bus, ata_dev_t *dev, uint8_t devnum)
 {
 	void *base = bus->base;
-	uint8_t hcyl, lcyl, info[INFO_SIZE];
+	uint8_t hcyl, lcyl, info[512];
 	uint16_t data;
 	int err, i;
 
@@ -390,8 +390,8 @@ static int ata_initdev(ata_bus_t *bus, ata_dev_t *dev, uint8_t devnum)
 	if ((err = ata_wait(bus, STATUS_BSY, STATUS_DRQ)))
 		return err;
 
-	/* Read device info */
-	for (i = 0; i < INFO_SIZE; i += 2) {
+	/* Read device identification info */
+	for (i = 0; i < sizeof(info) / sizeof(info[0]); i += 2) {
 		data = (uint16_t)ata_readreg(base, REG_DATA, 2);
 		info[i + 0] = (data >> 8) & 0xFF;
 		info[i + 1] = (data >> 0) & 0xFF;
@@ -408,15 +408,16 @@ static int ata_initdev(ata_bus_t *bus, ata_dev_t *dev, uint8_t devnum)
 		dev->sectors   = (info[13]  << 0) | (info[12]  << 8);
 		dev->secsize   = (info[235] << 0) | (info[234] << 8) | (info[237] << 16) | (info[236] << 24);
 
+		/* secsize = 0 => use default ATA sector size */
 		if (!dev->secsize)
-			dev->secsize = SECTOR_SIZE;
+			dev->secsize = 512;
 
 		switch (dev->mode) {
-		case AMODE_CHS:
+		case CHS:
 			dev->size = (uint64_t)dev->cylinders * dev->heads * dev->sectors;
 			break;
 
-		case AMODE_LBA28:
+		case LBA28:
 			dev->size =
 				(info[121] <<  0) |
 				(info[120] <<  8) |
@@ -424,7 +425,7 @@ static int ata_initdev(ata_bus_t *bus, ata_dev_t *dev, uint8_t devnum)
 				(info[122] << 24);
 			break;
 
-		case AMODE_LBA48:
+		case LBA48:
 			dev->size =
 				(((uint64_t)info[201]) <<  0) |
 				(((uint64_t)info[200]) <<  8) |

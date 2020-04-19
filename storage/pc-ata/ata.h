@@ -11,47 +11,44 @@
  * %LICENSE%
  */
 
-#ifndef _PC_ATA_H_
-#define _PC_ATA_H_
+#ifndef _ATA_H_
+#define _ATA_H_
 
 
 #include <stdint.h>
+
 #include <sys/types.h>
 
 
-/* Offset between register blocks addresses */
-#define REG_OFFSET 0x80
+/* Offset between standard IO-ports addresses */
+#define PORT_OFFSET 0x80
 
 /* ATA standard IO-ports */
 #define ATA1_BASE 0x1f0
 #define ATA1_CTRL 0x3f6
-#define ATA2_BASE (ATA1_BASE - REG_OFFSET)
-#define ATA2_CTRL (ATA1_CTRL - REG_OFFSET)
+#define ATA2_BASE (ATA1_BASE - PORT_OFFSET)
+#define ATA2_CTRL (ATA1_CTRL - PORT_OFFSET)
+
 #define ATA3_BASE 0x1e8
 #define ATA3_CTRL 0x3e6
-#define ATA4_BASE (ATA3_BASE - REG_OFFSET)
-#define ATA4_CTRL (ATA3_CTRL - REG_OFFSET)
-
-/* ATA identification info size */
-#define INFO_SIZE   512
-/* ATA default sector size */
-#define SECTOR_SIZE 512
-
-
-/* ATA device number */
-enum { MASTER, SLAVE };
+#define ATA4_BASE (ATA3_BASE - PORT_OFFSET)
+#define ATA4_CTRL (ATA3_CTRL - PORT_OFFSET)
 
 
 /* ATA device types */
 enum { ATA, SATA, ATAPI, SATAPI };
 
 
+/* ATA device numbers */
+enum { MASTER, SLAVE };
+
+
 /* ATA addressing modes */
-enum { AMODE_CHS, AMODE_LBA28, AMODE_LBA48 };
+enum { CHS, LBA28, LBA48 };
 
 
 /* ATA access direction */
-enum { DIR_READ, DIR_WRITE };
+enum { READ, WRITE };
 
 
 /* ATA commands */
@@ -75,8 +72,8 @@ enum {
 
 /* ATA registers */
 enum {
-	REG_CTRL            = 0x0, /* Control register */
-	REG_ALTSTATUS       = 0x0, /* Alternate status */
+	REG_CTRL            = 0x0, /* Write control register */
+	REG_ALTSTATUS       = 0x0, /* Read alternate status */
 	REG_DATA            = 0x0, /* R/W PIO data port */
 	REG_ERROR           = 0x1, /* Read error */
 	REG_FEATURES        = 0x1, /* Write features */
@@ -84,8 +81,7 @@ enum {
 	REG_SECTOR          = 0x3, /* Sector */
 	REG_LCYLINDER       = 0x4, /* Cylinder low */
 	REG_HCYLINDER       = 0x5, /* Cylinder high */
-	REG_HEAD            = 0x6, /* LBA head */
-	REG_DEVSEL          = 0x6, /* Drive select */
+	REG_DEVSEL          = 0x6, /* Device select */
 	REG_CMD             = 0x7, /* Write command */
 	REG_STATUS          = 0x7  /* Read status */
 };
