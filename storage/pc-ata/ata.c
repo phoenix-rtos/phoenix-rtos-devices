@@ -137,7 +137,7 @@ static void ata_resetbus(ata_bus_t *bus)
 }
 
 
-static void ata_select(ata_dev_t *dev, uint8_t devnum, uint64_t lba, uint16_t nsectors, uint8_t mode)
+static void ata_select(ata_dev_t *dev, uint64_t lba, uint16_t nsectors, uint8_t mode)
 {
 	ata_bus_t *bus = dev->bus;
 	void *base = bus->base;
@@ -162,7 +162,7 @@ static void ata_select(ata_dev_t *dev, uint8_t devnum, uint64_t lba, uint16_t ns
 	}
 
 	/* Select the device */
-	ata_writereg(base, REG_DEVSEL, h | devnum * DEVSEL_DEVNUM | DEVSEL_SET0 | DEVSEL_SET1, 1);
+	ata_writereg(base, REG_DEVSEL, h | (dev == bus->devs[SLAVE]) * DEVSEL_DEVNUM | DEVSEL_SET0 | DEVSEL_SET1, 1);
 	/* Wait for the device to push its status onto the bus */
 	ata_delay(bus);
 
@@ -257,7 +257,7 @@ static ssize_t _ata_access(ata_dev_t *dev, uint64_t lba, uint16_t nsectors, uint
 		return err;
 
 	/* Select the device and prepare for the transfer */
-	ata_select(dev, (dev == bus->devs[SLAVE]), lba, nsectors, dev->mode);
+	ata_select(dev, lba, nsectors, dev->mode);
 
 	/* Send the command */
 	ata_writereg(base, REG_CMD, cmd, 1);
@@ -338,7 +338,7 @@ ssize_t ata_write(ata_dev_t *dev, offs_t offs, const char *buff, size_t len)
 }
 
 
-static int ata_initdev(ata_bus_t *bus, ata_dev_t *dev, uint8_t devnum)
+static int ata_initdev(ata_bus_t *bus, ata_dev_t *dev)
 {
 	void *base = bus->base;
 	uint8_t hcyl, lcyl, info[512];
@@ -348,7 +348,7 @@ static int ata_initdev(ata_bus_t *bus, ata_dev_t *dev, uint8_t devnum)
 	dev->bus = bus;
 
 	/* Select the device */
-	ata_select(dev, devnum, 0, 0, -1);
+	ata_select(dev, 0, 0, -1);
 
 	/* Floating bus check */
 	if (ata_readreg(base, REG_STATUS, 1) == 0xFF)
@@ -464,12 +464,12 @@ static int ata_initbus(void *base, void *ctrl, ata_bus_t *bus)
 	/* Software reset the bus */
 	ata_resetbus(bus);
 
-	if (ata_initdev(bus, bus->devs[MASTER], MASTER)) {
+	if (ata_initdev(bus, bus->devs[MASTER])) {
 		free(bus->devs[MASTER]);
 		bus->devs[MASTER] = NULL;
 	}
 
-	if (ata_initdev(bus, bus->devs[SLAVE], SLAVE)) {
+	if (ata_initdev(bus, bus->devs[SLAVE])) {
 		free(bus->devs[SLAVE]);
 		bus->devs[SLAVE] = NULL;
 	}
