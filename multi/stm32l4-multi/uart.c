@@ -230,17 +230,20 @@ int uart_write(int uart, void* buff, unsigned int bufflen)
 
 	uart = uartPos[uart];
 
+	if (!bufflen)
+		return 0;
+
 	if (!uart_common[uart].enabled)
 		return -EIO;
 
 	mutexLock(uart_common[uart].txlock);
+	mutexLock(uart_common[uart].lock);
 
 	keepidle(1);
 
-	uart_common[uart].txbeg = buff;
-	uart_common[uart].txend = buff + bufflen;
-
-	mutexLock(uart_common[uart].lock);
+	*(uart_common[uart].base + tdr) = *((unsigned char *)buff);
+	uart_common[uart].txbeg = (void *)((unsigned char *)buff + 1);
+	uart_common[uart].txend = (void *)((unsigned char *)buff + bufflen);
 	*(uart_common[uart].base + cr1) |= 1 << 7;
 
 	while (uart_common[uart].txbeg != uart_common[uart].txend)
@@ -275,12 +278,14 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 	mutexLock(uart_common[uart].lock);
 
 	*(uart_common[uart].base + cr1) &= ~(1 << 5);
+	dataBarier();
 
 	uart_common[uart].read = &read;
 	uart_common[uart].rxend = (char *)buff + count;
 	uart_common[uart].rxbeg = buff;
 
 	*(uart_common[uart].base + cr1) |= 1 << 5;
+	dataBarier();
 
 	/* Provoke UART exception to fire so that existing data from
 	 * rxdfifo is copied into buff. The handler will clear this
@@ -293,10 +298,12 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 
 		if (mode == uart_mnblock || (timeout && err == -ETIME) || !uart_common[uart].enabled) {
 			*(uart_common[uart].base + cr1) &= ~(1 << 5);
+			dataBarier();
 			uart_common[uart].rxbeg = NULL;
 			uart_common[uart].rxend = NULL;
 			uart_common[uart].read = NULL;
 			*(uart_common[uart].base + cr1) |= 1 << 5;
+			dataBarier();
 			break;
 		}
 	}
