@@ -43,7 +43,7 @@ typedef struct _flash_context_t {
 	flash_properties_t properties;
 	serial_norConfigOption_t option;
 	flexspi_norConfig_t config;
-} __attribute__((packed)) flash_context_t;
+} __attribute__((packed, aligned(8))) flash_context_t;
 
 
 size_t flash_readData(flash_context_t *context, uint32_t offset, char *buff, size_t size);
