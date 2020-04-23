@@ -277,15 +277,12 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 	mutexLock(uart_common[uart].rxlock);
 	mutexLock(uart_common[uart].lock);
 
-	*(uart_common[uart].base + cr1) &= ~(1 << 5);
-	dataBarier();
-
 	uart_common[uart].read = &read;
 	uart_common[uart].rxend = (char *)buff + count;
-	uart_common[uart].rxbeg = buff;
 
-	*(uart_common[uart].base + cr1) |= 1 << 5;
-	dataBarier();
+	/* This field works as trigger for rx interrupt to store data in buffer
+	 * instead of FIFO */
+	uart_common[uart].rxbeg = buff;
 
 	/* Provoke UART exception to fire so that existing data from
 	 * rxdfifo is copied into buff. The handler will clear this
@@ -297,13 +294,9 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 		err = condWait(uart_common[uart].rxcond, uart_common[uart].lock, timeout);
 
 		if (mode == uart_mnblock || (timeout && err == -ETIME) || !uart_common[uart].enabled) {
-			*(uart_common[uart].base + cr1) &= ~(1 << 5);
-			dataBarier();
 			uart_common[uart].rxbeg = NULL;
 			uart_common[uart].rxend = NULL;
 			uart_common[uart].read = NULL;
-			*(uart_common[uart].base + cr1) |= 1 << 5;
-			dataBarier();
 			break;
 		}
 	}
