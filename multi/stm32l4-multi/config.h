@@ -34,7 +34,7 @@
 #endif
 
 #ifndef LPUART1
-#define LPUART1 1
+#define LPUART1 0
 #endif
 
 #ifndef UART_CONSOLE
