@@ -34,7 +34,7 @@
 #include "exti.h"
 
 #define THREADS_NO 4
-#define THREADS_PRIORITY 0
+#define THREADS_PRIORITY 1
 #define STACKSZ 512
 
 
