@@ -3,7 +3,7 @@
  *
  * i.MX RT ROM API driver for FlexSPI
  *
- * Copyright 2019 Phoenix Systems
+ * Copyright 2019, 2020 Phoenix Systems
  * Author: Hubert Buczynski
  *
  * This file is part of Phoenix-RTOS.
@@ -130,7 +130,10 @@ int flexspi_norFlashErase(uint32_t instance, flexspi_norConfig_t *config, uint32
 int flexspi_norFlashRead(uint32_t instance, flexspi_norConfig_t *config, uint32_t *dst, uint32_t start, uint32_t bytes);
 
 
-int flexspi_getVendorID(uint32_t instance, uint32_t *manID);
+int flexspi_norFlashExecuteSeq(uint32_t instance, flexspi_xfer_t *xfer);
+
+
+int flexspi_norFlashUpdateLUT(uint32_t instance, uint32_t seqIndex, const uint32_t *lutBase, uint32_t seqNumber);
 
 
 #endif

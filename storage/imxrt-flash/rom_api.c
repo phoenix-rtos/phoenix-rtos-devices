@@ -3,7 +3,7 @@
  *
  * i.MX RT ROM API driver for FlexSPI
  *
- * Copyright 2019 Phoenix Systems
+ * Copyright 2019, 2020 Phoenix Systems
  * Author: Hubert Buczynski
  *
  * This file is part of Phoenix-RTOS.
@@ -38,18 +38,6 @@ typedef struct {
 
 
 static volatile flexspi_norDriverInterface_t *flexspi_norApi = (void *)FLEXSPI_DRIVER_API_ADDRESS;
-
-
-static int flexspi_executeSeq(uint32_t instance, flexspi_xfer_t *xfer)
-{
-	return flexspi_norApi->xfer(instance, xfer);
-}
-
-
-static int flexspi_updateLut(uint32_t instance, uint32_t seqIndex, const uint32_t *lutBase, uint32_t seqNumber)
-{
-	return flexspi_norApi->update_lut(instance, seqIndex, lutBase, seqNumber);
-}
 
 
 int flexspi_norFlashInit(uint32_t instance, flexspi_norConfig_t *config)
@@ -88,27 +76,13 @@ int flexspi_norFlashRead(uint32_t instance, flexspi_norConfig_t *config, uint32_
 }
 
 
-int flexspi_getVendorID(uint32_t instance, uint32_t *manID)
+int flexspi_norFlashUpdateLUT(uint32_t instance, uint32_t seqIndex, const uint32_t *lutBase, uint32_t seqNumber)
 {
-	int err = EOK;
-	flexspi_xfer_t xfer;
-	const uint8_t seqID = 8;
-	const uint32_t lutSeq[] = { FLEX_SPI_LUT_INSTR(0x9, 0, 0x04, 0x1, 0, 0x9f), 0, 0, 0 };
-
-	xfer.rxSize = 3;
-	xfer.rxBuffer = manID;
-	xfer.baseAddress = instance;
-	xfer.operation = kFlexSpiOperation_Read;
-	xfer.seqId = seqID;
-	xfer.seqNum = 1;
-	xfer.isParallelModeEnable = 0;
-
-	if ((err = flexspi_updateLut(instance, seqID, lutSeq, 1)) != 0)
-		return -err;
-
-	if ((err = flexspi_executeSeq(instance, &xfer)) != 0)
-		return -err;
-
-	return err;
+	return flexspi_norApi->update_lut(instance, seqIndex, lutBase, seqNumber);
 }
 
+
+int flexspi_norFlashExecuteSeq(uint32_t instance, flexspi_xfer_t *xfer)
+{
+	return flexspi_norApi->xfer(instance, xfer);
+}
