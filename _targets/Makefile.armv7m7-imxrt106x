@@ -21,4 +21,5 @@ include multi/imxrt-multi/Makefile
 include usb/common/Makefile
 include usb/imxrt-usbc/Makefile
 include storage/imxrt-flash/Makefile
+include storage/imxrt-flash/tests/Makefile
 # include usb/imxrt-ehci/Makefile
