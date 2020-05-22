@@ -82,7 +82,7 @@ static int spi_irqHandler(unsigned int n, void *arg)
 {
 	int spi = (int)arg;
 
-	*(spi_common[spi].base + spi_ier) &= ~(1 << 0);
+	*(spi_common[spi].base + spi_ier) = 0;
 	spi_common[spi].ready = 1;
 
 	return 0;
@@ -95,6 +95,19 @@ static void spi_initTransmition(int spi)
 	spi_common[spi].ready = 0;
 
 	*(spi_common[spi].base + spi_ier) |= 1;
+
+	while (!spi_common[spi].ready)
+		condWait(spi_common[spi].cond, spi_common[spi].irqLock, 0);
+
+	mutexUnlock(spi_common[spi].irqLock);
+}
+
+static void spi_initRcv(int spi)
+{
+	mutexLock(spi_common[spi].irqLock);
+	spi_common[spi].ready = 0;
+
+	*(spi_common[spi].base + spi_ier) |= 1 << 1;
 
 	while (!spi_common[spi].ready)
 		condWait(spi_common[spi].cond, spi_common[spi].irqLock, 0);
@@ -182,11 +195,9 @@ static int spi_performTranscation(int spi, unsigned char cs, const uint8_t *txBu
 		txWordsCnt = *(spi_common[spi].base + spi_fsr) & 0x1f;
 		spi_initTransmition(spi);
 
-		/* Wait on transmit data.
-		 * Omit this step if Transmit Command is sent in transfers bigger than MAX_FIFOSZ_BYTES */
+		/* RCV data from slave */
+		spi_initRcv(spi);
 		rxWordsCnt = (*(spi_common[spi].base + spi_fsr) >> 16) & 0x1f;
-		while ((rxWordsCnt != txWordsCnt) & (len <= MAX_FIFOSZ_BYTES))
-			rxWordsCnt = (*(spi_common[spi].base + spi_fsr) >> 16) & 0x1f;
 
 		/* Get data from receive FIFO */
 		rxFifoBytes = rxWordsCnt * WORD_SIZE;
@@ -445,7 +456,7 @@ static void spi_initPins(void)
 #ifdef SPI2_PCS3
 		PIN2MUX(SPI2_PCS3),
 #endif
-#endif		
+#endif
 
 #if SPI3
 		PIN2MUX(SPI3_SCK), PIN2MUX(SPI3_SD0), PIN2MUX(SPI3_SDI),
