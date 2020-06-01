@@ -4,7 +4,7 @@
  * OLED phy test
  *
  * Copyright 2020 Phoenix Systems
- * Author: Hubert Buczyński
+ * Author: Hubert Buczyński, Marcin Baran
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -15,6 +15,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <errno.h>
+#include <sys/msg.h>
 
 #include "oled-phy.h"
 
@@ -94,6 +96,7 @@ static const unsigned char logo[] = {
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
 
+
 int main(int argc, char **argv)
 {
 	/* Initialize OLED */
@@ -108,10 +111,6 @@ int main(int argc, char **argv)
 	oledphy_sendCmd(0x21);
 	oledphy_sendCmd(0x00);
 	oledphy_sendCmd(0x7F);
-
-	/* Rotate by 180 degrees */
-	oledphy_sendCmd(0xc8);
-	oledphy_sendCmd(0xa1);
 
 	int y = 0, offset = 0, inverted = 0;
 
