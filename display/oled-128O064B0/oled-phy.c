@@ -37,7 +37,9 @@
 #define STATE_LOW         0
 
 /* Size of one row of pixels */
-#define BUFFER_SIZE 132
+#define X_RES 132
+/* Size of one column of pixels */
+#define Y_RES 64
 
 
 struct {
@@ -45,13 +47,13 @@ struct {
 	oid_t gpioOid;
 
 	uint8_t *txBuff;
-	uint8_t rxBuff[BUFFER_SIZE];
+	uint8_t rxBuff[X_RES];
 } oledphy_common;
 
 
 static int oledphy_transmitSPI(uint8_t *data, uint8_t size)
 {
-	if (size > BUFFER_SIZE)
+	if (size > X_RES)
 		return -1;
 
 	msg_t msg;
@@ -313,10 +315,10 @@ static int oledphy_initLCD(void)
 {
 	int res = 0;
 	res |= oledphy_sendCmd(0xae);
-	res |= oledphy_sendCmd(0xa1); //Segment remap
+	res |= oledphy_sendCmd(0xa0); //Segment normal
 	res |= oledphy_sendCmd(0xda); //Common pads hardware: alternative
 	res |= oledphy_sendCmd(0x12);
-	res |= oledphy_sendCmd(0xc8); //Common output scan direction:com63~com0
+	res |= oledphy_sendCmd(0xc0); //Common output scan direction:com0~com63
 	res |= oledphy_sendCmd(0xa8); //Multiplex ration mode:63
 	res |= oledphy_sendCmd(0x3f);
 	res |= oledphy_sendCmd(0xd5);
@@ -349,6 +351,14 @@ static int oledphy_initLCD(void)
 	res |= oledphy_sendCmd(0xaf);
 	res |= oledphy_sendCmd(0x40);
 
+	int i, j;
+
+	for (i = 0; i < Y_RES / 8; ++i) {
+		oledphy_sendCmd(i | 0xb0);
+		for (j = 0; j < X_RES; ++j)
+			oledphy_sendData(0x0);
+	}
+
 	return res;
 }
 
@@ -359,7 +369,7 @@ int oledphy_reset(void)
 	if ((res = oledphy_gpioSetPin(oledphy_common.gpioOid.id, RESET_PIN, STATE_LOW)) < 0)
 		return res;
 
-	sleep(1);
+	usleep(10000);
 
 	if ((res = oledphy_gpioSetPin(oledphy_common.gpioOid.id, RESET_PIN, STATE_HIGH)) < 0)
 		return res;

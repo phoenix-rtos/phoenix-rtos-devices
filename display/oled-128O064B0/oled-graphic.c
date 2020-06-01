@@ -123,7 +123,6 @@ void oledgraph_drawStringAbs(int x, int y, int w, int h, int font, int size, cha
 		else
 			handle_control(x, y, w, h, &cur_x, &cur_y, font, c);
 	}
-	oledgraph_drawBuffer(x, y, w, h, 0);
 }
 
 
@@ -172,7 +171,6 @@ void oledgraph_drawStringCont(int x, int y, int w, int h, int font, int size, ch
 
 	g_common.scroll.cur_x = cur_x;
 	g_common.scroll.cur_y = cur_y;
-	oledgraph_drawBuffer(min_x, min_y, min_w, min_h, 0);
 }
 
 

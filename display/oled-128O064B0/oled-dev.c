@@ -24,6 +24,7 @@
 #include "oled-phy.h"
 #include "oled-graphic.h"
 #include "fonts/font.h"
+#include "oled-api.h"
 
 
 struct {
@@ -68,6 +69,34 @@ int dev_init(void)
 	return 0;
 }
 
+static int dev_write(oled_write_t *cmd) {
+	switch(cmd->type) {
+		case oled_write__rect:
+			oledgraph_fillRect(cmd->x, cmd->y, cmd->w, cmd->h, cmd->filled);
+			break;
+		case oled_write__bitmap:
+			oledgraph_fillBitmap(cmd->x, cmd->y, cmd->w, cmd->h, cmd->data);
+			break;
+		case oled_write__text_abs:
+			oledgraph_drawStringAbs(cmd->x, cmd->y, cmd->w, cmd->h, font_5x7,
+				strlen(cmd->text), cmd->text);
+			break;
+		case oled_write__text_cont:
+			oledgraph_drawStringCont(cmd->x, cmd->y, cmd->w, cmd->h, font_5x7,
+				strlen(cmd->text), cmd->text);
+			break;
+		case oled_write__clear:
+			oledgraph_fillRect(cmd->x, cmd->y, cmd->w, cmd->h, 0);
+			break;
+		case oled_write__draw:
+			oledgraph_drawBuffer(cmd->x, cmd->y, cmd->w, cmd->h, 1);
+			break;
+		default:
+			return -EINVAL;
+	}
+
+	return EOK;
+}
 
 void msg_loop(void)
 {
@@ -92,10 +121,8 @@ void msg_loop(void)
 				}
 				break;
 			case mtWrite:
-				if (msg.i.data != NULL && msg.i.size >= sizeof(char)) {
-					oledgraph_drawStringCont(0, 0, 128, 64, font_5x7,
-						msg.i.size/sizeof(char) - 1, msg.i.data);
-					msg.o.io.err = msg.i.size / sizeof(char);
+				if (msg.i.data != NULL && msg.i.size == sizeof(oled_write_t *)) {
+					msg.o.io.err = dev_write((oled_write_t *)msg.i.data);
 				}
 				else {
 					msg.o.io.err = EOK;
@@ -124,8 +151,8 @@ int main(void)
 		return -EIO;
 
 	/* Rotate by 180 degrees */
-	oledphy_sendCmd(0xc8);
-	oledphy_sendCmd(0xa1);
+	oledphy_sendCmd(0xc0);
+	oledphy_sendCmd(0xa0);
 
 	/* Turn on the screen */
 	oledphy_sendCmd(0xaf);

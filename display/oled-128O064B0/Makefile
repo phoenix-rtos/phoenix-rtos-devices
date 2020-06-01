@@ -14,4 +14,7 @@ $(PREFIX_PROG)oled-test: $(addprefix $(PREFIX_O)display/oled-128O064B0/, oled-te
 $(PREFIX_PROG)oled-driver: $(addprefix $(PREFIX_O)display/oled-128O064B0/, oled-dev.o $(OLED_GRAPHIC) $(OLED_CORE))
 	$(LINK)
 
-all: $(addprefix $(PREFIX_PROG_STRIPPED), oled-test oled-driver)
+$(PREFIX_H)oled-api.h: display/oled-128O064B0/oled-api.h
+	$(HEADER)
+
+all: $(addprefix $(PREFIX_PROG_STRIPPED), oled-test oled-driver) $(PREFIX_H)oled-api.h
