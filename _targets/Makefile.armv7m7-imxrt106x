@@ -22,4 +22,7 @@ include usb/common/Makefile
 include usb/imxrt-usbc/Makefile
 include storage/imxrt-flash/Makefile
 include storage/imxrt-flash/tests/Makefile
+include dma/imxrt-edma/Makefile
+include adc/ad7779/Makefile
+include display/oled-128O064B0/Makefile
 # include usb/imxrt-ehci/Makefile
