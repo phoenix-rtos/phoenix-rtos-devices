@@ -200,7 +200,7 @@ ssize_t flash_readData(flash_context_t *context, uint32_t offset, char *buff, si
 	if (flash_isValidAddress(context, offset, size))
 		return -1;
 
-	if (flexspi_norFlashRead(context->instance, &context->config, (uint32_t *)buff, offset, size) < 0)
+	if (flexspi_norFlashRead(context->instance, &context->config, buff, offset, size) < 0)
 		return -1;
 
 	return size;
@@ -344,6 +344,7 @@ int flash_init(flash_context_t *context)
 
 	if (flash_getConfig(context) != 0)
 		return -ENXIO;
+
 
 	return res;
 }

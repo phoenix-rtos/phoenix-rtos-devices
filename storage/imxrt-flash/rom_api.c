@@ -70,9 +70,9 @@ int flexspi_norFlashErase(uint32_t instance, flexspi_norConfig_t *config, uint32
 }
 
 
-int flexspi_norFlashRead(uint32_t instance, flexspi_norConfig_t *config, uint32_t *dst, uint32_t start, uint32_t bytes)
+int flexspi_norFlashRead(uint32_t instance, flexspi_norConfig_t *config, char *dst, uint32_t start, uint32_t bytes)
 {
-	return flexspi_norApi->read(instance, config, dst, start, bytes);
+	return flexspi_norApi->read(instance, config, (uint32_t *)dst, start, bytes);
 }
 
 

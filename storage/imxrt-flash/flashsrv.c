@@ -301,6 +301,7 @@ static void flashsrv_rawCtl(flash_memory_t *memory, msg_t *msg)
 			odevctl->properties.psize = memory->ctx.properties.page_size;
 			odevctl->properties.ssize = memory->ctx.properties.sector_size;
 			odevctl->properties.offs = memory->parts[partID].pHeader->offset;
+			odevctl->err = EOK;
 			break;
 
 		case flashsrv_devctl_sync:

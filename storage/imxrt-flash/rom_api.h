@@ -17,13 +17,13 @@
 #include <stdio.h>
 
 
-typedef struct _serial_norConfigOption_t {
-	uint32_t option0;
-	uint32_t option1;
+typedef struct {
+	volatile uint32_t option0;
+	volatile uint32_t option1;
 } serial_norConfigOption_t;
 
 
-typedef enum _flexspi_operation_t {
+typedef enum {
 	kFlexSpiOperation_Command,                 /* FlexSPI operation: Only command, both TX and RX buffer are ignored. */
 	kFlexSpiOperation_Config,                  /* FlexSPI operation: Configure device mode, the TX FIFO size is fixed in LUT. */
 	kFlexSpiOperation_Write,                   /* FlexSPI operation: Write, only TX buffer is effective */
@@ -32,7 +32,7 @@ typedef enum _flexspi_operation_t {
 } flexspi_operation_t;
 
 
-typedef struct _flexspi_xfer_t {
+typedef struct {
 	flexspi_operation_t operation;             /* FlexSPI operation */
 	uint32_t baseAddress;                      /* FlexSPI operation base address */
 	uint32_t seqId;                            /* Sequence Id */
@@ -45,14 +45,14 @@ typedef struct _flexspi_xfer_t {
 } flexspi_xfer_t;
 
 
-typedef struct _flexspi_lutSeq_t {
+typedef struct {
 	uint8_t seqNum;                             /* Sequence Number, valid number: 1-16 */
 	uint8_t seqId;                              /* Sequence Index, valid number: 0-15 */
 	uint16_t reserved;
 } flexspi_lutSeq_t;
 
 
-typedef struct _flexspi_memConfig_t {
+typedef struct {
 	uint32_t tag;                               /* Tag, fixed value 0x42464346UL */
 	uint32_t version;                           /* Version,[31:24] -'V', [23:16] - Major, [15:8] - Minor, [7:0] - bugfix */
 	uint32_t reserved0;                         /* Reserved for future use */
@@ -96,8 +96,8 @@ typedef struct _flexspi_memConfig_t {
 } flexspi_memConfig_t;
 
 
-typedef struct _flexspi_norConfig_t {
-	flexspi_memConfig_t memConfig;              /* Common memory configuration info via FlexSPI */
+typedef struct {
+	volatile flexspi_memConfig_t memConfig;              /* Common memory configuration info via FlexSPI */
 	uint32_t pageSize;                          /* Page size of Serial NOR */
 	uint32_t sectorSize;                        /* Sector size of Serial NOR */
 	uint8_t ipcmdSerialClkFreq;                 /* Clock frequency for IP command */
@@ -127,7 +127,7 @@ int flexspi_norGetConfig(uint32_t instance, flexspi_norConfig_t *config, serial_
 int flexspi_norFlashErase(uint32_t instance, flexspi_norConfig_t *config, uint32_t start, uint32_t length);
 
 
-int flexspi_norFlashRead(uint32_t instance, flexspi_norConfig_t *config, uint32_t *dst, uint32_t start, uint32_t bytes);
+int flexspi_norFlashRead(uint32_t instance, flexspi_norConfig_t *config, char *dst, uint32_t start, uint32_t bytes);
 
 
 int flexspi_norFlashExecuteSeq(uint32_t instance, flexspi_xfer_t *xfer);

@@ -23,27 +23,27 @@
 #define FLASH_INTERNAL_DATA_ADDRESS 0x70000000
 
 
-typedef struct _flash_properties_t {
+typedef struct {
 	uint32_t size;
 	uint32_t page_size;
 	uint32_t sector_size;
-} __attribute__((packed)) flash_properties_t;
+} flash_properties_t;
 
 
-typedef struct _flash_context_t {
-	int sectorID;
-	int counter;
-
-	char *buff;
+typedef struct {
+	flash_properties_t properties;
+	serial_norConfigOption_t option;
+	flexspi_norConfig_t config;
 
 	uint32_t address;
 	uint32_t instance;
 	uint32_t flashID;
 
-	flash_properties_t properties;
-	serial_norConfigOption_t option;
-	flexspi_norConfig_t config;
-} __attribute__((packed)) flash_context_t;
+	int sectorID;
+	int counter;
+
+	char *buff;
+} flash_context_t;
 
 
 ssize_t flash_readData(flash_context_t *context, uint32_t offset, char *buff, size_t size);
