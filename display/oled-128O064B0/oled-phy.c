@@ -205,10 +205,10 @@ static int oledphy_initSPI(void)
 	odevctl = (multi_o_t *)msg.o.raw;
 
 	if (msgSend(oledphy_common.spiOid.port, &msg) < 0)
-		return -EOK;
+		return -1;
 
 	if (odevctl->err < 0)
-		return -EOK;
+		return -1;
 
 	return EOK;
 }
