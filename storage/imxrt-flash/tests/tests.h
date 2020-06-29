@@ -38,6 +38,7 @@ extern int test_flashdrv_init(uint32_t addr);
 extern int test_flashdrv_writeAndReadPage(uint32_t addr);
 extern int test_flashdrv_writeAndReadBytes(uint32_t addr);
 extern int test_flashdrv_eraseSector(uint32_t addr);
+extern int test_flashdrv_iterativeRead(uint32_t addr);
 extern int test_flashdrv_eraseChip(uint32_t addr);
 
 

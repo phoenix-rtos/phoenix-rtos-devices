@@ -18,11 +18,6 @@
 
 #define FLEXSPI_DRIVER_API_ADDRESS 0x00201a60
 
-#define FLEX_SPI_LUT_INSTR(opcode1, pads1, operand1, opcode0, pads0, operand0) \
-	(((opcode1 & 0x3f) << 26) | ((pads1 & 0x3) << 24) | (operand1 & 0xff) << 16) \
-	| (((opcode0 & 0x3f) << 10) | ((pads0 & 0x3) << 8) | (operand0 & 0xff))
-
-
 typedef struct {
 	uint32_t version;
 	int32_t (*init)(uint32_t instance, flexspi_norConfig_t *config);
