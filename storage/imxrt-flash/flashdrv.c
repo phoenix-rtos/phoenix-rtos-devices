@@ -17,27 +17,19 @@
 #include <unistd.h>
 #include <phoenix/arch/imxrt.h>
 
-
-#include "flashdrv.h"
+#include "lut.h"
 #include "rom_api.h"
-
+#include "flashdrv.h"
 #include "flash_config.h"
 
 
 #define QSPI_FREQ_133MHZ 0xc0000008
 
 
-#define QUAD_FAST_READ_SEQ_ID      0
-#define READ_STATUS_REG_SEQ_ID     1
-#define WRITE_ENABLE_SEQ_ID        3
-#define SECTOR_ERASE_SEQ_ID        5
-#define BLOCK_ERASE_SEQ_ID         8
-#define PAGE_PROGRAM_SEQ_ID        9
-#define CHIP_ERASE_SEQ_ID          11
-#define READ_JEDEC_ID_SEQ_ID       12
 
+/* Flash config commands */
 
-static int flash_setWEL(flash_context_t *context, uint32_t dstAddr)
+static int flash_setWEL(flash_context_t *ctx, uint32_t dstAddr)
 {
 	flexspi_xfer_t xfer;
 
@@ -47,11 +39,11 @@ static int flash_setWEL(flash_context_t *context, uint32_t dstAddr)
 	xfer.seqNum = 1;
 	xfer.isParallelModeEnable = 0;
 
-	return -flexspi_norFlashExecuteSeq(context->instance, &xfer);
+	return -flexspi_norFlashExecuteSeq(ctx->instance, &xfer);
 }
 
 
-static int flash_writeBytes(flash_context_t *context, uint32_t dstAddr, uint32_t *src, uint32_t size)
+static int flash_writeBytes(flash_context_t *ctx, uint32_t dstAddr, uint32_t *src, uint32_t size)
 {
 	flexspi_xfer_t xfer;
 
@@ -62,11 +54,11 @@ static int flash_writeBytes(flash_context_t *context, uint32_t dstAddr, uint32_t
 	xfer.seqId = PAGE_PROGRAM_SEQ_ID;
 	xfer.seqNum = 1;
 
-	return -flexspi_norFlashExecuteSeq(context->instance, &xfer);
+	return -flexspi_norFlashExecuteSeq(ctx->instance, &xfer);
 }
 
 
-static int flash_waitBusBusy(flash_context_t *context)
+static int flash_waitBusBusy(flash_context_t *ctx)
 {
 	int err = EOK;
 	uint32_t buff;
@@ -77,14 +69,14 @@ static int flash_waitBusBusy(flash_context_t *context)
 	retrans = 0;
 	xfer.rxSize = 4;
 	xfer.rxBuffer = &buff;
-	xfer.baseAddress = context->instance;
+	xfer.baseAddress = ctx->instance;
 	xfer.operation = kFlexSpiOperation_Read;
 	xfer.seqId = READ_STATUS_REG_SEQ_ID;
 	xfer.seqNum = 1;
 	xfer.isParallelModeEnable = 0;
 
 	do {
-		err = flexspi_norFlashExecuteSeq(context->instance, &xfer);
+		err = flexspi_norFlashExecuteSeq(ctx->instance, &xfer);
 		usleep(10000);
 	} while ((buff & (0x1 << 1)) && (++retrans < MAX_RETRANS) && (err == 0));
 
@@ -92,99 +84,30 @@ static int flash_waitBusBusy(flash_context_t *context)
 }
 
 
-static int flash_getVendorID(uint32_t instance, uint32_t *manID)
+static int flash_getVendorID(flash_context_t *ctx, uint32_t *manID)
 {
 	flexspi_xfer_t xfer;
 
+	/* READ JEDEC ID*/
+	ctx->config.mem.lut[4 * READ_JEDEC_ID_SEQ_ID] = LUT_INSTR(LUT_CMD_CMD, LUT_PAD1, FLASH_SPANSION_CMD_RDID, LUT_CMD_READ, LUT_PAD1, FLASH_SPANSION_CMD_WRDI); // 0x2404049f
+	ctx->config.mem.lut[4 * READ_JEDEC_ID_SEQ_ID + 1] = 0;
+	ctx->config.mem.lut[4 * READ_JEDEC_ID_SEQ_ID + 2] = 0;
+	ctx->config.mem.lut[4 * READ_JEDEC_ID_SEQ_ID + 3] = 0;
+	flexspi_norFlashUpdateLUT(ctx->instance, READ_JEDEC_ID_SEQ_ID, (const uint32_t *)&ctx->config.mem.lut[4 * READ_JEDEC_ID_SEQ_ID], 1);
+
 	xfer.rxSize = 3;
 	xfer.rxBuffer = manID;
-	xfer.baseAddress = instance;
+	xfer.baseAddress = ctx->instance;
 	xfer.operation = kFlexSpiOperation_Read;
 	xfer.seqId = READ_JEDEC_ID_SEQ_ID;
 	xfer.seqNum = 1;
 	xfer.isParallelModeEnable = 0;
 
-	return flexspi_norFlashExecuteSeq(instance, &xfer);
+	return flexspi_norFlashExecuteSeq(ctx->instance, &xfer);
 }
 
 
-static int flash_defineFlexSPI(flash_context_t *context)
-{
-	switch (context->address) {
-		case FLASH_EXT_DATA_ADDRESS:
-			context->instance = 0;
-			context->option.option0 = QSPI_FREQ_133MHZ;
-			break;
-
-		case FLASH_INTERNAL_DATA_ADDRESS:
-			context->instance = 1;
-			context->option.option0 = QSPI_FREQ_133MHZ;
-			break;
-
-		default:
-			return -ENODEV;
-	}
-
-	return EOK;
-}
-
-
-static void flash_setLutTable(flash_context_t *context)
-{
-	/* QUAD Fast Read */
-	context->config.memConfig.lookupTable[4 * QUAD_FAST_READ_SEQ_ID] = 0xa1804eb;
-	context->config.memConfig.lookupTable[4 * QUAD_FAST_READ_SEQ_ID + 1] = 0x26043206;
-	context->config.memConfig.lookupTable[4 * QUAD_FAST_READ_SEQ_ID + 2] = 0;
-	context->config.memConfig.lookupTable[4 * QUAD_FAST_READ_SEQ_ID + 3] = 0;
-
-	/* Read Status Register */
-	context->config.memConfig.lookupTable[4 * READ_STATUS_REG_SEQ_ID] = 0x24040405;
-	context->config.memConfig.lookupTable[4 * READ_STATUS_REG_SEQ_ID + 1] = 0;
-	context->config.memConfig.lookupTable[4 * READ_STATUS_REG_SEQ_ID + 2] = 0;
-	context->config.memConfig.lookupTable[4 * READ_STATUS_REG_SEQ_ID + 3] = 0;
-	flexspi_norFlashUpdateLUT(context->instance, READ_STATUS_REG_SEQ_ID, (const uint32_t *)&context->config.memConfig.lookupTable[4 * READ_STATUS_REG_SEQ_ID], 1);
-
-
-	/* Write Enable */
-	context->config.memConfig.lookupTable[4 * WRITE_ENABLE_SEQ_ID] = 0x406;
-	context->config.memConfig.lookupTable[4 * WRITE_ENABLE_SEQ_ID + 1] = 0;
-	context->config.memConfig.lookupTable[4 * WRITE_ENABLE_SEQ_ID + 2] = 0;
-	context->config.memConfig.lookupTable[4 * WRITE_ENABLE_SEQ_ID + 3] = 0;
-	flexspi_norFlashUpdateLUT(context->instance, WRITE_ENABLE_SEQ_ID, (const uint32_t *)&context->config.memConfig.lookupTable[4 * WRITE_ENABLE_SEQ_ID], 1);
-
-	/* Sector Erase */
-	context->config.memConfig.lookupTable[4 * SECTOR_ERASE_SEQ_ID] = 0x8180420;
-	context->config.memConfig.lookupTable[4 * SECTOR_ERASE_SEQ_ID + 1] = 0;
-	context->config.memConfig.lookupTable[4 * SECTOR_ERASE_SEQ_ID + 2] = 0;
-	context->config.memConfig.lookupTable[4 * SECTOR_ERASE_SEQ_ID + 3] = 0;
-
-	/* Block Erase */
-	context->config.memConfig.lookupTable[4 * BLOCK_ERASE_SEQ_ID] = 0x81804d8;
-	context->config.memConfig.lookupTable[4 * BLOCK_ERASE_SEQ_ID + 1] = 0;
-	context->config.memConfig.lookupTable[4 * BLOCK_ERASE_SEQ_ID + 2] = 0;
-	context->config.memConfig.lookupTable[4 * BLOCK_ERASE_SEQ_ID + 3] = 0;
-
-	/* Page Program */
-	context->config.memConfig.lookupTable[4 * PAGE_PROGRAM_SEQ_ID] = 0x8180402;
-	context->config.memConfig.lookupTable[4 * PAGE_PROGRAM_SEQ_ID + 1] = 0x2004;
-	context->config.memConfig.lookupTable[4 * PAGE_PROGRAM_SEQ_ID + 2] = 0;
-	context->config.memConfig.lookupTable[4 * PAGE_PROGRAM_SEQ_ID + 3] = 0;
-	flexspi_norFlashUpdateLUT(context->instance, PAGE_PROGRAM_SEQ_ID, (const uint32_t *)&context->config.memConfig.lookupTable[4 * PAGE_PROGRAM_SEQ_ID], 1);
-
-	/* Chip Erase */
-	context->config.memConfig.lookupTable[4 * CHIP_ERASE_SEQ_ID] = 0x0460;
-	context->config.memConfig.lookupTable[4 * CHIP_ERASE_SEQ_ID + 1] = 0x2004;
-	context->config.memConfig.lookupTable[4 * CHIP_ERASE_SEQ_ID + 2] = 0;
-	context->config.memConfig.lookupTable[4 * CHIP_ERASE_SEQ_ID + 3] = 0;
-
-	/* READ JEDEC ID*/
-	context->config.memConfig.lookupTable[4 * READ_JEDEC_ID_SEQ_ID] = 0x2404049f;
-	context->config.memConfig.lookupTable[4 * READ_JEDEC_ID_SEQ_ID + 1] = 0;
-	context->config.memConfig.lookupTable[4 * READ_JEDEC_ID_SEQ_ID + 2] = 0;
-	context->config.memConfig.lookupTable[4 * READ_JEDEC_ID_SEQ_ID + 3] = 0;
-	flexspi_norFlashUpdateLUT(context->instance, READ_JEDEC_ID_SEQ_ID, (const uint32_t *)&context->config.memConfig.lookupTable[4 * READ_JEDEC_ID_SEQ_ID], 1);
-}
-
+/* Read/write/erase operation via ROM API */
 
 static int flash_isValidAddress(flash_context_t *context, uint32_t addr, size_t size)
 {
@@ -195,38 +118,38 @@ static int flash_isValidAddress(flash_context_t *context, uint32_t addr, size_t 
 }
 
 
-ssize_t flash_readData(flash_context_t *context, uint32_t offset, char *buff, size_t size)
+ssize_t flash_readData(flash_context_t *ctx, uint32_t offset, char *buff, size_t size)
 {
-	if (flash_isValidAddress(context, offset, size))
+	if (flash_isValidAddress(ctx, offset, size))
 		return -1;
 
-	if (flexspi_norFlashRead(context->instance, &context->config, buff, offset, size) < 0)
+	if (flexspi_norFlashRead(ctx->instance, &ctx->config, buff, offset, size) < 0)
 		return -1;
 
 	return size;
 }
 
 
-ssize_t flash_directBytesWrite(flash_context_t *context, uint32_t offset, const char *buff, size_t size)
+ssize_t flash_directBytesWrite(flash_context_t *ctx, uint32_t offset, const char *buff, size_t size)
 {
 	int err;
 	uint32_t chunk;
 	uint32_t len = size;
 
 	while (len) {
-		if ((chunk = context->properties.page_size - (offset & 0xff)) > len)
+		if ((chunk = ctx->properties.page_size - (offset & 0xff)) > len)
 			chunk = len;
 
-		if ((err = flash_waitBusBusy(context)) < 0)
+		if ((err = flash_waitBusBusy(ctx)) < 0)
 			return -1;
 
-		if ((err = flash_setWEL(context, offset)) < 0)
+		if ((err = flash_setWEL(ctx, offset)) < 0)
 			return -1;
 
-		if ((err = flash_writeBytes(context, offset, (uint32_t *)buff, chunk)) < 0)
+		if ((err = flash_writeBytes(ctx, offset, (uint32_t *)buff, chunk)) < 0)
 			return -1;
 
-		if ((err = flash_waitBusBusy(context)) < 0)
+		if ((err = flash_waitBusBusy(ctx)) < 0)
 			return -1;
 
 		offset += chunk;
@@ -238,120 +161,146 @@ ssize_t flash_directBytesWrite(flash_context_t *context, uint32_t offset, const 
 }
 
 
-ssize_t flash_bufferedPagesWrite(flash_context_t *context, uint32_t offset, const char *buff, size_t size)
+ssize_t flash_bufferedPagesWrite(flash_context_t *ctx, uint32_t offset, const char *buff, size_t size)
 {
 	uint32_t pageAddr;
 	uint16_t sector_id;
 	size_t savedBytes = 0;
 
-	if (size % context->properties.page_size)
+	if (size % ctx->properties.page_size)
 		return -1;
 
-	if (flash_isValidAddress(context, offset, size))
+	if (flash_isValidAddress(ctx, offset, size))
 		return -1;
 
 	while (savedBytes < size) {
 		pageAddr = offset + savedBytes;
-		sector_id = pageAddr / context->properties.sector_size;
+		sector_id = pageAddr / ctx->properties.sector_size;
 
 		/* If sector_id has changed, data from previous sector have to be saved and new sector is read. */
-		if (sector_id != context->sectorID) {
-			flash_sync(context);
+		if (sector_id != ctx->sectorID) {
+			flash_sync(ctx);
 
-			if (flash_readData(context, context->properties.sector_size * sector_id, context->buff, context->properties.sector_size) <= 0)
+			if (flash_readData(ctx, ctx->properties.sector_size * sector_id, ctx->buff, ctx->properties.sector_size) <= 0)
 				return savedBytes;
 
-			if (flexspi_norFlashErase(context->instance, &context->config, context->properties.sector_size * sector_id, context->properties.sector_size) != 0)
+			if (flexspi_norFlashErase(ctx->instance, &ctx->config, ctx->properties.sector_size * sector_id, ctx->properties.sector_size) != 0)
 				return savedBytes;
 
-			context->sectorID = sector_id;
-			context->counter = offset - context->properties.sector_size * context->sectorID;
+			ctx->sectorID = sector_id;
+			ctx->counter = offset - ctx->properties.sector_size * ctx->sectorID;
 		}
 
-		memcpy(context->buff + context->counter, buff + savedBytes, context->properties.page_size);
+		memcpy(ctx->buff + ctx->counter, buff + savedBytes, ctx->properties.page_size);
 
-		savedBytes += context->properties.page_size;
-		context->counter += context->properties.page_size;
+		savedBytes += ctx->properties.page_size;
+		ctx->counter += ctx->properties.page_size;
 
 		/* Save filled buffer */
-		if (context->counter >= context->properties.sector_size)
-			flash_sync(context);
+		if (ctx->counter >= ctx->properties.sector_size)
+			flash_sync(ctx);
 	}
 
 	return size;
 }
 
 
-int flash_chipErase(flash_context_t *context)
+int flash_chipErase(flash_context_t *ctx)
 {
-	return flexspi_norFlashEraseAll(context->instance, &context->config);
+	return flexspi_norFlashEraseAll(ctx->instance, &ctx->config);
 }
 
 
-int flash_sectorErase(flash_context_t *context, uint32_t offset)
+int flash_sectorErase(flash_context_t *ctx, uint32_t offset)
 {
-	if (offset % context->properties.sector_size)
+	if (offset % ctx->properties.sector_size)
 		return -1;
 
-	return flexspi_norFlashErase(context->instance, &context->config, offset, context->properties.sector_size);
+	return flexspi_norFlashErase(ctx->instance, &ctx->config, offset, ctx->properties.sector_size);
 }
 
 
-void flash_sync(flash_context_t *context)
+void flash_sync(flash_context_t *ctx)
 {
 	int i;
 	uint32_t dstAddr;
 	const uint32_t *src;
-	const uint32_t pagesNumber = context->properties.sector_size / context->properties.page_size;
+	const uint32_t pagesNumber = ctx->properties.sector_size / ctx->properties.page_size;
 
-	if (context->counter == 0)
+	if (ctx->counter == 0)
 		return;
 
 	for (i = 0; i < pagesNumber; ++i) {
-		dstAddr = context->sectorID * context->properties.sector_size + i * context->properties.page_size;
-		src = (const uint32_t *)(context->buff + i * context->properties.page_size);
+		dstAddr = ctx->sectorID * ctx->properties.sector_size + i * ctx->properties.page_size;
+		src = (const uint32_t *)(ctx->buff + i * ctx->properties.page_size);
 
-		flexspi_norFlashPageProgram(context->instance, &context->config, dstAddr, src);
+		flexspi_norFlashPageProgram(ctx->instance, &ctx->config, dstAddr, src);
 	}
 
-	context->counter = 0;
-	context->sectorID = -1;
+	ctx->counter = 0;
+	ctx->sectorID = -1;
 }
 
 
-int flash_init(flash_context_t *context)
+/* Init functions */
+
+static int flash_defineFlexSPI(flash_context_t *ctx)
+{
+	switch (ctx->address) {
+		case FLASH_EXT_DATA_ADDRESS:
+			ctx->instance = 0;
+			ctx->option.option0 = QSPI_FREQ_133MHZ;
+			ctx->option.option1 = 0;
+			break;
+
+		case FLASH_INTERNAL_DATA_ADDRESS:
+			ctx->instance = 1;
+			ctx->option.option0 = QSPI_FREQ_133MHZ;
+			ctx->option.option1 = 0;
+			break;
+
+		default:
+			return -ENODEV;
+	}
+
+	return EOK;
+}
+
+
+int flash_init(flash_context_t *ctx)
 {
 	int res = EOK;
 
-	context->sectorID = -1;
-	context->counter = 0;
-	context->buff = NULL;
+	ctx->sectorID = -1;
+	ctx->counter = 0;
+	ctx->buff = NULL;
 
-	if ((res = flash_defineFlexSPI(context)) < 0)
+	ctx->config.ipcmdSerialClkFreq = 8;
+	ctx->config.mem.serialClkFreq = 8;
+	ctx->config.mem.sflashPadType = 4;
+
+
+	if ((res = flash_defineFlexSPI(ctx)) < 0)
 		return res;
 
-	if (flexspi_norGetConfig(context->instance, &context->config, &context->option) != 0)
+	if (flexspi_norGetConfig(ctx->instance, &ctx->config, &ctx->option) != 0)
 		return -ENXIO;
 
-	if (flexspi_norFlashInit(context->instance, &context->config) != 0)
+	if (flexspi_norFlashInit(ctx->instance, &ctx->config) != 0)
 		return -ENXIO;
 
-	/* Basic LUT table uses by ROM API. */
-	flash_setLutTable(context);
-
-	if (flash_getVendorID(context->instance, &context->flashID) != 0)
+	if (flash_getVendorID(ctx, &ctx->flashID) != 0)
 		return -ENXIO;
 
-	if (flash_getConfig(context) != 0)
+	if (flash_getConfig(ctx) != 0)
 		return -ENXIO;
-
 
 	return res;
 }
 
 
-void flash_contextDestroy(flash_context_t *context)
+void flash_contextDestroy(flash_context_t *ctx)
 {
-	flash_sync(context);
-	free(context->buff);
+	flash_sync(ctx);
+	free(ctx->buff);
 }

@@ -90,14 +90,14 @@ typedef struct {
 	uint16_t dataValidTime[2];                  /* CLK edge to data valid time for PORT A and PORT B, in terms of 0.1ns */
 	uint16_t busyOffset;                        /* Busy offset, valid value: 0-31 */
 	uint16_t busyBitPolarity;                   /* Busy flag polarity, 0 - busy flag is 1 when flash device is busy, 1 - */
-	uint32_t lookupTable[64];                   /* Lookup table holds Flash command sequences */
+	uint32_t lut[64];                           /* Lookup table holds Flash command sequences */
 	flexspi_lutSeq_t lutCustomSeq[12];          /* Customizable LUT Sequences */
 	uint32_t reserved4[4];                      /* Reserved for future use */
 } flexspi_memConfig_t;
 
 
 typedef struct {
-	volatile flexspi_memConfig_t memConfig;              /* Common memory configuration info via FlexSPI */
+	volatile flexspi_memConfig_t mem;           /* Common memory configuration info via FlexSPI */
 	uint32_t pageSize;                          /* Page size of Serial NOR */
 	uint32_t sectorSize;                        /* Sector size of Serial NOR */
 	uint8_t ipcmdSerialClkFreq;                 /* Clock frequency for IP command */

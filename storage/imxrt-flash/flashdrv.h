@@ -46,28 +46,28 @@ typedef struct {
 } flash_context_t;
 
 
-ssize_t flash_readData(flash_context_t *context, uint32_t offset, char *buff, size_t size);
+ssize_t flash_readData(flash_context_t *ctx, uint32_t offset, char *buff, size_t size);
 
 
-ssize_t flash_directBytesWrite(flash_context_t *context, uint32_t offset, const char *buff, size_t size);
+ssize_t flash_directBytesWrite(flash_context_t *ctx, uint32_t offset, const char *buff, size_t size);
 
 
-ssize_t flash_bufferedPagesWrite(flash_context_t *context, uint32_t offset, const char *buff, size_t size);
+ssize_t flash_bufferedPagesWrite(flash_context_t *ctx, uint32_t offset, const char *buff, size_t size);
 
 
-void flash_sync(flash_context_t *context);
+void flash_sync(flash_context_t *ctx);
 
 
-int flash_chipErase(flash_context_t *context);
+int flash_chipErase(flash_context_t *ctx);
 
 
-int flash_sectorErase(flash_context_t *context, uint32_t offset);
+int flash_sectorErase(flash_context_t *ctx, uint32_t offset);
 
 
-int flash_init(flash_context_t *context);
+int flash_init(flash_context_t *ctx);
 
 
-void flash_contextDestroy(flash_context_t *context);
+void flash_contextDestroy(flash_context_t *ctx);
 
 
 #endif

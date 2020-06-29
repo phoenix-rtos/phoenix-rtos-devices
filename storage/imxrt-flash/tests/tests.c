@@ -49,6 +49,7 @@ int main(int argc, char **argv)
 	TEST_CASE(test_flashdrv_writeAndReadPage(FLASH_INTERNAL_DATA_ADDRESS));
 	TEST_CASE(test_flashdrv_writeAndReadBytes(FLASH_INTERNAL_DATA_ADDRESS));
 	TEST_CASE(test_flashdrv_eraseSector(FLASH_INTERNAL_DATA_ADDRESS));
+	TEST_CASE(test_flashdrv_iterativeRead(FLASH_INTERNAL_DATA_ADDRESS));
 	TEST_CASE(test_flashdrv_eraseChip(FLASH_INTERNAL_DATA_ADDRESS));
 #endif
 
@@ -60,6 +61,7 @@ int main(int argc, char **argv)
 	TEST_CASE(test_flashdrv_writeAndReadPage(FLASH_EXT_DATA_ADDRESS));
 	TEST_CASE(test_flashdrv_writeAndReadBytes(FLASH_EXT_DATA_ADDRESS));
 	TEST_CASE(test_flashdrv_eraseSector(FLASH_EXT_DATA_ADDRESS));
+	TEST_CASE(test_flashdrv_iterativeRead(FLASH_EXT_DATA_ADDRESS));
 	TEST_CASE(test_flashdrv_eraseChip(FLASH_EXT_DATA_ADDRESS));
 #endif
 
