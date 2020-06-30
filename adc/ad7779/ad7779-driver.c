@@ -645,17 +645,6 @@ static void msg_loop(void)
 	}
 }
 
-static void ad7779_enableCache(unsigned char enable)
-{
-	platformctl_t pctl;
-
-	pctl.action = pctl_set;
-	pctl.type = pctl_devcache;
-	pctl.devcache.state = !!enable;
-
-	platformctl(&pctl);
-}
-
 static int init(void)
 {
 	int res;
@@ -695,9 +684,6 @@ static int init(void)
 int main(void)
 {
 	oid_t root;
-
-	/* Temporary fix for OCRAM allocation */
-	ad7779_enableCache(1);
 
 	/* Wait for the filesystem */
 	while (lookup("/", NULL, &root) < 0)
