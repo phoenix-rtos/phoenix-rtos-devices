@@ -1,617 +1,639 @@
 /* 
  * Phoenix-RTOS
  *
- * Operating system kernel
+ * Virtual Terminal Functions
  *
- * ttypc VT220 functions (based on FreeBSD 4.4 pcvt)
- *
- * Copyright 2012, 2019 Phoenix Systems
  * Copyright 2008 Pawel Pisarczyk
+ * Copyright 2012, 2019, 2020 Phoenix Systems
  * Author: Pawel Pisarczyk, Lukasz Kosinski
  *
  * %LICENSE%
  */
 
-#include <sys/minmax.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
-#include "ttypc.h"
-#include "ttypc_vtf.h"
+#include <sys/minmax.h>
+
+#include "ttypc_bioskbd.h"
+#include "ttypc_kbd.h"
 #include "ttypc_vga.h"
+#include "ttypc_vtf.h"
 
 
-/* Color attributes for foreground text */
-
-#define	FG_BLACK           0
-#define	FG_BLUE            1
-#define	FG_GREEN           2
-#define	FG_CYAN            3
-#define	FG_RED             4
-#define	FG_MAGENTA         5
-#define	FG_BROWN           6
-#define	FG_LIGHTGREY       7
-#define	FG_DARKGREY        8
-#define	FG_LIGHTBLUE       9
-#define	FG_LIGHTGREEN      10
-#define	FG_LIGHTCYAN       11
-#define	FG_LIGHTRED        12
-#define	FG_LIGHTMAGENTA    13
-#define	FG_YELLOW          14
-#define	FG_WHITE           15
-#define	FG_BLINK           0x80
-
-/* Color attributes for text background */
-
-#define	BG_BLACK           0x00
-#define	BG_BLUE            0x10
-#define	BG_GREEN           0x20
-#define	BG_CYAN            0x30
-#define	BG_RED             0x40
-#define	BG_MAGENTA         0x50
-#define	BG_BROWN           0x60
-#define	BG_LIGHTGREY       0x70
-
-/* Monochrome attributes for foreground text */
-
-#define	FG_UNDERLINE       0x01
-#define	FG_INTENSE         0x08
-
-/* Monochrome attributes for text background */
-
-#define	BG_INTENSE         0x10
-
-
-/*---------------------------------------------------------------------------
-
-	VT220 attributes -> internal emulator attributes conversion tables
-
-	be careful when designing color combinations, because on
-	EGA and VGA displays, bit 3 of the attribute byte is used
-	for characterset switching, and is no longer available for
-	foreground intensity (bold)!
-
----------------------------------------------------------------------------*/
-
-/* color displays */
-
-uint8_t sgr_tab_color[16] = {
-	(BG_BLACK     | FG_LIGHTGREY),             /* normal               */
-	(BG_BLUE      | FG_LIGHTGREY),             /* bold                 */
-	(BG_BROWN     | FG_LIGHTGREY),             /* underline            */
-	(BG_MAGENTA   | FG_LIGHTGREY),             /* bold+underline       */
-	(BG_BLACK     | FG_LIGHTGREY | FG_BLINK),  /* blink                */
-	(BG_BLUE      | FG_LIGHTGREY | FG_BLINK),  /* bold+blink           */
-	(BG_BROWN     | FG_LIGHTGREY | FG_BLINK),  /* underline+blink      */
-	(BG_MAGENTA   | FG_LIGHTGREY | FG_BLINK),  /* bold+underline+blink */
-	(BG_LIGHTGREY | FG_BLACK),                 /* invers               */
-	(BG_LIGHTGREY | FG_BLUE),                  /* bold+invers          */
-	(BG_LIGHTGREY | FG_BROWN),                 /* underline+invers     */
-	(BG_LIGHTGREY | FG_MAGENTA),               /* bold+underline+invers*/
-	(BG_LIGHTGREY | FG_BLACK      | FG_BLINK), /* blink+invers         */
-	(BG_LIGHTGREY | FG_BLUE       | FG_BLINK), /* bold+blink+invers    */
-	(BG_LIGHTGREY | FG_BROWN      | FG_BLINK), /* underline+blink+invers*/
-	(BG_LIGHTGREY | FG_MAGENTA    | FG_BLINK)  /* bold+underl+blink+invers */
-};
-
-/* monochrome displays (VGA version, no intensity) */
-
-uint8_t sgr_tab_mono[16] = {
-	(BG_BLACK     | FG_LIGHTGREY),            /* normal               */
-	(BG_BLACK     | FG_UNDERLINE),            /* bold                 */
-	(BG_BLACK     | FG_UNDERLINE),            /* underline            */
-	(BG_BLACK     | FG_UNDERLINE),            /* bold+underline       */
-	(BG_BLACK     | FG_LIGHTGREY | FG_BLINK), /* blink                */
-	(BG_BLACK     | FG_UNDERLINE | FG_BLINK), /* bold+blink           */
-	(BG_BLACK     | FG_UNDERLINE | FG_BLINK), /* underline+blink      */
-	(BG_BLACK     | FG_UNDERLINE | FG_BLINK), /* bold+underline+blink */
-	(BG_LIGHTGREY | FG_BLACK),                /* invers               */
-	(BG_LIGHTGREY | FG_BLACK),                /* bold+invers          */
-	(BG_LIGHTGREY | FG_BLACK),                /* underline+invers     */
-	(BG_LIGHTGREY | FG_BLACK),                /* bold+underline+invers*/
-	(BG_LIGHTGREY | FG_BLACK | FG_BLINK),     /* blink+invers         */
-	(BG_LIGHTGREY | FG_BLACK | FG_BLINK),     /* bold+blink+invers    */
-	(BG_LIGHTGREY | FG_BLACK | FG_BLINK),     /* underline+blink+invers */
-	(BG_LIGHTGREY | FG_BLACK | FG_BLINK)      /* bold+underl+blink+invers */
+/* Color display SGR attributes */
+static uint8_t csgr[] = {
+	(BG_BLACK     | FG_LIGHTGREY),            /* Normal */
+	(BG_BLUE      | FG_LIGHTGREY),            /* Bold */
+	(BG_BROWN     | FG_LIGHTGREY),            /* Underline */
+	(BG_MAGENTA   | FG_LIGHTGREY),            /* Bold + underline */
+	(BG_BLACK     | FG_LIGHTGREY | FG_BLINK), /* Blink */
+	(BG_BLUE      | FG_LIGHTGREY | FG_BLINK), /* Bold + blink */
+	(BG_BROWN     | FG_LIGHTGREY | FG_BLINK), /* Underline + blink */
+	(BG_MAGENTA   | FG_LIGHTGREY | FG_BLINK), /* Bold + underline + blink */
+	(BG_LIGHTGREY | FG_BLACK),                /* Inversed */
+	(BG_LIGHTGREY | FG_BLUE),                 /* Bold + inversed */
+	(BG_LIGHTGREY | FG_BROWN),                /* Underline + inversed */
+	(BG_LIGHTGREY | FG_MAGENTA),              /* Bold + underline + inversed */
+	(BG_LIGHTGREY | FG_BLACK     | FG_BLINK), /* Blink + inversed */
+	(BG_LIGHTGREY | FG_BLUE      | FG_BLINK), /* Bold + blink + inversed */
+	(BG_LIGHTGREY | FG_BROWN     | FG_BLINK), /* Underline + blink + inversed */
+	(BG_LIGHTGREY | FG_MAGENTA   | FG_BLINK)  /* Bold + underline + blink + inversed */
 };
 
 
-/* foreground ANSI color -> pc */
-uint8_t fgansitopc[] = {
-	FG_BLACK, FG_RED, FG_GREEN, FG_BROWN, FG_BLUE,
-	FG_MAGENTA, FG_CYAN, FG_LIGHTGREY
+/* Monochrome display SGR attributes */
+static uint8_t msgr[] = {
+	(BG_BLACK     | FG_LIGHTGREY),            /* Normal */
+	(BG_BLACK     | FG_UNDERLINE),            /* Bold */
+	(BG_BLACK     | FG_UNDERLINE),            /* Underline */
+	(BG_BLACK     | FG_UNDERLINE),            /* Bold + underline */
+	(BG_BLACK     | FG_LIGHTGREY | FG_BLINK), /* Blink */
+	(BG_BLACK     | FG_UNDERLINE | FG_BLINK), /* Bold + blink */
+	(BG_BLACK     | FG_UNDERLINE | FG_BLINK), /* Underline + blink */
+	(BG_BLACK     | FG_UNDERLINE | FG_BLINK), /* Bold + underline + blink */
+	(BG_LIGHTGREY | FG_BLACK),                /* Inversed */
+	(BG_LIGHTGREY | FG_BLACK),                /* Bold + inversed */
+	(BG_LIGHTGREY | FG_BLACK),                /* Underline + inversed */
+	(BG_LIGHTGREY | FG_BLACK),                /* Bold + underline + inversed */
+	(BG_LIGHTGREY | FG_BLACK     | FG_BLINK), /* Blink + inversed */
+	(BG_LIGHTGREY | FG_BLACK     | FG_BLINK), /* Bold + blink + inversed */
+	(BG_LIGHTGREY | FG_BLACK     | FG_BLINK), /* Underline + blink + inversed */
+	(BG_LIGHTGREY | FG_BLACK     | FG_BLINK)  /* Bold + underline + blink + inversed */
 };
 
 
-/* background ANSI color -> pc */
-uint8_t bgansitopc[] = {
-	BG_BLACK, BG_RED, BG_GREEN, BG_BROWN, BG_BLUE,
-	BG_MAGENTA, BG_CYAN, BG_LIGHTGREY
+/* Internal attributes indexes */
+enum {
+	VT_NORMAL   = 0,
+	VT_BOLD     = 1,
+	VT_UNDER    = 2,
+	VT_BLINK    = 4,
+	VT_INVERSED = 8
 };
 
 
-/* initialize ANSI escape sequence parameter buffers */
-void _ttypc_vtf_clrparms(ttypc_virt_t *virt)
+/* Foreground ANSI color code to PC conversion table */
+static uint8_t fgansitopc[] = {
+	FG_BLACK,    /* 0 */
+	FG_RED,      /* 1 */
+	FG_GREEN,    /* 2 */
+	FG_BROWN,    /* 3 */
+	FG_BLUE,     /* 4 */
+	FG_MAGENTA,  /* 5 */
+	FG_CYAN,     /* 6 */
+	FG_LIGHTGREY /* 7 */
+};
+
+
+/* Background ANSI color code to PC conversion table */
+static uint8_t bgansitopc[] = {
+	BG_BLACK,    /* 0 */
+	BG_RED,      /* 1 */
+	BG_GREEN,    /* 2 */
+	BG_BROWN,    /* 3 */
+	BG_BLUE,     /* 4 */
+	BG_MAGENTA,  /* 5 */
+	BG_CYAN,     /* 6 */
+	BG_LIGHTGREY /* 7 */
+};
+
+
+/* ASCII character set */
+static uint16_t ascii[] = {
+	0x20, 0x21, 0x22, 0x23, /* 20 */
+	0x24, 0x25, 0x26, 0x27, /* 24 */
+	0x28, 0x29, 0x2A, 0x2B, /* 28 */
+	0x2C, 0x2D, 0x2E, 0x2F, /* 2C */
+
+	0x30, 0x31, 0x32, 0x33, /* 30 */
+	0x34, 0x35, 0x36, 0x37, /* 34 */
+	0x38, 0x39, 0x3A, 0x3B, /* 38 */
+	0x3C, 0x3D, 0x3E, 0x3F, /* 3C */
+
+	0x40, 0x41, 0x42, 0x43, /* 40 */
+	0x44, 0x45, 0x46, 0x47, /* 44 */
+	0x48, 0x49, 0x4A, 0x4B, /* 48 */
+	0x4C, 0x4D, 0x4E, 0x4F, /* 4C */
+
+	0x50, 0x51, 0x52, 0x53, /* 50 */
+	0x54, 0x55, 0x56, 0x57, /* 54 */
+	0x58, 0x59, 0x5A, 0x5B, /* 58 */
+	0x5C, 0x5D, 0x5E, 0x5F, /* 5C */
+
+	0x60, 0x61, 0x62, 0x63, /* 60 */
+	0x64, 0x65, 0x66, 0x67, /* 64 */
+	0x68, 0x69, 0x6A, 0x6B, /* 68 */
+	0x6C, 0x6D, 0x6E, 0x6F, /* 6C */
+
+	0x70, 0x71, 0x72, 0x73, /* 70 */
+	0x74, 0x75, 0x76, 0x77, /* 74 */
+	0x78, 0x79, 0x7A, 0x7B, /* 78 */
+	0x7C, 0x7D, 0x7E, 0x7F  /* 7C */
+};
+
+
+/* Supplemental Graphic character set */
+static uint16_t supg[] = {
+	0x20, 0xAD, 0x9B, 0x9C, /* 20 */
+	0x20, 0x9D, 0x20, 0x20, /* 24 */
+	0x20, 0x20, 0xA6, 0xAE, /* 28 */
+	0x20, 0x20, 0x20, 0x20, /* 2C */
+
+	0xF8, 0xF1, 0xFD, 0x20, /* 30 */
+	0x20, 0xE6, 0x20, 0x20, /* 34 */
+	0x20, 0x20, 0xA7, 0xAF, /* 38 */
+	0xAC, 0xAB, 0x20, 0xA8, /* 3C */
+
+	0x20, 0x20, 0x20, 0x20, /* 40 */
+	0x8E, 0x8F, 0x92, 0x80, /* 44 */
+	0x20, 0x90, 0x20, 0x20, /* 48 */
+	0x8D, 0xA1, 0x8C, 0x8B, /* 4C */
+
+	0x20, 0xA5, 0x20, 0x20, /* 50 */
+	0x20, 0x20, 0x99, 0x20, /* 54 */
+	0x20, 0x20, 0x20, 0x20, /* 58 */
+	0x9A, 0x20, 0x20, 0xE1, /* 5C */
+
+	0x85, 0xA0, 0x83, 0x20, /* 60 */
+	0x84, 0x86, 0x91, 0x87, /* 64 */
+	0x8A, 0x82, 0x88, 0x89, /* 68 */
+	0x8D, 0xA1, 0x8C, 0x8B, /* 6C */
+
+	0x20, 0xA4, 0x95, 0xA2, /* 70 */
+	0x93, 0x20, 0x94, 0x20, /* 74 */
+	0x20, 0x97, 0xA3, 0x96, /* 78 */
+	0x81, 0x98, 0x20, 0x20  /* 7C */
+};
+
+
+void _ttypc_vtf_clrparms(ttypc_vt_t *vt)
 {
-	register int i;
+	int i;
 
 	for (i = 0; i < MAXPARMS; i++)
-		virt->parms[i] = 0;
-	virt->parmi = 0;
+		vt->parms[i] = 0;
+	vt->parmi = 0;
 }
 
 
-/* select character attributes */
-void _ttypc_vtf_sca(ttypc_virt_t *virt)
+void _ttypc_vtf_str(ttypc_vt_t *vt)
 {
-	switch (virt->parms[0]) {
-	case 1:
-//		virt->selchar = 1;
-		break;
-	case 0:
-	case 2:
-	default:
-//		virt->selchar = 0;
-		break;
-	}
-}
-
-
-/* DECSTR - soft terminal reset (SOFT emulator runtime reset) */
-void _ttypc_vtf_str(ttypc_virt_t *virt)
-{
-	ttypc_t *ttypc = virt->ttypc;
 	int i;
 
-	_ttypc_vtf_clrparms(virt);
-	virt->state = STATE_INIT;
-	virt->sc_flag = 0;
+	/* Reset screen margins */
+	vt->top = 0;
+	vt->bottom = vt->rows - 1;
 
-	/* setup tabstops */
-	for (i = 0; i < MAXTAB; i++) {
-		if (i % 8 == 0)
-			virt->tab_stops[i] = 1;
-		else
-			virt->tab_stops[i] = 0;
-	}
+	/* Reset cursor type and visibility */
+	vt->cst = 1;
+	vt->ctype = CURT_DEF;
+	_ttypc_vga_togglecursor(vt, 1);
 
-	virt->m_irm = 0;
-	virt->m_awm = 1;
-	virt->m_ckm = 1;
-	
-	virt->scrr_beg = 0;
-	virt->scrr_len = virt->rows;
-	virt->scrr_end = virt->scrr_len - 1;
+	/* Reset character processing state and attributes */
+	vt->dcsst = DCS_INIT;
+	vt->escst = ESC_INIT;
+	vt->sgr = VT_NORMAL;
+	vt->attr = (uint16_t)((vt->ttypc->color) ? csgr[vt->sgr] : msgr[vt->sgr]) << 8;
 
-	virt->G0 = csd_ascii;
-	virt->G1 = csd_ascii;
-	virt->G2 = csd_supplemental;
-	virt->G3 = csd_supplemental;
-	virt->GL = &virt->G0;
-	virt->GR = &virt->G2;
+	/* Setup tabstops */
+	for (i = 0; i < MAXTABS; i++)
+		vt->tabs[i] = !(i % 8);
 
-	virt->vtsgr = VT_NORMAL;
+	/* Clear escape sequence parameters */
+	_ttypc_vtf_clrparms(vt);
 
-	if (ttypc->color)
-		virt->attr = ((sgr_tab_color[virt->vtsgr]) << 8);
+	/* Reset keyboard modes */
+	vt->ttypc->lockst = 0;
+	if (vt->ttypc->ktype)
+		_ttypc_kbd_updateled(vt->ttypc);
 	else
-		virt->attr = ((sgr_tab_mono[virt->vtsgr]) << 8);
+		_ttypc_bioskbd_updateled(vt->ttypc);
+
+	/* Reset character processing modes */
+	vt->awm = 1;
+	vt->om = 0;
+	vt->ckm = 0;
+	vt->irm = 0;
+	vt->arm = 1;
+	vt->lnm = 0;
+	vt->sc = 0;
+
+	/* Reset character sets */
+	vt->G0 = ascii;
+	vt->G1 = ascii;
+	vt->G2 = supg;
+	vt->G3 = supg;
+	vt->GL = &vt->G0;
+	vt->GR = &vt->G2;
 }
 
 
-/* DECSC - save cursor & attributes */
-void _ttypc_vtf_sc(ttypc_virt_t *virt)
+void _ttypc_vtf_sc(ttypc_vt_t *vt)
 {
-	virt->sc_flag = 1;
-	virt->sc_row = virt->row;
-	virt->sc_col = virt->col;
-	virt->sc_cur_offset = virt->cur_offset;
-	virt->sc_attr = virt->attr;
+	/* Save cursor position */
+	vt->scccol = vt->ccol;
+	vt->sccrow = vt->crow;
+	vt->sccpos = vt->cpos;
 
-	virt->sc_awm = virt->m_awm;
+	/* Save character sets */
+	vt->scG0 = vt->G0;
+	vt->scG1 = vt->G1;
+	vt->scG2 = vt->G2;
+	vt->scG3 = vt->G3;
+	vt->scGL = vt->GL;
+	vt->scGR = vt->GR;
 
-	virt->sc_G0 = virt->G0;
-	virt->sc_G1 = virt->G1;
-	virt->sc_G2 = virt->G2;
-	virt->sc_G3 = virt->G3;
-	virt->sc_GL = virt->GL;
-	virt->sc_GR = virt->GR;
+	/* Save VT100 modes & graphic attributes */
+	vt->scawm = vt->awm;
+	vt->scom = vt->om;
+	vt->scsgr = vt->sgr;
+	vt->scattr = vt->attr;
+
+	vt->sc = 1;
 }
 
 
-/* DECRC - restore cursor & attributes */
-void _ttypc_vtf_rc(ttypc_virt_t *virt)
+void _ttypc_vtf_rc(ttypc_vt_t *vt)
 {
-	if (virt->sc_flag == 1)
-		return;
-	
-	virt->sc_flag = 0;
-	virt->row = virt->sc_row;
-	virt->col = virt->sc_col;
-	virt->cur_offset = virt->sc_cur_offset;
-	virt->attr = virt->sc_attr;
-	
-	virt->m_awm = virt->sc_awm;
-
-	virt->G0 = virt->sc_G0;
-	virt->G1 = virt->sc_G1;
-	virt->G2 = virt->sc_G2;
-	virt->G3 = virt->sc_G3;
-	virt->GL = virt->sc_GL;
-	virt->GR = virt->sc_GR;
-}
-
-
-/* device attributes */
-void _ttypc_vtf_da(ttypc_virt_t *virt)
-{
-#if 0
-	static uint8_t *response = (u_char *)DA_VT220;
-
-	svsp->report_chars = response;
-	svsp->report_count = 18;
-	respond(svsp);
-#endif
-}
-
-
-/* scroll up */
-void _ttypc_vtf_su(ttypc_virt_t *virt)
-{
-	register int p = virt->parms[0];
-
-	if (p <= 0)
-		p = 1;
-	else if (p > virt->rows - 1)
-		p = virt->rows - 1;
-
-	_ttypc_vga_rollup(virt, p);
-}
-
-
-/* scroll down */
-void _ttypc_vtf_sd(ttypc_virt_t *virt)
-{
-	register int p = virt->parms[0];
-
-	if (p <= 0)
-		p = 1;
-	else if (p > virt->rows - 1)
-		p = virt->rows - 1;
-
-	_ttypc_vga_rolldown(virt, p);
-}
-
-
-/* CUU - cursor up */
-void _ttypc_vtf_cuu(ttypc_virt_t *virt)
-{
-	register int p = virt->parms[0];
-
-	p = min(p <= 0 ? 1 : p, virt->row - virt->scrr_beg);
-
-	if (p <= 0)
+	if (!vt->sc)
 		return;
 
-	virt->cur_offset -= virt->maxcol * p;
+	/* Restore cursor position */
+	vt->ccol = vt->scccol;
+	vt->crow = vt->sccrow;
+	vt->cpos = vt->sccpos;
+
+	/* Restore character set */
+	vt->G0 = vt->scG0;
+	vt->G1 = vt->scG1;
+	vt->G2 = vt->scG2;
+	vt->G3 = vt->scG3;
+	vt->GL = vt->scGL;
+	vt->GR = vt->scGR;
+
+	/* Restore VT100 modes & graphic attributes */
+	vt->awm = vt->scawm;
+	vt->om = vt->scom;
+	vt->sgr = vt->scsgr;
+	vt->attr = vt->scattr;
+
+	vt->sc = 0;
 }
 
 
-/* CUD - cursor down */
-void _ttypc_vtf_cud(ttypc_virt_t *virt)
+void _ttypc_vtf_da(ttypc_vt_t *vt)
 {
-	register int p = virt->parms[0];
-
-	p = min(p <= 0 ? 1 : p, virt->scrr_end - virt->row);
-	virt->cur_offset += (virt->maxcol * p);
+	/* 62 - class 2 terminal, c - end of attributes list */
+	static char *da = "\033[62;c";
+	write(0, da, sizeof(da));
 }
 
 
-/* CUF - cursor forward */
-void _ttypc_vtf_cuf(ttypc_virt_t *virt)
+void _ttypc_vtf_aln(ttypc_vt_t *vt)
 {
-	register int p = virt->parms[0];
+	memsetw(vt->vram, vt->attr | 'E' , vt->rows * vt->cols);
+	vt->cpos = 0;
+	vt->ccol = 0;
+	vt->crow = 0;
+}
+
+
+void _ttypc_vtf_su(ttypc_vt_t *vt)
+{
+	int p = max(1, vt->parms[0]);
+
+	if (p > vt->rows - 1)
+		p = vt->rows - 1;
+
+	_ttypc_vga_rollup(vt, p);
+}
+
+
+void _ttypc_vtf_sd(ttypc_vt_t *vt)
+{
+	int p = max(1, vt->parms[0]);
+
+	if (p > vt->rows - 1)
+		p = vt->rows - 1;
+
+	_ttypc_vga_rolldown(vt, p);
+}
+
+
+void _ttypc_vtf_cuu(ttypc_vt_t *vt)
+{
+	int p = max(1, vt->parms[0]);
+
+	p = min(p, vt->crow - vt->top);
 
 	if (p <= 0)
-		p = 1;
+		return;
 
-	p = min(p, virt->maxcol - virt->col - 1);
-	
-	virt->cur_offset += p;
-	virt->col += p;
+	vt->cpos -= vt->cols * p;
 }
 
 
-/* CUB - cursor backward */
-void _ttypc_vtf_cub(ttypc_virt_t *virt)
+void _ttypc_vtf_cud(ttypc_vt_t *vt)
 {
-	register int p = virt->parms[0];
+	int p = max(1, vt->parms[0]);
+
+	p = min(p, vt->bottom - vt->crow);
 
 	if (p <= 0)
-		p = 1;
+		return;
 
-	p = min(p, virt->col);
-
-	virt->cur_offset -= p;
-	virt->col -= p;
+	vt->cpos += vt->cols * p;
 }
 
 
-/* ED - erase in display */
-void _ttypc_vtf_clreos(ttypc_virt_t *virt)
+void _ttypc_vtf_cuf(ttypc_vt_t *vt)
 {
-	switch (virt->parms[0]) {
+	int p = max(1, vt->parms[0]);
+
+	if (p > vt->cols - 1)
+		p = vt->cols - 1;
+
+	if (vt->ccol + p > vt->cols - 1)
+		p = vt->cols - 1 - vt->ccol;
+
+	vt->cpos += p;
+	vt->ccol += p;
+}
+
+
+void _ttypc_vtf_cub(ttypc_vt_t *vt)
+{
+	int p = max(1, vt->parms[0]);
+
+	if (p > vt->cols - 1)
+		p = vt->cols - 1;
+
+	if (vt->ccol < p)
+		p = vt->ccol;
+
+	vt->cpos -= p;
+	vt->ccol -= p;
+}
+
+
+void _ttypc_vtf_clreos(ttypc_vt_t *vt)
+{
+	switch (vt->parms[0]) {
 	case 0:
-		memsetw(virt->vram + virt->cur_offset, ' ' | virt->attr, virt->maxcol * virt->rows - virt->cur_offset);
+		memsetw(vt->vram + vt->cpos, vt->attr | ' ', vt->cols * vt->rows - vt->cpos);
 		break;
 
 	case 1:
-		memsetw(virt->vram, ' ' | virt->attr, virt->cur_offset + 1);
+		memsetw(vt->vram, vt->attr | ' ', vt->cpos + 1);
 		break;
 
 	case 2:
-		memsetw(virt->vram, ' ' | virt->attr, virt->maxcol * virt->rows);
+		memsetw(vt->vram, vt->attr | ' ', vt->cols * vt->rows);
 		break;
 	}
 }
 
 
-/* EL - erase in line */
-void _ttypc_vtf_clreol(ttypc_virt_t *virt)
+void _ttypc_vtf_clreol(ttypc_vt_t *vt)
 {
-	switch (virt->parms[0]) {
+	switch (vt->parms[0]) {
 	case 0:
-		memsetw(virt->vram + virt->cur_offset, ' ' | virt->attr, virt->maxcol - virt->col);
+		memsetw(vt->vram + vt->cpos, vt->attr | ' ', vt->cols - vt->ccol);
 		break;
 
 	case 1:
-		memsetw(virt->vram + virt->cur_offset - virt->col, ' ' | virt->attr, virt->col + 1);
+		memsetw(vt->vram + vt->cpos - vt->ccol, vt->attr | ' ', vt->ccol + 1);
 		break;
 
 	case 2:
-		memsetw(virt->vram + virt->cur_offset - virt->col, ' ' | virt->attr, virt->maxcol);
+		memsetw(vt->vram + vt->cpos - vt->ccol, vt->attr | ' ', vt->cols);
 		break;
 	}
 }
 
 
-/* CUP - cursor position */
-void _ttypc_vtf_curadr(ttypc_virt_t *virt)
+void _ttypc_vtf_curadr(ttypc_vt_t *vt)
 {
-	/* relative to screen start */
-	if ((virt->parms[0] == 0) && (virt->parms[1] == 0)) {
-		virt->cur_offset = 0;
-		virt->col = 0;
+	if ((vt->parms[0] == 0) && (vt->parms[1] == 0)) {
+		vt->cpos = (vt->om) ? vt->top * vt->cols : 0;
+		vt->ccol = 0;
 		return;
 	}
 
-	if (virt->parms[0] <= 0)
-		virt->parms[0] = 1;
-	if (virt->parms[0] > virt->rows)
-		virt->parms[0] = virt->rows;
+	if (vt->parms[0] <= 0)
+		vt->parms[0] = 1;
+	else if (vt->parms[0] > (vt->om) ? vt->bottom - vt->top + 1 : vt->rows)
+		vt->parms[0] = (vt->om) ? vt->bottom - vt->top + 1 : vt->rows;
 
-	if (virt->parms[1] <= 0)
-		virt->parms[1] = 1;
-	if (virt->parms[1] > virt->maxcol)
-		virt->parms[1] = virt->maxcol;
+	if (vt->parms[1] <= 0)
+		vt->parms[1] = 1;
+	else if (vt->parms[1] > vt->cols)
+		vt->parms[1] = vt->cols;
 
-	virt->cur_offset = (((virt->parms[0] - 1) * virt->maxcol) + (virt->parms[1] - 1));
-	virt->col = virt->parms[1] - 1;
+	vt->cpos = (vt->parms[0] - 1) * vt->cols + vt->parms[1] - 1 + (vt->om) ? vt->top * vt->cols : 0;
+	vt->ccol = vt->parms[1] - 1;
 }
 
 
-/* IL - insert line */
-void _ttypc_vtf_il(ttypc_virt_t *virt)
+void _ttypc_vtf_il(ttypc_vt_t *vt)
 {
-	register int p = virt->parms[0];
+	int p = max(1, vt->parms[0]);
 
-	if ((virt->row >= virt->scrr_beg) && (virt->row <= virt->scrr_end)) {
-		if (p <= 0)
-			p = 1;
-		else if (p > virt->scrr_end - virt->row)
-			p = virt->scrr_end - virt->row;
+	if ((vt->crow >= vt->top) && (vt->crow <= vt->bottom)) {
+		if (p > vt->bottom - vt->crow)
+			p = vt->bottom - vt->crow;
 
-		virt->cur_offset -= virt->col;
-		virt->col = 0;
+		vt->cpos -= vt->ccol;
+		vt->ccol = 0;
 	
-		if (virt->row == virt->scrr_beg)
-			_ttypc_vga_rolldown(virt, p);
+		if (vt->crow == vt->top) {
+			_ttypc_vga_rolldown(vt, p);
+		}
 		else {
-			memcpy(virt->vram + virt->cur_offset + p * virt->maxcol, virt->vram + virt->cur_offset,
-				virt->maxcol * (virt->scrr_end - virt->row + 1 - p) * CHR);
-
-			memsetw(virt->vram + virt->cur_offset, ' ' | virt->attr, p * virt->maxcol);
+			memmove(vt->vram + vt->cpos + p * vt->cols, vt->vram + vt->cpos, (vt->bottom - vt->crow + 1 - p) * vt->cols * CHR_VGA);
+			memsetw(vt->vram + vt->cpos, vt->attr | ' ', p * vt->cols);
 		}
 	}
 }
 
 
-/* ICH - insert character */
-void _ttypc_vtf_ic(ttypc_virt_t *virt)
+void _ttypc_vtf_ic(ttypc_vt_t *vt)
 {
-	register int p = virt->parms[0];
+	int p = max(1, vt->parms[0]);
 
-	if (p <= 0)
-		p = 1;
-	else if (p > virt->maxcol - virt->col)
-		p = virt->maxcol - virt->col;
+	if (p > vt->cols - vt->ccol)
+		p = vt->cols - vt->ccol;
 
-	memcpy(virt->vram + virt->cur_offset + p, virt->vram + virt->cur_offset, virt->maxcol - p - virt->col);
-	memsetw(virt->vram + virt->cur_offset, ' ' | virt->attr, p);
+	memmove(vt->vram + vt->cpos + p, vt->vram + vt->cpos, vt->cols - vt->ccol - p);
+	memsetw(vt->vram + vt->cpos, vt->attr | ' ', p);
 }
 
 
-/* DL - delete line */
-void _ttypc_vtf_dl(ttypc_virt_t *virt)
+void _ttypc_vtf_dl(ttypc_vt_t *vt)
 {
-	register int p = virt->parms[0];
+	int p = max(1, vt->parms[0]);
 
-	if ((virt->row >= virt->scrr_beg) && (virt->row <= virt->scrr_end)) {
-		if (p <= 0)
-			p = 1;
-		else if (p > virt->scrr_end - virt->row)
-			p = virt->scrr_end - virt->row;
+	if ((vt->crow >= vt->top) && (vt->crow <= vt->bottom)) {
+		if (p > vt->bottom - vt->crow)
+			p = vt->bottom - vt->crow;
 
-		virt->cur_offset -= virt->col;
-		virt->col = 0;
+		vt->cpos -= vt->ccol;
+		vt->ccol = 0;
 
-		if (virt->row == virt->scrr_beg) {
-			_ttypc_vga_rollup(virt, p);
+		if (vt->crow == vt->top) {
+			_ttypc_vga_rollup(vt, p);
 		}
 		else {
-			memcpy(virt->vram + virt->cur_offset, virt->vram + virt->cur_offset + p * virt->maxcol,
-			  virt->maxcol * (virt->scrr_end - virt->row + 1 - p) * CHR);
-
-			memsetw(virt->vram + (virt->scrr_end - p + 1) * virt->maxcol, ' ' | virt->attr, p * virt->maxcol);
+			memmove(vt->vram + vt->cpos, vt->vram + vt->cpos + p * vt->cols, (vt->bottom - vt->crow + 1 - p) * vt->cols * CHR_VGA);
+			memsetw(vt->vram + (vt->bottom + 1 - p) * vt->cols, vt->attr | ' ', p * vt->cols);
 		}
 	}
 }
 
 
-/* DCH - delete character */
-void _ttypc_vtf_dch(ttypc_virt_t *virt)
+void _ttypc_vtf_dch(ttypc_vt_t *vt)
 {
-	register int p = virt->parms[0];
+	int p = max(1, vt->parms[0]);
 
-	if (p <= 0)
-		p = 1;
+	if (p > vt->cols - vt->ccol)
+		p = vt->cols - vt->ccol;
 
-	p = min(p, virt->maxcol - virt->col);
-	
-	memcpy(virt->vram + virt->cur_offset, virt->vram + virt->cur_offset + p, (virt->maxcol - p - virt->col) * CHR);
-	memsetw(virt->vram + virt->cur_offset + virt->maxcol - p, ' ' | virt->attr, p);	
+	memmove(vt->vram + vt->cpos, vt->vram + vt->cpos + p, (vt->cols - vt->ccol - p) * CHR_VGA);
+	memsetw(vt->vram + vt->cpos + vt->cols - p, vt->attr | ' ', p);	
 }
 
 
-/* RI - reverse index, move cursor up */
-void _ttypc_vtf_ri(ttypc_virt_t *virt)
+void _ttypc_vtf_ri(ttypc_vt_t *vt)
 {
-	if (virt->cur_offset >= virt->scrr_beg * virt->maxcol + virt->maxcol)
-		virt->cur_offset -= virt->maxcol;
+	if (vt->cpos >= vt->top * (vt->cols + 1))
+		vt->cpos -= vt->cols;
 	else
-		_ttypc_vga_rolldown(virt, 1);
+		_ttypc_vga_rolldown(vt, 1);
 }
 
 
-/* IND - index, move cursor down */
-void _ttypc_vtf_ind(ttypc_virt_t *virt)
+void _ttypc_vtf_ind(ttypc_vt_t *vt)
 {
-	if (virt->cur_offset < virt->scrr_end * virt->maxcol)
-		virt->cur_offset += virt->maxcol;
+	if (vt->cpos < vt->bottom * vt->cols)
+		vt->cpos += vt->cols;
 	else
-		_ttypc_vga_rollup(virt, 1);
+		_ttypc_vga_rollup(vt, 1);
 }
 
 
-/* NEL - next line, first pos of next line */
-void _ttypc_vtf_nel(ttypc_virt_t *virt)
+void _ttypc_vtf_nel(ttypc_vt_t *vt)
 {
-	if (virt->cur_offset < virt->scrr_end * virt->maxcol) {
-		virt->cur_offset += virt->maxcol - virt->col;
-		virt->col = 0;
+	if (vt->cpos < vt->bottom * vt->cols) {
+		vt->cpos += vt->cols - vt->ccol;
+		vt->ccol = 0;
 	}
 	else {
-		_ttypc_vga_rollup(virt, 1);
-		virt->cur_offset -= virt->col;
-		virt->col = 0;
+		_ttypc_vga_rollup(vt, 1);
+		vt->cpos -= vt->ccol;
+		vt->ccol = 0;
 	}
 }
 
 
-/* clear tab stop(s) */
-void _ttypc_vtf_clrtab(ttypc_virt_t *virt)
+void _ttypc_vtf_clrtab(ttypc_vt_t *vt)
 {
 	int i;
 
-	if (virt->parms[0] == 0)
-		virt->tab_stops[virt->col] = 0;
-
-	if (virt->parms[0] == 3) {
-		for (i = 0; i < MAXTAB; i++)
-			virt->tab_stops[i] = 0;
+	if (!vt->parms[0]) {
+		vt->tabs[vt->ccol] = 0;
+	}
+	else if (vt->parms[0] == 3) {
+		for (i = 0; i < MAXTABS; i++)
+			vt->tabs[i] = 0;
 	}
 }
 
 
-/* RIS - reset to initial state (hard emulator runtime reset) */
-void _ttypc_vtf_ris(ttypc_virt_t *virt)
-{	
-	virt->cur_offset = 0;
-	virt->col = 0;
-	virt->row = 0;
+void _ttypc_vtf_ris(ttypc_vt_t *vt)
+{
+	/* Reset cursor and scrollback */
+	vt->cpos = 0;
+	vt->ccol = 0;
+	vt->crow = 0;
+	vt->scrbsz = 0;
+	vt->scrbpos = 0;
 
-	memsetw(virt->vram + virt->cur_offset, ' ' | virt->attr, virt->maxcol * virt->rows);
-
-	_ttypc_vtf_str(virt);
+	/* Clear screen */
+	memsetw(vt->vram, vt->attr | ' ', vt->cols * vt->rows);
+	/* Soft reset */
+	_ttypc_vtf_str(vt);
 }
 
 
 /* ECH - erase character */
-void _ttypc_vtf_ech(ttypc_virt_t *virt)
+void _ttypc_vtf_ech(ttypc_vt_t *vt)
 {
-	register int p = virt->parms[0];
+	int p = max(1, vt->parms[0]);
 
-	if (p <= 0)
-		p = 1;
-	else if (p > virt->maxcol - virt->col)
-		p = virt->maxcol - virt->col;
+	if (p > vt->cols - vt->ccol)
+		p = vt->cols - vt->ccol;
 
-	memsetw(virt->vram + virt->cur_offset, ' ' | virt->attr, p);
+	memsetw(vt->vram + vt->cpos, vt->attr | ' ', p);
 }
 
 
-/* media copy	(NO PRINTER AVAILABLE IN KERNEL ...) */
-void _ttypc_vtf_mc(ttypc_virt_t *virt)
-{
-}
-
-
-/* invoke selftest */
-void _ttypc_vtf_tst(ttypc_virt_t *virt)
+void _ttypc_vtf_mc(ttypc_vt_t *vt)
 {
 }
 
 
-/* SGR - set graphic rendition */
-void _ttypc_vtf_sgr(ttypc_virt_t *virt)
+void _ttypc_vtf_tst(ttypc_vt_t *vt)
 {
-	ttypc_t *ttypc = virt->ttypc;
-	register int i = 0;
-	uint16_t setcolor = 0;
-	char colortouched = 0;
+}
+
+
+void _ttypc_vtf_sgr(ttypc_vt_t *vt)
+{
+	ttypc_t *ttypc = vt->ttypc;
+	uint16_t attr = vt->attr;
+	int cc = 0, i = 0;
 
 	do {
-		switch (virt->parms[i++]) {
-		case 0:                                 /* reset to normal attributes */
-			virt->vtsgr = VT_NORMAL;
-			break;
-		case 1:                                 /* bold */
-			virt->vtsgr |= VT_BOLD;
-			break;
-		case 4:                                 /* underline */
-			virt->vtsgr |= VT_UNDER;
-			break;
-		case 5:                                 /* blinking */
-			virt->vtsgr |= VT_BLINK;
-			break;
-		case 7:                                 /* reverse */
-			virt->vtsgr |= VT_INVERSE;
-			break;
-		case 22:                                /* not bold */
-			virt->vtsgr &= ~VT_BOLD;
-			break;
-		case 24:                                /* not underlined */
-			virt->vtsgr &= ~VT_UNDER;
-			break;
-		case 25:                                /* not blinking */
-			virt->vtsgr &= ~VT_BLINK;
-			break;
-		case 27:                                /* not reverse */
-			virt->vtsgr &= ~VT_INVERSE;
+		switch (vt->parms[i++]) {
+		case 0: /* Reset to normal attributes */
+			vt->sgr &= VT_INVERSED;
 			break;
 
-		case 30:                                /* foreground colors */
+		case 1: /* Bold */
+			vt->sgr |= VT_BOLD;
+			break;
+
+		case 4: /* Underline */
+			vt->sgr |= VT_UNDER;
+			break;
+
+		case 5: /* Blinking */
+			vt->sgr |= VT_BLINK;
+			break;
+
+		case 7: /* Inversed */
+			vt->sgr |= VT_INVERSED;
+			break;
+
+		case 22: /* Not bold */
+			vt->sgr &= ~VT_BOLD;
+			break;
+
+		case 24: /* Not underlined */
+			vt->sgr &= ~VT_UNDER;
+			break;
+
+		case 25: /* Not blinking */
+			vt->sgr &= ~VT_BLINK;
+			break;
+
+		case 27: /* Not inversed */
+			vt->sgr &= ~VT_INVERSED;
+			break;
+
+		case 30: /* Foreground colors */
 		case 31:
 		case 32:
 		case 33:
@@ -620,12 +642,12 @@ void _ttypc_vtf_sgr(ttypc_virt_t *virt)
 		case 36:
 		case 37:
 			if (ttypc->color) {
-				colortouched = 1;
-				setcolor |= ((fgansitopc[(virt->parms[i - 1] - 30) & 7]) << 8);
+				cc = 1;
+				attr = (attr & 0xf000) | (fgansitopc[(vt->parms[i - 1] - 30) & 7] << 8);
 			}
 			break;
 
-		case 40:                                /* background colors */
+		case 40: /* Background colors */
 		case 41:
 		case 42:
 		case 43:
@@ -634,212 +656,340 @@ void _ttypc_vtf_sgr(ttypc_virt_t *virt)
 		case 46:
 		case 47:
 			if (ttypc->color) {
-				colortouched = 1;
-				setcolor |= ((bgansitopc[(virt->parms[i - 1] - 40) & 7]) << 8);
+				cc = 1;
+				attr = (bgansitopc[(vt->parms[i - 1] - 40) & 7] << 8) | (attr & 0x0f00);
 			}
 			break;
 		}
-	} while (i <= virt->parmi);
+	} while (i <= vt->parmi);
 	
-	if (ttypc->color) {
-		if (colortouched)
-			virt->attr = setcolor;
-		else
-			virt->attr = ((sgr_tab_color[virt->vtsgr]) << 8);
-	}
-	else
-		virt->attr = ((sgr_tab_mono[virt->vtsgr]) << 8);
+	vt->attr = (ttypc->color) ? ((cc) ? attr : csgr[vt->sgr] << 8) : msgr[vt->sgr] << 8;
 }
 
 
-/* device status reports */
-void _ttypc_vtf_dsr(ttypc_virt_t *virt)
+/* Device status reports */
+void _ttypc_vtf_dsr(ttypc_vt_t *vt)
 {
-#if 0
-	static uint8_t *answr = (uint8_t *)"\033[0n";
-	static uint8_t *panswr = (uint8_t *)"\033[?13n";      /* Printer Unattached */
-	static uint8_t *udkanswr = (uint8_t *)"\033[?21n";    /* UDK Locked */
-	static uint8_t *langanswr = (uint8_t *)"\033[?27;1n"; /* North American*/
-#endif
-#if 0
-	static uint8_t buffer[16];
-
+	static char *stat  = "\033[0n";     /* Status */
+	static char *print = "\033[?13n";   /* Printer Unattached */
+	static char *udk   = "\033[?21n";   /* UDK Locked */
+	static char *lang  = "\033[?27;1n"; /* North American */
+	char buff[16];
 	int i = 0;
 
-	switch (virt->parms[0]) {
-	
-	/* return status */
+	switch (vt->parms[0]) {
+	/* Status */
 	case 5:
-		/* respond(answr); */
+		write(0, stat, sizeof(stat));
 		break;
 
-	/* return cursor position */
+	/* Cursor position */
 	case 6:
-		buffer[i++] = 0x1b;
-		buffer[i++] = '[';
+		buff[i++] = 0x1b;
+		buff[i++] = '[';
 		
-		if (virt->row + 1 > 10)
-			buffer[i++] = (virt->row + 1) / 10 + '0';
-		buffer[i++] = (virt->row + 1) % 10 + '0';
-		buffer[i++] = ';';
+		if (vt->crow + 1 > 10)
+			buff[i++] = '0' + (vt->crow + 1) / 10;
+		buff[i++] = '0' + (vt->crow + 1) % 10;
+		buff[i++] = ';';
 
-		if (virt->col + 1 > 10)
-			buffer[i++] = (virt->col + 1) / 10 + '0';
-		buffer[i++] = (virt->col + 1) % 10 + '0';
-		buffer[i++] = 'R';
-		buffer[i++] = '\0';
+		if (vt->ccol + 1 > 10)
+			buff[i++] = '0' + (vt->ccol + 1) / 10;
+		buff[i++] = '0' + (vt->ccol + 1) % 10;
+		buff[i++] = 'R';
+		buff[i++] = '\0';
 
-		/* respond(buffer) */;
+		write(0, buff, i);
 		break;
 
-	/* return printer status */
+	/* Printer status */
 	case 15:
-		/* respond(panswr); */
+		write(0, print, sizeof(print));
 		break;
 
-	/* return udk status */
+	/* User Defined Keys status */
 	case 25:
-		/* respond(udkanswr); */
+		write(0, udk, sizeof(udk));
 		break;
 
-	/* return language status */
+	/* Language status */
 	case 26:
-		/* respond(langanswr); */
+		write(0, lang, sizeof(lang));
 		break;
 
 	default:
 		break;
 	}
-#endif
 }
 
 
-/* DECSTBM - set top and bottom margins */
-void _ttypc_vtf_stbm(ttypc_virt_t *virt)
+void _ttypc_vtf_stbm(ttypc_vt_t *vt)
 {
-
-	if (virt->parms[1] <= virt->parms[0])
-		return;
-
-	/* both 0 => scrolling region = entire screen */
-	if (!virt->parms[0] && !virt->parms[1]) {
-		virt->cur_offset = 0;
-		virt->scrr_beg = 0;
-		virt->scrr_len = virt->rows;
-		virt->scrr_end = virt->scrr_len - 1;
-		virt->col = 0;
+	/* Both 0 => scrolling region = entire screen */
+	if (!vt->parms[0] && !vt->parms[1]) {
+		vt->cpos = 0;
+		vt->top = 0;
+		vt->bottom = vt->rows - 1;
+		vt->ccol = 0;
 		return;
 	}
 
-	/* range parm 1 */
-	if (virt->parms[0] < 1)
-		virt->parms[0] = 1;
-	else if (virt->parms[0] > virt->rows - 1)
-		virt->parms[0] = virt->rows - 1;
+	if (vt->parms[1] <= vt->parms[0])
+		return;
 
-	/* range parm 2 */
-	if (virt->parms[1] < 2)
-		virt->parms[1] = 2;
-	else if (virt->parms[1] > virt->rows)
-		virt->parms[1] = virt->rows;
+	/* Range parm 1 */
+	if (vt->parms[0] < 1)
+		vt->parms[0] = 1;
+	else if (vt->parms[0] > vt->rows - 1)
+		vt->parms[0] = vt->rows - 1;
 
-	virt->scrr_beg = virt->parms[0] - 1;
-	virt->scrr_len = virt->parms[1] - virt->parms[0] + 1;
-	virt->scrr_end = virt->parms[1] - 1;
+	/* Range parm 2 */
+	if (vt->parms[1] < 2)
+		vt->parms[1] = 2;
+	else if (vt->parms[1] > vt->rows)
+		vt->parms[1] = vt->rows;
 
-	/* cursor to first pos */
-	virt->cur_offset = 0;
+	vt->top = vt->parms[0] - 1;
+	vt->bottom = vt->parms[1] - 1;
 
-	virt->col = 0;
+	/* Cursor to origin position */
+	vt->cpos = (vt->om) ? vt->top * vt->cols : 0;
+	vt->ccol = 0;
 }
 
 
-/* set ansi modes, esc [ x */
-void _ttypc_vtf_set_ansi(ttypc_virt_t *virt)
+/* Apply attr to a VGA character */
+static void ttypc_vtf_putattr(uint16_t *ptr, uint16_t attr) {
+	uint16_t nattr = attr;
+
+	/* Keep old fg color if it's different than new bg color */
+	if ((*ptr & 0x0f00) ^ ((attr & 0xf000) >> 4))
+		nattr = (*ptr & 0x0f00) | (nattr & 0xf0ff);
+	/* Keep old bg color if it's different than new fg color */
+	if (((*ptr & 0xf000) >> 4) ^ (attr & 0x0f00))
+		nattr = (*ptr & 0xf000) | (nattr & 0x0fff);
+
+	*ptr = (*ptr & 0x00ff) | nattr;
+}
+
+
+/* Apply attr to VGA character buffer */
+static void ttypc_vtf_applyattr(uint16_t *begin, uint16_t *end, uint16_t attr) {
+	for (; begin < end; begin++)
+		ttypc_vtf_putattr(begin, attr);
+}
+
+
+/* Apply sgr mode globally */
+static void ttypc_vtf_applysgr(ttypc_vt_t *vt, uint8_t sgr) {
+	vt->sgr = sgr;
+	vt->attr = ((vt->ttypc->color) ? csgr[sgr] : msgr[sgr]) << 8;
+
+	/* Apply attr to vram */
+	ttypc_vtf_applyattr(vt->vram, vt->vram + vt->rows * vt->cols, vt->attr);
+	/* Apply attr to scrollback */
+	ttypc_vtf_applyattr(vt->scrb, vt->scrb + vt->scrbsz * vt->cols, vt->attr);
+	/* Apply attr to scroll origin */
+	if (vt->scrbpos)
+		ttypc_vtf_applyattr(vt->scro, vt->scro + vt->rows * vt->cols, vt->attr);
+}
+
+
+void _ttypc_vtf_setdecpriv(ttypc_vt_t *vt)
 {
-	switch(virt->parms[0]) {
-	case 0:		/* error, ignored */
-	case 1:		/* GATM - guarded area transfer mode */
-	case 2:		/* KAM - keyboard action mode */
-	case 3:		/* CRM - Control Representation mode */
+	switch(vt->parms[0])
+	{
+	case 0:  /* error, ignored */
+	case 1:  /* CKM - cursor key mode */
+		vt->ckm = 1;
 		break;
 
-	case 4:		/* IRM - insert replacement mode */
-		virt->m_irm = 1;
+	case 2:  /* ANM - ansi/vt52 mode */
+	case 3:  /* COLM - column mode */
+	case 4:  /* SCLM - scrolling mode */
 		break;
 
-	case 5:		/* SRTM - status report transfer mode */
-	case 6:		/* ERM - erasue mode */
-	case 7:		/* VEM - vertical editing mode */
-	case 10:	/* HEM - horizontal editing mode */
-	case 11:	/* PUM - position unit mode */
-	case 12:	/* SRM - send-receive mode */
-	case 13:	/* FEAM - format effector action mode */
-	case 14:	/* FETM - format effector transfer mode */
-	case 15:	/* MATM - multiple area transfer mode */
-	case 16:	/* TTM - transfer termination */
-	case 17:	/* SATM - selected area transfer mode */
-	case 18:	/* TSM - tabulation stop mode */
-	case 19:	/* EBM - editing boundary mode */
-	case 20:	/* LNM - line feed / newline mode */
+	case 5:  /* SCNM - screen mode */
+		ttypc_vtf_applysgr(vt, VT_INVERSED);
+		break;
+
+	case 6:  /* OM - origin mode */
+		vt->om = 1;
+		break;
+
+	case 7:  /* AWM - auto wrap mode */
+		vt->awm = 1;
+		break;
+
+	case 8:  /* ARM - auto repeat mode */
+		vt->arm = 1;
+		break;
+
+	case 9:  /* INLM - interlace mode */
+	case 10: /* EDM - edit mode */
+	case 11: /* LTM - line transmit mode */
+	case 12: /* ? */
+	case 13: /* SCFDM - space compression / field delimiting */
+	case 14: /* TEM - transmit execution mode */
+	case 15: /* ? */
+	case 16: /* EKEM - edit key execution mode */
+		break;
+
+	case 25: /* TCEM - text cursor enable mode */
+		vt->cst = 1;
+		_ttypc_vga_togglecursor(vt, 1);
+		break;
+
+	case 42: /* NRCM - 7bit NRC characters */
 		break;
 	}
 }
 
 
-/* reset ansi modes, esc [ x */
-void _ttypc_vtf_reset_ansi(ttypc_virt_t *virt)
+/* Reset dec private modes, esc [ ? x l */
+void _ttypc_vtf_resetdecpriv(ttypc_vt_t *vt)
 {
-	switch (virt->parms[0]) {
-	case 0:		/* error, ignored */
-	case 1:		/* GATM - guarded area transfer mode */
-	case 2:		/* KAM - keyboard action mode */
-	case 3:		/* CRM - Control Representation mode */
+	switch(vt->parms[0])
+	{
+	case 0:  /* error, ignored */
+	case 1:  /* CKM - cursor key mode */
+		vt->ckm = 0;
 		break;
 
-	case 4:		/* IRM - insert replacement mode */
-		virt->m_irm = 0;
+	case 2:  /* ANM - ansi/vt52 mode */
+	case 3:  /* COLM - column mode */
+	case 4:  /* SCLM - scrolling mode */
 		break;
 
-	case 5:		/* SRTM - status report transfer mode */
-	case 6:		/* ERM - erasue mode */
-	case 7:		/* VEM - vertical editing mode */
-	case 10:	/* HEM - horizontal editing mode */
-	case 11:	/* PUM - position unit mode */
-	case 12:	/* SRM - send-receive mode */
-	case 13:	/* FEAM - format effector action mode */
-	case 14:	/* FETM - format effector transfer mode */
-	case 15:	/* MATM - multiple area transfer mode */
-	case 16:	/* TTM - transfer termination */
-	case 17:	/* SATM - selected area transfer mode */
-	case 18:	/* TSM - tabulation stop mode */
-	case 19:	/* EBM - editing boundary mode */
-	case 20:	/* LNM - line feed / newline mode */
+	case 5:  /* SCNM - screen mode */
+		ttypc_vtf_applysgr(vt, VT_NORMAL);
+		break;
+
+	case 6:  /* OM - origin mode */
+		vt->om = 0;
+		break;
+
+	case 7:  /* AWM - auto wrap mode */
+		vt->awm = 0;
+		break;
+
+	case 8:  /* ARM - auto repeat mode */
+		vt->arm = 0;
+		break;
+
+	case 9:  /* INLM - interlace mode */
+	case 10: /* EDM - edit mode */
+	case 11: /* LTM - line transmit mode */
+	case 12: /* ? */
+	case 13: /* SCFDM - space compression / field delimiting */
+	case 14: /* TEM - transmit execution mode */
+	case 15: /* ? */
+	case 16: /* EKEM - edit key execution mode */
+		break;
+
+	case 25: /* TCEM - text cursor enable mode */
+		vt->cst = 0;
+		_ttypc_vga_togglecursor(vt, 0);
+		break;
+
+	case 42: /* NRCM - 7bit NRC characters */
 		break;
 	}
 }
 
 
-/* request terminal parameters */
-void _ttypc_vtf_reqtparm(ttypc_virt_t *virt)
+void _ttypc_vtf_setansi(ttypc_vt_t *vt)
 {
-	/* static uint8_t *answr = (uint8_t *)"\033[3;1;1;120;120;1;0x"; */
+	switch(vt->parms[0]) {
+	case 0:  /* error, ignored */
+	case 1:  /* GATM - guarded area transfer mode */
+	case 2:  /* KAM - keyboard action mode */
+	case 3:  /* CRM - Control Representation mode */
+		break;
 
-	/* respond(answr); */
+	case 4:  /* IRM - insert replacement mode */
+		vt->irm = 1;
+		break;
+
+	case 5:  /* SRTM - status report transfer mode */
+	case 6:  /* ERM - erasue mode */
+	case 7:  /* VEM - vertical editing mode */
+	case 10: /* HEM - horizontal editing mode */
+	case 11: /* PUM - position unit mode */
+	case 12: /* SRM - send-receive mode */
+	case 13: /* FEAM - format effector action mode */
+	case 14: /* FETM - format effector transfer mode */
+	case 15: /* MATM - multiple area transfer mode */
+	case 16: /* TTM - transfer termination */
+	case 17: /* SATM - selected area transfer mode */
+	case 18: /* TSM - tabulation stop mode */
+	case 19: /* EBM - editing boundary mode */
+		break;
+
+	case 20: /* LNM - line feed / newline mode */
+		vt->lnm = 1;
+		break;
+	}
 }
 
 
-/* switch keypad to numeric mode */
-void _ttypc_vtf_keynum(ttypc_virt_t *virt)
+void _ttypc_vtf_resetansi(ttypc_vt_t *vt)
 {
-/*	virt->num_lock = 1;
-	update_led();*/
+	switch (vt->parms[0]) {
+	case 0:  /* error, ignored */
+	case 1:  /* GATM - guarded area transfer mode */
+	case 2:  /* KAM - keyboard action mode */
+	case 3:  /* CRM - Control Representation mode */
+		break;
+
+	case 4:  /* IRM - insert replacement mode */
+		vt->irm = 0;
+		break;
+
+	case 5:  /* SRTM - status report transfer mode */
+	case 6:  /* ERM - erasue mode */
+	case 7:  /* VEM - vertical editing mode */
+	case 10: /* HEM - horizontal editing mode */
+	case 11: /* PUM - position unit mode */
+	case 12: /* SRM - send-receive mode */
+	case 13: /* FEAM - format effector action mode */
+	case 14: /* FETM - format effector transfer mode */
+	case 15: /* MATM - multiple area transfer mode */
+	case 16: /* TTM - transfer termination */
+	case 17: /* SATM - selected area transfer mode */
+	case 18: /* TSM - tabulation stop mode */
+	case 19: /* EBM - editing boundary mode */
+		break;
+
+	case 20: /* LNM - line feed / newline mode */
+		vt->lnm = 0;
+		break;
+	}
 }
 
 
-/* switch keypad to application mode */
-void _ttypc_vtf_keyappl(ttypc_virt_t *virt)
+void _ttypc_vtf_reqtparm(ttypc_vt_t *vt)
 {
-/*	svsp->num_lock = 0;
-	update_led(); */
+	static char *tparm = "\033[3;1;1;120;120;1;0x";
+	write(0, tparm, sizeof(tparm));
+}
+
+
+void _ttypc_vtf_keynum(ttypc_vt_t *vt)
+{
+	vt->ttypc->lockst |= KB_NUM;
+	if (vt->ttypc->ktype)
+		_ttypc_kbd_updateled(vt->ttypc);
+	else
+		_ttypc_bioskbd_updateled(vt->ttypc);
+}
+
+
+void _ttypc_vtf_keyappl(ttypc_vt_t *vt)
+{
+	vt->ttypc->lockst &= ~KB_NUM;
+	if (vt->ttypc->ktype)
+		_ttypc_kbd_updateled(vt->ttypc);
+	else
+		_ttypc_bioskbd_updateled(vt->ttypc);
 }

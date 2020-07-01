@@ -1,12 +1,10 @@
 /* 
  * Phoenix-RTOS
  *
- * Operating system kernel
+ * AT / PS/2 101-key US keyboard (based on FreeBSD 4.4 pcvt)
  *
- * PC 101-key keyboard handler derived from the BSD 4.4 Lite kernel.
- *
- * Copyright 2012, 2019 Phoenix Systems
  * Copyright 2001, 2006 Pawel Pisarczyk
+ * Copyright 2012, 2019, 2020 Phoenix Systems
  * Author: Pawel Pisarczyk, Lukasz Kosinski
  *
  * This file is part of Phoenix-RTOS.
@@ -20,31 +18,20 @@
 #include "ttypc.h"
 
 
-#define KB_NONE    1
-#define KB_ASCII   2
-#define KB_CTL     4
-#define KB_SHIFT   8
-#define KB_KP      16
-#define KB_ALT     32
-#define KB_CAPS    64
-#define KB_NUM     128
-#define KB_SCROLL  256
-#define KB_ALTGR   512
-#define KB_FUNC    1024
+/* Updates keyboard LEDs */
+extern int _ttypc_kbd_updateled(ttypc_t *ttypc);
 
 
-typedef struct _keymap_t {
-	unsigned int type;
-	char *unshift;
-	char *shift;
-	char *ctl;
-	char *altgr;
-	char *shift_altgr;
-} keymap_t;
+/* Destroys keyboard */
+extern void ttypc_kbd_destroy(ttypc_t *ttypc);
 
 
-/* Function initializes ttypc keyboard handler */
-extern int _ttypc_kbd_init(ttypc_t *ttypc);
+/* Initializes keyboard */
+extern int ttypc_kbd_init(ttypc_t *ttypc);
+
+
+/* Configures keyboard */
+extern int ttypc_kbd_configure(ttypc_t *ttypc);
 
 
 #endif
