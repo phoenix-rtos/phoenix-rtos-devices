@@ -1,10 +1,10 @@
 /*
  * Phoenix-RTOS
  *
- * ttypc - keyboard handler (map derived from BSD 4.4 Lite kernel).
+ * AT / PS/2 101-key US keyboard (based on FreeBSD 4.4 pcvt)
  *
- * Copyright 2012, 2017, 2019 Phoenix Systems
  * Copyright 2001, 2007-2008 Pawel Pisarczyk
+ * Copyright 2012, 2017, 2019, 2020 Phoenix Systems
  * Author: Pawel Pisarczyk, Lukasz Kosinski
  *
  * This file is part of Phoenix-RTOS.
@@ -14,300 +14,388 @@
 
 #include <errno.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
+
+#include <sys/interrupt.h>
 #include <sys/io.h>
 #include <sys/threads.h>
-#include <sys/interrupt.h>
+#include <sys/reboot.h>
 
 #include "ttypc_kbd.h"
 #include "ttypc_vga.h"
 
+
+/* Keyboard map entry */
+typedef struct {
+	unsigned int type;
+	char *unshift;
+	char *shift;
+	char *ctl;
+	char *altgr;
+	char *shift_altgr;
+} keymap_t;
+
+
 /* U.S 101 keys keyboard map */
-keymap_t scan_codes[] = {
-	/*  type     unshift   shift     control   altgr     shift_altgr scancode */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 0 unused */
-	{ KB_ASCII,  "\033",   "\033",   "\033",   "",       "" }, /* 1 ESCape */
-	{ KB_ASCII,  "1",      "!",      "\033[k", "",       "" }, /* 2 1 */
-	{ KB_ASCII,  "2",      "@",      "\033[l", "",       "" }, /* 3 2 */
-	{ KB_ASCII,  "3",      "#",      "\033[m", "",       "" }, /* 4 3 */
-	{ KB_ASCII,  "4",      "$",      "\033[n", "",       "" }, /* 5 4 */
-	{ KB_ASCII,  "5",      "%",      "%",      "",       "" }, /* 6 5 */
-	{ KB_ASCII,  "6",      "^",      "\036",   "",       "" }, /* 7 6 */
-	{ KB_ASCII,  "7",      "&",      "&",      "",       "" }, /* 8 7 */
-	{ KB_ASCII,  "8",      "*",      "\010",   "",       "" }, /* 9 8 */
-	{ KB_ASCII,  "9",      "(",      "(",      "",       "" }, /* 10 9 */
-	{ KB_ASCII,  "0",      ")",      ")",      "",       "" }, /* 11 0 */
-	{ KB_ASCII,  "-",      "_",      "\037",   "",       "" }, /* 12 - */
-	{ KB_ASCII,  "=",      "+",      "+",      "",       "" }, /* 13 = */
-	{ KB_ASCII,  "\b \b",  "\177",   "\010",   "",       "" }, /* 14 backspace */
-	{ KB_ASCII,  "\t",     "\t",     "\t",     "",       "" }, /* 15 tab */
-	{ KB_ASCII,  "q",      "Q",      "\021",   "",       "" }, /* 16 q */
-	{ KB_ASCII,  "w",      "W",      "\027",   "",       "" }, /* 17 w */
-	{ KB_ASCII,  "e",      "E",      "\005",   "",       "" }, /* 18 e */
-	{ KB_ASCII,  "r",      "R",      "\022",   "",       "" }, /* 19 r */
-	{ KB_ASCII,  "t",      "T",      "\024",   "",       "" }, /* 20 t */
-	{ KB_ASCII,  "y",      "Y",      "\031",   "",       "" }, /* 21 y */
-	{ KB_ASCII,  "u",      "U",      "\025",   "",       "" }, /* 22 u */
-	{ KB_ASCII,  "i",      "I",      "\011",   "",       "" }, /* 23 i */
-	{ KB_ASCII,  "o",      "O",      "\017",   "",       "" }, /* 24 o */
-	{ KB_ASCII,  "p",      "P",      "\020",   "",       "" }, /* 25 p */
-	{ KB_ASCII,  "[",      "{",      "\033",   "",       "" }, /* 26 [ */
-	{ KB_ASCII,  "]",      "}",      "\035",   "",       "" }, /* 27 ] */
-	{ KB_ASCII,  "\n",     "\n",     "\r",     "",       "" }, /* 28 return */
-	{ KB_CTL,    "",       "",       "",       "",       "" }, /* 29 control */
-	{ KB_ASCII,  "a",      "A",      "\001",   "",       "" }, /* 30 a */
-	{ KB_ASCII,  "s",      "S",      "\023",   "",       "" }, /* 31 s */
-	{ KB_ASCII,  "d",      "D",      "\004",   "",       "" }, /* 32 d */
-	{ KB_ASCII,  "f",      "F",      "\006",   "",       "" }, /* 33 f */
-	{ KB_ASCII,  "g",      "G",      "\007",   "",       "" }, /* 34 g */
-	{ KB_ASCII,  "h",      "H",      "\010",   "",       "" }, /* 35 h */
-	{ KB_ASCII,  "j",      "J",      "\n",     "",       "" }, /* 36 j */
-	{ KB_ASCII,  "k",      "K",      "\013",   "",       "" }, /* 37 k */
-	{ KB_ASCII,  "l",      "L",      "\014",   "",       "" }, /* 38 l */
-	{ KB_ASCII,  ";",      ":",      ";",      "",       "" }, /* 39 ; */
-	{ KB_ASCII,  "'",      "\"",     "'",      "",       "" }, /* 40 ' */
-	{ KB_ASCII,  "`",      "~",      "`",      "",       "" }, /* 41 ` */
-	{ KB_SHIFT,  "\001",   "",       "",       "",       "" }, /* 42 shift */
-	{ KB_ASCII,  "\\",     "|",      "\034",   "",       "" }, /* 43 \ */
-	{ KB_ASCII,  "z",      "Z",      "\032",   "",       "" }, /* 44 z */
-	{ KB_ASCII,  "x",      "X",      "\030",   "",       "" }, /* 45 x */
-	{ KB_ASCII,  "c",      "C",      "\003",   "",       "" }, /* 46 c */
-	{ KB_ASCII,  "v",      "V",      "\026",   "",       "" }, /* 47 v */
-	{ KB_ASCII,  "b",      "B",      "\002",   "",       "" }, /* 48 b */
-	{ KB_ASCII,  "n",      "N",      "\016",   "",       "" }, /* 49 n */
-	{ KB_ASCII,  "m",      "M",      "\r",     "",       "" }, /* 50 m */
-	{ KB_ASCII,  ",",      "<",      "<",      "",       "" }, /* 51 , */
-	{ KB_ASCII,  ".",      ">",      ">",      "",       "" }, /* 52 . */
-	{ KB_ASCII,  "/",      "?",      "\037",   "",       "" }, /* 53 / */
-	{ KB_SHIFT,  "\002",   "",       "",       "",       "" }, /* 54 shift */
-	{ KB_KP,     "*",      "*",      "*",      "",       "" }, /* 55 kp * */
-	{ KB_ALT,    "",       "",       "",       "",       "" }, /* 56 alt */
-	{ KB_ASCII,  " ",      " ",      "\000",   "",       "" }, /* 57 space */
-	{ KB_CAPS,   "",       "",       "",       "",       "" }, /* 58 caps */
-	{ KB_FUNC,   "\033[M", "\033[Y", "\033[k", "",       "" }, /* 59 f1 */
-	{ KB_FUNC,   "\033[N", "\033[Z", "\033[l", "",       "" }, /* 60 f2 */
-	{ KB_FUNC,   "\033[O", "\033[a", "\033[m", "",       "" }, /* 61 f3 */
-	{ KB_FUNC,   "\033[P", "\033[b", "\033[n", "",       "" }, /* 62 f4 */
-	{ KB_FUNC,   "\033[Q", "\033[c", "\033[o", "",       "" }, /* 63 f5 */
-	{ KB_FUNC,   "\033[R", "\033[d", "\033[p", "",       "" }, /* 64 f6 */
-	{ KB_FUNC,   "\033[S", "\033[e", "\033[q", "",       "" }, /* 65 f7 */
-	{ KB_FUNC,   "\033[T", "\033[f", "\033[r", "",       "" }, /* 66 f8 */
-	{ KB_FUNC,   "\033[U", "\033[g", "\033[s", "",       "" }, /* 67 f9 */
-	{ KB_FUNC,   "\033[V", "\033[h", "\033[t", "",       "" }, /* 68 f10 */
-	{ KB_NUM,    "",       "",       "",       "",       "" }, /* 69 num lock */
-	{ KB_SCROLL, "",       "",       "",       "",       "" }, /* 70 scroll lock */
-	{ KB_KP,     "7",      "\033[H", "7",      "",       "" }, /* 71 kp 7 */
-	{ KB_KP,     "8",      "\033[A", "8",      "",       "" }, /* 72 kp 8 */
-	{ KB_KP,     "9",      "\033[I", "9",      "",       "" }, /* 73 kp 9 */
-	{ KB_KP,     "-",      "-",      "-",      "",       "" }, /* 74 kp - */
-	{ KB_KP,     "4",      "\033[D", "4",      "",       "" }, /* 75 kp 4 */
-	{ KB_KP,     "5",      "\033[E", "5",      "",       "" }, /* 76 kp 5 */
-	{ KB_KP,     "6",      "\033[C", "6",      "",       "" }, /* 77 kp 6 */
-	{ KB_KP,     "+",      "+",      "+",      "",       "" }, /* 78 kp + */
-	{ KB_KP,     "1",      "\033[F", "1",      "",       "" }, /* 79 kp 1 */
-	{ KB_KP,     "2",      "\033[B", "2",      "",       "" }, /* 80 kp 2 */
-	{ KB_KP,     "3",      "\033[G", "3",      "",       "" }, /* 81 kp 3 */
-	{ KB_KP,     "0",      "\033[L", "0",      "",       "" }, /* 82 kp 0 */
-	{ KB_KP,     ",",      "\177",   ",",      "",       "" }, /* 83 kp . */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 84 0 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 85 0 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 86 0 */
-	{ KB_FUNC,   "\033[W", "\033[i", "\033[u", "",       "" }, /* 87 f11 */
-	{ KB_FUNC,   "\033[X", "\033[j", "\033[v", "",       "" }, /* 88 f12 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 89 0 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 90 0 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 91 0 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 92 0 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 93 0 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 94 0 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 95 0 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 96 0 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 97 0 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 98 0 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 99 0 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 100 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 101 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 102 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 103 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 104 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 105 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 106 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 107 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 108 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 109 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 110 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 111 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 112 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 113 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 114 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 115 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 116 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 117 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 118 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 119 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 120 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 121 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 122 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 123 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 124 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 125 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 126 */
-	{ KB_NONE,   "",       "",       "",       "",       "" }, /* 127 */
+static keymap_t scodes[] = {
+	/*type       unshift    shift      ctl        altgr      shift_altgr scancode */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 0 unused */
+	{ KB_ASCII,  "\033",    "\033",    "\033",    "",        "" },    /* 1 ESCape */
+	{ KB_ASCII,  "1",       "!",       "1",       "",        "" },    /* 2 1 */
+	{ KB_ASCII,  "2",       "@",       "\000",    "",        "" },    /* 3 2 */
+	{ KB_ASCII,  "3",       "#",       "\033",    "",        "" },    /* 4 3 */
+	{ KB_ASCII,  "4",       "$",       "\034",    "",        "" },    /* 5 4 */
+	{ KB_ASCII,  "5",       "%",       "\035",    "",        "" },    /* 6 5 */
+	{ KB_ASCII,  "6",       "^",       "\036",    "",        "" },    /* 7 6 */
+	{ KB_ASCII,  "7",       "&",       "\037",    "",        "" },    /* 8 7 */
+	{ KB_ASCII,  "8",       "*",       "\010",    "",        "" },    /* 9 8 */
+	{ KB_ASCII,  "9",       "(",       "9",       "",        "" },    /* 10 9 */
+	{ KB_ASCII,  "0",       ")",       "0",       "",        "" },    /* 11 0 */
+	{ KB_ASCII,  "-",       "_",       "-",       "",        "" },    /* 12 - */
+	{ KB_ASCII,  "=",       "+",       "=",       "",        "" },    /* 13 = */
+	{ KB_ASCII,  "\b \b",   "\177",    "\010",    "",        "" },    /* 14 backspace */
+	{ KB_ASCII,  "\t",      "\t",      "\t",      "",        "" },    /* 15 tab */
+	{ KB_ASCII,  "q",       "Q",       "\021",    "",        "" },    /* 16 q */
+	{ KB_ASCII,  "w",       "W",       "\027",    "",        "" },    /* 17 w */
+	{ KB_ASCII,  "e",       "E",       "\005",    "",        "" },    /* 18 e */
+	{ KB_ASCII,  "r",       "R",       "\022",    "",        "" },    /* 19 r */
+	{ KB_ASCII,  "t",       "T",       "\024",    "",        "" },    /* 20 t */
+	{ KB_ASCII,  "y",       "Y",       "\031",    "",        "" },    /* 21 y */
+	{ KB_ASCII,  "u",       "U",       "\025",    "",        "" },    /* 22 u */
+	{ KB_ASCII,  "i",       "I",       "\011",    "",        "" },    /* 23 i */
+	{ KB_ASCII,  "o",       "O",       "\017",    "",        "" },    /* 24 o */
+	{ KB_ASCII,  "p",       "P",       "\020",    "",        "" },    /* 25 p */
+	{ KB_ASCII,  "[",       "{",       "\033",    "",        "" },    /* 26 [ */
+	{ KB_ASCII,  "]",       "}",       "\035",    "",        "" },    /* 27 ] */
+	{ KB_ASCII,  "\n",      "\n",      "\r",      "",        "" },    /* 28 return */
+	{ KB_CTL,    "",        "",        "",        "",        "" },    /* 29 control */
+	{ KB_ASCII,  "a",       "A",       "\001",    "",        "" },    /* 30 a */
+	{ KB_ASCII,  "s",       "S",       "\023",    "",        "" },    /* 31 s */
+	{ KB_ASCII,  "d",       "D",       "\004",    "",        "" },    /* 32 d */
+	{ KB_ASCII,  "f",       "F",       "\006",    "",        "" },    /* 33 f */
+	{ KB_ASCII,  "g",       "G",       "\007",    "",        "" },    /* 34 g */
+	{ KB_ASCII,  "h",       "H",       "\010",    "",        "" },    /* 35 h */
+	{ KB_ASCII,  "j",       "J",       "\n",      "",        "" },    /* 36 j */
+	{ KB_ASCII,  "k",       "K",       "\013",    "",        "" },    /* 37 k */
+	{ KB_ASCII,  "l",       "L",       "\014",    "",        "" },    /* 38 l */
+	{ KB_ASCII,  ";",       ":",       ";",       "",        "" },    /* 39 ; */
+	{ KB_ASCII,  "'",       "\"",      "'",       "",        "" },    /* 40 ' */
+	{ KB_ASCII,  "`",       "~",       "\000",    "",        "" },    /* 41 ` */
+	{ KB_SHIFT,  "\001",    "",        "",        "",        "" },    /* 42 shift */
+	{ KB_ASCII,  "\\",      "|",       "\034",    "",        "" },    /* 43 \ */
+	{ KB_ASCII,  "z",       "Z",       "\032",    "",        "" },    /* 44 z */
+	{ KB_ASCII,  "x",       "X",       "\030",    "",        "" },    /* 45 x */
+	{ KB_ASCII,  "c",       "C",       "\003",    "",        "" },    /* 46 c */
+	{ KB_ASCII,  "v",       "V",       "\026",    "",        "" },    /* 47 v */
+	{ KB_ASCII,  "b",       "B",       "\002",    "",        "" },    /* 48 b */
+	{ KB_ASCII,  "n",       "N",       "\016",    "",        "" },    /* 49 n */
+	{ KB_ASCII,  "m",       "M",       "\r",      "",        "" },    /* 50 m */
+	{ KB_ASCII,  ",",       "<",       ",",       "",        "" },    /* 51 , */
+	{ KB_ASCII,  ".",       ">",       ".",       "",        "" },    /* 52 . */
+	{ KB_ASCII,  "/",       "?",       "\037",    "",        "" },    /* 53 / */
+	{ KB_SHIFT,  "\002",    "",        "",        "",        "" },    /* 54 shift */
+	{ KB_KP,     "*",       "*",       "*",       "",        "" },    /* 55 kp * */
+	{ KB_ALT,    "",        "",        "",        "",        "" },    /* 56 alt */
+	{ KB_ASCII,  " ",       " ",       "\000",    "",        "" },    /* 57 space */
+	{ KB_CAPS,   "",        "",        "",        "",        "" },    /* 58 caps */
+	{ KB_FUNC,   "\033[OP", "\033[a",  "\033[m",  "",        "" },    /* 59 f1 */
+	{ KB_FUNC,   "\033[OQ", "\033[b",  "\033[n",  "",        "" },    /* 60 f2 */
+	{ KB_FUNC,   "\033[OR", "\033[c",  "\033[o",  "",        "" },    /* 61 f3 */
+	{ KB_FUNC,   "\033[OS", "\033[d",  "\033[p",  "",        "" },    /* 62 f4 */
+	{ KB_FUNC,   "\033[15~","\033[e",  "\033[q",  "",        "" },    /* 63 f5 */
+	{ KB_FUNC,   "\033[17~","\033[f",  "\033[r",  "",        "" },    /* 64 f6 */
+	{ KB_FUNC,   "\033[18~","\033[g",  "\033[s",  "",        "" },    /* 65 f7 */
+	{ KB_FUNC,   "\033[19~","\033[h",  "\033[t",  "",        "" },    /* 66 f8 */
+	{ KB_FUNC,   "\033[20~","\033[i",  "\033[u",  "",        "" },    /* 67 f9 */
+	{ KB_FUNC,   "\033[21~","\033[j",  "\033[v",  "",        "" },    /* 68 f10 */
+	{ KB_NUM,    "",        "",        "",        "",        "" },    /* 69 num lock */
+	{ KB_SCROLL, "",        "",        "",        "",        "" },    /* 70 scroll lock */
+	{ KB_KP,     "7",       "\033[H",  "7",       "",        "" },    /* 71 kp 7 */
+	{ KB_KP,     "8",       "\033[A",  "8",       "",        "" },    /* 72 kp 8 */
+	{ KB_KP,     "9",       "\033[5~", "9",       "",        "" },    /* 73 kp 9 */
+	{ KB_KP,     "-",       "-",       "-",       "",        "" },    /* 74 kp - */
+	{ KB_KP,     "4",       "\033[D",  "4",       "",        "" },    /* 75 kp 4 */
+	{ KB_KP,     "5",       "\033[E",  "5",       "",        "" },    /* 76 kp 5 */
+	{ KB_KP,     "6",       "\033[C",  "6",       "",        "" },    /* 77 kp 6 */
+	{ KB_KP,     "+",       "+",       "+",       "",        "" },    /* 78 kp + */
+	{ KB_KP,     "1",       "\033[F",  "1",       "",        "" },    /* 79 kp 1 */
+	{ KB_KP,     "2",       "\033[B",  "2",       "",        "" },    /* 80 kp 2 */
+	{ KB_KP,     "3",       "\033[6~", "3",       "",        "" },    /* 81 kp 3 */
+	{ KB_KP,     "0",       "\033[2~", "0",       "",        "" },    /* 82 kp 0 */
+	{ KB_KP,     ",",       "\033[3~", ",",       "",        "" },    /* 83 kp . */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 84 0 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 85 0 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 86 0 */
+	{ KB_FUNC,   "\033[23~","\033[k",  "\033[w",  "",        "" },    /* 87 f11 */
+	{ KB_FUNC,   "\033[24~","\033[l",  "\033[x",  "",        "" },    /* 88 f12 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 89 0 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 90 0 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 91 0 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 92 0 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 93 0 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 94 0 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 95 0 */
+	{ KB_EXT,    "",        "",        "",        "",        "" },    /* 96 extended */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 97 0 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 98 0 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 99 0 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 100 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 101 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 102 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 103 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 104 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 105 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 106 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 107 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 108 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 109 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 110 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 111 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 112 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 113 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 114 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 115 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 116 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 117 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 118 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 119 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 120 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 121 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 122 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 123 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 124 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 125 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 126 */
+	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 127 */
 };
 
 
-/* Function gets characters from keyboard */
+/* KB_BP (keypad keys) modifiers map */
+static unsigned char kpmod[] = {
+	0, /* 0 no modifiers */
+	5, /* 1 ctl */
+	2, /* 2 shift */
+	6, /* 3 ctl + shift */
+	3, /* 4 alt */
+	7, /* 5 ctl + alt */
+	4, /* 6 shift + alt */
+	8, /* 7 ctl + shift + alt */
+	0, /* 8 altgr */
+	5, /* 9 ctrl + altgr */
+	2, /* 10 shift + altgr */
+	6, /* 11 ctl + shift + altgr */
+	3, /* 12 alt + altgr */
+	7, /* 13 ctl + alt + altgr */
+	4, /* 14 shift + alt + altgr */
+	8, /* 15 ctl + shift + alt + altgr */
+};
+
+
+/* Get key code from keyboard */
 static char *_ttypc_kbd_get(ttypc_t *ttypc)
 {
-	uint8_t dt;
-	char *more = NULL;
+	static char *erreboot = "Failed to reboot\n";
+	static unsigned char ext = 0, lkey = 0, lkeyup = 0, lext = 0;
+	unsigned char dt;
+	char *s = NULL;
 
-	dt = inb(ttypc->base);
+	dt = inb(ttypc->kbd);
 
-	/* Key is released */
-	if (dt & 0x80) {
-		dt &= 0x7f;
-
-		switch (scan_codes[dt].type) {
-		case KB_NUM:
-			ttypc->shiftst &= ~KB_NUM;
-			break;
-		case KB_CAPS:
-			ttypc->shiftst &= ~KB_CAPS;
-			break;
-		case KB_SCROLL:
-			ttypc->shiftst &= ~KB_SCROLL;
-			break;
-		case KB_SHIFT:
-			ttypc->shiftst &= ~KB_SHIFT;
-			break;
-		case KB_ALT:
-			if (ttypc->extended)
-				ttypc->shiftst &= ~KB_ALTGR;
-			else
-				ttypc->shiftst &= ~KB_ALT;
-			break;
-		case KB_CTL:
-			ttypc->shiftst &= ~KB_CTL;
-			break;
-		}
+	/* Extended scan code key pressed/released */
+	if (scodes[dt & 0x7f].type == KB_EXT) {
+		ext = 1;
 	}
-	
-	/* Key is pressed */
 	else {
-		switch (scan_codes[dt].type) {
+		/* Key is released */
+		if (dt & 0x80) {
+			dt &= 0x7f;
 
-		/* Locking keys - Caps, Scroll, Num */
-		case KB_NUM:
-			if (ttypc->shiftst & KB_NUM)
+			switch (scodes[dt].type) {
+			case KB_SCROLL:
+				if (!ext)
+					ttypc->shiftst &= ~KB_SCROLL;
 				break;
-			ttypc->shiftst |= KB_NUM;
-			ttypc->lockst ^= KB_NUM;
-			break;
 
-		case KB_CAPS:
-			if (ttypc->shiftst & KB_CAPS)
+			case KB_NUM:
+				if (!ext)
+					ttypc->shiftst &= ~KB_NUM;
 				break;
-			ttypc->shiftst |= KB_CAPS;
-			ttypc->lockst ^= KB_CAPS;
-			break;
 
-		case KB_SCROLL:
-			if (ttypc->shiftst & KB_SCROLL)
+			case KB_CAPS:
+				if (!ext)
+					ttypc->shiftst &= ~KB_CAPS;
 				break;
-			ttypc->shiftst |= KB_SCROLL;
-			ttypc->lockst ^= KB_SCROLL;
-			break;
 
-		/* Special no locking keys */
-		case KB_SHIFT:
-			ttypc->shiftst |= KB_SHIFT;
-			break;
+			case KB_CTL:
+				ttypc->shiftst &= ~KB_CTL;
+				break;
 
-		case KB_ALT:
-			if (ttypc->extended)
-				ttypc->shiftst |= KB_ALTGR;
-			else
-				ttypc->shiftst |= KB_ALT;
-			break;
+			case KB_SHIFT:
+				if (!ext)
+					ttypc->shiftst &= ~KB_SHIFT;
+				break;
 
-		case KB_CTL:
-			ttypc->shiftst |= KB_CTL;
-			break;
-		
-		/* Regular ASCII */
-		case KB_ASCII:
-
-			/* Control is pressed */
-			if (ttypc->shiftst & KB_CTL)
-				more = scan_codes[dt].ctl;
-			
-			/* Right alt and right alt with shift */
-			else if (ttypc->shiftst & KB_ALTGR) {
-				if (ttypc->shiftst & KB_SHIFT)
-					more = scan_codes[dt].shift_altgr;
+			case KB_ALT:
+				if (ext)
+					ttypc->shiftst &= ~KB_ALTGR;
 				else
-					more = scan_codes[dt].altgr;
-			}
-			
-			/* Shift */
-			else if (ttypc->shiftst & KB_SHIFT)
-				more = scan_codes[dt].shift;
-			else
-				more = scan_codes[dt].unshift;
-
-			/* CAPS LOCK */
-			if ((ttypc->lockst & KB_CAPS) /*&& (*scan_codes[dt].unshift >= 'a') && (*scan_codes[dt].unshift <= 'z')*/) {
-
-				if (ttypc->shiftst & KB_SHIFT)
-					more = scan_codes[dt].unshift;
-				else
-					more = scan_codes[dt].shift;
+					ttypc->shiftst &= ~KB_ALT;
+				break;
 			}
 
-			ttypc->extended = 0;
-			break;
-		
-		/* Key without meaning */
-		case KB_NONE:
-			break;
-			
-		/* Function key */
-		case KB_FUNC: {
-			if (ttypc->shiftst & KB_SHIFT)
-				more = scan_codes[dt].shift;
-			else if (ttypc->shiftst & KB_CTL)
-				more = scan_codes[dt].ctl;
-			else
-				more = scan_codes[dt].unshift;
-			
-			ttypc->extended = 0;
-			break;
+			/* Last key released */
+			if ((dt == lkey) && (ext == lext)) {
+				lkey = 0;
+				lext = 0;
+				lkeyup = 1;
+			}
 		}
-		
-		/* Keypad */
-		case KB_KP:
-			
-			/* Reboot sequence */
-						
-			/*
-			if ((ttypcv->shiftst & KB_ALT) && (ttypcv->shiftst & KB_CTL) && (dt == 83)) {
-				return ttypcv->capchar;
-			}*/
-			
-			if (ttypc->shiftst & (KB_SHIFT | KB_CTL) || (ttypc->lockst & KB_NUM) == 0 || ttypc->extended)
-				more = scan_codes[dt].shift;
-			else
-				more = scan_codes[dt].unshift;
-			ttypc->extended = 0;
-			break;
+		/* Key is pressed */
+		else {
+			switch (scodes[dt].type) {
+			/* Lock keys - Scroll, Num, Caps */
+			case KB_SCROLL:
+				if (ttypc->shiftst & KB_SCROLL)
+					break;
+				ttypc->shiftst |= KB_SCROLL;
+				ttypc->lockst ^= KB_SCROLL;
+				_ttypc_kbd_updateled(ttypc);
+				break;
+
+			case KB_NUM:
+				if (ttypc->shiftst & KB_NUM)
+					break;
+				ttypc->shiftst |= KB_NUM;
+				ttypc->lockst ^= KB_NUM;
+				_ttypc_kbd_updateled(ttypc);
+				break;
+
+			case KB_CAPS:
+				if (ttypc->shiftst & KB_CAPS)
+					break;
+				ttypc->shiftst |= KB_CAPS;
+				ttypc->lockst ^= KB_CAPS;
+				_ttypc_kbd_updateled(ttypc);
+				break;
+
+			/* Shift keys - Ctl, Shift, Alt */
+			case KB_CTL:
+				ttypc->shiftst |= KB_CTL;
+				break;
+
+			case KB_SHIFT:
+				ttypc->shiftst |= KB_SHIFT;
+				break;
+
+			case KB_ALT:
+				if (ext)
+					ttypc->shiftst |= KB_ALTGR;
+				else
+					ttypc->shiftst |= KB_ALT;
+				break;
+
+			/* Function keys */
+			case KB_FUNC:
+			/* Regular ASCII */
+			case KB_ASCII:
+				/* Keys with extended scan codes don't depend on any modifiers */
+				if (ext) {
+					/* Handles keypad '/' key */
+					s = scodes[dt].unshift;
+					break;
+				}
+				/* Control modifier */
+				if (ttypc->shiftst & KB_CTL) {
+					s = scodes[dt].ctl;
+					break;
+				}
+
+				/* Right alt and right alt with shift modifiers */
+				if (ttypc->shiftst & KB_ALTGR) {
+					if (ttypc->shiftst & KB_SHIFT)
+						s = scodes[dt].shift_altgr;
+					else
+						s = scodes[dt].altgr;
+				}
+				/* Shift modifier */
+				else if (ttypc->shiftst & KB_SHIFT) {
+					s = scodes[dt].shift;
+				}
+				/* No modifiers */
+				else {
+					s = scodes[dt].unshift;
+				}
+
+				/* Caps lock */
+				if ((ttypc->lockst & KB_CAPS) && (*scodes[dt].unshift >= 'a') && (*scodes[dt].unshift <= 'z')) {
+					if (s == scodes[dt].altgr)
+						s = scodes[dt].shift_altgr;
+					else if (s == scodes[dt].shift_altgr)
+						s = scodes[dt].altgr;
+					else if (s == scodes[dt].shift)
+						s = scodes[dt].unshift;
+					else if (s == scodes[dt].unshift)
+						s = scodes[dt].shift;
+				}
+				break;
+
+			/* Keys without meaning */
+			case KB_NONE:
+				break;
+
+			/* Keypad */
+			case KB_KP:
+				/* Keys with extended scan codes don't depend on any modifiers */
+				if (ext) {
+					/* Handles DEL, HOME, END, PU, PD and arrow (non keypad) keys */
+					s = scodes[dt].shift;
+					break;
+				}
+
+				/* Shift modifier */
+				if (ttypc->shiftst & KB_SHIFT)
+					s = scodes[dt].shift;
+				/* Control modifier */
+				else if (ttypc->shiftst & KB_CTL)
+					s = scodes[dt].ctl;
+				/* No modifiers */
+				else
+					s = scodes[dt].unshift;
+
+				/* Num lock */
+				if (ttypc->lockst & KB_NUM) {
+					if (s == scodes[dt].shift)
+						s = scodes[dt].unshift;
+					else if ((s == scodes[dt].ctl) || (s == scodes[dt].unshift))
+						s = scodes[dt].shift;
+				}
+				break;
+			}
 		}
+
+		/* AutoRepeat Mode */
+		if (!ttypc->vt->arm && (dt == lkey) && (ext == lext))
+			s = NULL;
+
+		/* Reboot sequence - Ctl-Alt-Del */
+		if (s && ext && !strcmp(s, "\033[3~") && (ttypc->shiftst == (KB_CTL | KB_ALT))) {
+			if (reboot(PHOENIX_REBOOT_MAGIC) < 0)
+				ttypc_vt_write(ttypc->vt, 0, erreboot, sizeof(erreboot));
+			s = NULL;
+		}
+
+		if (lkeyup) {
+			lkeyup = 0;
+		}
+		else if ((scodes[dt].type == KB_FUNC) || (scodes[dt].type == KB_ASCII) || (scodes[dt].type == KB_KP)) {
+			lkey = dt;
+			lext = ext;
+		}
+
+		ext = 0;
 	}
-	ttypc->extended = 0;
 
-	return more;
+	return s;
 }
 
 
@@ -316,62 +404,290 @@ static int ttypc_kbd_interrupt(unsigned int n, void *arg)
 {
 	ttypc_t *ttypc = (ttypc_t *)arg;
 
-	return ttypc->rcond;
+	return ttypc->kcond;
 }
 
 
-void ttypc_kbd_ctlthr(void *arg)
+static void ttypc_kbd_ctlthr(void *arg)
 {
 	ttypc_t *ttypc = (ttypc_t *)arg;
-	unsigned int i, len;
-	char *s;
+	char *s, k;
+	char buff[10];
+	unsigned char m;
 
-	mutexLock(ttypc->rlock);
+	mutexLock(ttypc->klock);
 	for (;;) {
-		while (inb(ttypc->base + 4) != 0x1d)
-			condWait(ttypc->rcond, ttypc->rlock, 0);
+		/* Wait for character codes to show up in keyboard output buffer */
+		while (!(inb((void *)((uintptr_t)ttypc->kbd + 4)) & 0x01))
+			condWait(ttypc->kcond, ttypc->klock, 0);
 
-		s = _ttypc_kbd_get(ttypc);
+		mutexLock(ttypc->lock);
+		mutexLock(ttypc->vt->lock);
 
-		if (s != NULL) {
-			if (!strcmp(s, "\033[k")) {
-				ttypc_vga_switch(&ttypc->virtuals[0]);
-			}
-			else if (!strcmp(s, "\033[l")) {
-				ttypc_vga_switch(&ttypc->virtuals[1]);
-			}
-			else if (!strcmp(s, "\033[m")) {
-				ttypc_vga_switch(&ttypc->virtuals[2]);
-			}
-			else if (!strcmp(s, "\033[n")) {
-				ttypc_vga_switch(&ttypc->virtuals[3]);
-			}
-			else {
-				len = strlen(s);
-
-				for (i = 0; i < len; i++)
-					libtty_putchar(&ttypc->cv->tty, *(s + i), NULL);
-			}
+		if ((s = _ttypc_kbd_get(ttypc)) == NULL) {
+			mutexUnlock(ttypc->vt->lock);
+			mutexUnlock(ttypc->lock);
+			continue;
 		}
+
+		/* Scroll up one line */
+		if (!strcmp(s, "\033[A") && ((ttypc->lockst & KB_SCROLL) || (ttypc->shiftst == (KB_CTL | KB_SHIFT)))) {
+			_ttypc_vga_scrollup(ttypc->vt, 1);
+		}
+		/* Scroll down one line */
+		else if (!strcmp(s, "\033[B") && ((ttypc->lockst & KB_SCROLL) || (ttypc->shiftst == (KB_CTL | KB_SHIFT)))) {
+			_ttypc_vga_scrolldown(ttypc->vt, 1);
+		}
+		/* Scroll up one page */
+		else if (!strcmp(s, "\033[5~") && ((ttypc->lockst & KB_SCROLL) || (ttypc->shiftst == KB_SHIFT))) {
+			_ttypc_vga_scrollup(ttypc->vt, ttypc->vt->rows);
+		}
+		/* Scroll down one page */
+		else if (!strcmp(s, "\033[6~") && ((ttypc->lockst & KB_SCROLL) || (ttypc->shiftst == KB_SHIFT))) {
+			_ttypc_vga_scrolldown(ttypc->vt, ttypc->vt->rows);
+		}
+		/* Scroll to top */
+		else if (!strcmp(s, "\033[H") && ((ttypc->lockst & KB_SCROLL) || (ttypc->shiftst == KB_SHIFT))) {
+			_ttypc_vga_scrollup(ttypc->vt, ttypc->vt->scrbsz - ttypc->vt->scrbpos);
+		}
+		/* Scroll to bottom */
+		else if (!strcmp(s, "\033[F") && ((ttypc->lockst & KB_SCROLL) || (ttypc->shiftst == KB_SHIFT))) {
+			_ttypc_vga_scrolldown(ttypc->vt, ttypc->vt->scrbpos);
+		}
+		/* Switch between VTs (up to 12) */
+		else if (!strncmp(s, "\033[", 2) && (s[2] >= 'm') && (s[2] <= 'x') && !s[3]) {
+			if ((s[2] - 'm') < NVTS)
+				_ttypc_vga_switch(ttypc->vts + (s[2] - 'm'));
+		}
+		/* Regular character processing */
+		else {
+			mutexUnlock(ttypc->vt->lock);
+			mutexUnlock(ttypc->lock);
+
+			/* Process kp/fn keys */
+			if (!strncmp(s, "\033[", 2)) {
+				m = kpmod[ttypc->shiftst & 0x0f];
+
+				if ((k = s[2])) {
+					if (!s[3] && ((k >= 'A' && k <= 'F') || k == 'H')) {
+						if (m) {
+							snprintf(buff, sizeof(buff), "\033[1;%u%c", m, k);
+							s = buff;
+						}
+						/* Cursor Key Mode */
+						else if (ttypc->vt->ckm) {
+							snprintf(buff, sizeof(buff), "\033O%c", k);
+							s = buff;
+						}
+					}
+					else if ((s[3] == '~') && !s[4] && (k >= '2' && k <= '6' && (k != '4'))) {
+						if (m) {
+							snprintf(buff, sizeof(buff), "\033[%c;%u~", k, m);
+							s = buff;
+						}
+					}
+				}
+			}
+			else if (!strcmp(s, "\r") || !strcmp(s, "\n")) {
+				/* Line feed/New line Mode */
+				if (ttypc->vt->lnm)
+					s = "\r\n";
+			}
+
+			while (*s && !libtty_putchar(&ttypc->vt->tty, *s++, NULL));
+			continue;
+		}
+
+		mutexUnlock(ttypc->vt->lock);
+		mutexUnlock(ttypc->lock);
 	}
 }
 
 
-int _ttypc_kbd_init(ttypc_t *ttypc)
+/* Waits for keyboard controller status bit with small timeout */
+static int ttypc_kbd_waitstatus(ttypc_t *ttypc, unsigned char bit, unsigned char state)
 {
-	ttypc->extended = 0;
-	ttypc->lockst = 0;
-	ttypc->shiftst = 0;
+	unsigned int i;
 
-	mutexCreate(&ttypc->rlock);
-	condCreate(&ttypc->rcond);
+	for (i = 0; i < 0xffff; i++)
+		if (!(inb((void *)((uintptr_t)ttypc->kbd + 4)) & ((1 << bit) ^ (state << bit))))
+			return EOK;
 
-	/* Attach interrupt and launch interrupt thread */
-	interrupt(ttypc->irq, ttypc_kbd_interrupt, ttypc, ttypc->rcond, &ttypc->inth);
-	beginthread(ttypc_kbd_ctlthr, 1, &ttypc->kbdthr_stack, sizeof(ttypc->kbdthr_stack), (void *)ttypc);
+	return -ETIMEDOUT;
+}
+
+
+/* Reads a byte from keyboard controller output buffer */
+static int ttypc_kbd_read(ttypc_t *ttypc)
+{
+	int err;
+
+	/* Wait for output buffer not to be empty */
+	if ((err = ttypc_kbd_waitstatus(ttypc, 0, 1)) < 0)
+		return err;
+
+	return inb(ttypc->kbd);
+}
+
+
+/* Writes a byte to keyboard controller input buffer */
+static int ttypc_kbd_write(ttypc_t *ttypc, unsigned char byte)
+{
+	int err;
+
+	/* Wait for input buffer to be empty */
+	if ((err = ttypc_kbd_waitstatus(ttypc, 1, 0)) < 0)
+		return err;
+	outb(ttypc->kbd, byte);
+
+	return EOK;
+}
+
+
+/* May not work for PS/2 emulation through USB legacy support */
+int _ttypc_kbd_updateled(ttypc_t *ttypc)
+{
+	int err, ret = 0;
+
+	/* Disable first controller port */
+	outb((void *)((uintptr_t)ttypc->kbd + 4), 0xad);
+
+	do {
+		/* Send update LEDs command */
+		if ((err = ttypc_kbd_write(ttypc, 0xed)) < 0)
+			break;
+
+		/* ACK response */
+		if ((err = ttypc_kbd_read(ttypc)) != 0xfa)
+			break;
+
+		/* Send LEDs state */
+		if ((err = ttypc_kbd_write(ttypc, (ttypc->lockst >> 4) & 0x07)) < 0)
+			break;
+
+		/* ACK response */
+		if ((err = ttypc_kbd_read(ttypc)) != 0xfa)
+			break;
+
+		/* Successfully updated LEDs state */
+		ret = 1;
+	} while (0);
+
+	/* Enable first controller port */
+	outb((void *)((uintptr_t)ttypc->kbd + 4), 0xae);
+
+	return ret;
+}
+
+
+void ttypc_kbd_destroy(ttypc_t *ttypc)
+{
+	resourceDestroy(ttypc->klock);
+	resourceDestroy(ttypc->kcond);
+}
+
+
+int ttypc_kbd_init(ttypc_t *ttypc)
+{
+	int err;
+
+	if ((err = mutexCreate(&ttypc->klock)) < 0)
+		return err;
+
+	if ((err = condCreate(&ttypc->kcond)) < 0) {
+		resourceDestroy(ttypc->klock);
+		return err;
+	}
+
+	/* Attach interrupt */
+	if ((err = interrupt((ttypc->kirq = 1), ttypc_kbd_interrupt, ttypc, ttypc->kcond, &ttypc->kinth)) < 0) {
+		resourceDestroy(ttypc->klock);
+		resourceDestroy(ttypc->kcond);
+		return err;
+	}
+
+	/* Launch keyboard control thread */
+	if ((err = beginthread(ttypc_kbd_ctlthr, 1, &ttypc->kstack, sizeof(ttypc->kstack), (void *)ttypc)) < 0) {
+		resourceDestroy(ttypc->klock);
+		resourceDestroy(ttypc->kcond);
+		return err;
+	}
 
 	/* Read byte from controller (reset is neccessary) */
-	inb(ttypc->base);
+	inb(ttypc->kbd);
 
-	return 0;
+	return EOK;
+}
+
+
+int ttypc_kbd_configure(ttypc_t *ttypc)
+{
+	unsigned char cb;
+	unsigned int i;
+	int err, ret = 0;
+
+	/* Keyboard base IO-port */
+	ttypc->kbd = (void *)0x60;
+
+	/* Disable controller ports */
+	outb((void *)((uintptr_t)ttypc->kbd + 4), 0xad);
+	outb((void *)((uintptr_t)ttypc->kbd + 4), 0xa7);
+
+	do {
+		/* Flush output buffer (max 32 characters) */
+		for (i = 0; i < 32; i++) {
+			if (inb((void *)((uintptr_t)ttypc->kbd + 4)) & 1)
+				inb(ttypc->kbd);
+			else
+				break;
+		}
+		if (inb((void *)((uintptr_t)ttypc->kbd + 4)) & 1)
+			break;
+
+		/* Get controller configuration */
+		outb((void *)((uintptr_t)ttypc->kbd + 4), 0x20);
+		if ((err = ttypc_kbd_read(ttypc)) < 0)
+			break;
+
+		/* We want bits 1, 3, 4 and 7 disabled */
+		cb = (unsigned char)err & 0x65;
+		/* Enable first port with translation and interrupts, disable second port */
+		cb |= 0x61;
+
+		/* Save controller configuration */
+		outb((void *)((uintptr_t)ttypc->kbd + 4), 0x60);
+		if ((err = ttypc_kbd_write(ttypc, cb)) < 0)
+			break;
+
+		/* Controller tests - may not work for PS/2 emulation through USB legacy support */
+		/* Perform controller self test */
+		// outb((void *)((uintptr_t)ttypc->kbd + 4), 0xaa);
+		// if ((err = ttypc_kbd_read(ttypc)) != 0x55)
+		// 	break;
+
+		// /* Perform first port test */
+		// outb((void *)((uintptr_t)ttypc->kbd + 4), 0xab);
+		// if ((err = ttypc_kbd_read(ttypc)) != 0x00)
+		// 	break;
+
+		// /* Reset first port */
+		// if ((err = ttypc_kbd_write(ttypc, 0xff)) < 0)
+		// 	break;
+
+		// /* ACK response */
+		// if ((err = ttypc_kbd_read(ttypc)) != 0xfa)
+		// 	break;
+
+		// /* Reset success */
+		// if ((err = ttypc_kbd_read(ttypc)) != 0xaa)
+		// 	break;
+
+		/* Configuration finished successfully */
+		ret = 1;
+	} while (0);
+
+	/* Enable first controller port */
+	outb((void *)((uintptr_t)ttypc->kbd + 4), 0xae);
+
+	return ret;
 }
