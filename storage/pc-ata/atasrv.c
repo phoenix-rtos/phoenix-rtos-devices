@@ -149,7 +149,7 @@ static atasrv_fs_t *atasrv_fsfind(const char *name)
 		c = strcmp(fs->name, name);
 		if (c == 0)
 			return fs;
-		
+
 		node = (c > 0) ? node->left : node->right;
 	}
 
@@ -169,7 +169,7 @@ static void atasrv_partthr(void *arg)
 		req->part = part;
 		while (msgRecv(req->part->port, &req->msg, &req->rid) < 0);
 
-		/* TODO: handle umount here? 
+		/* TODO: handle umount here?
 		if (req->msg.type == mtUmount) {
 
 		}
@@ -279,7 +279,7 @@ static int atasrv_reghdd(atasrv_dev_t *srvhdd)
 	char path[32];
 	oid_t oid;
 	int err;
-	
+
 	oid.port = atasrv_common.port;
 	oid.id = idtree_id(&srvhdd->node);
 	sprintf(path, "%s%c", HDD_NAME_BASE, HDD_NAME_CHAR + idtree_id(&srvhdd->node));
@@ -606,7 +606,7 @@ int main(int argc, char **argv)
 				if ((err = atasrv_reghdd(srvdev)) < 0)
 					return err;
 				break;
-			
+
 			case DEV_PART:
 				if ((err = atasrv_regpart(srvdev)) < 0)
 					return err;

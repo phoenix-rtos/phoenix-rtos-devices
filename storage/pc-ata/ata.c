@@ -448,7 +448,7 @@ static int ata_initbus(void *base, void *ctrl, ata_bus_t *bus)
 
 	if ((bus->devs[MASTER] = malloc(sizeof(ata_dev_t))) == NULL)
 		return -ENOMEM;
-	
+
 	if ((bus->devs[SLAVE] = malloc(sizeof(ata_dev_t))) == NULL) {
 		free(bus->devs[MASTER]);
 		return -ENOMEM;
