@@ -74,8 +74,8 @@ typedef struct {
 	/* Cursor */
 	uint8_t ctype;           /* Cursor type */
 	uint8_t cst;             /* Cursor state */
-	uint16_t crow;           /* Cursor row */
-	uint16_t ccol;           /* Cursor column */
+	uint8_t ccol;            /* Cursor column */
+	uint8_t crow;            /* Cursor row */
 	uint16_t cpos;           /* Cursor position offset */
 
 	/* Scrollback */
@@ -86,13 +86,13 @@ typedef struct {
 
 	/* Character sets */
 	uint8_t ss;              /* Single shift G2 / G3 -> GL */
-	const uint16_t **Gs;     /* G2/G3 conversion table */
-	const uint16_t **GL;     /* GL conversion table */
-	const uint16_t **GR;     /* GR conversion table */
 	const uint16_t *G0;      /* G0 conversion table */
 	const uint16_t *G1;      /* G1 conversion table */
 	const uint16_t *G2;      /* G2 conversion table */
 	const uint16_t *G3;      /* G3 conversion table */
+	const uint16_t **GL;     /* GL conversion table */
+	const uint16_t **GR;     /* GR conversion table */
+	const uint16_t **Gs;     /* G2/G3 conversion table */
 
 	/* VT100 modes */
 	uint8_t awm;             /* Auto Wrap Mode */
@@ -110,8 +110,8 @@ typedef struct {
 	uint8_t scom;            /* Saved Origin Mode */
 	uint8_t scattr;          /* Saved character attributes */
 	uint8_t scsgr;           /* Saved SGR configuration */
-	uint16_t scccol;         /* Saved cursor horitzontal position */
-	uint16_t sccrow;         /* Saved cursor vertical position */
+	uint8_t scccol;          /* Saved cursor column */
+	uint8_t sccrow;          /* Saved cursor row */
 	uint16_t sccpos;         /* Saved cursor position offset */
 	const uint16_t *scG0;    /* Saved G0 conversion table */
 	const uint16_t *scG1;    /* Saved G1 conversion table */
