@@ -1,7 +1,7 @@
 /* 
  * Phoenix-RTOS
  *
- * Terminal emulator using VGA and 101-key US keyboard (based on FreeBSD 4.4 pcvt)
+ * Terminal emulator using VGA display and 101-key US keyboard (based on FreeBSD 4.4 pcvt)
  *
  * Copyright 2017 Pawel Pisarczyk
  * Copyright 2019, 2020 Phoenix Systems

@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * PC 101-key BIOS keyboard
+ * 101-key US BIOS keyboard
  *
  * Copyright 2020 Phoenix Systems
  * Author: Lukasz Kosinski

@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * Terminal emulator using VGA and 101-key US keyboard (based on FreeBSD 4.4 pcvt)
+ * Terminal emulator using VGA display and 101-key US keyboard (based on FreeBSD 4.4 pcvt)
  *
  * Copyright 2006, 2008 Pawel Pisarczyk
  * Copyright 2012, 2017, 2019, 2020 Phoenix Systems
@@ -94,7 +94,7 @@ static void ttypc_poolthr(void *arg)
 
 int main(void)
 {
-	unsigned int i, j, init = 0;
+	unsigned int i;
 	char name[10];
 	oid_t oid;
 	int err;
@@ -102,83 +102,57 @@ int main(void)
 	/* Initialize driver */
 	memset(&ttypc_common, 0, sizeof(ttypc_t));
 
-	do {
-		if ((err = portCreate(&ttypc_common.port)) < 0)
-			break;
-		init++;
+	if ((err = portCreate(&ttypc_common.port)) < 0)
+		return err;
 
-		if ((err = mutexCreate(&ttypc_common.lock)) < 0)
-			break;
-		init++;
+	if ((err = mutexCreate(&ttypc_common.lock)) < 0)
+		return err;
 
-		/* Initialize and register virtual terminals */
-		for (i = 0; i < NVTS; i++) {
-			snprintf(name, sizeof(name), "/dev/tty%u", i);
-			oid.port = ttypc_common.port;
-			oid.id = i;
+	/* Initialize and register virtual terminals */
+	for (i = 0; i < NVTS; i++) {
+		snprintf(name, sizeof(name), "/dev/tty%u", i);
+		oid.port = ttypc_common.port;
+		oid.id = i;
 
-			if ((err = portRegister(oid.port, name, &oid)) < 0)
-				break;
+		if ((err = ttypc_vt_init(&ttypc_common, _PAGE_SIZE, ttypc_common.vts + i)) < 0)
+			return err;
 
-			if ((err = ttypc_vt_init(&ttypc_common, _PAGE_SIZE, ttypc_common.vts + i)) < 0)
-				break;
-		}
-		if (err < 0)
-			break;
-		printf("pc-tty: Initialized %u virtual terminals\n", NVTS);
-		init++;
-
-		/* Initialize VGA */
-		if ((err = ttypc_vga_init(&ttypc_common)) < 0)
-			break;
-		printf("pc-tty: Initialized VGA display\n");
-
-		/* Set active virtual terminal */
-		ttypc_common.vt = ttypc_common.vts;
-		ttypc_common.vt->vram = ttypc_common.vga;
-
-		/* Initialize cursor */
-		_ttypc_vga_getcursor(ttypc_common.vt);
-		/* Set default cursor color */
-		memsetw(ttypc_common.vt->vram + ttypc_common.vt->cpos, FG_LIGHTGREY << 8, ttypc_common.vt->rows * ttypc_common.vt->cols - ttypc_common.vt->cpos);
-		init++;
-
-		/* Initialize KBD */
-		if (ttypc_kbd_configure(&ttypc_common)) {
-			if ((err = ttypc_kbd_init(&ttypc_common)) < 0)
-				break;
-			ttypc_common.ktype = KBD_PS2;
-		}
-		else {
-			if ((err = ttypc_bioskbd_init(&ttypc_common)) < 0)
-				break;
-			ttypc_common.ktype = KBD_BIOS;
-		}
-		printf("pc-tty: Initialized %s keyboard\n", (ttypc_common.ktype) ? "PS/2" : "BIOS");
-		init++;
-
-		/* Start poolthread */
-		if ((err = beginthread(ttypc_poolthr, 1, &ttypc_common.pstack, sizeof(ttypc_common.pstack), (void *)&ttypc_common)) < 0)
-			break;
-		ttypc_poolthr(&ttypc_common);
-	} while (0);
-
-	switch (init) {
-	case 5:
-		if (ttypc_common.ktype)
-			ttypc_kbd_destroy(&ttypc_common);
-		else
-			ttypc_bioskbd_destroy(&ttypc_common);
-	case 4:
-		ttypc_vga_destroy(&ttypc_common);
-	case 3:
-		for (j = 0; j < i; j++)
-			ttypc_vt_destroy(ttypc_common.vts + j);
-	case 2:
-		resourceDestroy(ttypc_common.lock);
-	case 1:
-		portDestroy(ttypc_common.port);
+		if ((err = portRegister(oid.port, name, &oid)) < 0)
+			return err;
 	}
+	printf("pc-tty: Initialized %u virtual terminals\n", NVTS);
 
-	return err;
+	/* Initialize VGA display */
+	if ((err = ttypc_vga_init(&ttypc_common)) < 0)
+		return err;
+	printf("pc-tty: Initialized VGA display\n");
+
+	/* Set active virtual terminal */
+	ttypc_common.vt = ttypc_common.vts;
+	ttypc_common.vt->vram = ttypc_common.vga;
+
+	/* Initialize cursor */
+	_ttypc_vga_getcursor(ttypc_common.vt);
+	/* Set default cursor color */
+	memsetw(ttypc_common.vt->vram + ttypc_common.vt->cpos, FG_LIGHTGREY << 8, ttypc_common.vt->rows * ttypc_common.vt->cols - ttypc_common.vt->cpos);
+
+	/* Initialize keyboard */
+	if (ttypc_kbd_configure(&ttypc_common)) {
+		if ((err = ttypc_kbd_init(&ttypc_common)) < 0)
+			return err;
+		ttypc_common.ktype = KBD_PS2;
+	}
+	else {
+		if ((err = ttypc_bioskbd_init(&ttypc_common)) < 0)
+			return err;
+		ttypc_common.ktype = KBD_BIOS;
+	}
+	printf("pc-tty: Initialized %s keyboard\n", (ttypc_common.ktype) ? "PS/2" : "BIOS");
+
+	/* Start poolthreads */
+	if ((err = beginthread(ttypc_poolthr, 1, ttypc_common.pstack, sizeof(ttypc_common.pstack), &ttypc_common)) < 0)
+		return err;
+	ttypc_poolthr(&ttypc_common);
+
+	return EOK;
 }

@@ -48,11 +48,9 @@ static void _ttypc_vt_updatescroll(ttypc_vt_t *vt)
 }
 
 
-static int ttypc_vt_sput(ttypc_vt_t *vt, char c)
+static int _ttypc_vt_sput(ttypc_vt_t *vt, char c)
 {
 	int ret = 1;
-
-	mutexLock(vt->lock);
 
 	/* Cancel scrolling */
 	_ttypc_vga_scrollcancel(vt);
@@ -175,7 +173,7 @@ static int ttypc_vt_sput(ttypc_vt_t *vt, char c)
 			break;
 
 		case ESC_ESC:
-			switch(c) {
+			switch (c) {
 			case ' ':   /* ESC space family */
 				vt->escst = ESC_BLANK;
 				break;
@@ -332,7 +330,7 @@ static int ttypc_vt_sput(ttypc_vt_t *vt, char c)
 			break;
 		
 		case ESC_HASH:
-			switch(c) {
+			switch (c) {
 			case '3':   /* Double height top half */
 			case '4':   /* Double height bottom half */
 			case '5':   /* Single width single height */
@@ -527,8 +525,7 @@ static int ttypc_vt_sput(ttypc_vt_t *vt, char c)
 			break;
 
 		case ESC_CSIQM: /* DEC private modes */
-			switch(c)
-			{
+			switch (c) {
 			case '0':
 			case '1':
 			case '2':
@@ -584,7 +581,7 @@ static int ttypc_vt_sput(ttypc_vt_t *vt, char c)
 			break;
 
 		case ESC_SCA:
-			switch(c) {
+			switch (c) {
 			case 'q':
 				vt->escst = ESC_INIT;
 				break;
@@ -596,7 +593,7 @@ static int ttypc_vt_sput(ttypc_vt_t *vt, char c)
 			break;
 
 		case ESC_STR:
-			switch(c) {
+			switch (c) {
 			case 'p':   /* Soft terminal reset */
 				_ttypc_vtf_str(vt);
 				vt->escst = ESC_INIT;
@@ -624,8 +621,6 @@ static int ttypc_vt_sput(ttypc_vt_t *vt, char c)
 	if (vt == vt->ttypc->vt)
 		_ttypc_vga_setcursor(vt);
 
-	mutexUnlock(vt->lock);
-
 	return ret;
 }
 
@@ -636,7 +631,7 @@ ssize_t ttypc_vt_read(ttypc_vt_t *vt, int mode, char *buff, size_t len)
 }
 
 
-ssize_t ttypc_vt_write(ttypc_vt_t *vt, int mode, char *buff, size_t len)
+ssize_t ttypc_vt_write(ttypc_vt_t *vt, int mode, const char *buff, size_t len)
 {
 	return libtty_write(&vt->tty, buff, len, mode);
 }
@@ -664,34 +659,34 @@ void ttypc_vt_destroy(ttypc_vt_t *vt)
 }
 
 
-static void ttypc_vt_setbaudrate(void *arg, speed_t baud)
+static void _ttypc_vt_setbaudrate(void *arg, speed_t baud)
 {
 	/* TODO */
 }
 
 
-static void ttypc_vt_setcflag(void *arg, tcflag_t *cflag)
+static void _ttypc_vt_setcflag(void *arg, tcflag_t *cflag)
 {
 	/* TODO */
 }
 
 
-static void ttypc_vt_signaltxready(void *arg)
+static void _ttypc_vt_signaltxready(void *arg)
 {
 	ttypc_vt_t *vt = (ttypc_vt_t *)arg;
 
 	while (libtty_txready(&vt->tty))
-		ttypc_vt_sput(vt, (char)libtty_getchar(&vt->tty, NULL));
+		_ttypc_vt_sput(vt, (char)libtty_getchar(&vt->tty, NULL));
 }
 
 
 int ttypc_vt_init(ttypc_t *ttypc, unsigned int ttybuffsz, ttypc_vt_t *vt)
 {
 	libtty_callbacks_t cb = {
-		.arg = vt,
-		.set_baudrate = ttypc_vt_setbaudrate,
-		.set_cflag = ttypc_vt_setcflag,
-		.signal_txready = ttypc_vt_signaltxready
+		.arg            = vt,
+		.set_baudrate   = _ttypc_vt_setbaudrate,
+		.set_cflag      = _ttypc_vt_setcflag,
+		.signal_txready = _ttypc_vt_signaltxready
 	};
 	int err;
 

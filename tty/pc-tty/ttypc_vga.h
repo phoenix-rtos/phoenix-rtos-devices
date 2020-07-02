@@ -160,12 +160,8 @@ extern void _ttypc_vga_rollup(ttypc_vt_t *vt, unsigned int n);
 extern void _ttypc_vga_rolldown(ttypc_vt_t *vt, unsigned int n);
 
 
-/* Scrolls VT screen n lines up */
-extern void _ttypc_vga_scrollup(ttypc_vt_t *vt, unsigned int n);
-
-
-/* Scrolls VT screen n lines down */
-extern void _ttypc_vga_scrolldown(ttypc_vt_t *vt, unsigned int n);
+/* Scrolls VT screen by n lines */
+extern void _ttypc_vga_scroll(ttypc_vt_t *vt, int n);
 
 
 /* Cancels VT screen scrolling */
@@ -184,11 +180,11 @@ extern void _ttypc_vga_setcursor(ttypc_vt_t *vt);
 extern void _ttypc_vga_togglecursor(ttypc_vt_t *vt, uint8_t state);
 
 
-/* Destroys VGA */
+/* Destroys VGA display */
 extern void ttypc_vga_destroy(ttypc_t *ttypc);
 
 
-/* Initializes VGA */
+/* Initializes VGA display */
 extern int ttypc_vga_init(ttypc_t *ttypc);
 
 

@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * AT / PS/2 101-key US keyboard (based on FreeBSD 4.4 pcvt)
+ * PS/2 101-key US keyboard (based on FreeBSD 4.4 pcvt)
  *
  * Copyright 2001, 2007-2008 Pawel Pisarczyk
  * Copyright 2012, 2017, 2019, 2020 Phoenix Systems
@@ -37,7 +37,7 @@ typedef struct {
 
 
 /* U.S 101 keys keyboard map */
-static keymap_t scodes[] = {
+static const keymap_t scodes[] = {
 	/*type       unshift    shift      ctl        altgr      shift_altgr scancode */
 	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 0 unused */
 	{ KB_ASCII,  "\033",    "\033",    "\033",    "",        "" },    /* 1 ESCape */
@@ -166,12 +166,12 @@ static keymap_t scodes[] = {
 	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 124 */
 	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 125 */
 	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 126 */
-	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 127 */
+	{ KB_NONE,   "",        "",        "",        "",        "" }     /* 127 */
 };
 
 
-/* KB_BP (keypad keys) modifiers map */
-static unsigned char kpmod[] = {
+/* KB_KP (keypad keys) modifiers map */
+static const unsigned char kpmod[] = {
 	0, /* 0 no modifiers */
 	5, /* 1 ctl */
 	2, /* 2 shift */
@@ -187,14 +187,14 @@ static unsigned char kpmod[] = {
 	3, /* 12 alt + altgr */
 	7, /* 13 ctl + alt + altgr */
 	4, /* 14 shift + alt + altgr */
-	8, /* 15 ctl + shift + alt + altgr */
+	8  /* 15 ctl + shift + alt + altgr */
 };
 
 
-/* Get key code from keyboard */
+/* Gets key code from keyboard */
 static char *_ttypc_kbd_get(ttypc_t *ttypc)
 {
-	static char *erreboot = "Failed to reboot\n";
+	static const char erreboot[] = "Failed to reboot\n";
 	static unsigned char ext = 0, lkey = 0, lkeyup = 0, lext = 0;
 	unsigned char dt;
 	char *s = NULL;
@@ -411,6 +411,7 @@ static int ttypc_kbd_interrupt(unsigned int n, void *arg)
 static void ttypc_kbd_ctlthr(void *arg)
 {
 	ttypc_t *ttypc = (ttypc_t *)arg;
+	ttypc_vt_t *cvt;
 	char *s, k;
 	char buff[10];
 	unsigned char m;
@@ -422,37 +423,37 @@ static void ttypc_kbd_ctlthr(void *arg)
 			condWait(ttypc->kcond, ttypc->klock, 0);
 
 		mutexLock(ttypc->lock);
-		mutexLock(ttypc->vt->lock);
+		mutexLock((cvt = ttypc->vt)->lock);
 
 		if ((s = _ttypc_kbd_get(ttypc)) == NULL) {
-			mutexUnlock(ttypc->vt->lock);
+			mutexUnlock(cvt->lock);
 			mutexUnlock(ttypc->lock);
 			continue;
 		}
 
 		/* Scroll up one line */
 		if (!strcmp(s, "\033[A") && ((ttypc->lockst & KB_SCROLL) || (ttypc->shiftst == (KB_CTL | KB_SHIFT)))) {
-			_ttypc_vga_scrollup(ttypc->vt, 1);
+			_ttypc_vga_scroll(ttypc->vt, 1);
 		}
 		/* Scroll down one line */
 		else if (!strcmp(s, "\033[B") && ((ttypc->lockst & KB_SCROLL) || (ttypc->shiftst == (KB_CTL | KB_SHIFT)))) {
-			_ttypc_vga_scrolldown(ttypc->vt, 1);
+			_ttypc_vga_scroll(ttypc->vt, -1);
 		}
 		/* Scroll up one page */
 		else if (!strcmp(s, "\033[5~") && ((ttypc->lockst & KB_SCROLL) || (ttypc->shiftst == KB_SHIFT))) {
-			_ttypc_vga_scrollup(ttypc->vt, ttypc->vt->rows);
+			_ttypc_vga_scroll(ttypc->vt, ttypc->vt->rows);
 		}
 		/* Scroll down one page */
 		else if (!strcmp(s, "\033[6~") && ((ttypc->lockst & KB_SCROLL) || (ttypc->shiftst == KB_SHIFT))) {
-			_ttypc_vga_scrolldown(ttypc->vt, ttypc->vt->rows);
+			_ttypc_vga_scroll(ttypc->vt, -ttypc->vt->rows);
 		}
 		/* Scroll to top */
 		else if (!strcmp(s, "\033[H") && ((ttypc->lockst & KB_SCROLL) || (ttypc->shiftst == KB_SHIFT))) {
-			_ttypc_vga_scrollup(ttypc->vt, ttypc->vt->scrbsz - ttypc->vt->scrbpos);
+			_ttypc_vga_scroll(ttypc->vt, ttypc->vt->scrbsz - ttypc->vt->scrbpos);
 		}
 		/* Scroll to bottom */
 		else if (!strcmp(s, "\033[F") && ((ttypc->lockst & KB_SCROLL) || (ttypc->shiftst == KB_SHIFT))) {
-			_ttypc_vga_scrolldown(ttypc->vt, ttypc->vt->scrbpos);
+			_ttypc_vga_scroll(ttypc->vt, -ttypc->vt->scrbpos);
 		}
 		/* Switch between VTs (up to 12) */
 		else if (!strncmp(s, "\033[", 2) && (s[2] >= 'm') && (s[2] <= 'x') && !s[3]) {
@@ -461,10 +462,7 @@ static void ttypc_kbd_ctlthr(void *arg)
 		}
 		/* Regular character processing */
 		else {
-			mutexUnlock(ttypc->vt->lock);
-			mutexUnlock(ttypc->lock);
-
-			/* Process kp/fn keys */
+			/* Process KP/FN keys */
 			if (!strncmp(s, "\033[", 2)) {
 				m = kpmod[ttypc->shiftst & 0x0f];
 
@@ -495,10 +493,9 @@ static void ttypc_kbd_ctlthr(void *arg)
 			}
 
 			while (*s && !libtty_putchar(&ttypc->vt->tty, *s++, NULL));
-			continue;
 		}
 
-		mutexUnlock(ttypc->vt->lock);
+		mutexUnlock(cvt->lock);
 		mutexUnlock(ttypc->lock);
 	}
 }
@@ -547,26 +544,26 @@ static int ttypc_kbd_write(ttypc_t *ttypc, unsigned char byte)
 /* May not work for PS/2 emulation through USB legacy support */
 int _ttypc_kbd_updateled(ttypc_t *ttypc)
 {
-	int err, ret = 0;
+	int ret = 0;
 
 	/* Disable first controller port */
 	outb((void *)((uintptr_t)ttypc->kbd + 4), 0xad);
 
 	do {
 		/* Send update LEDs command */
-		if ((err = ttypc_kbd_write(ttypc, 0xed)) < 0)
+		if (ttypc_kbd_write(ttypc, 0xed) < 0)
 			break;
 
 		/* ACK response */
-		if ((err = ttypc_kbd_read(ttypc)) != 0xfa)
+		if (ttypc_kbd_read(ttypc) != 0xfa)
 			break;
 
 		/* Send LEDs state */
-		if ((err = ttypc_kbd_write(ttypc, (ttypc->lockst >> 4) & 0x07)) < 0)
+		if (ttypc_kbd_write(ttypc, (ttypc->lockst >> 4) & 0x07) < 0)
 			break;
 
 		/* ACK response */
-		if ((err = ttypc_kbd_read(ttypc)) != 0xfa)
+		if (ttypc_kbd_read(ttypc) != 0xfa)
 			break;
 
 		/* Successfully updated LEDs state */
@@ -607,9 +604,10 @@ int ttypc_kbd_init(ttypc_t *ttypc)
 	}
 
 	/* Launch keyboard control thread */
-	if ((err = beginthread(ttypc_kbd_ctlthr, 1, &ttypc->kstack, sizeof(ttypc->kstack), (void *)ttypc)) < 0) {
+	if ((err = beginthread(ttypc_kbd_ctlthr, 1, ttypc->kstack, sizeof(ttypc->kstack), ttypc)) < 0) {
 		resourceDestroy(ttypc->klock);
 		resourceDestroy(ttypc->kcond);
+		resourceDestroy(ttypc->kinth);
 		return err;
 	}
 
@@ -626,7 +624,7 @@ int ttypc_kbd_configure(ttypc_t *ttypc)
 	unsigned int i;
 	int err, ret = 0;
 
-	/* Keyboard base IO-port */
+	/* PS/2 Keyboard base IO-port */
 	ttypc->kbd = (void *)0x60;
 
 	/* Disable controller ports */

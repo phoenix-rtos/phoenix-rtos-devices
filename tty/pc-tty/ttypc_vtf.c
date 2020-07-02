@@ -23,7 +23,7 @@
 
 
 /* Color display SGR attributes */
-static uint8_t csgr[] = {
+static const uint8_t csgr[] = {
 	(BG_BLACK     | FG_LIGHTGREY),            /* Normal */
 	(BG_BLUE      | FG_LIGHTGREY),            /* Bold */
 	(BG_BROWN     | FG_LIGHTGREY),            /* Underline */
@@ -44,7 +44,7 @@ static uint8_t csgr[] = {
 
 
 /* Monochrome display SGR attributes */
-static uint8_t msgr[] = {
+static const uint8_t msgr[] = {
 	(BG_BLACK     | FG_LIGHTGREY),            /* Normal */
 	(BG_BLACK     | FG_UNDERLINE),            /* Bold */
 	(BG_BLACK     | FG_UNDERLINE),            /* Underline */
@@ -75,7 +75,7 @@ enum {
 
 
 /* Foreground ANSI color code to PC conversion table */
-static uint8_t fgansitopc[] = {
+static const uint8_t fgansitopc[] = {
 	FG_BLACK,    /* 0 */
 	FG_RED,      /* 1 */
 	FG_GREEN,    /* 2 */
@@ -88,7 +88,7 @@ static uint8_t fgansitopc[] = {
 
 
 /* Background ANSI color code to PC conversion table */
-static uint8_t bgansitopc[] = {
+static const uint8_t bgansitopc[] = {
 	BG_BLACK,    /* 0 */
 	BG_RED,      /* 1 */
 	BG_GREEN,    /* 2 */
@@ -101,7 +101,7 @@ static uint8_t bgansitopc[] = {
 
 
 /* ASCII character set */
-static uint16_t ascii[] = {
+static const uint16_t ascii[] = {
 	0x20, 0x21, 0x22, 0x23, /* 20 */
 	0x24, 0x25, 0x26, 0x27, /* 24 */
 	0x28, 0x29, 0x2A, 0x2B, /* 28 */
@@ -135,7 +135,7 @@ static uint16_t ascii[] = {
 
 
 /* Supplemental Graphic character set */
-static uint16_t supg[] = {
+static const uint16_t supg[] = {
 	0x20, 0xAD, 0x9B, 0x9C, /* 20 */
 	0x20, 0x9D, 0x20, 0x20, /* 24 */
 	0x20, 0x20, 0xA6, 0xAE, /* 28 */
@@ -286,7 +286,7 @@ void _ttypc_vtf_rc(ttypc_vt_t *vt)
 void _ttypc_vtf_da(ttypc_vt_t *vt)
 {
 	/* 62 - class 2 terminal, c - end of attributes list */
-	static char *da = "\033[62;c";
+	static char da[] = "\033[62;c";
 	write(0, da, sizeof(da));
 }
 
@@ -670,10 +670,10 @@ void _ttypc_vtf_sgr(ttypc_vt_t *vt)
 /* Device status reports */
 void _ttypc_vtf_dsr(ttypc_vt_t *vt)
 {
-	static char *stat  = "\033[0n";     /* Status */
-	static char *print = "\033[?13n";   /* Printer Unattached */
-	static char *udk   = "\033[?21n";   /* UDK Locked */
-	static char *lang  = "\033[?27;1n"; /* North American */
+	static char stat[]  = "\033[0n";     /* Status */
+	static char print[] = "\033[?13n";   /* Printer Unattached */
+	static char udk[]   = "\033[?21n";   /* UDK Locked */
+	static char lang[]  = "\033[?27;1n"; /* North American */
 	char buff[16];
 	int i = 0;
 
@@ -759,7 +759,8 @@ void _ttypc_vtf_stbm(ttypc_vt_t *vt)
 
 
 /* Apply attr to a VGA character */
-static void ttypc_vtf_putattr(uint16_t *ptr, uint16_t attr) {
+static void ttypc_vtf_putattr(uint16_t *ptr, uint16_t attr)
+{
 	uint16_t nattr = attr;
 
 	/* Keep old fg color if it's different than new bg color */
@@ -774,14 +775,16 @@ static void ttypc_vtf_putattr(uint16_t *ptr, uint16_t attr) {
 
 
 /* Apply attr to VGA character buffer */
-static void ttypc_vtf_applyattr(uint16_t *begin, uint16_t *end, uint16_t attr) {
+static void ttypc_vtf_applyattr(uint16_t *begin, uint16_t *end, uint16_t attr)
+{
 	for (; begin < end; begin++)
 		ttypc_vtf_putattr(begin, attr);
 }
 
 
 /* Apply sgr mode globally */
-static void ttypc_vtf_applysgr(ttypc_vt_t *vt, uint8_t sgr) {
+static void ttypc_vtf_applysgr(ttypc_vt_t *vt, uint8_t sgr)
+{
 	vt->sgr = sgr;
 	vt->attr = ((vt->ttypc->color) ? csgr[sgr] : msgr[sgr]) << 8;
 
@@ -797,8 +800,7 @@ static void ttypc_vtf_applysgr(ttypc_vt_t *vt, uint8_t sgr) {
 
 void _ttypc_vtf_setdecpriv(ttypc_vt_t *vt)
 {
-	switch(vt->parms[0])
-	{
+	switch (vt->parms[0]) {
 	case 0:  /* error, ignored */
 	case 1:  /* CKM - cursor key mode */
 		vt->ckm = 1;
@@ -849,8 +851,7 @@ void _ttypc_vtf_setdecpriv(ttypc_vt_t *vt)
 /* Reset dec private modes, esc [ ? x l */
 void _ttypc_vtf_resetdecpriv(ttypc_vt_t *vt)
 {
-	switch(vt->parms[0])
-	{
+	switch (vt->parms[0]) {
 	case 0:  /* error, ignored */
 	case 1:  /* CKM - cursor key mode */
 		vt->ckm = 0;
@@ -900,7 +901,7 @@ void _ttypc_vtf_resetdecpriv(ttypc_vt_t *vt)
 
 void _ttypc_vtf_setansi(ttypc_vt_t *vt)
 {
-	switch(vt->parms[0]) {
+	switch (vt->parms[0]) {
 	case 0:  /* error, ignored */
 	case 1:  /* GATM - guarded area transfer mode */
 	case 2:  /* KAM - keyboard action mode */
@@ -970,7 +971,7 @@ void _ttypc_vtf_resetansi(ttypc_vt_t *vt)
 
 void _ttypc_vtf_reqtparm(ttypc_vt_t *vt)
 {
-	static char *tparm = "\033[3;1;1;120;120;1;0x";
+	static char tparm[] = "\033[3;1;1;120;120;1;0x";
 	write(0, tparm, sizeof(tparm));
 }
 

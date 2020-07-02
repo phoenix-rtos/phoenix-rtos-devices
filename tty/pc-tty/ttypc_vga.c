@@ -25,7 +25,7 @@
 #include "ttypc_vga.h"
 
 
-/* Reads from CRTC register */
+/* Reads CRTC registers */
 static uint16_t ttypc_vga_readreg(ttypc_t *ttypc, uint8_t reg)
 {
 	uint16_t val;
@@ -39,7 +39,7 @@ static uint16_t ttypc_vga_readreg(ttypc_t *ttypc, uint8_t reg)
 }
 
 
-/* Writes to CRTC register */
+/* Writes to CRTC registers */
 static void ttypc_vga_writereg(ttypc_t *ttypc, uint8_t reg, uint16_t val)
 {
 	outb(ttypc->crtc, reg);
@@ -69,31 +69,40 @@ void _ttypc_vga_switch(ttypc_vt_t *vt)
 
 	/* VGA memory -> VT memory */
 	memcpy(cvt->mem, cvt->vram, cvt->rows * cvt->cols * CHR_VGA);
-	cvt->vram = vt->mem;
+	cvt->vram = cvt->mem;
 
-	/* VT memory -> VGA memory */
 	mutexLock(vt->lock);
+	/* VT memory -> VGA memory */
 	vt->vram = ttypc->vga;
 	memcpy(vt->vram, vt->mem, vt->rows * vt->cols * CHR_VGA);
+	/* Set cursor position... */
+	_ttypc_vga_setcursor(vt);
+	/* ... and visibility */
+	_ttypc_vga_togglecursor(vt, vt->cst);
 	mutexUnlock(vt->lock);
 
 	/* Set active VT */
 	ttypc->vt = vt;
-	_ttypc_vga_setcursor(ttypc->vt);
 }
 
 
-void _ttypc_vga_rollup(ttypc_vt_t *vt, unsigned int n)
+static void _ttypc_vga_allocscrollback(ttypc_vt_t *vt, unsigned int n)
 {
-	/* Update scrollback buffer */
 	if (vt->scrbsz + n > vt->rows * SCRB_PAGES) {
-		/* Make space for n new lines */
+		/* Make space for n new lines by (lose n oldest saved lines) */
 		memmove(vt->scrb, vt->scrb + (vt->rows * SCRB_PAGES + 1 - vt->scrbsz) * vt->cols, (2 * vt->scrbsz - vt->rows * SCRB_PAGES - 1) * vt->cols * CHR_VGA);
 		vt->scrbsz = vt->rows * SCRB_PAGES;
 	}
 	else {
 		vt->scrbsz += n;
 	}
+}
+
+
+void _ttypc_vga_rollup(ttypc_vt_t *vt, unsigned int n)
+{
+	/* Update scrollback buffer */
+	_ttypc_vga_allocscrollback(vt, n);
 	memcpy(vt->scrb + (vt->scrbsz - n) * vt->cols, vt->vram + vt->top * vt->cols, n * vt->cols * CHR_VGA);
 
 	/* Roll up */
@@ -118,26 +127,17 @@ void _ttypc_vga_rolldown(ttypc_vt_t *vt, unsigned int n)
 	}
 
 	/* Update scrollback buffer */
-	if (vt->scrbsz + n > vt->rows * SCRB_PAGES) {
-		/* Make space for n new lines */
-		memmove(vt->scrb, vt->scrb + (vt->rows * SCRB_PAGES + 1 - vt->scrbsz) * vt->cols, (2 * vt->scrbsz - vt->rows * SCRB_PAGES - 1) * vt->cols * CHR_VGA);
-		vt->scrbsz = vt->rows * SCRB_PAGES;
-	}
-	else {
-		vt->scrbsz += n;
-	}
+	_ttypc_vga_allocscrollback(vt, n);
 	memsetw(vt->scrb + (vt->scrbsz - n) * vt->cols, vt->attr | ' ', n * vt->cols);
 }
 
 
-void _ttypc_vga_scrollup(ttypc_vt_t *vt, unsigned int n)
+void _ttypc_vga_scroll(ttypc_vt_t *vt, int n)
 {
-	/* Clip n */
-	if (n > vt->scrbsz - vt->scrbpos) {
-		if (!(vt->scrbsz - vt->scrbpos))
-			return;
+	if (n > vt->scrbsz - vt->scrbpos)
 		n = vt->scrbsz - vt->scrbpos;
-	}
+	else if (n < -vt->scrbpos)
+		n = -vt->scrbpos;
 
 	if (!n)
 		return;
@@ -163,35 +163,6 @@ void _ttypc_vga_scrollup(ttypc_vt_t *vt, unsigned int n)
 }
 
 
-void _ttypc_vga_scrolldown(ttypc_vt_t *vt, unsigned int n)
-{
-	/* Clip n */
-	if (n > vt->scrbpos) {
-		if (!vt->scrbpos)
-			return;
-		n = vt->scrbpos;
-	}
-
-	if (!n)
-		return;
-
-	/* Copy scrollback */
-	vt->scrbpos -= n;
-	memcpy(vt->vram, vt->scrb + (vt->scrbsz - vt->scrbpos) * vt->cols, min(vt->scrbpos, vt->rows) * vt->cols * CHR_VGA);
-
-	/* Copy scroll origin */
-	if (vt->scrbpos < vt->rows)
-		memcpy(vt->vram + vt->scrbpos * vt->cols, vt->scro, (vt->rows - vt->scrbpos) * vt->cols * CHR_VGA);
-
-	/* Update cursor */
-	vt->cpos -= n * vt->cols;
-	vt->crow -= n;
-
-	if (vt == vt->ttypc->vt)
-		_ttypc_vga_setcursor(vt);
-}
-
-
 void _ttypc_vga_scrollcancel(ttypc_vt_t *vt)
 {
 	if (!vt->scrbpos)
@@ -200,7 +171,7 @@ void _ttypc_vga_scrollcancel(ttypc_vt_t *vt)
 	/* Restore scroll origin */
 	memcpy(vt->vram, vt->scro, vt->rows * vt->cols * CHR_VGA);
 
-	/* Restore cursor position... */
+	/* Restore cursor position */
 	vt->cpos -= vt->scrbpos * vt->cols;
 	vt->crow -= vt->scrbpos;
 	vt->scrbpos = 0;

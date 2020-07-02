@@ -1,7 +1,7 @@
 /* 
  * Phoenix-RTOS
  *
- * AT / PS/2 101-key US keyboard (based on FreeBSD 4.4 pcvt)
+ * PS/2 101-key US keyboard (based on FreeBSD 4.4 pcvt)
  *
  * Copyright 2001, 2006 Pawel Pisarczyk
  * Copyright 2012, 2019, 2020 Phoenix Systems
