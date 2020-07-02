@@ -64,7 +64,7 @@ typedef struct {
 	ttypc_t *ttypc;          /* Parent ttypc_t object */
 
 	/* Screen */
-	uint16_t *vram;          /* Screen buffer address (if VT is active ttypc->vga, mem otherwise) */
+	uint16_t *vram;          /* Screen buffer address (if VT is active points to ttypc->vga, mem otherwise) */
 	uint16_t *mem;           /* Screen memory buffer */
 	uint8_t rows;            /* Screen height - number of rows */
 	uint8_t cols;            /* Screen width - number of columns */
@@ -86,13 +86,13 @@ typedef struct {
 
 	/* Character sets */
 	uint8_t ss;              /* Single shift G2 / G3 -> GL */
-	uint16_t **Gs;           /* G2/G3 conversion table */
-	uint16_t **GL;           /* GL conversion table */
-	uint16_t **GR;           /* GR conversion table */
-	uint16_t *G0;            /* G0 conversion table */
-	uint16_t *G1;            /* G1 conversion table */
-	uint16_t *G2;            /* G2 conversion table */
-	uint16_t *G3;            /* G3 conversion table */
+	const uint16_t **Gs;     /* G2/G3 conversion table */
+	const uint16_t **GL;     /* GL conversion table */
+	const uint16_t **GR;     /* GR conversion table */
+	const uint16_t *G0;      /* G0 conversion table */
+	const uint16_t *G1;      /* G1 conversion table */
+	const uint16_t *G2;      /* G2 conversion table */
+	const uint16_t *G3;      /* G3 conversion table */
 
 	/* VT100 modes */
 	uint8_t awm;             /* Auto Wrap Mode */
@@ -113,12 +113,12 @@ typedef struct {
 	uint16_t scccol;         /* Saved cursor horitzontal position */
 	uint16_t sccrow;         /* Saved cursor vertical position */
 	uint16_t sccpos;         /* Saved cursor position offset */
-	uint16_t *scG0;          /* Saved G0 conversion table */
-	uint16_t *scG1;          /* Saved G1 conversion table */
-	uint16_t *scG2;          /* Saved G2 conversion table */
-	uint16_t *scG3;          /* Saved G3 conversion table */
-	uint16_t **scGL;         /* Saved GL conversion table */
-	uint16_t **scGR;         /* Saved GR conversion table */
+	const uint16_t *scG0;    /* Saved G0 conversion table */
+	const uint16_t *scG1;    /* Saved G1 conversion table */
+	const uint16_t *scG2;    /* Saved G2 conversion table */
+	const uint16_t *scG3;    /* Saved G3 conversion table */
+	const uint16_t **scGL;   /* Saved GL conversion table */
+	const uint16_t **scGR;   /* Saved GR conversion table */
 
 	/* Character processing */
 	uint16_t attr;           /* Current character attributes */
@@ -139,15 +139,15 @@ typedef struct {
 #include "ttypc.h"
 
 
-/* Read characters from virtual terminal */
+/* Reads characters from virtual terminal */
 extern ssize_t ttypc_vt_read(ttypc_vt_t *vt, int mode, char *buff, size_t len);
 
 
 /* Write characters to virtual terminal */
-extern ssize_t ttypc_vt_write(ttypc_vt_t *vt, int mode, char *buff, size_t len);
+extern ssize_t ttypc_vt_write(ttypc_vt_t *vt, int mode, const char *buff, size_t len);
 
 
-/* Virtual terminal poll status */
+/* Polls virtual terminal status */
 extern int ttypc_vt_pollstatus(ttypc_vt_t *vt);
 
 
@@ -155,11 +155,11 @@ extern int ttypc_vt_pollstatus(ttypc_vt_t *vt);
 extern int ttypc_vt_ioctl(ttypc_vt_t *vt, pid_t pid, unsigned int cmd, const void *idata, const void **odata);
 
 
-/* Destroy virtual terminal */
+/* Destroys virtual terminal */
 extern void ttypc_vt_destroy(ttypc_vt_t *vt);
 
 
-/* Initialize virtual terminal */
+/* Initializes virtual terminal */
 extern int ttypc_vt_init(ttypc_t *ttypc, unsigned int ttybuffsz, ttypc_vt_t *vt);
 
 

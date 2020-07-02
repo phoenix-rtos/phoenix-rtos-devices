@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * PC 101-key BIOS keyboard
+ * 101-key US BIOS keyboard
  *
  * Copyright 2020 Phoenix Systems
  * Author: Lukasz Kosinski
@@ -27,6 +27,7 @@
 static void ttypc_bioskbd_ctlthr(void *arg)
 {
 	ttypc_t *ttypc = (ttypc_t *)arg;
+	ttypc_vt_t *cvt;
 	uint16_t head;
 
 	for (;;) {
@@ -34,9 +35,15 @@ static void ttypc_bioskbd_ctlthr(void *arg)
 		while ((head = *(uint16_t *)((uintptr_t)ttypc->kbd + 0x41a)) == *(uint16_t *)((uintptr_t)ttypc->kbd + 0x41c))
 			usleep(1000);
 
+		mutexLock(ttypc->lock);
+		mutexLock((cvt = ttypc->vt)->lock);
+
 		/* Add the keystroke and update head position */
 		libtty_putchar(&ttypc->vt->tty, *(unsigned char *)((uintptr_t)ttypc->kbd + 0x400 + head), NULL);
 		*(uint16_t *)((uintptr_t)ttypc->kbd + 0x41a) = 0x1e + (head - 0x1e + 2) % 32;
+
+		mutexUnlock(cvt->lock);
+		mutexUnlock(ttypc->lock);
 	}
 }
 
@@ -61,7 +68,7 @@ int ttypc_bioskbd_init(ttypc_t *ttypc)
 		return -ENOMEM;
 
 	/* Launch keyboard control thread */
-	if ((err = beginthread(ttypc_bioskbd_ctlthr, 1, &ttypc->kstack, sizeof(ttypc->kstack), (void *)ttypc)) < 0)
+	if ((err = beginthread(ttypc_bioskbd_ctlthr, 1, ttypc->kstack, sizeof(ttypc->kstack), ttypc)) < 0)
 		return err;
 
 	return EOK;
