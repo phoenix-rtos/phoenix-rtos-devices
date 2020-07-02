@@ -86,12 +86,21 @@ void _ttypc_vga_switch(ttypc_vt_t *vt)
 }
 
 
+/* Returns scrollback capacity in lines */
+static unsigned int _ttypc_vga_scrollbackcapacity(ttypc_vt_t *vt)
+{
+	return (SCRB_PAGES * _PAGE_SIZE) / (vt->cols * CHR_VGA);
+}
+
+
+/* Makes space for n new lines in the scrollback buffer */
 static void _ttypc_vga_allocscrollback(ttypc_vt_t *vt, unsigned int n)
 {
-	if (vt->scrbsz + n > vt->rows * SCRB_PAGES) {
-		/* Make space for n new lines by (lose n oldest saved lines) */
-		memmove(vt->scrb, vt->scrb + (vt->rows * SCRB_PAGES + 1 - vt->scrbsz) * vt->cols, (2 * vt->scrbsz - vt->rows * SCRB_PAGES - 1) * vt->cols * CHR_VGA);
-		vt->scrbsz = vt->rows * SCRB_PAGES;
+	unsigned int scrbcap = _ttypc_vga_scrollbackcapacity(vt);
+
+	if (vt->scrbsz + n > scrbcap) {
+		memmove(vt->scrb, vt->scrb + (vt->scrbsz + n - scrbcap) * vt->cols, (scrbcap - n) * vt->cols * CHR_VGA);
+		vt->scrbsz = scrbcap;
 	}
 	else {
 		vt->scrbsz += n;
@@ -101,13 +110,17 @@ static void _ttypc_vga_allocscrollback(ttypc_vt_t *vt, unsigned int n)
 
 void _ttypc_vga_rollup(ttypc_vt_t *vt, unsigned int n)
 {
+	unsigned int k = min(n, _ttypc_vga_scrollbackcapacity(vt));
+
 	/* Update scrollback buffer */
-	_ttypc_vga_allocscrollback(vt, n);
-	memcpy(vt->scrb + (vt->scrbsz - n) * vt->cols, vt->vram + vt->top * vt->cols, n * vt->cols * CHR_VGA);
+	_ttypc_vga_allocscrollback(vt, k);
+	memcpy(vt->scrb + (vt->scrbsz - k) * vt->cols, vt->vram + (vt->top + n - k) * vt->cols, k * vt->cols * CHR_VGA);
 
 	/* Roll up */
-	memmove(vt->vram + vt->top * vt->cols, vt->vram + (vt->top + n) * vt->cols, (vt->bottom - vt->top - n + 1) * vt->cols * CHR_VGA);
-	memsetw(vt->vram + (vt->bottom - n + 1) * vt->cols, vt->attr | ' ', n * vt->cols);
+	if (n < vt->bottom - vt->top) {
+		memmove(vt->vram + vt->top * vt->cols, vt->vram + (vt->top + n) * vt->cols, (vt->bottom - vt->top + 1 - n) * vt->cols * CHR_VGA);
+		memsetw(vt->vram + (vt->bottom + 1 - n) * vt->cols, vt->attr | ' ', n * vt->cols);
+	}
 }
 
 
@@ -118,17 +131,18 @@ void _ttypc_vga_rolldown(ttypc_vt_t *vt, unsigned int n)
 	/* Roll down */
 	if (vt->bottom > vt->crow) {
 		k = min(n, vt->bottom - vt->crow);
-		memmove(vt->vram + (vt->top + k) * vt->cols, vt->vram + vt->top * vt->cols, (vt->bottom - vt->top - k + 1) * vt->cols * CHR_VGA);
+		memmove(vt->vram + (vt->top + k) * vt->cols, vt->vram + vt->top * vt->cols, (vt->bottom - vt->top + 1 - k) * vt->cols * CHR_VGA);
 		memsetw(vt->vram + vt->top * vt->cols, vt->attr | ' ', k * vt->cols);
 
 		if (n == k)
 			return;
 		n -= k;
 	}
+	k = min(n, _ttypc_vga_scrollbackcapacity(vt));
 
-	/* Update scrollback buffer */
-	_ttypc_vga_allocscrollback(vt, n);
-	memsetw(vt->scrb + (vt->scrbsz - n) * vt->cols, vt->attr | ' ', n * vt->cols);
+	/* Update scrollback buffer */	
+	_ttypc_vga_allocscrollback(vt, k);
+	memsetw(vt->scrb + (vt->scrbsz - k) * vt->cols, vt->attr | ' ', k * vt->cols);
 }
 
 
@@ -142,6 +156,10 @@ void _ttypc_vga_scroll(ttypc_vt_t *vt, int n)
 	if (!n)
 		return;
 
+	/* Update cursor position */
+	vt->cpos += n * vt->cols;
+	vt->crow += n;
+
 	/* Save scroll origin */
 	if (!vt->scrbpos)
 		memcpy(vt->scro, vt->vram, vt->rows * vt->cols * CHR_VGA);
@@ -151,15 +169,19 @@ void _ttypc_vga_scroll(ttypc_vt_t *vt, int n)
 	memcpy(vt->vram, vt->scrb + (vt->scrbsz - vt->scrbpos) * vt->cols, min(vt->scrbpos, vt->rows) * vt->cols * CHR_VGA);
 
 	/* Copy scroll origin */
-	if (vt->scrbpos < vt->rows)
+	if (vt->scrbpos < vt->rows) {
 		memcpy(vt->vram + vt->scrbpos * vt->cols, vt->scro, (vt->rows - vt->scrbpos) * vt->cols * CHR_VGA);
 
-	/* Update cursor */
-	vt->cpos += n * vt->cols;
-	vt->crow += n;
-
-	if (vt == vt->ttypc->vt)
-		_ttypc_vga_setcursor(vt);
+		if ((vt == vt->ttypc->vt) && vt->cst) {
+			/* Show cursor */
+			_ttypc_vga_setcursor(vt);
+			_ttypc_vga_togglecursor(vt, 1);
+		}
+	}
+	else {
+		/* Hide cursor */
+		_ttypc_vga_togglecursor(vt, 0);
+	}
 }
 
 
@@ -171,13 +193,16 @@ void _ttypc_vga_scrollcancel(ttypc_vt_t *vt)
 	/* Restore scroll origin */
 	memcpy(vt->vram, vt->scro, vt->rows * vt->cols * CHR_VGA);
 
-	/* Restore cursor position */
+	/* Restore cursor position... */
 	vt->cpos -= vt->scrbpos * vt->cols;
 	vt->crow -= vt->scrbpos;
-	vt->scrbpos = 0;
-
-	if (vt == vt->ttypc->vt)
+	/* ... and visibility */
+	if ((vt == vt->ttypc->vt) && vt->cst) {
 		_ttypc_vga_setcursor(vt);
+		_ttypc_vga_togglecursor(vt, 1);
+	}
+	
+	vt->scrbpos = 0;
 }
 
 
