@@ -1,4 +1,4 @@
-/* 
+/*
  * Phoenix-RTOS
  *
  * Virtual Terminal Functions

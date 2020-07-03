@@ -1,4 +1,4 @@
-/* 
+/*
  * Phoenix-RTOS
  *
  * Terminal emulator using VGA display and 101-key US keyboard (based on FreeBSD 4.4 pcvt)
@@ -53,11 +53,11 @@ struct _ttypc_t {
 
 	/* VGA */
 	unsigned color;        /* Color support */
-	void *vga;             /* VGA screen memory */
+	volatile void *vga;    /* VGA screen memory */
 	void *crtc;            /* Video Display Controller (CRTC) */
 
 	/* KBD */
-	void *kbd;             /* Keyboard controller */
+	volatile void *kbd;    /* Keyboard controller */
 	unsigned char ktype;   /* Keyboard type */
 	unsigned char lockst;  /* Lock keys state */
 	unsigned char shiftst; /* Shift keys state */

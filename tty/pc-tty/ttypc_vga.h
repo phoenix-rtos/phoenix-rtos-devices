@@ -1,4 +1,4 @@
-/* 
+/*
  * Phoenix-RTOS
  *
  * VGA display
@@ -14,6 +14,8 @@
 
 #ifndef _TTYPC_VGA_H_
 #define _TTYPC_VGA_H_
+
+#include <stdint.h>
 
 #include "ttypc_vt.h"
 
@@ -146,6 +148,22 @@ enum {
 	CURT_NONE        = (CUR_DEFH + 1),
 	CURT_DEF         = CURT_UNDERLINE
 };
+
+
+/* Copies VGA screen buffer to buff */
+extern ssize_t _ttypc_vga_read(volatile uint16_t *vga, uint16_t *buff, size_t n);
+
+
+/* Copies buff to VGA screen buffer */
+extern ssize_t _ttypc_vga_write(volatile uint16_t *vga, uint16_t *buff, size_t n);
+
+
+/* Sets VGA screen buffer characters to val */
+extern volatile uint16_t *_ttypc_vga_set(volatile uint16_t *vga, uint16_t val, size_t n);
+
+
+/* Moves VGA screen memory */
+extern volatile uint16_t *_ttypc_vga_move(volatile uint16_t *dvga, volatile uint16_t *svga, size_t n);
 
 
 /* Switches to another VT */

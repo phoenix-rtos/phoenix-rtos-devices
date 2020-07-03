@@ -1,4 +1,4 @@
-/* 
+/*
  * Phoenix-RTOS
  *
  * Virtual Terminal (based on FreeBSD 4.4 pcvt)
@@ -64,7 +64,7 @@ typedef struct {
 	ttypc_t *ttypc;          /* Parent ttypc_t object */
 
 	/* Screen */
-	uint16_t *vram;          /* Screen buffer address (if VT is active points to ttypc->vga, mem otherwise) */
+	volatile uint16_t *vram; /* Screen buffer address (if VT is active points to ttypc->vga, mem otherwise) */
 	uint16_t *mem;           /* Screen memory buffer */
 	uint8_t rows;            /* Screen height - number of rows */
 	uint8_t cols;            /* Screen width - number of columns */
@@ -135,7 +135,7 @@ typedef struct {
 } ttypc_vt_t;
 
 
-/* Include ttypc.h after ttypc_vt_t definition (ttypc_t requires complete ttypc_vt_t definition) */ 
+/* Include ttypc.h after ttypc_vt_t definition (ttypc_t requires complete ttypc_vt_t definition) */
 #include "ttypc.h"
 
 

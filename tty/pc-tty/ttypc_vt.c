@@ -1,4 +1,4 @@
-/* 
+/*
  * Phoenix-RTOS
  *
  * Virtual Terminal (based on FreeBSD 4.4 pcvt)
@@ -122,7 +122,7 @@ static int _ttypc_vt_sput(ttypc_vt_t *vt, char c)
 			vt->escst = ESC_INIT;
 			_ttypc_vtf_clrparms(vt);
 			break;
-		
+
 		case 0x19: /* EM */
 			break;
 
@@ -157,7 +157,7 @@ static int _ttypc_vt_sput(ttypc_vt_t *vt, char c)
 
 			/* InseRt Mode */
 			if (vt->irm)
-				memmove(vt->vram + vt->cpos + 1, vt->vram + vt->cpos, (vt->cols - 1 - vt->ccol) * CHR_VGA);
+				_ttypc_vga_move(vt->vram + vt->cpos + 1, vt->vram + vt->cpos, vt->cols - vt->ccol - 1);
 
 			_ttypc_vt_sdraw(vt, c);
 
@@ -328,7 +328,7 @@ static int _ttypc_vt_sput(ttypc_vt_t *vt, char c)
 		case ESC_BLANK: /* ESC space */
 			vt->escst = ESC_INIT;
 			break;
-		
+
 		case ESC_HASH:
 			switch (c) {
 			case '3':   /* Double height top half */
@@ -726,7 +726,7 @@ int ttypc_vt_init(ttypc_t *ttypc, unsigned int ttybuffsz, ttypc_vt_t *vt)
 	_ttypc_vtf_str(vt);
 
 	/* Clear screen */
-	memsetw(vt->vram, vt->attr | ' ', vt->cols * vt->rows);
+	_ttypc_vga_set(vt->vram, vt->attr | ' ', vt->cols * vt->rows);
 
 	return EOK;
 }
