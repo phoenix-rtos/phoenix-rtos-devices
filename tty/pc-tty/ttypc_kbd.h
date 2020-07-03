@@ -1,4 +1,4 @@
-/* 
+/*
  * Phoenix-RTOS
  *
  * PS/2 101-key US keyboard (based on FreeBSD 4.4 pcvt)

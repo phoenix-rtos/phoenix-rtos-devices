@@ -13,7 +13,6 @@
 
 #include <errno.h>
 #include <stdint.h>
-#include <string.h>
 #include <unistd.h>
 
 #include <sys/mman.h>
@@ -56,7 +55,7 @@ int _ttypc_bioskbd_updateled(ttypc_t *ttypc)
 
 void ttypc_bioskbd_destroy(ttypc_t *ttypc)
 {
-	munmap(ttypc->kbd, _PAGE_SIZE);
+	munmap((void *)ttypc->kbd, _PAGE_SIZE);
 }
 
 

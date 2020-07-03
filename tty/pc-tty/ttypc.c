@@ -134,7 +134,7 @@ int main(void)
 	/* Initialize cursor */
 	_ttypc_vga_getcursor(ttypc_common.vt);
 	/* Set default cursor color */
-	memsetw(ttypc_common.vt->vram + ttypc_common.vt->cpos, FG_LIGHTGREY << 8, ttypc_common.vt->rows * ttypc_common.vt->cols - ttypc_common.vt->cpos);
+	_ttypc_vga_set(ttypc_common.vt->vram + ttypc_common.vt->cpos, FG_LIGHTGREY << 8, ttypc_common.vt->rows * ttypc_common.vt->cols - ttypc_common.vt->cpos);
 
 	/* Initialize keyboard */
 	if (ttypc_kbd_configure(&ttypc_common)) {

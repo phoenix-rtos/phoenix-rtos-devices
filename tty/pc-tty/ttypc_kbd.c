@@ -199,7 +199,7 @@ static char *_ttypc_kbd_get(ttypc_t *ttypc)
 	unsigned char dt;
 	char *s = NULL;
 
-	dt = inb(ttypc->kbd);
+	dt = inb((void *)ttypc->kbd);
 
 	/* Extended scan code key pressed/released */
 	if (scodes[dt & 0x7f].type == KB_EXT) {
@@ -523,7 +523,7 @@ static int ttypc_kbd_read(ttypc_t *ttypc)
 	if ((err = ttypc_kbd_waitstatus(ttypc, 0, 1)) < 0)
 		return err;
 
-	return inb(ttypc->kbd);
+	return inb((void *)ttypc->kbd);
 }
 
 
@@ -535,7 +535,7 @@ static int ttypc_kbd_write(ttypc_t *ttypc, unsigned char byte)
 	/* Wait for input buffer to be empty */
 	if ((err = ttypc_kbd_waitstatus(ttypc, 1, 0)) < 0)
 		return err;
-	outb(ttypc->kbd, byte);
+	outb((void *)ttypc->kbd, byte);
 
 	return EOK;
 }
@@ -612,7 +612,7 @@ int ttypc_kbd_init(ttypc_t *ttypc)
 	}
 
 	/* Read byte from controller (reset is neccessary) */
-	inb(ttypc->kbd);
+	inb((void *)ttypc->kbd);
 
 	return EOK;
 }
@@ -635,7 +635,7 @@ int ttypc_kbd_configure(ttypc_t *ttypc)
 		/* Flush output buffer (max 32 characters) */
 		for (i = 0; i < 32; i++) {
 			if (inb((void *)((uintptr_t)ttypc->kbd + 4)) & 1)
-				inb(ttypc->kbd);
+				inb((void *)ttypc->kbd);
 			else
 				break;
 		}

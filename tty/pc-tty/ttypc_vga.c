@@ -1,4 +1,4 @@
-/* 
+/*
  * Phoenix-RTOS
  *
  * VGA display
@@ -13,7 +13,6 @@
  */
 
 #include <errno.h>
-#include <stdint.h>
 #include <string.h>
 
 #include <sys/io.h>
@@ -26,7 +25,7 @@
 
 
 /* Reads CRTC registers */
-static uint16_t ttypc_vga_readreg(ttypc_t *ttypc, uint8_t reg)
+static uint16_t _ttypc_vga_readreg(ttypc_t *ttypc, uint8_t reg)
 {
 	uint16_t val;
 
@@ -40,7 +39,7 @@ static uint16_t ttypc_vga_readreg(ttypc_t *ttypc, uint8_t reg)
 
 
 /* Writes to CRTC registers */
-static void ttypc_vga_writereg(ttypc_t *ttypc, uint8_t reg, uint16_t val)
+static void _ttypc_vga_writereg(ttypc_t *ttypc, uint8_t reg, uint16_t val)
 {
 	outb(ttypc->crtc, reg);
 	outb(ttypc->crtc + 1, (val >> 8) & 0xff);
@@ -50,12 +49,62 @@ static void ttypc_vga_writereg(ttypc_t *ttypc, uint8_t reg, uint16_t val)
 
 
 /* Sets cursor type */
-static void _ttypc_vga_setcurt(ttypc_t *ttypc, uint8_t from, uint8_t to)
+static void _ttypc_vga_setctype(ttypc_t *ttypc, uint8_t from, uint8_t to)
 {
-	uint16_t ctype = ttypc_vga_readreg(ttypc, CRTC_CURSTART);
+	uint16_t ctype = _ttypc_vga_readreg(ttypc, CRTC_CURSTART);
 
 	ctype = (ctype & 0xc0e0) | ((uint16_t)from << 8 | to);
-	ttypc_vga_writereg(ttypc, CRTC_CURSTART, ctype);
+	_ttypc_vga_writereg(ttypc, CRTC_CURSTART, ctype);
+}
+
+
+ssize_t _ttypc_vga_read(volatile uint16_t *vga, uint16_t *buff, size_t n)
+{
+	size_t i;
+
+	for (i = 0; i < n; i++)
+		*(buff + i) = *(vga + i);
+
+	return n;
+}
+
+
+ssize_t _ttypc_vga_write(volatile uint16_t *vga, uint16_t *buff, size_t n)
+{
+	size_t i;
+
+	for (i = 0; i < n; i++)
+		*(vga + i) = *(buff + i);
+
+	return n;
+}
+
+
+volatile uint16_t *_ttypc_vga_set(volatile uint16_t *vga, uint16_t val, size_t n)
+{
+	size_t i;
+
+	for (i = 0; i < n; i++)
+		*(vga + i) = val;
+	
+	return vga;
+}
+
+
+volatile uint16_t *_ttypc_vga_move(volatile uint16_t *dvga, volatile uint16_t *svga, size_t n)
+{
+	size_t i;
+
+	if (dvga < svga) {
+		for (i = 0; i < n; i++)
+			dvga[i] = svga[i];
+	}
+	else {
+		for (i = n; i--; )
+			dvga[i] = svga[i];
+	}
+
+	return dvga;
 }
 
 
@@ -68,13 +117,13 @@ void _ttypc_vga_switch(ttypc_vt_t *vt)
 		return;
 
 	/* VGA memory -> VT memory */
-	memcpy(cvt->mem, cvt->vram, cvt->rows * cvt->cols * CHR_VGA);
+	_ttypc_vga_read(cvt->vram, cvt->mem, cvt->rows * cvt->cols);
 	cvt->vram = cvt->mem;
 
 	mutexLock(vt->lock);
 	/* VT memory -> VGA memory */
 	vt->vram = ttypc->vga;
-	memcpy(vt->vram, vt->mem, vt->rows * vt->cols * CHR_VGA);
+	_ttypc_vga_write(vt->vram, vt->mem, vt->rows * vt->cols);
 	/* Set cursor position... */
 	_ttypc_vga_setcursor(vt);
 	/* ... and visibility */
@@ -114,12 +163,12 @@ void _ttypc_vga_rollup(ttypc_vt_t *vt, unsigned int n)
 
 	/* Update scrollback buffer */
 	_ttypc_vga_allocscrollback(vt, k);
-	memcpy(vt->scrb + (vt->scrbsz - k) * vt->cols, vt->vram + (vt->top + n - k) * vt->cols, k * vt->cols * CHR_VGA);
+	_ttypc_vga_read(vt->vram + (vt->top + n - k) * vt->cols, vt->scrb + (vt->scrbsz - k) * vt->cols, k * vt->cols);
 
 	/* Roll up */
 	if (n < vt->bottom - vt->top) {
-		memmove(vt->vram + vt->top * vt->cols, vt->vram + (vt->top + n) * vt->cols, (vt->bottom - vt->top + 1 - n) * vt->cols * CHR_VGA);
-		memsetw(vt->vram + (vt->bottom + 1 - n) * vt->cols, vt->attr | ' ', n * vt->cols);
+		_ttypc_vga_move(vt->vram + vt->top * vt->cols, vt->vram + (vt->top + n) * vt->cols, (vt->bottom - vt->top + 1 - n) * vt->cols);
+		_ttypc_vga_set(vt->vram + (vt->bottom + 1 - n) * vt->cols, vt->attr | ' ', n * vt->cols);
 	}
 }
 
@@ -131,8 +180,8 @@ void _ttypc_vga_rolldown(ttypc_vt_t *vt, unsigned int n)
 	/* Roll down */
 	if (vt->bottom > vt->crow) {
 		k = min(n, vt->bottom - vt->crow);
-		memmove(vt->vram + (vt->top + k) * vt->cols, vt->vram + vt->top * vt->cols, (vt->bottom - vt->top + 1 - k) * vt->cols * CHR_VGA);
-		memsetw(vt->vram + vt->top * vt->cols, vt->attr | ' ', k * vt->cols);
+		_ttypc_vga_move(vt->vram + (vt->top + k) * vt->cols, vt->vram + vt->top * vt->cols, (vt->bottom - vt->top + 1 - k) * vt->cols);
+		_ttypc_vga_set(vt->vram + vt->top * vt->cols, vt->attr | ' ', k * vt->cols);
 
 		if (n == k)
 			return;
@@ -162,15 +211,15 @@ void _ttypc_vga_scroll(ttypc_vt_t *vt, int n)
 
 	/* Save scroll origin */
 	if (!vt->scrbpos)
-		memcpy(vt->scro, vt->vram, vt->rows * vt->cols * CHR_VGA);
+		_ttypc_vga_read(vt->vram, vt->scro, vt->rows * vt->cols);
 
 	/* Copy scrollback */
 	vt->scrbpos += n;
-	memcpy(vt->vram, vt->scrb + (vt->scrbsz - vt->scrbpos) * vt->cols, min(vt->scrbpos, vt->rows) * vt->cols * CHR_VGA);
+	_ttypc_vga_write(vt->vram, vt->scrb + (vt->scrbsz - vt->scrbpos) * vt->cols, min(vt->scrbpos, vt->rows) * vt->cols);
 
 	/* Copy scroll origin */
 	if (vt->scrbpos < vt->rows) {
-		memcpy(vt->vram + vt->scrbpos * vt->cols, vt->scro, (vt->rows - vt->scrbpos) * vt->cols * CHR_VGA);
+		_ttypc_vga_write(vt->vram + vt->scrbpos * vt->cols, vt->scro, (vt->rows - vt->scrbpos) * vt->cols);
 
 		if ((vt == vt->ttypc->vt) && vt->cst) {
 			/* Show cursor */
@@ -191,7 +240,7 @@ void _ttypc_vga_scrollcancel(ttypc_vt_t *vt)
 		return;
 
 	/* Restore scroll origin */
-	memcpy(vt->vram, vt->scro, vt->rows * vt->cols * CHR_VGA);
+	_ttypc_vga_write(vt->vram, vt->scro, vt->rows * vt->cols);
 
 	/* Restore cursor position... */
 	vt->cpos -= vt->scrbpos * vt->cols;
@@ -208,7 +257,7 @@ void _ttypc_vga_scrollcancel(ttypc_vt_t *vt)
 
 void _ttypc_vga_getcursor(ttypc_vt_t *vt)
 {
-	vt->cpos = ttypc_vga_readreg(vt->ttypc, CRTC_CURSORH);
+	vt->cpos = _ttypc_vga_readreg(vt->ttypc, CRTC_CURSORH);
 	vt->ccol = vt->cpos % vt->cols;
 	vt->crow = vt->cpos / vt->cols;
 }
@@ -216,7 +265,7 @@ void _ttypc_vga_getcursor(ttypc_vt_t *vt)
 
 void _ttypc_vga_setcursor(ttypc_vt_t *vt)
 {
-	ttypc_vga_writereg(vt->ttypc, CRTC_CURSORH, vt->cpos);
+	_ttypc_vga_writereg(vt->ttypc, CRTC_CURSORH, vt->cpos);
 }
 
 
@@ -224,7 +273,7 @@ void _ttypc_vga_togglecursor(ttypc_vt_t *vt, uint8_t state)
 {
 	if (state) {
 		/* Show cursor */
-		_ttypc_vga_setcurt(vt->ttypc, vt->ctype, CUR_DEFH);
+		_ttypc_vga_setctype(vt->ttypc, vt->ctype, CUR_DEFH);
 	}
 	else {
 		/* Hide cursor */
@@ -236,7 +285,7 @@ void _ttypc_vga_togglecursor(ttypc_vt_t *vt, uint8_t state)
 
 void ttypc_vga_destroy(ttypc_t *ttypc)
 {
-	munmap(ttypc->vga, _PAGE_SIZE);
+	munmap((void *)ttypc->vga, _PAGE_SIZE);
 }
 
 
