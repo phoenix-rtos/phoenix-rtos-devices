@@ -433,27 +433,27 @@ static void ttypc_kbd_ctlthr(void *arg)
 
 		/* Scroll up one line */
 		if (!strcmp(s, "\033[A") && ((ttypc->lockst & KB_SCROLL) || (ttypc->shiftst == (KB_CTL | KB_SHIFT)))) {
-			_ttypc_vga_scroll(ttypc->vt, 1);
+			_ttypc_vga_scroll(cvt, 1);
 		}
 		/* Scroll down one line */
 		else if (!strcmp(s, "\033[B") && ((ttypc->lockst & KB_SCROLL) || (ttypc->shiftst == (KB_CTL | KB_SHIFT)))) {
-			_ttypc_vga_scroll(ttypc->vt, -1);
+			_ttypc_vga_scroll(cvt, -1);
 		}
 		/* Scroll up one page */
 		else if (!strcmp(s, "\033[5~") && ((ttypc->lockst & KB_SCROLL) || (ttypc->shiftst == KB_SHIFT))) {
-			_ttypc_vga_scroll(ttypc->vt, ttypc->vt->rows);
+			_ttypc_vga_scroll(cvt, cvt->rows);
 		}
 		/* Scroll down one page */
 		else if (!strcmp(s, "\033[6~") && ((ttypc->lockst & KB_SCROLL) || (ttypc->shiftst == KB_SHIFT))) {
-			_ttypc_vga_scroll(ttypc->vt, -ttypc->vt->rows);
+			_ttypc_vga_scroll(cvt, -cvt->rows);
 		}
 		/* Scroll to top */
 		else if (!strcmp(s, "\033[H") && ((ttypc->lockst & KB_SCROLL) || (ttypc->shiftst == KB_SHIFT))) {
-			_ttypc_vga_scroll(ttypc->vt, ttypc->vt->scrbsz - ttypc->vt->scrbpos);
+			_ttypc_vga_scroll(cvt, cvt->scrbsz - cvt->scrbpos);
 		}
 		/* Scroll to bottom */
 		else if (!strcmp(s, "\033[F") && ((ttypc->lockst & KB_SCROLL) || (ttypc->shiftst == KB_SHIFT))) {
-			_ttypc_vga_scroll(ttypc->vt, -ttypc->vt->scrbpos);
+			_ttypc_vga_scroll(cvt, -cvt->scrbpos);
 		}
 		/* Switch between VTs (up to 12) */
 		else if (!strncmp(s, "\033[", 2) && (s[2] >= 'm') && (s[2] <= 'x') && !s[3]) {
@@ -473,7 +473,7 @@ static void ttypc_kbd_ctlthr(void *arg)
 							s = buff;
 						}
 						/* Cursor Key Mode */
-						else if (ttypc->vt->ckm) {
+						else if (cvt->ckm) {
 							snprintf(buff, sizeof(buff), "\033O%c", k);
 							s = buff;
 						}
@@ -488,11 +488,11 @@ static void ttypc_kbd_ctlthr(void *arg)
 			}
 			else if (!strcmp(s, "\r") || !strcmp(s, "\n")) {
 				/* Line feed/New line Mode */
-				if (ttypc->vt->lnm)
+				if (cvt->lnm)
 					s = "\r\n";
 			}
 
-			while (*s && !libtty_putchar(&ttypc->vt->tty, *s++, NULL));
+			while (*s && !libtty_putchar(&cvt->tty, *s++, NULL));
 		}
 
 		mutexUnlock(cvt->lock);
