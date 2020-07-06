@@ -14,8 +14,6 @@
 #include <string.h>
 #include <unistd.h>
 
-#include <sys/minmax.h>
-
 #include "ttypc_bioskbd.h"
 #include "ttypc_kbd.h"
 #include "ttypc_vga.h"
@@ -66,11 +64,11 @@ static const uint8_t msgr[] = {
 
 /* Internal attributes indexes */
 enum {
-	VT_NORMAL   = 0,
-	VT_BOLD     = 1,
-	VT_UNDER    = 2,
-	VT_BLINK    = 4,
-	VT_INVERSED = 8
+	VT_NORMAL   = 0x00,
+	VT_BOLD     = 0x01,
+	VT_UNDER    = 0x02,
+	VT_BLINK    = 0x04,
+	VT_INVERSED = 0x08
 };
 
 
@@ -188,7 +186,7 @@ void _ttypc_vtf_str(ttypc_vt_t *vt)
 
 	/* Reset cursor type and visibility */
 	vt->cst = 1;
-	vt->ctype = CURT_DEF;
+	vt->ctype = CUR_DEF;
 	_ttypc_vga_togglecursor(vt, 1);
 
 	/* Reset character processing state and attributes */
@@ -293,18 +291,20 @@ void _ttypc_vtf_da(ttypc_vt_t *vt)
 
 void _ttypc_vtf_aln(ttypc_vt_t *vt)
 {
-	_ttypc_vga_set(vt->vram, vt->attr | 'E' , vt->rows * vt->cols);
 	vt->cpos = 0;
 	vt->ccol = 0;
 	vt->crow = 0;
+	_ttypc_vga_set(vt->vram, vt->attr | 'E' , vt->rows * vt->cols);
 }
 
 
 void _ttypc_vtf_su(ttypc_vt_t *vt)
 {
-	int p = max(1, vt->parms[0]);
+	int p = vt->parms[0];
 
-	if (p > vt->rows - 1)
+	if (p < 1)
+		p = 1;
+	else if (p > vt->rows - 1)
 		p = vt->rows - 1;
 
 	_ttypc_vga_rollup(vt, p);
@@ -313,9 +313,11 @@ void _ttypc_vtf_su(ttypc_vt_t *vt)
 
 void _ttypc_vtf_sd(ttypc_vt_t *vt)
 {
-	int p = max(1, vt->parms[0]);
+	int p = vt->parms[0];
 
-	if (p > vt->rows - 1)
+	if (p < 1)
+		p = 1;
+	else if (p > vt->rows - 1)
 		p = vt->rows - 1;
 
 	_ttypc_vga_rolldown(vt, p);
@@ -324,12 +326,12 @@ void _ttypc_vtf_sd(ttypc_vt_t *vt)
 
 void _ttypc_vtf_cuu(ttypc_vt_t *vt)
 {
-	int p = max(1, vt->parms[0]);
+	int p = vt->parms[0];
 
-	p = min(p, vt->crow - vt->top);
-
-	if (p <= 0)
-		return;
+	if (p < 1)
+		p = 1;
+	else if (p > vt->crow - vt->top)
+		p = vt->crow - vt->top;
 
 	vt->cpos -= vt->cols * p;
 }
@@ -337,12 +339,12 @@ void _ttypc_vtf_cuu(ttypc_vt_t *vt)
 
 void _ttypc_vtf_cud(ttypc_vt_t *vt)
 {
-	int p = max(1, vt->parms[0]);
+	int p = vt->parms[0];
 
-	p = min(p, vt->bottom - vt->crow);
-
-	if (p <= 0)
-		return;
+	if (p < 1)
+		p = 1;
+	else if (p > vt->bottom - vt->crow)
+		p = vt->bottom - vt->crow;
 
 	vt->cpos += vt->cols * p;
 }
@@ -350,13 +352,15 @@ void _ttypc_vtf_cud(ttypc_vt_t *vt)
 
 void _ttypc_vtf_cuf(ttypc_vt_t *vt)
 {
-	int p = max(1, vt->parms[0]);
+	int p = vt->parms[0];
 
-	if (p > vt->cols - 1)
+	if (p < 1)
+		p = 1;
+	else if (p > vt->cols - 1)
 		p = vt->cols - 1;
 
 	if (vt->ccol + p > vt->cols - 1)
-		p = vt->cols - 1 - vt->ccol;
+		p = vt->cols - vt->ccol - 1;
 
 	vt->cpos += p;
 	vt->ccol += p;
@@ -365,9 +369,11 @@ void _ttypc_vtf_cuf(ttypc_vt_t *vt)
 
 void _ttypc_vtf_cub(ttypc_vt_t *vt)
 {
-	int p = max(1, vt->parms[0]);
+	int p = vt->parms[0];
 
-	if (p > vt->cols - 1)
+	if (p < 1)
+		p = 1;
+	else if (p > vt->cols - 1)
 		p = vt->cols - 1;
 
 	if (vt->ccol < p)
@@ -416,18 +422,18 @@ void _ttypc_vtf_clreol(ttypc_vt_t *vt)
 
 void _ttypc_vtf_curadr(ttypc_vt_t *vt)
 {
-	if ((vt->parms[0] == 0) && (vt->parms[1] == 0)) {
+	if (!vt->parms[0] && !vt->parms[1]) {
 		vt->cpos = (vt->om) ? vt->top * vt->cols : 0;
 		vt->ccol = 0;
 		return;
 	}
 
-	if (vt->parms[0] <= 0)
+	if (vt->parms[0] < 1)
 		vt->parms[0] = 1;
 	else if (vt->parms[0] > (vt->om) ? vt->bottom - vt->top + 1 : vt->rows)
 		vt->parms[0] = (vt->om) ? vt->bottom - vt->top + 1 : vt->rows;
 
-	if (vt->parms[1] <= 0)
+	if (vt->parms[1] < 1)
 		vt->parms[1] = 1;
 	else if (vt->parms[1] > vt->cols)
 		vt->parms[1] = vt->cols;
@@ -439,10 +445,12 @@ void _ttypc_vtf_curadr(ttypc_vt_t *vt)
 
 void _ttypc_vtf_il(ttypc_vt_t *vt)
 {
-	int p = max(1, vt->parms[0]);
+	int p = vt->parms[0];
 
 	if ((vt->crow >= vt->top) && (vt->crow <= vt->bottom)) {
-		if (p > vt->bottom - vt->crow)
+		if (p < 1)
+			p = 1;
+		else if (p > vt->bottom - vt->crow)
 			p = vt->bottom - vt->crow;
 
 		vt->cpos -= vt->ccol;
@@ -461,9 +469,11 @@ void _ttypc_vtf_il(ttypc_vt_t *vt)
 
 void _ttypc_vtf_ic(ttypc_vt_t *vt)
 {
-	int p = max(1, vt->parms[0]);
+	int p = vt->parms[0];
 
-	if (p > vt->cols - vt->ccol)
+	if (p < 1)
+		p = 1;
+	else if (p > vt->cols - vt->ccol)
 		p = vt->cols - vt->ccol;
 
 	_ttypc_vga_move(vt->vram + vt->cpos + p, vt->vram + vt->cpos, vt->cols - vt->ccol - p);
@@ -473,10 +483,12 @@ void _ttypc_vtf_ic(ttypc_vt_t *vt)
 
 void _ttypc_vtf_dl(ttypc_vt_t *vt)
 {
-	int p = max(1, vt->parms[0]);
+	int p = vt->parms[0];
 
 	if ((vt->crow >= vt->top) && (vt->crow <= vt->bottom)) {
-		if (p > vt->bottom - vt->crow)
+		if (p < 1)
+			p = 1;
+		else if (p > vt->bottom - vt->crow)
 			p = vt->bottom - vt->crow;
 
 		vt->cpos -= vt->ccol;
@@ -495,9 +507,11 @@ void _ttypc_vtf_dl(ttypc_vt_t *vt)
 
 void _ttypc_vtf_dch(ttypc_vt_t *vt)
 {
-	int p = max(1, vt->parms[0]);
+	int p = vt->parms[0];
 
-	if (p > vt->cols - vt->ccol)
+	if (p < 1)
+		p = 1;
+	else if (p > vt->cols - vt->ccol)
 		p = vt->cols - vt->ccol;
 
 	_ttypc_vga_move(vt->vram + vt->cpos, vt->vram + vt->cpos + p, vt->cols - vt->ccol - p);
@@ -570,9 +584,11 @@ void _ttypc_vtf_ris(ttypc_vt_t *vt)
 /* ECH - erase character */
 void _ttypc_vtf_ech(ttypc_vt_t *vt)
 {
-	int p = max(1, vt->parms[0]);
+	int p = vt->parms[0];
 
-	if (p > vt->cols - vt->ccol)
+	if (p < 1)
+		p = 1;
+	else if (p > vt->cols - vt->ccol)
 		p = vt->cols - vt->ccol;
 
 	_ttypc_vga_set(vt->vram + vt->cpos, vt->attr | ' ', p);

@@ -25,7 +25,7 @@
 #include "ttypc_vga.h"
 
 
-/* Keyboard map entry */
+/* Keyboard key map entry */
 typedef struct {
 	unsigned int type;
 	char *unshift;
@@ -33,11 +33,11 @@ typedef struct {
 	char *ctl;
 	char *altgr;
 	char *shift_altgr;
-} keymap_t;
+} ttypc_kbd_keymap_t;
 
 
 /* U.S 101 keys keyboard map */
-static const keymap_t scodes[] = {
+static const ttypc_kbd_keymap_t scodes[] = {
 	/*type       unshift    shift      ctl        altgr      shift_altgr scancode */
 	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 0 unused */
 	{ KB_ASCII,  "\033",    "\033",    "\033",    "",        "" },    /* 1 ESCape */
@@ -581,6 +581,7 @@ void ttypc_kbd_destroy(ttypc_t *ttypc)
 {
 	resourceDestroy(ttypc->klock);
 	resourceDestroy(ttypc->kcond);
+	resourceDestroy(ttypc->kinth);
 }
 
 

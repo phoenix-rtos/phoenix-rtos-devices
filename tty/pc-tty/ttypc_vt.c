@@ -16,7 +16,6 @@
 #include <stdint.h>
 #include <string.h>
 
-#include <sys/minmax.h>
 #include <sys/mman.h>
 #include <sys/threads.h>
 
@@ -652,8 +651,10 @@ int ttypc_vt_ioctl(ttypc_vt_t *vt, pid_t pid, unsigned int cmd, const void *idat
 void ttypc_vt_destroy(ttypc_vt_t *vt)
 {
 	libtty_destroy(&vt->tty);
-	munmap(vt->scrb, SCRB_PAGES * _PAGE_SIZE);
-	munmap(vt->scro, _PAGE_SIZE);
+	if (SCRB_PAGES) {
+		munmap(vt->scrb, SCRB_PAGES * _PAGE_SIZE);
+		munmap(vt->scro, _PAGE_SIZE);
+	}
 	munmap(vt->mem, _PAGE_SIZE);
 	resourceDestroy(vt->lock);
 }
@@ -698,24 +699,28 @@ int ttypc_vt_init(ttypc_t *ttypc, unsigned int ttybuffsz, ttypc_vt_t *vt)
 		return -ENOMEM;
 	}
 
-	if ((vt->scro = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE, NULL, 0)) == MAP_FAILED) {
-		resourceDestroy(vt->lock);
-		munmap(vt->mem, _PAGE_SIZE);
-		return -ENOMEM;
-	}
+	if (SCRB_PAGES) {
+		if ((vt->scro = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE, NULL, 0)) == MAP_FAILED) {
+			resourceDestroy(vt->lock);
+			munmap(vt->mem, _PAGE_SIZE);
+			return -ENOMEM;
+		}
 
-	if ((vt->scrb = mmap(NULL, SCRB_PAGES * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE, NULL, 0)) == MAP_FAILED) {
-		resourceDestroy(vt->lock);
-		munmap(vt->mem, _PAGE_SIZE);
-		munmap(vt->scro, _PAGE_SIZE);
-		return -ENOMEM;
+		if ((vt->scrb = mmap(NULL, SCRB_PAGES * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE, NULL, 0)) == MAP_FAILED) {
+			resourceDestroy(vt->lock);
+			munmap(vt->mem, _PAGE_SIZE);
+			munmap(vt->scro, _PAGE_SIZE);
+			return -ENOMEM;
+		}
 	}
 
 	if ((err = libtty_init(&vt->tty, &cb, ttybuffsz)) < 0) {
 		resourceDestroy(vt->lock);
 		munmap(vt->mem, _PAGE_SIZE);
-		munmap(vt->scro, _PAGE_SIZE);
-		munmap(vt->scrb, SCRB_PAGES * _PAGE_SIZE);
+		if (SCRB_PAGES) {
+			munmap(vt->scro, _PAGE_SIZE);
+			munmap(vt->scrb, SCRB_PAGES * _PAGE_SIZE);
+		}
 		return err;
 	}
 

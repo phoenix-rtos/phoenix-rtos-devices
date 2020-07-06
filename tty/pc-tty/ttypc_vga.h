@@ -140,13 +140,13 @@ enum {
 
 /* Cursor types */
 enum {
-	CURT_BLOCK       = 0,
-	CURT_TWO_THIRDS  = (CUR_DEFH / 3),
-	CURT_LOWER_HALF  = (CUR_DEFH / 2),
-	CURT_LOWER_THIRD = (2 * CUR_DEFH / 3),
-	CURT_UNDERLINE   = (CUR_DEFH - 1),
-	CURT_NONE        = (CUR_DEFH + 1),
-	CURT_DEF         = CURT_UNDERLINE
+	CUR_BLOCK       = 0,
+	CUR_TWO_THIRDS  = (CUR_DEFH / 3),
+	CUR_LOWER_HALF  = (CUR_DEFH / 2),
+	CUR_LOWER_THIRD = (2 * CUR_DEFH / 3),
+	CUR_UNDERLINE   = (CUR_DEFH - 1),
+	CUR_NONE        = (CUR_DEFH + 1),
+	CUR_DEF         = CUR_UNDERLINE
 };
 
 

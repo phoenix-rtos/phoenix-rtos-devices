@@ -85,7 +85,6 @@ typedef struct {
 	uint16_t scrbpos;        /* Scrollback position offset */
 
 	/* Character sets */
-	uint8_t ss;              /* Single shift G2 / G3 -> GL */
 	const uint16_t *G0;      /* G0 conversion table */
 	const uint16_t *G1;      /* G1 conversion table */
 	const uint16_t *G2;      /* G2 conversion table */
@@ -93,6 +92,7 @@ typedef struct {
 	const uint16_t **GL;     /* GL conversion table */
 	const uint16_t **GR;     /* GR conversion table */
 	const uint16_t **Gs;     /* G2/G3 conversion table */
+	uint8_t ss;              /* Single shift G2 / G3 -> GL */
 
 	/* VT100 modes */
 	uint8_t awm;             /* Auto Wrap Mode */

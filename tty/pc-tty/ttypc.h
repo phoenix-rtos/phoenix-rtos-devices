@@ -33,18 +33,18 @@ enum {
 
 /* Keyboard key type */
 enum {
-	KB_NONE    = 0,
-	KB_CTL     = 1,
-	KB_SHIFT   = 2,
-	KB_ALT     = 4,
-	KB_ALTGR   = 8,
-	KB_SCROLL  = 16,
-	KB_NUM     = 32,
-	KB_CAPS    = 64,
-	KB_FUNC    = 128,
-	KB_ASCII   = 256,
-	KB_KP      = 512,
-	KB_EXT     = 1024
+	KB_NONE    = 0x0000,
+	KB_CTL     = 0x0001,
+	KB_SHIFT   = 0x0002,
+	KB_ALT     = 0x0004,
+	KB_ALTGR   = 0x0008,
+	KB_SCROLL  = 0x0010,
+	KB_NUM     = 0x0020,
+	KB_CAPS    = 0x0040,
+	KB_FUNC    = 0x0080,
+	KB_ASCII   = 0x0100,
+	KB_KP      = 0x0200,
+	KB_EXT     = 0x0400
 };
 
 
@@ -52,9 +52,9 @@ struct _ttypc_t {
 	unsigned int port;     /* Driver port */
 
 	/* VGA */
-	unsigned color;        /* Color support */
 	volatile void *vga;    /* VGA screen memory */
 	void *crtc;            /* Video Display Controller (CRTC) */
+	unsigned color;        /* Color support */
 
 	/* KBD */
 	volatile void *kbd;    /* Keyboard controller */

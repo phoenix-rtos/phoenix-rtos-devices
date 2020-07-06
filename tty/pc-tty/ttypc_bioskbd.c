@@ -31,15 +31,15 @@ static void ttypc_bioskbd_ctlthr(void *arg)
 
 	for (;;) {
 		/* Wait for keystrokes to show up in keyboard buffer */
-		while ((head = *(uint16_t *)((uintptr_t)ttypc->kbd + 0x41a)) == *(uint16_t *)((uintptr_t)ttypc->kbd + 0x41c))
+		while ((head = *(volatile uint16_t *)((uintptr_t)ttypc->kbd + 0x41a)) == *(volatile uint16_t *)((uintptr_t)ttypc->kbd + 0x41c))
 			usleep(1000);
 
 		mutexLock(ttypc->lock);
 		mutexLock((cvt = ttypc->vt)->lock);
 
 		/* Add the keystroke and update head position */
-		libtty_putchar(&ttypc->vt->tty, *(unsigned char *)((uintptr_t)ttypc->kbd + 0x400 + head), NULL);
-		*(uint16_t *)((uintptr_t)ttypc->kbd + 0x41a) = 0x1e + (head - 0x1e + 2) % 32;
+		libtty_putchar(&ttypc->vt->tty, *(volatile unsigned char *)((uintptr_t)ttypc->kbd + 0x400 + head), NULL);
+		*(volatile uint16_t *)((uintptr_t)ttypc->kbd + 0x41a) = 0x1e + (head - 0x1e + 2) % 32;
 
 		mutexUnlock(cvt->lock);
 		mutexUnlock(ttypc->lock);
