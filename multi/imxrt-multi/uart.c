@@ -42,7 +42,7 @@
 
 #define UART_CNT (UART1 + UART2 + UART3 + UART4 + UART5 + UART6 + UART7 + UART8)
 
-#define BUFSIZE 256
+#define BUFSIZE 512
 
 
 typedef struct uart_s {
@@ -137,10 +137,7 @@ static void uart_intrThread(void *arg)
 static void signal_txready(void *_uart)
 {
 	uart_t *uartptr = (uart_t *)_uart;
-
-	mutexLock(uartptr->lock);
 	condSignal(uartptr->cond);
-	mutexUnlock(uartptr->lock);
 }
 
 
@@ -483,8 +480,8 @@ int uart_init(void)
 		/* Clear all status flags */
 		*(uart->base + statr) |= 0xc01fc000;
 
-		uart->rxFifoSz = fifoSzLut[*(uart->base) & 0x7];
-		uart->txFifoSz = fifoSzLut[(*(uart->base) >> 4) & 0x7];
+		uart->rxFifoSz = fifoSzLut[*(uart->base + fifor) & 0x7];
+		uart->txFifoSz = fifoSzLut[(*(uart->base + fifor) >> 4) & 0x7];
 
 		/* Enable receiver interrupt */
 		*(uart->base + ctrlr) |= 1 << 21;
@@ -492,9 +489,8 @@ int uart_init(void)
 		/* Enable TX and RX */
 		*(uart->base + ctrlr) |= (1 << 19) | (1 << 18);
 
-		interrupt(info[dev].irq, uart_handleIntr, (void *)uart, uart->cond, NULL);
-
 		beginthread(uart_intrThread, 2, &uart->stack, sizeof(uart->stack), uart);
+		interrupt(info[dev].irq, uart_handleIntr, (void *)uart, uart->cond, NULL);
 	}
 
 	return 0;
