@@ -42,7 +42,8 @@ struct {
 } g_common;
 
 
-void oledgraph_fillRect(int x, int y, int w, int h, int filled) {
+void oledgraph_fillRect(int x, int y, int w, int h, int filled)
+{
 	int i;
 	const uint64_t mask = (((uint64_t)-1) << y) &~ (((uint64_t)-1) << (y + h));
 
@@ -57,7 +58,8 @@ void oledgraph_fillRect(int x, int y, int w, int h, int filled) {
 }
 
 
-void oledgraph_fillBitmap(int x, int y, int w, int h, const uint64_t map[w]) {
+void oledgraph_fillBitmap(int x, int y, int w, int h, const uint64_t map[w])
+{
 	int i;
 	const uint64_t mask = (((uint64_t)-1) << y) &~ (((uint64_t)-1) << (y + h));
 	for (i = 0; i < w; ++i) {
@@ -67,13 +69,15 @@ void oledgraph_fillBitmap(int x, int y, int w, int h, const uint64_t map[w]) {
 }
 
 
-void oledgraph_fillChar(int x, int y, int w, int h, int font, char c) {
+void oledgraph_fillChar(int x, int y, int w, int h, int font, char c)
+{
 	uint64_t* font_ptr = ((uint64_t(*)[5]) font_common[font]->data)[c - font_common[font]->first_char];
 	oledgraph_fillBitmap(x, y, w, h, font_ptr);
 }
 
 
-static void handle_control(int x, int y, int w, int h, int* cur_x, int* cur_y, int font, char c) {
+static void handle_control(int x, int y, int w, int h, int* cur_x, int* cur_y, int font, char c)
+{
 	int i;
 	switch(c) {
 		case '\n':
@@ -87,7 +91,8 @@ static void handle_control(int x, int y, int w, int h, int* cur_x, int* cur_y, i
 	}
 }
 
-static void buffer_move_updown(int x, int y, int w, int h, int move) {
+static void buffer_move_updown(int x, int y, int w, int h, int move)
+{
 	int i;
 	uint64_t tmp;
 	const uint64_t mask = (((uint64_t)-1) << y) &~ (((uint64_t)-1) << (y + h));
@@ -99,7 +104,8 @@ static void buffer_move_updown(int x, int y, int w, int h, int move) {
 }
 
 
-static void handle_character(int x, int y, int w, int h, int* cur_x, int* cur_y, int font, char c) {
+static void handle_character(int x, int y, int w, int h, int* cur_x, int* cur_y, int font, char c)
+{
 	if (c - font_common[font]->first_char > font_common[font]->char_num)
 		c = '?';
 	oledgraph_fillChar(*cur_x, *cur_y, font_common[font]->char_width, font_common[font]->char_height, font, c);
@@ -111,7 +117,8 @@ static void handle_character(int x, int y, int w, int h, int* cur_x, int* cur_y,
 }
 
 
-void oledgraph_drawStringAbs(int x, int y, int w, int h, int font, int size, char* str) {
+void oledgraph_drawStringAbs(int x, int y, int w, int h, int font, int size, const char* str)
+{
 	int i = 0;
 	int cur_x = x, cur_y = y;
 	char c;
@@ -126,7 +133,8 @@ void oledgraph_drawStringAbs(int x, int y, int w, int h, int font, int size, cha
 }
 
 
-void oledgraph_drawStringCont(int x, int y, int w, int h, int font, int size, char* str) {
+void oledgraph_drawStringCont(int x, int y, int w, int h, int font, int size, const char* str)
+{
 	int i = 0;
 	int min_x, min_y, min_w, min_h;
 	int scrolled = 0;
@@ -171,10 +179,12 @@ void oledgraph_drawStringCont(int x, int y, int w, int h, int font, int size, ch
 
 	g_common.scroll.cur_x = cur_x;
 	g_common.scroll.cur_y = cur_y;
+	oledgraph_drawBuffer(min_x, min_y, min_w, min_h, 0);
 }
 
 
-void oledgraph_reset(int x, int y, int w, int h) {
+void oledgraph_reset(int x, int y, int w, int h)
+{
 	g_common.scroll.cur_x = x;
 	g_common.scroll.cur_y = y;
 	oledgraph_fillRect(x, y, w, h, 0);
@@ -182,7 +192,8 @@ void oledgraph_reset(int x, int y, int w, int h) {
 }
 
 
-static int findRowStart(int row, int x, int endx) {
+static int findRowStart(int row, int x, int endx)
+{
 	int col;
 	for (col = x; col < endx; ++col) {
 		if (BYTE_ELEM(g_common.buffer, row, col) !=
@@ -193,7 +204,8 @@ static int findRowStart(int row, int x, int endx) {
 	return -1;
 }
 
-static int findRowEnd(int row, int x, int endx) {
+static int findRowEnd(int row, int x, int endx)
+{
 	int col, i;
 
 	for (col = x; col < endx; ++col) {
@@ -217,7 +229,8 @@ static int findRowEnd(int row, int x, int endx) {
 }
 
 
-static void drawBufferRow(int row, int x, int w) {
+static void drawBufferRow(int row, int x, int w)
+{
 	int col = x;
 	int i;
 	int startx;
@@ -236,7 +249,8 @@ static void drawBufferRow(int row, int x, int w) {
 }
 
 
-void oledgraph_drawBuffer(int x, int y, int w, int h, int force) {
+void oledgraph_drawBuffer(int x, int y, int w, int h, int force)
+{
 	int i, j;
 	const int start_page = y / 8;
 	const int end_page = (y + h - 1) / 8;
