@@ -229,27 +229,6 @@ static int configMux(int mux, int sion, int mode)
 }
 
 
-static int configPad(int pad, int hys, int pus, int pue, int pke, int ode, int speed, int dse, int sre)
-{
-	platformctl_t pctl;
-
-	pctl.action = pctl_set;
-	pctl.type = pctl_iopad;
-
-	pctl.iopad.pad = pad;
-	pctl.iopad.hys = hys;
-	pctl.iopad.pus = pus;
-	pctl.iopad.pue = pue;
-	pctl.iopad.pke = pke;
-	pctl.iopad.ode = ode;
-	pctl.iopad.speed = speed;
-	pctl.iopad.dse = dse;
-	pctl.iopad.sre = sre;
-
-	return platformctl(&pctl);
-}
-
-
 static int oledphy_initGPIO(void)
 {
 	int res = EOK;

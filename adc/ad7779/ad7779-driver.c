@@ -301,13 +301,6 @@ static void *alloc_uncached(size_t size, addr_t *paddr, int ocram)
 	return vaddr;
 }
 
-static int free_uncached(void *vaddr, size_t size)
-{
-	uint32_t n = (size + _PAGE_SIZE - 1)/_PAGE_SIZE;
-
-	return munmap(vaddr, n*_PAGE_SIZE);
-}
-
 static int edma_configure(void)
 {
 	int res;
@@ -447,7 +440,7 @@ static int dev_read(void *data, size_t size)
 
 	condWait(common.irq_cond, common.irq_lock, 0);
 
-	*(uint32_t **)data = &common.current;
+	*(uint32_t **)data = ((uint32_t *)&common.current);
 
 	mutexUnlock(common.irq_lock);
 

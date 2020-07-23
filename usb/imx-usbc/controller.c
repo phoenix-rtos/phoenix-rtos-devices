@@ -263,7 +263,7 @@ dtd_t *ctrl_execTransfer(int endpt, uint32_t paddr, uint32_t sz, int dir)
 
 	dtd = ctrl_getDtd(endpt, dir);
 
-	ctrl_buildDtd(dtd, paddr, sz);
+	ctrl_buildDtd((dtd_t *)dtd, paddr, sz);
 
 	shift = endpt + ((qh & 1) ? 16 : 0);
 	offs = (uint32_t)dtd & (((ctrl_common.dc->endptqh[qh].size) * sizeof(dtd_t)) - 1);
@@ -288,7 +288,7 @@ dtd_t *ctrl_execTransfer(int endpt, uint32_t paddr, uint32_t sz, int dir)
 	while (DTD_ACTIVE(dtd) && !DTD_ERROR(dtd))
 		;
 
-	return dtd;
+	return (dtd_t *)dtd;
 }
 
 
@@ -302,7 +302,7 @@ int ctrl_hfIrq(void)
 			endpt++;
 		do {
 			*(ctrl_common.dc->base + usbcmd) |= 1 << 13;
-			memcpy(&ctrl_common.dc->setup, ctrl_common.dc->endptqh[endpt].setup_buff, sizeof(usb_setup_packet_t));
+			memcpy(&ctrl_common.dc->setup, (void *)ctrl_common.dc->endptqh[endpt].setup_buff, sizeof(usb_setup_packet_t));
 		} while (!(*(ctrl_common.dc->base + usbcmd) & 1 << 13));
 
 		*(ctrl_common.dc->base + endptsetupstat) |= 1 << endpt;

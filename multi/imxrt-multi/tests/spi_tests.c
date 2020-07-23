@@ -16,6 +16,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
+#include <unistd.h>
 #include <time.h>
 
 #include "../imxrt-multi.h"

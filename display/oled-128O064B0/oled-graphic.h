@@ -26,10 +26,10 @@ void oledgraph_fillBitmap(int x, int y, int w, int h, const uint64_t map[]);
 void oledgraph_fillChar(int x, int y, int w, int h, int font, char c);
 
 
-void oledgraph_drawStringAbs(int x, int y, int w, int h, int font, int size, char* str);
+void oledgraph_drawStringAbs(int x, int y, int w, int h, int font, int size, const char* str);
 
 
-void oledgraph_drawStringCont(int x, int y, int w, int h, int font, int size, char* str);
+void oledgraph_drawStringCont(int x, int y, int w, int h, int font, int size, const char* str);
 
 
 void oledgraph_reset(int x, int y, int w, int h);

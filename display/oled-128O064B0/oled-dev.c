@@ -69,7 +69,8 @@ int dev_init(void)
 	return 0;
 }
 
-static int dev_write(oled_write_t *cmd) {
+static int dev_write(oled_write_t *cmd)
+{
 	switch(cmd->type) {
 		case oled_write__rect:
 			oledgraph_fillRect(cmd->x, cmd->y, cmd->w, cmd->h, cmd->filled);

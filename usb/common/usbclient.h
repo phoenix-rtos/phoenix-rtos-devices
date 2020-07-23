@@ -21,7 +21,7 @@
 
 /* Library configuration structure */
 typedef struct _usb_desc_list_t {
-	struct usb_desc_list_t *next, *prev;
+	struct _usb_desc_list_t *next, *prev;
 	usb_functional_desc_t *descriptor;
 } usb_desc_list_t;
 
