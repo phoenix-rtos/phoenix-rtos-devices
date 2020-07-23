@@ -16,12 +16,15 @@
 #include <poll.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <sys/file.h>
 #include <sys/io.h>
 #include <sys/ioctl.h>
 #include <sys/msg.h>
 #include <sys/threads.h>
+
+#include <posix/utils.h>
 
 #include "ttypc.h"
 #include "ttypc_bioskbd.h"
@@ -95,7 +98,7 @@ static void ttypc_poolthr(void *arg)
 int main(void)
 {
 	unsigned int i;
-	char name[10];
+	char path[12];
 	oid_t oid;
 	int err;
 
@@ -108,24 +111,15 @@ int main(void)
 	if ((err = mutexCreate(&ttypc_common.lock)) < 0)
 		return err;
 
-	/* Initialize and register virtual terminals */
+	/* Initialize VTs */
 	for (i = 0; i < NVTS; i++) {
-		snprintf(name, sizeof(name), "/dev/tty%u", i);
-		oid.port = ttypc_common.port;
-		oid.id = i;
-
 		if ((err = ttypc_vt_init(&ttypc_common, _PAGE_SIZE, ttypc_common.vts + i)) < 0)
 			return err;
-
-		if ((err = portRegister(oid.port, name, &oid)) < 0)
-			return err;
 	}
-	printf("pc-tty: Initialized %u virtual terminals\n", NVTS);
 
 	/* Initialize VGA display */
 	if ((err = ttypc_vga_init(&ttypc_common)) < 0)
 		return err;
-	printf("pc-tty: Initialized VGA display\n");
 
 	/* Set active virtual terminal */
 	ttypc_common.vt = ttypc_common.vts;
@@ -147,11 +141,25 @@ int main(void)
 			return err;
 		ttypc_common.ktype = KBD_BIOS;
 	}
-	printf("pc-tty: Initialized %s keyboard\n", (ttypc_common.ktype) ? "PS/2" : "BIOS");
 
-	/* Start poolthreads */
+	/* Run pool threads */
 	if ((err = beginthread(ttypc_poolthr, 1, ttypc_common.pstack, sizeof(ttypc_common.pstack), &ttypc_common)) < 0)
 		return err;
+
+	/* Wait for the filesystem */
+	while (lookup("/", NULL, &oid) < 0)
+		usleep(10000);
+
+	/* Register devices */
+	for (i = 0; i < NVTS; i++) {
+		snprintf(path, sizeof(path), "/dev/tty%u", i);
+		oid.port = ttypc_common.port;
+		oid.id = i;
+
+		if (create_dev(&oid, path) < 0)
+			fprintf(stderr, "pc-tty: failed to register device %s\n", path);
+	}
+
 	ttypc_poolthr(&ttypc_common);
 
 	return EOK;
