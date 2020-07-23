@@ -16,7 +16,7 @@
 #include "mbr.h"
 
 
-int read_mbr(ata_dev_t *dev, mbr_t *mbr)
+int mbr_read(ata_dev_t *dev, mbr_t *mbr)
 {
 	ssize_t ret;
 

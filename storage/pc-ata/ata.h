@@ -14,7 +14,6 @@
 #ifndef _ATA_H_
 #define _ATA_H_
 
-
 #include <stdint.h>
 
 #include <sys/types.h>
@@ -56,13 +55,13 @@ enum {
 	CMD_WRITE_PIO       = 0x30,
 	CMD_WRITE_PIO_EXT   = 0x34,
 	CMD_WRITE_DMA_EXT   = 0x35,
-	CMD_PACKET          = 0xA0,
-	CMD_IDENTIFY_PACKET = 0xA1,
-	CMD_READ_DMA        = 0xC8,
-	CMD_WRITE_DMA       = 0xCA,
-	CMD_CACHE_FLUSH     = 0xE7,
-	CMD_CACHE_FLUSH_EXT = 0xEA,
-	CMD_IDENTIFY        = 0xEC
+	CMD_PACKET          = 0xa0,
+	CMD_IDENTIFY_PACKET = 0xa1,
+	CMD_READ_DMA        = 0xc8,
+	CMD_WRITE_DMA       = 0xca,
+	CMD_CACHE_FLUSH     = 0xe7,
+	CMD_CACHE_FLUSH_EXT = 0xea,
+	CMD_IDENTIFY        = 0xec
 };
 
 
@@ -93,7 +92,7 @@ enum {
 
 /* REG_DEVSEL layout */
 enum {
-	DEVSEL_HEAD         = 0x0F, /* LBA head */
+	DEVSEL_HEAD         = 0x0f, /* LBA head */
 	DEVSEL_DEVNUM       = 0x10, /* 0: Master, 1: Slave */
 	DEVSEL_SET0         = 0x20, /* Should always be set */
 	DEVSEL_LBA          = 0x40, /* 0: CHS, 1: LBA */
@@ -112,11 +111,11 @@ enum {
 };
 
 
-typedef struct ata_dev_t ata_dev_t;
-typedef struct ata_bus_t ata_bus_t;
+typedef struct _ata_dev_t ata_dev_t;
+typedef struct _ata_bus_t ata_bus_t;
 
 
-struct ata_dev_t {
+struct _ata_dev_t {
 	uint8_t mode;           /* Addressing mode: CHS, LBA28, LBA48 */
 
 	/* Device geometry */
@@ -131,7 +130,7 @@ struct ata_dev_t {
 };
 
 
-struct ata_bus_t {
+struct _ata_bus_t {
 	/* ATA registers access */
 	void *base;             /* ATA bus base registers */
 	void *ctrl;             /* ATA bus control registers */
@@ -145,21 +144,24 @@ struct ata_bus_t {
 
 
 typedef struct {
-	unsigned int ndevices; /* Number of detected ATA devices */
-	ata_dev_t *devices;    /* Detected ATA devices */
+	unsigned int ndevs;    /* Number of detected ATA devices */
+	ata_dev_t *devs;       /* Detected ATA devices */
 } ata_common_t;
 
 
 extern ata_common_t ata_common;
 
 
-extern int ata_init(void);
-
-
+/* Reads from ATA device */
 extern ssize_t ata_read(ata_dev_t *dev, offs_t offs, char *buff, size_t len);
 
 
+/* Writes to ATA device */
 extern ssize_t ata_write(ata_dev_t *dev, offs_t offs, const char *buff, size_t len);
+
+
+/* Initializes ATA devices */
+extern int ata_init(void);
 
 
 #endif

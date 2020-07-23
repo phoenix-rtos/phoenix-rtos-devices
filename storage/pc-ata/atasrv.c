@@ -12,6 +12,7 @@
  */
 
 #include <errno.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,6 +23,7 @@
 #include <sys/msg.h>
 #include <sys/rb.h>
 #include <sys/threads.h>
+#include <sys/types.h>
 
 #include <posix/idtree.h>
 #include <posix/utils.h>
@@ -32,104 +34,121 @@
 #include "mbr.h"
 
 
+/* Misc definitions */
+#define HDD_BASE "/dev/hd" /* Base name for ATA HDD devices */
+
+
 /* ATA server device types */
 enum {
-	DEV_HDD  = 0xFF, /* Hard Disk Drive */
-	DEV_PART = 0x01  /* HDD Partition */
+	DEV_BASE, /* ATA device */
+	DEV_PART  /* ATA device partition */
 };
 
-/* ATA server devices name definitions */
-#define HDD_NAME_BASE "/dev/hd"
-#define HDD_NAME_CHAR 'a'
 
-/* Filesystem registration macro */
-#define FS_REGISTER(NAME) do {                           \
-	atasrv_fs_t *fs;                                     \
-	if ((fs = malloc(sizeof(atasrv_fs_t))) == NULL)      \
-		return -ENOMEM;                                  \
-	strcpy(fs->name, LIB##NAME##_NAME);                  \
-	fs->type    =  LIB##NAME##_TYPE;                     \
-	fs->mount   = &LIB##NAME##_MOUNT;                    \
-	fs->unmount = &LIB##NAME##_UNMOUNT;                  \
-	fs->handler = &LIB##NAME##_HANDLER;                  \
-	lib_rbInsert(&atasrv_common.filesystems, &fs->node); \
-} while (0)
+/* ATA device access callbacks */
+static ssize_t atasrv_read(id_t id, offs_t offs, char *buff, size_t len);
+static ssize_t atasrv_write(id_t id, offs_t offs, const char *buff, size_t len);
 
 
-/* Callbacks for ATA device access */
-typedef ssize_t (*read_cb)(id_t, offs_t, char *, size_t);
-typedef ssize_t (*write_cb)(id_t, offs_t, const char *, size_t);
+/* Filesystem callbacks types */
+typedef int (*fs_handler)(void *, msg_t *);
+typedef int (*fs_unmount)(void *);
+typedef int (*fs_mount)(oid_t *, unsigned int, typeof(atasrv_read) *, typeof(atasrv_write) *, void **);
 
 
 typedef struct {
-	rbnode_t node;                                     /* RB tree node */
-	char name[16];                                     /* Filesystem name */
-	uint8_t type;                                      /* Compatible partition type */
-	int (*mount)(oid_t *, read_cb, write_cb, void **); /* Mount callback */
-	int (*unmount)(void *);                            /* Unmount callback */
-	int (*handler)(void *, msg_t *);                   /* Message handler callback */
+	rbnode_t node;      /* RBTree node */
+	char name[16];      /* Filesystem name */
+	uint8_t type;       /* Compatible partition type */
+	fs_handler handler; /* Message handler callback */
+	fs_unmount unmount; /* Unmount callback */
+	fs_mount mount;     /* Mount callback */
 } atasrv_fs_t;
 
 
-typedef struct atasrv_hdd_t atasrv_hdd_t;
-typedef struct atasrv_part_t atasrv_part_t;
-typedef struct atasrv_dev_t atasrv_dev_t;
-typedef struct atasrv_req_t atasrv_req_t;
+typedef struct _atasrv_dev_t  atasrv_dev_t;
+typedef struct _atasrv_base_t atasrv_base_t;
+typedef struct _atasrv_part_t atasrv_part_t;
+typedef struct _atasrv_req_t  atasrv_req_t;
 
 
-struct atasrv_hdd_t {
-	ata_dev_t *dev;             /* ATA device */
-	unsigned int nparts;        /* Number of registered partitions */
-	atasrv_part_t *parts;       /* Registered partitions */
+struct _atasrv_dev_t {
+	idnode_t node;              /* Device ID */
+	uint8_t type;               /* Device type, 0: DEV_BASE, 1: DEV_PART */
+	union {
+		atasrv_base_t *base;    /* ATA device */
+		atasrv_part_t *part;    /* ATA device partition */
+	};
+	atasrv_dev_t *prev, *next;  /* Doubly linked list */
 };
 
 
-struct atasrv_part_t {
+struct _atasrv_base_t {
+	unsigned int number;        /* Device number */
+	unsigned int npdevs;        /* Number of partitions within the device */
+	atasrv_dev_t *pdevs;        /* Device partitions */
+	ata_dev_t *dev;             /* Underlaying ATA device */
+};
+
+
+struct _atasrv_part_t {
+	/* Partition data */
+	unsigned int port;          /* Partition port */
+	unsigned int number;        /* Partition number */
 	uint8_t type;               /* Partition type */
-	uint32_t port;              /* Partition port */
 	uint32_t start;             /* Partition start (LBA) */
 	uint32_t sectors;           /* Number of sectors */
+	atasrv_dev_t *bdev;         /* ATA device the partition is part of */
 
-	atasrv_dev_t *srvhdd;       /* HDD device the partition belongs to */
+	/* Filesystem data */
 	atasrv_fs_t *fs;            /* Mounted filesystem */
+	void *fdata;                /* Mounted filesystem data */
 
-	void *data;                 /* Mounted filesystem data */
-	char *stack;                /* Partition thread stack */
-	atasrv_part_t *prev, *next; /* Doubly linked list */
+	/* Partition filesystem thread stack */
+	char pstack[4 * _PAGE_SIZE] __attribute__((aligned(8)));
 };
 
 
-struct atasrv_dev_t {
-	idnode_t node;              /* Device ID */
-	uint8_t type;               /* Device type */
-	union {
-		atasrv_hdd_t *hdd;      /* HDD device */
-		atasrv_part_t *part;    /* Partition device */
-	};
-};
-
-
-struct atasrv_req_t {
+struct _atasrv_req_t {
 	msg_t msg;                  /* Request msg */
 	unsigned int rid;           /* Request rid */
-
 	atasrv_part_t *part;        /* Request receiver partition */
 	atasrv_req_t *prev, *next;  /* Doubly linked list */
 };
 
 
 struct {
-	uint32_t port;              /* ATA server port */
-	unsigned int ndevices;      /* Number of HDD devices */
-	idtree_t devices;           /* Registered devices */
-	rbtree_t filesystems;       /* Registered filesystems */
-	atasrv_req_t *queue;        /* Requests FIFO queue */
-	handle_t lock, cond;        /* Requests synchronization */
-	char poolstacks[1][4 * _PAGE_SIZE] __attribute__((aligned(8)));
+	unsigned int port;          /* ATA server port */
+	unsigned int ndevs;         /* Number of registered ATA devices */
+	idtree_t sdevs;             /* Registered ATA server devices */
+	rbtree_t fss;               /* Registered filesystems */
+	atasrv_req_t *rqueue;       /* Requests FIFO queue */
+	handle_t rlock, rcond;      /* Requests synchronization */
+
+	/* Pool threads stacks */
+	char pstacks[4][4 * _PAGE_SIZE] __attribute__((aligned(8)));
 } atasrv_common;
 
 
-static int atasrv_fscmp(rbnode_t *node1, rbnode_t *node2)
+static int atasrv_registerfs(const char *name, uint8_t type, fs_mount mount, fs_unmount unmount, fs_handler handler)
+{
+	atasrv_fs_t *fs;
+
+	if ((fs = (atasrv_fs_t *)malloc(sizeof(atasrv_fs_t))) == NULL)
+		return -ENOMEM;
+
+	strcpy(fs->name, name);
+	fs->type = type;
+	fs->mount = mount;
+	fs->unmount = unmount;
+	fs->handler = handler;
+	lib_rbInsert(&atasrv_common.fss, &fs->node);
+
+	return EOK;
+}
+
+
+static int atasrv_cmpfs(rbnode_t *node1, rbnode_t *node2)
 {
 	atasrv_fs_t *fs1 = lib_treeof(atasrv_fs_t, node, node1);
 	atasrv_fs_t *fs2 = lib_treeof(atasrv_fs_t, node, node2);
@@ -138,47 +157,57 @@ static int atasrv_fscmp(rbnode_t *node1, rbnode_t *node2)
 }
 
 
-static atasrv_fs_t *atasrv_fsfind(const char *name)
+static atasrv_fs_t *atasrv_getfs(const char *name)
 {
-	rbnode_t *node = atasrv_common.filesystems.root;
+	atasrv_fs_t fs;
+
+	strcpy(fs.name, name);
+
+	return lib_treeof(atasrv_fs_t, node, lib_rbFind(&atasrv_common.fss, &fs.node));
+}
+
+
+static atasrv_fs_t *atasrv_findfs(uint8_t type)
+{
+	rbnode_t *node;
 	atasrv_fs_t *fs;
-	int c;
 
-	while (node != NULL) {
+	for (node = lib_rbMinimum(atasrv_common.fss.root); node != NULL; node = lib_rbNext(node)) {
 		fs = lib_treeof(atasrv_fs_t, node, node);
-		c = strcmp(fs->name, name);
-		if (c == 0)
-			return fs;
 
-		node = (c > 0) ? node->left : node->right;
+		if (fs->type == type)
+			return fs;
 	}
 
 	return NULL;
 }
 
 
-static void atasrv_partthr(void *arg)
+static void atasrv_fsthr(void *arg)
 {
 	atasrv_part_t *part = (atasrv_part_t *)arg;
 	atasrv_req_t *req;
+	int umount = 0;
 
 	for (;;) {
-		if ((req = malloc(sizeof(atasrv_req_t))) == NULL)
+		if ((req = (atasrv_req_t *)malloc(sizeof(atasrv_req_t))) == NULL)
 			continue;
 
 		req->part = part;
 		while (msgRecv(req->part->port, &req->msg, &req->rid) < 0);
 
-		/* TODO: handle umount here?
-		if (req->msg.type == mtUmount) {
+		if (req->msg.type == mtUmount)
+			umount = 1;
 
-		}
-		*/
+		mutexLock(atasrv_common.rlock);
 
-		mutexLock(atasrv_common.lock);
-		LIST_ADD(&atasrv_common.queue, req);
-		mutexUnlock(atasrv_common.lock);
-		condSignal(atasrv_common.cond);
+		LIST_ADD(&atasrv_common.rqueue, req);
+
+		mutexUnlock(atasrv_common.rlock);
+		condSignal(atasrv_common.rcond);
+
+		if (umount)
+			endthread();
 	}
 }
 
@@ -188,175 +217,145 @@ static void atasrv_poolthr(void *arg)
 	atasrv_req_t *req;
 
 	for (;;) {
-		mutexLock(atasrv_common.lock);
-		while (atasrv_common.queue == NULL)
-			condWait(atasrv_common.cond, atasrv_common.lock, 0);
-		req = atasrv_common.queue;
-		LIST_REMOVE(&atasrv_common.queue, req);
-		mutexUnlock(atasrv_common.lock);
+		mutexLock(atasrv_common.rlock);
 
-		req->part->fs->handler(req->part->data, &req->msg);
+		while (atasrv_common.rqueue == NULL)
+			condWait(atasrv_common.rcond, atasrv_common.rlock, 0);
+		req = atasrv_common.rqueue->prev;
+		LIST_REMOVE(&atasrv_common.rqueue, req);
+
+		mutexUnlock(atasrv_common.rlock);
+
+		if (req->msg.type == mtUmount) {
+			req->part->fs->unmount(req->part->fdata);
+			req->part->fs = NULL;
+			req->part->fdata = NULL;
+		}
+		else {
+			req->part->fs->handler(req->part->fdata, &req->msg);
+		}
+
 		msgRespond(req->part->port, &req->msg, req->rid);
 		free(req);
 	}
 }
 
 
-static int atasrv_inithdd(ata_dev_t *dev)
+static int atasrv_initbase(ata_dev_t *dev)
 {
-	atasrv_dev_t *srvhdd;
+	atasrv_dev_t *sdev;
 
-	if ((srvhdd = malloc(sizeof(atasrv_dev_t))) == NULL)
+	if ((sdev = (atasrv_dev_t *)malloc(sizeof(atasrv_dev_t))) == NULL)
 		return -ENOMEM;
 
-	if ((srvhdd->hdd = malloc(sizeof(atasrv_hdd_t))) == NULL) {
-		free(srvhdd);
+	if ((sdev->base = (atasrv_base_t *)malloc(sizeof(atasrv_base_t))) == NULL) {
+		free(sdev);
 		return -ENOMEM;
 	}
 
-	srvhdd->type = DEV_HDD;
-	srvhdd->hdd->dev = dev;
-	srvhdd->hdd->nparts = 0;
-	srvhdd->hdd->parts = NULL;
-	idtree_alloc(&atasrv_common.devices, &srvhdd->node);
-	atasrv_common.ndevices++;
+	sdev->type = DEV_BASE;
+	sdev->prev = NULL;
+	sdev->next = NULL;
+	sdev->base->npdevs = 0;
+	sdev->base->pdevs = NULL;
+	sdev->base->dev = dev;
+	sdev->base->number = atasrv_common.ndevs++;
+	idtree_alloc(&atasrv_common.sdevs, &sdev->node);
 
 	return EOK;
 }
 
 
-static int atasrv_initpart(atasrv_dev_t *srvhdd, uint8_t type, uint32_t start, uint32_t sectors)
+static int atasrv_initpart(atasrv_dev_t *bdev, uint8_t type, uint32_t start, uint32_t sectors)
 {
-	atasrv_dev_t *srvpart;
+	atasrv_dev_t *pdev;
 	int err;
 
-	if ((srvpart = malloc(sizeof(atasrv_dev_t))) == NULL)
+	if ((pdev = (atasrv_dev_t *)malloc(sizeof(atasrv_dev_t))) == NULL)
 		return -ENOMEM;
 
-	if ((srvpart->part = malloc(sizeof(atasrv_part_t))) == NULL) {
-		free(srvpart);
-		return -ENOMEM;
-	}
-
-	if ((srvpart->part->stack = malloc(2 * _PAGE_SIZE)) == NULL) {
-		free(srvpart->part);
-		free(srvpart);
+	if ((pdev->part = (atasrv_part_t *)malloc(sizeof(atasrv_part_t))) == NULL) {
+		free(pdev);
 		return -ENOMEM;
 	}
 
-	srvpart->type = DEV_PART;
-	srvpart->part->type = type;
-	srvpart->part->start = start;
-	srvpart->part->sectors = sectors;
-	srvpart->part->srvhdd = srvhdd;
-	srvpart->part->fs = NULL;
-	srvpart->part->data = NULL;
-	idtree_alloc(&atasrv_common.devices, &srvpart->node);
-
-	if ((err = portCreate(&srvpart->part->port)) < 0) {
-		idtree_remove(&atasrv_common.devices, &srvpart->node);
-		free(srvpart->part->stack);
-		free(srvpart->part);
-		free(srvpart);
+	if ((err = portCreate(&pdev->part->port)) < 0) {
+		free(pdev->part);
+		free(pdev);
 		return err;
 	}
 
-	if ((err = beginthread(atasrv_partthr, 4, srvpart->part->stack, sizeof(srvpart->part->stack), srvpart->part)) < 0) {
-		portDestroy(srvpart->part->port);
-		idtree_remove(&atasrv_common.devices, &srvpart->node);
-		free(srvpart->part->stack);
-		free(srvpart->part);
-		free(srvpart);
-		return err;
-	}
+	pdev->type = DEV_PART;
+	pdev->prev = NULL;
+	pdev->next = NULL;
+	pdev->part->type = type;
+	pdev->part->start = start;
+	pdev->part->sectors = sectors;
+	pdev->part->fs = NULL;
+	pdev->part->fdata = NULL;
+	pdev->part->bdev = bdev;
+	pdev->part->number = bdev->base->npdevs++;
+	idtree_alloc(&atasrv_common.sdevs, &pdev->node);
+	LIST_ADD(&bdev->base->pdevs, pdev);
 
 	return EOK;
 }
 
 
-static int atasrv_reghdd(atasrv_dev_t *srvhdd)
+static ssize_t atasrv_read(id_t id, offs_t offs, char *buff, size_t len)
 {
-	char path[32];
-	oid_t oid;
-	int err;
-
-	oid.port = atasrv_common.port;
-	oid.id = idtree_id(&srvhdd->node);
-	sprintf(path, "%s%c", HDD_NAME_BASE, HDD_NAME_CHAR + idtree_id(&srvhdd->node));
-
-	if ((err = create_dev(&oid, path)) < 0)
-		return err;
-
-	return EOK;
-}
-
-
-static int atasrv_regpart(atasrv_dev_t *srvpart)
-{
-	char path[32];
-	oid_t oid;
-	int err;
-
-	oid.port = atasrv_common.port;
-	oid.id = idtree_id(&srvpart->node);
-	sprintf(path, "%s%c%d", HDD_NAME_BASE, HDD_NAME_CHAR + idtree_id(&srvpart->part->srvhdd->node), srvpart->part->srvhdd->hdd->nparts);
-
-	if ((err = create_dev(&oid, path)) < 0)
-		return err;
-
-	LIST_ADD(&srvpart->part->srvhdd->hdd->parts, srvpart->part);
-	srvpart->part->srvhdd->hdd->nparts++;
-
-	return EOK;
-}
-
-
-ssize_t atasrv_read(id_t id, offs_t offs, char *buff, size_t len)
-{
-	atasrv_dev_t *srvdev;
+	atasrv_dev_t *sdev;
 	ata_dev_t *dev;
 
-	if ((srvdev = lib_treeof(atasrv_dev_t, node, idtree_find(&atasrv_common.devices, id))) == NULL)
+	if ((sdev = lib_treeof(atasrv_dev_t, node, idtree_find(&atasrv_common.sdevs, id))) == NULL)
 		return -ENODEV;
 
-	switch (srvdev->type) {
-		case DEV_HDD:
-			dev = srvdev->hdd->dev;
-			break;
+	switch (sdev->type) {
+	case DEV_BASE:
+		dev = sdev->base->dev;
+		if (offs > dev->size)
+			return -EINVAL;
+		break;
 
-		case DEV_PART:
-			dev = srvdev->part->srvhdd->hdd->dev;
-			offs += srvdev->part->start * dev->sectorsz;
-			break;
+	case DEV_PART:
+		dev = sdev->part->bdev->base->dev;
+		if (offs > sdev->part->sectors * dev->sectorsz)
+			return -EINVAL;
+		offs += sdev->part->start * dev->sectorsz;
+		break;
 
-		default:
-			return -1;
+	default:
+		return -1;
 	}
 
 	return ata_read(dev, offs, buff, len);
 }
 
 
-ssize_t atasrv_write(id_t id, offs_t offs, const char *buff, size_t len)
+static ssize_t atasrv_write(id_t id, offs_t offs, const char *buff, size_t len)
 {
-	atasrv_dev_t *srvdev;
+	atasrv_dev_t *sdev;
 	ata_dev_t *dev;
 
-	if ((srvdev = lib_treeof(atasrv_dev_t, node, idtree_find(&atasrv_common.devices, id))) == NULL)
+	if ((sdev = lib_treeof(atasrv_dev_t, node, idtree_find(&atasrv_common.sdevs, id))) == NULL)
 		return -ENODEV;
 
-	switch (srvdev->type) {
-		case DEV_HDD:
-			dev = srvdev->hdd->dev;
-			break;
+	switch (sdev->type) {
+	case DEV_BASE:
+		dev = sdev->base->dev;
+		if (offs > sdev->base->dev->size)
+			return -EINVAL;
+		break;
 
-		case DEV_PART:
-			dev = srvdev->part->srvhdd->hdd->dev;
-			offs += srvdev->part->start * dev->sectorsz;
-			break;
+	case DEV_PART:
+		dev = sdev->part->bdev->base->dev;
+		if (offs > sdev->part->sectors * dev->sectorsz)
+			return -EINVAL;
+		offs += sdev->part->start * dev->sectorsz;
+		break;
 
-		default:
-			return -1;
+	default:
+		return -1;
 	}
 
 	return ata_write(dev, offs, buff, len);
@@ -365,29 +364,37 @@ ssize_t atasrv_write(id_t id, offs_t offs, const char *buff, size_t len)
 
 static int atasrv_mount(id_t id, const char *name, oid_t *oid)
 {
-	atasrv_dev_t *srvpart;
+	atasrv_dev_t *pdev;
 	atasrv_fs_t *fs;
 	int err;
 
-	if ((srvpart = lib_treeof(atasrv_dev_t, node, idtree_find(&atasrv_common.devices, id))) == NULL)
+	if ((pdev = lib_treeof(atasrv_dev_t, node, idtree_find(&atasrv_common.sdevs, id))) == NULL)
 		return -ENODEV;
 
-	if (srvpart->type != DEV_PART)
+	if (pdev->type != DEV_PART)
 		return -EINVAL;
 
-	if ((fs = atasrv_fsfind(name)) == NULL)
+	if (pdev->part->fs != NULL)
+		return -EEXIST;
+
+	if ((pdev->part->fs = fs = (name == NULL) ? atasrv_findfs(pdev->part->type) : atasrv_getfs(name)) == NULL)
+		return -ENOENT;
+
+	if (fs->type != pdev->part->type)
 		return -EINVAL;
 
-	if (srvpart->part->type != fs->type)
-		return -EINVAL;
+	oid->port = pdev->part->port;
+	oid->id = id;
 
-	oid->port = srvpart->part->port;
-	oid->id = idtree_id(&srvpart->node);
-
-	if ((err = fs->mount(oid, atasrv_read, atasrv_write, &srvpart->part->data)) < 0)
+	if ((oid->id = err = fs->mount(oid, pdev->part->bdev->base->dev->sectorsz, atasrv_read, atasrv_write, &pdev->part->fdata)) < 0)
 		return err;
 
-	srvpart->part->fs = fs;
+	if ((err = beginthread(atasrv_fsthr, 4, pdev->part->pstack, sizeof(pdev->part->pstack), pdev->part)) < 0) {
+		pdev->part->fs->unmount(pdev->part->fdata);
+		pdev->part->fs = NULL;
+		pdev->part->fdata = NULL;
+		return err;
+	}
 
 	return EOK;
 }
@@ -395,12 +402,9 @@ static int atasrv_mount(id_t id, const char *name, oid_t *oid)
 
 static void atasrv_msgloop(void *arg)
 {
-	uint32_t port = (uint32_t)arg;
-	unsigned int rid;
+	unsigned int rid, port = *(unsigned int *)arg;
 	mount_msg_t *mnt;
-	oid_t *oid;
 	msg_t msg;
-	int err;
 
 	for (;;) {
 		if (msgRecv(port, &msg, &rid) < 0)
@@ -417,20 +421,10 @@ static void atasrv_msgloop(void *arg)
 
 		case mtMount:
 			mnt = (mount_msg_t *)msg.i.raw;
-			oid = (oid_t *)msg.o.raw;
-
-			if ((err = atasrv_mount(mnt->id, mnt->fstype, oid)) < 0) {
-				oid->port = -1;
-				oid->id = 0;
-			}
+			atasrv_mount(mnt->id, mnt->fstype, (oid_t *)msg.o.raw);
 			break;
 
-		/* TBD
 		case mtSync:
-			msg.o.io.err = -ENOSYS;
-			break;
-		*/
-
 		case mtGetAttr:
 			msg.o.io.err = -ENOSYS;
 			break;
@@ -450,124 +444,166 @@ static void atasrv_msgloop(void *arg)
 }
 
 
-static void print_usage(const char* progname) {
-	printf("Usage: %s [OPTIONS] or no args to mount first registered MBR partition as root\n", progname);
-	printf("\t-p id type start size    Register HDD partition\n");
-	printf("\t\tid:    HDD id starting at 0\n");
+static void atasrv_usage(const char* prog)
+{
+	printf("Usage: %s [OPTION] or no args to mount first MBR partition as root\n", prog);
+	printf("\t-p <id> <type> <start> <size> :registers partition\n");
+	printf("\t\tid:    device id starting at 0\n");
 	printf("\t\ttype:  partition type e.g. 0x83 for native Linux partition\n");
 	printf("\t\tstart: partition start (LBA)\n");
 	printf("\t\tsize:  partition size in sectors\n");
-	printf("\t-r id name               Mount root partition\n");
+	printf("\t-r <id>                       :mounts root partition\n");
 	printf("\t\tid:    partition id starting at 0\n");
-	printf("\t\tname:  filesystem name e.g. ext2\n");
-	printf("\t-d                       Daemonize server\n")
-	printf("\t-h                       Show this help message\n");
+	printf("\t-h                            :shows this help message\n");
+}
+
+
+static void atasrv_signalexit(int sig)
+{
+	exit(EXIT_SUCCESS);
 }
 
 
 int main(int argc, char **argv)
 {
-	atasrv_dev_t *srvdev, *srvhdd;
+	atasrv_dev_t *sdev, *bdev;
 	ata_dev_t *dev;
-	mbr_t *mbr;
 	rbnode_t *node;
-	id_t id;
-	oid_t root = { -1, 0 };
-	char *name;
-	uint8_t type;
-	uint32_t start, sectors;
-	int i, j, c, argn, pid, sid, err;
-	int daemonize = 0;
+	mbr_t *mbr;
+	unsigned int i, j, type, start, sectors;
+	int err, c, argn, id, pid, mroot = 0;
+	oid_t oid;
+	char path[32];
 
-	if ((err = ata_init()))
+	/* Detect ATA devices */
+	if ((err = ata_init()) < 0) {
+		fprintf(stderr, "pc-ata: failed to detect ATA devices\n");
 		return err;
+	}
 
-	if ((err = portCreate(&atasrv_common.port)) < 0)
+	/* Set parent exit handler */
+	signal(SIGUSR1, atasrv_signalexit);
+
+	/* Daemonize server */
+	if ((pid = fork()) < 0) {
+		fprintf(stderr, "pc-ata: failed to daemonize server\n");
+		exit(EXIT_FAILURE);
+	}
+	else if (pid > 0) {
+		/* Parent waits to be killed by the child after finished server initialization */
+		sleep(10);
+		fprintf(stderr, "pc-ata: failed to successfully initialize server\n");
+		exit(EXIT_FAILURE);
+	}
+
+	/* Set child exit handler */
+	signal(SIGUSR1, atasrv_signalexit);
+
+	if (setsid() < 0) {
+		fprintf(stderr, "pc-ata: failed to create new session\n");
+		exit(EXIT_FAILURE);
+	}
+
+	/* Init common server data */
+	if ((err = portCreate(&atasrv_common.port)) < 0) {
+		fprintf(stderr, "pc-ata: failed to create server port\n");
 		return err;
+	}
 
-	if ((err = mutexCreate(&atasrv_common.lock)) < 0)
+	if ((err = mutexCreate(&atasrv_common.rlock)) < 0) {
+		fprintf(stderr, "pc-ata: failed to create server requests mutex\n");
 		return err;
+	}
 
-	if ((err = condCreate(&atasrv_common.cond)) < 0)
+	if ((err = condCreate(&atasrv_common.rcond)) < 0) {
+		fprintf(stderr, "pc-ata: failed to create server requests condition variable\n");
 		return err;
+	}
 
-	atasrv_common.ndevices = 0;
-	idtree_init(&atasrv_common.devices);
-	lib_rbInit(&atasrv_common.filesystems, atasrv_fscmp, NULL);
-	atasrv_common.queue = NULL;
+	atasrv_common.ndevs = 0;
+	atasrv_common.rqueue = NULL;
+	idtree_init(&atasrv_common.sdevs);
+	lib_rbInit(&atasrv_common.fss, atasrv_cmpfs, NULL);
 
 	/* Register filesystems */
-	FS_REGISTER(EXT2);
+	if (atasrv_registerfs(LIBEXT2_NAME, LIBEXT2_TYPE, LIBEXT2_MOUNT, LIBEXT2_UNMOUNT, LIBEXT2_HANDLER) < 0)
+		fprintf(stderr, "pc-ata: failed to register ext2 filesystem\n");
 
-	/* Start thread pool */
-	for (i = 0; i < sizeof(atasrv_common.poolstacks) / sizeof(atasrv_common.poolstacks[0]); i++)
-		beginthread(atasrv_poolthr, 4, atasrv_common.poolstacks[i], sizeof(atasrv_common.poolstacks[i]), NULL);
-
-	/* Init HDD devices */
-	dev = ata_common.devices;
-	for (i = 0; i < ata_common.ndevices; i++) {
-		dev = dev->prev;
-		if ((err = atasrv_inithdd(dev)))
+	/* Init base ATA devices - process the list as FIFO */
+	dev = ata_common.devs;
+	for (i = 0; i < ata_common.ndevs; i++) {
+		if ((err = atasrv_initbase((dev = dev->prev))) < 0) {
+			fprintf(stderr, "pc-ata: failed to initialize ATA device %d\n", i);
 			return err;
+		}
 	}
 
 	if (argc > 1) {
-		while ((c = getopt(argc, argv, "dhp:r:")) != -1) {
+		/* Process command line options */
+		while ((c = getopt(argc, argv, "p:r:h")) != -1) {
 			switch (c) {
-			case 'd':
-				daemonize = 1;
-
-			case 'r':
-				argn = optind - 1;
-				if (argn + 1 < argc) {
-					id = atoi(argv[argn++]);
-					name = argv[argn];
-					optind += 1;
-
-					if ((err = atasrv_mount(atasrv_common.ndevices + id, name, &root)) < 0) {
-						root.port = -1;
-						root.id = 0;
-					}
-				}
-				break;
-
 			case 'p':
 				argn = optind - 1;
 				if (argn + 3 < argc) {
-					id = atoi(argv[argn++]);
-					type = (uint8_t)strtoul(argv[argn++], NULL, 0);
-					start = (uint32_t)strtoul(argv[argn++], NULL, 0);
-					sectors = (uint32_t)strtoul(argv[argn], NULL, 0);
+					id = (int)strtoul(argv[argn++], NULL, 0);
+					type = (unsigned int)strtoul(argv[argn++], NULL, 0);
+					start = (unsigned int)strtoul(argv[argn++], NULL, 0);
+					sectors = (unsigned int)strtoul(argv[argn++], NULL, 0);
 					optind += 3;
 
-					if ((srvhdd = lib_treeof(atasrv_dev_t, node, idtree_find(&atasrv_common.devices, id))) == NULL)
-						return -ENODEV;
-
-					if (srvhdd->type != DEV_HDD)
+					if (((bdev = lib_treeof(atasrv_dev_t, node, idtree_find(&atasrv_common.sdevs, id))) == NULL) || (bdev->type != DEV_BASE)) {
+						fprintf(stderr, "pc-ata: invalid device id (%d) passed to -p option\n", id);
 						return -EINVAL;
+					}
 
-					if ((err = atasrv_initpart(srvhdd, type, start, sectors)) < 0)
-						return err;
+					if (atasrv_initpart(bdev, (uint8_t)type, (uint32_t)start, (uint32_t)sectors) < 0) {
+						fprintf(stderr, "pc-ata: failed to register partition on device %d starting at LBA %u\n", id, start);
+						break;
+					}
+				}
+				else {
+					fprintf(stderr, "pc-ata: missing arg(s) for -p option\n");
+					return -EINVAL;
+				}
+				break;
+
+			case 'r':
+				argn = optind - 1;
+				if (argn < argc) {
+					id = (int)strtoul(argv[argn++], NULL, 0);
+
+					if (atasrv_mount(atasrv_common.ndevs + id, NULL, &oid) < 0) {
+						fprintf(stderr, "pc-ata: failed to mount root partition %d\n", id);
+						break;
+					}
+					mroot = 1;
+				}
+				else {
+					printf("pc-ata: missing arg(s) for -r option\n");
+					return -EINVAL;
 				}
 				break;
 
 			case 'h':
+				atasrv_usage(argv[0]);
+				break;
+
 			default:
-				print_usage(argv[0]);
-				return EOK;
+				atasrv_usage(argv[0]);
+				return -EINVAL;
 			}
 		}
 	}
 	else {
-		/* Init MBR partitions */
-		if ((mbr = malloc(sizeof(mbr_t))) == NULL)
+		/* Init partitions from MBR partition table */
+		if ((mbr = (mbr_t *)malloc(sizeof(mbr_t))) == NULL)
 			return -ENOMEM;
 
-		for (i = 0; i < atasrv_common.ndevices; i++) {
-			if ((srvhdd = lib_treeof(atasrv_dev_t, node, idtree_find(&atasrv_common.devices, i))) == NULL)
+		for (i = 0; i < atasrv_common.ndevs; i++) {
+			if ((bdev = lib_treeof(atasrv_dev_t, node, idtree_find(&atasrv_common.sdevs, i))) == NULL)
 				return -ENODEV;
 
-			if ((err = read_mbr(srvhdd->hdd->dev, mbr)) < 0) {
+			if ((err = mbr_read(bdev->base->dev, mbr)) < 0) {
 				if (err == -ENOENT)
 					continue;
 				return err;
@@ -576,65 +612,64 @@ int main(int argc, char **argv)
 			for (j = 0; j < sizeof(mbr->pent) / sizeof(mbr->pent[0]); j++) {
 				if (!(mbr->pent[j].type))
 					continue;
-				if ((err = atasrv_initpart(srvhdd, mbr->pent[j].type, mbr->pent[j].start, mbr->pent[j].sectors)) < 0)
-					return err;
+				if (atasrv_initpart(bdev, mbr->pent[j].type, mbr->pent[j].start, mbr->pent[j].sectors) < 0)
+					fprintf(stderr, "pc-ata: failed to register MBR partition %u from device %u\n", j, i);
 			}
 		}
 		free(mbr);
 
-		/* Try mounting first MBR partition with ext2 filesystem as root*/
-		if ((err = atasrv_mount(atasrv_common.ndevices, "ext2", &root)) < 0) {
-			root.port = -1;
-			root.id = 0;
-		}
+		/* Mount first detected MBR partition as root */
+		if (atasrv_mount(atasrv_common.ndevs, NULL, &oid) < 0)
+			fprintf(stderr, "pc-ata: failed to mount root MBR partition\n");
+		else
+			mroot = 1;
 	}
 
-	if (root.port) {
-		/* Register root */
-		root.port = atasrv_common.ndevices;
-		root.id = 2;
-		if ((err = portRegister(root.port, "/", &root)) < 0)
+	/* Register root */
+	if (mroot && ((err = portRegister(oid.port, "/", &oid)) < 0)) {
+		fprintf(stderr, "pc-ata: failed to register root filesystem\n");
+		return err;
+	}
+	else {
+		/* Wait for root filesystem */
+		while (lookup("/", NULL, &oid) < 0)
+			usleep(10000);
+	}
+
+	/* Run pool threads */
+	for (i = 0; i < sizeof(atasrv_common.pstacks) / sizeof(atasrv_common.pstacks[0]); i++) {
+		if ((err = beginthread(atasrv_poolthr, 4, atasrv_common.pstacks[i], sizeof(atasrv_common.pstacks[i]), NULL)) < 0) {
+			fprintf(stderr, "pc-ata: failed to start pool thread %d\n", i);
 			return err;
-
-		atasrv_mount(atasrv_common.ndevices, "ext2", &root);
-		/* Register devices */
-		for (node = lib_rbMinimum(atasrv_common.devices.root); node != NULL; node = lib_rbNext(node)) {
-			srvdev = lib_treeof(atasrv_dev_t, node, node);
-
-			switch (srvdev->type) {
-			case DEV_HDD:
-				if ((err = atasrv_reghdd(srvdev)) < 0)
-					return err;
-				break;
-
-			case DEV_PART:
-				if ((err = atasrv_regpart(srvdev)) < 0)
-					return err;
-				break;
-
-			default:
-				return -1;
-			}
 		}
 	}
 
-	if (daemonize) {
-		/* Daemonize */
-		pid = fork();
+	/* Register devices */
+	for (node = lib_rbMinimum(atasrv_common.sdevs.root); node != NULL; node = lib_rbNext(node)) {
+		sdev = lib_treeof(atasrv_dev_t, node, lib_treeof(idnode_t, linkage, node));
 
-		if (pid < 0)
-			exit(EXIT_FAILURE);
+		switch (sdev->type) {
+		case DEV_BASE:
+			sprintf(path, "%s%c", HDD_BASE, 'a' + sdev->base->number);
+			oid.port = atasrv_common.port;
+			oid.id = idtree_id(&sdev->node);
+			break;
 
-		if (pid > 0)
-			exit(EXIT_SUCCESS);
+		case DEV_PART:
+			sprintf(path, "%s%c%d", HDD_BASE, 'a' + sdev->part->bdev->base->number, sdev->part->number);
+			oid.port = sdev->part->port;
+			oid.id = idtree_id(&sdev->node);
+			break;
+		}
 
-		sid = setsid();
-
-		if (sid < 0)
-			exit(EXIT_FAILURE);
+		if (create_dev(&oid, path) < 0)
+			fprintf(stderr, "pc-ata: failed to register device %s\n", path);
 	}
 
-	atasrv_msgloop((void *)(atasrv_common.port));
+	/* Finished server initialization - kill parent */
+	kill(getppid(), SIGUSR1);
+
+	atasrv_msgloop(&atasrv_common.port);
 
 	return EOK;
 }

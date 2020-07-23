@@ -17,10 +17,9 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include <sys/io.h>
 #include <sys/list.h>
 #include <sys/threads.h>
-
-#include <arch/ia32/io.h>
 
 #include "ata.h"
 
@@ -51,7 +50,7 @@ static uint32_t ata_readreg(void *base, uint8_t reg, uint8_t size)
 	}
 	else {
 		/* Read from memory */
-		addr &= ~0xF;
+		addr &= ~0xf;
 		addr += reg;
 
 		switch (size) {
@@ -64,7 +63,7 @@ static uint32_t ata_readreg(void *base, uint8_t reg, uint8_t size)
 		}
 	}
 
-	return -1;
+	return -EINVAL;
 }
 
 
@@ -91,7 +90,7 @@ static void ata_writereg(void *base, uint8_t reg, uint32_t val, uint8_t size)
 	}
 	else {
 		/* Write to memory */
-		addr &= ~0xF;
+		addr &= ~0xf;
 		addr += reg;
 
 		switch (size) {
@@ -135,7 +134,7 @@ static void ata_resetbus(ata_bus_t *bus)
 }
 
 
-static void ata_select(ata_dev_t *dev, uint64_t lba, uint16_t nsectors, uint8_t mode)
+static void ata_select(ata_dev_t *dev, uint64_t lba, uint16_t sectors, uint8_t mode)
 {
 	ata_bus_t *bus = dev->bus;
 	void *base = bus->base;
@@ -160,7 +159,7 @@ static void ata_select(ata_dev_t *dev, uint64_t lba, uint16_t nsectors, uint8_t 
 	}
 
 	/* Select the device */
-	ata_writereg(base, REG_DEVSEL, (h & 0xFF) | (dev == bus->devs[SLAVE]) * DEVSEL_DEVNUM | DEVSEL_SET0 | DEVSEL_SET1, 1);
+	ata_writereg(base, REG_DEVSEL, (h & 0xff) | (dev == bus->devs[SLAVE]) * DEVSEL_DEVNUM | DEVSEL_SET0 | DEVSEL_SET1, 1);
 	/* Wait for the device to push its status onto the bus */
 	ata_delay(bus);
 
@@ -169,15 +168,15 @@ static void ata_select(ata_dev_t *dev, uint64_t lba, uint16_t nsectors, uint8_t 
 
 	/* Write other registers */
 	if (mode == LBA48) {
-		ata_writereg(base, REG_NSECTORS,  (nsectors >>  8) & 0xFF, 1);
-		ata_writereg(base, REG_SECTOR,    (lba      >> 24) & 0xFF, 1);
-		ata_writereg(base, REG_LCYLINDER, (lba      >> 32) & 0xFF, 1);
-		ata_writereg(base, REG_HCYLINDER, (lba      >> 40) & 0xFF, 1);
+		ata_writereg(base, REG_NSECTORS,  (sectors  >>  8) & 0xff, 1);
+		ata_writereg(base, REG_SECTOR,    (lba      >> 24) & 0xff, 1);
+		ata_writereg(base, REG_LCYLINDER, (lba      >> 32) & 0xff, 1);
+		ata_writereg(base, REG_HCYLINDER, (lba      >> 40) & 0xff, 1);
 	}
-	ata_writereg(base, REG_NSECTORS,  nsectors & 0xFF, 1);
-	ata_writereg(base, REG_SECTOR,    (s >> 0) & 0xFF, 1);
-	ata_writereg(base, REG_LCYLINDER, (c >> 0) & 0xFF, 1);
-	ata_writereg(base, REG_HCYLINDER, (c >> 8) & 0xFF, 1);
+	ata_writereg(base, REG_NSECTORS,  sectors  & 0xff, 1);
+	ata_writereg(base, REG_SECTOR,    (s >> 0) & 0xff, 1);
+	ata_writereg(base, REG_LCYLINDER, (c >> 0) & 0xff, 1);
+	ata_writereg(base, REG_HCYLINDER, (c >> 8) & 0xff, 1);
 }
 
 
@@ -196,21 +195,22 @@ static int ata_wait(ata_bus_t *bus, uint8_t clear, uint8_t set)
 
 	} while ((status & clear) || (status & set) != set);
 
-	return 0;
+	return EOK;
 }
 
 
-static ssize_t ata_pio(ata_dev_t *dev, uint16_t nsectors, uint8_t *buff, uint8_t dir)
+static ssize_t ata_pio(ata_dev_t *dev, uint16_t sectors, uint8_t *buff, uint8_t dir)
 {
 	ata_bus_t *bus = dev->bus;
 	void *base = bus->base;
-	uint16_t data;
-	uint32_t i, j;
-	ssize_t err, ret = 0;
+	ssize_t ret = 0;
+	uint16_t data, i;
+	uint32_t j;
+	int err;
 
-	for (i = 0; i < nsectors; i++) {
+	for (i = 0; i < sectors; i++) {
 		/* Wait until BSY clears and DRQ sets */
-		if ((err = ata_wait(bus, STATUS_BSY, STATUS_DRQ)))
+		if ((err = ata_wait(bus, STATUS_BSY, STATUS_DRQ)) < 0)
 			return err;
 
 		switch (dir) {
@@ -218,8 +218,8 @@ static ssize_t ata_pio(ata_dev_t *dev, uint16_t nsectors, uint8_t *buff, uint8_t
 			/* Read one sector */
 			for (j = 0; j < dev->sectorsz; j += 2) {
 				data = (uint16_t)ata_readreg(base, REG_DATA, 2);
-				(buff + ret)[j + 0] = (data >> 0) & 0xFF;
-				(buff + ret)[j + 1] = (data >> 8) & 0xFF;
+				(buff + ret)[j + 0] = (data >> 0) & 0xff;
+				(buff + ret)[j + 1] = (data >> 8) & 0xff;
 			}
 			break;
 
@@ -237,26 +237,25 @@ static ssize_t ata_pio(ata_dev_t *dev, uint16_t nsectors, uint8_t *buff, uint8_t
 	}
 
 	/* Wait until DRQ clears and RDY sets */
-	if ((err = ata_wait(bus, STATUS_DRQ, STATUS_RDY)))
+	if ((err = ata_wait(bus, STATUS_DRQ, STATUS_RDY)) < 0)
 		return err;
 
 	return ret;
 }
 
 
-static ssize_t _ata_access(ata_dev_t *dev, uint64_t lba, uint16_t nsectors, uint8_t cmd, uint8_t *buff)
+static ssize_t _ata_access(ata_dev_t *dev, uint64_t lba, uint16_t sectors, uint8_t cmd, uint8_t *buff)
 {
 	ata_bus_t *bus = dev->bus;
 	void *base = bus->base;
-	ssize_t err, ret = -1;
+	ssize_t ret;
 
 	/* Wait until BSY clears */
-	if ((err = ata_wait(bus, STATUS_BSY, 0)))
-		return err;
+	if ((ret = ata_wait(bus, STATUS_BSY, 0)) < 0)
+		return ret;
 
 	/* Select the device and prepare for the transfer */
-	ata_select(dev, lba, nsectors, dev->mode);
-
+	ata_select(dev, lba, sectors, dev->mode);
 	/* Send the command */
 	ata_writereg(base, REG_CMD, cmd, 1);
 
@@ -264,12 +263,12 @@ static ssize_t _ata_access(ata_dev_t *dev, uint64_t lba, uint16_t nsectors, uint
 	switch (cmd) {
 	case CMD_READ_PIO:
 	case CMD_READ_PIO_EXT:
-		ret = ata_pio(dev, nsectors, buff, READ);
+		ret = ata_pio(dev, sectors, buff, READ);
 		break;
 
 	case CMD_WRITE_PIO:
 	case CMD_WRITE_PIO_EXT:
-		if ((ret = ata_pio(dev, nsectors, buff, WRITE)) < 0)
+		if ((ret = ata_pio(dev, sectors, buff, WRITE)) < 0)
 			break;
 
 		/* Flush the hardware cache */
@@ -287,6 +286,9 @@ ssize_t ata_read(ata_dev_t *dev, offs_t offs, char *buff, size_t len)
 	uint8_t cmd;
 	ssize_t ret;
 
+	if (!len)
+		return 0;
+
 	switch (dev->mode) {
 	case CHS:
 	case LBA28:
@@ -302,7 +304,9 @@ ssize_t ata_read(ata_dev_t *dev, offs_t offs, char *buff, size_t len)
 	}
 
 	mutexLock(dev->bus->lock);
+
 	ret = _ata_access(dev, (uint64_t)(offs / dev->sectorsz), (uint16_t)(len / dev->sectorsz), cmd, (uint8_t *)buff);
+
 	mutexUnlock(dev->bus->lock);
 
 	return ret;
@@ -313,6 +317,9 @@ ssize_t ata_write(ata_dev_t *dev, offs_t offs, const char *buff, size_t len)
 {
 	uint8_t cmd;
 	ssize_t ret;
+
+	if (!len)
+		return 0;
 
 	switch (dev->mode) {
 	case CHS:
@@ -329,7 +336,9 @@ ssize_t ata_write(ata_dev_t *dev, offs_t offs, const char *buff, size_t len)
 	}
 
 	mutexLock(dev->bus->lock);
+
 	ret = _ata_access(dev, (uint64_t)(offs / dev->sectorsz), (uint16_t)(len / dev->sectorsz), cmd, (uint8_t *)buff);
+
 	mutexUnlock(dev->bus->lock);
 
 	return ret;
@@ -339,7 +348,7 @@ ssize_t ata_write(ata_dev_t *dev, offs_t offs, const char *buff, size_t len)
 static int ata_initdev(ata_bus_t *bus, ata_dev_t *dev)
 {
 	void *base = bus->base;
-	uint8_t hcyl, lcyl, info[512];
+	uint8_t info[512];
 	uint16_t data;
 	int err, i;
 
@@ -349,7 +358,7 @@ static int ata_initdev(ata_bus_t *bus, ata_dev_t *dev)
 	ata_select(dev, 0, 0, -1);
 
 	/* Floating bus check */
-	if (ata_readreg(base, REG_STATUS, 1) == 0xFF)
+	if (ata_readreg(base, REG_STATUS, 1) == 0xff)
 		return -ENXIO;
 
 	/* Send identify command */
@@ -359,39 +368,23 @@ static int ata_initdev(ata_bus_t *bus, ata_dev_t *dev)
 	if (!ata_readreg(base, REG_STATUS, 1))
 		return -ENXIO;
 
-	lcyl = (uint8_t)ata_readreg(base, REG_LCYLINDER, 1);
-	hcyl = (uint8_t)ata_readreg(base, REG_HCYLINDER, 1);
-
-	/* Detect device type */
-	switch ((hcyl << 8) | lcyl) {
-	case 0x0000:
-		/* ATA device */
-		break;
-
-	case 0xC33C:
-		/* SATA device */
-	case 0xEB14:
-		/* ATAPI device */
-	case 0x9669:
-		/* SATAPI device */
-	default:
-		/* Unknown device */
+	/* Check if it's ATA device */
+	if ((ata_readreg(base, REG_HCYLINDER, 1) << 8) | ata_readreg(base, REG_LCYLINDER, 1))
 		return -ENXIO;
-	}
 
 	/* Wait until BSY clears and DRQ sets */
-	if ((err = ata_wait(bus, STATUS_BSY, STATUS_DRQ)))
+	if ((err = ata_wait(bus, STATUS_BSY, STATUS_DRQ)) < 0)
 		return err;
 
 	/* Read device identification info */
 	for (i = 0; i < sizeof(info) / sizeof(info[0]); i += 2) {
 		data = (uint16_t)ata_readreg(base, REG_DATA, 2);
-		info[i + 0] = (data >> 8) & 0xFF;
-		info[i + 1] = (data >> 0) & 0xFF;
+		info[i + 0] = (data >> 8) & 0xff;
+		info[i + 1] = (data >> 0) & 0xff;
 	}
 
 	/* Wait until DRQ clears and RDY sets */
-	if ((err = ata_wait(bus, STATUS_DRQ, STATUS_RDY)))
+	if ((err = ata_wait(bus, STATUS_DRQ, STATUS_RDY)) < 0)
 		return err;
 
 	dev->mode = ((info[98] >> 1) & 1) + ((info[166] >> 2) & 1);
@@ -411,22 +404,22 @@ static int ata_initdev(ata_bus_t *bus, ata_dev_t *dev)
 
 	case LBA28:
 		dev->size =
-			(info[121] <<  0) |
-			(info[120] <<  8) |
-			(info[123] << 16) |
-			(info[122] << 24);
+			((uint64_t)info[121] <<  0) |
+			((uint64_t)info[120] <<  8) |
+			((uint64_t)info[123] << 16) |
+			((uint64_t)info[122] << 24);
 		break;
 
 	case LBA48:
 		dev->size =
-			(((uint64_t)info[201]) <<  0) |
-			(((uint64_t)info[200]) <<  8) |
-			(((uint64_t)info[203]) << 16) |
-			(((uint64_t)info[202]) << 24) |
-			(((uint64_t)info[205]) << 32) |
-			(((uint64_t)info[204]) << 40) |
-			(((uint64_t)info[207]) << 48) |
-			(((uint64_t)info[206]) << 56);
+			((uint64_t)info[201] <<  0) |
+			((uint64_t)info[200] <<  8) |
+			((uint64_t)info[203] << 16) |
+			((uint64_t)info[202] << 24) |
+			((uint64_t)info[205] << 32) |
+			((uint64_t)info[204] << 40) |
+			((uint64_t)info[207] << 48) |
+			((uint64_t)info[206] << 56);
 		break;
 	}
 	dev->size *= dev->sectorsz;
@@ -443,13 +436,13 @@ static int ata_initbus(void *base, void *ctrl, ata_bus_t *bus)
 	bus->ctrl = ctrl;
 
 	/* Floating bus check */
-	if (ata_readreg(base, REG_STATUS, 1) == 0xFF)
+	if (ata_readreg(base, REG_STATUS, 1) == 0xff)
 		return -ENXIO;
 
-	if ((bus->devs[MASTER] = malloc(sizeof(ata_dev_t))) == NULL)
+	if ((bus->devs[MASTER] = (ata_dev_t *)malloc(sizeof(ata_dev_t))) == NULL)
 		return -ENOMEM;
 
-	if ((bus->devs[SLAVE] = malloc(sizeof(ata_dev_t))) == NULL) {
+	if ((bus->devs[SLAVE] = (ata_dev_t *)malloc(sizeof(ata_dev_t))) == NULL) {
 		free(bus->devs[MASTER]);
 		return -ENOMEM;
 	}
@@ -457,12 +450,12 @@ static int ata_initbus(void *base, void *ctrl, ata_bus_t *bus)
 	/* Software reset the bus */
 	ata_resetbus(bus);
 
-	if (ata_initdev(bus, bus->devs[MASTER])) {
+	if (ata_initdev(bus, bus->devs[MASTER]) < 0) {
 		free(bus->devs[MASTER]);
 		bus->devs[MASTER] = NULL;
 	}
 
-	if (ata_initdev(bus, bus->devs[SLAVE])) {
+	if (ata_initdev(bus, bus->devs[SLAVE]) < 0) {
 		free(bus->devs[SLAVE]);
 		bus->devs[SLAVE] = NULL;
 	}
@@ -479,13 +472,13 @@ static int ata_initbus(void *base, void *ctrl, ata_bus_t *bus)
 	LIST_ADD(&buses, bus);
 
 	if (bus->devs[MASTER] != NULL) {
-		LIST_ADD(&ata_common.devices, bus->devs[MASTER]);
-		ata_common.ndevices++;
+		LIST_ADD(&ata_common.devs, bus->devs[MASTER]);
+		ata_common.ndevs++;
 	}
 
 	if (bus->devs[SLAVE] != NULL) {
-		LIST_ADD(&ata_common.devices, bus->devs[SLAVE]);
-		ata_common.ndevices++;
+		LIST_ADD(&ata_common.devs, bus->devs[SLAVE]);
+		ata_common.ndevs++;
 	}
 
 	return EOK;
@@ -496,22 +489,22 @@ int ata_init(void)
 {
 	ata_bus_t *bus1, *bus2;
 
-	ata_common.ndevices = 0;
-	ata_common.devices = NULL;
+	ata_common.ndevs = 0;
+	ata_common.devs = NULL;
 	buses = NULL;
 
-	if ((bus1 = malloc(sizeof(ata_bus_t))) == NULL)
+	if ((bus1 = (ata_bus_t *)malloc(sizeof(ata_bus_t))) == NULL)
 		return -ENOMEM;
 
-	if ((bus2 = malloc(sizeof(ata_bus_t))) == NULL) {
+	if ((bus2 = (ata_bus_t *)malloc(sizeof(ata_bus_t))) == NULL) {
 		free(bus1);
 		return -ENOMEM;
 	}
 
-	if (ata_initbus((void *)(ATA1_BASE | 0x1), (void *)(ATA1_CTRL | 0x1), bus1))
+	if (ata_initbus((void *)(ATA1_BASE | 0x1), (void *)(ATA1_CTRL | 0x1), bus1) < 0)
 		free(bus1);
 
-	if (ata_initbus((void *)(ATA2_BASE | 0x1), (void *)(ATA2_CTRL | 0x1), bus2))
+	if (ata_initbus((void *)(ATA2_BASE | 0x1), (void *)(ATA2_CTRL | 0x1), bus2) < 0)
 		free(bus2);
 
 	return EOK;
