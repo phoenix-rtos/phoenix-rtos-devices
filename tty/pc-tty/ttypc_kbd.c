@@ -655,30 +655,30 @@ int ttypc_kbd_configure(ttypc_t *ttypc)
 
 		/* Save controller configuration */
 		outb((void *)((uintptr_t)ttypc->kbd + 4), 0x60);
-		if ((err = ttypc_kbd_write(ttypc, cb)) < 0)
+		if (ttypc_kbd_write(ttypc, cb) < 0)
 			break;
 
 		/* Controller tests - may not work for PS/2 emulation through USB legacy support */
 		/* Perform controller self test */
 		// outb((void *)((uintptr_t)ttypc->kbd + 4), 0xaa);
-		// if ((err = ttypc_kbd_read(ttypc)) != 0x55)
+		// if (ttypc_kbd_read(ttypc) != 0x55)
 		// 	break;
 
 		// /* Perform first port test */
 		// outb((void *)((uintptr_t)ttypc->kbd + 4), 0xab);
-		// if ((err = ttypc_kbd_read(ttypc)) != 0x00)
+		// if (ttypc_kbd_read(ttypc) != 0x00)
 		// 	break;
 
 		// /* Reset first port */
-		// if ((err = ttypc_kbd_write(ttypc, 0xff)) < 0)
+		// if (ttypc_kbd_write(ttypc, 0xff) < 0)
 		// 	break;
 
 		// /* ACK response */
-		// if ((err = ttypc_kbd_read(ttypc)) != 0xfa)
+		// if (ttypc_kbd_read(ttypc) != 0xfa)
 		// 	break;
 
 		// /* Reset success */
-		// if ((err = ttypc_kbd_read(ttypc)) != 0xaa)
+		// if (ttypc_kbd_read(ttypc) != 0xaa)
 		// 	break;
 
 		/* Configuration finished successfully */
