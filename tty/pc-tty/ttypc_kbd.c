@@ -41,10 +41,10 @@ static const ttypc_kbd_keymap_t scodes[] = {
 	/*type       unshift    shift      ctl        altgr      shift_altgr scancode */
 	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 0 unused */
 	{ KB_ASCII,  "\033",    "\033",    "\033",    "",        "" },    /* 1 ESCape */
-	{ KB_ASCII,  "1",       "!",       "1",       "",        "" },    /* 2 1 */
-	{ KB_ASCII,  "2",       "@",       "\000",    "",        "" },    /* 3 2 */
-	{ KB_ASCII,  "3",       "#",       "\033",    "",        "" },    /* 4 3 */
-	{ KB_ASCII,  "4",       "$",       "\034",    "",        "" },    /* 5 4 */
+	{ KB_ASCII,  "1",       "!",       "\033[m",  "",        "" },    /* 2 1 */
+	{ KB_ASCII,  "2",       "@",       "\033[n",  "",        "" },    /* 3 2 */
+	{ KB_ASCII,  "3",       "#",       "\033[o",  "",        "" },    /* 4 3 */
+	{ KB_ASCII,  "4",       "$",       "\033[p",  "",        "" },    /* 5 4 */
 	{ KB_ASCII,  "5",       "%",       "\035",    "",        "" },    /* 6 5 */
 	{ KB_ASCII,  "6",       "^",       "\036",    "",        "" },    /* 7 6 */
 	{ KB_ASCII,  "7",       "&",       "\037",    "",        "" },    /* 8 7 */
@@ -628,65 +628,34 @@ int ttypc_kbd_configure(ttypc_t *ttypc)
 	/* PS/2 Keyboard base IO-port */
 	ttypc->kbd = (void *)0x60;
 
-	/* Disable controller ports */
-	outb((void *)((uintptr_t)ttypc->kbd + 4), 0xad);
-	outb((void *)((uintptr_t)ttypc->kbd + 4), 0xa7);
+	if (inb((void *)((uintptr_t)ttypc->kbd + 4)) == 0xff)
+		return 0;
+
+	/* Flush output buffer (max 16 characters) */
+	for (i = 0; i < 16; i++) {
+		if (inb((void *)((uintptr_t)ttypc->kbd + 4)) & 1)
+			inb((void *)ttypc->kbd);
+		else
+			break;
+	}
 
 	do {
-		/* Flush output buffer (max 32 characters) */
-		for (i = 0; i < 32; i++) {
-			if (inb((void *)((uintptr_t)ttypc->kbd + 4)) & 1)
-				inb((void *)ttypc->kbd);
-			else
-				break;
-		}
-		if (inb((void *)((uintptr_t)ttypc->kbd + 4)) & 1)
+		/* Send set typematic rate/delay command */
+		if (ttypc_kbd_write(ttypc, 0xf3) < 0)
 			break;
 
-		/* Get controller configuration */
-		outb((void *)((uintptr_t)ttypc->kbd + 4), 0x20);
-		if ((err = ttypc_kbd_read(ttypc)) < 0)
+		/* ACK response */
+		if (ttypc_kbd_read(ttypc) != 0xfa)
 			break;
 
-		/* We want bits 1, 3, 4 and 7 disabled */
-		cb = (unsigned char)err & 0x65;
-		/* Enable first port with translation and interrupts, disable second port */
-		cb |= 0x61;
-
-		/* Save controller configuration */
-		outb((void *)((uintptr_t)ttypc->kbd + 4), 0x60);
-		if (ttypc_kbd_write(ttypc, cb) < 0)
+		/* Set the lowest delay and the fastest rate */
+		if (ttypc_kbd_write(ttypc, 0) < 0)
 			break;
 
-		/* Controller tests - may not work for PS/2 emulation through USB legacy support */
-		/* Perform controller self test */
-		// outb((void *)((uintptr_t)ttypc->kbd + 4), 0xaa);
-		// if (ttypc_kbd_read(ttypc) != 0x55)
-		// 	break;
-
-		// /* Perform first port test */
-		// outb((void *)((uintptr_t)ttypc->kbd + 4), 0xab);
-		// if (ttypc_kbd_read(ttypc) != 0x00)
-		// 	break;
-
-		// /* Reset first port */
-		// if (ttypc_kbd_write(ttypc, 0xff) < 0)
-		// 	break;
-
-		// /* ACK response */
-		// if (ttypc_kbd_read(ttypc) != 0xfa)
-		// 	break;
-
-		// /* Reset success */
-		// if (ttypc_kbd_read(ttypc) != 0xaa)
-		// 	break;
-
-		/* Configuration finished successfully */
-		ret = 1;
+		/* ACK response */
+		if (ttypc_kbd_read(ttypc) != 0xfa)
+			break;
 	} while (0);
 
-	/* Enable first controller port */
-	outb((void *)((uintptr_t)ttypc->kbd + 4), 0xae);
-
-	return ret;
+	return 1;
 }
