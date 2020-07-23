@@ -545,10 +545,10 @@ int main(int argc, char **argv)
 			case 'p':
 				argn = optind - 1;
 				if (argn + 3 < argc) {
-					id = (int)strtoul(argv[argn++], NULL, 0);
-					type = (unsigned int)strtoul(argv[argn++], NULL, 0);
-					start = (unsigned int)strtoul(argv[argn++], NULL, 0);
-					sectors = (unsigned int)strtoul(argv[argn++], NULL, 0);
+					id = strtoul(argv[argn++], NULL, 0);
+					type = strtoul(argv[argn++], NULL, 0);
+					start = strtoul(argv[argn++], NULL, 0);
+					sectors = strtoul(argv[argn], NULL, 0);
 					optind += 3;
 
 					if (((bdev = lib_treeof(atasrv_dev_t, node, idtree_find(&atasrv_common.sdevs, id))) == NULL) || (bdev->type != DEV_BASE)) {
@@ -558,7 +558,6 @@ int main(int argc, char **argv)
 
 					if (atasrv_initpart(bdev, (uint8_t)type, (uint32_t)start, (uint32_t)sectors) < 0) {
 						fprintf(stderr, "pc-ata: failed to register partition on device %d starting at LBA %u\n", id, start);
-						break;
 					}
 				}
 				else {
@@ -568,25 +567,18 @@ int main(int argc, char **argv)
 				break;
 
 			case 'r':
-				argn = optind - 1;
-				if (argn < argc) {
-					id = (int)strtoul(argv[argn++], NULL, 0);
+				id = strtoul(optarg, NULL, 0);
 
-					if (atasrv_mount(atasrv_common.ndevs + id, NULL, &oid) < 0) {
-						fprintf(stderr, "pc-ata: failed to mount root partition %d\n", id);
-						break;
-					}
+				if (atasrv_mount(atasrv_common.ndevs + id, NULL, &oid) < 0) {
+					fprintf(stderr, "pc-ata: failed to mount root partition %d\n", id);
+				} else {
 					mroot = 1;
-				}
-				else {
-					printf("pc-ata: missing arg(s) for -r option\n");
-					return -EINVAL;
 				}
 				break;
 
 			case 'h':
 				atasrv_usage(argv[0]);
-				break;
+				return EOK;
 
 			default:
 				atasrv_usage(argv[0]);
