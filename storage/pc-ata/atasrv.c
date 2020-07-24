@@ -475,6 +475,10 @@ int main(int argc, char **argv)
 	oid_t oid;
 	char path[32];
 
+	/* Wait for console */
+	while (write(1, "", 0) < 0)
+		usleep(50000);
+
 	/* Detect ATA devices */
 	if ((err = ata_init()) < 0) {
 		fprintf(stderr, "pc-ata: failed to detect ATA devices\n");
@@ -543,51 +547,53 @@ int main(int argc, char **argv)
 		while ((c = getopt(argc, argv, "p:r:h")) != -1) {
 			switch (c) {
 			case 'p':
-				argn = optind - 1;
-				if (argn + 3 < argc) {
-					id = strtoul(argv[argn++], NULL, 0);
-					type = strtoul(argv[argn++], NULL, 0);
-					start = strtoul(argv[argn++], NULL, 0);
-					sectors = strtoul(argv[argn], NULL, 0);
-					optind += 3;
-
-					if (((bdev = lib_treeof(atasrv_dev_t, node, idtree_find(&atasrv_common.sdevs, id))) == NULL) || (bdev->type != DEV_BASE)) {
-						fprintf(stderr, "pc-ata: invalid device id (%d) passed to -p option\n", id);
-						return -EINVAL;
-					}
-
-					if (atasrv_initpart(bdev, (uint8_t)type, (uint32_t)start, (uint32_t)sectors) < 0) {
-						fprintf(stderr, "pc-ata: failed to register partition on device %d starting at LBA %u\n", id, start);
-					}
-				}
-				else {
+				if ((argn = optind - 1) > argc - 4) {
 					fprintf(stderr, "pc-ata: missing arg(s) for -p option\n");
 					return -EINVAL;
+				}
+
+				id = strtoul(argv[argn++], NULL, 0);
+				type = strtoul(argv[argn++], NULL, 0);
+				start = strtoul(argv[argn++], NULL, 0);
+				sectors = strtoul(argv[argn++], NULL, 0);
+				optind += 3;
+
+				if (((bdev = lib_treeof(atasrv_dev_t, node, idtree_find(&atasrv_common.sdevs, id))) == NULL) || (bdev->type != DEV_BASE)) {
+					fprintf(stderr, "pc-ata: invalid device id (%d) passed to -p option\n", id);
+					return -EINVAL;
+				}
+
+				if ((err = atasrv_initpart(bdev, (uint8_t)type, (uint32_t)start, (uint32_t)sectors)) < 0) {
+					fprintf(stderr, "pc-ata: failed to register partition on device %d starting at LBA %u\n", id, start);
+					return err;
 				}
 				break;
 
 			case 'r':
 				id = strtoul(optarg, NULL, 0);
 
-				if (atasrv_mount(atasrv_common.ndevs + id, NULL, &oid) < 0) {
-					fprintf(stderr, "pc-ata: failed to mount root partition %d\n", id);
-				} else {
-					mroot = 1;
+				if (mroot) {
+					fprintf(stderr, "pc-ata: root partition is already mounted\n");
+					return -EINVAL;
 				}
+
+				if ((err = atasrv_mount(atasrv_common.ndevs + id, NULL, &oid)) < 0) {
+					fprintf(stderr, "pc-ata: failed to mount root partition %d\n", id);
+					return err;
+				}
+
+				mroot = 1;
 				break;
 
 			case 'h':
-				atasrv_usage(argv[0]);
-				return EOK;
-
 			default:
 				atasrv_usage(argv[0]);
-				return -EINVAL;
+				return EOK;
 			}
 		}
 	}
 	else {
-		/* Init partitions from MBR partition table */
+		/* Init partitions from MBR */
 		if ((mbr = (mbr_t *)malloc(sizeof(mbr_t))) == NULL)
 			return -ENOMEM;
 
