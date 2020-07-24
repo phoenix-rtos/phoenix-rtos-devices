@@ -546,9 +546,6 @@ int _ttypc_kbd_updateled(ttypc_t *ttypc)
 {
 	int ret = 0;
 
-	/* Disable first controller port */
-	outb((void *)((uintptr_t)ttypc->kbd + 4), 0xad);
-
 	do {
 		/* Send update LEDs command */
 		if (ttypc_kbd_write(ttypc, 0xed) < 0)
@@ -569,9 +566,6 @@ int _ttypc_kbd_updateled(ttypc_t *ttypc)
 		/* Successfully updated LEDs state */
 		ret = 1;
 	} while (0);
-
-	/* Enable first controller port */
-	outb((void *)((uintptr_t)ttypc->kbd + 4), 0xae);
 
 	return ret;
 }
@@ -646,7 +640,7 @@ int ttypc_kbd_configure(ttypc_t *ttypc)
 		if (ttypc_kbd_read(ttypc) != 0xfa)
 			break;
 
-		/* Set the lowest delay and the fastest rate */
+		/* 250 ms / 30.0 reports/sec */
 		if (ttypc_kbd_write(ttypc, 0) < 0)
 			break;
 
