@@ -621,9 +621,7 @@ int ttypc_kbd_init(ttypc_t *ttypc)
 
 int ttypc_kbd_configure(ttypc_t *ttypc)
 {
-	unsigned char cb;
 	unsigned int i;
-	int err, ret = 0;
 
 	/* PS/2 Keyboard base IO-port */
 	ttypc->kbd = (void *)0x60;
