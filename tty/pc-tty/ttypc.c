@@ -130,6 +130,10 @@ int main(void)
 	/* Set default cursor color */
 	_ttypc_vga_set(ttypc_common.vt->vram + ttypc_common.vt->cpos, FG_LIGHTGREY << 8, ttypc_common.vt->rows * ttypc_common.vt->cols - ttypc_common.vt->cpos);
 
+	/* Run pool threads */
+	if ((err = beginthread(ttypc_poolthr, 1, ttypc_common.pstack, sizeof(ttypc_common.pstack), &ttypc_common)) < 0)
+		return err;
+
 	/* Initialize keyboard */
 	if (ttypc_kbd_configure(&ttypc_common)) {
 		if ((err = ttypc_kbd_init(&ttypc_common)) < 0)
@@ -137,14 +141,11 @@ int main(void)
 		ttypc_common.ktype = KBD_PS2;
 	}
 	else {
+		fprintf(stderr, "pc-tty: no PS/2 keyboard detected\n");
 		if ((err = ttypc_bioskbd_init(&ttypc_common)) < 0)
 			return err;
 		ttypc_common.ktype = KBD_BIOS;
 	}
-
-	/* Run pool threads */
-	if ((err = beginthread(ttypc_poolthr, 1, ttypc_common.pstack, sizeof(ttypc_common.pstack), &ttypc_common)) < 0)
-		return err;
 
 	/* Wait for the filesystem */
 	while (lookup("/", NULL, &oid) < 0)
