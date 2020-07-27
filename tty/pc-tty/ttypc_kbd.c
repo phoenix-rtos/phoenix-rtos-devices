@@ -201,199 +201,198 @@ static char *_ttypc_kbd_get(ttypc_t *ttypc)
 
 	dt = inb((void *)ttypc->kbd);
 
-	/* Extended scan code key pressed/released */
+	/* Extended scan code */
 	if (scodes[dt & 0x7f].type == KB_EXT) {
 		ext = 1;
+		return NULL;
 	}
+
+	/* Key is released */
+	if (dt & 0x80) {
+		dt &= 0x7f;
+
+		switch (scodes[dt].type) {
+		case KB_SCROLL:
+			if (!ext)
+				ttypc->shiftst &= ~KB_SCROLL;
+			break;
+
+		case KB_NUM:
+			if (!ext)
+				ttypc->shiftst &= ~KB_NUM;
+			break;
+
+		case KB_CAPS:
+			if (!ext)
+				ttypc->shiftst &= ~KB_CAPS;
+			break;
+
+		case KB_CTL:
+			ttypc->shiftst &= ~KB_CTL;
+			break;
+
+		case KB_SHIFT:
+			if (!ext)
+				ttypc->shiftst &= ~KB_SHIFT;
+			break;
+
+		case KB_ALT:
+			if (ext)
+				ttypc->shiftst &= ~KB_ALTGR;
+			else
+				ttypc->shiftst &= ~KB_ALT;
+			break;
+		}
+
+		/* Last key released */
+		if ((dt == lkey) && (ext == lext)) {
+			lkey = 0;
+			lext = 0;
+			lkeyup = 1;
+		}
+	}
+	/* Key is pressed */
 	else {
-		/* Key is released */
-		if (dt & 0x80) {
-			dt &= 0x7f;
-
-			switch (scodes[dt].type) {
-			case KB_SCROLL:
-				if (!ext)
-					ttypc->shiftst &= ~KB_SCROLL;
+		switch (scodes[dt].type) {
+		/* Lock keys - Scroll, Num, Caps */
+		case KB_SCROLL:
+			if (ttypc->shiftst & KB_SCROLL)
 				break;
+			ttypc->shiftst |= KB_SCROLL;
+			ttypc->lockst ^= KB_SCROLL;
+			_ttypc_kbd_updateled(ttypc);
+			break;
 
-			case KB_NUM:
-				if (!ext)
-					ttypc->shiftst &= ~KB_NUM;
+		case KB_NUM:
+			if (ttypc->shiftst & KB_NUM)
 				break;
+			ttypc->shiftst |= KB_NUM;
+			ttypc->lockst ^= KB_NUM;
+			_ttypc_kbd_updateled(ttypc);
+			break;
 
-			case KB_CAPS:
-				if (!ext)
-					ttypc->shiftst &= ~KB_CAPS;
+		case KB_CAPS:
+			if (ttypc->shiftst & KB_CAPS)
 				break;
+			ttypc->shiftst |= KB_CAPS;
+			ttypc->lockst ^= KB_CAPS;
+			_ttypc_kbd_updateled(ttypc);
+			break;
 
-			case KB_CTL:
-				ttypc->shiftst &= ~KB_CTL;
+		/* Shift keys - Ctl, Shift, Alt */
+		case KB_CTL:
+			ttypc->shiftst |= KB_CTL;
+			break;
+
+		case KB_SHIFT:
+			ttypc->shiftst |= KB_SHIFT;
+			break;
+
+		case KB_ALT:
+			if (ext)
+				ttypc->shiftst |= KB_ALTGR;
+			else
+				ttypc->shiftst |= KB_ALT;
+			break;
+
+		/* Function keys */
+		case KB_FUNC:
+		/* Regular ASCII */
+		case KB_ASCII:
+			/* Keys with extended scan codes don't depend on any modifiers */
+			if (ext) {
+				/* Handles keypad '/' key */
+				s = scodes[dt].unshift;
 				break;
-
-			case KB_SHIFT:
-				if (!ext)
-					ttypc->shiftst &= ~KB_SHIFT;
-				break;
-
-			case KB_ALT:
-				if (ext)
-					ttypc->shiftst &= ~KB_ALTGR;
-				else
-					ttypc->shiftst &= ~KB_ALT;
+			}
+			/* Control modifier */
+			if (ttypc->shiftst & KB_CTL) {
+				s = scodes[dt].ctl;
 				break;
 			}
 
-			/* Last key released */
-			if ((dt == lkey) && (ext == lext)) {
-				lkey = 0;
-				lext = 0;
-				lkeyup = 1;
-			}
-		}
-		/* Key is pressed */
-		else {
-			switch (scodes[dt].type) {
-			/* Lock keys - Scroll, Num, Caps */
-			case KB_SCROLL:
-				if (ttypc->shiftst & KB_SCROLL)
-					break;
-				ttypc->shiftst |= KB_SCROLL;
-				ttypc->lockst ^= KB_SCROLL;
-				_ttypc_kbd_updateled(ttypc);
-				break;
-
-			case KB_NUM:
-				if (ttypc->shiftst & KB_NUM)
-					break;
-				ttypc->shiftst |= KB_NUM;
-				ttypc->lockst ^= KB_NUM;
-				_ttypc_kbd_updateled(ttypc);
-				break;
-
-			case KB_CAPS:
-				if (ttypc->shiftst & KB_CAPS)
-					break;
-				ttypc->shiftst |= KB_CAPS;
-				ttypc->lockst ^= KB_CAPS;
-				_ttypc_kbd_updateled(ttypc);
-				break;
-
-			/* Shift keys - Ctl, Shift, Alt */
-			case KB_CTL:
-				ttypc->shiftst |= KB_CTL;
-				break;
-
-			case KB_SHIFT:
-				ttypc->shiftst |= KB_SHIFT;
-				break;
-
-			case KB_ALT:
-				if (ext)
-					ttypc->shiftst |= KB_ALTGR;
-				else
-					ttypc->shiftst |= KB_ALT;
-				break;
-
-			/* Function keys */
-			case KB_FUNC:
-			/* Regular ASCII */
-			case KB_ASCII:
-				/* Keys with extended scan codes don't depend on any modifiers */
-				if (ext) {
-					/* Handles keypad '/' key */
-					s = scodes[dt].unshift;
-					break;
-				}
-				/* Control modifier */
-				if (ttypc->shiftst & KB_CTL) {
-					s = scodes[dt].ctl;
-					break;
-				}
-
-				/* Right alt and right alt with shift modifiers */
-				if (ttypc->shiftst & KB_ALTGR) {
-					if (ttypc->shiftst & KB_SHIFT)
-						s = scodes[dt].shift_altgr;
-					else
-						s = scodes[dt].altgr;
-				}
-				/* Shift modifier */
-				else if (ttypc->shiftst & KB_SHIFT) {
-					s = scodes[dt].shift;
-				}
-				/* No modifiers */
-				else {
-					s = scodes[dt].unshift;
-				}
-
-				/* Caps lock */
-				if ((ttypc->lockst & KB_CAPS) && (*scodes[dt].unshift >= 'a') && (*scodes[dt].unshift <= 'z')) {
-					if (s == scodes[dt].altgr)
-						s = scodes[dt].shift_altgr;
-					else if (s == scodes[dt].shift_altgr)
-						s = scodes[dt].altgr;
-					else if (s == scodes[dt].shift)
-						s = scodes[dt].unshift;
-					else if (s == scodes[dt].unshift)
-						s = scodes[dt].shift;
-				}
-				break;
-
-			/* Keys without meaning */
-			case KB_NONE:
-				break;
-
-			/* Keypad */
-			case KB_KP:
-				/* Keys with extended scan codes don't depend on any modifiers */
-				if (ext) {
-					/* Handles DEL, HOME, END, PU, PD and arrow (non keypad) keys */
-					s = scodes[dt].shift;
-					break;
-				}
-
-				/* Shift modifier */
+			/* Right alt and right alt with shift modifiers */
+			if (ttypc->shiftst & KB_ALTGR) {
 				if (ttypc->shiftst & KB_SHIFT)
-					s = scodes[dt].shift;
-				/* Control modifier */
-				else if (ttypc->shiftst & KB_CTL)
-					s = scodes[dt].ctl;
-				/* No modifiers */
+					s = scodes[dt].shift_altgr;
 				else
-					s = scodes[dt].unshift;
+					s = scodes[dt].altgr;
+			}
+			/* Shift modifier */
+			else if (ttypc->shiftst & KB_SHIFT) {
+				s = scodes[dt].shift;
+			}
+			/* No modifiers */
+			else {
+				s = scodes[dt].unshift;
+			}
 
-				/* Num lock */
-				if (ttypc->lockst & KB_NUM) {
-					if (s == scodes[dt].shift)
-						s = scodes[dt].unshift;
-					else if ((s == scodes[dt].ctl) || (s == scodes[dt].unshift))
-						s = scodes[dt].shift;
-				}
+			/* Caps lock */
+			if ((ttypc->lockst & KB_CAPS) && (*scodes[dt].unshift >= 'a') && (*scodes[dt].unshift <= 'z')) {
+				if (s == scodes[dt].altgr)
+					s = scodes[dt].shift_altgr;
+				else if (s == scodes[dt].shift_altgr)
+					s = scodes[dt].altgr;
+				else if (s == scodes[dt].shift)
+					s = scodes[dt].unshift;
+				else if (s == scodes[dt].unshift)
+					s = scodes[dt].shift;
+			}
+			break;
+
+		/* Keys without meaning */
+		case KB_NONE:
+			break;
+
+		/* Keypad */
+		case KB_KP:
+			/* Keys with extended scan codes don't depend on any modifiers */
+			if (ext) {
+				/* Handles DEL, HOME, END, PU, PD and arrow (non keypad) keys */
+				s = scodes[dt].shift;
 				break;
 			}
-		}
 
-		/* AutoRepeat Mode */
-		if (!ttypc->vt->arm && (dt == lkey) && (ext == lext))
-			s = NULL;
+			/* Shift modifier */
+			if (ttypc->shiftst & KB_SHIFT)
+				s = scodes[dt].shift;
+			/* Control modifier */
+			else if (ttypc->shiftst & KB_CTL)
+				s = scodes[dt].ctl;
+			/* No modifiers */
+			else
+				s = scodes[dt].unshift;
 
-		/* Reboot sequence - Ctl-Alt-Del */
-		if (s && ext && !strcmp(s, "\033[3~") && (ttypc->shiftst == (KB_CTL | KB_ALT))) {
-			if (reboot(PHOENIX_REBOOT_MAGIC) < 0)
-				ttypc_vt_write(ttypc->vt, 0, erreboot, sizeof(erreboot));
-			s = NULL;
+			/* Num lock */
+			if (ttypc->lockst & KB_NUM) {
+				if (s == scodes[dt].shift)
+					s = scodes[dt].unshift;
+				else if ((s == scodes[dt].ctl) || (s == scodes[dt].unshift))
+					s = scodes[dt].shift;
+			}
+			break;
 		}
-
-		if (lkeyup) {
-			lkeyup = 0;
-		}
-		else if ((scodes[dt].type == KB_FUNC) || (scodes[dt].type == KB_ASCII) || (scodes[dt].type == KB_KP)) {
-			lkey = dt;
-			lext = ext;
-		}
-
-		ext = 0;
 	}
+
+	/* AutoRepeat Mode */
+	if (!ttypc->vt->arm && (dt == lkey) && (ext == lext))
+		s = NULL;
+
+	/* Reboot sequence - Ctl-Alt-Del */
+	if (s && ext && !strcmp(s, "\033[3~") && (ttypc->shiftst == (KB_CTL | KB_ALT))) {
+		if (reboot(PHOENIX_REBOOT_MAGIC) < 0)
+			ttypc_vt_write(ttypc->vt, 0, erreboot, sizeof(erreboot));
+		s = NULL;
+	}
+
+	if (lkeyup) {
+		lkeyup = 0;
+	}
+	else if ((scodes[dt].type == KB_FUNC) || (scodes[dt].type == KB_ASCII) || (scodes[dt].type == KB_KP)) {
+		lkey = dt;
+		lext = ext;
+	}
+	ext = 0;
 
 	return s;
 }
@@ -546,9 +545,6 @@ int _ttypc_kbd_updateled(ttypc_t *ttypc)
 {
 	int ret = 0;
 
-	/* Disable first controller port */
-	outb((void *)((uintptr_t)ttypc->kbd + 4), 0xad);
-
 	do {
 		/* Send update LEDs command */
 		if (ttypc_kbd_write(ttypc, 0xed) < 0)
@@ -569,9 +565,6 @@ int _ttypc_kbd_updateled(ttypc_t *ttypc)
 		/* Successfully updated LEDs state */
 		ret = 1;
 	} while (0);
-
-	/* Enable first controller port */
-	outb((void *)((uintptr_t)ttypc->kbd + 4), 0xae);
 
 	return ret;
 }
@@ -646,7 +639,7 @@ int ttypc_kbd_configure(ttypc_t *ttypc)
 		if (ttypc_kbd_read(ttypc) != 0xfa)
 			break;
 
-		/* Set the lowest delay and the fastest rate */
+		/* 250 ms / 30.0 reports/sec */
 		if (ttypc_kbd_write(ttypc, 0) < 0)
 			break;
 

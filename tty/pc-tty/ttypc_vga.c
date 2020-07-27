@@ -189,7 +189,7 @@ void _ttypc_vga_rolldown(ttypc_vt_t *vt, unsigned int n)
 	}
 	k = min(n, _ttypc_vga_scrollbackcapacity(vt));
 
-	/* Update scrollback buffer */	
+	/* Update scrollback buffer */
 	_ttypc_vga_allocscrollback(vt, k);
 	memsetw(vt->scrb + (vt->scrbsz - k) * vt->cols, vt->attr | ' ', k * vt->cols);
 }
@@ -250,7 +250,7 @@ void _ttypc_vga_scrollcancel(ttypc_vt_t *vt)
 		_ttypc_vga_setcursor(vt);
 		_ttypc_vga_togglecursor(vt, 1);
 	}
-	
+
 	vt->scrbpos = 0;
 }
 

@@ -386,8 +386,10 @@ static int atasrv_mount(id_t id, const char *name, oid_t *oid)
 	oid->port = pdev->part->port;
 	oid->id = id;
 
-	if ((oid->id = err = fs->mount(oid, pdev->part->bdev->base->dev->sectorsz, atasrv_read, atasrv_write, &pdev->part->fdata)) < 0)
+	if ((err = fs->mount(oid, pdev->part->bdev->base->dev->sectorsz, atasrv_read, atasrv_write, &pdev->part->fdata)) < 0)
 		return err;
+
+	oid->id = err;
 
 	if ((err = beginthread(atasrv_fsthr, 4, pdev->part->pstack, sizeof(pdev->part->pstack), pdev->part)) < 0) {
 		pdev->part->fs->unmount(pdev->part->fdata);
@@ -475,6 +477,10 @@ int main(int argc, char **argv)
 	oid_t oid;
 	char path[32];
 
+	/* Wait for console */
+	while (write(1, "", 0) < 0)
+		usleep(50000);
+
 	/* Detect ATA devices */
 	if ((err = ata_init()) < 0) {
 		fprintf(stderr, "pc-ata: failed to detect ATA devices\n");
@@ -543,59 +549,53 @@ int main(int argc, char **argv)
 		while ((c = getopt(argc, argv, "p:r:h")) != -1) {
 			switch (c) {
 			case 'p':
-				argn = optind - 1;
-				if (argn + 3 < argc) {
-					id = (int)strtoul(argv[argn++], NULL, 0);
-					type = (unsigned int)strtoul(argv[argn++], NULL, 0);
-					start = (unsigned int)strtoul(argv[argn++], NULL, 0);
-					sectors = (unsigned int)strtoul(argv[argn++], NULL, 0);
-					optind += 3;
-
-					if (((bdev = lib_treeof(atasrv_dev_t, node, idtree_find(&atasrv_common.sdevs, id))) == NULL) || (bdev->type != DEV_BASE)) {
-						fprintf(stderr, "pc-ata: invalid device id (%d) passed to -p option\n", id);
-						return -EINVAL;
-					}
-
-					if (atasrv_initpart(bdev, (uint8_t)type, (uint32_t)start, (uint32_t)sectors) < 0) {
-						fprintf(stderr, "pc-ata: failed to register partition on device %d starting at LBA %u\n", id, start);
-						break;
-					}
-				}
-				else {
+				if ((argn = optind - 1) > argc - 4) {
 					fprintf(stderr, "pc-ata: missing arg(s) for -p option\n");
 					return -EINVAL;
+				}
+
+				id = strtoul(argv[argn++], NULL, 0);
+				type = strtoul(argv[argn++], NULL, 0);
+				start = strtoul(argv[argn++], NULL, 0);
+				sectors = strtoul(argv[argn++], NULL, 0);
+				optind += 3;
+
+				if (((bdev = lib_treeof(atasrv_dev_t, node, idtree_find(&atasrv_common.sdevs, id))) == NULL) || (bdev->type != DEV_BASE)) {
+					fprintf(stderr, "pc-ata: invalid device id (%d) passed to -p option\n", id);
+					return -EINVAL;
+				}
+
+				if ((err = atasrv_initpart(bdev, (uint8_t)type, (uint32_t)start, (uint32_t)sectors)) < 0) {
+					fprintf(stderr, "pc-ata: failed to register partition on device %d starting at LBA %u\n", id, start);
+					return err;
 				}
 				break;
 
 			case 'r':
-				argn = optind - 1;
-				if (argn < argc) {
-					id = (int)strtoul(argv[argn++], NULL, 0);
+				id = strtoul(optarg, NULL, 0);
 
-					if (atasrv_mount(atasrv_common.ndevs + id, NULL, &oid) < 0) {
-						fprintf(stderr, "pc-ata: failed to mount root partition %d\n", id);
-						break;
-					}
-					mroot = 1;
-				}
-				else {
-					printf("pc-ata: missing arg(s) for -r option\n");
+				if (mroot) {
+					fprintf(stderr, "pc-ata: root partition is already mounted\n");
 					return -EINVAL;
 				}
+
+				if ((err = atasrv_mount(atasrv_common.ndevs + id, NULL, &oid)) < 0) {
+					fprintf(stderr, "pc-ata: failed to mount root partition %d\n", id);
+					return err;
+				}
+
+				mroot = 1;
 				break;
 
 			case 'h':
-				atasrv_usage(argv[0]);
-				break;
-
 			default:
 				atasrv_usage(argv[0]);
-				return -EINVAL;
+				return EOK;
 			}
 		}
 	}
 	else {
-		/* Init partitions from MBR partition table */
+		/* Init partitions from MBR */
 		if ((mbr = (mbr_t *)malloc(sizeof(mbr_t))) == NULL)
 			return -ENOMEM;
 
@@ -647,18 +647,16 @@ int main(int argc, char **argv)
 	/* Register devices */
 	for (node = lib_rbMinimum(atasrv_common.sdevs.root); node != NULL; node = lib_rbNext(node)) {
 		sdev = lib_treeof(atasrv_dev_t, node, lib_treeof(idnode_t, linkage, node));
+		oid.port = atasrv_common.port;
+		oid.id = idtree_id(&sdev->node);
 
 		switch (sdev->type) {
 		case DEV_BASE:
 			sprintf(path, "%s%c", HDD_BASE, 'a' + sdev->base->number);
-			oid.port = atasrv_common.port;
-			oid.id = idtree_id(&sdev->node);
 			break;
 
 		case DEV_PART:
 			sprintf(path, "%s%c%d", HDD_BASE, 'a' + sdev->part->bdev->base->number, sdev->part->number);
-			oid.port = sdev->part->port;
-			oid.id = idtree_id(&sdev->node);
 			break;
 		}
 
