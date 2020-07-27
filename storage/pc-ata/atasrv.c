@@ -386,8 +386,10 @@ static int atasrv_mount(id_t id, const char *name, oid_t *oid)
 	oid->port = pdev->part->port;
 	oid->id = id;
 
-	if ((oid->id = err = fs->mount(oid, pdev->part->bdev->base->dev->sectorsz, atasrv_read, atasrv_write, &pdev->part->fdata)) < 0)
+	if ((err = fs->mount(oid, pdev->part->bdev->base->dev->sectorsz, atasrv_read, atasrv_write, &pdev->part->fdata)) < 0)
 		return err;
+
+	oid->id = err;
 
 	if ((err = beginthread(atasrv_fsthr, 4, pdev->part->pstack, sizeof(pdev->part->pstack), pdev->part)) < 0) {
 		pdev->part->fs->unmount(pdev->part->fdata);
