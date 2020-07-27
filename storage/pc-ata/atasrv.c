@@ -645,18 +645,16 @@ int main(int argc, char **argv)
 	/* Register devices */
 	for (node = lib_rbMinimum(atasrv_common.sdevs.root); node != NULL; node = lib_rbNext(node)) {
 		sdev = lib_treeof(atasrv_dev_t, node, lib_treeof(idnode_t, linkage, node));
+		oid.port = atasrv_common.port;
+		oid.id = idtree_id(&sdev->node);
 
 		switch (sdev->type) {
 		case DEV_BASE:
 			sprintf(path, "%s%c", HDD_BASE, 'a' + sdev->base->number);
-			oid.port = atasrv_common.port;
-			oid.id = idtree_id(&sdev->node);
 			break;
 
 		case DEV_PART:
 			sprintf(path, "%s%c%d", HDD_BASE, 'a' + sdev->part->bdev->base->number, sdev->part->number);
-			oid.port = sdev->part->port;
-			oid.id = idtree_id(&sdev->node);
 			break;
 		}
 
