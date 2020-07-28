@@ -35,7 +35,7 @@
 
 
 /* Misc definitions */
-#define HDD_BASE "/dev/hd" /* Base name for ATA HDD devices */
+#define HDD_BASE "/dev/hd" /* Base name for HDD devices */
 
 
 /* ATA server device types */
@@ -313,13 +313,13 @@ static ssize_t atasrv_read(id_t id, offs_t offs, char *buff, size_t len)
 	switch (sdev->type) {
 	case DEV_BASE:
 		dev = sdev->base->dev;
-		if (offs > dev->size)
+		if (offs + len > dev->size)
 			return -EINVAL;
 		break;
 
 	case DEV_PART:
 		dev = sdev->part->bdev->base->dev;
-		if (offs > sdev->part->sectors * dev->sectorsz)
+		if (offs + len > sdev->part->sectors * dev->sectorsz)
 			return -EINVAL;
 		offs += sdev->part->start * dev->sectorsz;
 		break;
@@ -343,13 +343,13 @@ static ssize_t atasrv_write(id_t id, offs_t offs, const char *buff, size_t len)
 	switch (sdev->type) {
 	case DEV_BASE:
 		dev = sdev->base->dev;
-		if (offs > sdev->base->dev->size)
+		if (offs + len > sdev->base->dev->size)
 			return -EINVAL;
 		break;
 
 	case DEV_PART:
 		dev = sdev->part->bdev->base->dev;
-		if (offs > sdev->part->sectors * dev->sectorsz)
+		if (offs + len > sdev->part->sectors * dev->sectorsz)
 			return -EINVAL;
 		offs += sdev->part->start * dev->sectorsz;
 		break;
@@ -402,6 +402,31 @@ static int atasrv_mount(id_t id, const char *name, oid_t *oid)
 }
 
 
+static int atasrv_getattr(id_t id, int type, int *attr)
+{
+	atasrv_dev_t *sdev;
+
+	if ((sdev = lib_treeof(atasrv_dev_t, node, idtree_find(&atasrv_common.sdevs, id))) == NULL)
+		return -ENODEV;
+
+	switch (type) {
+	case atSize:
+		switch (sdev->type) {
+		case DEV_BASE:
+			*attr = sdev->base->dev->size;
+			break;
+
+		case DEV_PART:
+			*attr = sdev->part->sectors * sdev->part->bdev->base->dev->sectorsz;
+			break;
+		}
+		break;
+	}
+
+	return EOK;
+}
+
+
 static void atasrv_msgloop(void *arg)
 {
 	unsigned int rid, port = *(unsigned int *)arg;
@@ -413,6 +438,20 @@ static void atasrv_msgloop(void *arg)
 			continue;
 
 		switch (msg.type) {
+		case mtMount:
+			mnt = (mount_msg_t *)msg.i.raw;
+			atasrv_mount(mnt->id, mnt->fstype, (oid_t *)msg.o.raw);
+			break;
+
+		case mtOpen:
+		case mtClose:
+			msg.o.io.err = EOK;
+			break;
+
+		case mtSync:
+			msg.o.io.err = -ENOSYS;
+			break;
+
 		case mtRead:
 			msg.o.io.err = atasrv_read(msg.i.io.oid.id, msg.i.io.offs, msg.o.data, msg.o.size);
 			break;
@@ -421,19 +460,8 @@ static void atasrv_msgloop(void *arg)
 			msg.o.io.err = atasrv_write(msg.i.io.oid.id, msg.i.io.offs, msg.i.data, msg.i.size);
 			break;
 
-		case mtMount:
-			mnt = (mount_msg_t *)msg.i.raw;
-			atasrv_mount(mnt->id, mnt->fstype, (oid_t *)msg.o.raw);
-			break;
-
-		case mtSync:
 		case mtGetAttr:
-			msg.o.io.err = -ENOSYS;
-			break;
-
-		case mtOpen:
-		case mtClose:
-			msg.o.io.err = EOK;
+			atasrv_getattr(msg.i.attr.oid.id, msg.i.attr.type, &msg.o.attr.val);
 			break;
 
 		default:
@@ -535,7 +563,7 @@ int main(int argc, char **argv)
 	if (atasrv_registerfs(LIBEXT2_NAME, LIBEXT2_TYPE, LIBEXT2_MOUNT, LIBEXT2_UNMOUNT, LIBEXT2_HANDLER) < 0)
 		fprintf(stderr, "pc-ata: failed to register ext2 filesystem\n");
 
-	/* Init base ATA devices - process the list as FIFO */
+	/* Init base ATA devices - process the list in FIFO order */
 	dev = ata_common.devs;
 	for (i = 0; i < ata_common.ndevs; i++) {
 		if ((err = atasrv_initbase((dev = dev->prev))) < 0) {
