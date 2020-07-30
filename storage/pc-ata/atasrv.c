@@ -271,6 +271,9 @@ static int atasrv_initpart(atasrv_dev_t *bdev, uint8_t type, uint32_t start, uin
 	atasrv_dev_t *pdev;
 	int err;
 
+	if ((bdev->type != DEV_BASE) || ((start + sectors) * bdev->base->dev->sectorsz > bdev->base->dev->size))
+		return -EINVAL;
+
 	if ((pdev = (atasrv_dev_t *)malloc(sizeof(atasrv_dev_t))) == NULL)
 		return -ENOMEM;
 
@@ -313,14 +316,20 @@ static ssize_t atasrv_read(id_t id, offs_t offs, char *buff, size_t len)
 	switch (sdev->type) {
 	case DEV_BASE:
 		dev = sdev->base->dev;
-		if (offs + len > dev->size)
-			return -EINVAL;
+		if (offs + len > dev->size) {
+			if (offs > dev->size)
+				return -EINVAL;
+			len = dev->size - offs;
+		}
 		break;
 
 	case DEV_PART:
 		dev = sdev->part->bdev->base->dev;
-		if (offs + len > sdev->part->sectors * dev->sectorsz)
-			return -EINVAL;
+		if (offs + len > sdev->part->sectors * dev->sectorsz) {
+			if (offs > sdev->part->sectors * dev->sectorsz)
+				return -EINVAL;
+			len = sdev->part->sectors * dev->sectorsz - offs;
+		}
 		offs += sdev->part->start * dev->sectorsz;
 		break;
 
@@ -343,14 +352,20 @@ static ssize_t atasrv_write(id_t id, offs_t offs, const char *buff, size_t len)
 	switch (sdev->type) {
 	case DEV_BASE:
 		dev = sdev->base->dev;
-		if (offs + len > sdev->base->dev->size)
-			return -EINVAL;
+		if (offs + len > dev->size) {
+			if (offs > dev->size)
+				return -EINVAL;
+			len = dev->size - offs;
+		}
 		break;
 
 	case DEV_PART:
 		dev = sdev->part->bdev->base->dev;
-		if (offs + len > sdev->part->sectors * dev->sectorsz)
-			return -EINVAL;
+		if (offs + len > sdev->part->sectors * dev->sectorsz) {
+			if (offs > sdev->part->sectors * dev->sectorsz)
+				return -EINVAL;
+			len = sdev->part->sectors * dev->sectorsz - offs;
+		}
 		offs += sdev->part->start * dev->sectorsz;
 		break;
 
