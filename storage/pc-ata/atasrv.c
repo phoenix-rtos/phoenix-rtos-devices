@@ -489,17 +489,17 @@ static void atasrv_msgloop(void *arg)
 }
 
 
-static void atasrv_usage(const char* prog)
+static void atasrv_usage(const char *prog)
 {
-	printf("Usage: %s [OPTION] or no args to mount first MBR partition as root\n", prog);
-	printf("\t-p <id> <type> <start> <size> :registers partition\n");
+	printf("Usage: %s [options] or no args to mount first MBR partition as root\n", prog);
+	printf("\t-p <id> <type> <start> <size> - registers partition\n");
 	printf("\t\tid:    device id starting at 0\n");
 	printf("\t\ttype:  partition type e.g. 0x83 for native Linux partition\n");
 	printf("\t\tstart: partition start (LBA)\n");
 	printf("\t\tsize:  partition size in sectors\n");
-	printf("\t-r <id>                       :mounts root partition\n");
+	printf("\t-r <id>                       - mounts root partition\n");
 	printf("\t\tid:    partition id starting at 0\n");
-	printf("\t-h                            :shows this help message\n");
+	printf("\t-h                            - shows this help message\n");
 }
 
 
