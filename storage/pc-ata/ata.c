@@ -134,8 +134,28 @@ static void ata_resetbus(ata_bus_t *bus)
 }
 
 
+static int ata_wait(ata_bus_t *bus, uint8_t clear, uint8_t set)
+{
+	uint8_t status;
+
+	do {
+		status = (uint8_t)ata_readreg(bus->base, REG_STATUS, 1);
+
+		if (status & STATUS_ERR)
+			return -1;
+
+		if (status & STATUS_DF)
+			return -2;
+
+	} while ((status & clear) || (status & set) != set);
+
+	return EOK;
+}
+
+
 static void ata_select(ata_dev_t *dev, uint64_t lba, uint16_t sectors, uint8_t mode)
 {
+	static ata_dev_t *ldev = NULL;
 	ata_bus_t *bus = dev->bus;
 	void *base = bus->base;
 	uint16_t c = 0, h = 0, s = 0;
@@ -158,13 +178,25 @@ static void ata_select(ata_dev_t *dev, uint64_t lba, uint16_t sectors, uint8_t m
 		break;
 	}
 
-	/* Select the device */
-	ata_writereg(base, REG_DEVSEL, (h & 0xff) | (dev == bus->devs[SLAVE]) * DEVSEL_DEVNUM | DEVSEL_SET0 | DEVSEL_SET1, 1);
-	/* Wait for the device to push its status onto the bus */
-	ata_delay(bus);
+	if (dev != ldev) {
+		/* Select the device */
+		ata_writereg(base, REG_DEVSEL, (h & 0xff) | (dev == bus->devs[SLAVE]) * DEVSEL_DEVNUM | DEVSEL_SET0 | DEVSEL_SET1, 1);
+		/* Wait for the device to push its status onto the bus */
+		ata_delay(bus);
 
-	/* Write features */
-	ata_writereg(base, REG_FEATURES, 0, 1);
+		/* Write features - set PIO mode */
+		ata_writereg(base, REG_FEATURES, 0x03, 1);
+		ata_writereg(base, REG_NSECTORS, dev->pio, 1);
+
+		/* Send set features command */
+		ata_writereg(base, REG_CMD, CMD_SET_FEATUERS, 1);
+		/* Wait until BSY clears */
+		ata_wait(bus, STATUS_BSY, 0);
+
+		/* Don't update ldev on device initialization */
+		if (mode != -1)
+			ldev = dev;
+	}
 
 	/* Write other registers */
 	if (mode == LBA48) {
@@ -177,25 +209,6 @@ static void ata_select(ata_dev_t *dev, uint64_t lba, uint16_t sectors, uint8_t m
 	ata_writereg(base, REG_SECTOR,    (s >> 0) & 0xff, 1);
 	ata_writereg(base, REG_LCYLINDER, (c >> 0) & 0xff, 1);
 	ata_writereg(base, REG_HCYLINDER, (c >> 8) & 0xff, 1);
-}
-
-
-static int ata_wait(ata_bus_t *bus, uint8_t clear, uint8_t set)
-{
-	uint8_t status;
-
-	do {
-		status = (uint8_t)ata_readreg(bus->base, REG_STATUS, 1);
-
-		if (status & STATUS_ERR)
-			return -1;
-
-		if (status & STATUS_DF)
-			return -2;
-
-	} while ((status & clear) || (status & set) != set);
-
-	return EOK;
 }
 
 
@@ -352,6 +365,7 @@ static int ata_initdev(ata_bus_t *bus, ata_dev_t *dev)
 	uint16_t data;
 	int err, i;
 
+	dev->pio = PIO_DEFAULT;
 	dev->bus = bus;
 
 	/* Select the device */
@@ -386,6 +400,19 @@ static int ata_initdev(ata_bus_t *bus, ata_dev_t *dev)
 	/* Wait until DRQ clears and RDY sets */
 	if ((err = ata_wait(bus, STATUS_DRQ, STATUS_RDY)) < 0)
 		return err;
+
+	/* Check advanced PIO mode support */
+	if ((info[107] << 0) & 2) {
+		switch ((info[129] << 0) | (info[128] << 8)) {
+		case 0x01:
+			dev->pio = PIO_3;
+			break;
+
+		case 0x03:
+			dev->pio = PIO_4;
+			break;
+		}
+	}
 
 	dev->mode = ((info[98] >> 1) & 1) + ((info[166] >> 2) & 1);
 	dev->cylinders = (info[3]   << 0) | (info[2]   << 8);

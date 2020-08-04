@@ -46,6 +46,17 @@ enum { CHS, LBA28, LBA48 };
 enum { READ, WRITE };
 
 
+/* ATA PIO transfer modes */
+enum {
+	PIO_DEFAULT         = 0x00, /* Default mode */
+	PIO_0               = 0x08, /* max 3,3  MB/s */
+	PIO_1               = 0x09, /* max 5,2  MB/s */
+	PIO_2               = 0x0a, /* max 8,3  MB/s */ 
+	PIO_3               = 0x0b, /* max 11,1 MB/s */
+	PIO_4               = 0x0c  /* max 16,7 MB/s */
+};
+
+
 /* ATA commands */
 enum {
 	CMD_NOP             = 0x00,
@@ -61,7 +72,8 @@ enum {
 	CMD_WRITE_DMA       = 0xca,
 	CMD_CACHE_FLUSH     = 0xe7,
 	CMD_CACHE_FLUSH_EXT = 0xea,
-	CMD_IDENTIFY        = 0xec
+	CMD_IDENTIFY        = 0xec,
+	CMD_SET_FEATUERS    = 0xef
 };
 
 
@@ -116,6 +128,8 @@ typedef struct _ata_bus_t ata_bus_t;
 
 
 struct _ata_dev_t {
+	/* Device configuration */
+	uint8_t pio;            /* PIO mode: PIO_DEFAULT, PIO_0, PIO_1, PIO_2, PIO_3, PIO_4 */
 	uint8_t mode;           /* Addressing mode: CHS, LBA28, LBA48 */
 
 	/* Device geometry */
