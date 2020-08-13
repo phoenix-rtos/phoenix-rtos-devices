@@ -102,8 +102,7 @@ typedef struct {
 	uint8_t arm;             /* AutoRepeat Mode */
 	uint8_t lnm;             /* Line feed/New line Mode */
 	uint8_t sc;              /* Saved Cursor & attributes */
-	uint8_t lc;              /* Last Character */
-	uint8_t lr;              /* Last Row */
+	uint8_t lc;              /* Last Character in row flag */
 
 	/* SCa saved state */
 	uint8_t scawm;           /* Saved Auto Wrap Mode */

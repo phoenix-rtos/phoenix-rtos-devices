@@ -69,8 +69,13 @@ static int _ttypc_vt_sput(ttypc_vt_t *vt, char c)
 
 		case 0x08: /* BS  */
 			if (vt->ccol) {
-				vt->cpos--;
 				vt->ccol--;
+				vt->cpos--;
+			}
+			else {
+				_ttypc_vtf_ri(vt);
+				vt->ccol = vt->cols - 1;
+				vt->cpos += vt->cols - 1;
 			}
 			ret = 0;
 			break;
@@ -86,18 +91,22 @@ static int _ttypc_vt_sput(ttypc_vt_t *vt, char c)
 		case 0x0a: /* LF */
 		case 0x0b: /* VT */
 		case 0x0c: /* FF */
-			if (vt->lnm) {
-				vt->cpos -= vt->ccol;
-				vt->ccol = 0;
+			if (!vt->lc) {
+				if (vt->lnm) {
+					vt->cpos -= vt->ccol;
+					vt->ccol = 0;
+				}
+				vt->cpos += vt->cols;
+				_ttypc_vt_updatescroll(vt);
 			}
-			vt->cpos += vt->cols;
-			_ttypc_vt_updatescroll(vt);
 			break;
 
 		case 0x0d: /* CR */
 			vt->cpos -= vt->ccol;
 			vt->ccol = 0;
-			break;
+			if (vt == vt->ttypc->vt)
+				_ttypc_vga_setcursor(vt);
+			return ret;
 
 		case 0x0e: /* SO */
 			vt->GL = &vt->G1;
@@ -147,27 +156,25 @@ static int _ttypc_vt_sput(ttypc_vt_t *vt, char c)
 	else {
 		switch (vt->escst) {
 		case ESC_INIT:
-			if (vt->lc && vt->awm && (vt->lr == vt->crow)) {
-				vt->lc = 0;
-				vt->ccol = 0;
-				vt->cpos++;
-				_ttypc_vt_updatescroll(vt);
-			}
-
 			/* InseRt Mode */
 			if (vt->irm)
 				_ttypc_vga_move(vt->vram + vt->cpos + 1, vt->vram + vt->cpos, vt->cols - vt->ccol - 1);
 
 			_ttypc_vt_sdraw(vt, c);
 
-			if (vt->ccol >= vt->cols - 1) {
-				vt->lc = 1;
-				vt->lr = vt->crow;
-			}
-			else {
-				vt->lc = 0;
+			if (vt->ccol < vt->cols - 1) {
 				vt->ccol++;
 				vt->cpos++;
+			}
+			else if (vt->awm) {
+				vt->ccol = 0;
+				vt->cpos++;
+				vt->crow = vt->cpos / vt->cols;
+				vt->lc = 1;
+				_ttypc_vt_updatescroll(vt);
+				if (vt == vt->ttypc->vt)
+					_ttypc_vga_setcursor(vt);
+				return ret;
 			}
 			break;
 
@@ -611,12 +618,8 @@ static int _ttypc_vt_sput(ttypc_vt_t *vt, char c)
 	}
 
 	vt->crow = vt->cpos / vt->cols;
+	vt->lc = 0;
 
-	/* Take care of last character on line behaviour */
-	if (vt->lc && (vt->ccol < vt->cols - 1))
-		vt->lc = 0;
-
-	/* Update cursor */
 	if (vt == vt->ttypc->vt)
 		_ttypc_vga_setcursor(vt);
 
