@@ -175,23 +175,17 @@ void _ttypc_vga_rollup(ttypc_vt_t *vt, unsigned int n)
 
 void _ttypc_vga_rolldown(ttypc_vt_t *vt, unsigned int n)
 {
-	unsigned int k;
+	unsigned int k, l;
 
 	/* Roll down */
 	if (vt->bottom > vt->crow) {
 		k = min(n, vt->bottom - vt->crow);
+		l = min(k, vt->scrbsz);
 		_ttypc_vga_move(vt->vram + (vt->top + k) * vt->cols, vt->vram + vt->top * vt->cols, (vt->bottom - vt->top + 1 - k) * vt->cols);
-		_ttypc_vga_set(vt->vram + vt->top * vt->cols, vt->attr | ' ', k * vt->cols);
-
-		if (n == k)
-			return;
-		n -= k;
+		_ttypc_vga_set(vt->vram + vt->top * vt->cols, vt->attr | ' ', (k - l) * vt->cols);
+		_ttypc_vga_write(vt->vram + (vt->top + k - l) * vt->cols, vt->scrb + (vt->scrbsz - l) * vt->cols, l * vt->cols);
+		vt->scrbsz -= l;
 	}
-	k = min(n, _ttypc_vga_scrollbackcapacity(vt));
-
-	/* Update scrollback buffer */
-	_ttypc_vga_allocscrollback(vt, k);
-	memsetw(vt->scrb + (vt->scrbsz - k) * vt->cols, vt->attr | ' ', k * vt->cols);
 }
 
 
