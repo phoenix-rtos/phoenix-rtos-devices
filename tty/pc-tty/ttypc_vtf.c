@@ -521,7 +521,7 @@ void _ttypc_vtf_dch(ttypc_vt_t *vt)
 
 void _ttypc_vtf_ri(ttypc_vt_t *vt)
 {
-	if (vt->cpos >= vt->top * (vt->cols + 1))
+	if (vt->cpos >= (vt->top + 1) * vt->cols)
 		vt->cpos -= vt->cols;
 	else
 		_ttypc_vga_rolldown(vt, 1);
