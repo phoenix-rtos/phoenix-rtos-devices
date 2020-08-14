@@ -19,7 +19,6 @@
 #include <string.h>
 #include <sys/threads.h>
 #include <sys/interrupt.h>
-//#include <sys/io.h>
 #include <sys/file.h>
 #include <unistd.h>
 #include <sys/msg.h>
@@ -37,6 +36,7 @@ typedef struct {
 
 static spiketty_t *spikettys[1];
 
+static spiketty_t spiketty = {0};
 
 static void set_baudrate(void *_uart, speed_t baud)
 {
@@ -148,9 +148,10 @@ void poolthr(void *arg)
 {
 	uint32_t port = (uint32_t)arg;
 	msg_t msg;
-	unsigned int rid;
+	unsigned long int rid;
 
 	for (;;) {
+
 		if (msgRecv(port, &msg, &rid) < 0)
 			continue;
 
@@ -175,8 +176,30 @@ void poolthr(void *arg)
 			spiketty_ioctl(port, &msg);
 			break;
 		}
-
 		msgRespond(port, &msg, rid);
+	}
+}
+
+void spiketty_thr(void *arg)
+{
+	spiketty_t *spiketty = (spiketty_t *)arg;
+
+	int c;
+
+	for (;;) {
+		do {
+			c = sbi_getchar();
+			if (c > 0) {
+				libtty_putchar(&spiketty->tty, c, NULL);
+			}
+		} while (c > 0);
+
+		/* Transmit */
+		while (libtty_txready(&spiketty->tty)) {
+			c = libtty_getchar(&spiketty->tty, NULL);
+			sbi_putchar(c);
+		}
+		usleep(100000);
 	}
 }
 
@@ -192,6 +215,11 @@ int _spiketty_init(spiketty_t **spiketty)
 
 	libtty_init(&(*spiketty)->tty, &callbacks, _PAGE_SIZE);
 
+	uint8_t *stack;
+	stack = (uint8_t *)malloc(2 * 4096);
+
+	beginthread(spiketty_thr, 1, stack, 2 * 4096, (void *)*spiketty);
+
 	return EOK;
 }
 
@@ -200,8 +228,9 @@ int main(void)
 {
 	uint32_t port;
 
-	printf("riscv-spiketty: Initializing RISCV HTIF console driver %s\n", "");
+	// printf("riscv-spiketty: Initializing RISCV HTIF console driver %s\n", "");
 
+	spikettys[0] = &spiketty;
 	_spiketty_init(&spikettys[0]);
 
 	portCreate(&port);
