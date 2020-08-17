@@ -12,6 +12,7 @@
  */
 
 #include <sys/msg.h>
+#include <errno.h>
 
 #include "common.h"
 #include "gpio.h"
@@ -43,6 +44,7 @@ int i2c_handleMsg(msg_t *msg, int dev)
 int i2c_init(void)
 {
 	int i, dev;
+
 	static const struct {
 		volatile uint32_t *base;
 		int clk;
@@ -54,10 +56,17 @@ int i2c_init(void)
 		{ I2C4_BASE, I2C4_CLK, I2C4_IRQ }
 	};
 
-	//i2c_initPins();
+	/* FIXME: remove following statements when driver implementation will be finished */
+	(void)i;
+	(void)i2cPos;
+
+	/* TODO: initialize peripherals */
 	for (i = 0, dev = 0; dev < sizeof(i2cConfig) / sizeof(i2cConfig[0]); ++dev) {
 		if (!i2cConfig[dev])
 			continue;
+
+		if (common_setClock(info[dev].clk, clk_state_run) < 0)
+			return -EFAULT;
 	}
 
 	return 0;
