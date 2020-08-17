@@ -19,6 +19,7 @@
 #include <string.h>
 #include <sys/threads.h>
 #include <sys/interrupt.h>
+#include <sys/io.h>
 #include <sys/file.h>
 #include <unistd.h>
 #include <sys/msg.h>
@@ -146,7 +147,7 @@ static void spiketty_ioctl(unsigned port, msg_t *msg)
 
 void poolthr(void *arg)
 {
-	uint32_t port = (uint32_t)arg;
+	uint32_t port = (uint32_t)(uint64_t)arg;
 	msg_t msg;
 	unsigned long int rid;
 
@@ -242,8 +243,8 @@ int main(void)
 	void *stack = malloc(2048);
 
 	/* Run threads */
-	beginthread(poolthr, 1, stack, 2048, (void *)port);
-	poolthr((void *)port);
+	beginthread(poolthr, 1, stack, 2048, (void *)(uint64_t)port);
+	poolthr((void *)(uint64_t)port);
 
 	return 0;
 }
