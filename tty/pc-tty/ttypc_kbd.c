@@ -619,7 +619,7 @@ int ttypc_kbd_configure(ttypc_t *ttypc)
 	/* PS/2 Keyboard base IO-port */
 	ttypc->kbd = (void *)0x60;
 
-	if (inb(ttypc->kbd + 4) == 0xff)
+	if (inb((void *)((uintptr_t)ttypc->kbd + 4)) == 0xff)
 		return 0;
 
 	/* Flush output buffer (max 16 characters) */

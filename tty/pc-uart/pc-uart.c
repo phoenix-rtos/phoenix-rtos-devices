@@ -274,7 +274,7 @@ void poolthr(void *arg)
 {
 	uint32_t port = (uint32_t)arg;
 	msg_t msg;
-	unsigned int rid;
+	unsigned long rid;
 
 	for (;;) {
 		if (msgRecv(port, &msg, &rid) < 0)

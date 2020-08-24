@@ -423,7 +423,7 @@ int libtty_ioctl(libtty_common_t* tty, pid_t sender_pid, unsigned int cmd, const
 		case TCFLSH:
 			log_ioctl("TCFLSH");
 			// WARN: passing ioctl attr by value
-			libtty_flush(tty, (int)in_arg);
+			libtty_flush(tty, (long)in_arg);
 			break;
 		case TCSETS:
 		case TCSETSW:

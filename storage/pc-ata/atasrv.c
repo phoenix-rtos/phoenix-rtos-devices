@@ -111,7 +111,7 @@ struct _atasrv_part_t {
 
 struct _atasrv_req_t {
 	msg_t msg;                  /* Request msg */
-	unsigned int rid;           /* Request rid */
+	unsigned long rid;          /* Request rid */
 	atasrv_part_t *part;        /* Request receiver partition */
 	atasrv_req_t *prev, *next;  /* Doubly linked list */
 };
@@ -444,7 +444,8 @@ static int atasrv_getattr(id_t id, int type, int *attr)
 
 static void atasrv_msgloop(void *arg)
 {
-	unsigned int rid, port = *(unsigned int *)arg;
+	unsigned long rid;
+	unsigned port = *(unsigned int *)arg;
 	mount_msg_t *mnt;
 	msg_t msg;
 

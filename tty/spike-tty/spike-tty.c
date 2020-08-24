@@ -149,7 +149,7 @@ void poolthr(void *arg)
 {
 	uint32_t port = (uint32_t)(uint64_t)arg;
 	msg_t msg;
-	unsigned long int rid;
+	unsigned long rid;
 
 	for (;;) {
 
@@ -200,7 +200,7 @@ void spiketty_thr(void *arg)
 			c = libtty_getchar(&spiketty->tty, NULL);
 			sbi_putchar(c);
 		}
-		usleep(100000);
+		usleep(10000);
 	}
 }
 
@@ -229,7 +229,7 @@ int main(void)
 {
 	uint32_t port;
 
-	// printf("riscv-spiketty: Initializing RISCV HTIF console driver %s\n", "");
+	/* printf("riscv-spiketty: Initializing RISCV HTIF console driver %s\n", ""); */
 
 	spikettys[0] = &spiketty;
 	_spiketty_init(&spikettys[0]);
@@ -240,10 +240,13 @@ int main(void)
 		return -1;
 	}
 
-	void *stack = malloc(2048);
-
 	/* Run threads */
-	beginthread(poolthr, 1, stack, 2048, (void *)(uint64_t)port);
+
+	/*
+	void *stack = malloc(2048);	
+	beginthread(poolthr, 4, stack, 2048, (void *)(uint64_t)port);
+	*/
+
 	poolthr((void *)(uint64_t)port);
 
 	return 0;
