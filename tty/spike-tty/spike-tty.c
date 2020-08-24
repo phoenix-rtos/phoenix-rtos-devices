@@ -241,11 +241,8 @@ int main(void)
 	}
 
 	/* Run threads */
-
-	/*
 	void *stack = malloc(2048);	
 	beginthread(poolthr, 4, stack, 2048, (void *)(uint64_t)port);
-	*/
 
 	poolthr((void *)(uint64_t)port);
 
