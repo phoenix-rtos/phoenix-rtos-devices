@@ -23,21 +23,21 @@
 /* Color display SGR attributes */
 static const uint8_t csgr[] = {
 	(BG_BLACK     | FG_LIGHTGREY),            /* Normal */
-	(BG_BLUE      | FG_LIGHTGREY),            /* Bold */
+	(BG_BLACK     | FG_WHITE),                /* Bold */
 	(BG_BROWN     | FG_LIGHTGREY),            /* Underline */
-	(BG_MAGENTA   | FG_LIGHTGREY),            /* Bold + underline */
+	(BG_MAGENTA   | FG_WHITE),                /* Bold + underline */
 	(BG_BLACK     | FG_LIGHTGREY | FG_BLINK), /* Blink */
-	(BG_BLUE      | FG_LIGHTGREY | FG_BLINK), /* Bold + blink */
+	(BG_BLUE      | FG_WHITE     | FG_BLINK), /* Bold + blink */
 	(BG_BROWN     | FG_LIGHTGREY | FG_BLINK), /* Underline + blink */
-	(BG_MAGENTA   | FG_LIGHTGREY | FG_BLINK), /* Bold + underline + blink */
+	(BG_MAGENTA   | FG_WHITE     | FG_BLINK), /* Bold + underline + blink */
 	(BG_LIGHTGREY | FG_BLACK),                /* Inversed */
-	(BG_LIGHTGREY | FG_BLUE),                 /* Bold + inversed */
+	(BG_LIGHTGREY | FG_WHITE),                /* Bold + inversed */
 	(BG_LIGHTGREY | FG_BROWN),                /* Underline + inversed */
-	(BG_LIGHTGREY | FG_MAGENTA),              /* Bold + underline + inversed */
+	(BG_LIGHTGREY | FG_WHITE),                /* Bold + underline + inversed */
 	(BG_LIGHTGREY | FG_BLACK     | FG_BLINK), /* Blink + inversed */
-	(BG_LIGHTGREY | FG_BLUE      | FG_BLINK), /* Bold + blink + inversed */
+	(BG_LIGHTGREY | FG_WHITE     | FG_BLINK), /* Bold + blink + inversed */
 	(BG_LIGHTGREY | FG_BROWN     | FG_BLINK), /* Underline + blink + inversed */
-	(BG_LIGHTGREY | FG_MAGENTA   | FG_BLINK)  /* Bold + underline + blink + inversed */
+	(BG_LIGHTGREY | FG_WHITE     | FG_BLINK)  /* Bold + underline + blink + inversed */
 };
 
 
