@@ -356,10 +356,7 @@ void _ttypc_vtf_cuf(ttypc_vt_t *vt)
 
 	if (p < 1)
 		p = 1;
-	else if (p > vt->cols - 1)
-		p = vt->cols - 1;
-
-	if (vt->ccol + p > vt->cols - 1)
+	else if (p > vt->cols - vt->ccol - 1)
 		p = vt->cols - vt->ccol - 1;
 
 	vt->cpos += p;
@@ -373,10 +370,7 @@ void _ttypc_vtf_cub(ttypc_vt_t *vt)
 
 	if (p < 1)
 		p = 1;
-	else if (p > vt->cols - 1)
-		p = vt->cols - 1;
-
-	if (vt->ccol < p)
+	else if (p > vt->ccol)
 		p = vt->ccol;
 
 	vt->cpos -= p;
