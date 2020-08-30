@@ -165,7 +165,7 @@ uint8_t uart_get(oid_t *oid)
 {
 	unsigned int i;
 
-	for (i = 0; i < sizeof(uarts) / sizeof(uart_t); i++) {
+	for (i = 0; i < sizeof(uarts) / sizeof(uart_t *); i++) {
 		if ((uarts[i]->oid.id == oid->id) && (uarts[i]->oid.port == oid->port))
 			return i;
 	}
@@ -315,7 +315,7 @@ int main(void)
 	for (n = 0; n < 4; n++) {
 		if (_uart_init(n, B115200, &uarts[n]) < 0)
 			continue;
-		
+
 		if (portRegister(port, "/dev/ttyS0", &uarts[n]->oid) < 0) {
 			fprintf(stderr, DRIVER ": Can't register port %d\n", port);
 			return -1;
