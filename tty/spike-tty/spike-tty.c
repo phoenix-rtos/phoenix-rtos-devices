@@ -6,7 +6,7 @@
  * Spike tty (HTIF console)
  *
  * Copyright 2020 Phoenix Systems
- * Author: Pawel Pisarczyk
+ * Author: Pawel Pisarczyk, Julia Kosowska
  *
  * %LICENSE%
  */
