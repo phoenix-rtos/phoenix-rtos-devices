@@ -27,10 +27,14 @@
 
 #include <libtty.h>
 #include "uart16550.h"
+#include "uarthw.h"
+
+
+#define DRIVER "uart16550"
 
 
 typedef struct {
-	unsigned int irq;
+	uint8_t hwctx[64];
 
 	handle_t mutex;
 	handle_t intcond;
@@ -43,6 +47,8 @@ typedef struct {
 
 static uart_t *uarts[4];
 
+
+extern uint8_t uart_speed;
 
 static int uart_interrupt(unsigned int n, void *arg)
 {
@@ -71,7 +77,7 @@ static void set_cflag(void *_uart, tcflag_t *cflag)
 static void signal_txready(void *_uart)
 {
 	uart_t *uart = _uart;
-	uart_regwr(REG_IMR, IMR_THRE | IMR_DR);
+	uarthw_write(uart->hwctx, REG_IMR, IMR_THRE | IMR_DR);
 	condSignal(uart->intcond);
 }
 
@@ -84,18 +90,18 @@ void uart_intthr(void *arg)
 
 	mutexLock(uart->mutex);
 	for (;;) {
-		while ((iir = uart_regrd(REG_IIR)) & IIR_IRQPEND)
+		while ((iir = uarthw_read(uart->hwctx, REG_IIR)) & IIR_IRQPEND)
 			condWait(uart->intcond, uart->mutex, 0);
 
 		/* Receive */
 		if ((iir & IIR_DR) == IIR_DR) {
 			while (1) {
-				lsr = uart_regrd(REG_LSR);
+				lsr = uarthw_read(uart->hwctx, REG_LSR);
 
 				if ((lsr & 1) == 0)
 					break;
 
-				c = uart_regrd(REG_RBR);
+				c = uarthw_read(uart->hwctx, REG_RBR);
 				libtty_putchar(&uart->tty, c, NULL);
 			}
 		}
@@ -104,10 +110,10 @@ void uart_intthr(void *arg)
 		if ((iir & IIR_THRE) == IIR_THRE) {
 			if (libtty_txready(&uart->tty)) {
 				c = libtty_getchar(&uart->tty, NULL);
-				uart_regwr(REG_THR, c);
+				uarthw_write(uart->hwctx, REG_THR, c);
 			}
 			else {
-				uart_regwr(REG_IMR, IMR_DR);
+				uarthw_write(uart->hwctx, REG_IMR, IMR_DR);
 			}
 		}
 	}
@@ -202,23 +208,27 @@ static void uart_ioctl(unsigned port, msg_t *msg)
 }
 
 
-int _uart_init(unsigned int irq, unsigned int speed, uart_t **uart)
+int _uart_init(unsigned int uartn, unsigned int speed, uart_t **uart)
 {
+	uint8_t buff[64];
+	char s[64];
 	libtty_callbacks_t callbacks;
+	uint8_t *stack;
 
-	uart_reginit();
-
-	/* Test if device exist */
-	if (uart_regrd(REG_IIR) == 0xff)
+	if (uarthw_init(uartn, buff, sizeof(buff)) < 0)
 		return -ENOENT;
 
-	printf("pc-uart: Detected uart interface irq=%d\n", irq);
+	printf(DRIVER ": Detected uart interface (%s)\n", uarthw_dump(buff, s, sizeof(s)));
 
 	/* Allocate and map memory for driver structures */
-	if ((*uart = malloc(sizeof(uart_t))) == NULL)
+	if ((*uart = malloc(sizeof(uart_t))) == NULL) {
+		fprintf(stderr, DRIVER ": Out of memory!\n");
 		return -ENOMEM;
+	}
 
+	/* Initialize uart strcture */
 	memset((*uart), 0, sizeof(uart_t));
+	memcpy((*uart)->hwctx, buff, sizeof(buff));
 
 	callbacks.arg = *uart;
 	callbacks.set_baudrate = set_baudrate;
@@ -227,34 +237,33 @@ int _uart_init(unsigned int irq, unsigned int speed, uart_t **uart)
 
 	libtty_init(&(*uart)->tty, &callbacks, _PAGE_SIZE);
 
-	(*uart)->irq = irq;
-
 	condCreate(&(*uart)->intcond);
 	mutexCreate(&(*uart)->mutex);
 
-	interrupt(irq, uart_interrupt, (*uart), (*uart)->intcond, &(*uart)->inth);
-
-	uint8_t *stack;
-	stack = (uint8_t *)malloc(2 * 4096);
-
+	/* Install interrupt */
+	if ((stack = (uint8_t *)malloc(2 * 4096)) == NULL) {
+		fprintf(stderr, DRIVER ": Out of memory!\n");
+		return -ENOMEM;
+	}
 	beginthread(uart_intthr, 1, stack, 2 * 4096, (void *)*uart);
+	interrupt(uarthw_irq((*uart)->hwctx), uart_interrupt, (*uart), (*uart)->intcond, &(*uart)->inth);
 
 	/* Set speed (MOD) */
-	uart_regwr(REG_LCR, LCR_DLAB);
-	uart_regwr(REG_LSB, speed);
-	uart_regwr(REG_MSB, 0);
+	uarthw_write((*uart)->hwctx, REG_LCR, LCR_DLAB);
+	uarthw_write((*uart)->hwctx, REG_LSB, speed);
+	uarthw_write((*uart)->hwctx, REG_MSB, 0);
 
 	/* Set data format (MOD) */
-	uart_regwr(REG_LCR, LCR_D8N1);
+	uarthw_write((*uart)->hwctx, REG_LCR, LCR_D8N1);
 
 	/* Enable FIFO - this is required for Transmeta Crusoe (MOD) */
-	uart_regwr(2, 0x01);
+	uarthw_write((*uart)->hwctx, 2, 0x01);
 
 	/* Enable hardware interrupts */
-	uart_regwr(REG_MCR, MCR_OUT2);
+	uarthw_write((*uart)->hwctx, REG_MCR, MCR_OUT2);
 
 	/* Set interrupt mask */
-	uart_regwr(REG_IMR, IMR_DR);
+	uarthw_write((*uart)->hwctx, REG_IMR, IMR_DR);
 
 	return EOK;
 }
@@ -299,34 +308,31 @@ void poolthr(void *arg)
 
 int main(void)
 {
-	unsigned int n = 4;
+	unsigned int n;
 	uint32_t port;
+	void *stack;
 
-	printf("pc-uart: Initializing UART 16550 driver %s\n", "");
-
-	_uart_init(n, uart_speed, &uarts[0]);
+	debug(DRIVER ": Initializing UART 16550 driver\n");
 
 	portCreate(&port);
-	if (portRegister(port, "/dev/ttyS0", &uarts[0]->oid) < 0) {
-		printf("Can't register port %d\n", port);
-		return -1;
-	}
-	/*if (portRegister(port, "/dev/ttyS1", &uarts[1]->oid) < 0) {
-		printf("Can't register port %d\n", port);
-		return -1;
-	}
-	if (portRegister(port, "/dev/ttyS2", &uarts[2]->oid) < 0) {
-		printf("Can't register port %d\n", port);
-		return -1;
-	}
-	if (portRegister(port, "/dev/ttyS3", &uarts[3]->oid) < 0) {
-		printf("Can't register port %d\n", port);
-		return -1;
-	}*/
 
-	void *stack = malloc(2048);
+	for (n = 0; n < 4; n++) {
+		if (_uart_init(n, B115200, &uarts[n]) < 0)
+			continue;
+		
+		if (portRegister(port, "/dev/ttyS0", &uarts[n]->oid) < 0) {
+			fprintf(stderr, DRIVER ": Can't register port %d\n", port);
+			return -1;
+		}
 
-	/* Run threads */
+		debug("E\n");
+	}
+
+	/* Run driver threads for message processing */
+	if ((stack = malloc(2048)) == NULL) {
+		fprintf(stderr, DRIVER ": Out of memory!\n");
+		return -ENOMEM;
+	}
 	beginthread(poolthr, 1, stack, 2048, (void *)(unsigned long)port);
 	poolthr((void *)(unsigned long)port);
 

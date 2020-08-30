@@ -6,9 +6,9 @@
 #
 
 ifeq ($(TARGET_FAMILY),riscv64)
-    UARTLL = uart-riscv
+    UARTLL = uarthw-riscv
 else
-    UARTLL = uart-pc
+    UARTLL = uarthw-pc
 endif
 
 $(PREFIX_PROG)uart16550: $(PREFIX_O)tty/uart16550/uart16550.o $(PREFIX_O)tty/uart16550/$(UARTLL).o $(PREFIX_A)libtty.a
