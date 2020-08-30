@@ -7,7 +7,7 @@
 
 ifeq ($(TARGET_FAMILY),riscv64)
     UARTLL = uarthw-riscv
-else
+else ifeq ($(TARGET_FAMILY),ia32)
     UARTLL = uarthw-pc
 endif
 

@@ -1,9 +1,9 @@
 /*
  * Phoenix-RTOS
  *
- * Operating system kernel
+ * UART 16550 device driver
  *
- * UART hardware abstracion layer
+ * Hardware abstracion layer interface
  *
  * Copyright 2020 Phoenix Systems
  * Author: Pawel Pisarczyk

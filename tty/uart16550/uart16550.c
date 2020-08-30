@@ -1,13 +1,11 @@
 /*
  * Phoenix-RTOS
  *
- * Operating system kernel
+ * UART 16550 device driver
  *
- * UART 16550 driver for PC
- *
- * Copyright 2012-2015 Phoenix Systems
+ * Copyright 2012-2015, 2020 Phoenix Systems
  * Copyright 2001, 2008 Pawel Pisarczyk
- * Author: Pawel Pisarczyk, Pawel Kolodziej
+ * Author: Pawel Pisarczyk, Pawel Kolodziej, Julia Kosowska
  *
  * %LICENSE%
  */
@@ -312,7 +310,7 @@ int main(void)
 	uint32_t port;
 	void *stack;
 
-	debug(DRIVER ": Initializing UART 16550 driver\n");
+	printf(DRIVER ": Initializing UART 16550 driver\n");
 
 	portCreate(&port);
 
@@ -324,8 +322,6 @@ int main(void)
 			fprintf(stderr, DRIVER ": Can't register port %d\n", port);
 			return -1;
 		}
-
-		debug("E\n");
 	}
 
 	/* Run driver threads for message processing */

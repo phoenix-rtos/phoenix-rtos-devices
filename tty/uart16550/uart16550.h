@@ -1,11 +1,9 @@
 /*
  * Phoenix-RTOS
  *
- * Operating system kernel
+ * UART 16550 device driver
  *
- * UART 16450 driver
- *
- * Copyright 2012-2015 Phoenix Systems
+ * Copyright 2012-2015, 2020 Phoenix Systems
  * Copyright 2001, 2005, 2008 Pawel Pisarczyk
  * Author: Pawel Pisarczyk, Pawel Kolodziej
  *

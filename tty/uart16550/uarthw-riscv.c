@@ -3,7 +3,7 @@
  *
  * UART 16550 device driver
  *
- * Hardware abstracion layer (ia32-generic)
+ * Hardware abstracion layer (riscv64-virt)
  *
  * Copyright 2020 Phoenix Systems
  * Author: Julia Kosowska, Pawel Pisarczyk
@@ -14,27 +14,31 @@
  */
 
 #include <stdio.h>
-#include <sys/io.h>
 #include <errno.h>
+#include <sys/mman.h>
 
 #include "uart16550.h"
 
 
 typedef struct {
-	void *base;
-	unsigned int irq;
+	volatile uint8_t *base;
+	uint8_t irq;
 } uarthw_ctx_t;
 
 
 uint8_t uarthw_read(void *hwctx, unsigned int reg)
 {
-	return inb(((uarthw_ctx_t *)hwctx)->base + reg);
+	uint8_t b;
+
+	b = *(((uarthw_ctx_t *)hwctx)->base + reg);
+	return b;
 }
 
 
 void uarthw_write(void *hwctx, unsigned int reg, uint8_t val)
 {
-	outb(((uarthw_ctx_t *)hwctx)->base + reg, val);
+	*(((uarthw_ctx_t *)hwctx)->base + reg) = val;
+	return;
 }
 
 
@@ -53,23 +57,22 @@ unsigned int uarthw_irq(void *hwctx)
 
 int uarthw_init(unsigned int uartn, void *hwctx, size_t hwctxsz)
 {
-	static struct {
-		void *base;
-		unsigned int irq;
-	} uarts[] = { { (void *)0x3f8, 4 }, { (void *)0x2f8, 3 }, { (void *)0x3e8, 4 }, { (void *)0x2e8, 3 } };
-
 	if (hwctxsz < sizeof(uarthw_ctx_t))
 		return -EINVAL;
 
-	if (uartn >= 4)
+	if (uartn >= 1)
 		return -ENOENT;
 
-	((uarthw_ctx_t *)hwctx)->base = uarts[uartn].base;
-	((uarthw_ctx_t *)hwctx)->irq = uarts[uartn].irq;
+	if ((((uarthw_ctx_t *)hwctx)->base = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, (offs_t)0x10000000)) == NULL)
+		return -ENOMEM;
+
+	((uarthw_ctx_t *)hwctx)->irq = 0xa;
 
 	/* Detect device presence */
-	if (uarthw_read(hwctx, REG_IIR) == 0xff)
+	if (uarthw_read(hwctx, REG_IIR) == 0xff) {
+		munmap((void *)((uarthw_ctx_t *)hwctx)->base, _PAGE_SIZE);
 		return -ENOENT;
+	}
 
 	return EOK;
 }
