@@ -46,8 +46,6 @@ typedef struct {
 static uart_t *uarts[4];
 
 
-extern uint8_t uart_speed;
-
 static int uart_interrupt(unsigned int n, void *arg)
 {
 	uart_t *uart = (uart_t *)arg;
@@ -60,19 +58,19 @@ static int uart_interrupt(unsigned int n, void *arg)
 }
 
 
-static void set_baudrate(void *_uart, speed_t baud)
+static void uart_setbaudrate(void *_uart, speed_t baud)
 {
 	/* TODO */
 }
 
 
-static void set_cflag(void *_uart, tcflag_t *cflag)
+static void uart_setcflag(void *_uart, tcflag_t *cflag)
 {
 	/* TODO */
 }
 
 
-static void signal_txready(void *_uart)
+static void uart_signaltxready(void *_uart)
 {
 	uart_t *uart = _uart;
 	uarthw_write(uart->hwctx, REG_IMR, IMR_THRE | IMR_DR);
@@ -229,9 +227,9 @@ int _uart_init(unsigned int uartn, unsigned int speed, uart_t **uart)
 	memcpy((*uart)->hwctx, buff, sizeof(buff));
 
 	callbacks.arg = *uart;
-	callbacks.set_baudrate = set_baudrate;
-	callbacks.set_cflag = set_cflag;
-	callbacks.signal_txready = signal_txready;
+	callbacks.set_baudrate = uart_setbaudrate;
+	callbacks.set_cflag = uart_setcflag;
+	callbacks.signal_txready = uart_signaltxready;
 
 	libtty_init(&(*uart)->tty, &callbacks, _PAGE_SIZE);
 
