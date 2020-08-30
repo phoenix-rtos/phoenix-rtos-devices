@@ -132,7 +132,9 @@ static void spiketty_ioctl(unsigned port, msg_t *msg)
 	out_data = NULL;
 	pid = ioctl_getSenderPid(msg);
 
-	if (!(d = spiketty_get(&oid)))
+	d = spiketty_get(&oid);
+
+	if (d >= sizeof(spikettys) / sizeof(spiketty_t *))
 		err = -EINVAL;
 
 	else if ((spiketty = spikettys[d]) == NULL)
