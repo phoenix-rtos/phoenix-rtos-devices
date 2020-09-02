@@ -193,7 +193,6 @@ void spiketty_thr(void *arg)
 	for (;;) {
 		if ((c = sbi_getchar()) > 0)
 			libtty_putchar(&spiketty->tty, c, NULL);
-		usleep(10000);
 	}
 }
 
@@ -212,7 +211,7 @@ int _spiketty_init(spiketty_t *spiketty)
 	uint8_t *stack;
 	stack = (uint8_t *)malloc(2 * 4096);
 
-	beginthread(spiketty_thr, 1, stack, 2 * 4096, (void *)spiketty);
+	beginthread(spiketty_thr, 4, stack, 2 * 4096, (void *)spiketty);
 
 	return EOK;
 }
