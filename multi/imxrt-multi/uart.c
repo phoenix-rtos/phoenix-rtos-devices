@@ -219,6 +219,7 @@ static void set_baudrate(void *_uart, speed_t baud)
 
 	reg = calculate_baudrate(baud);
 
+
 	/* disable TX and RX */
 	*(uartptr->base + ctrlr) &= ~((1 << 19) | (1 << 18));
 
@@ -240,7 +241,7 @@ int uart_handleMsg(msg_t *msg, int dev)
 
 	dev -= id_uart1;
 
-	if (dev > 7 || !uartConfig[dev])
+	if (dev < 0 || dev >= sizeof(uartConfig) / sizeof(uartConfig[0]) || !uartConfig[dev])
 		return -EINVAL;
 
 	uart = &uart_common.uarts[uartPos[dev]];

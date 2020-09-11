@@ -39,23 +39,24 @@ static spiketty_t *spikettys[1];
 
 static spiketty_t spiketty = {0};
 
-static void set_baudrate(void *_uart, speed_t baud)
+static void set_baudrate(void *arg, speed_t baud)
 {
 	/* TODO */
 }
 
 
-static void set_cflag(void *_uart, tcflag_t *cflag)
+static void set_cflag(void *arg, tcflag_t *cflag)
 {
 	/* TODO */
 }
 
 
-static void signal_txready(void *_uart)
+static void signal_txready(void *arg)
 {
-/*	uart_t *uart = _uart;
-	outb(uart->base + REG_IMR, IMR_THRE | IMR_DR);
-	condSignal(uart->intcond);*/
+	spiketty_t *spiketty = (spiketty_t *)arg;
+
+	while (libtty_txready(&spiketty->tty))
+		sbi_putchar(libtty_getchar(&spiketty->tty, NULL));
 }
 
 
@@ -183,45 +184,35 @@ void poolthr(void *arg)
 	}
 }
 
+
 void spiketty_thr(void *arg)
 {
 	spiketty_t *spiketty = (spiketty_t *)arg;
-
 	int c;
 
 	for (;;) {
-		do {
-			c = sbi_getchar();
-			if (c > 0) {
-				libtty_putchar(&spiketty->tty, c, NULL);
-			}
-		} while (c > 0);
-
-		/* Transmit */
-		while (libtty_txready(&spiketty->tty)) {
-			c = libtty_getchar(&spiketty->tty, NULL);
-			sbi_putchar(c);
-		}
-		usleep(10000);
+		if ((c = sbi_getchar()) > 0)
+			libtty_putchar(&spiketty->tty, c, NULL);
+		usleep(10);
 	}
 }
 
 
-int _spiketty_init(spiketty_t **spiketty)
+int _spiketty_init(spiketty_t *spiketty)
 {
 	libtty_callbacks_t callbacks;
 
-	callbacks.arg = *spiketty;
+	callbacks.arg = spiketty;
 	callbacks.set_baudrate = set_baudrate;
 	callbacks.set_cflag = set_cflag;
 	callbacks.signal_txready = signal_txready;
 
-	libtty_init(&(*spiketty)->tty, &callbacks, _PAGE_SIZE);
+	libtty_init(&spiketty->tty, &callbacks, _PAGE_SIZE);
 
 	uint8_t *stack;
 	stack = (uint8_t *)malloc(2 * 4096);
 
-	beginthread(spiketty_thr, 1, stack, 2 * 4096, (void *)*spiketty);
+	beginthread(spiketty_thr, 4, stack, 2 * 4096, (void *)spiketty);
 
 	return EOK;
 }
@@ -234,7 +225,7 @@ int main(void)
 	/* printf("riscv-spiketty: Initializing RISCV HTIF console driver %s\n", ""); */
 
 	spikettys[0] = &spiketty;
-	_spiketty_init(&spikettys[0]);
+	_spiketty_init(spikettys[0]);
 
 	portCreate(&port);
 	if (portRegister(port, "/dev/tty0", &spikettys[0]->oid) < 0) {
@@ -243,7 +234,7 @@ int main(void)
 	}
 
 	/* Run threads */
-	void *stack = malloc(2048);	
+	void *stack = malloc(2048);
 	beginthread(poolthr, 4, stack, 2048, (void *)(uint64_t)port);
 
 	poolthr((void *)(uint64_t)port);
