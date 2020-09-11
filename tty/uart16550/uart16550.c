@@ -49,11 +49,7 @@ static uart_t *uarts[4];
 static int uart_interrupt(unsigned int n, void *arg)
 {
 	uart_t *uart = (uart_t *)arg;
-/*
-	uint8_t iir;
-	if ((iir = uart_regrd(REG_IIR)) & IIR_IRQPEND)
-		return 0;
-*/
+
 	return uart->intcond;
 }
 
@@ -73,6 +69,7 @@ static void uart_setcflag(void *_uart, tcflag_t *cflag)
 static void uart_signaltxready(void *_uart)
 {
 	uart_t *uart = _uart;
+
 	uarthw_write(uart->hwctx, REG_IMR, IMR_THRE | IMR_DR);
 	condSignal(uart->intcond);
 }
@@ -81,16 +78,18 @@ static void uart_signaltxready(void *_uart)
 void uart_intthr(void *arg)
 {
 	uart_t *uart = (uart_t *)arg;
-	uint8_t iir, lsr;
+	uint64_t iir, lsr;
 	char c;
 
 	mutexLock(uart->mutex);
 	for (;;) {
+
 		while ((iir = uarthw_read(uart->hwctx, REG_IIR)) & IIR_IRQPEND)
 			condWait(uart->intcond, uart->mutex, 0);
 
 		/* Receive */
 		if ((iir & IIR_DR) == IIR_DR) {
+
 			while (1) {
 				lsr = uarthw_read(uart->hwctx, REG_LSR);
 
@@ -98,12 +97,14 @@ void uart_intthr(void *arg)
 					break;
 
 				c = uarthw_read(uart->hwctx, REG_RBR);
+
 				libtty_putchar(&uart->tty, c, NULL);
 			}
 		}
 
 		/* Transmit */
 		if ((iir & IIR_THRE) == IIR_THRE) {
+
 			if (libtty_txready(&uart->tty)) {
 				c = libtty_getchar(&uart->tty, NULL);
 				uarthw_write(uart->hwctx, REG_THR, c);
@@ -111,6 +112,7 @@ void uart_intthr(void *arg)
 			else {
 				uarthw_write(uart->hwctx, REG_IMR, IMR_DR);
 			}
+
 		}
 	}
 }
@@ -242,7 +244,17 @@ int _uart_init(unsigned int uartn, unsigned int speed, uart_t **uart)
 		return -ENOMEM;
 	}
 	beginthread(uart_intthr, 1, stack, 2 * 4096, (void *)*uart);
+
 	interrupt(uarthw_irq((*uart)->hwctx), uart_interrupt, (*uart), (*uart)->intcond, &(*uart)->inth);
+
+	/* Enable FIFO - this is required for Transmeta Crusoe (MOD) */
+	uarthw_write((*uart)->hwctx, 2, 0x00);
+
+	/* Enable hardware interrupts */
+	uarthw_write((*uart)->hwctx, REG_MCR, MCR_OUT2);
+
+	/* Set interrupt mask */
+	uarthw_write((*uart)->hwctx, REG_IMR, IMR_DR);
 
 	/* Set speed (MOD) */
 	uarthw_write((*uart)->hwctx, REG_LCR, LCR_DLAB);
@@ -251,15 +263,6 @@ int _uart_init(unsigned int uartn, unsigned int speed, uart_t **uart)
 
 	/* Set data format (MOD) */
 	uarthw_write((*uart)->hwctx, REG_LCR, LCR_D8N1);
-
-	/* Enable FIFO - this is required for Transmeta Crusoe (MOD) */
-	uarthw_write((*uart)->hwctx, 2, 0x01);
-
-	/* Enable hardware interrupts */
-	uarthw_write((*uart)->hwctx, REG_MCR, MCR_OUT2);
-
-	/* Set interrupt mask */
-	uarthw_write((*uart)->hwctx, REG_IMR, IMR_DR);
 
 	return EOK;
 }
@@ -327,7 +330,7 @@ int main(void)
 		fprintf(stderr, DRIVER ": Out of memory!\n");
 		return -ENOMEM;
 	}
-	beginthread(poolthr, 1, stack, 2048, (void *)(unsigned long)port);
+	beginthread(poolthr, 4, stack, 2048, (void *)(unsigned long)port);
 	poolthr((void *)(unsigned long)port);
 
 	return 0;

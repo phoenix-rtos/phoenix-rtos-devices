@@ -21,23 +21,24 @@
 
 
 typedef struct {
-	volatile uint8_t *base;
+	uintptr_t base;
 	uint8_t irq;
 } uarthw_ctx_t;
 
 
 uint8_t uarthw_read(void *hwctx, unsigned int reg)
 {
-	uint8_t b;
+	volatile uintptr_t p = (((uarthw_ctx_t *)hwctx)->base + reg);
 
-	b = *(((uarthw_ctx_t *)hwctx)->base + reg);
-	return b;
+	return (*(volatile uint8_t *)p);
 }
 
 
 void uarthw_write(void *hwctx, unsigned int reg, uint8_t val)
 {
-	*(((uarthw_ctx_t *)hwctx)->base + reg) = val;
+	volatile uint64_t p = (uint64_t)(((uarthw_ctx_t *)hwctx)->base + reg);
+
+	*(volatile uint8_t *)p = val;
 	return;
 }
 
@@ -63,7 +64,7 @@ int uarthw_init(unsigned int uartn, void *hwctx, size_t hwctxsz)
 	if (uartn >= 1)
 		return -ENOENT;
 
-	if ((((uarthw_ctx_t *)hwctx)->base = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, (offs_t)0x10000000)) == NULL)
+	if ((((uarthw_ctx_t *)hwctx)->base = (uintptr_t)mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, (offs_t)0x10000000)) == (uintptr_t)NULL)
 		return -ENOMEM;
 
 	((uarthw_ctx_t *)hwctx)->irq = 0xa;

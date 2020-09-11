@@ -8,6 +8,5 @@
 
 include tty/libtty/Makefile
 include tty/pc-tty/Makefile
-include tty/pc-uart/Makefile
 include tty/uart16550/Makefile
 include storage/pc-ata/Makefile
