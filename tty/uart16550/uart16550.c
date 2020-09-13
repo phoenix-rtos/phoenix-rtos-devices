@@ -104,15 +104,13 @@ void uart_intthr(void *arg)
 
 		/* Transmit */
 		if ((iir & IIR_THRE) == IIR_THRE) {
-
+			
 			if (libtty_txready(&uart->tty)) {
 				c = libtty_getchar(&uart->tty, NULL);
 				uarthw_write(uart->hwctx, REG_THR, c);
 			}
-			else {
+			else
 				uarthw_write(uart->hwctx, REG_IMR, IMR_DR);
-			}
-
 		}
 	}
 }
@@ -167,11 +165,11 @@ uint8_t uart_get(oid_t *oid)
 {
 	unsigned int i;
 
-	for (i = 0; i < sizeof(uarts) / sizeof(uart_t); i++) {
+	for (i = 0; i < sizeof(uarts) / sizeof(uart_t *); i++) {
 		if ((uarts[i]->oid.id == oid->id) && (uarts[i]->oid.port == oid->port))
 			return i;
 	}
-	return 0;
+	return -ENOENT;
 }
 
 
@@ -247,8 +245,8 @@ int _uart_init(unsigned int uartn, unsigned int speed, uart_t **uart)
 
 	interrupt(uarthw_irq((*uart)->hwctx), uart_interrupt, (*uart), (*uart)->intcond, &(*uart)->inth);
 
-	/* Enable FIFO - this is required for Transmeta Crusoe (MOD) */
-	uarthw_write((*uart)->hwctx, 2, 0x00);
+	/* Enable FIFO */
+	uarthw_write((*uart)->hwctx, 2, 0x01);
 
 	/* Enable hardware interrupts */
 	uarthw_write((*uart)->hwctx, REG_MCR, MCR_OUT2);
@@ -272,7 +270,7 @@ void poolthr(void *arg)
 {
 	uint32_t port = (uint32_t)(unsigned long)arg;
 	msg_t msg;
-	unsigned long rid;
+	unsigned long rid, d;
 
 	for (;;) {
 		if (msgRecv(port, &msg, &rid) < 0)
@@ -281,17 +279,32 @@ void poolthr(void *arg)
 		switch (msg.type) {
 		case mtOpen:
 			break;
-		case mtWrite:
-			msg.o.io.err = uart_write(uart_get(&msg.i.io.oid), msg.i.size, msg.i.data, msg.i.io.mode);
+		case mtWrite: {
+			if ((d = uart_get(&msg.i.io.oid)) < 0) {
+				msg.o.io.err = -ENOENT;
+				break;
+			}
+			msg.o.io.err = uart_write(d, msg.i.size, msg.i.data, msg.i.io.mode);
+		}
 			break;
 		case mtRead:
-			msg.o.io.err = uart_read(uart_get(&msg.i.io.oid), msg.o.size, msg.o.data, msg.i.io.mode);
+			if ((d = uart_get(&msg.i.io.oid)) < 0) {
+				msg.o.io.err = -ENOENT;
+				break;
+			}
+
+			msg.o.io.err = uart_read(d, msg.o.size, msg.o.data, msg.i.io.mode);
 			break;
 		case mtClose:
 			break;
 		case mtGetAttr:
-			if (msg.i.attr.type == atPollStatus)
-				msg.o.attr.val = uart_poll_status(uart_get(&msg.i.io.oid));
+			if (msg.i.attr.type == atPollStatus) {
+				if ((d = uart_get(&msg.i.io.oid)) < 0) {
+					msg.o.io.err = -ENOENT;
+					break;
+				}
+				msg.o.attr.val = uart_poll_status(d);
+			}
 			else
 				msg.o.attr.val = -EINVAL;
 			break;
