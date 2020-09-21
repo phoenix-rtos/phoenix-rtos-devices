@@ -22,6 +22,7 @@
 
 #include "stm32-multi.h"
 #include "common.h"
+#include "dma.h"
 #include "rcc.h"
 #include "spi.h"
 
@@ -33,12 +34,8 @@
 
 struct {
 	volatile uint16_t *base;
-	volatile int ready;
 
 	handle_t mutex;
-	handle_t irqLock;
-	handle_t cond;
-	handle_t inth;
 } spi_common[SPI1 + SPI2 + SPI3];
 
 
@@ -54,44 +51,54 @@ static const int spiPos[] = { SPI1_POS, SPI2_POS, SPI3_POS };
 enum { cr1 = 0, cr2 = 2, sr = 4, dr = 6, crcpr = 8, rxcrcr = 10, txcrcr = 12 };
 
 
-static int spi_irqHandler(unsigned int n, void *arg)
-{
-	*(spi_common[(int)arg].base + cr2) &= ~(1 << 7);
-	spi_common[(int)arg].ready = 1;
-
-	return 1;
-}
-
-
 static unsigned char _spi_readwrite(int spi, unsigned char txd)
 {
 	unsigned char rxd;
 
-	spi_common[spi].ready = 0;
-
 	/* Initiate transmission */
-	*((uint8_t *)(spi_common[spi].base + dr)) = txd;
-	*(spi_common[spi].base + cr2) |= 1 << 7;
+	*((volatile uint8_t *)(spi_common[spi].base + dr)) = txd;
 
-	mutexLock(spi_common[spi].irqLock);
-	while (!spi_common[spi].ready)
-		condWait(spi_common[spi].cond, spi_common[spi].irqLock, 1);
-	mutexUnlock(spi_common[spi].irqLock);
+	/* Wait until RXNE==1 */
+	while (!(*(spi_common[spi].base + sr) & 0x1))
+		;
 
-	rxd = *((uint8_t *)(spi_common[spi].base + dr));
+	rxd = *((volatile uint8_t *)(spi_common[spi].base + dr));
 
 	return rxd;
+}
+
+
+static void _spi_readwrite_dma(int spi, unsigned char *ibuff, unsigned char *obuff, size_t bufflen)
+{
+	unsigned int dmach = (1 << 1) | (ibuff != NULL);
+
+	*(spi_common[spi].base + cr2) |= dmach;
+	dma_transfer_spi(spi, ibuff, obuff, bufflen);
+	*(spi_common[spi].base + cr2) &= ~dmach;
+
+	if (ibuff != NULL)
+		return;
+
+	/* Wait until RXNE=1 and TXE=1, i.e. the whole transfer is complete */
+	while ((*(spi_common[spi].base + sr) & 0x3) != 0x3)
+		;
+
+	/* Empty out the RX FIFO completely - leaving anything in the FIFO will corrupt subsequent transfers */
+	while (*(spi_common[spi].base + sr) & 0x1)
+		(void) *((volatile uint8_t *)(spi_common[spi].base + dr));
 }
 
 
 int spi_transaction(int spi, int dir, unsigned char cmd, unsigned int addr, unsigned char flags, unsigned char *ibuff, unsigned char *obuff, size_t bufflen)
 {
 	int i;
+	unsigned int addrsz;
 
 	if (spi < spi1 || spi > spi3 || !spiConfig[spi])
 		return -EINVAL;
 
 	spi = spiPos[spi];
+	addrsz = (flags >> SPI_ADDRSHIFT) & SPI_ADDRMASK;
 
 	mutexLock(spi_common[spi].mutex);
 	keepidle(1);
@@ -99,28 +106,45 @@ int spi_transaction(int spi, int dir, unsigned char cmd, unsigned int addr, unsi
 	if (flags & spi_cmd)
 		_spi_readwrite(spi, cmd);
 
-	if (flags & spi_address) {
-		for (i = 0; i < 3; ++i) {
-			_spi_readwrite(spi, (addr >> 16) & 0xff);
-			addr <<= 8;
+	if (addrsz > 0) {
+		if (flags & spi_addrlsb) {
+			for (i = 0; i < addrsz; ++i) {
+				_spi_readwrite(spi, addr & 0xFF);
+				addr >>= 8;
+			}
+		}
+		else {
+			for (i = 0; i < addrsz; ++i) {
+				_spi_readwrite(spi, (addr >> (addrsz - 1) * 8) & 0xFF);
+				addr <<= 8;
+			}
 		}
 	}
 
 	if (flags & spi_dummy)
 		_spi_readwrite(spi, 0);
 
-	if (dir == spi_read) {
-		for (i = 0; i < bufflen; ++i)
-			ibuff[i] = _spi_readwrite(spi, 0);
-	}
-	else if (dir == spi_write) {
-		for (i = 0; i < bufflen; ++i)
-			_spi_readwrite(spi, obuff[i]);
+	if (bufflen >= 6) {
+		_spi_readwrite_dma(spi, ibuff, obuff, bufflen);
 	}
 	else {
-		for (i = 0; i < bufflen; ++i)
-			ibuff[i] = _spi_readwrite(spi, obuff[i]);
+		if (dir == spi_read) {
+			for (i = 0; i < bufflen; ++i)
+				ibuff[i] = _spi_readwrite(spi, 0);
+		}
+		else if (dir == spi_write) {
+			for (i = 0; i < bufflen; ++i)
+				_spi_readwrite(spi, obuff[i]);
+		}
+		else {
+			for (i = 0; i < bufflen; ++i)
+				ibuff[i] = _spi_readwrite(spi, obuff[i]);
+		}
 	}
+
+	/* Wait until BSY=0 */
+	while ((*(spi_common[spi].base + sr) & (1 << 7)) != 0x0)
+		;
 
 	keepidle(0);
 	mutexUnlock(spi_common[spi].mutex);
@@ -155,6 +179,9 @@ int spi_configure(int spi, char mode, char bdiv, int enable)
 
 	mutexUnlock(spi_common[pos].mutex);
 
+	dma_configure_spi(spi, dma_mem2per, 0x1, (void*) (spi_common[pos].base + dr), 0x0, 0x0, 0x1, 0x0);
+	dma_configure_spi(spi, dma_per2mem, 0x1, (void*) (spi_common[pos].base + dr), 0x0, 0x0, 0x1, 0x0);
+
 	return EOK;
 }
 
@@ -173,11 +200,8 @@ void spi_init(void)
 			continue;
 
 		spi_common[i].base = (void *)spiinfo[spi].base;
-		spi_common[i].ready = 1;
 
 		mutexCreate(&spi_common[i].mutex);
-		mutexCreate(&spi_common[i].irqLock);
-		condCreate(&spi_common[i].cond);
 
 		rcc_devClk(spi2pctl[spi], 1);
 
@@ -185,16 +209,14 @@ void spi_init(void)
 		*(spi_common[i].base + cr1) &= ~(1 << 6);
 		dataBarier();
 
-		/* 1 MHz baudrate, master, mode 0 */
+		/* fPCLK/2 baudrate, master, mode 0 */
 		*(spi_common[i].base + cr1) = (1 << 2);
 
-		/* 8 bits, motorola frame format */
-		*(spi_common[i].base + cr2) = (0x7 << 8) | (1 << 2);
+		/* 8-bit RXNE threshold, 8 bits, motorola frame format, SS output enable */
+		*(spi_common[i].base + cr2) = (1 << 12) | (0x7 << 8) | (1 << 2);
 
 		/* Enable SPI */
 		*(spi_common[i].base + cr1) |= 1 << 6;
-
-		interrupt(spiinfo[spi].irq, spi_irqHandler, (void *)i, spi_common[i].cond, &spi_common[i].inth);
 
 		++i;
 	}

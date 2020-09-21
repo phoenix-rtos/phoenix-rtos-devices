@@ -243,22 +243,25 @@ Structure of below format:
 
 	typedef struct {
 		int spi;
-		char cmd;
 		unsigned int addr;
 		unsigned int flags;
+		char cmd;
 	} spirw_t;
 
 Is used for read/write transactions with SPI device.
 
 - spi - from pool of enum { spi1 = 0, spi2, spi3 };
 - cmd - command to SPI device, first byte always written during transaction
-- addr - address, second and third byte written during transaction 
-- flags - bit mask of enum { spi_address = 0x1, spi_dummy = 0x2 };
+- addr - address to be written after cmd during transaction
+- flags - bit mask of enum { spi_cmd, spi_dummy, spi_addrlsb } and/or (addrsz << SPI_ADDRSHIFT)
+
 
 where
 
-- spi_address - if set address will be transmitted
+- addrsz - this many bytes of addr will be transmitted
+- spi_cmd - if set, cmd will be transmitted
 - spi_dummy - if set one dummy transaction will preceed read/write
+- spi_addrlsb - if set, addr will be sent least significant byte first
 
 ### spi_def
 
@@ -266,9 +269,9 @@ Structure of below format:
 
 	typedef struct {
 		int spi;
+		int enable;
 		char mode;
 		char bdiv;
-		int enable;
 	} spidef_t;
 
 Is used to configure paramters of transmission of SPI device.
