@@ -162,7 +162,11 @@ typedef struct {
 enum { spi1 = 0, spi2, spi3 };
 
 
-enum { spi_cmd = 0x1, spi_address = 0x2, spi_dummy = 0x4 };
+#define SPI_ADDRSHIFT 3
+#define SPI_ADDRMASK 0x3
+
+
+enum { spi_cmd = 0x1, spi_dummy = 0x2, /* 3-bits for SPI_ADDR* ,*/ spi_addrlsb = 0x20 };
 
 
 typedef struct {
