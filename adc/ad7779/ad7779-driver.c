@@ -606,7 +606,7 @@ static int dev_ctl(msg_t *msg)
 static void msg_loop(void)
 {
 	msg_t msg;
-	unsigned rid;
+	unsigned long rid;
 
 	while (1) {
 		if (msgRecv(common.port, &msg, &rid) < 0)

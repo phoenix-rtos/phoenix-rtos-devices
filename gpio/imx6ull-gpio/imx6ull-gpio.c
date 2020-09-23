@@ -177,7 +177,7 @@ int gpiosetdir(int d, uint32_t dir, uint32_t mask)
 void thread(void *arg)
 {
 	msg_t msg;
-	unsigned int rid;
+	unsigned long int rid;
 	int d;
 	uint32_t val, mask;
 

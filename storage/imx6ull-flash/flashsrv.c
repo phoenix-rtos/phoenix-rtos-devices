@@ -26,7 +26,7 @@ typedef struct {
 
 	int (*handler)(void *, msg_t *);
 	msg_t msg;
-	unsigned rid;
+	unsigned long rid;
 	unsigned port;
 	void *data;
 } flashsrv_request_t;
@@ -596,7 +596,7 @@ static int flashsrv_fileAttr(int type, id_t id)
 static void flashsrv_devThread(void *arg)
 {
 	msg_t msg;
-	unsigned rid, port = (unsigned)arg;
+	unsigned long rid, port = (unsigned)arg;
 
 	for (;;) {
 		if (msgRecv(port, &msg, &rid) < 0)
