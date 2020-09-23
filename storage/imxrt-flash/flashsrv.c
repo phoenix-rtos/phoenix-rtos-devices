@@ -345,7 +345,7 @@ static void flashsrv_rawCtl(flash_memory_t *memory, msg_t *msg)
 static void flashsrv_meterfsThread(void *arg)
 {
 	msg_t msg;
-	unsigned rid;
+	unsigned long rid;
 
 	flashsrv_partition_t *part = (flashsrv_partition_t *)arg;
 
@@ -437,7 +437,7 @@ static int flashsrv_verifyRawIO(const flash_memory_t *memory, msg_t *msg, size_t
 static void flashsrv_rawThread(void *arg)
 {
 	msg_t msg;
-	unsigned rid;
+	unsigned long rid;
 	uint32_t beginAddr;
 
 	flash_memory_t *memory = (flash_memory_t *)arg;
@@ -485,7 +485,7 @@ static void flashsrv_rawThread(void *arg)
 static void flashsrv_devThread(void *arg)
 {
 	msg_t msg;
-	unsigned rid;
+	unsigned long rid;
 
 	flash_memory_t *memory = (flash_memory_t *)arg;
 

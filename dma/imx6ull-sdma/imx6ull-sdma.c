@@ -735,7 +735,7 @@ static int dev_ctl(msg_t *msg)
 static void worker_thread(void *arg)
 {
 	msg_t msg;
-	unsigned rid;
+	unsigned long rid;
 
 	(void)arg;
 
