@@ -596,7 +596,8 @@ static int flashsrv_fileAttr(int type, id_t id)
 static void flashsrv_devThread(void *arg)
 {
 	msg_t msg;
-	unsigned long rid, port = (unsigned)arg;
+	unsigned long rid;
+	unsigned port = (unsigned)arg;
 
 	for (;;) {
 		if (msgRecv(port, &msg, &rid) < 0)
