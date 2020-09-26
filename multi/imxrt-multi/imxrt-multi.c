@@ -148,7 +148,7 @@ static int mkFile(oid_t *dir, id_t id, char *name, uint32_t port)
 	msg.o.size = 0;
 
 	if (msgSend(dir->port, &msg) < 0 || msg.o.create.err != EOK)
-		return - 1;
+		return -1;
 
 	return 0;
 }
@@ -244,6 +244,7 @@ static int createDevFiles(void)
 
 #if SPI4
 	if (mkFile(&dir, id_spi4, "spi4", multi_port) < 0)
+		return -1;
 #endif
 
 
