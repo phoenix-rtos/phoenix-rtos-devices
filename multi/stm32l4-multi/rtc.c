@@ -73,7 +73,7 @@ static void _rtc_unlock(void)
 }
 
 
-/* CAUTION - not tested */
+/* CAUTION - not tested, programmed according to the reference manual */
 void rtc_setCalib(int value)
 {
 	unsigned int t = *(rtc_common.base + calr);
@@ -86,14 +86,17 @@ void rtc_setCalib(int value)
 	if (value < -487)
 		value = -487;
 
-	/* ppm to value */
-	value = (10000 * value) / 954;
-	value = (value + 5) / 10;
-
-	if (value > 0)
+	if (value > 0) {
 		t |= 1 << 15;
-	else
+		value = 488 - value;
+	}
+	else {
 		value = -value;
+	}
+
+	/* ppm to value */
+	value = (100000 * value) / 954;
+	value = (value + 55) / 100;
 
 	t |= (unsigned int)value;
 
