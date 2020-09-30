@@ -177,9 +177,6 @@ int spi_configure(int spi, char mode, char bdiv, int enable)
 
 	mutexUnlock(spi_common[pos].mutex);
 
-	dma_configure_spi(spi, dma_mem2per, 0x1, (void*) (spi_common[pos].base + dr), 0x0, 0x0, 0x1, 0x0);
-	dma_configure_spi(spi, dma_per2mem, 0x1, (void*) (spi_common[pos].base + dr), 0x0, 0x0, 0x1, 0x0);
-
 	return EOK;
 }
 
@@ -215,6 +212,9 @@ void spi_init(void)
 
 		/* SPI mode enabled */
 		*(spi_common[i].base + i2scfgr) = 0;
+
+		dma_configure_spi(spi, dma_mem2per, 0x1, (void*) (spi_common[i].base + dr), 0x0, 0x0, 0x1, 0x0);
+		dma_configure_spi(spi, dma_per2mem, 0x1, (void*) (spi_common[i].base + dr), 0x0, 0x0, 0x1, 0x0);
 
 		/* Enable SPI */
 		*(spi_common[i].base + cr1) |= 1 << 6;
