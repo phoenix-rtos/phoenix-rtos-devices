@@ -177,7 +177,7 @@ int rtc_init(void)
 	mutexCreate(&rtc_common.lock);
 
 	pwr_unlock();
-	rcc_devClk(pctl_rtc, 1);
+	devClk(pctl_rtc, 1);
 	pwr_lock();
 
 	return EOK;

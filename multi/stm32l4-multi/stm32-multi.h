@@ -15,6 +15,7 @@
 #define _STM32_MULTI_H_
 
 #include <sys/interrupt.h>
+#include <stm32l4-multi/libuart.h>
 
 
 enum { adc_get = 0, rtc_setcal, rtc_get, rtc_set, i2c_get, i2c_set, gpio_def, gpio_get,
@@ -77,13 +78,7 @@ typedef struct {
 /* UART */
 
 
-enum { usart1 = 0, usart2, usart3, uart4, uart5, lpuart1 };
-
-
-enum { uart_mnormal = 0, uart_mnblock };
-
-
-enum { uart_parnone = 0, uart_pareven, uart_parodd };
+enum { usart1 = 0, usart2, usart3, uart4, uart5 };
 
 
 typedef struct {

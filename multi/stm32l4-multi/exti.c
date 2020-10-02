@@ -152,7 +152,7 @@ int syscfg_mapexti(unsigned int line, int port)
 
 	mutexLock(exti_common.lock);
 	if (!initDone) {
-		rcc_devClk(pctl_syscfg, 1);
+		devClk(pctl_syscfg, 1);
 		initDone = 1;
 	}
 	tmp = *cr & ~mask;
