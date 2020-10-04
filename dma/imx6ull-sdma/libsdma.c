@@ -187,18 +187,18 @@ addr_t sdma_ocram_alloc(sdma_t *s, size_t size)
 
 void *sdma_alloc_uncached(sdma_t *s, size_t size, addr_t *paddr, int ocram)
 {
-	uint32_t n = (size + SIZE_PAGE - 1)/SIZE_PAGE;
+	uint32_t n = (size + _PAGE_SIZE - 1)/_PAGE_SIZE;
 	oid_t *oid = OID_NULL;
 	addr_t _paddr = 0;
 
 	if (ocram) {
 		oid = OID_PHYSMEM;
-		_paddr = sdma_ocram_alloc(s, n*SIZE_PAGE);
+		_paddr = sdma_ocram_alloc(s, n*_PAGE_SIZE);
 		if (!_paddr)
 			return NULL;
 	}
 
-	void *vaddr = mmap(NULL, n*SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_UNCACHED, oid, _paddr);
+	void *vaddr = mmap(NULL, n*_PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, oid, _paddr);
 	if (vaddr == MAP_FAILED)
 		return NULL;
 
@@ -214,7 +214,7 @@ void *sdma_alloc_uncached(sdma_t *s, size_t size, addr_t *paddr, int ocram)
 
 int sdma_free_uncached(void *vaddr, size_t size)
 {
-	uint32_t n = (size + SIZE_PAGE - 1)/SIZE_PAGE;
+	uint32_t n = (size + _PAGE_SIZE - 1)/_PAGE_SIZE;
 
-	return munmap(vaddr, n*SIZE_PAGE);
+	return munmap(vaddr, n*_PAGE_SIZE);
 }
