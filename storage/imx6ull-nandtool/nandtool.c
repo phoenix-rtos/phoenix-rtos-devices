@@ -419,12 +419,12 @@ static int send_nandErase(unsigned port, unsigned start, unsigned end)
 
 	msg.type = mtDevCtl;
 	devctl->type = flashsrv_devctl_erase;
-	devctl->erase.offset = start * PAGES_PER_BLOCK	* SIZE_PAGE;
+	devctl->erase.offset = start * PAGES_PER_BLOCK	* _PAGE_SIZE;
 
 	if (start > end)
 		return -EINVAL;
 
-	devctl->erase.size = (end - start) * PAGES_PER_BLOCK * SIZE_PAGE;
+	devctl->erase.size = (end - start) * PAGES_PER_BLOCK * _PAGE_SIZE;
 	devctl->erase.oid.id = -1;
 	devctl->erase.oid.port = port;
 
@@ -446,7 +446,7 @@ static int send_nandFlash(unsigned port, unsigned offset, unsigned end, void *da
 
 	msg.i.io.oid.id = -1;
 	msg.i.io.oid.port = port;
-	msg.i.io.offs = offset * SIZE_PAGE;
+	msg.i.io.offs = offset * _PAGE_SIZE;
 
 	msg.i.data = data;
 	msg.i.size = size;
@@ -534,13 +534,13 @@ static int flash_update_tool(char **args)
 			if (!size)
 				break;
 
-			if (size & (SIZE_PAGE - 1)) {
-				memset(data + size, 0xff, SIZE_PAGE - (size & (SIZE_PAGE - 1)));
-				size = (size + SIZE_PAGE - 1) & ~(SIZE_PAGE - 1);
+			if (size & (_PAGE_SIZE - 1)) {
+				memset(data + size, 0xff, _PAGE_SIZE - (size & (_PAGE_SIZE - 1)));
+				size = (size + _PAGE_SIZE - 1) & ~(_PAGE_SIZE - 1);
 			}
 
 			result = send_nandFlash(port, offset, end, data, size);
-			offset += size / SIZE_PAGE;
+			offset += size / _PAGE_SIZE;
 
 			if (result < 0) {
 				fprintf(stderr, "flash: error while writing\n");

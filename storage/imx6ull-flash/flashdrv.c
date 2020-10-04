@@ -423,7 +423,7 @@ static void flashdrv_setDevClock(int dev, int state)
 
 flashdrv_dma_t *flashdrv_dmanew(void)
 {
-	flashdrv_dma_t *dma = mmap(NULL, SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0);
+	flashdrv_dma_t *dma = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0);
 	dma->last = NULL;
 	dma->first = NULL;
 
@@ -433,7 +433,7 @@ flashdrv_dma_t *flashdrv_dmanew(void)
 
 void flashdrv_dmadestroy(flashdrv_dma_t *dma)
 {
-	munmap(dma, SIZE_PAGE);
+	munmap(dma, _PAGE_SIZE);
 }
 
 
@@ -847,10 +847,10 @@ void flashdrv_rundma(flashdrv_dma_t *dma)
 
 void flashdrv_init(void)
 {
-	flashdrv_common.dma  = mmap(NULL, 2 * SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x1804000);
-	flashdrv_common.gpmi = mmap(NULL, 2 * SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x1806000);
-	flashdrv_common.bch  = mmap(NULL, 4 * SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x1808000);
-	flashdrv_common.mux  = mmap(NULL, 4 * SIZE_PAGE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x20e0000);
+	flashdrv_common.dma  = mmap(NULL, 2 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x1804000);
+	flashdrv_common.gpmi = mmap(NULL, 2 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x1806000);
+	flashdrv_common.bch  = mmap(NULL, 4 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x1808000);
+	flashdrv_common.mux  = mmap(NULL, 4 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x20e0000);
 
 	flashdrv_common.pagesz = 4096 + 224;
 	flashdrv_common.metasz = 16 + 26;

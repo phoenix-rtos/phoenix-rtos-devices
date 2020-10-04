@@ -118,7 +118,7 @@ void phy_disableClock(void)
 
 void phy_init(void)
 {
-	phy_common.base = mmap(NULL, 2 * SIZE_PAGE, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, PHY_ADDR);
+	phy_common.base = mmap(NULL, 2 * _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, PHY_ADDR);
 
 	/* Offset into PHY2 */
 	phy_common.base += 1024;

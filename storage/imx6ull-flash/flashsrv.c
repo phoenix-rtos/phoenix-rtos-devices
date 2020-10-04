@@ -10,6 +10,7 @@
 #include <errno.h>
 #include <getopt.h>
 #include <stdlib.h>
+#include <syslog.h>
 
 #include "posix/utils.h"
 #include "posix/idtree.h"
