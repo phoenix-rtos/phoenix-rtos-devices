@@ -30,7 +30,7 @@
 #endif
 
 #ifndef FLASH_PROGRAM_BANK_SIZE
-#define FLASH_PROGRAM_BANK_SIZE (320 * 1024)
+#define FLASH_PROGRAM_BANK_SIZE (512 * 1024)
 #endif
 
 
