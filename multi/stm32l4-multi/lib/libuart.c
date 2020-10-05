@@ -286,15 +286,6 @@ int libuart_init(libuart_ctx *ctx, unsigned int uart)
 
 	ctx->base = info[uart].base;
 
-	ctx->txbeg = NULL;
-	ctx->txend = NULL;
-
-	ctx->rxbeg = NULL;
-	ctx->rxend = NULL;
-	ctx->read = NULL;
-	ctx->rxdr = 0;
-	ctx->rxdw = 0;
-
 	/* Set up UART to 9600,8,n,1 16-bit oversampling */
 	libuart_configure(ctx, 8, uart_parnone, 9600, 1);
 
