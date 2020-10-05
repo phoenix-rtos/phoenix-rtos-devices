@@ -15,13 +15,33 @@
 #define _FLASH_H_
 
 #include <stdint.h>
-#include "common.h"
-#include "config.h"
 
 #define FLASH_PAGE_SIZE         2048
 #define FLASH_OB_1_ADDR         0x1fff7800
 #define FLASH_OB_2_ADDR         0x1ffff800
 #define FLASH_OB_SIZE           16
+
+#ifndef FLASH_PROGRAM_1_ADDR
+#define FLASH_PROGRAM_1_ADDR 0x08000000
+#endif
+
+#ifndef FLASH_PROGRAM_2_ADDR
+#define FLASH_PROGRAM_2_ADDR 0x08080000
+#endif
+
+#ifndef FLASH_PROGRAM_BANK_SIZE
+#define FLASH_PROGRAM_BANK_SIZE (512 * 1024)
+#endif
+
+
+static inline uint32_t getPC(void)
+{
+	uint32_t ret;
+
+	__asm__ volatile ("mov %0, pc" : "=r" (ret));
+
+	return ret;
+}
 
 
 static inline int flash_activeBank(void)

@@ -17,6 +17,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <phoenix/arch/stm32l4.h>
+#include <sys/platform.h>
 
 #include "config.h"
 
@@ -48,13 +49,31 @@ static inline void dataBarier(void)
 }
 
 
-static inline uint32_t getPC(void)
+static inline int devClk(int dev, int state)
 {
-	uint32_t ret;
+	int ret;
+	platformctl_t pctl;
 
-	__asm__ volatile ("mov %0, pc" : "=r" (ret));
+	pctl.action = pctl_set;
+	pctl.type = pctl_devclk;
+	pctl.devclk.dev = dev;
+	pctl.devclk.state = state;
+
+	ret = platformctl(&pctl);
 
 	return ret;
+}
+
+
+static inline int getCpufreq(void)
+{
+	platformctl_t pctl;
+
+	pctl.action = pctl_get;
+	pctl.type = pctl_cpuclk;
+	platformctl(&pctl);
+
+	return pctl.cpuclk.hz;
 }
 
 #endif

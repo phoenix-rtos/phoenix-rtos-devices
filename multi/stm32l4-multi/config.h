@@ -33,10 +33,6 @@
 #define UART5 0
 #endif
 
-#ifndef LPUART1
-#define LPUART1 0
-#endif
-
 #ifndef UART_CONSOLE
 #define UART_CONSOLE 4
 #endif
@@ -51,18 +47,6 @@
 
 #ifndef SPI3
 #define SPI3 0
-#endif
-
-#ifndef FLASH_PROGRAM_1_ADDR
-#define FLASH_PROGRAM_1_ADDR 0x08000000
-#endif
-
-#ifndef FLASH_PROGRAM_2_ADDR
-#define FLASH_PROGRAM_2_ADDR 0x08080000
-#endif
-
-#ifndef FLASH_PROGRAM_BANK_SIZE
-#define FLASH_PROGRAM_BANK_SIZE (320 * 1024)
 #endif
 
 #endif

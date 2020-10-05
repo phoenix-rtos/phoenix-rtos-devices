@@ -252,7 +252,7 @@ int dma_init(void)
 			interrupt(irqnum, dma_irqHandler, (void *)i, dma_common[i].cond, NULL);
 		}
 
-		rcc_devClk(dma2pctl[dma], 1);
+		devClk(dma2pctl[dma], 1);
 
 		++i;
 	}

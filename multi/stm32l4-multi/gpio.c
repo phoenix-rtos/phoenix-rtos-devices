@@ -77,7 +77,7 @@ int gpio_configPin(int port, char pin, char mode, char af, char otype, char ospe
 
 	/* Enable GPIO port's clock */
 	if (!(gpio_common.enableMask & (1 << (port - gpioa)))) {
-		rcc_devClk(gpio2pctl[port - gpioa], 1);
+		devClk(gpio2pctl[port - gpioa], 1);
 		gpio_common.enableMask |= (1 << (port - gpioa));
 	}
 

@@ -165,7 +165,7 @@ int spi_configure(int spi, char mode, char bdiv, int enable)
 
 	mutexLock(spi_common[pos].mutex);
 
-	rcc_devClk(spi2pctl[spi], 1);
+	devClk(spi2pctl[spi], 1);
 	*(spi_common[pos].base + cr1) &= ~(1 << 6);
 
 	/* Set mode and baud div */
@@ -175,7 +175,7 @@ int spi_configure(int spi, char mode, char bdiv, int enable)
 	if (enable)
 		*(spi_common[pos].base + cr1) |= 1 << 6;
 	else
-		rcc_devClk(spi2pctl[spi], 0);
+		devClk(spi2pctl[spi], 0);
 
 	mutexUnlock(spi_common[pos].mutex);
 
@@ -200,7 +200,7 @@ void spi_init(void)
 
 		mutexCreate(&spi_common[i].mutex);
 
-		rcc_devClk(spi2pctl[spi], 1);
+		devClk(spi2pctl[spi], 1);
 
 		/* Disable SPI */
 		*(spi_common[i].base + cr1) &= ~(1 << 6);
