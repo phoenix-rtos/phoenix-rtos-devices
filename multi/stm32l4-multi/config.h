@@ -33,10 +33,6 @@
 #define UART5 0
 #endif
 
-#ifndef LPUART1
-#define LPUART1 0
-#endif
-
 #ifndef UART_CONSOLE
 #define UART_CONSOLE 4
 #endif

@@ -270,7 +270,6 @@ int libuart_init(libuart_ctx *ctx, unsigned int uart)
 		{ (void *)0x40004800, pctl_usart3, usart3_irq },
 		{ (void *)0x40004c00, pctl_uart4, uart4_irq },
 		{ (void *)0x40005000, pctl_uart5, uart5_irq },
-		{ (void *)0x40008000, pctl_lpuart1, lpuart1_irq }
 	};
 
 	if (uart >= (sizeof(info) / sizeof(info[0])))

@@ -33,17 +33,16 @@
 #define UART3_POS (UART2_POS + UART2)
 #define UART4_POS (UART3_POS + UART3)
 #define UART5_POS (UART4_POS + UART4)
-#define LPUART1_POS (UART5_POS + UART5)
 
-#define UART_CNT (UART1 + UART2 + UART3 + UART4 + UART5 + LPUART1)
+#define UART_CNT (UART1 + UART2 + UART3 + UART4 + UART5)
 
 static libuart_ctx uart_common[UART_CNT];
 
 
-static const int uartConfig[] = { UART1, UART2, UART3, UART4, UART5, LPUART1 };
+static const int uartConfig[] = { UART1, UART2, UART3, UART4, UART5 };
 
 
-static const int uartPos[] = { UART1_POS, UART2_POS, UART3_POS, UART4_POS, UART5_POS, LPUART1_POS };
+static const int uartPos[] = { UART1_POS, UART2_POS, UART3_POS, UART4_POS, UART5_POS };
 
 
 int uart_configure(int uart, char bits, char parity, unsigned int baud, char enable)
@@ -75,7 +74,8 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 
 int uart_init(void)
 {
-	int i, uart;
+	int i;
+	unsigned int uart;
 
 	for (i = 0, uart = usart1; uart <= uart5; ++uart) {
 		if (!uartConfig[uart])
