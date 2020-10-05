@@ -139,7 +139,7 @@ int rtc_setTime(rtctimestamp_t *timestamp)
 	time = 0;
 	time |= (rtc_binToBcd(timestamp->hours) & 0x3f) << 16;
 	time |= (rtc_binToBcd(timestamp->minutes) & 0x7f) << 8;
-	time |= (rtc_binToBcd(timestamp->seconds) & 0x3f);
+	time |= (rtc_binToBcd(timestamp->seconds) & 0x7f);
 
 	date = 0;
 	date |= (rtc_binToBcd(timestamp->day) & 0x3f);
