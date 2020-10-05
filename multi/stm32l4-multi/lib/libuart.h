@@ -56,7 +56,7 @@ int libuart_write(libuart_ctx *ctx, void* buff, unsigned int bufflen);
 int libuart_read(libuart_ctx *ctx, void* buff, unsigned int count, char mode, unsigned int timeout);
 
 
-int libuart_init(libuart_ctx *ctx, int uart);
+int libuart_init(libuart_ctx *ctx, unsigned int uart);
 
 
 #endif

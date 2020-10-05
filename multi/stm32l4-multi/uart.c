@@ -77,7 +77,7 @@ int uart_init(void)
 {
 	int i, uart;
 
-	for (i = 0, uart = usart1; uart < uart5; ++uart) {
+	for (i = 0, uart = usart1; uart <= uart5; ++uart) {
 		if (!uartConfig[uart])
 			continue;
 

@@ -257,7 +257,7 @@ int libuart_read(libuart_ctx *ctx, void* buff, unsigned int count, char mode, un
 }
 
 
-int libuart_init(libuart_ctx *ctx, int uart)
+int libuart_init(libuart_ctx *ctx, unsigned int uart)
 {
 
 	const struct {
@@ -273,7 +273,7 @@ int libuart_init(libuart_ctx *ctx, int uart)
 		{ (void *)0x40008000, pctl_lpuart1, lpuart1_irq }
 	};
 
-	if (uart < 0 || uart > (int)(sizeof(info) / sizeof(info[0])))
+	if (uart >= (sizeof(info) / sizeof(info[0])))
 		return -1;
 
 	devClk(info[uart].dev, 1);
