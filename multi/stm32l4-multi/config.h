@@ -49,4 +49,16 @@
 #define SPI3 0
 #endif
 
+#ifndef SPI1_USEDMA
+#define SPI1_USEDMA 0
+#endif
+
+#ifndef SPI2_USEDMA
+#define SPI2_USEDMA 1
+#endif
+
+#ifndef SPI3_USEDMA
+#define SPI3_USEDMA 0
+#endif
+
 #endif
