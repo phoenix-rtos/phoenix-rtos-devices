@@ -22,6 +22,9 @@
 #include "config.h"
 
 
+#define NELEMS(x) (sizeof(x) / sizeof(x[0]))
+
+
 #define max(a, b) ({ \
 	__typeof__ (a) _a = (a); \
 	__typeof__ (b) _b = (b); \

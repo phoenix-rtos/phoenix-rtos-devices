@@ -74,16 +74,13 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 
 int uart_init(void)
 {
-	int i;
 	unsigned int uart;
 
-	for (i = 0, uart = usart1; uart <= uart5; ++uart) {
+	for (uart = usart1; uart <= uart5; ++uart) {
 		if (!uartConfig[uart])
 			continue;
 
-		libuart_init(&uart_common[i], uart);
-
-		++i;
+		libuart_init(&uart_common[uartPos[uart]], uart);
 	}
 
 	return EOK;

@@ -16,6 +16,7 @@
 
 #include <sys/interrupt.h>
 #include <stm32l4-multi/libuart.h>
+#include <stm32l4-multi/libspi.h>
 
 
 enum { adc_get = 0, rtc_setcal, rtc_get, rtc_set, i2c_get, i2c_set, gpio_def, gpio_get,
@@ -78,9 +79,6 @@ typedef struct {
 /* UART */
 
 
-enum { usart1 = 0, usart2, usart3, uart4, uart5 };
-
-
 typedef struct {
 	int uart;
 	int mode;
@@ -103,17 +101,6 @@ typedef struct {
 
 
 /* SPI */
-
-
-enum { spi1 = 0, spi2, spi3 };
-
-
-#define SPI_ADDRSHIFT 3
-#define SPI_ADDRMASK 0x3
-
-
-enum { spi_cmd = 0x1, spi_dummy = 0x2, /* 3-bits for SPI_ADDR* ,*/ spi_addrlsb = 0x20 };
-
 
 typedef struct {
 	int spi;

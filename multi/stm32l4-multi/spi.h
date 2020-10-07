@@ -16,7 +16,7 @@
 #define _SPI_H_
 
 
-enum { spi_read = 0, spi_write, spi_readwrite };
+#include <stddef.h>
 
 
 int spi_transaction(int spi, int dir, unsigned char cmd, unsigned int addr, unsigned char flags,

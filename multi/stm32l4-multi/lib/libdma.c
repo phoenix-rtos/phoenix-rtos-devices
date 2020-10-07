@@ -195,6 +195,12 @@ int libdma_transferSpi(int num, void *rx_maddr, void *tx_maddr, size_t len)
 int libdma_init(void)
 {
 	int dma;
+	static int init = 0;
+
+	if (init)
+		return 0;
+
+	init = 1;
 
 	for (dma = 0; dma < 2; ++dma) {
 		dma_common[dma].base = (void *)dmainfo[dma].base;
