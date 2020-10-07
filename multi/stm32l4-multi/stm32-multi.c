@@ -24,7 +24,6 @@
 #include "common.h"
 
 #include "adc.h"
-#include "dma.h"
 #include "exti.h"
 #include "flash.h"
 #include "gpio.h"
@@ -205,7 +204,6 @@ int main(void)
 	oid_t oid;
 
 	rcc_init();
-	dma_init();
 	uart_init();
 	gpio_init();
 	spi_init();

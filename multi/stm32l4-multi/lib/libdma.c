@@ -1,10 +1,10 @@
-/*
+﻿/*
  * Phoenix-RTOS
  *
  * STM32L4 DMA driver
  *
  * Copyright 2020 Phoenix Systems
- * Author: Daniel Sawka
+ * Author: Daniel Sawka, Aleksander Kaminski
  *
  * %LICENSE%
  */
@@ -14,58 +14,21 @@
 #include <sys/threads.h>
 #include <sys/interrupt.h>
 
-#include "common.h"
-#include "dma.h"
-#include "rcc.h"
-
-
-#define DMA1_CH1 0
-#define DMA1_CH2 (SPI1)
-#define DMA1_CH3 (SPI1)
-#define DMA1_CH4 (SPI2)
-#define DMA1_CH5 (SPI2)
-#define DMA1_CH6 0
-#define DMA1_CH7 0
-
-#define DMA2_CH1 (SPI3)
-#define DMA2_CH2 (SPI3)
-#define DMA2_CH3 0
-#define DMA2_CH4 0
-#define DMA2_CH5 0
-#define DMA2_CH6 0
-#define DMA2_CH7 0
-
-#define DMA1 (DMA1_CH1 || DMA1_CH2 || DMA1_CH3 || DMA1_CH4 || DMA1_CH5 || DMA1_CH6 || DMA1_CH7)
-#define DMA2 (DMA2_CH1 || DMA2_CH2 || DMA2_CH3 || DMA2_CH4 || DMA2_CH5 || DMA2_CH6 || DMA2_CH7)
-
-#define DMA1_POS 0
-#define DMA2_POS (DMA1_POS + DMA1)
-
+#include "../common.h"
+#include "libdma.h"
 
 struct {
 	volatile unsigned int *base;
 	int irq_base;
 	handle_t irqLock;
 	handle_t cond;
-} dma_common[DMA1 + DMA2];
+} dma_common[2];
 
 
 enum { dma1 = 0, dma2 };
 
 
 static const int dma2pctl[] = { pctl_dma1, pctl_dma2 };
-
-
-static const unsigned char dmaConfig[] = { DMA1, DMA2 };
-
-
-static const unsigned char dmaChannelConfig[2][7] = {
-	{ DMA1_CH1, DMA1_CH2, DMA1_CH3, DMA1_CH4, DMA1_CH5, DMA1_CH6, DMA1_CH7 },
-	{ DMA2_CH1, DMA2_CH2, DMA2_CH3, DMA2_CH4, DMA2_CH5, DMA2_CH6, DMA2_CH7 }
-};
-
-
-static const int dmaPos[] = { DMA1_POS, DMA2_POS };
 
 
 static const struct dma_map {
@@ -79,13 +42,19 @@ static const struct dma_map {
 };
 
 
+static const struct {
+	unsigned int base;
+	int irq_base;
+} dmainfo[2] = { { 0x40020000, 11 }, { 0x40020400, 56 } };
+
+
 enum { isr = 0, ifcr, cselr = 42 };
 
 
 enum { ccr = 0, cndtr, cpar, cmar };
 
 
-static int dma_irqHandler(unsigned int n, void *arg)
+static int irqHandler(unsigned int n, void *arg)
 {
 	int channel = n - dma_common[(int)arg].irq_base - 16;
 	volatile unsigned int *base = dma_common[(int)arg].base;
@@ -99,27 +68,36 @@ static int dma_irqHandler(unsigned int n, void *arg)
 }
 
 
-static void _configure_channel(int dma, int channel, int dir, int priority, void *paddr, int msize, int psize, int minc, int pinc, unsigned char reqmap)
+static void _configureChannel(int dma, int channel, int dir, int priority, void *paddr, int msize, int psize, int minc, int pinc, unsigned char reqmap)
 {
-	int pos = dmaPos[dma];
-	unsigned int tmp;
-	volatile unsigned int *channel_base = dma_common[pos].base + 2 + 5 * channel;
+	unsigned int tmp, irqnum;
+	volatile unsigned int *channel_base = dma_common[dma].base + 2 + 5 * channel;
+
+	/* Channels of DMA2 are noncontiguous */
+	if (dma == dma2 && channel >= 5) {
+		irqnum = 16 + 68 - 5 + channel;
+	}
+	else {
+		irqnum = 16 + dmainfo[dma].irq_base + channel;
+	}
+
+	interrupt(irqnum, irqHandler, (void *)dma, dma_common[dma].cond, NULL);
 
 	*(channel_base + ccr) = ((priority & 0x3) << 12) | ((msize & 0x3) << 10) | ((psize & 0x3) << 8) |
 		((minc & 0x1) << 7) | ((pinc & 0x1) << 6) | ((dir & 0x1) << 4);
 	*(channel_base + cpar) = (unsigned int) paddr;
-	tmp = *(dma_common[pos].base + cselr) & ~(0xF << channel * 4);
-	*(dma_common[pos].base + cselr) = tmp | ((unsigned int) reqmap << channel * 4);
+	tmp = *(dma_common[dma].base + cselr) & ~(0xF << channel * 4);
+	*(dma_common[dma].base + cselr) = tmp | ((unsigned int) reqmap << channel * 4);
 }
 
 
-int dma_configure_spi(int num, int dir, int priority, void *paddr, int msize, int psize, int minc, int pinc)
+int libdma_configureSpi(int num, int dir, int priority, void *paddr, int msize, int psize, int minc, int pinc)
 {
 	int dma = spiChanMap[num].dma;
 	int channel = spiChanMap[num].channel[dir];
 	char reqmap = spiChanMap[num].reqmap;
 
-	_configure_channel(dma, channel, dir, priority, paddr, msize, psize, minc, pinc, reqmap);
+	_configureChannel(dma, channel, dir, priority, paddr, msize, psize, minc, pinc, reqmap);
 
 	return 0;
 }
@@ -156,10 +134,9 @@ static int _transfer(int dma, int rx_channel, int tx_channel, void *rx_maddr, vo
 {
 	/* Empirically chosen value to avoid mutex+cond overhead for short transactions */
 	int use_interrupts = len > 24;
-	int pos = dmaPos[dma];
 
-	volatile unsigned int *rx_channel_base = dma_common[pos].base + 2 + 5 * rx_channel;
-	volatile unsigned int *tx_channel_base = dma_common[pos].base + 2 + 5 * tx_channel;
+	volatile unsigned int *rx_channel_base = dma_common[dma].base + 2 + 5 * rx_channel;
+	volatile unsigned int *tx_channel_base = dma_common[dma].base + 2 + 5 * tx_channel;
 
 	if (rx_maddr != NULL)
 		_prepare_transfer(rx_channel_base, rx_maddr, len, use_interrupts);
@@ -170,10 +147,10 @@ static int _transfer(int dma, int rx_channel, int tx_channel, void *rx_maddr, vo
 		_prepare_transfer(tx_channel_base, tx_maddr, len, use_interrupts && rx_maddr == NULL);
 
 	if (use_interrupts) {
-		mutexLock(dma_common[pos].irqLock);
+		mutexLock(dma_common[dma].irqLock);
 		while (_has_channel_finished(rx_maddr, rx_channel_base) || _has_channel_finished(tx_maddr, tx_channel_base))
-			condWait(dma_common[pos].cond, dma_common[pos].irqLock, 1);
-		mutexUnlock(dma_common[pos].irqLock);
+			condWait(dma_common[dma].cond, dma_common[dma].irqLock, 1);
+		mutexUnlock(dma_common[dma].irqLock);
 	}
 	else {
 		while (_has_channel_finished(rx_maddr, rx_channel_base) || _has_channel_finished(tx_maddr, tx_channel_base))
@@ -190,9 +167,8 @@ static int _transfer(int dma, int rx_channel, int tx_channel, void *rx_maddr, vo
 }
 
 
-int dma_transfer_spi(int num, void *rx_maddr, void *tx_maddr, size_t len)
+int libdma_transferSpi(int num, void *rx_maddr, void *tx_maddr, size_t len)
 {
-	int pos;
 	int res;
 	volatile unsigned int *tx_channel_base;
 	int dma = spiChanMap[num].dma;
@@ -203,8 +179,7 @@ int dma_transfer_spi(int num, void *rx_maddr, void *tx_maddr, size_t len)
 	if (tx_maddr == NULL) {
 		/* In case no tx buffer is provided, use a 1-byte dummy
 		and configure DMA not to increment the memory address. */
-		pos = dmaPos[dma];
-		tx_channel_base = dma_common[pos].base + 2 + 5 * tx_channel;
+		tx_channel_base = dma_common[dma].base + 2 + 5 * tx_channel;
 		*(tx_channel_base + ccr) &= ~(1 << 7);
 		res = _transfer(dma, rx_channel, tx_channel, rx_maddr, &txbuf, len);
 		*(tx_channel_base + ccr) |= (1 << 7);
@@ -217,44 +192,18 @@ int dma_transfer_spi(int num, void *rx_maddr, void *tx_maddr, size_t len)
 }
 
 
-int dma_init(void)
+int libdma_init(void)
 {
-	int i, j, dma;
-	int irqnum;
+	int dma;
 
-	static const struct {
-		unsigned int base;
-		int irq_base;
-	} dmainfo[2] = { { 0x40020000, 11 }, { 0x40020400, 56 } };
+	for (dma = 0; dma < 2; ++dma) {
+		dma_common[dma].base = (void *)dmainfo[dma].base;
+		dma_common[dma].irq_base = dmainfo[dma].irq_base;
 
-	for (i = 0, dma = 0; dma < 2; ++dma) {
-		if (!dmaConfig[dma])
-			continue;
-
-		dma_common[i].base = (void *)dmainfo[dma].base;
-		dma_common[i].irq_base = dmainfo[dma].irq_base;
-
-		mutexCreate(&dma_common[i].irqLock);
-		condCreate(&dma_common[i].cond);
-
-		for (j = 0; j < 7; j++) {
-			if (!dmaChannelConfig[dma][j])
-				continue;
-
-			/* Channels of DMA2 are noncontiguous */
-			if (dma == dma2 && j >= 5) {
-				irqnum = 16 + 68 - 5 + j;
-			}
-			else {
-				irqnum = 16 + dmainfo[dma].irq_base + j;
-			}
-
-			interrupt(irqnum, dma_irqHandler, (void *)i, dma_common[i].cond, NULL);
-		}
+		mutexCreate(&dma_common[dma].irqLock);
+		condCreate(&dma_common[dma].cond);
 
 		devClk(dma2pctl[dma], 1);
-
-		++i;
 	}
 
 	return 0;

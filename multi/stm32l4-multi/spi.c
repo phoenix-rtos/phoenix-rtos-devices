@@ -20,9 +20,10 @@
 #include <errno.h>
 #include <stdint.h>
 
+#include "lib/libdma.h"
+
 #include "stm32-multi.h"
 #include "common.h"
-#include "dma.h"
 #include "rcc.h"
 #include "spi.h"
 
@@ -116,7 +117,7 @@ static void _spi_readwriteDma(int spi, unsigned char *ibuff, unsigned char *obuf
 	unsigned int dmach = (1 << 1) | (ibuff != NULL);
 
 	*(spi_common[spi].base + cr2) |= dmach;
-	dma_transfer_spi(spi, ibuff, obuff, bufflen);
+	libdma_transferSpi(spi, ibuff, obuff, bufflen);
 	*(spi_common[spi].base + cr2) &= ~dmach;
 
 	if (ibuff != NULL)
@@ -241,6 +242,8 @@ void spi_init(void)
 		int irq;
 	} spiinfo[3] = { { 0x40013000, spi1_irq }, { 0x40003800, spi2_irq }, { 0x40003c00, spi3_irq } };
 
+	libdma_init();
+
 	for (i = 0, spi = 0; spi < 3; ++spi) {
 		if (!spiConfig[spi])
 			continue;
@@ -256,8 +259,8 @@ void spi_init(void)
 		spi_configure(spi, 0, 0, 1);
 
 		if (spi_common[i].usedma) {
-			dma_configure_spi(spi, dma_mem2per, 0x1, (void*) (spi_common[i].base + dr), 0x0, 0x0, 0x1, 0x0);
-			dma_configure_spi(spi, dma_per2mem, 0x1, (void*) (spi_common[i].base + dr), 0x0, 0x0, 0x1, 0x0);
+			libdma_configureSpi(spi, dma_mem2per, 0x1, (void*) (spi_common[i].base + dr), 0x0, 0x0, 0x1, 0x0);
+			libdma_configureSpi(spi, dma_per2mem, 0x1, (void*) (spi_common[i].base + dr), 0x0, 0x0, 0x1, 0x0);
 		}
 		else {
 			interrupt(spiinfo[spi].irq, spi_irqHandler, (void *)i, spi_common[i].cond, &spi_common[i].inth);
