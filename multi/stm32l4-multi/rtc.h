@@ -27,6 +27,9 @@ int rtc_getTime(rtctimestamp_t *timestamp);
 int rtc_setTime(rtctimestamp_t *timestamp);
 
 
+int rtc_setAlarm(rtctimestamp_t *timestamp);
+
+
 int rtc_init(void);
 
 #endif

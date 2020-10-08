@@ -21,6 +21,9 @@ int exti_configure(unsigned int line, unsigned char mode, unsigned char edge);
 int syscfg_mapexti(unsigned int line, int port);
 
 
+int exti_clear_irq(unsigned int line);
+
+
 int exti_init(void);
 
 
