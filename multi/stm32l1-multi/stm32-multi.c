@@ -209,6 +209,7 @@ int main(void)
 	oid_t oid;
 
 	rcc_init();
+	exti_init();
 	dma_init();
 	uart_init();
 	gpio_init();
@@ -218,7 +219,6 @@ int main(void)
 	i2c_init();
 	flash_init();
 	spi_init();
-	exti_init();
 
 	portCreate(&common.port);
 	portRegister(common.port, "/multi", &oid);

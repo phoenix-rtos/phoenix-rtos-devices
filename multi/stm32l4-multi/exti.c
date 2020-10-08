@@ -36,49 +36,49 @@ enum { memrmp = 0, cfgr1, exticr1, exticr2, exticr3, exticr4 };
 
 static int exti0_handler(unsigned int n, void *arg)
 {
-	*(exti_common.base + pr1) |= 0x1;
+	*(exti_common.base + pr1) = 0x1;
 	return -1;
 }
 
 
 static int exti1_handler(unsigned int n, void *arg)
 {
-	*(exti_common.base + pr1) |= 0x2;
+	*(exti_common.base + pr1) = 0x2;
 	return -1;
 }
 
 
 static int exti2_handler(unsigned int n, void *arg)
 {
-	*(exti_common.base + pr1) |= 0x4;
+	*(exti_common.base + pr1) = 0x4;
 	return -1;
 }
 
 
 static int exti3_handler(unsigned int n, void *arg)
 {
-	*(exti_common.base + pr1) |= 0x8;
+	*(exti_common.base + pr1) = 0x8;
 	return -1;
 }
 
 
 static int exti4_handler(unsigned int n, void *arg)
 {
-	*(exti_common.base + pr1) |= 0x10;
+	*(exti_common.base + pr1) = 0x10;
 	return -1;
 }
 
 
 static int exti9_5_handler(unsigned int n, void *arg)
 {
-	*(exti_common.base + pr1) |= 0x3e0;
+	*(exti_common.base + pr1) = 0x3e0;
 	return -1;
 }
 
 
 static int exti15_10_handler(unsigned int n, void *arg)
 {
-	*(exti_common.base + pr1) |= 0xfc00;
+	*(exti_common.base + pr1) = 0xfc00;
 	return -1;
 }
 
@@ -160,6 +160,19 @@ int syscfg_mapexti(unsigned int line, int port)
 	mutexUnlock(exti_common.lock);
 
 	return EOK;
+}
+
+
+int exti_clear_irq(unsigned int line)
+{
+	if (line <= 22 && line != 17)
+		*(exti_common.base + pr1) = 1 << line;
+	else if (line >= 35 && line <= 38)
+		*(exti_common.base + pr2) = 1 << (line - 32);
+	else
+		return -1;
+
+	return 0;
 }
 
 

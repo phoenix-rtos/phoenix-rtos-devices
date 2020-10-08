@@ -90,6 +90,10 @@ static void handleMsg(msg_t *msg)
 			rtc_setTime(&imsg->rtc_timestamp);
 			break;
 
+		case rtc_setalarm:
+			rtc_setAlarm(&imsg->rtc_timestamp);
+			break;
+
 		case adc_get:
 			omsg->adc_valmv = adc_conversion(imsg->adc_get.adcno, imsg->adc_get.channel);
 			break;
@@ -204,13 +208,13 @@ int main(void)
 	oid_t oid;
 
 	rcc_init();
+	exti_init();
 	uart_init();
 	gpio_init();
 	spi_init();
 	adc_init();
 	rtc_init();
 	flash_init();
-	exti_init();
 
 /*
 	i2c_init();

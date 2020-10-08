@@ -36,35 +36,35 @@ enum { memrmp = 0, pmc, exticr1, exticr2, exticr3, exticr4 };
 
 static int exti0_handler(unsigned int n, void *arg)
 {
-	*(exti_common.base + pr) |= 0x1;
+	*(exti_common.base + pr) = 0x1;
 	return -1;
 }
 
 
 static int exti1_handler(unsigned int n, void *arg)
 {
-	*(exti_common.base + pr) |= 0x2;
+	*(exti_common.base + pr) = 0x2;
 	return -1;
 }
 
 
 static int exti2_handler(unsigned int n, void *arg)
 {
-	*(exti_common.base + pr) |= 0x4;
+	*(exti_common.base + pr) = 0x4;
 	return -1;
 }
 
 
 static int exti3_handler(unsigned int n, void *arg)
 {
-	*(exti_common.base + pr) |= 0x8;
+	*(exti_common.base + pr) = 0x8;
 	return -1;
 }
 
 
 static int exti4_handler(unsigned int n, void *arg)
 {
-	*(exti_common.base + pr) |= 0x10;
+	*(exti_common.base + pr) = 0x10;
 	return -1;
 }
 

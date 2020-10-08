@@ -19,14 +19,15 @@
 #include <stm32l4-multi/libspi.h>
 
 
-enum { adc_get = 0, rtc_setcal, rtc_get, rtc_set, i2c_get, i2c_set, gpio_def, gpio_get,
-	gpio_set, uart_def, uart_get, uart_set, flash_get, flash_set, spi_get, spi_set,
+enum { adc_get = 0, rtc_setcal, rtc_get, rtc_set, rtc_setalarm, i2c_get, i2c_set, gpio_def,
+	gpio_get, gpio_set, uart_def, uart_get, uart_set, flash_get, flash_set, spi_get, spi_set,
 	spi_rw, spi_def, exti_def, exti_map };
 
 /* RTC */
 
 
 typedef struct {
+	unsigned int usecs;
 	unsigned int year;
 	unsigned char month;
 	unsigned char day;
