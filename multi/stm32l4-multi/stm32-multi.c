@@ -33,7 +33,7 @@
 #include "spi.h"
 #include "uart.h"
 
-#define THREADS_NO 4
+#define THREADS_NO 3
 #define THREADS_PRIORITY 1
 #define STACKSZ 512
 
@@ -131,20 +131,6 @@ static void handleMsg(msg_t *msg)
 			err = gpio_setPort(imsg->gpio_set.port, imsg->gpio_set.mask, imsg->gpio_set.state);
 			break;
 
-		case uart_def:
-			err = uart_configure(imsg->uart_def.uart, imsg->uart_def.bits, imsg->uart_def.parity,
-				imsg->uart_def.baud, imsg->uart_def.enable);
-			break;
-
-		case uart_get:
-			err = uart_read(imsg->uart_get.uart, msg->o.data, msg->o.size,
-				imsg->uart_get.mode, imsg->uart_get.timeout);
-			break;
-
-		case uart_set:
-			err = uart_write(imsg->uart_set.uart, msg->i.data, msg->i.size);
-			break;
-
 		default:
 			err = -EINVAL;
 	}
@@ -171,11 +157,11 @@ static void thread(void *arg)
 				break;
 
 			case mtRead:
-				msg.o.io.err = uart_read(UART_CONSOLE + usart1 - 1, msg.o.data, msg.o.size, uart_mnormal, 0);
+				msg.o.io.err = -ENOSYS;
 				break;
 
 			case mtWrite:
-				msg.o.io.err = uart_write(UART_CONSOLE + usart1 - 1, msg.i.data, msg.i.size);
+				msg.o.io.err = -ENOSYS;
 				break;
 
 			case mtDevCtl:
@@ -223,7 +209,7 @@ int main(void)
 	portCreate(&common.port);
 	portRegister(common.port, "/multi", &oid);
 
-	uart_write(UART_CONSOLE + usart1 - 1, "multidrv: Started\n", 18);
+	uart_log("multidrv: Started\n");
 
 	for (i = 0; i < THREADS_NO - 1; ++i)
 		beginthread(thread, THREADS_PRIORITY, common.stack[i], STACKSZ, (void *)i);

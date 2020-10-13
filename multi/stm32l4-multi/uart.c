@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/pwman.h>
 #include <sys/interrupt.h>
 #include <sys/platform.h>
@@ -36,7 +37,17 @@
 
 #define UART_CNT (UART1 + UART2 + UART3 + UART4 + UART5)
 
-static libuart_ctx uart_common[UART_CNT];
+#define THREAD_POOL 3
+#define THREAD_STACKSZ 512
+#define THREAD_PRIO 1
+
+
+struct {
+	unsigned char poolstack[THREAD_POOL][THREAD_STACKSZ] __attribute__((aligned(8)));
+	libuart_ctx ctx[UART_CNT];
+
+	unsigned int port;
+} uart_common;
 
 
 static const int uartConfig[] = { UART1, UART2, UART3, UART4, UART5 };
@@ -45,43 +56,126 @@ static const int uartConfig[] = { UART1, UART2, UART3, UART4, UART5 };
 static const int uartPos[] = { UART1_POS, UART2_POS, UART3_POS, UART4_POS, UART5_POS };
 
 
-int uart_configure(int uart, char bits, char parity, unsigned int baud, char enable)
+static libuart_ctx *uart_getCtx(id_t id)
 {
-	if (uart < usart1 || uart > uart5 || !uartConfig[uart])
-		return -EINVAL;
+	libuart_ctx *ctx = NULL;
 
-	return libuart_configure(&uart_common[uartPos[uart]], bits, parity, baud, enable);
+	if (!id)
+		id = usart1 + UART_CONSOLE;
+
+	id -= 1;
+
+	if (id >= usart1 && id <= uart5)
+		ctx = &uart_common.ctx[uartPos[id - usart1]];
+
+	return ctx;
 }
 
 
-int uart_write(int uart, void* buff, unsigned int bufflen)
+static void uart_thread(void *arg)
 {
-	if (uart < usart1 || uart > uart5 || !uartConfig[uart])
-		return -EINVAL;
+	msg_t msg;
+	unsigned long rid;
+	libuart_ctx *ctx;
+	unsigned long request;
+	const void *in_data, *out_data = NULL;
+	pid_t pid;
+	int err;
+	id_t id;
 
-	return libuart_write(&uart_common[uartPos[uart]], buff, bufflen);
+	while (1) {
+		while (msgRecv(uart_common.port, &msg, &rid) < 0)
+			;
+
+		priority(msg.priority);
+
+		switch (msg.type) {
+		case mtOpen:
+		case mtClose:
+			if ((ctx = uart_getCtx(msg.i.io.oid.id)) == NULL) {
+				msg.o.io.err = -EINVAL;
+				break;
+			}
+
+			msg.o.io.err = EOK;
+			break;
+
+		case mtWrite:
+			if ((ctx = uart_getCtx(msg.i.io.oid.id)) == NULL) {
+				msg.o.io.err = -EINVAL;
+				break;
+			}
+			msg.o.io.err = libuart_write(ctx, msg.i.data, msg.i.size, msg.i.io.mode);
+			break;
+
+		case mtRead:
+			if ((ctx = uart_getCtx(msg.i.io.oid.id)) == NULL) {
+				msg.o.io.err = -EINVAL;
+				break;
+			}
+			msg.o.io.err = libuart_read(ctx, msg.o.data, msg.o.size, msg.i.io.mode);
+			break;
+
+		case mtGetAttr:
+			if ((ctx = uart_getCtx(msg.i.attr.oid.id)) == NULL) {
+				msg.o.attr.val = -EINVAL;
+				break;
+			}
+
+			msg.o.attr.val = libuart_getAttr(ctx, msg.i.attr.type);
+			break;
+
+		case mtDevCtl:
+			in_data = ioctl_unpack(&msg, &request, &id);
+			if ((ctx = uart_getCtx(id)) == NULL) {
+				err = -EINVAL;
+			}
+			else {
+				pid = ioctl_getSenderPid(&msg);
+				err = libuart_devCtl(ctx, pid, request, in_data, &out_data);
+			}
+			ioctl_setResponse(&msg, request, err, out_data);
+			break;
+		}
+
+		msgRespond(uart_common.port, &msg, rid);
+
+		priority(THREAD_PRIO);
+	}
 }
 
 
-int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int timeout)
+void uart_log(const char *str)
 {
-	if (uart < usart1 || uart > uart5 || !uartConfig[uart])
-		return -EINVAL;
-
-	return libuart_read(&uart_common[uartPos[uart]], buff, count, mode, timeout);
+	libuart_write(uart_getCtx(0), str, strlen(str), 0);
 }
 
 
 int uart_init(void)
 {
-	unsigned int uart;
+	unsigned int uart, i;
+	char fname[] = "/dev/uart0";
+	oid_t oid;
+
+	portCreate(&uart_common.port);
+	oid.port = uart_common.port;
 
 	for (uart = usart1; uart <= uart5; ++uart) {
 		if (!uartConfig[uart])
 			continue;
 
-		libuart_init(&uart_common[uartPos[uart]], uart);
+		libuart_init(&uart_common.ctx[uartPos[uart]], uart);
+
+		fname[sizeof(fname) - 1] = '0' + uart - usart1;
+		oid.id = uart - usart1 + 1;
+		portRegister(uart_common.port, fname, &oid);
 	}
+
+	oid.id = 0;
+	portRegister(uart_common.port, "/dev/tty", &oid);
+
+	for (i = 0; i < THREAD_POOL; ++i)
+		beginthread(uart_thread, THREAD_PRIO, uart_common.poolstack[i], sizeof(uart_common.poolstack[i]), (void *)i);
 
 	return EOK;
 }

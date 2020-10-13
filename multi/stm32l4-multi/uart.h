@@ -15,13 +15,7 @@
 #define _UART_H_
 
 
-int uart_configure(int uart, char bits, char parity, unsigned int baud, char enable);
-
-
-int uart_write(int uart, void* buff, unsigned int bufflen);
-
-
-int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int timeout);
+void uart_log(const char *str);
 
 
 int uart_init(void);

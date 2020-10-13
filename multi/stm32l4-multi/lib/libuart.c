@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <sys/pwman.h>
 #include <sys/interrupt.h>
+#include <sys/file.h>
 
 #include "libuart.h"
 #include "../common.h"
@@ -27,91 +28,70 @@
 enum { cr1 = 0, cr2, cr3, brr, gtpr, rtor, rqr, isr, icr, rdr, tdr };
 
 
-static int libuart_txirq(unsigned int n, void *arg)
+enum { uart_parnone = 0, uart_pareven, uart_parodd };
+
+
+static inline int libuart_txready(libuart_ctx *ctx)
 {
-	libuart_ctx *ctx = (libuart_ctx *)arg;
-	int release = -1;
-
-	if (*(ctx->base + isr) & (1 << 7)) {
-		/* Txd buffer empty */
-		if (ctx->txbeg != ctx->txend) {
-			*(ctx->base + tdr) = *(ctx->txbeg++);
-		}
-		else {
-			*(ctx->base + cr1) &= ~(1 << 7);
-			ctx->txbeg = NULL;
-			ctx->txend = NULL;
-			release = 1;
-		}
-	}
-
-	return release;
+	return *(ctx->base + isr) & (1 << 7);
 }
 
 
-static int libuart_rxirq(unsigned int n, void *arg)
+static int libuart_irqHandler(unsigned int n, void *arg)
 {
 	libuart_ctx *ctx = (libuart_ctx *)arg;
-	int release = -1;
-
-	/* Clear wakeup from stop mode flag */
-	if (n == lpuart1_irq)
-		*(ctx->base + icr) |= 1 << 20;
 
 	if (*(ctx->base + isr) & ((1 << 5) | (1 << 3))) {
 		/* Clear overrun error bit */
 		*(ctx->base + icr) |= (1 << 3);
 
-		/* Rxd buffer not empty */
-		ctx->rxdfifo[ctx->rxdw++] = *(ctx->base + rdr);
-		ctx->rxdw %= sizeof(ctx->rxdfifo);
-
-		if (ctx->rxdr == ctx->rxdw)
-			ctx->rxdr = (ctx->rxdr + 1) % sizeof(ctx->rxdfifo);
+		ctx->rxbuff = *(ctx->base + rdr);
+		ctx->rxready = 1;
 	}
 
-	if (ctx->rxbeg != NULL) {
-		while (ctx->rxdr != ctx->rxdw && ctx->rxbeg != ctx->rxend) {
-			*(ctx->rxbeg++) = ctx->rxdfifo[ctx->rxdr++];
-			ctx->rxdr %= sizeof(ctx->rxdfifo);
-			(*ctx->read)++;
-		}
+	if (libuart_txready(ctx))
+		*(ctx->base + cr1) &= ~(1 << 7);
 
-		if (ctx->rxbeg == ctx->rxend) {
-			ctx->rxbeg = NULL;
-			ctx->rxend = NULL;
-			ctx->read = NULL;
-		}
-		release = 1;
-	}
-
-	return release;
+	return 1;
 }
 
 
-int libuart_configure(libuart_ctx *ctx, char bits, char parity, unsigned int baud, char enable)
+static void libuart_irqthread(void *arg)
 {
-	int err = EOK, baseClk = getCpufreq();
+	libuart_ctx *ctx = (libuart_ctx *)arg;
+
+	while (1) {
+		mutexLock(ctx->irqlock);
+		while (!ctx->rxready && !(libuart_txready(ctx) && libtty_txready(&ctx->tty_common)))
+			condWait(ctx->cond, ctx->irqlock, 0);
+		mutexUnlock(ctx->irqlock);
+
+		if (ctx->rxready) {
+			libtty_putchar(&ctx->tty_common, ctx->rxbuff, NULL);
+			ctx->rxready = 0;
+		}
+
+		if (libuart_txready(ctx) && libtty_txready(&ctx->tty_common)) {
+			*(ctx->base + tdr) = libtty_getchar(&ctx->tty_common, NULL);
+			*(ctx->base + cr1) |= (1 << 7);
+		}
+	}
+}
+
+
+static void libuart_signalTxReady(void *ctx)
+{
+	condSignal(((libuart_ctx *)ctx)->cond);
+}
+
+
+static int _libuart_configure(libuart_ctx *ctx, char bits, char parity, char enable)
+{
+	int err = EOK;
 	unsigned int tcr1 = 0;
 	char tbits = bits;
 
 	ctx->enabled = 0;
-	condBroadcast(ctx->rxcond);
-
-	mutexLock(ctx->txlock);
-	mutexLock(ctx->rxlock);
-	mutexLock(ctx->lock);
-
-	dataBarier();
-
-	ctx->txbeg = NULL;
-	ctx->txend = NULL;
-
-	ctx->rxbeg = NULL;
-	ctx->rxend = NULL;
-	ctx->read = NULL;
-	ctx->rxdr = 0;
-	ctx->rxdw = 0;
 
 	if (parity != uart_parnone) {
 		tcr1 |= 1 << 10;
@@ -139,14 +119,9 @@ int libuart_configure(libuart_ctx *ctx, char bits, char parity, unsigned int bau
 	}
 
 	if (err == EOK) {
-		ctx->bits = bits;
-
 		*(ctx->base + cr1) &= ~1;
 		dataBarier();
 		*(ctx->base + cr1) = tcr1;
-
-		ctx->baud = baud;
-		*(ctx->base + brr) = baseClk / baud;
 
 		if (parity == uart_parodd)
 			*(ctx->base + cr1) |= 1 << 9;
@@ -166,100 +141,114 @@ int libuart_configure(libuart_ctx *ctx, char bits, char parity, unsigned int bau
 		dataBarier();
 	}
 
-	mutexUnlock(ctx->lock);
-	mutexUnlock(ctx->rxlock);
-	mutexUnlock(ctx->txlock);
-
 	return err;
 }
 
 
-int libuart_write(libuart_ctx *ctx, void* buff, unsigned int bufflen)
+static void libuart_setCflag(void *uart, tcflag_t *cflag)
 {
-	if (!bufflen)
-		return 0;
+	libuart_ctx *ctx = (libuart_ctx *)uart;
+	char bits, parity = uart_parnone;
 
-	if (!ctx->enabled)
-		return -EIO;
-
-	mutexLock(ctx->txlock);
 	mutexLock(ctx->lock);
 
-	keepidle(1);
+	if ((*cflag & CSIZE) == CS6)
+		bits = 6;
+	else if ((*cflag & CSIZE) == CS7)
+		bits = 7;
+	else
+		bits = 8;
 
-	*(ctx->base + tdr) = *((unsigned char *)buff);
-	ctx->txbeg = (void *)((unsigned char *)buff + 1);
-	ctx->txend = (void *)((unsigned char *)buff + bufflen);
-	*(ctx->base + cr1) |= 1 << 7;
+	if (*cflag & PARENB) {
+		if (*cflag & PARODD)
+			parity = uart_parodd;
+		else
+			parity = uart_pareven;
+	}
 
-	while (ctx->txbeg != ctx->txend)
-		condWait(ctx->txcond, ctx->lock, 0);
+	_libuart_configure(ctx, bits, parity, 1);
+
 	mutexUnlock(ctx->lock);
-
-	keepidle(0);
-	mutexUnlock(ctx->txlock);
-
-	return bufflen;
 }
 
 
-int libuart_read(libuart_ctx *ctx, void* buff, unsigned int count, char mode, unsigned int timeout)
+static void libuart_setBaudrate(void *uart, speed_t baud)
 {
-	int i, err;
-	volatile unsigned int read = 0;
-	char mask = 0x7f;
+	libuart_ctx *ctx = (libuart_ctx *)uart;
 
-	if (!ctx->enabled)
-		return -EIO;
+	mutexUnlock(ctx->lock);
 
-	if (!count)
-		return 0;
+	*(ctx->base + cr1) &= ~1;
+	dataBarier();
 
-	mutexLock(ctx->rxlock);
+	*(ctx->base + brr) = getCpufreq() / libtty_baudrate_to_int(baud);
+
+	*(ctx->base + icr) = -1;
+	(void)*(ctx->base + rdr);
+
+	*(ctx->base + cr1) |= (1 << 5) | (1 << 3) | (1 << 2);
+	dataBarier();
+	*(ctx->base + cr1) |= 1;
+	ctx->enabled = 1;
+
+	mutexUnlock(ctx->lock);
+}
+
+
+ssize_t libuart_write(libuart_ctx *ctx, const void *buff, size_t bufflen, unsigned int mode)
+{
+	ssize_t ret;
+
 	mutexLock(ctx->lock);
+	ret = libtty_write(&ctx->tty_common, buff, bufflen, mode);
+	mutexUnlock(ctx->lock);
 
-	ctx->read = &read;
-	ctx->rxend = (char *)buff + count;
+	return ret;
+}
 
-	/* This field works as trigger for rx interrupt to store data in buffer
-	 * instead of FIFO */
-	ctx->rxbeg = buff;
 
-	/* Provoke UART exception to fire so that existing data from
-	 * rxdfifo is copied into buff. The handler will clear this
-	 * bit. */
+ssize_t libuart_read(libuart_ctx *ctx, void *buff, size_t bufflen, unsigned int mode)
+{
+	ssize_t ret;
 
-	*(ctx->base + cr1) |= 1 << 7;
+	mutexLock(ctx->lock);
+	ret = libtty_read(&ctx->tty_common, buff, bufflen, mode);
+	mutexUnlock(ctx->lock);
 
-	while (ctx->rxbeg != ctx->rxend) {
-		err = condWait(ctx->rxcond, ctx->lock, timeout);
+	return ret;
+}
 
-		if (mode == uart_mnblock || (timeout && err == -ETIME) || !ctx->enabled) {
-			ctx->rxbeg = NULL;
-			ctx->rxend = NULL;
-			ctx->read = NULL;
-			break;
-		}
+
+int libuart_getAttr(libuart_ctx *ctx, int type)
+{
+	int ret;
+
+	mutexLock(ctx->lock);
+	if (type != atPollStatus) {
+		ret = -EINVAL;
 	}
-
-	if (ctx->bits < 8) {
-		if (ctx->bits == 6)
-			mask = 0x3f;
-
-		for (i = 0; i < read; ++i)
-			((char *)buff)[i] &= mask;
+	else {
+		ret = libtty_poll_status(&ctx->tty_common);
 	}
 	mutexUnlock(ctx->lock);
 
-	mutexUnlock(ctx->rxlock);
+	return ret;
+}
 
-	return read;
+
+int libuart_devCtl(libuart_ctx *ctx, pid_t pid, unsigned int request, const void* inData, const void** outData)
+{
+	int ret;
+
+	ret = libtty_ioctl(&ctx->tty_common, pid, (unsigned int)request, inData, outData);
+
+	return ret;
 }
 
 
 int libuart_init(libuart_ctx *ctx, unsigned int uart)
 {
-
+	libtty_callbacks_t callbacks;
 	const struct {
 		volatile uint32_t *base;
 		int dev;
@@ -272,29 +261,37 @@ int libuart_init(libuart_ctx *ctx, unsigned int uart)
 		{ (void *)0x40005000, pctl_uart5, uart5_irq },
 	};
 
+	uart -= usart1;
+
 	if (uart >= (sizeof(info) / sizeof(info[0])))
 		return -1;
 
 	devClk(info[uart].dev, 1);
 
-	mutexCreate(&ctx->rxlock);
-	condCreate(&ctx->rxcond);
-	mutexCreate(&ctx->txlock);
-	condCreate(&ctx->txcond);
+	callbacks.arg = ctx;
+	callbacks.set_baudrate = libuart_setBaudrate;
+	callbacks.set_cflag = libuart_setCflag;
+	callbacks.signal_txready = libuart_signalTxReady;
+
+	if (libtty_init(&ctx->tty_common, &callbacks, 64) < 0)
+		return -1;
 
 	mutexCreate(&ctx->lock);
+	mutexCreate(&ctx->irqlock);
+	condCreate(&ctx->cond);
 
 	ctx->base = info[uart].base;
 
 	/* Set up UART to 9600,8,n,1 16-bit oversampling */
-	libuart_configure(ctx, 8, uart_parnone, 9600, 1);
+	_libuart_configure(ctx, 8, uart_parnone, 1);
+	libuart_setBaudrate(ctx, B9600);
 
-	interrupt(info[uart].irq, libuart_rxirq, (void *)ctx, ctx->rxcond, NULL);
-	interrupt(info[uart].irq, libuart_txirq, (void *)ctx, ctx->txcond, NULL);
+	interrupt(info[uart].irq, libuart_irqHandler, (void *)ctx, ctx->cond, NULL);
+	interrupt(info[uart].irq, libuart_irqHandler, (void *)ctx, ctx->cond, NULL);
+
+	beginthread(libuart_irqthread, 1, ctx->stack, sizeof(ctx->stack), (void *)ctx);
 
 	ctx->enabled = 1;
 
 	return 0;
 }
-
-
