@@ -154,7 +154,7 @@ void uart_log(const char *str)
 int uart_init(void)
 {
 	unsigned int uart, i;
-	char fname[] = "/dev/uart0";
+	char fname[] = "/dev/uartx";
 	oid_t oid;
 
 	portCreate(&uart_common.port);
@@ -166,7 +166,7 @@ int uart_init(void)
 
 		libuart_init(&uart_common.ctx[uartPos[uart]], uart);
 
-		fname[sizeof(fname) - 1] = '0' + uart - usart1;
+		fname[sizeof(fname) - 2] = '0' + uart - usart1;
 		oid.id = uart - usart1 + 1;
 		portRegister(uart_common.port, fname, &oid);
 	}
