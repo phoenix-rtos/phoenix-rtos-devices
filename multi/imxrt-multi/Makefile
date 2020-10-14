@@ -11,6 +11,7 @@ $(PREFIX_PROG)imxrt-multi: $(addprefix $(PREFIX_O)multi/imxrt-multi/, uart.o gpi
 
 $(PREFIX_O)multi/imxrt-multi/imxrt-multi.o: $(PREFIX_H)libtty.h
 
+$(PREFIX_O)multi/imxrt-multi/uart.o: $(PREFIX_H)libtty.h
 
 $(PREFIX_PROG)multi-tests: $(addprefix $(PREFIX_O)multi/imxrt-multi/tests/, multi_tests.o spi_tests.o)
 	$(LINK)
