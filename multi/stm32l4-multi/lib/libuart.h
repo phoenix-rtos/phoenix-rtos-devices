@@ -23,9 +23,12 @@ typedef struct {
 	volatile unsigned int *base;
 	volatile int enabled;
 
+	int bits;
+	int parity;
+	int baud;
+
 	handle_t cond;
 	handle_t inth;
-	handle_t lock;
 	handle_t irqlock;
 
 	libtty_common_t tty_common;

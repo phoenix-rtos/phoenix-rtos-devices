@@ -193,6 +193,8 @@ int main(void)
 	int i;
 	oid_t oid;
 
+	priority(THREADS_PRIORITY);
+
 	rcc_init();
 	exti_init();
 	uart_init();
@@ -213,8 +215,6 @@ int main(void)
 
 	for (i = 0; i < THREADS_NO - 1; ++i)
 		beginthread(thread, THREADS_PRIORITY, common.stack[i], STACKSZ, (void *)i);
-
-	priority(THREADS_PRIORITY);
 
 	thread((void *)i);
 
