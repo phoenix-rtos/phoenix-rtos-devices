@@ -11,8 +11,8 @@
  * %LICENSE%
  */
 
-#ifndef _GPIO_H_
-#define _GPIO_H_
+#ifndef GPIO_H_
+#define GPIO_H_
 
 
 int gpio_setPort(int port, unsigned int mask, unsigned int val);

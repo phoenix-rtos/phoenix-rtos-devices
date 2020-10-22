@@ -11,8 +11,8 @@
  * %LICENSE%
  */
 
-#ifndef _LIBUART_H_
-#define _LIBUART_H_
+#ifndef LIBUART_H_
+#define LIBUART_H_
 
 #include <sys/threads.h>
 #include <libtty.h>

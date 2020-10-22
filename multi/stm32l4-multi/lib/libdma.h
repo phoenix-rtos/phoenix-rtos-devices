@@ -9,8 +9,8 @@
  * %LICENSE%
  */
 
-#ifndef _DMA_H_
-#define _DMA_H_
+#ifndef LIBDMA_H_
+#define LIBDMA_H_
 
 #include <stddef.h>
 

@@ -12,8 +12,8 @@
  */
 
 
-#ifndef _SPI_H_
-#define _SPI_H_
+#ifndef SPI_H_
+#define SPI_H_
 
 
 #include <stddef.h>

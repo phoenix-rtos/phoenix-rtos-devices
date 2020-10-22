@@ -12,8 +12,8 @@
  */
 
 
-#ifndef _I2C_H_
-#define _I2C_H_
+#ifndef I2C_H_
+#define I2C_H_
 
 
 enum { _i2c_read = 0, _i2c_write };

@@ -9,8 +9,8 @@
  * %LICENSE%
  */
 
-#ifndef _EXTI_H_
-#define _EXTI_H_
+#ifndef EXTI_H_
+#define EXTI_H_
 
 #include <sys/interrupt.h>
 

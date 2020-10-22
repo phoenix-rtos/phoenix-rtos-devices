@@ -11,8 +11,8 @@
  * %LICENSE%
  */
 
-#ifndef _UART_H_
-#define _UART_H_
+#ifndef UART_H_
+#define UART_H_
 
 
 void uart_log(const char *str);

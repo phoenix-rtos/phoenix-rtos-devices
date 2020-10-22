@@ -1,9 +1,9 @@
 /*
  * Phoenix-RTOS
  *
- * STM32L4 SPI driver
+ * Multidrv-lib: STM32L4 SPI driver
  *
- * Copyright 2018 Phoenix Systems
+ * Copyright 2018, 2020 Phoenix Systems
  * Author: Aleksander Kaminski
  *
  * This file is part of Phoenix-RTOS.
@@ -12,8 +12,8 @@
  */
 
 
-#ifndef _LIBSPI_H_
-#define _LIBSPI_H_
+#ifndef LIBSPI_H_
+#define LIBSPI_H_
 
 
 #include <stddef.h>

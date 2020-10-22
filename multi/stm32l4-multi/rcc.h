@@ -11,8 +11,8 @@
  * %LICENSE%
  */
 
-#ifndef _RCC_H_
-#define _RCC_H_
+#ifndef RCC_H_
+#define RCC_H_
 
 
 void pwr_lock(void);

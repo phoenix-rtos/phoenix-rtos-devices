@@ -11,8 +11,8 @@
  * %LICENSE%
  */
 
-#ifndef _FLASH_H_
-#define _FLASH_H_
+#ifndef FLASH_H_
+#define FLASH_H_
 
 #include <stdint.h>
 

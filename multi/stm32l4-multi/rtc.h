@@ -11,8 +11,8 @@
  * %LICENSE%
  */
 
-#ifndef _RTC_H_
-#define _RTC_H_
+#ifndef RTC_H_
+#define RTC_H_
 
 
 #include "stm32-multi.h"
