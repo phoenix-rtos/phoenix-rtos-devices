@@ -31,19 +31,19 @@ virtq_t *virtio_allocVirtq(uint16_t size)
 	uint32_t uoffs = ALIGN(ueoffs + sizeof(uint16_t), ALIGN_USED);
 	uint32_t aeoffs = uoffs + sizeof(virtq_used_t) + size * sizeof(virtq_used_item_t);
 	uint32_t vdoffs = ALIGN(aeoffs + sizeof(uint16_t), sizeof(void *));
-	uint32_t vqsz = vdoffs + size * sizeof(void *);
+	uint32_t vqsz = ALIGN(vdoffs + size * sizeof(void *), _PAGE_SIZE);
 	virtq_t *vq;
 	uint16_t i;
 
 	if ((vq = malloc(sizeof(virtq_t))) == NULL)
 		return NULL;
 
-	if ((vq->data = mmap(NULL, ALIGN(vqsz, _PAGE_SIZE), PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_ANONYMOUS, OID_NULL, 0)) == MAP_FAILED) {
+	if ((vq->data = mmap(NULL, vqsz, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_ANONYMOUS, OID_NULL, 0)) == MAP_FAILED) {
 		free(vq);
 		return NULL;
 	}
 
-	memset((void *)vq->data, 0, ALIGN(vqsz, _PAGE_SIZE));
+	memset((void *)vq->data, 0, vqsz);
 	vq->desc = (virtq_desc_t *)((uintptr_t)vq->data + doffs);
 	vq->avail = (virtq_avail_t *)((uintptr_t)vq->data + aoffs);
 	vq->uevent = (uint16_t *)((uintptr_t)vq->data + ueoffs);
@@ -77,7 +77,7 @@ int virtio_allocDesc(virtq_t *vq, void *addr)
 	uint16_t next = vq->desc[desc].next;
 
 	if (desc == vq->size)
-		return -EFAULT;
+		return -ENOSPC;
 
 	vq->desc[desc].addr = va2pa(addr);
 	vq->vdesc[desc] = addr;
@@ -97,14 +97,16 @@ void virtio_freeDesc(virtq_t *vq, uint16_t desc)
 
 virtq_t *virtio_getVirtq(virtio_dev_t *vdev, uint8_t n)
 {
-	virtq_t *vq = vdev->vqs;
+	virtq_t *vq;
 	uint8_t i;
 
 	if (n + 1 > vdev->nvqs)
 		return NULL;
 
+	/* Go through virtqueues list in FIFO order */
+	vq = vdev->vqs->prev;
 	for (i = 0; i < n; i++)
-		vq = vq->next;
+		vq = vq->prev;
 
 	return vq;
 }

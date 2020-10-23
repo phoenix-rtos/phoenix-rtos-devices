@@ -21,26 +21,10 @@
 #include "virtio-mmio.h"
 
 
-/* VirtIO block device command types */
-enum {
-	CMD_READ               = 0x00, /* Read command */
-	CMD_WRITE              = 0x01, /* Write command */
-	CMD_SCSI               = 0x02, /* SCSI command, LEGACY */
-	CMD_FLUSH              = 0x04, /* Flush command (if FEAT_FLUSH) */
-	CMD_DEVID              = 0x08, /* Get device ID */
-	CMD_DISCARD            = 0x0b, /* Discard command (if FEAT_DISCARD) */
-	CMD_ZEROES             = 0x0d, /* Write zeroes command (if FEAT_ZEROES) */
-	/* Requests barrier command, LEGACY */
-	CMD_BARRIER            = 0x80000000
-};
-
-
-/* VirtIO block device request returned status */
-enum {
-	RSTATUS_OK             = 0x00, /* Request successfully processed */
-	RSTATUS_ERR            = 0x01, /* Request failed with error */
-	RSTATUS_UNSUPP         = 0x02  /* Unsupported request */
-};
+/* Misc definitions */
+#define SECTOR_SIZE 512            /* VirtIO block device default sector size */
+#define REQ_HEADER  16             /* VirtIO block device request header size */
+#define REQ_FOOTER  1              /* VirtIO block device request footer size */
 
 
 /* VirtIO block device features */
@@ -57,6 +41,28 @@ enum {
 	FEAT_WCE             = 0x0800, /* Cache writeback and writethrough modes support */
 	FEAT_DISCARD         = 0x2000, /* Discard command support */
 	FEAT_ZEROES          = 0x4000  /* Write zeroes command support */
+};
+
+
+/* VirtIO block device command types */
+enum {
+	CMD_READ               = 0x00, /* Read command */
+	CMD_WRITE              = 0x01, /* Write command */
+	CMD_SCSI               = 0x02, /* SCSI command, LEGACY */
+	CMD_FLUSH              = 0x04, /* Flush command (if FEAT_FLUSH) */
+	CMD_ID                 = 0x08, /* Get device ID */
+	CMD_DISCARD            = 0x0b, /* Discard command (if FEAT_DISCARD) */
+	CMD_ZEROES             = 0x0d, /* Write zeroes command (if FEAT_ZEROES) */
+	/* Requests barrier command, LEGACY */
+	CMD_BARRIER            = 0x80000000
+};
+
+
+/* VirtIO block device request returned status */
+enum {
+	RSTATUS_OK             = 0x00, /* Request successfully processed */
+	RSTATUS_ERR            = 0x01, /* Request failed with error */
+	RSTATUS_UNSUPP         = 0x02  /* Unsupported request */
 };
 
 
@@ -84,28 +90,30 @@ enum {
 
 
 typedef struct {
-	/* Standard fields */
+	/* Request header (read-only) */
 	uint32_t type;             /* Request type */
 	uint32_t reserved;         /* Reserved */
 	uint64_t sector;           /* Sector (512-byte offset) */
-	uint8_t status;            /* Request status */
 
-	/* Custom fields */
-	uint8_t pad[3];            /* Padding */
-	uint32_t desc;             /* Descriptor index */
-} __attribute__((packed)) virtio_blk_req_t;
+	/* Request footer (write-only) */
+	uint8_t status;            /* Returned request status */
+} __attribute__((packed)) virtio_blkreq_t;
 
 
 typedef struct _virtio_blk_t virtio_blk_t;
 
 
 struct _virtio_blk_t {
+	/* Device information */
 	virtio_mmio_t mdev;        /* VirtIO MMIO block device */
 	uint64_t size;             /* Storage size */
+
+	/* Interrupt handling */
 	unsigned int irq;          /* Interrupt number */
 	handle_t lock;             /* Interrupt mutex */
 	handle_t cond;             /* Interrupt condition variable */
 	handle_t inth;             /* Interrupt handle */
+
 	virtio_blk_t *prev, *next; /* Doubly linked list */
 };
 
@@ -127,8 +135,8 @@ extern ssize_t virtio_blk_read(virtio_blk_t *dev, offs_t offs, char *buff, size_
 extern ssize_t virtio_blk_write(virtio_blk_t *dev, offs_t offs, const char *buff, size_t len);
 
 
-/* Destrots VirtIO block devices */
-extern int virtio_blk_destroy(void);
+/* Destroys VirtIO block devices */
+extern void virtio_blk_destroy(void);
 
 
 /* Initializes VirtIO block devices */

@@ -19,13 +19,6 @@
 #include <stdint.h>
 
 
-/* VirtIO device transport options */
-enum {
-	TRANS_PCI       = 0x00, /* VirtIO PCI device */
-	TRANS_MMIO      = 0x01  /* VirtIO MMIO device */
-};
-
-
 /* VirtIO device ID */
 enum {
 	DEV_NET         = 0x01, /* Network card device */
@@ -64,7 +57,7 @@ enum {
 };
 
 
-/* VirtIO virtqueue ring alignment requirements */
+/* VirtIO virtqueue alignment requirements */
 enum {
 	ALIGN_DESC      = 0x10, /* Virtqueue descriptors alignment */
 	ALIGN_AVAIL     = 0x02, /* Virtqueue avail ring alignment */

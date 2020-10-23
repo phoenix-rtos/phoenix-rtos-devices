@@ -141,6 +141,12 @@ uint64_t virtio_mmio_readConfig(virtio_mmio_t *mdev, uint32_t offs, uint8_t size
 }
 
 
+void virtio_mmio_writeConfig(virtio_mmio_t *mdev, uint32_t offs, uint8_t size, uint64_t val)
+{
+	virtio_mmio_writeReg(mdev, REG_CONFIG + offs, size, val);
+}
+
+
 int virtio_mmio_addVirtq(virtio_mmio_t* mdev, uint16_t size)
 {
 	uint16_t maxsz;
@@ -216,15 +222,17 @@ int virtio_mmio_initDev(virtio_mmio_t *mdev, addr_t addr)
 	uint32_t version;
 	int err;
 
+	/* Init VirtIO device */
+	if ((err = virtio_initDev(&mdev->vdev)) < 0)
+		return err;
+
 	/* Map registers */
-	if ((mdev->base = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, addr)) == MAP_FAILED)
+	if ((mdev->base = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, addr)) == MAP_FAILED) {
+		virtio_destroyDev(&mdev->vdev);
 		return -ENOMEM;
+	}
 
 	do {
-		/* Init VirtIO device */
-		if ((err = virtio_initDev(&mdev->vdev)) < 0)
-			break;
-
 		/* Check VirtIO magic */
 		if ((uint32_t)virtio_mmio_readReg(mdev, REG_MAGIC, 4) != VIRTIO_MAGIC) {
 			err = -ENXIO;
@@ -245,7 +253,7 @@ int virtio_mmio_initDev(virtio_mmio_t *mdev, addr_t addr)
 		}
 		mdev->vdev.id.vendor = (uint32_t)virtio_mmio_readReg(mdev, REG_VENDOR_ID, 4);
 
-		/* Write guest page size (if it is legacy device) */
+		/* Write guest page size (legacy devices use page-based addresing) */
 		if (version == 1)
 			virtio_mmio_writeReg(mdev, REG_PAGE_SIZE, 4, _PAGE_SIZE);
 
