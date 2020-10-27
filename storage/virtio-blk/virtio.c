@@ -11,6 +11,7 @@
  * %LICENSE%
  */
 
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -71,7 +72,7 @@ void virtio_freeVirtq(virtq_t *vq)
 }
 
 
-int virtio_allocDesc(virtq_t *vq, void *addr)
+int _virtio_allocDesc(virtq_t *vq, void *addr)
 {
 	uint16_t desc = vq->free;
 	uint16_t next = vq->desc[desc].next;
@@ -87,7 +88,7 @@ int virtio_allocDesc(virtq_t *vq, void *addr)
 }
 
 
-void virtio_freeDesc(virtq_t *vq, uint16_t desc)
+void _virtio_freeDesc(virtq_t *vq, uint16_t desc)
 {
 	vq->desc[desc].next = vq->free;
 	vq->vdesc[desc] = NULL;

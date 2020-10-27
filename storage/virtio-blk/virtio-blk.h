@@ -22,25 +22,25 @@
 
 
 /* Misc definitions */
-#define SECTOR_SIZE 512            /* VirtIO block device default sector size */
-#define REQ_HEADER  16             /* VirtIO block device request header size */
-#define REQ_FOOTER  1              /* VirtIO block device request footer size */
+#define SECTOR_SIZE      512       /* VirtIO block device default sector size */
+#define REQ_HEADER_SIZE  16        /* VirtIO block device request header size */
+#define REQ_FOOTER_SIZE  1         /* VirtIO block device request footer size */
 
 
-/* VirtIO block device features */
+/* VirtIO block device features bits */
 enum {
-	FEAT_BARRIER         = 0x0001, /* Request barriers support, LEGACY */
-	FEAT_MAX_SIZE        = 0x0002, /* Max segment size */
-	FEAT_MAX_SEG         = 0x0004, /* Max number of segments */
-	FEAT_GEOMETRY        = 0x0010, /* Legacy geometry support */
-	FEAT_RO              = 0x0020, /* Disk is read-only */
-	FEAT_BLK_SIZE        = 0x0040, /* Disk block size available */
-	FEAT_SCSI            = 0x0080, /* SCSI commands passthrough support, LEGACY */
-	FEAT_FLUSH           = 0x0200, /* Cache flush command support */
-	FEAT_TOPOLOGY        = 0x0400, /* Topology/alignment information available */
-	FEAT_WCE             = 0x0800, /* Cache writeback and writethrough modes support */
-	FEAT_DISCARD         = 0x2000, /* Discard command support */
-	FEAT_ZEROES          = 0x4000  /* Write zeroes command support */
+	FEAT_BARRIER           = 0x00, /* Request barriers support, LEGACY */
+	FEAT_MAX_SIZE          = 0x01, /* Max segment size */
+	FEAT_MAX_SEG           = 0x02, /* Max number of segments */
+	FEAT_GEOMETRY          = 0x04, /* Legacy geometry support */
+	FEAT_RO                = 0x05, /* Disk is read-only */
+	FEAT_BLK_SIZE          = 0x06, /* Disk block size available */
+	FEAT_SCSI              = 0x07, /* SCSI commands passthrough support, LEGACY */
+	FEAT_FLUSH             = 0x09, /* Cache flush command support */
+	FEAT_TOPOLOGY          = 0x0a, /* Topology/alignment information available */
+	FEAT_WCE               = 0x0b, /* Cache writeback and writethrough modes support */
+	FEAT_DISCARD           = 0x0d, /* Discard command support */
+	FEAT_ZEROES            = 0x0e  /* Write zeroes command support */
 };
 
 
@@ -58,11 +58,18 @@ enum {
 };
 
 
+/* VirtIO block device request state */
+enum {
+	RSTATE_AVAIL           = 0x00, /* Request available (not yet processed) */
+	RSTATE_USED            = 0x01  /* Request used (processed by device) */
+};
+
+
 /* VirtIO block device request returned status */
 enum {
 	RSTATUS_OK             = 0x00, /* Request successfully processed */
 	RSTATUS_ERR            = 0x01, /* Request failed with error */
-	RSTATUS_UNSUPP         = 0x02  /* Unsupported request */
+	RSTATUS_UNSUPP         = 0x02, /* Request not supported */
 };
 
 
@@ -91,12 +98,16 @@ enum {
 
 typedef struct {
 	/* Request header (read-only) */
-	uint32_t type;             /* Request type */
-	uint32_t reserved;         /* Reserved */
-	uint64_t sector;           /* Sector (512-byte offset) */
+	uint32_t type;      /* Request type */
+	uint32_t reserved;  /* Reserved field (previously request priority) */
+	uint64_t sector;    /* Sector (512-byte offset) */
 
 	/* Request footer (write-only) */
-	uint8_t status;            /* Returned request status */
+	uint8_t status;     /* Returned status */
+
+	/* Custom helper fields (not available to device) */
+	uint8_t state;      /* Request state: RSTATE_AVAIL, RSTATE_USED */
+	uint32_t len;       /* Bytes read from/writen to request buffer */
 } __attribute__((packed)) virtio_blkreq_t;
 
 
@@ -105,22 +116,29 @@ typedef struct _virtio_blk_t virtio_blk_t;
 
 struct _virtio_blk_t {
 	/* Device information */
-	virtio_mmio_t mdev;        /* VirtIO MMIO block device */
-	uint64_t size;             /* Storage size */
+	virtio_mmio_t mdev; /* VirtIO MMIO block device */
+	uint64_t size;      /* Device storage size */
+
+	/* Request handling */
+	handle_t rcond;     /* Request condition variable */
+	handle_t rlock;     /* Request mutex */
 
 	/* Interrupt handling */
-	unsigned int irq;          /* Interrupt number */
-	handle_t lock;             /* Interrupt mutex */
-	handle_t cond;             /* Interrupt condition variable */
-	handle_t inth;             /* Interrupt handle */
+	unsigned int irq;   /* Interrupt number */
+	handle_t lock;      /* Interrupt mutex */
+	handle_t cond;      /* Interrupt condition variable */
+	handle_t inth;      /* Interrupt handle */
 
-	virtio_blk_t *prev, *next; /* Doubly linked list */
+	/* Interrupt thread stack */
+	char stack[4096] __attribute__((aligned(8)));
+	/* Doubly linked list */
+	virtio_blk_t *prev, *next;
 };
 
 
 typedef struct {
-	unsigned int ndevs;        /* Number of detected VirtIO block devices */
-	virtio_blk_t *devs;        /* Detected VirtIO block devices */
+	unsigned int ndevs; /* Number of detected VirtIO block devices */
+	virtio_blk_t *devs; /* Detected VirtIO block devices */
 } virtio_blk_common_t;
 
 

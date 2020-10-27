@@ -106,8 +106,9 @@ int virtio_mmio_writeFeatures(virtio_mmio_t *mdev, uint64_t features)
 	if (virtio_legacy(&mdev->vdev))
 		return EOK;
 
+	/* Finalize features negotiation */
 	virtio_mmio_writeReg(mdev, REG_STATUS, 4, virtio_mmio_readReg(mdev, REG_STATUS, 4) | CSTATUS_FEAT_OK);
-	/* Check if VirtIO device accepted our features */
+	/* Check if device accepted our features */
 	if (!(virtio_mmio_readReg(mdev, REG_STATUS, 4) & CSTATUS_FEAT_OK))
 		return -EFAULT;
 
@@ -121,11 +122,13 @@ uint64_t virtio_mmio_readConfig(virtio_mmio_t *mdev, uint32_t offs, uint8_t size
 	uint64_t ret;
 
 	if (virtio_legacy(&mdev->vdev)) {
+		/* Keep reading register until we get consistent value */
 		do {
 			ret = virtio_mmio_readReg(mdev, REG_CONFIG + offs, size);
 		} while (ret != virtio_mmio_readReg(mdev, REG_CONFIG + offs, size));
 	}
 	else {
+		/* Accesses over 4-byte wide might not be atomic. Use REG_CONFIG_GEN for atomicity check */
 		do {
 			if (size > 4)
 				gen1 = virtio_mmio_readReg(mdev, REG_CONFIG_GEN, 4);
@@ -153,7 +156,7 @@ int virtio_mmio_addVirtq(virtio_mmio_t* mdev, uint16_t size)
 	uint64_t addr;
 	virtq_t *vq;
 
-	/* Select next virtqueue slot */
+	/* Select next virtqueue slot (virtqueues should be added in ascending index order) */
 	virtio_mmio_writeReg(mdev, REG_QUEUE_SEL, 4, mdev->vdev.nvqs);
 
 	/* The slot should be empty */
@@ -164,7 +167,7 @@ int virtio_mmio_addVirtq(virtio_mmio_t* mdev, uint16_t size)
 	if (!(maxsz = (uint16_t)virtio_mmio_readReg(mdev, REG_QUEUE_MAX, 4)))
 		return -EFAULT;
 
-	if (size > maxsz)
+	if (virtio_legacy(&mdev->vdev) || (size > maxsz))
 		size = maxsz;
 
 	/* Allocate the virtqueue */
@@ -247,11 +250,11 @@ int virtio_mmio_initDev(virtio_mmio_t *mdev, addr_t addr)
 		}
 
 		/* Check device ID */
-		if (!(mdev->vdev.id.device = (uint32_t)virtio_mmio_readReg(mdev, REG_DEV_ID, 4))) {
+		if (!(mdev->vdev.device = (uint32_t)virtio_mmio_readReg(mdev, REG_DEV_ID, 4))) {
 			err = -ENXIO;
 			break;
 		}
-		mdev->vdev.id.vendor = (uint32_t)virtio_mmio_readReg(mdev, REG_VENDOR_ID, 4);
+		mdev->vdev.vendor = (uint32_t)virtio_mmio_readReg(mdev, REG_VENDOR_ID, 4);
 
 		/* Write guest page size (legacy devices use page-based addresing) */
 		if (version == 1)
@@ -267,7 +270,7 @@ int virtio_mmio_initDev(virtio_mmio_t *mdev, addr_t addr)
 		/* Save device features */
 		mdev->vdev.features = virtio_mmio_readFeatures(mdev);
 
-		/* Compare reported VirtIO version with supported features */
+		/* Compare reported device version with supported features */
 		if (virtio_legacy(&mdev->vdev) && (version == 2)) {
 			err = -ENXIO;
 			break;

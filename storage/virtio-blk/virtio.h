@@ -18,82 +18,91 @@
 #include <errno.h>
 #include <stdint.h>
 
+#include <sys/types.h>
+
 
 /* VirtIO device ID */
 enum {
-	DEV_NET         = 0x01, /* Network card device */
-	DEV_BLK         = 0x02, /* Block device */
-	DEV_CONSOLE     = 0x03, /* Console device */
-	DEV_ENTROPY     = 0x04, /* Entropy device */
-	DEV_BALLOON_STD = 0x05, /* Memory standard ballooning device */
-	DEV_IOMEM       = 0x06, /* ioMemory device */
-	DEV_RPMSG       = 0x07, /* rpmsg device */
-	DEV_SCSI        = 0x08, /* SCSI host device */
-	DEV_9P          = 0x09, /* 9P transport device */
-	DEV_MAC80211    = 0x0a, /* mac80211 wlan device */
-	DEV_RPROC       = 0x0b, /* rproc serial device */
-	DEV_CAIF        = 0x0c, /* virtio CAIF device */
-	DEV_BALLOON     = 0x0d, /* Memory ballon device */
-	DEV_GPU         = 0x10, /* GPU device */
-	DEV_CLOCK       = 0x11, /* Timer/clock device */
-	DEV_INPUT       = 0x12, /* Input device */
-	DEV_SOCKET      = 0x13, /* Socket device */
-	DEV_CRYPTO      = 0x14, /* Crypto device */
-	DEV_SIGNAL      = 0x15, /* Signal Distribution Module device */
-	DEV_PSTORE      = 0x16, /* pstore device */
-	DEV_IOMMU       = 0x17, /* IOMMU device */
-	DEV_MEM         = 0x18  /* Memory device */
+	DEV_NET           = 0x01, /* Network card device */
+	DEV_BLK           = 0x02, /* Block device */
+	DEV_CONSOLE       = 0x03, /* Console device */
+	DEV_ENTROPY       = 0x04, /* Entropy device */
+	DEV_BALLOON_STD   = 0x05, /* Memory standard ballooning device */
+	DEV_IOMEM         = 0x06, /* ioMemory device */
+	DEV_RPMSG         = 0x07, /* rpmsg device */
+	DEV_SCSI          = 0x08, /* SCSI host device */
+	DEV_9P            = 0x09, /* 9P transport device */
+	DEV_MAC80211      = 0x0a, /* mac80211 wlan device */
+	DEV_RPROC         = 0x0b, /* rproc serial device */
+	DEV_CAIF          = 0x0c, /* virtio CAIF device */
+	DEV_BALLOON       = 0x0d, /* Memory ballon device */
+	DEV_GPU           = 0x10, /* GPU device */
+	DEV_CLOCK         = 0x11, /* Timer/clock device */
+	DEV_INPUT         = 0x12, /* Input device */
+	DEV_SOCKET        = 0x13, /* Socket device */
+	DEV_CRYPTO        = 0x14, /* Crypto device */
+	DEV_SIGNAL        = 0x15, /* Signal Distribution Module device */
+	DEV_PSTORE        = 0x16, /* pstore device */
+	DEV_IOMMU         = 0x17, /* IOMMU device */
+	DEV_MEM           = 0x18  /* Memory device */
 };
 
 
 /* VirtIO device configuration status */
 enum {
-	CSTATUS_ACK     = 0x01, /* Virtio device detected */
-	CSTATUS_DRV     = 0x02, /* Driver supports the device */
-	CSTATUS_DRV_OK  = 0x04, /* Driver is ready to drive the device */
-	CSTATUS_FEAT_OK = 0x08, /* Driver finished feature negotiation */
-	CSTATUS_RESET   = 0x40, /* Device entered invalid state, driver must reset it */
-	CSTATUS_FAILED  = 0x80, /* Driver gave up on the device */
+	CSTATUS_ACK       = 0x01, /* Virtio device detected */
+	CSTATUS_DRV       = 0x02, /* Driver supports the device */
+	CSTATUS_DRV_OK    = 0x04, /* Driver is ready to drive the device */
+	CSTATUS_FEAT_OK   = 0x08, /* Driver finished feature negotiation */
+	CSTATUS_RESET     = 0x40, /* Device entered invalid state, driver must reset it */
+	CSTATUS_FAILED    = 0x80, /* Driver gave up on the device */
 };
 
 
-/* VirtIO virtqueue alignment requirements */
+/* VirtIO virtqueue alignment requirements (legacy interface compatible) */
 enum {
-	ALIGN_DESC      = 0x10, /* Virtqueue descriptors alignment */
-	ALIGN_AVAIL     = 0x02, /* Virtqueue avail ring alignment */
-	ALIGN_USED      = 0x04  /* Virtqueue used ring alignment */
+	ALIGN_DESC  = _PAGE_SIZE, /* Virtqueue descriptors alignment (0x10 for modern VirtIO devices) */
+	ALIGN_AVAIL =       0x02, /* Virtqueue avail ring alignment */
+	ALIGN_USED  = _PAGE_SIZE  /* Virtqueue used ring alignment (0x4 for modern VirtIO devices) */
 };
 
 
 /* VirtIO virtqueue descriptor flags */
 enum {
-	DESC_NEXT       = 0x01, /* Buffer continues via the next field */
-	DESC_WRITE      = 0x02, /* Buffer is write-only (otherwise read-only) */
-	DESC_INDIRECT   = 0x04  /* Buffer contains a list of buffer descriptors */
+	DESC_NEXT         = 0x01, /* Buffer continues via the next field */
+	DESC_WRITE        = 0x02, /* Buffer is write-only (otherwise read-only) */
+	DESC_INDIRECT     = 0x04  /* Buffer contains a list of buffer descriptors */
 };
 
 
 /* VirtIO virtqueue notification flags */
 enum {
-	AVAIL_NO_IRQ    = 0x01, /* Avail buffer notification suppression */
-	USED_NO_NOTIFY  = 0x01  /* Used buffer notification suppression */
+	AVAIL_NO_IRQ      = 0x01, /* Avail buffer notification suppression */
+	USED_NO_NOTIFY    = 0x01  /* Used buffer notification suppression */
 };
 
 
-/* VirtIO device common features */
+/* VirtIO device common features bits */
 enum {
-	FEAT_NOTIFY_EMPTY = 0x0001000000, /* Notifications when the ring is completely used, even when suppressed */
-	FEAT_ANY_LAYOUT   = 0x0008000000, /* Any descriptor layout support */
-	FEAT_INDIRECT     = 0x0010000000, /* Indirect buffer descriptos support */
-	FEAT_EVENT        = 0x0020000000, /* Notification events suppression */
-	FEAT_VERSION1     = 0x0100000000, /* VirtIO v1.0 compliance */
-	FEAT_ACCESS       = 0x0200000000, /* Device can be used on platform with limited/translated memory access (IOMMU) */
-	FEAT_RING_PACKED  = 0x0400000000, /* Packed virtqueue layout support*/
-	FEAT_IN_ORDER     = 0x0800000000, /* Buffers are used by device in order they were made available */
-	FEAT_ORDER        = 0x1000000000, /* Memory accesses are ordered in platform specific way */
-	FEAT_SR_IOV       = 0x2000000000, /* Single Root IO Virtualization support */
-	FEAT_NOTIFICATION = 0x4000000000  /* Driver passes extra data in device notifications */
+	FEAT_NOTIFY_EMPTY = 0x18, /* Notifications when the ring is completely used, even when suppressed */
+	FEAT_ANY_LAYOUT   = 0x1b, /* Any descriptor layout support */
+	FEAT_INDIRECT     = 0x1c, /* Indirect buffer descriptos support */
+	FEAT_EVENT        = 0x1d, /* Notification events suppression */
+	FEAT_VERSION1     = 0x20, /* VirtIO v1.0 compliance */
+	FEAT_ACCESS       = 0x21, /* Device can be used on platform with limited/translated memory access (IOMMU) */
+	FEAT_RING_PACKED  = 0x22, /* Packed virtqueue layout support*/
+	FEAT_IN_ORDER     = 0x23, /* Buffers are used by device in order they were made available */
+	FEAT_ORDER        = 0x24, /* Memory accesses are ordered in platform specific way */
+	FEAT_SR_IOV       = 0x25, /* Single Root IO Virtualization support */
+	FEAT_NOTIFICATION = 0x26  /* Driver passes extra data in device notifications */
 };
+
+
+/* VirtIO device feature access helpers */
+#define FEATURE_MSK(x)           (1ULL << x)
+#define FEATURE_HAS(features, x) (features & FEATURE_MSK(x))
+#define FEATURE_SET(features, x) (features |= FEATURE_MSK(x))
+#define FEATURE_CLR(features, x) (features &= ~(FEATURE_MSK(x)))
 
 
 typedef struct {
@@ -119,7 +128,7 @@ typedef struct {
 
 typedef struct {
 	uint16_t flags;           /* Available buffer notification suppression */
-	uint16_t idx;             /* Next processed (used) request index */
+	uint16_t idx;             /* Next processed (used) request descriptor index */
 	virtq_used_item_t ring[]; /* Processed (used) requests */
 } __attribute__((packed)) virtq_used_t;
 
@@ -132,32 +141,27 @@ struct _virtq_t {
 	volatile void *data;
 
 	/* Standard split virtqueue layout */
-	volatile virtq_desc_t *desc;  /* Descriptors */
-	volatile virtq_avail_t *avail;/* Avail ring */
-	volatile uint16_t *uevent;    /* Used event notification suppression */
-	volatile virtq_used_t *used;  /* Used ring */
-	volatile uint16_t *aevent;    /* Avail event notification suppression */
-	void **vdesc;                 /* Descriptors buffers */
+	volatile virtq_desc_t *desc;   /* Descriptors */
+	volatile virtq_avail_t *avail; /* Avail ring */
+	volatile uint16_t *uevent;     /* Used event notification suppression */
+	volatile virtq_used_t *used;   /* Used ring */
+	volatile uint16_t *aevent;     /* Avail event notification suppression */
 
 	/* Custom helper fields */
-	uint16_t size;                /* Virtqueue size */
-	uint16_t last;                /* Last processed request (used descriptor) index */
-	uint16_t free;                /* Next free desriptor index */
-	virtq_t *prev, *next;         /* Doubly linked list */
+	void **vdesc;                  /* Descriptors buffers */
+	uint16_t size;                 /* Virtqueue size */
+	uint16_t last;                 /* Last processed request (used descriptor) index */
+	uint16_t free;                 /* Next free desriptor index */
+	virtq_t *prev, *next;          /* Doubly linked list */
 };
 
 
 typedef struct {
-	uint32_t device;              /* Device ID */
-	uint32_t vendor;              /* Vendor ID */
-} virtio_id_t;
-
-
-typedef struct {
-	virtio_id_t id;               /* Device ID */
-	uint64_t features;            /* Device features */
-	uint8_t nvqs;                 /* Number of virtqueues */
-	virtq_t *vqs;                 /* Virtqueues */
+	uint32_t device;               /* Device ID */
+	uint32_t vendor;               /* Vendor ID */
+	uint64_t features;             /* Device features */
+	uint8_t nvqs;                  /* Number of virtqueues */
+	virtq_t *vqs;                  /* Virtqueues */
 } virtio_dev_t;
 
 
@@ -171,7 +175,7 @@ static inline void virtio_memoryBarrier(void)
 /* VirtIO legacy device? */
 static inline int virtio_legacy(virtio_dev_t *vdev)
 {
-	return !(vdev->features & FEAT_VERSION1);
+	return !FEATURE_HAS(vdev->features, FEAT_VERSION1);
 }
 
 
@@ -239,12 +243,12 @@ extern virtq_t *virtio_allocVirtq(uint16_t size);
 extern void virtio_freeVirtq(virtq_t *vq);
 
 
-/* Allocates descriptor */
-extern int virtio_allocDesc(virtq_t *vq, void *addr);
+/* Allocates descriptor (should be protected with mutex) */
+extern int _virtio_allocDesc(virtq_t *vq, void *addr);
 
 
-/* Releases given descriptor */
-extern void virtio_freeDesc(virtq_t *vq, uint16_t desc);
+/* Releases given descriptor (should be protected with mutex) */
+extern void _virtio_freeDesc(virtq_t *vq, uint16_t desc);
 
 
 /* Returns VirtIO device n-th virtqueue */
