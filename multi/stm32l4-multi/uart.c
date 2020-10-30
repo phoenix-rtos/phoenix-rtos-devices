@@ -44,7 +44,7 @@
 
 struct {
 	unsigned char poolstack[THREAD_POOL][THREAD_STACKSZ] __attribute__((aligned(8)));
-	libuart_ctx ctx[UART_CNT];
+	libuart_ctx_t ctx[UART_CNT];
 
 	unsigned int port;
 } uart_common;
@@ -56,9 +56,9 @@ static const int uartConfig[] = { UART1, UART2, UART3, UART4, UART5 };
 static const int uartPos[] = { UART1_POS, UART2_POS, UART3_POS, UART4_POS, UART5_POS };
 
 
-static libuart_ctx *uart_getCtx(id_t id)
+static libuart_ctx_t *uart_getCtx(id_t id)
 {
-	libuart_ctx *ctx = NULL;
+	libuart_ctx_t *ctx = NULL;
 
 	if (!id)
 		id = usart1 + UART_CONSOLE;
@@ -76,7 +76,7 @@ static void uart_thread(void *arg)
 {
 	msg_t msg;
 	unsigned long rid;
-	libuart_ctx *ctx;
+	libuart_ctx_t *ctx;
 	unsigned long request;
 	const void *in_data, *out_data = NULL;
 	pid_t pid;

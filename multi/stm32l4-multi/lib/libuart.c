@@ -31,7 +31,7 @@ enum { cr1 = 0, cr2, cr3, brr, gtpr, rtor, rqr, isr, icr, rdr, tdr };
 enum { uart_parnone = 0, uart_pareven, uart_parodd };
 
 
-static inline int libuart_txready(libuart_ctx *ctx)
+static inline int libuart_txready(libuart_ctx_t *ctx)
 {
 	return *(ctx->base + isr) & (1 << 7);
 }
@@ -39,7 +39,7 @@ static inline int libuart_txready(libuart_ctx *ctx)
 
 static int libuart_irqHandler(unsigned int n, void *arg)
 {
-	libuart_ctx *ctx = (libuart_ctx *)arg;
+	libuart_ctx_t *ctx = (libuart_ctx_t *)arg;
 
 	if (*(ctx->base + isr) & ((1 << 5) | (1 << 3))) {
 		/* Clear overrun error bit */
@@ -58,7 +58,7 @@ static int libuart_irqHandler(unsigned int n, void *arg)
 
 static void libuart_irqthread(void *arg)
 {
-	libuart_ctx *ctx = (libuart_ctx *)arg;
+	libuart_ctx_t *ctx = (libuart_ctx_t *)arg;
 
 	while (1) {
 		mutexLock(ctx->irqlock);
@@ -81,11 +81,11 @@ static void libuart_irqthread(void *arg)
 
 static void libuart_signalTxReady(void *ctx)
 {
-	condSignal(((libuart_ctx *)ctx)->cond);
+	condSignal(((libuart_ctx_t *)ctx)->cond);
 }
 
 
-static int _libuart_configure(libuart_ctx *ctx, char bits, char parity, char enable)
+static int _libuart_configure(libuart_ctx_t *ctx, char bits, char parity, char enable)
 {
 	int err = EOK;
 	unsigned int tcr1 = 0;
@@ -147,7 +147,7 @@ static int _libuart_configure(libuart_ctx *ctx, char bits, char parity, char ena
 
 static void libuart_setCflag(void *uart, tcflag_t *cflag)
 {
-	libuart_ctx *ctx = (libuart_ctx *)uart;
+	libuart_ctx_t *ctx = (libuart_ctx_t *)uart;
 	char bits, parity = uart_parnone;
 
 	if ((*cflag & CSIZE) == CS6)
@@ -176,7 +176,7 @@ static void libuart_setCflag(void *uart, tcflag_t *cflag)
 
 static void libuart_setBaudrate(void *uart, speed_t baud)
 {
-	libuart_ctx *ctx = (libuart_ctx *)uart;
+	libuart_ctx_t *ctx = (libuart_ctx_t *)uart;
 	int baudr = libtty_baudrate_to_int(baud);
 
 	if (ctx->baud != baudr) {
@@ -199,19 +199,19 @@ static void libuart_setBaudrate(void *uart, speed_t baud)
 }
 
 
-ssize_t libuart_write(libuart_ctx *ctx, const void *buff, size_t bufflen, unsigned int mode)
+ssize_t libuart_write(libuart_ctx_t *ctx, const void *buff, size_t bufflen, unsigned int mode)
 {
 	return libtty_write(&ctx->tty_common, buff, bufflen, mode);
 }
 
 
-ssize_t libuart_read(libuart_ctx *ctx, void *buff, size_t bufflen, unsigned int mode)
+ssize_t libuart_read(libuart_ctx_t *ctx, void *buff, size_t bufflen, unsigned int mode)
 {
 	return libtty_read(&ctx->tty_common, buff, bufflen, mode);
 }
 
 
-int libuart_getAttr(libuart_ctx *ctx, int type)
+int libuart_getAttr(libuart_ctx_t *ctx, int type)
 {
 	int ret;
 
@@ -226,7 +226,7 @@ int libuart_getAttr(libuart_ctx *ctx, int type)
 }
 
 
-int libuart_devCtl(libuart_ctx *ctx, pid_t pid, unsigned int request, const void* inData, const void** outData)
+int libuart_devCtl(libuart_ctx_t *ctx, pid_t pid, unsigned int request, const void* inData, const void** outData)
 {
 	int ret;
 
@@ -236,7 +236,7 @@ int libuart_devCtl(libuart_ctx *ctx, pid_t pid, unsigned int request, const void
 }
 
 
-int libuart_init(libuart_ctx *ctx, unsigned int uart)
+int libuart_init(libuart_ctx_t *ctx, unsigned int uart)
 {
 	libtty_callbacks_t callbacks;
 	const struct {

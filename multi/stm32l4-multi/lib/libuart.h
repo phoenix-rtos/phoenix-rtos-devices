@@ -35,25 +35,25 @@ typedef struct {
 
 	volatile unsigned char rxbuff;
 	volatile int rxready;
-} libuart_ctx;
+} libuart_ctx_t;
 
 
 enum { usart1 = 0, usart2, usart3, uart4, uart5 };
 
 
-ssize_t libuart_write(libuart_ctx *ctx, const void *buff, size_t bufflen, unsigned int mode);
+ssize_t libuart_write(libuart_ctx_t *ctx, const void *buff, size_t bufflen, unsigned int mode);
 
 
-ssize_t libuart_read(libuart_ctx *ctx, void *buff, size_t bufflen, unsigned int mode);
+ssize_t libuart_read(libuart_ctx_t *ctx, void *buff, size_t bufflen, unsigned int mode);
 
 
-int libuart_getAttr(libuart_ctx *ctx, int type);
+int libuart_getAttr(libuart_ctx_t *ctx, int type);
 
 
-int libuart_devCtl(libuart_ctx *ctx, pid_t pid, unsigned int request, const void* inData, const void** outData);
+int libuart_devCtl(libuart_ctx_t *ctx, pid_t pid, unsigned int request, const void* inData, const void** outData);
 
 
-int libuart_init(libuart_ctx *ctx, unsigned int uart);
+int libuart_init(libuart_ctx_t *ctx, unsigned int uart);
 
 
 #endif
