@@ -53,15 +53,22 @@ static void handleMsg(msg_t *msg)
 	unsigned int t;
 
 	switch (imsg->type) {
-#if 0
 		case i2c_get:
-			err = i2c_transaction(_i2c_read, imsg->i2c_msg.addr, imsg->i2c_msg.reg, msg->o.data, msg->o.size);
+			err = i2c_read(imsg->i2c_msg.i2c, imsg->i2c_msg.addr, msg->o.data, msg->o.size);
+			break;
+
+		case i2c_getwreg:
+			err = i2c_readReg(imsg->i2c_msg.i2c, imsg->i2c_msg.addr, imsg->i2c_msg.reg, msg->o.data, msg->o.size);
 			break;
 
 		case i2c_set:
-			err = i2c_transaction(_i2c_write, imsg->i2c_msg.addr, imsg->i2c_msg.reg, msg->i.data, msg->i.size);
+			err = i2c_write(imsg->i2c_msg.i2c, imsg->i2c_msg.addr, msg->i.data, msg->i.size);
 			break;
-#endif
+
+		case i2c_setwreg:
+			err = i2c_writeReg(imsg->i2c_msg.i2c, imsg->i2c_msg.addr, imsg->i2c_msg.reg, msg->i.data, msg->i.size);
+			break;
+
 		case exti_def:
 			err = exti_configure(imsg->exti_def.line, imsg->exti_def.mode, imsg->exti_def.edge);
 			break;
@@ -203,10 +210,7 @@ int main(void)
 	adc_init();
 	rtc_init();
 	flash_init();
-
-/*
 	i2c_init();
-*/
 
 	portCreate(&common.port);
 	portRegister(common.port, "/multi", &oid);

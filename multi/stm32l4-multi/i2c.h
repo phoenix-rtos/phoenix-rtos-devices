@@ -3,7 +3,7 @@
  *
  * STM32L4 I2C driver
  *
- * Copyright 2017, 2018 Phoenix Systems
+ * Copyright 2020 Phoenix Systems
  * Author: Aleksander Kaminski
  *
  * This file is part of Phoenix-RTOS.
@@ -16,13 +16,22 @@
 #define I2C_H_
 
 
-enum { _i2c_read = 0, _i2c_write };
+#include <sys/types.h>
 
 
-extern unsigned int i2c_transaction(char op, char addr, char reg, void *buff, unsigned int count);
+ssize_t i2c_read(int i2c, unsigned char addr, void *buff, size_t len);
 
 
-extern int i2c_init(void);
+ssize_t i2c_readReg(int i2c, unsigned char addr, unsigned char reg, void *buff, size_t len);
+
+
+ssize_t i2c_write(int i2c, unsigned char addr, void *buff, size_t len);
+
+
+ssize_t i2c_writeReg(int i2c, unsigned char addr, unsigned char reg, void *buff, size_t len);
+
+
+void i2c_init(void);
 
 
 #endif

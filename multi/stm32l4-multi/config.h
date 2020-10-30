@@ -61,4 +61,20 @@
 #define SPI3_USEDMA 0
 #endif
 
+#ifndef I2C1
+#define I2C1 0
+#endif
+
+#ifndef I2C2
+#define I2C2 0
+#endif
+
+#ifndef I2C3
+#define I2C3 0
+#endif
+
+#ifndef I2C4
+#define I2C4 0
+#endif
+
 #endif

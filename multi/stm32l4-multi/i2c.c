@@ -3,7 +3,7 @@
  *
  * STM32L4 I2C driver
  *
- * Copyright 2017, 2018 Phoenix Systems
+ * Copyright 2020 Phoenix Systems
  * Author: Aleksander Kaminski
  *
  * This file is part of Phoenix-RTOS.
@@ -17,6 +17,8 @@
 #include <sys/threads.h>
 #include <sys/interrupt.h>
 
+#include "lib/libi2c.h"
+
 #include "stm32-multi.h"
 #include "common.h"
 #include "gpio.h"
@@ -24,161 +26,93 @@
 #include "rcc.h"
 
 
-enum { cr1 = 0, cr2, oar1, oar2, dr, sr1, sr2, ccr, trise };
+
+#define I2C1_POS 0
+#define I2C2_POS (I2C1_POS + I2C1)
+#define I2C3_POS (I2C2_POS + I2C2)
+#define I2C4_POS (I2C3_POS + I2C3)
 
 
-struct {
-	volatile unsigned int *base;
-
-	handle_t lock;
-	handle_t irqlock;
-	handle_t irqcond;
-	handle_t inth;
-} i2c_common;
+libi2c_ctx_t i2c_ctx[I2C1 + I2C2 + I2C3 + I2C4];
+handle_t i2c_lock[I2C1 + I2C2 + I2C3 + I2C4];
 
 
-static int i2c_irq(unsigned int n, void *arg)
+static const int i2cConfig[] = { I2C1, I2C2, I2C3, I2C4 };
+
+
+static const int i2cPos[] = { I2C1_POS, I2C2_POS, I2C3_POS, I2C4_POS };
+
+
+
+ssize_t i2c_read(int i2c, unsigned char addr, void *buff, size_t len)
 {
-	/* Event irq disable */
-	*(i2c_common.base + cr2) &= ~(3 << 9);
+	ssize_t ret;
 
-	return 1;
+	if (i2c < i2c1 || i2c > i2c4 || !i2cConfig[i2c])
+		return -1;
+
+	mutexLock(i2c_lock[i2cPos[i2c]]);
+	ret = libi2c_read(&i2c_ctx[i2cPos[i2c]], addr, buff, len);
+	mutexUnlock(i2c_lock[i2cPos[i2c]]);
+
+	return ret;
 }
 
 
-static void i2c_waitForIrq(void)
+ssize_t i2c_readReg(int i2c, unsigned char addr, unsigned char reg, void *buff, size_t len)
 {
-	mutexLock(i2c_common.irqlock);
-	*(i2c_common.base + cr2) |= (3 << 9);
-	condWait(i2c_common.irqcond, i2c_common.irqlock, 0);
-	mutexUnlock(i2c_common.irqlock);
+	ssize_t ret;
+
+	if (i2c < i2c1 || i2c > i2c4 || !i2cConfig[i2c])
+		return -1;
+
+	mutexLock(i2c_lock[i2cPos[i2c]]);
+	ret = libi2c_readReg(&i2c_ctx[i2cPos[i2c]], addr, reg, buff, len);
+	mutexUnlock(i2c_lock[i2cPos[i2c]]);
+
+	return ret;
 }
 
 
-static void i2c_hwinit(void)
+ssize_t i2c_write(int i2c, unsigned char addr, void *buff, size_t len)
 {
-	unsigned int t;
+	ssize_t ret;
 
-	/* Disable I2C periph */
-	*(i2c_common.base + cr1) &= ~1;
-	dataBarier();
+	if (i2c < i2c1 || i2c > i2c4 || !i2cConfig[i2c])
+		return -1;
 
-	*(i2c_common.base + cr1) |= 1 << 15;
-	dataBarier();
-	*(i2c_common.base + cr1) &= ~(1 << 15);
-	dataBarier();
+	mutexLock(i2c_lock[i2cPos[i2c]]);
+	ret = libi2c_write(&i2c_ctx[i2cPos[i2c]], addr, buff, len);
+	mutexUnlock(i2c_lock[i2cPos[i2c]]);
 
-	/* Enable ACK after each byte */
-	*(i2c_common.base + cr2) |= 1 << 10;
-
-	/* Peripheral clock = 2 MHz */
-	t = *(i2c_common.base + cr2) & ~0x1ff;
-	*(i2c_common.base + cr2) = t | (1 << 2);
-
-	/* 95,325 kHz SCK */
-	t = *(i2c_common.base + ccr) & ~((1 << 14) | 0x7ff);
-	*(i2c_common.base + ccr) = t | 0xb;
-
-	/* 500 ns SCL rise time */
-	t = *(i2c_common.base + trise) & ~0x1ff;
-	*(i2c_common.base + trise) = t | 3;
-
-	/* Enable I2C periph */
-	*(i2c_common.base + cr1) |= 1;
+	return ret;
 }
 
 
-unsigned int i2c_transaction(char op, char addr, char reg, void *buff, unsigned int count)
+ssize_t i2c_writeReg(int i2c, unsigned char addr, unsigned char reg, void *buff, size_t len)
 {
-	int i;
+	ssize_t ret;
 
-	if (count < 1 || (op != _i2c_read && op != _i2c_write))
-		return 0;
+	if (i2c < i2c1 || i2c > i2c4 || !i2cConfig[i2c])
+		return -1;
 
-	mutexLock(i2c_common.lock);
-	keepidle(1);
+	mutexLock(i2c_lock[i2cPos[i2c]]);
+	ret = libi2c_writeReg(&i2c_ctx[i2cPos[i2c]], addr, reg, buff, len);
+	mutexUnlock(i2c_lock[i2cPos[i2c]]);
 
-	if (*(i2c_common.base + sr2) & (1 << 1))
-		i2c_hwinit();
+	return ret;
+}
 
-	*(i2c_common.base + cr2) |= (3 << 9);
 
-	/* Start condition generation */
-	*(i2c_common.base + cr1) |= (1 << 8);
+void i2c_init(void)
+{
+	int i2c;
 
-	while (!(*(i2c_common.base + sr1) & 1))
-		i2c_waitForIrq();
+	for (i2c = 0; i2c < 4; ++i2c) {
+		if (!i2cConfig[i2c])
+			continue;
 
-	*(i2c_common.base + dr) = addr << 1;
-
-	while (!((*(i2c_common.base + sr1) & 2) && (*(i2c_common.base + sr2) & 1)))
-		i2c_waitForIrq();
-
-	while (!(*(i2c_common.base + sr1) & (1 << 7)))
-		i2c_waitForIrq();
-
-	*(i2c_common.base + dr) = reg;
-
-	if (op == _i2c_read) {
-		*(i2c_common.base + cr1) |= (1 << 8);
-		if (count > 1)
-			*(i2c_common.base + cr1) |= (1 << 10);
-
-		while (!(*(i2c_common.base + sr1) & 1))
-			i2c_waitForIrq();
-
-		*(i2c_common.base + dr) = (addr << 1) | 1;
-
-		while (!((*(i2c_common.base + sr1) & 2) && (*(i2c_common.base + sr2) & 1)))
-			i2c_waitForIrq();
-
-		for (i = 0; i < count; ++i) {
-			while (!(*(i2c_common.base + sr1) & (1 << 6)))
-				i2c_waitForIrq();
-
-			if ((i + 2) >= count)
-				*(i2c_common.base + cr1) &= ~(1 << 10);
-
-			((char *)buff)[i] = *(i2c_common.base + dr);
-		}
+		mutexCreate(&i2c_lock[i2cPos[i2c]]);
+		libi2c_init(&i2c_ctx[i2cPos[i2c]], i2c);
 	}
-	else {
-		for (i = 0; i < count; ++i) {
-			while (!(*(i2c_common.base + sr1) & (1 << 7)))
-				i2c_waitForIrq();
-
-			*(i2c_common.base + dr) = ((char *)buff)[i];
-		}
-
-		while (!(*(i2c_common.base + sr1) & (1 << 7)))
-			i2c_waitForIrq();
-	}
-
-	*(i2c_common.base + cr1) |= (1 << 9);
-
-	keepidle(0);
-	mutexUnlock(i2c_common.lock);
-
-	return i;
-}
-
-
-int i2c_init(void)
-{
-	i2c_common.base = (void *)0x40005800;
-
-	rcc_devClk(pctl_i2c2, 1);
-
-	i2c_hwinit();
-
-	gpio_configPin(gpiob, 10, 2, 4, 1, 0, 0);
-	gpio_configPin(gpiob, 11, 2, 4, 1, 0, 0);
-
-	mutexCreate(&i2c_common.lock);
-	mutexCreate(&i2c_common.irqlock);
-	condCreate(&i2c_common.irqcond);
-
-	interrupt(49, i2c_irq, NULL, i2c_common.irqcond, &i2c_common.inth);
-
-	return EOK;
 }
