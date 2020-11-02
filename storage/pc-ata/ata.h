@@ -29,12 +29,12 @@
 #define ATA2_CTRL (ATA1_CTRL - PORT_OFFSET)
 
 #define ATA3_BASE 0x1e8
-#define ATA3_CTRL 0x3e6
+#define ATA3_CTRL 0x3ee
 #define ATA4_BASE (ATA3_BASE - PORT_OFFSET)
 #define ATA4_CTRL (ATA3_CTRL - PORT_OFFSET)
 
 
-/* ATA device numbers */
+/* ATA bus devices */
 enum { MASTER, SLAVE };
 
 
