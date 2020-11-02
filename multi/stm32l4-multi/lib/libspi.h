@@ -29,7 +29,6 @@ typedef struct {
 
 	int usedma;
 
-	handle_t mutex;
 	handle_t irqLock;
 	handle_t cond;
 	handle_t inth;

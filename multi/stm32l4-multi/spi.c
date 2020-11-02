@@ -34,7 +34,8 @@
 #define SPI3_POS (SPI2_POS + SPI2)
 
 
-libspi_ctx_t spi_common[SPI1 + SPI2 + SPI3];
+static libspi_ctx_t spi_common[SPI1 + SPI2 + SPI3];
+static handle_t spi_locks[SPI1 + SPI2 + SPI3];
 
 
 static const int spiConfig[] = { SPI1, SPI2, SPI3 };
@@ -48,19 +49,31 @@ static const int spiUseDma[] = { SPI1_USEDMA, SPI2_USEDMA, SPI3_USEDMA };
 
 int spi_transaction(int spi, int dir, unsigned char cmd, unsigned int addr, unsigned char flags, unsigned char *ibuff, unsigned char *obuff, size_t bufflen)
 {
+	int ret;
+
 	if (spi < spi1 || spi > spi3 || !spiConfig[spi])
 		return -EINVAL;
 
-	return libspi_transaction(&spi_common[spiPos[spi]], dir, cmd, addr, flags, ibuff, obuff, bufflen);
+	mutexLock(spi_locks[spiPos[spi]]);
+	ret = libspi_transaction(&spi_common[spiPos[spi]], dir, cmd, addr, flags, ibuff, obuff, bufflen);
+	mutexUnlock(spi_locks[spiPos[spi]]);
+
+	return ret;
 }
 
 
 int spi_configure(int spi, char mode, char bdiv, int enable)
 {
+	int ret;
+
 	if (spi < spi1 || spi > spi3 || !spiConfig[spi])
 		return -EINVAL;
 
-	return libspi_configure(&spi_common[spiPos[spi]], mode, bdiv, enable);
+	mutexLock(spi_locks[spiPos[spi]]);
+	ret = libspi_configure(&spi_common[spiPos[spi]], mode, bdiv, enable);
+	mutexUnlock(spi_locks[spiPos[spi]]);
+
+	return ret;
 }
 
 
@@ -72,6 +85,7 @@ void spi_init(void)
 		if (!spiConfig[spi])
 			continue;
 
+		mutexCreate(&spi_locks[spiPos[spi]]);
 		libspi_init(&spi_common[spiPos[spi]], spi, spiUseDma[spi]);
 	}
 }

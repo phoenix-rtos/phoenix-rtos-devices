@@ -126,7 +126,6 @@ int libspi_transaction(libspi_ctx_t *ctx, int dir, unsigned char cmd, unsigned i
 
 	addrsz = (flags >> SPI_ADDRSHIFT) & SPI_ADDRMASK;
 
-	mutexLock(ctx->mutex);
 	keepidle(1);
 
 	if (flags & spi_cmd)
@@ -176,7 +175,6 @@ int libspi_transaction(libspi_ctx_t *ctx, int dir, unsigned char cmd, unsigned i
 		;
 
 	keepidle(0);
-	mutexUnlock(ctx->mutex);
 
 	return bufflen;
 }
@@ -185,8 +183,6 @@ int libspi_transaction(libspi_ctx_t *ctx, int dir, unsigned char cmd, unsigned i
 int libspi_configure(libspi_ctx_t *ctx, char mode, char bdiv, int enable)
 {
 	unsigned int t;
-
-	mutexLock(ctx->mutex);
 
 	devClk(spi2pctl[libspi_spino(ctx) - spi1], 1);
 	*(ctx->base + cr1) &= ~(1 << 6);
@@ -203,8 +199,6 @@ int libspi_configure(libspi_ctx_t *ctx, char mode, char bdiv, int enable)
 	else
 		devClk(spi2pctl[libspi_spino(ctx) - spi1], 0);
 
-	mutexUnlock(ctx->mutex);
-
 	return EOK;
 }
 
@@ -219,7 +213,6 @@ int libspi_init(libspi_ctx_t *ctx, unsigned int spi, int useDma)
 	ctx->base = (void *)spiinfo[spi - spi1].base;
 	ctx->usedma = useDma;
 
-	mutexCreate(&ctx->mutex);
 	mutexCreate(&ctx->irqLock);
 	condCreate(&ctx->cond);
 
