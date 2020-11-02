@@ -382,13 +382,13 @@ static int ata_initdev(ata_bus_t *bus, ata_dev_t *dev)
 	if (!ata_readreg(base, REG_STATUS, 1))
 		return -ENXIO;
 
-	/* Check if it's ATA device */
-	if ((ata_readreg(base, REG_HCYLINDER, 1) << 8) | ata_readreg(base, REG_LCYLINDER, 1))
-		return -ENXIO;
-
 	/* Wait until BSY clears and DRQ sets */
 	if ((err = ata_wait(bus, STATUS_BSY, STATUS_DRQ)) < 0)
 		return err;
+
+	/* Check if it's ATA device */
+	if ((ata_readreg(base, REG_HCYLINDER, 1) << 8) | ata_readreg(base, REG_LCYLINDER, 1))
+		return -ENXIO;
 
 	/* Read device identification info */
 	for (i = 0; i < sizeof(info) / sizeof(info[0]); i += 2) {
