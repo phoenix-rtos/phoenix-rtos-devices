@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * ATA server
+ * Generic ATA devices server
  *
  * Copyright 2019, 2020 Phoenix Systems
  * Author: Kamil Amanowicz, Lukasz Kosinski
@@ -57,12 +57,12 @@ typedef int (*fs_mount)(oid_t *, unsigned int, typeof(atasrv_read) *, typeof(ata
 
 
 typedef struct {
-	rbnode_t node;      /* RBTree node */
-	char name[16];      /* Filesystem name */
-	uint8_t type;       /* Compatible partition type */
-	fs_handler handler; /* Message handler callback */
-	fs_unmount unmount; /* Unmount callback */
-	fs_mount mount;     /* Mount callback */
+	rbnode_t node;              /* RBTree node */
+	char name[16];              /* Filesystem name */
+	uint8_t type;               /* Compatible partition type */
+	fs_handler handler;         /* Message handler callback */
+	fs_unmount unmount;         /* Unmount callback */
+	fs_mount mount;             /* Mount callback */
 } atasrv_fs_t;
 
 
@@ -84,7 +84,7 @@ struct _atasrv_dev_t {
 
 
 struct _atasrv_base_t {
-	unsigned int number;        /* Device number */
+	unsigned int idx;           /* Device index */
 	unsigned int npdevs;        /* Number of partitions within the device */
 	atasrv_dev_t *pdevs;        /* Device partitions */
 	ata_dev_t *dev;             /* Underlaying ATA device */
@@ -93,8 +93,8 @@ struct _atasrv_base_t {
 
 struct _atasrv_part_t {
 	/* Partition data */
+	unsigned int idx;           /* Partition index */
 	unsigned int port;          /* Partition port */
-	unsigned int number;        /* Partition number */
 	uint8_t type;               /* Partition type */
 	uint32_t start;             /* Partition start (LBA) */
 	uint32_t sectors;           /* Number of sectors */
@@ -111,7 +111,7 @@ struct _atasrv_part_t {
 
 struct _atasrv_req_t {
 	msg_t msg;                  /* Request msg */
-	unsigned long rid;          /* Request rid */
+	unsigned long rid;          /* Request receiving context */
 	atasrv_part_t *part;        /* Request receiver partition */
 	atasrv_req_t *prev, *next;  /* Doubly linked list */
 };
@@ -259,7 +259,7 @@ static int atasrv_initbase(ata_dev_t *dev)
 	sdev->base->npdevs = 0;
 	sdev->base->pdevs = NULL;
 	sdev->base->dev = dev;
-	sdev->base->number = atasrv_common.ndevs++;
+	sdev->base->idx = atasrv_common.ndevs++;
 	idtree_alloc(&atasrv_common.sdevs, &sdev->node);
 
 	return EOK;
@@ -297,7 +297,7 @@ static int atasrv_initpart(atasrv_dev_t *bdev, uint8_t type, uint32_t start, uin
 	pdev->part->fs = NULL;
 	pdev->part->fdata = NULL;
 	pdev->part->bdev = bdev;
-	pdev->part->number = bdev->base->npdevs++;
+	pdev->part->idx = bdev->base->npdevs++;
 	idtree_alloc(&atasrv_common.sdevs, &pdev->node);
 	LIST_ADD(&bdev->base->pdevs, pdev);
 
@@ -403,7 +403,6 @@ static int atasrv_mount(id_t id, const char *name, oid_t *oid)
 
 	if ((err = fs->mount(oid, pdev->part->bdev->base->dev->sectorsz, atasrv_read, atasrv_write, &pdev->part->fdata)) < 0)
 		return err;
-
 	oid->id = err;
 
 	if ((err = beginthread(atasrv_fsthr, 4, pdev->part->pstack, sizeof(pdev->part->pstack), pdev->part)) < 0) {
@@ -696,11 +695,11 @@ int main(int argc, char **argv)
 
 		switch (sdev->type) {
 		case DEV_BASE:
-			sprintf(path, "%s%c", HDD_BASE, 'a' + sdev->base->number);
+			sprintf(path, "%s%c", HDD_BASE, 'a' + sdev->base->idx);
 			break;
 
 		case DEV_PART:
-			sprintf(path, "%s%c%d", HDD_BASE, 'a' + sdev->part->bdev->base->number, sdev->part->number);
+			sprintf(path, "%s%c%d", HDD_BASE, 'a' + sdev->part->bdev->base->idx, sdev->part->idx);
 			break;
 		}
 
