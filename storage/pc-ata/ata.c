@@ -55,11 +55,11 @@ static uint32_t ata_readreg(void *base, uint8_t reg, uint8_t size)
 
 		switch (size) {
 		case 1:
-			return *((uint8_t *)addr);
+			return *(volatile uint8_t *)addr;
 		case 2:
-			return le16toh(*((uint16_t *)addr));
+			return le16toh(*(volatile uint16_t *)addr);
 		case 4:
-			return le32toh(*((uint32_t *)addr));
+			return le32toh(*(volatile uint32_t *)addr);
 		}
 	}
 
@@ -95,13 +95,13 @@ static void ata_writereg(void *base, uint8_t reg, uint32_t val, uint8_t size)
 
 		switch (size) {
 		case 1:
-			*((uint8_t *)addr) = (uint8_t)val;
+			*(volatile uint8_t *)addr = (uint8_t)val;
 			break;
 		case 2:
-			*((uint16_t *)addr) = htole16((uint16_t)val);
+			*(volatile uint16_t *)addr = htole16((uint16_t)val);
 			break;
 		case 4:
-			*((uint32_t *)addr) = htole32(val);
+			*(volatile uint32_t *)addr = htole32(val);
 			break;
 		}
 	};
