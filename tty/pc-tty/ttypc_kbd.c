@@ -550,10 +550,6 @@ int _ttypc_kbd_updateled(ttypc_t *ttypc)
 		if (ttypc_kbd_write(ttypc, 0xed) < 0)
 			break;
 
-		/* ACK response */
-		if (ttypc_kbd_read(ttypc) != 0xfa)
-			break;
-
 		/* Send LEDs state */
 		if (ttypc_kbd_write(ttypc, (ttypc->lockst >> 4) & 0x07) < 0)
 			break;
