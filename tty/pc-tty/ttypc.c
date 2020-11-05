@@ -135,16 +135,16 @@ int main(void)
 		return err;
 
 	/* Initialize keyboard */
-	if (ttypc_kbd_configure(&ttypc_common)) {
-		if ((err = ttypc_kbd_init(&ttypc_common)) < 0)
-			return err;
-		ttypc_common.ktype = KBD_PS2;
-	}
-	else {
+	if (inb((void *)0x64) == 0xff) {
 		fprintf(stderr, "pc-tty: no PS/2 keyboard detected\n");
 		if ((err = ttypc_bioskbd_init(&ttypc_common)) < 0)
 			return err;
 		ttypc_common.ktype = KBD_BIOS;
+	}
+	else {
+		if ((err = ttypc_kbd_init(&ttypc_common)) < 0)
+			return err;
+		ttypc_common.ktype = KBD_PS2;
 	}
 
 	/* Wait for the filesystem */

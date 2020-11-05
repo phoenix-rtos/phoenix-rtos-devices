@@ -26,12 +26,8 @@ extern int _ttypc_kbd_updateled(ttypc_t *ttypc);
 extern void ttypc_kbd_destroy(ttypc_t *ttypc);
 
 
-/* Initializes keyboard */
+/* Initializes PS/2 keyboard */
 extern int ttypc_kbd_init(ttypc_t *ttypc);
-
-
-/* Configures keyboard */
-extern int ttypc_kbd_configure(ttypc_t *ttypc);
 
 
 #endif

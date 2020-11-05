@@ -543,8 +543,6 @@ static int ttypc_kbd_write(ttypc_t *ttypc, unsigned char byte)
 /* May not work for PS/2 emulation through USB legacy support */
 int _ttypc_kbd_updateled(ttypc_t *ttypc)
 {
-	int ret = 0;
-
 	do {
 		/* Send update LEDs command */
 		if (ttypc_kbd_write(ttypc, 0xed) < 0)
@@ -558,11 +556,10 @@ int _ttypc_kbd_updateled(ttypc_t *ttypc)
 		if (ttypc_kbd_read(ttypc) != 0xfa)
 			break;
 
-		/* Successfully updated LEDs state */
-		ret = 1;
+		return 1;
 	} while (0);
 
-	return ret;
+	return 0;
 }
 
 
@@ -576,7 +573,32 @@ void ttypc_kbd_destroy(ttypc_t *ttypc)
 
 int ttypc_kbd_init(ttypc_t *ttypc)
 {
-	int err;
+	int i, err;
+
+	/* PS/2 Keyboard base IO-port */
+	ttypc->kbd = (void *)0x60;
+
+	/* Read byte from keyboard controller (reset is neccessary) */
+	inb((void *)ttypc->kbd);
+
+	/* Flush output buffer (max 16 characters) */
+	for (i = 0; i < 16; i++) {
+		if (inb((void *)((uintptr_t)ttypc->kbd + 4)) & 1)
+			inb((void *)ttypc->kbd);
+		else
+			break;
+	}
+
+	/* Configure typematic */
+	do {
+		/* Send set typematic rate/delay command */
+		if (ttypc_kbd_write(ttypc, 0xf3) < 0)
+			break;
+
+		/* 250 ms / 30.0 reports/sec */
+		if (ttypc_kbd_write(ttypc, 0) < 0)
+			break;
+	} while (0);
 
 	if ((err = mutexCreate(&ttypc->klock)) < 0)
 		return err;
@@ -601,48 +623,5 @@ int ttypc_kbd_init(ttypc_t *ttypc)
 		return err;
 	}
 
-	/* Read byte from controller (reset is neccessary) */
-	inb((void *)ttypc->kbd);
-
 	return EOK;
-}
-
-
-int ttypc_kbd_configure(ttypc_t *ttypc)
-{
-	unsigned int i;
-
-	/* PS/2 Keyboard base IO-port */
-	ttypc->kbd = (void *)0x60;
-
-	if (inb((void *)((uintptr_t)ttypc->kbd + 4)) == 0xff)
-		return 0;
-
-	/* Flush output buffer (max 16 characters) */
-	for (i = 0; i < 16; i++) {
-		if (inb((void *)((uintptr_t)ttypc->kbd + 4)) & 1)
-			inb((void *)ttypc->kbd);
-		else
-			break;
-	}
-
-	do {
-		/* Send set typematic rate/delay command */
-		if (ttypc_kbd_write(ttypc, 0xf3) < 0)
-			break;
-
-		/* ACK response */
-		if (ttypc_kbd_read(ttypc) != 0xfa)
-			break;
-
-		/* 250 ms / 30.0 reports/sec */
-		if (ttypc_kbd_write(ttypc, 0) < 0)
-			break;
-
-		/* ACK response */
-		if (ttypc_kbd_read(ttypc) != 0xfa)
-			break;
-	} while (0);
-
-	return 1;
 }

@@ -24,14 +24,11 @@
 #define NVTS 4
 
 
-/* Keyboard type */
-enum {
-	KBD_BIOS,
-	KBD_PS2
-};
+/* Keyboard types */
+enum { KBD_BIOS, KBD_PS2 };
 
 
-/* Keyboard key type */
+/* Keyboard key types */
 enum {
 	KB_NONE    = 0x0000,
 	KB_CTL     = 0x0001,
