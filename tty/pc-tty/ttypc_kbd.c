@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <stdint.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <sys/interrupt.h>
 #include <sys/io.h>
@@ -505,9 +506,11 @@ static int ttypc_kbd_waitstatus(ttypc_t *ttypc, unsigned char bit, unsigned char
 {
 	unsigned int i;
 
-	for (i = 0; i < 0xffff; i++)
+	for (i = 0; i < 0xffff; i++) {
 		if (!(inb((void *)((uintptr_t)ttypc->kbd + 4)) & ((1 << bit) ^ (state << bit))))
 			return EOK;
+		usleep(10);
+	}
 
 	return -ETIMEDOUT;
 }
@@ -534,6 +537,7 @@ static int ttypc_kbd_write(ttypc_t *ttypc, unsigned char byte)
 	/* Wait for input buffer to be empty */
 	if ((err = ttypc_kbd_waitstatus(ttypc, 1, 0)) < 0)
 		return err;
+
 	outb((void *)ttypc->kbd, byte);
 
 	return EOK;
@@ -550,10 +554,6 @@ int _ttypc_kbd_updateled(ttypc_t *ttypc)
 
 		/* Send LEDs state */
 		if (ttypc_kbd_write(ttypc, (ttypc->lockst >> 4) & 0x07) < 0)
-			break;
-
-		/* ACK response */
-		if (ttypc_kbd_read(ttypc) != 0xfa)
 			break;
 
 		return 1;
@@ -578,15 +578,13 @@ int ttypc_kbd_init(ttypc_t *ttypc)
 	/* PS/2 Keyboard base IO-port */
 	ttypc->kbd = (void *)0x60;
 
-	/* Read byte from keyboard controller (reset is neccessary) */
-	inb((void *)ttypc->kbd);
-
-	/* Flush output buffer (max 16 characters) */
+	/* Flush output buffer (max 16 bytes) */
 	for (i = 0; i < 16; i++) {
-		if (inb((void *)((uintptr_t)ttypc->kbd + 4)) & 1)
-			inb((void *)ttypc->kbd);
-		else
+		if (!(inb((void *)((uintptr_t)ttypc->kbd + 4)) & 1))
 			break;
+
+		inb((void *)ttypc->kbd);
+		usleep(10);
 	}
 
 	/* Configure typematic */
