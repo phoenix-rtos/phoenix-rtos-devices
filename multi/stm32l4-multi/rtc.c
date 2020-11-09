@@ -244,7 +244,7 @@ int rtc_init(void)
 
 	rtc_common.prediv_s = *(rtc_common.base + prer) & 0x7fff;
 
-	exti_configure(18, exti_irq, exti_rising);
+	exti_configure(18, exti_irqevent, exti_rising);
 
 	interrupt(rtc_alarm_irq, rtc_alarm_handler, NULL, 0, NULL);
 
