@@ -9,4 +9,4 @@
 include tty/libtty/Makefile
 include tty/spike-tty/Makefile
 include tty/uart16550/Makefile
-include storage/virtio-blk/Makefile
+#include storage/virtio-blk/Makefile

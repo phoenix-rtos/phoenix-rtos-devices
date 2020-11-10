@@ -16,12 +16,13 @@
 #include <string.h>
 
 #include <sys/mman.h>
+#include <sys/threads.h>
 
 #include "virtio.h"
 
 
-#define ALIGN_MASK(x, mask) (((x) + (mask)) & ~(mask))
-#define ALIGN(x, a) ALIGN_MASK(x, (typeof(x))(a) - 1)
+#define ALIGN_MSK(addr, mask) (((addr) + (mask)) & ~(mask))
+#define ALIGN(addr, align) ALIGN_MSK(addr, (typeof(addr))(align) - 1)
 
 
 virtq_t *virtio_allocVirtq(uint16_t size)
@@ -34,12 +35,17 @@ virtq_t *virtio_allocVirtq(uint16_t size)
 	uint32_t vdoffs = ALIGN(aeoffs + sizeof(uint16_t), sizeof(void *));
 	uint32_t vqsz = ALIGN(vdoffs + size * sizeof(void *), _PAGE_SIZE);
 	virtq_t *vq;
-	uint16_t i;
 
 	if ((vq = malloc(sizeof(virtq_t))) == NULL)
 		return NULL;
 
 	if ((vq->data = mmap(NULL, vqsz, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_ANONYMOUS, OID_NULL, 0)) == MAP_FAILED) {
+		free(vq);
+		return NULL;
+	}
+
+	if (mutexCreate(&vq->lock) < 0) {
+		munmap((void *)vq->data, vqsz);
 		free(vq);
 		return NULL;
 	}
@@ -58,41 +64,50 @@ virtq_t *virtio_allocVirtq(uint16_t size)
 	vq->prev = NULL;
 	vq->next = NULL;
 
-	for (i = 0; i < size; i++)
-		vq->desc[i].next = i + 1;
-
 	return vq;
 }
 
 
 void virtio_freeVirtq(virtq_t *vq)
 {
+	resourceDestroy(vq->lock);
 	munmap((void *)vq->data, ALIGN((uintptr_t)vq->vdesc - (uintptr_t)vq->data + vq->size * sizeof(void *), _PAGE_SIZE));
 	free(vq);
 }
 
 
-int _virtio_allocDesc(virtq_t *vq, void *addr)
+int virtio_allocDesc(virtio_dev_t *vdev, virtq_t *vq, void *addr)
 {
-	uint16_t desc = vq->free;
-	uint16_t next = vq->desc[desc].next;
+	uint16_t desc;
+	uint16_t next;
 
-	if (desc == vq->size)
+	mutexLock(vq->lock);
+
+	if ((desc = vq->free) == vq->size) {
+		mutexUnlock(vq->lock);
 		return -ENOSPC;
+	}
 
-	vq->desc[desc].addr = va2pa(addr);
+	next = (uint16_t)virtio_toGuest(vdev, vq->desc[desc].next, 2);
+	vq->desc[desc].addr = virtio_toHost(vdev, va2pa(addr), 8);
 	vq->vdesc[desc] = addr;
 	vq->free = next;
+
+	mutexUnlock(vq->lock);
 
 	return desc;
 }
 
 
-void _virtio_freeDesc(virtq_t *vq, uint16_t desc)
+void virtio_freeDesc(virtio_dev_t *vdev, virtq_t *vq, uint16_t desc)
 {
-	vq->desc[desc].next = vq->free;
+	mutexLock(vq->lock);
+
+	vq->desc[desc].next = (uint16_t)virtio_toHost(vdev, vq->free, 2);
 	vq->vdesc[desc] = NULL;
 	vq->free = desc;
+
+	mutexUnlock(vq->lock);
 }
 
 
@@ -124,8 +139,7 @@ void virtio_destroyDev(virtio_dev_t *vdev)
 		vq = nvq;
 	}
 
-	vdev->nvqs = 0;
-	vdev->vqs = NULL;
+	memset(vdev, 0, sizeof(virtio_dev_t));
 }
 
 

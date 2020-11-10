@@ -122,7 +122,7 @@ uint64_t virtio_mmio_readConfig(virtio_mmio_t *mdev, uint32_t offs, uint8_t size
 	uint64_t ret;
 
 	if (virtio_legacy(&mdev->vdev)) {
-		/* Keep reading register until we get consistent value */
+		/* Keep reading from register until we get consistent value */
 		do {
 			ret = virtio_mmio_readReg(mdev, REG_CONFIG + offs, size);
 		} while (ret != virtio_mmio_readReg(mdev, REG_CONFIG + offs, size));
@@ -152,7 +152,7 @@ void virtio_mmio_writeConfig(virtio_mmio_t *mdev, uint32_t offs, uint8_t size, u
 
 int virtio_mmio_addVirtq(virtio_mmio_t* mdev, uint16_t size)
 {
-	uint16_t maxsz;
+	uint16_t i, maxsz;
 	uint64_t addr;
 	virtq_t *vq;
 
@@ -173,6 +173,10 @@ int virtio_mmio_addVirtq(virtio_mmio_t* mdev, uint16_t size)
 	/* Allocate the virtqueue */
 	if ((vq = virtio_allocVirtq(size)) == NULL)
 		return -ENOMEM;
+
+	/* Initialize descriptors */
+	for (i = 0; i < size; i++)
+		vq->desc[i].next = (uint16_t)virtio_toHost(&mdev->vdev, i + 1, 2);
 
 	/* Write virtqueue size */
 	virtio_mmio_writeReg(mdev, REG_QUEUE_SIZE, 4, vq->size);
@@ -270,7 +274,7 @@ int virtio_mmio_initDev(virtio_mmio_t *mdev, addr_t addr)
 		/* Save device features */
 		mdev->vdev.features = virtio_mmio_readFeatures(mdev);
 
-		/* Compare reported device version with supported features */
+		/* Compare reported device VirtIO version with supported features */
 		if (virtio_legacy(&mdev->vdev) && (version == 2)) {
 			err = -ENXIO;
 			break;

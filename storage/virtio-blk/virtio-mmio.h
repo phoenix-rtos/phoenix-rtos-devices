@@ -14,10 +14,6 @@
 #ifndef _VIRTIO_MMIO_H_
 #define _VIRTIO_MMIO_H_
 
-#include <stdint.h>
-
-#include <sys/types.h>
-
 #include "virtio.h"
 
 
@@ -58,8 +54,8 @@ enum {
 
 
 typedef struct {
-	volatile void *base;     /* MMIO registers base address */
 	virtio_dev_t vdev;       /* VirtIO device */
+	volatile void *base;     /* MMIO registers base address */
 } virtio_mmio_t;
 
 

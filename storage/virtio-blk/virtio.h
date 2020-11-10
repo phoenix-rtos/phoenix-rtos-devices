@@ -98,7 +98,7 @@ enum {
 };
 
 
-/* VirtIO device feature access helpers */
+/* VirtIO device features access helpers */
 #define FEATURE_MSK(x)           (1ULL << x)
 #define FEATURE_HAS(features, x) (features & FEATURE_MSK(x))
 #define FEATURE_SET(features, x) (features |= FEATURE_MSK(x))
@@ -121,7 +121,7 @@ typedef struct {
 
 
 typedef struct {
-	uint32_t id;              /* Descriptor chain index */
+	uint32_t id;              /* Descriptor chain ID */
 	uint32_t len;             /* Number of bytes written into the buffer */
 } __attribute__((packed)) virtq_used_item_t;
 
@@ -152,6 +152,7 @@ struct _virtq_t {
 	uint16_t size;                 /* Virtqueue size */
 	uint16_t last;                 /* Last processed request (used descriptor) index */
 	uint16_t free;                 /* Next free desriptor index */
+	handle_t lock;                 /* Descriptors mutex */
 	virtq_t *prev, *next;          /* Doubly linked list */
 };
 
@@ -244,11 +245,11 @@ extern void virtio_freeVirtq(virtq_t *vq);
 
 
 /* Allocates descriptor (should be protected with mutex) */
-extern int _virtio_allocDesc(virtq_t *vq, void *addr);
+extern int virtio_allocDesc(virtio_dev_t *vdev, virtq_t *vq, void *addr);
 
 
 /* Releases given descriptor (should be protected with mutex) */
-extern void _virtio_freeDesc(virtq_t *vq, uint16_t desc);
+extern void virtio_freeDesc(virtio_dev_t *vdev, virtq_t *vq, uint16_t desc);
 
 
 /* Returns VirtIO device n-th virtqueue */

@@ -14,17 +14,15 @@
 #ifndef _VIRTIO_BLK_H_
 #define _VIRTIO_BLK_H_
 
-#include <stdint.h>
-
-#include <sys/types.h>
+#include <sys/msg.h>
 
 #include "virtio-mmio.h"
 
 
 /* Misc definitions */
-#define SECTOR_SIZE      512       /* VirtIO block device default sector size */
-#define REQ_HEADER_SIZE  16        /* VirtIO block device request header size */
-#define REQ_FOOTER_SIZE  1         /* VirtIO block device request footer size */
+#define SECTOR_SIZE      512       /* Default sector size */
+#define REQ_HEADER_SIZE  16        /* Request header size */
+#define REQ_FOOTER_SIZE  1         /* Request footer size */
 
 
 /* VirtIO block device features bits */
@@ -58,10 +56,10 @@ enum {
 };
 
 
-/* VirtIO block device request state */
+/* VirtIO block device request interface */
 enum {
-	RSTATE_AVAIL           = 0x00, /* Request available (not yet processed) */
-	RSTATE_USED            = 0x01  /* Request used (processed by device) */
+	IFACE_MSG              = 0x00, /* Message iterface - used for handling external requests (messages) */
+	IFACE_DIR              = 0x01  /* Direct iterface - used for handling internal requests */
 };
 
 
@@ -97,17 +95,27 @@ enum {
 
 
 typedef struct {
-	/* Request header (read-only) */
-	uint32_t type;      /* Request type */
+	/* Request header (device read-only) */
+	uint32_t type;      /* Request type (command) */
 	uint32_t reserved;  /* Reserved field (previously request priority) */
-	uint64_t sector;    /* Sector (512-byte offset) */
+	uint64_t sector;    /* Starting sector (512-byte offset) */
 
-	/* Request footer (write-only) */
+	/* Request footer (device write-only) */
 	uint8_t status;     /* Returned status */
 
 	/* Custom helper fields (not available to device) */
-	uint8_t state;      /* Request state: RSTATE_AVAIL, RSTATE_USED */
-	uint32_t len;       /* Bytes read from/writen to request buffer */
+	uint8_t itype; /* Interface type */
+	union {
+		struct {
+			uint32_t port;      /* Request receiving port */
+			unsigned long rid;  /* Request receiving context */
+			msg_t *msg;         /* Request message */
+		} imsg;
+		struct {
+			uint8_t *data;      /* Data buffer */
+			uint32_t len;       /* Data buffer length */
+		} idir;
+	};
 } __attribute__((packed)) virtio_blkreq_t;
 
 
@@ -118,19 +126,15 @@ struct _virtio_blk_t {
 	/* Device information */
 	virtio_mmio_t mdev; /* VirtIO MMIO block device */
 	uint64_t size;      /* Device storage size */
-
-	/* Request handling */
-	handle_t rcond;     /* Request condition variable */
-	handle_t rlock;     /* Request mutex */
+	uint32_t sectorsz;  /* Device sector size */
 
 	/* Interrupt handling */
 	unsigned int irq;   /* Interrupt number */
 	handle_t lock;      /* Interrupt mutex */
 	handle_t cond;      /* Interrupt condition variable */
 	handle_t inth;      /* Interrupt handle */
+	char stack[2048] __attribute__((aligned(8)));
 
-	/* Interrupt thread stack */
-	char stack[4096] __attribute__((aligned(8)));
 	/* Doubly linked list */
 	virtio_blk_t *prev, *next;
 };
