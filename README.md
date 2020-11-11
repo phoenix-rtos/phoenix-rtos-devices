@@ -1,12 +1,6 @@
 # phoenix-rtos-devices
-This repository contains the source for the Phoenix-RTOS device drivers. Device drivers work on the user-level and are written
-using libphoenix standard library. Most of drivers are imported into this repository directly from Phoenix-RTOS 2 kernel and need to be reimplemnted.
-These drivers are marked with _ prefix.
+This repository contains device drivers for Phoenix-RTOS. Device drivers work on the user-level and use message passing for interfacing with other operating system components.
 
-To compile driver set for target architecture edit Makefile and TARGET
-variable and after this type:
-
-	$ make clean
-	$ make
+To learn the device driver architecuture and the method how to implement it please refer to the [Documentation](https://github.com/phoenix-rtos/phoenix-rtos-doc/).
 
 This work is licensed under a BSD license. See the LICENSE file for details.
