@@ -62,11 +62,10 @@ static int flash_waitBusBusy(flash_context_t *ctx)
 {
 	int err = EOK;
 	uint32_t buff;
-	uint8_t retrans;
 	flexspi_xfer_t xfer;
-	const uint8_t MAX_RETRANS = 8;
+	uint8_t retrans = 0;
+	const uint8_t MAX_RETRANS = 15;
 
-	retrans = 0;
 	xfer.rxSize = 4;
 	xfer.rxBuffer = &buff;
 	xfer.baseAddress = ctx->instance;
@@ -76,9 +75,9 @@ static int flash_waitBusBusy(flash_context_t *ctx)
 	xfer.isParallelModeEnable = 0;
 
 	do {
+		usleep(retrans * 500);
 		err = flexspi_norFlashExecuteSeq(ctx->instance, &xfer);
-		usleep(10000);
-	} while ((buff & (0x1 << 1)) && (++retrans < MAX_RETRANS) && (err == 0));
+	} while ((buff & 0x3) && (++retrans < MAX_RETRANS) && (err == 0));
 
 	return err;
 }
