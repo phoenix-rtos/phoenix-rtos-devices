@@ -47,6 +47,8 @@
 #define ADC_BUFFER_SIZE             (4 * AD7779_NUM_OF_CHANNELS * _PAGE_SIZE)
 #define NUM_OF_BUFFERS              (16)
 
+#define MAX_INIT_TRIES              (4)
+
 typedef volatile struct {
 	uint32_t VERID; //0x00
 	uint32_t PARAM; //0x04
@@ -301,16 +303,21 @@ static void *alloc_uncached(size_t size, addr_t *paddr, int ocram)
 	return vaddr;
 }
 
+static int free_uncached(void *vaddr, size_t size)
+{
+	return munmap(vaddr, (size + _PAGE_SIZE - 1) / _PAGE_SIZE * _PAGE_SIZE);
+}
+
 static int edma_configure(void)
 {
 	int res;
 
-	if((res = mutexCreate(&common.irq_lock) != EOK)) {
+	if ((res = mutexCreate(&common.irq_lock)) != EOK) {
 		log_error("mutex resource creation failed");
 		return res;
 	}
 
-	if((res = condCreate(&common.irq_cond)) != EOK) {
+	if ((res = condCreate(&common.irq_cond)) != EOK) {
 		log_error("conditional resource creation failed");
 		resourceDestroy(common.irq_lock);
 		return res;
@@ -357,8 +364,10 @@ static int edma_configure(void)
 		common.tcds[i].dlast_sga = (uint32_t)&common.tcds[(i + 1) % NUM_OF_BUFFERS];
 	}
 
-	if ((res = edma_install_tcd(&common.tcds[0], SAI1_RX_DMA_CHANNEL)) != 0)
+	if ((res = edma_install_tcd(&common.tcds[0], SAI1_RX_DMA_CHANNEL)) != 0) {
+		free_uncached(buf, ADC_BUFFER_SIZE);
 		return res;
+	}
 
 	interrupt(EDMA_CHANNEL_IRQ(SAI1_RX_DMA_CHANNEL),
 		edma_irq_handler, NULL, common.irq_cond, &common.irq_handle);
@@ -433,18 +442,18 @@ static int dev_close(oid_t *oid, int flags)
 
 static int dev_read(void *data, size_t size)
 {
+	int res = 0;
+
 	if (data != NULL && size != sizeof(unsigned))
 		return -EIO;
 
 	mutexLock(common.irq_lock);
-
-	condWait(common.irq_cond, common.irq_lock, 0);
-
-	*(uint32_t **)data = ((uint32_t *)&common.current);
+	if ((res = condWait(common.irq_cond, common.irq_lock, 1000000)) == 0)
+		*(uint32_t **)data = (uint32_t *)&common.current;
 
 	mutexUnlock(common.irq_lock);
 
-	return EOK;
+	return res;
 }
 
 static int dev_ctl(msg_t *msg)
@@ -469,6 +478,18 @@ static int dev_ctl(msg_t *msg)
 			common.current = 0;
 			return EOK;
 
+		case adc_dev_ctl__reset:
+			return ad7779_init(dev_ctl.reset_hard);
+
+		case adc_dev_ctl__status:
+			res = ad7779_get_status((uint8_t *)&dev_ctl.status);
+			if (res == AD7779_ARG_ERROR)
+				return -EINVAL;
+			if (res != AD7779_OK)
+				return -EIO;
+			memcpy(msg->o.raw, &dev_ctl, sizeof(adc_dev_ctl_t));
+			return EOK;
+
 		case adc_dev_ctl__set_adc_mux:
 			res = ad7779_set_adc_mux((dev_ctl.mux >> 6),
 				(dev_ctl.mux >> 2) & 0b1111);
@@ -484,10 +505,18 @@ static int dev_ctl(msg_t *msg)
 				return -EINVAL;
 			if (res != AD7779_OK)
 				return -EIO;
+			res = ad7779_set_enabled_channels(dev_ctl.config.enabled_ch);
+			if (res == AD7779_ARG_ERROR)
+				return -EINVAL;
+			if (res != AD7779_OK)
+				return -EIO;
 			return EOK;
 
 		case adc_dev_ctl__get_config:
 			res = ad7779_get_sampling_rate(&dev_ctl.config.sampling_rate);
+			if (res != AD7779_OK)
+				return -EIO;
+			res = ad7779_get_enabled_channels(&dev_ctl.config.enabled_ch);
 			if (res != AD7779_OK)
 				return -EIO;
 			dev_ctl.config.channels = AD7779_NUM_OF_CHANNELS;
@@ -511,7 +540,7 @@ static int dev_ctl(msg_t *msg)
 			if (res != AD7779_OK)
 				return -EIO;
 
-			ad7779_chmode_t mode = (dev_ctl.ch_config.ref_monitor_mode << 1) |
+			ad7779_chmode_t mode = dev_ctl.ch_config.ref_monitor_mode +
 				dev_ctl.ch_config.meter_rx_mode;
 
 			res = ad7779_set_channel_mode(dev_ctl.ch_config.channel, mode);
@@ -646,44 +675,58 @@ static int init(void)
 	common.current = 0;
 	common.ocram_ptr = OCRAM2_BASE;
 
-	if ((res = sai_init()) < 0) {
-		log_error("failed to initialize sai");
-		return res;
-	}
+	do {
+		if ((res = sai_init()) < 0) {
+			log_error("failed to initialize sai");
+			break;
+		}
 
-	if ((res = edma_init(edma_error_handler)) != 0) {
-		log_error("failed to initialize edma");
-		return res;
-	}
+		if ((res = edma_init(edma_error_handler)) != 0) {
+			log_error("failed to initialize edma");
+			break;
+		}
 
-	if((res = edma_configure()) != 0) {
-		log_error("failed to configure edma");
-		return res;
-	}
+		if((res = edma_configure()) != 0) {
+			log_error("failed to configure edma");
+			break;
+		}
 
-	if ((res = ad7779_init()) < 0) {
-		log_error("failed to initialize ad7779 (%d)", res);
-		return res;
-	}
+		if ((res = ad7779_init(0)) < 0) {
+			log_error("failed to initialize ad7779 (%d)", res);
+			free_uncached((void *)common.tcds[0].daddr, ADC_BUFFER_SIZE);
+			break;
+		}
 
-	if ((res = dev_init()) < 0) {
-		log_error("device initialization failed");
-		return res;
-	}
+		if ((res = dev_init()) < 0) {
+			log_error("device initialization failed");
+			free_uncached((void *)common.tcds[0].daddr, ADC_BUFFER_SIZE);
+			break;
+		}
+	} while(0);
 
-	return 0;
+	return res;
 }
 
 int main(void)
 {
+	int i;
 	oid_t root;
 
 	/* Wait for the filesystem */
 	while (lookup("/", NULL, &root) < 0)
 		usleep(10000);
 
-	if (init())
+	for (i = 0; i < MAX_INIT_TRIES; ++i) {
+		if (!init())
+			break;
+
+		usleep(100000);
+	}
+
+	if (i == MAX_INIT_TRIES) {
+		log_error("could not init driver.");
 		return -EIO;
+	}
 
 	msg_loop();
 
