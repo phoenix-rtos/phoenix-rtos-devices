@@ -407,6 +407,16 @@ int ad7779_set_sampling_rate(uint32_t fs)
 	return AD7779_OK;
 }
 
+int ad7779_get_enabled_channels(uint8_t *ch)
+{
+	return ad7779_read_reg(AD7779_CH_DISABLE, ch);
+}
+
+int ad7779_set_enabled_channels(uint8_t ch)
+{
+	return ad7779_write_reg(AD7779_CH_DISABLE, ~ch);
+}
+
 int ad7779_get_channel_mode(uint8_t channel, ad7779_chmode_t* mode)
 {
 	int res;
@@ -580,6 +590,36 @@ int ad7779_set_channel_gain_correction(uint8_t channel, uint32_t gain)
 	return AD7779_OK;
 }
 
+int ad7779_get_status(uint8_t *status_buf)
+{
+	uint8_t i, k = 0;
+
+	if (status_buf == NULL)
+		return AD7779_ARG_ERROR;
+
+	for (i = 0; i < 8; ++i) {
+		if (ad7779_read_reg(AD7779_CHn_ERR_REG(i), &status_buf[k++]))
+			return AD7779_CTRL_IO_ERROR;
+	}
+
+	for (i = 0; i < 4; ++i) {
+		if (ad7779_read_reg(AD7779_CH0_1_SAT_ERR + i, &status_buf[k++]))
+			return AD7779_CTRL_IO_ERROR;
+	}
+
+	for (i = 0; i < 2; ++i) {
+		if (ad7779_read_reg(AD7779_GEN_ERR_REG_1 + i * 2, &status_buf[k++]))
+			return AD7779_CTRL_IO_ERROR;
+	}
+
+	for (i = 0; i < 3; ++i) {
+		if (ad7779_read_reg(AD7779_STATUS_REG_1 + i, &status_buf[k++]))
+			return AD7779_CTRL_IO_ERROR;
+	}
+
+	return AD7779_OK;
+}
+
 int ad7779_print_status(void)
 {
 	uint8_t i, tmp;
@@ -632,55 +672,94 @@ static int ad7779_gpio_init(void)
 
 	/* Configure as GPIOs */
 
-	/* Leave /START alone, it is pulled up, as it should be */
-
+	/* /START */
+	pctl.iomux.mux = pctl_mux_gpio_b0_04;
+	platformctl(&pctl);
 	/* /RESET */
 	pctl.iomux.mux = pctl_mux_gpio_b0_05;
 	platformctl(&pctl);
 	/* /CLK_SEL */
 	pctl.iomux.mux = pctl_mux_gpio_b0_06;
 	platformctl(&pctl);
+	/* Hardware reset */
+	pctl.iomux.mux = pctl_mux_gpio_emc_23;
+	platformctl(&pctl);
 
 	pctl.type = pctl_iopad;
 	pctl.iopad.hys = 0;
-	pctl.iopad.pus = 0;
+	pctl.iopad.pus = 0b11;
 	pctl.iopad.pue = 0;
 	pctl.iopad.pke = 1;
 	pctl.iopad.ode = 0;
 	pctl.iopad.speed = 2;
-	pctl.iopad.dse = 6;
-	pctl.iopad.dse = 3;
+	pctl.iopad.dse = 1;
+	pctl.iopad.sre = 0;
 
+	/* /START */
+	pctl.iopad.pad = pctl_pad_gpio_b0_04;
+	platformctl(&pctl);
 	/* /RESET */
 	pctl.iopad.pad = pctl_pad_gpio_b0_05;
 	platformctl(&pctl);
 	/* /CLK_SEL */
 	pctl.iopad.pad = pctl_pad_gpio_b0_06;
 	platformctl(&pctl);
+	/* Hardware reset */
+	pctl.iopad.pad = pctl_pad_gpio_emc_23;
+	platformctl(&pctl);
 
 	/* Set states */
+	gpio_setDir(id_gpio2, 4, 1);
 	gpio_setDir(id_gpio2, 5, 1);
 	gpio_setDir(id_gpio2, 6, 1);
+	gpio_setDir(id_gpio4, 23, 1);
 
+	gpio_setPin(id_gpio2, 4, 1);
 	gpio_setPin(id_gpio2, 5, 1);
 	gpio_setPin(id_gpio2, 6, 1);
+	gpio_setPin(id_gpio4, 23, 0);
 
 	return AD7779_OK;
 }
 
 
-static int ad7779_reset(void)
+static int ad7779_reset(int hard)
 {
+	int i;
+	uint8_t status[17];
+
+	/* Hardware reset */
+	if (hard) {
+		gpio_setPin(id_gpio4, 23, 1);
+		usleep(200000);
+		gpio_setPin(id_gpio4, 23, 0);
+	}
+
+	/* Software reset */
+	gpio_setPin(id_gpio2, 4, 0);
+	usleep(10000);
 	gpio_setPin(id_gpio2, 5, 0);
+	usleep(200000);
+	gpio_setPin(id_gpio2, 4, 1);
 	usleep(100000);
 	gpio_setPin(id_gpio2, 5, 1);
-	usleep(100000);
 
-	return AD7779_OK;
+	memset(status, 0, sizeof(status));
+
+	for (i = 0; i < 4; ++i) {
+		if (!ad7779_get_status(status)) {
+			if (status[16] & 0x10)
+				return AD7779_OK;
+		}
+
+		usleep(100000);
+	}
+
+	return AD7779_CTRL_IO_ERROR;
 }
 
 
-int ad7779_init(void)
+int ad7779_init(int hard)
 {
 	int res;
 
@@ -693,11 +772,16 @@ int ad7779_init(void)
 	if ((res = ad7779_gpio_init()) < 0)
 		return res;
 
-	if ((res = ad7779_reset()) < 0)
+	if ((res = ad7779_reset(hard)) < 0)
 		return res;
 
-	if ((res = ad7779_write_reg(AD7779_CH_DISABLE, 0x00)) < 0)
+	if ((res = ad7779_write_reg(AD7779_CH_DISABLE, 0xFF)) < 0)
 		return res;
+
+	for (int i = 0; i < 8; ++i)
+		if ((res = ad7779_set_channel_mode(i, ad7779_chmode__normal)) < 0)
+			return res;
+
 
 	/* Use external reference with RES_OUT connected to REFx+/REFx- */
 	/* Set meter mux to 280mV */

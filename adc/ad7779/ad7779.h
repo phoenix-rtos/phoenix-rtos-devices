@@ -59,7 +59,7 @@ typedef enum {
 	ad7779_mode__high_resolution,
 } ad7779_mode_t;
 
-int ad7779_init(void);
+int ad7779_init(int hard);
 
 int ad7779_set_adc_mux(ad7779_ref_t ref, ad7779_meter_t meter);
 
@@ -68,6 +68,9 @@ int ad7779_set_mode(ad7779_mode_t mode);
 
 int ad7779_get_sampling_rate(uint32_t *fs);
 int ad7779_set_sampling_rate(uint32_t fs);
+
+int ad7779_get_enabled_channels(uint8_t *ch);
+int ad7779_set_enabled_channels(uint8_t ch);
 
 int ad7779_get_channel_mode(uint8_t channel, ad7779_chmode_t *mode);
 int ad7779_set_channel_mode(uint8_t channel, ad7779_chmode_t mode);
@@ -80,6 +83,8 @@ int ad7779_set_channel_offset(uint8_t channel, uint32_t offset);
 
 int ad7779_get_channel_gain_correction(uint8_t channel, uint32_t *gain);
 int ad7779_set_channel_gain_correction(uint8_t channel, uint32_t gain);
+
+int ad7779_get_status(uint8_t *status_buf);
 
 /* For debugging purposes */
 int ad7779_print_status(void);
