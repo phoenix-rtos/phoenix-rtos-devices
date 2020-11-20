@@ -9,6 +9,7 @@
 SIL ?= @
 MAKEFLAGS += --no-print-directory
 
+
 #TARGET ?= ia32-generic
 #TARGET ?= armv7m3-stm32l152xd
 #TARGET ?= armv7m3-stm32l152xe
@@ -22,6 +23,8 @@ TARGET ?= ia32-generic
 
 include ../phoenix-rtos-build/Makefile.common
 include ../phoenix-rtos-build/Makefile.$(TARGET_SUFF)
+
+CFLAGS += $(BOARD_CONFIG)
 
 
 .PHONY: clean
