@@ -39,8 +39,7 @@ T1 := $(filter-out clean all,$(MAKECMDGOALS))
 ifneq ($(T1),)
 	include $(T1)/Makefile
 .PHONY: $(T1)
-$(T1):
-	@echo >/dev/null
+$(T1): all
 else
 	include _targets/Makefile.$(TARGET_FAMILY)-$(TARGET_SUBFAMILY)
 endif
