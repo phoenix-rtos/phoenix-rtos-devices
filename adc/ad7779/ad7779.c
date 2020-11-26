@@ -46,6 +46,7 @@
 #define AD7779_CH_DISABLE                 (0x08)
 
 #define AD7779_GENERAL_USER_CONFIG_1      (0x11)
+#define ALL_CH_DIS_MCLK_EN                (1 << 7)
 #define POWERMODE_BIT                     (1 << 6)
 #define PDB_REFOUT_BUF                    (1 << 4)
 
@@ -774,6 +775,8 @@ int ad7779_init(int hard)
 
 	if ((res = ad7779_reset(hard)) < 0)
 		return res;
+
+	ad7779_set_clear_bits(AD7779_GENERAL_USER_CONFIG_1, ALL_CH_DIS_MCLK_EN, 0);
 
 	if ((res = ad7779_write_reg(AD7779_CH_DISABLE, 0xFF)) < 0)
 		return res;

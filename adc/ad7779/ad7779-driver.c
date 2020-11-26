@@ -94,8 +94,7 @@ struct driver_common_s
 	uint32_t port;
 	volatile uint32_t current;
 
-	volatile struct edma_tcd_s
-		__attribute__((aligned(32))) tcds[NUM_OF_BUFFERS];
+	volatile struct edma_tcd_s tcds[NUM_OF_BUFFERS];
 
 	addr_t buffer_paddr;
 
@@ -450,7 +449,6 @@ static int dev_read(void *data, size_t size)
 	mutexLock(common.irq_lock);
 	if ((res = condWait(common.irq_cond, common.irq_lock, 1000000)) == 0)
 		*(uint32_t **)data = (uint32_t *)&common.current;
-
 	mutexUnlock(common.irq_lock);
 
 	return res;
@@ -517,6 +515,7 @@ static int dev_ctl(msg_t *msg)
 			if (res != AD7779_OK)
 				return -EIO;
 			res = ad7779_get_enabled_channels(&dev_ctl.config.enabled_ch);
+			dev_ctl.config.enabled_ch = ~dev_ctl.config.enabled_ch;
 			if (res != AD7779_OK)
 				return -EIO;
 			dev_ctl.config.channels = AD7779_NUM_OF_CHANNELS;
