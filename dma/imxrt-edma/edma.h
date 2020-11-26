@@ -43,7 +43,7 @@ struct edma_tcd_s {
 		uint16_t biter_elinkno;
 		uint16_t biter_elinkyes;
 	};
-};
+} __attribute__ ((aligned(32)));
 
 void dmamux_set_source(uint8_t channel, uint8_t source);
 void dmamux_channel_enable(uint8_t channel);
