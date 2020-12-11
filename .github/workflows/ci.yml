@@ -36,20 +36,10 @@ jobs:
           git fetch --force ${{ github.event.repository.git_url }} "+refs/pull/*/head:refs/remotes/origin/pr/*"
           git checkout ${{ github.sha }} || git checkout ${{ github.event.pull_request.head.sha }}
 
-      # alternative checkout -> removes the sumbodule and checkous the current directory instead
-      - name: Update submodule ${{ github.event.repository.name }}
-        if: false
-        uses: actions/checkout@v2
-        with:
-          lfs: true
-          submodules: false
-          path: ${{ github.event.repository.name }}
-
-
       # attach GCC problem matcher... might not work because of submodules... just trying
       - uses: ammaraskar/gcc-problem-matcher@master
 
-      # step 2: use our custom action to build the project
+      # step 3: use our custom action to build the project
       - name: Build
         uses: ./.github/actions/phoenix-build
         with:
@@ -60,7 +50,7 @@ jobs:
           param4: 'project'
           param5: 'image'
 
-      # step 3: upload contents of "_boot" as build artifacts
+      # step 4: upload contents of "_boot" as build artifacts
       - name: Upload build artifacts
         uses: actions/upload-artifact@v2
         with:
