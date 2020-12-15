@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * STM32L4 UART driver
+ * STM32L4 TTY driver
  *
  * Copyright 2017, 2018, 2020 Phoenix Systems
  * Author: Jan Sikorski, Aleksander Kaminski, Andrzej Glowinski
@@ -30,13 +30,13 @@
 #include "tty.h"
 #include "rcc.h"
 
-#define UART1_POS 0
-#define UART2_POS (UART1_POS + UART1)
-#define UART3_POS (UART2_POS + UART2)
-#define UART4_POS (UART3_POS + UART3)
-#define UART5_POS (UART4_POS + UART4)
+#define TTY1_POS 0
+#define TTY2_POS (TTY1_POS + TTY1)
+#define TTY3_POS (TTY2_POS + TTY2)
+#define TTY4_POS (TTY3_POS + TTY3)
+#define TTY5_POS (TTY4_POS + TTY4)
 
-#define UART_CNT (UART1 + UART2 + UART3 + UART4 + UART5)
+#define TTY_CNT (TTY1 + TTY2 + TTY3 + TTY4 + TTY5)
 
 #define THREAD_POOL 3
 #define THREAD_STACKSZ 512
@@ -64,18 +64,18 @@ typedef struct {
 } tty_ctx_t;
 
 
-struct {
+static struct {
 	unsigned char poolstack[THREAD_POOL][THREAD_STACKSZ] __attribute__((aligned(8)));
-	tty_ctx_t ctx[UART_CNT];
+	tty_ctx_t ctx[TTY_CNT];
 
 	unsigned int port;
 } uart_common;
 
 
-static const int uartConfig[] = { UART1, UART2, UART3, UART4, UART5 };
+static const int uartConfig[] = { TTY1, TTY2, TTY3, TTY4, TTY5 };
 
 
-static const int uartPos[] = { UART1_POS, UART2_POS, UART3_POS, UART4_POS, UART5_POS };
+static const int uartPos[] = { TTY1_POS, TTY2_POS, TTY3_POS, TTY4_POS, TTY5_POS };
 
 
 enum { cr1 = 0, cr2, cr3, brr, gtpr, rtor, rqr, isr, icr, rdr, tdr };
@@ -252,7 +252,7 @@ static void tty_setBaudrate(void *uart, speed_t baud)
 }
 
 
-static tty_ctx_t *uart_getCtx(id_t id)
+static tty_ctx_t *tty_getCtx(id_t id)
 {
 	tty_ctx_t *ctx = NULL;
 
@@ -268,7 +268,7 @@ static tty_ctx_t *uart_getCtx(id_t id)
 }
 
 
-static void uart_thread(void *arg)
+static void tty_thread(void *arg)
 {
 	msg_t msg;
 	unsigned long rid;
@@ -288,7 +288,7 @@ static void uart_thread(void *arg)
 		switch (msg.type) {
 		case mtOpen:
 		case mtClose:
-			if ((ctx = uart_getCtx(msg.i.io.oid.id)) == NULL) {
+			if ((ctx = tty_getCtx(msg.i.io.oid.id)) == NULL) {
 				msg.o.io.err = -EINVAL;
 				break;
 			}
@@ -297,7 +297,7 @@ static void uart_thread(void *arg)
 			break;
 
 		case mtWrite:
-			if ((ctx = uart_getCtx(msg.i.io.oid.id)) == NULL) {
+			if ((ctx = tty_getCtx(msg.i.io.oid.id)) == NULL) {
 				msg.o.io.err = -EINVAL;
 				break;
 			}
@@ -305,7 +305,7 @@ static void uart_thread(void *arg)
 			break;
 
 		case mtRead:
-			if ((ctx = uart_getCtx(msg.i.io.oid.id)) == NULL) {
+			if ((ctx = tty_getCtx(msg.i.io.oid.id)) == NULL) {
 				msg.o.io.err = -EINVAL;
 				break;
 			}
@@ -313,7 +313,7 @@ static void uart_thread(void *arg)
 			break;
 
 		case mtGetAttr:
-			if ((ctx = uart_getCtx(msg.i.attr.oid.id)) == NULL) {
+			if ((ctx = tty_getCtx(msg.i.attr.oid.id)) == NULL) {
 				msg.o.attr.val = -EINVAL;
 				break;
 			}
@@ -327,7 +327,7 @@ static void uart_thread(void *arg)
 
 		case mtDevCtl:
 			in_data = ioctl_unpack(&msg, &request, &id);
-			if ((ctx = uart_getCtx(id)) == NULL) {
+			if ((ctx = tty_getCtx(id)) == NULL) {
 				err = -EINVAL;
 			}
 			else {
@@ -345,14 +345,17 @@ static void uart_thread(void *arg)
 }
 
 
-void uart_log(const char *str)
+void tty_log(const char *str)
 {
-	libtty_write(&uart_getCtx(0)->tty_common, str, strlen(str), 0);
+#if TTY_CNT != 0
+	libtty_write(&tty_getCtx(0)->tty_common, str, strlen(str), 0);
+#endif
 }
 
 
-int uart_init(void)
+int tty_init(void)
 {
+#if TTY_CNT != 0
 	unsigned int uart, i;
 	char fname[] = "/dev/uartx";
 	oid_t oid;
@@ -417,7 +420,10 @@ int uart_init(void)
 	portRegister(uart_common.port, "/dev/tty", &oid);
 
 	for (i = 0; i < THREAD_POOL; ++i)
-		beginthread(uart_thread, THREAD_PRIO, uart_common.poolstack[i], sizeof(uart_common.poolstack[i]), (void *)i);
+		beginthread(tty_thread, THREAD_PRIO, uart_common.poolstack[i], sizeof(uart_common.poolstack[i]), (void *)i);
 
 	return EOK;
+#else
+	return 0;
+#endif
 }

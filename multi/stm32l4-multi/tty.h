@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * STM32L4 UART driver
+ * STM32L4 TTY driver
  *
  * Copyright 2017, 2018 Phoenix Systems
  * Author: Aleksander Kaminski
@@ -15,10 +15,10 @@
 #define UART_H_
 
 
-void uart_log(const char *str);
+void tty_log(const char *str);
 
 
-int uart_init(void);
+int tty_init(void);
 
 
 #endif

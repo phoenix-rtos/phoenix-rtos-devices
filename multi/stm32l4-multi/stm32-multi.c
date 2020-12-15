@@ -146,6 +146,15 @@ static void handleMsg(msg_t *msg)
 }
 
 
+static ssize_t console_write(const char *str, size_t len, int mode)
+{
+#if TTY1 || TTY2 || TTY3 || TTY4 || TTY5
+	tty_log(str);
+	return (ssize_t)len;
+#endif
+}
+
+
 static void thread(void *arg)
 {
 	msg_t msg;
@@ -168,7 +177,7 @@ static void thread(void *arg)
 				break;
 
 			case mtWrite:
-				msg.o.io.err = -ENOSYS;
+				msg.o.io.err = console_write(msg.i.data, msg.i.size, msg.i.io.mode);
 				break;
 
 			case mtDevCtl:
@@ -199,12 +208,13 @@ int main(void)
 {
 	int i;
 	oid_t oid;
+	static const char welcome[] = "multidrv: Started\n";
 
 	priority(THREADS_PRIORITY);
 
 	rcc_init();
 	exti_init();
-	uart_init();
+	tty_init();
 	gpio_init();
 	spi_init();
 	adc_init();
@@ -215,7 +225,7 @@ int main(void)
 	portCreate(&common.port);
 	portRegister(common.port, "/multi", &oid);
 
-	uart_log("multidrv: Started\n");
+	console_write(welcome, sizeof(welcome) - 1, 0);
 
 	for (i = 0; i < THREADS_NO - 1; ++i)
 		beginthread(thread, THREADS_PRIORITY, common.stack[i], STACKSZ, (void *)i);
