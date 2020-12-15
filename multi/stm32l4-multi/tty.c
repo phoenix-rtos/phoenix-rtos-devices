@@ -42,7 +42,7 @@
 #define THREAD_STACKSZ 512
 #define THREAD_PRIO 1
 
-
+#if TTY_CNT != 0
 typedef struct {
 	char stack[256] __attribute__ ((aligned(8)));
 
@@ -81,7 +81,7 @@ static const int uartPos[] = { TTY1_POS, TTY2_POS, TTY3_POS, TTY4_POS, TTY5_POS 
 enum { cr1 = 0, cr2, cr3, brr, gtpr, rtor, rqr, isr, icr, rdr, tdr };
 
 
-enum { uart_parnone = 0, uart_pareven, uart_parodd };
+enum { tty_parnone = 0, tty_pareven, tty_parodd };
 
 
 static inline int tty_txready(tty_ctx_t *ctx)
@@ -146,7 +146,7 @@ static int _tty_configure(tty_ctx_t *ctx, char bits, char parity, char enable)
 
 	ctx->enabled = 0;
 
-	if (parity != uart_parnone) {
+	if (parity != tty_parnone) {
 		tcr1 |= 1 << 10;
 		tbits += 1; /* We need one extra for parity */
 	}
@@ -176,7 +176,7 @@ static int _tty_configure(tty_ctx_t *ctx, char bits, char parity, char enable)
 		dataBarier();
 		*(ctx->base + cr1) = tcr1;
 
-		if (parity == uart_parodd)
+		if (parity == tty_parodd)
 			*(ctx->base + cr1) |= 1 << 9;
 		else
 			*(ctx->base + cr1) &= ~(1 << 9);
@@ -201,7 +201,7 @@ static int _tty_configure(tty_ctx_t *ctx, char bits, char parity, char enable)
 static void tty_setCflag(void *uart, tcflag_t *cflag)
 {
 	tty_ctx_t *ctx = (tty_ctx_t *)uart;
-	char bits, parity = uart_parnone;
+	char bits, parity = tty_parnone;
 
 	if ((*cflag & CSIZE) == CS6)
 		bits = 6;
@@ -212,9 +212,9 @@ static void tty_setCflag(void *uart, tcflag_t *cflag)
 
 	if (*cflag & PARENB) {
 		if (*cflag & PARODD)
-			parity = uart_parodd;
+			parity = tty_parodd;
 		else
-			parity = uart_pareven;
+			parity = tty_pareven;
 	}
 
 	if (bits != ctx->bits || parity != ctx->parity) {
@@ -343,6 +343,7 @@ static void tty_thread(void *arg)
 		priority(THREAD_PRIO);
 	}
 }
+#endif
 
 
 void tty_log(const char *str)
@@ -402,7 +403,7 @@ int tty_init(void)
 		ctx->baud = -1;
 
 		/* Set up UART to 9600,8,n,1 16-bit oversampling */
-		_tty_configure(ctx, 8, uart_parnone, 1);
+		_tty_configure(ctx, 8, tty_parnone, 1);
 		tty_setBaudrate(ctx, B9600);
 
 		interrupt(info[uart - usart1].irq, tty_irqHandler, (void *)ctx, ctx->cond, NULL);

@@ -79,6 +79,30 @@ typedef struct {
 } __attribute__((packed)) gpiodef_t;
 
 
+/* UART */
+
+
+typedef struct {
+	int uart;
+	int mode;
+	unsigned int timeout;
+} __attribute__((packed)) uartget_t;
+
+
+typedef struct {
+	int uart;
+} __attribute__((packed)) uartset_t;
+
+
+typedef struct {
+	int uart;
+	unsigned int baud;
+	char enable;
+	char bits;
+	char parity;
+} __attribute__((packed)) uartdef_t;
+
+
 /* SPI */
 
 typedef struct {
@@ -142,6 +166,9 @@ typedef struct {
 		int rtc_calib;
 		rtctimestamp_t rtc_timestamp;
 		i2cmsg_t i2c_msg;
+		uartget_t uart_get;
+		uartset_t uart_set;
+		uartdef_t uart_def;
 		gpiodef_t gpio_def;
 		gpioget_t gpio_get;
 		gpioset_t gpio_set;

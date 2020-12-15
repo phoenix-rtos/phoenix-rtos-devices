@@ -32,6 +32,7 @@
 #include "rtc.h"
 #include "spi.h"
 #include "tty.h"
+#include "uart.h"
 
 #define THREADS_NO 3
 #define THREADS_PRIORITY 1
@@ -138,6 +139,20 @@ static void handleMsg(msg_t *msg)
 			err = gpio_setPort(imsg->gpio_set.port, imsg->gpio_set.mask, imsg->gpio_set.state);
 			break;
 
+		case uart_def:
+			err = uart_configure(imsg->uart_def.uart, imsg->uart_def.bits, imsg->uart_def.parity,
+				imsg->uart_def.baud, imsg->uart_def.enable);
+			break;
+
+		case uart_get:
+			err = uart_read(imsg->uart_get.uart, msg->o.data, msg->o.size,
+				imsg->uart_get.mode, imsg->uart_get.timeout);
+			break;
+
+		case uart_set:
+			err = uart_write(imsg->uart_set.uart, msg->i.data, msg->i.size);
+			break;
+
 		default:
 			err = -EINVAL;
 	}
@@ -151,6 +166,18 @@ static ssize_t console_write(const char *str, size_t len, int mode)
 #if TTY1 || TTY2 || TTY3 || TTY4 || TTY5
 	tty_log(str);
 	return (ssize_t)len;
+#else
+	return uart_write(UART_CONSOLE - 1, str, len);
+#endif
+}
+
+
+static ssize_t console_read(char *str, size_t bufflen, int mode)
+{
+#if TTY1 || TTY2 || TTY3 || TTY4 || TTY5
+	return -ENOSYS;
+#else
+	return uart_read(UART_CONSOLE - 1, str, bufflen, mode, 0);
 #endif
 }
 
@@ -173,7 +200,7 @@ static void thread(void *arg)
 				break;
 
 			case mtRead:
-				msg.o.io.err = -ENOSYS;
+				msg.o.io.err = console_read(msg.o.data, msg.o.size, msg.i.io.mode);
 				break;
 
 			case mtWrite:
@@ -221,6 +248,7 @@ int main(void)
 	rtc_init();
 	flash_init();
 	i2c_init();
+	uart_init();
 
 	portCreate(&common.port);
 	portRegister(common.port, "/multi", &oid);
