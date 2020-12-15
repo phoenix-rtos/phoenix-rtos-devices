@@ -3,7 +3,7 @@
  *
  * STM32L4 multi driver config.
  *
- * Copyright 2018 Phoenix Systems
+ * Copyright 2018, 2020 Phoenix Systems
  * Author: Aleksander Kaminski
  *
  * %LICENSE%
@@ -14,11 +14,11 @@
 #define _CONFIG_H_
 
 #ifndef UART1
-#define UART1 1
+#define UART1 0
 #endif
 
 #ifndef UART2
-#define UART2 1
+#define UART2 0
 #endif
 
 #ifndef UART3
@@ -26,11 +26,36 @@
 #endif
 
 #ifndef UART4
-#define UART4 1
+#define UART4 0
 #endif
 
 #ifndef UART5
 #define UART5 0
+#endif
+
+#ifndef TTY1
+#define TTY1 0
+#endif
+
+#ifndef TTY2
+#define TTY2 0
+#endif
+
+#ifndef TTY3
+#define TTY3 0
+#endif
+
+#ifndef TTY4
+#define TTY4 1
+#endif
+
+#ifndef TTY5
+#define TTY5 0
+#endif
+
+#if (UART1 && TTY1) || (UART2 && TTY2) || (UART3 && TTY3) || \
+	(UART4 && TTY4) || (UART5 && TTY5)
+#error "Can't use UART as UART and TTY at the same time!"
 #endif
 
 #ifndef UART_CONSOLE

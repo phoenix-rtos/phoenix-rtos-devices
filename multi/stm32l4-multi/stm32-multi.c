@@ -31,6 +31,7 @@
 #include "rcc.h"
 #include "rtc.h"
 #include "spi.h"
+#include "tty.h"
 #include "uart.h"
 
 #define THREADS_NO 3
@@ -138,11 +139,46 @@ static void handleMsg(msg_t *msg)
 			err = gpio_setPort(imsg->gpio_set.port, imsg->gpio_set.mask, imsg->gpio_set.state);
 			break;
 
+		case uart_def:
+			err = uart_configure(imsg->uart_def.uart, imsg->uart_def.bits, imsg->uart_def.parity,
+				imsg->uart_def.baud, imsg->uart_def.enable);
+			break;
+
+		case uart_get:
+			err = uart_read(imsg->uart_get.uart, msg->o.data, msg->o.size,
+				imsg->uart_get.mode, imsg->uart_get.timeout);
+			break;
+
+		case uart_set:
+			err = uart_write(imsg->uart_set.uart, msg->i.data, msg->i.size);
+			break;
+
 		default:
 			err = -EINVAL;
 	}
 
 	omsg->err = err;
+}
+
+
+static ssize_t console_write(const char *str, size_t len, int mode)
+{
+#if TTY1 || TTY2 || TTY3 || TTY4 || TTY5
+	tty_log(str);
+	return (ssize_t)len;
+#else
+	return uart_write(UART_CONSOLE - 1, str, len);
+#endif
+}
+
+
+static ssize_t console_read(char *str, size_t bufflen, int mode)
+{
+#if TTY1 || TTY2 || TTY3 || TTY4 || TTY5
+	return -ENOSYS;
+#else
+	return uart_read(UART_CONSOLE - 1, str, bufflen, mode, 0);
+#endif
 }
 
 
@@ -164,11 +200,11 @@ static void thread(void *arg)
 				break;
 
 			case mtRead:
-				msg.o.io.err = -ENOSYS;
+				msg.o.io.err = console_read(msg.o.data, msg.o.size, msg.i.io.mode);
 				break;
 
 			case mtWrite:
-				msg.o.io.err = -ENOSYS;
+				msg.o.io.err = console_write(msg.i.data, msg.i.size, msg.i.io.mode);
 				break;
 
 			case mtDevCtl:
@@ -199,23 +235,25 @@ int main(void)
 {
 	int i;
 	oid_t oid;
+	static const char welcome[] = "multidrv: Started\n";
 
 	priority(THREADS_PRIORITY);
 
 	rcc_init();
 	exti_init();
-	uart_init();
+	tty_init();
 	gpio_init();
 	spi_init();
 	adc_init();
 	rtc_init();
 	flash_init();
 	i2c_init();
+	uart_init();
 
 	portCreate(&common.port);
 	portRegister(common.port, "/multi", &oid);
 
-	uart_log("multidrv: Started\n");
+	console_write(welcome, sizeof(welcome) - 1, 0);
 
 	for (i = 0; i < THREADS_NO - 1; ++i)
 		beginthread(thread, THREADS_PRIORITY, common.stack[i], STACKSZ, (void *)i);

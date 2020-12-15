@@ -11,11 +11,17 @@
  * %LICENSE%
  */
 
-#ifndef UART_H_
-#define UART_H_
+#ifndef _UART_H_
+#define _UART_H_
 
 
-void uart_log(const char *str);
+int uart_configure(int uart, char bits, char parity, unsigned int baud, char enable);
+
+
+int uart_write(int uart, const void *buff, unsigned int bufflen);
+
+
+int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int timeout);
 
 
 int uart_init(void);

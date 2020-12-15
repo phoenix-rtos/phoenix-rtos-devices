@@ -11,49 +11,55 @@
  * %LICENSE%
  */
 
-#ifndef LIBUART_H_
-#define LIBUART_H_
+#ifndef _LIBUART_H_
+#define _LIBUART_H_
 
 #include <sys/threads.h>
-#include <libtty.h>
 
 typedef struct {
-	char stack[256] __attribute__ ((aligned(8)));
-
 	volatile unsigned int *base;
+	unsigned int port;
+	unsigned int baud;
 	volatile int enabled;
-
 	int bits;
-	int parity;
-	int baud;
 
-	handle_t cond;
-	handle_t inth;
-	handle_t irqlock;
+	volatile char * volatile txbeg;
+	volatile char * volatile txend;
 
-	libtty_common_t tty_common;
+	volatile char rxdfifo[64];
+	volatile unsigned int rxdr;
+	volatile unsigned int rxdw;
+	volatile char * volatile rxbeg;
+	volatile char * volatile rxend;
+	volatile unsigned int *read;
 
-	volatile unsigned char rxbuff;
-	volatile int rxready;
-} libuart_ctx_t;
+	handle_t rxlock;
+	handle_t rxcond;
+	handle_t txlock;
+	handle_t txcond;
+	handle_t lock;
+} libuart_ctx;
 
 
 enum { usart1 = 0, usart2, usart3, uart4, uart5 };
 
 
-ssize_t libuart_write(libuart_ctx_t *ctx, const void *buff, size_t bufflen, unsigned int mode);
+enum { uart_mnormal = 0, uart_mnblock };
 
 
-ssize_t libuart_read(libuart_ctx_t *ctx, void *buff, size_t bufflen, unsigned int mode);
+enum { uart_parnone = 0, uart_pareven, uart_parodd };
 
 
-int libuart_getAttr(libuart_ctx_t *ctx, int type);
+int libuart_configure(libuart_ctx *ctx, char bits, char parity, unsigned int baud, char enable);
 
 
-int libuart_devCtl(libuart_ctx_t *ctx, pid_t pid, unsigned int request, const void* inData, const void** outData);
+int libuart_write(libuart_ctx *ctx, const void *buff, unsigned int bufflen);
 
 
-int libuart_init(libuart_ctx_t *ctx, unsigned int uart);
+int libuart_read(libuart_ctx *ctx, void* buff, unsigned int count, char mode, unsigned int timeout);
+
+
+int libuart_init(libuart_ctx *ctx, unsigned int uart);
 
 
 #endif

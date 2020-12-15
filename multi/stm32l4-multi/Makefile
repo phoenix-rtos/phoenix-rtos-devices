@@ -5,8 +5,8 @@
 #
 
 MULTI_PATH = multi/stm32l4-multi/
-MULTIDRV_OBJS = stm32-multi.o rcc.o rtc.o uart.o gpio.o spi.o adc.o flash.o exti.o i2c.o
-MULTIDRV_LIBOBJS = $(addprefix lib/lib, uart.o dma.o spi.o i2c.o aes.o)
+MULTIDRV_OBJS = stm32-multi.o rcc.o rtc.o gpio.o spi.o adc.o flash.o exti.o i2c.o tty.o uart.o
+MULTIDRV_LIBOBJS = $(addprefix lib/lib, dma.o spi.o i2c.o aes.o uart.o)
 SRCHEADERS := $(shell find $(MULTI_PATH)lib -name \*.h)
 
 headers: $(SRCHEADERS)
