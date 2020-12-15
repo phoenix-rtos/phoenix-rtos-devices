@@ -31,7 +31,7 @@
 #include "rcc.h"
 #include "rtc.h"
 #include "spi.h"
-#include "uart.h"
+#include "tty.h"
 
 #define THREADS_NO 3
 #define THREADS_PRIORITY 1
