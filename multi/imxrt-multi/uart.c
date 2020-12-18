@@ -182,33 +182,37 @@ static void set_cflag(void *_uart, tcflag_t* cflag)
 
 static uint32_t calculate_baudrate(speed_t baud)
 {
-	int osr, sbr, bestSbr = 0, bestOsr = 0, bestErr = 1000, t, baud_rate = libtty_baudrate_to_int(baud);
+	uint32_t osr, sbr, bestSbr = 0, bestOsr = 0, bestDiff, t, tDiff, baud_rate;
 
-	if (!baud_rate)
+	bestDiff = baud_rate = (uint32_t)libtty_baudrate_to_int(baud);
+
+	if ((int)baud_rate <= 0) {
 		return 0;
-
-	for (osr = 3; osr < 32; ++osr) {
-		sbr = UART_CLK / (baud_rate * (osr + 1));
-		sbr &= 0xfff;
-		t = UART_CLK / (sbr * (osr + 1));
-
-		if (t > baud_rate)
-			t = ((t - baud_rate) * 1000) / baud_rate;
-		else
-			t = ((baud_rate - t) * 1000) / baud_rate;
-
-		if (t < bestErr) {
-			bestErr = t;
-			bestOsr = osr;
-			bestSbr = sbr;
-		}
-
-		/* Finish if error is < 1% */
-		if (bestErr < 10)
-			break;
 	}
 
-	return (bestOsr << 24) | ((bestOsr <= 6) << 17) | bestSbr;
+	for (osr = 4; osr <= 32; ++osr) {
+		/* find sbr value in range between 1 and 8191 */
+		sbr = (UART_CLK / (baud_rate * osr)) & 0x1fff;
+		sbr = (sbr == 0) ? 1 : sbr;
+
+		/* baud rate difference based on temporary osr and sbr */
+		tDiff = UART_CLK / (osr * sbr) - baud_rate;
+		t = UART_CLK / (osr * (sbr + 1));
+
+		/* select best values between sbr and sbr+1 */
+		if (tDiff > baud_rate - t) {
+			tDiff = baud_rate - t;
+			sbr += (sbr < 0x1fff);
+		}
+
+		if (tDiff <= bestDiff) {
+			bestDiff = tDiff;
+			bestOsr = osr - 1;
+			bestSbr = sbr;
+		}
+	}
+
+	return (bestOsr << 24) | ((bestOsr <= 6) << 17) | (bestSbr & 0x1fff);
 }
 
 
@@ -223,7 +227,7 @@ static void set_baudrate(void *_uart, speed_t baud)
 	/* disable TX and RX */
 	*(uartptr->base + ctrlr) &= ~((1 << 19) | (1 << 18));
 
-	t = *(uartptr->base + baudr) & ~((0x1f << 24) | (1 << 17) | 0xfff);
+	t = *(uartptr->base + baudr) & ~((0x1f << 24) | (1 << 17) | 0x1fff);
 	*(uartptr->base + baudr) = t | reg;
 
 	/* reenable TX and RX */
@@ -487,7 +491,7 @@ int uart_init(void)
 		*(uart->base + pincfgr) &= ~3;
 
 		/* Set 115200 default baudrate */
-		t = *(uart->base + baudr) & ~((0x1f << 24) | (1 << 17) | 0xfff);
+		t = *(uart->base + baudr) & ~((0x1f << 24) | (1 << 17) | 0x1fff);
 		*(uart->base + baudr) = t | calculate_baudrate(B115200);
 
 		/* Set 8 bit and no parity mode */
