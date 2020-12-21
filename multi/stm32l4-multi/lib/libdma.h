@@ -21,7 +21,7 @@ enum { dma_per2mem = 0, dma_mem2per };
 int libdma_configureSpi(int num, int dir, int priority, void *paddr, int msize, int psize, int minc, int pinc);
 
 
-int libdma_transferSpi(int num, void *rx_maddr, void *tx_maddr, size_t len);
+int libdma_transferSpi(int num, void *rx_maddr, const void *tx_maddr, size_t len);
 
 
 int libdma_init(void);

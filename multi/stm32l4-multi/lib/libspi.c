@@ -81,7 +81,7 @@ static unsigned char libspi_readwrite(libspi_ctx_t *ctx, unsigned char txd)
 }
 
 
-static void libspi_readwriteIrq(libspi_ctx_t *ctx, unsigned char *ibuff, unsigned char *obuff, size_t bufflen)
+static void libspi_readwriteIrq(libspi_ctx_t *ctx, unsigned char *ibuff, const unsigned char *obuff, size_t bufflen)
 {
 	ctx->ibuff = ibuff;
 	ctx->obuff = obuff + 1;
@@ -98,7 +98,7 @@ static void libspi_readwriteIrq(libspi_ctx_t *ctx, unsigned char *ibuff, unsigne
 }
 
 
-static void libspi_readwriteDma(libspi_ctx_t *ctx, unsigned char *ibuff, unsigned char *obuff, size_t bufflen)
+static void libspi_readwriteDma(libspi_ctx_t *ctx, unsigned char *ibuff, const unsigned char *obuff, size_t bufflen)
 {
 	unsigned int dmach = (1 << 1) | (ibuff != NULL);
 
@@ -119,10 +119,9 @@ static void libspi_readwriteDma(libspi_ctx_t *ctx, unsigned char *ibuff, unsigne
 }
 
 
-int libspi_transaction(libspi_ctx_t *ctx, int dir, unsigned char cmd, unsigned int addr, unsigned char flags, unsigned char *ibuff, unsigned char *obuff, size_t bufflen)
+int libspi_transaction(libspi_ctx_t *ctx, int dir, unsigned char cmd, unsigned int addr, unsigned char flags, unsigned char *ibuff, const unsigned char *obuff, size_t bufflen)
 {
-	int i;
-	unsigned int addrsz;
+	unsigned int i, addrsz;
 
 	addrsz = (flags >> SPI_ADDRSHIFT) & SPI_ADDRMASK;
 

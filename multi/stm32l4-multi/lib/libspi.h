@@ -24,7 +24,7 @@ typedef struct {
 	volatile uint16_t *base;
 
 	unsigned char *ibuff;
-	unsigned char *obuff;
+	const unsigned char *obuff;
 	size_t cnt;
 
 	int usedma;
@@ -49,7 +49,7 @@ enum { spi_dir_read = 0, spi_dir_write, spi_dir_readwrite };
 
 
 int libspi_transaction(libspi_ctx_t *ctx, int dir, unsigned char cmd, unsigned int addr, unsigned char flags,
-	unsigned char *ibuff, unsigned char *obuff, size_t bufflen);
+	unsigned char *ibuff, const unsigned char *obuff, size_t bufflen);
 
 
 int libspi_configure(libspi_ctx_t *ctx, char mode, char bdiv, int enable);

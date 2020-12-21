@@ -124,13 +124,13 @@ static void _unprepare_transfer(volatile unsigned int *channel_base)
 }
 
 
-static int _has_channel_finished(void *maddr, volatile unsigned int *channel_base)
+static int _has_channel_finished(const void *maddr, volatile unsigned int *channel_base)
 {
 	return (maddr != NULL && *(channel_base + cndtr) > 0);
 }
 
 
-static int _transfer(int dma, int rx_channel, int tx_channel, void *rx_maddr, void *tx_maddr, size_t len)
+static int _transfer(int dma, int rx_channel, int tx_channel, void *rx_maddr, const void *tx_maddr, size_t len)
 {
 	/* Empirically chosen value to avoid mutex+cond overhead for short transactions */
 	int use_interrupts = len > 24;
@@ -144,7 +144,7 @@ static int _transfer(int dma, int rx_channel, int tx_channel, void *rx_maddr, vo
 	if (tx_maddr != NULL)
 		/* When doing rw transfer, avoid unnecessary interrupt handling and condSignal()
 		by waiting only for RX transfer completion, ignoring TX */
-		_prepare_transfer(tx_channel_base, tx_maddr, len, use_interrupts && rx_maddr == NULL);
+		_prepare_transfer(tx_channel_base, (void *)tx_maddr, len, use_interrupts && rx_maddr == NULL);
 
 	if (use_interrupts) {
 		mutexLock(dma_common[dma].irqLock);
@@ -167,7 +167,7 @@ static int _transfer(int dma, int rx_channel, int tx_channel, void *rx_maddr, vo
 }
 
 
-int libdma_transferSpi(int num, void *rx_maddr, void *tx_maddr, size_t len)
+int libdma_transferSpi(int num, void *rx_maddr, const void *tx_maddr, size_t len)
 {
 	int res;
 	volatile unsigned int *tx_channel_base;
