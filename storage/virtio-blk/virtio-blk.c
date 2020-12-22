@@ -29,30 +29,30 @@
 
 /* VirtIO block device request types */
 enum {
-	REQ_READ       = 0x00,   /* Read request */
-	REQ_WRITE      = 0x01,   /* Write request */
+	REQ_READ           = 0x00, /* Read request */
+	REQ_WRITE          = 0x01, /* Write request */
 };
 
 
 typedef struct {
 	/* Header (device read-only) */
-	uint32_t type;           /* Request type */
-	uint32_t reserved;       /* Reserved field (previously request priority) */
-	uint64_t sector;         /* Starting sector (512-byte offset) */
+	uint32_t type;             /* Request type */
+	uint32_t reserved;         /* Reserved field (previously request priority) */
+	uint64_t sector;           /* Starting sector (512-byte offset) */
 
 	/* Footer (device write-only) */
-	volatile uint8_t status; /* Returned status */
+	volatile uint8_t status;   /* Returned status */
 
-	/* VirtIO request descriptors */
-	virtio_seg_t header;     /* Header segment */
-	virtio_seg_t data;       /* Data segment */
-	virtio_seg_t footer;     /* Footer segment */
-	virtio_req_t vreq;       /* VirtIO request */
+	/* VirtIO request segments */
+	virtio_seg_t header;       /* Header segment */
+	virtio_seg_t data;         /* Data segment */
+	virtio_seg_t footer;       /* Footer segment */
+	virtio_req_t vreq;         /* VirtIO request */
 
 	/* Custom helper fields */
-	unsigned int len;        /* Number of bytes written to request buffers */
-	handle_t lock;           /* Request mutex */
-	handle_t cond;           /* Request condition variable */
+	unsigned int len;          /* Number of bytes written to request buffers */
+	handle_t lock;             /* Request mutex */
+	handle_t cond;             /* Request condition variable */
 } virtioblk_req_t;
 
 
@@ -101,9 +101,8 @@ static int virtioblk_int(unsigned int n, void *arg)
 	virtioblk_dev_t *bdev = (virtioblk_dev_t *)arg;
 	virtio_dev_t *vdev = &bdev->vdev;
 
-	//virtqueue_disableIRQ(vdev, &bdev->vq);
-	//bdev->isr = virtio_isr(vdev);
-	*(volatile uint32_t *)((uintptr_t)vdev->info.base.addr + 0x64) = *(volatile uint32_t *)((uintptr_t)vdev->info.base.addr + 0x60);
+	virtqueue_disableIRQ(vdev, &bdev->vq);
+	bdev->isr = virtio_isr(vdev);
 
 	return bdev->cond;
 }
@@ -115,46 +114,30 @@ static void virtioblk_intthr(void *arg)
 	virtioblk_dev_t *bdev = (virtioblk_dev_t *)arg;
 	virtio_dev_t *vdev = &bdev->vdev;
 	virtioblk_req_t *req;
-	unsigned int len, isr;
+	unsigned int len;
 
 	mutexLock(bdev->lock);
-	//bdev->isr = 0;
+	bdev->isr = 0;
 
 	for (;;) {
-		//while (!bdev->isr)
+		while (!(bdev->isr & 0x1))
 			condWait(bdev->cond, bdev->lock, 0);
-		//isr = bdev->isr;
-		//bdev->isr = 0;
-		fprintf(stderr, "Got interrupt!\n");
+		bdev->isr = 0;
 
-		//virtio_isr(vdev);
-		//isr = *(volatile uint32_t *)((uintptr_t)vdev->info.base.addr + 0x60);
-		//*(volatile uint32_t *)((uintptr_t)vdev->info.base.addr + 0x64) = isr;
-
-		// if (!(isr & 0x1))
-		// 	continue;
-		//if ((isr = virtio_read32(vdev, vdev->info.base.addr, 0x60)))
-		
-		//virtio_write32(vdev, vdev->info.base.addr, 0x64, isr);
-		//while (!(virtio_isr(vdev) & 0x01))
-		//while (!(bdev->isr & 0x01))
-			//condWait(bdev->cond, bdev->lock, 0);
-
-		//virtqueue_disableIRQ(vdev, &bdev->vq);
-		//bdev->isr = 0;
 		while ((req = (virtioblk_req_t *)virtqueue_dequeue(vdev, &bdev->vq, &len)) != NULL) {
-			fprintf(stderr, "Got request!\n");
 			req->len = len;
 			condSignal(req->cond);
 		}
-		//virtqueue_enableIRQ(vdev, &bdev->vq);
+		virtqueue_enableIRQ(vdev, &bdev->vq);
 
-		/* Handle requests that came after the last proceseed request and before enabling virtqueue interrupts */
+		/* Get requests that might have come after last virtqueue_dequeue() and before virtqueue_enableIRQ() */
 		while ((req = (virtioblk_req_t *)virtqueue_dequeue(vdev, &bdev->vq, &len)) != NULL) {
 			req->len = len;
 			condSignal(req->cond);
 		}
 	}
+
+	endthread();
 }
 
 
@@ -207,22 +190,17 @@ static ssize_t virtioblk_sendRequest(virtioblk_dev_t *bdev, virtioblk_req_t *req
 
 	mutexLock(req->lock);
 
-	//req->status = 0xff;
+	req->status = 0xff;
 	if ((err = virtqueue_enqueue(vdev, &bdev->vq, &req->vreq)) < 0) {
-		fprintf(stderr, "Enqueue error!\n");
 		mutexUnlock(req->lock);
 		return err;
 	}
-	fprintf(stderr, "Before notify!\n");
 	virtqueue_notify(vdev, &bdev->vq);
-	fprintf(stderr, "After notify!\n");
 
-	//while (req->status == 0xff)
-		sleep(1);
-		//condWait(req->cond, req->lock, 0);
-	
+	while (req->status == 0xff)
+		condWait(req->cond, req->lock, 0);
 	ret = (req->status) ? -EIO : req->len - 1;
-	printf("Ret: %d\n", ret);
+
 	mutexUnlock(req->lock);
 
 	return ret;
@@ -255,6 +233,7 @@ static ssize_t virtioblk_read(virtioblk_dev_t *bdev, void *rctx, offs_t offs, ch
 static ssize_t virtioblk_write(virtioblk_dev_t *bdev, void *rctx, offs_t offs, const char *buff, size_t len)
 {
 	virtioblk_req_t *req = (virtioblk_req_t *)rctx;
+	ssize_t ret;
 
 	if (offs + len > bdev->size) {
 		if (offs > bdev->size)
@@ -269,8 +248,8 @@ static ssize_t virtioblk_write(virtioblk_dev_t *bdev, void *rctx, offs_t offs, c
 	req->vreq.rsegs = 2;
 	req->vreq.wsegs = 1;
 
-	if (virtioblk_sendRequest(bdev, req))
-		return -EIO;
+	if ((ret = virtioblk_sendRequest(bdev, req)) < 0)
+		return ret;
 
 	return len;
 }
@@ -278,15 +257,13 @@ static ssize_t virtioblk_write(virtioblk_dev_t *bdev, void *rctx, offs_t offs, c
 
 static int virtioblk_getattr(virtioblk_dev_t *bdev, int type, int *attr)
 {
-	printf("Attr type: %d\n", type);
 	switch (type) {
 	case atSize:
-		printf("Disk size: %u\n", bdev->size);
 		*attr = bdev->size;
 		break;
 
-	//default:
-		//*attr = -EINVAL;
+	default:
+		*attr = -EINVAL;
 	}
 
 	return EOK;
@@ -371,13 +348,12 @@ static void virtioblk_poolthr(void *arg)
 	msg_t msg;
 
 	if (virtioblk_open(rctx) < 0)
-		return;
+		endthread();
 
 	for (;;) {
 		if (msgRecv(bdev->port, &msg, &rid) < 0)
 			continue;
 
-		fprintf(stderr, "Msg type: %d\n", msg.type);
 		switch (msg.type) {
 		case mtOpen:
 		case mtClose:
@@ -399,11 +375,12 @@ static void virtioblk_poolthr(void *arg)
 		default:
 			msg.o.io.err = -EINVAL;
 		}
-		fprintf(stderr, "Respond\n");
+
 		msgRespond(bdev->port, &msg, rid);
 	}
 
 	virtioblk_close(rctx);
+	endthread();
 }
 
 
@@ -485,19 +462,6 @@ int main(void)
 				free(bdev);
 				continue;
 			}
-			// sleep(1);
-			// unsigned char rctx[sizeof(virtioblk_req_t)];
-			// char buff[512];
-			// virtioblk_open(rctx);
-			// //printf("TEST\n");
-			// ssize_t ret = virtioblk_read(bdev, rctx, 0, buff, 512);
-			// fprintf(stderr, "ret: %d\n", ret);
-			// for (int i = 0; i < sizeof(buff); i += 16) {
-			// 	for (int j = 0; j < 8; j++)
-			// 		printf("%02x%02x ", buff[i + 2 * j + 1],  buff[i + 2 * j]);
-			// 	printf("\n");
-			// }
-			// virtioblk_close(rctx);
 
 			sprintf(path, "/dev/vblk%c", 'a' + nbdevs);
 			if ((err = virtioblk_registerDev(path, bdev)) < 0) {
