@@ -204,7 +204,8 @@ int libspi_configure(libspi_ctx_t *ctx, char mode, char bdiv, int enable)
 
 int libspi_init(libspi_ctx_t *ctx, unsigned int spi, int useDma)
 {
-	libdma_init();
+	if (useDma)
+		libdma_init();
 
 	if (spi > spi3 || ctx == NULL)
 		return -1;
