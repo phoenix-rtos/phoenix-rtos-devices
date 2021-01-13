@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * VirtIO block device driver
+ * VirtIO GPU device driver
  *
  * Copyright 2020 Phoenix Systems
  * Author: Lukasz Kosinski, Michal Slomczynski
@@ -11,13 +11,16 @@
  * %LICENSE%
  */
 
+#include <endian.h>
 #include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #include <sys/interrupt.h>
+#include <sys/mman.h>
 #include <sys/msg.h>
 #include <sys/threads.h>
 #include <sys/types.h>
@@ -25,177 +28,142 @@
 #include <libvirtio.h>
 
 
-// /* Control virtqueue commands */
-// enum {
-// 	DISPLAY_INFO = 0x0100,
-// 	RESOURCE_CREATE_2D,
-// 	RESOURCE_UNREF,
-// 	SET_SCANOUT,
-// 	RESOURCE_FLUSH,
-// 	TRANSFER_TO_HOST_2D,
-// 	RESOURCE_ATTACH_BACKING,
-// 	RESOURCE_DETACH_BACKING,
-// 	GET_CAPSET_INFO,
-// 	GET_CAPSET,
-// 	GET_EDID,
-// };
-
-
-// enum {
-// 	/* curqsor commands */
-// 	UPDATE_curqSOR = 0x0300,
-// 	MOVE_curqSOR,
-// };
-
-// enum {
-// 	/* success responses */
-// 	VIRTIO_GPU_RESP_OK_NODATA = 0x1100,
-// 	VIRTIO_GPU_RESP_OK_DISPLAY_INFO,
-// 	VIRTIO_GPU_RESP_OK_CAPSET_INFO,
-// 	VIRTIO_GPU_RESP_OK_CAPSET,
-// 	VIRTIO_GPU_RESP_OK_EDID,
-// 	VIRTIO_GPU_RESP_ERR_UNSPEC = 0x1200,
-// 	VIRTIO_GPU_RESP_ERR_OUT_OF_MEMORY,
-// 	VIRTIO_GPU_RESP_ERR_INVALID_SCANOUT_ID,
-// 	VIRTIO_GPU_RESP_ERR_INVALID_RESOURCE_ID,
-// 	VIRTIO_GPU_RESP_ERR_INVALID_CONTEXT_ID,
-// 	VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER
-// }
-
-
 typedef struct {
-    virtio_dev_t vdev;
-    virtqueue_t ctlq;
-    virtqueue_t curq;
+	/* Device data */
+	virtio_dev_t vdev;                /* VirtIO device */
+	virtqueue_t ctlq;                 /* Control virtqueue */
+	virtqueue_t curq;                 /* Cursor virtqueue */
+	void *displays[16];               /* Displays buffers */
+	unsigned int ndisplays;           /* Number of connected displays */
+	unsigned int rbmp;                /* Host resources bitmap */
+	handle_t rlock;                   /* Host resources bitmap mutex */
 
 	/* Interrupt handling */
-	volatile unsigned int isr; /* Interrupt status */
-	handle_t lock;             /* Interrupt mutex */
-	handle_t cond;             /* Interrupt condition variable */
-	handle_t inth;             /* Interrupt handle */
+	volatile unsigned int isr;        /* Interrupt status */
+	handle_t lock;                    /* Interrupt mutex */
+	handle_t cond;                    /* Interrupt condition variable */
+	handle_t inth;                    /* Interrupt handle */
 	char istack[2048] __attribute__((aligned(8)));
 } virtiogpu_dev_t;
 
 
 typedef struct {
-	uint32_t type;
-	uint32_t flags;
-	uint64_t fenceId;
-	uint32_t ctxId;
-	uint32_t padding;
-} virtiogpu_hdr_t;
+	uint32_t x;                       /* Horizontal coordinate */
+	uint32_t y;                       /* Vertical coordinate */
+	uint32_t width;                   /* Rectangle width */
+	uint32_t height;                  /* Rectangle height */
+} __attribute__((packed)) virtiogpu_rect_t;
 
 
 typedef struct {
-	uint32_t x;
-	uint32_t y;
-	uint32_t width;
-	uint32_t height;
-} virtiogpu_rect_t;
+	struct {
+		virtiogpu_rect_t r;           /* Display rectangle */
+		uint32_t enabled;             /* Is enabled? */
+		uint32_t flags;               /* Display flags */
+	} pmodes[16];                     /* Displays */
+} __attribute__((packed)) virtiogpu_display_t;
 
 
 typedef struct {
-	virtiogpu_rect_t r;
-	uint32_t enabled;
-	uint32_t flags;
-} virtiogpu_display_t;
+	/* Reguest buffers (accessible by device) */
+	struct {
+		/* Request header (device readable) */
+		struct {
+			uint32_t type;            /* Request/Response type */
+			uint32_t flags;           /* Request flags */
+			uint64_t fence;           /* Request fence ID */
+			uint32_t ctx;             /* 3D rendering context */
+			uint32_t pad;             /* Padding */
+		} __attribute__((packed)) hdr;
 
+		/* Request data (device access depends on request type) */
+		union {
+			/* Displays info request */
+			virtiogpu_display_t info; /* Displays info */
 
-typedef struct {
-	uint32_t scanoutId;
-	uint32_t x;
-	uint32_t y;
-	uint32_t padding;
-} virtiogpu_curqpos_t;
+			/* EDID request */
+			struct {
+				uint32_t size;        /* EDID scanout/size */
+				uint32_t pad;         /* Padding */
+				uint8_t edid[1024];   /* EDID data */
+			} __attribute__((packed)) edid;
 
+			/* Create resource 2D request */
+			struct {
+				uint32_t rid;         /* Resource ID */
+				uint32_t format;      /* Resource format */
+				uint32_t width;       /* Resource width */
+				uint32_t height;      /* Resource height */
+			} __attribute__((packed)) res2D;
 
-typedef struct {
-	virtiogpu_hdr_t hdr;
-	virtiogpu_display_t pmodes[16];
+			/* Unref resource request */
+			struct {
+				uint32_t rid;         /* Resource ID */
+				uint32_t pad;         /* Padding */
+			} __attribute__((packed)) unref;
 
-	virtio_seg_t header;
-	virtio_seg_t footer;
-	virtio_req_t vreq;
+			/* Set scanout request */
+			struct {
+				virtiogpu_rect_t r;   /* Scanout rectangle */
+				uint32_t sid;         /* Scanout ID */
+				uint32_t rid;         /* Resource ID */
+			} __attribute__((packed)) scanout;
+
+			/* Flush scanout request */
+			struct {
+				virtiogpu_rect_t r;   /* Scanout rectangle */
+				uint32_t rid;         /* Resource ID */
+				uint32_t pad;         /* Padding */
+			} __attribute__((packed)) flush;
+
+			/* Transfer resource 2D request */
+			struct {
+				virtiogpu_rect_t r;   /* Buffer rectangle */
+				uint64_t offset;      /* Resource offset */
+				uint32_t rid;         /* Resource ID */
+				uint32_t pad;         /* Padding */
+			} __attribute__((packed)) trans2D;
+
+			/* Attach resource request */
+			struct {
+				uint32_t rid;         /* Resource ID */
+				uint32_t nbuffs;      /* Number of attached buffers (one buffer only) */
+				uint64_t addr;        /* Buffer address */
+				uint32_t len;         /* Buffer length */
+				uint32_t pad;         /* Padding */
+			} __attribute__((packed)) attach;
+
+			/* Detach resource request */
+			struct {
+				uint32_t rid;         /* Resource ID */
+				uint32_t pad;         /* Padding */
+			} __attribute__((packed)) detach;
+
+			/* Update cursor request */
+			struct {
+				struct {
+					uint32_t sid;     /* Scanout ID */
+					uint32_t x;       /* Horizontal coordinate */
+					uint32_t y;       /* Vertical coordinate */
+					uint32_t pad;     /* Padding */
+				} pos;
+				uint32_t rid;         /* Resource ID */
+				uint32_t hx;          /* Hotspot x */
+				uint32_t hy;          /* Hotspot y */
+				uint32_t pad;         /* Padding */
+			} __attribute__((packed)) cursor;
+		};
+	} __attribute__((packed));
+
+	/* VirtIO request segments */
+	virtio_seg_t rseg;                /* Device readable segment */
+	virtio_seg_t wseg;                /* Device writeable segment */
+	virtio_req_t vreq;                /* VirtIO request */
 
 	/* Custom helper fields */
-	handle_t lock;             /* Request mutex */
-	handle_t cond;             /* Request condition variable */
-} virtiogpu_display_info_req_t;
-
-
-// typedef struct {
-// 	virtiogpu_hdr_t hdr;
-// 	union {
-// 		/* Display info */
-// 		struct {
-// 			virtiogpu_display_t pmodes[16];
-// 		};
-// 		/* EDID */
-// 		struct {
-// 			uint32_t size;
-// 			uint32_t padding;
-// 			uint8_t edid[1024];
-// 		};
-// 		/* Resource create 2D */
-// 		struct {
-// 			uint32_t resourceId;
-// 			uint32_t format;
-// 			uint32_t width;
-// 			uint32_t height;
-// 		};
-// 		/* Resource unref */
-// 		struct {
-// 			uint32_t resourceId;
-// 			uint32_t padding;
-// 		};
-// 		/* Set scanout */
-// 		struct {
-// 			virtiogpu_rect_t r;
-// 			uint32_t scnaoutId;
-// 			uint32_t resourceId;
-// 		};
-// 		/* Resource flush */
-// 		struct {
-// 			virtiogpu_rect_t r;
-// 			uint32_t resourceId;
-// 			uint32_t padding;
-// 		};
-// 		/* Transfer to host 2D */
-// 		struct {
-// 			virtiogpu_rect_t r;
-// 			uint64_t offset;
-// 			uint32_t resourceId;
-// 			uint32_t padding;
-// 		};
-// 		/* Resource attach backing */
-// 		struct {
-// 			uint32_t resourceId;
-// 			uint32_t nentries;
-// 		};
-// 		/* Resource deatch backing */
-// 		struct {
-// 			uint32_t resourceId;
-// 			uint32_t padding;
-// 		};
-// 		/* Update curqsors */
-// 		struct {
-// 			virtiogpu_curqpos_t pos;
-// 			uint32_t resourceId;
-// 			uint32_t x;
-// 			uint32_t y;
-// 			uint32_t padding;
-// 		};
-// 	};
-
-// 	virtio_seg_t header;
-// 	virtio_seg_t footer;
-// 	virtio_req_t vreq;
-
-// 	/* Custom helper fields */
-// 	unsigned int len;          /* Number of bytes written to request buffers */
-// 	handle_t lock;             /* Request mutex */
-// 	handle_t cond;             /* Request condition variable */
-// } virtiogpu_req_t;
+	handle_t lock;                    /* Request mutex */
+	handle_t cond;                    /* Request condition variable */
+} virtiogpu_req_t;
 
 
 /* VirtIO GPU devices descriptors */
@@ -216,171 +184,595 @@ static const virtio_devinfo_t info[] = {
 };
 
 
+/* Returns guest endianess */
+static inline int virtiogpu_endian(void)
+{
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+	return 1;
+#else
+	return 0;
+#endif
+}
+
+
+/* Interrupt handler */
 static int virtiogpu_int(unsigned int n, void *arg)
 {
-	virtiogpu_dev_t *gpudev = (virtiogpu_dev_t *)arg;
-	virtio_dev_t *vdev = &gpudev->vdev;
+	virtiogpu_dev_t *vgpu = (virtiogpu_dev_t *)arg;
+	virtio_dev_t *vdev = &vgpu->vdev;
 
-	virtqueue_disableIRQ(vdev, &gpudev->ctlq);
-	virtqueue_disableIRQ(vdev, &gpudev->curq);
-	gpudev->isr = virtio_isr(vdev);
+	virtqueue_disableIRQ(vdev, &vgpu->ctlq);
+	virtqueue_disableIRQ(vdev, &vgpu->curq);
+	vgpu->isr = virtio_isr(vdev);
 
-	return gpudev->cond;
+	return vgpu->cond;
 }
 
+
+/* Interrupt thread */
 static void virtiogpu_intthr(void *arg)
 {
-	virtiogpu_dev_t *gpudev = (virtiogpu_dev_t *)arg;
-	virtio_dev_t *vdev = &gpudev->vdev;
-	//virtiogpu_req_t *req;
+	virtiogpu_dev_t *vgpu = (virtiogpu_dev_t *)arg;
+	virtio_dev_t *vdev = &vgpu->vdev;
+	virtiogpu_req_t *req;
 
-	mutexLock(gpudev->lock);
-	gpudev->isr = 0;
+	mutexLock(vgpu->lock);
+	vgpu->isr = 0;
 
 	for (;;) {
-		while (!gpudev->isr)
-			condWait(gpudev->cond, gpudev->lock, 0);
-		gpudev->isr = 0;
+		while (!vgpu->isr)
+			condWait(vgpu->cond, vgpu->lock, 0);
 
-		printf("INT!\n");
+		if (vgpu->isr & (1 << 0)) {
+			while ((req = virtqueue_dequeue(vdev, &vgpu->ctlq, NULL)) != NULL)
+				condSignal(req->cond);
 
-		// if (gpudev->isr & 0x01) {
-		// 	/* Get processed requests */
+			while ((req = virtqueue_dequeue(vdev, &vgpu->curq, NULL)) != NULL)
+				condSignal(req->cond);
+		}
 
-		// }
-		// else if (gpudev->isr & 0x02) {
-		// 	/* Handle configuration change */
-		// }
-		// gpudev->isr = 0;
-		// virtqueue_enableIRQ(vdev, &gpudev->ctlq);
-		// virtqueue_enableIRQ(vdev, &gpudev->curq);
+		if (vgpu->isr & (1 << 1)) {
+			/* Handle configuration change */
+			printf("Configuration changed!\n");
+		}
+
+		vgpu->isr = 0;
+		virtqueue_enableIRQ(vdev, &vgpu->ctlq);
+		virtqueue_enableIRQ(vdev, &vgpu->curq);
+
+		/* Get requests that might have come after last virtqueue_dequeue() and before virtqueue_enableIRQ() */
+		if (vgpu->isr & (1 << 0)) {
+			while ((req = virtqueue_dequeue(vdev, &vgpu->ctlq, NULL)) != NULL)
+				condSignal(req->cond);
+
+			while ((req = virtqueue_dequeue(vdev, &vgpu->curq, NULL)) != NULL)
+				condSignal(req->cond);
+		}
 	}
 }
 
-// static ssize_t virtiogpu_ctlqSendRequest(virtiogpu_dev_t *gpudev, virtiogpu_req_t *req)
-// {
-// 	virtio_dev_t *vdev = &gpudev->vdev;
-// 	int err;
 
-// 	mutexLock(req->lock);
-
-// 	if ((err = virtqueue_enqueue(vdev, &gpudev->ctlq, &req->vreq)) < 0) {
-// 		mutexUnlock(req->lock);
-// 		return err;
-// 	}
-// 	virtqueue_notify(vdev, &gpudev->ctlq);
-
-// 	while (req->hdr.type < 0x10b && req->hdr.type > 0x100)
-// 		condWait(req->cond, req->lock, 0);
-// }
-
-// static ssize_t virtiogpu_curqSendRequest(virtiogpu_dev_t *gpudev, virtiogpu_req_t *req)
-// {
-// 	virtio_dev_t *vdev = &gpudev->vdev;
-// 	int err;
-
-// 	mutexLock(req->lock);
-
-// 	if ((err = virtqueue_enqueue(vdev, &gpudev->curq)), virtqueue_e)
-// }
-
-
-static int virtiogpu_displayInfo(virtiogpu_dev_t *gpudev)
+/* Sends request to device */
+static int _virtiogpu_send(virtiogpu_dev_t *vgpu, virtqueue_t *vq, virtiogpu_req_t *req, unsigned int resp)
 {
-	virtio_dev_t *vdev = &gpudev->vdev;
-	virtiogpu_display_info_req_t req;
+	virtio_dev_t *vdev = &vgpu->vdev;
+	uint32_t cmd = req->hdr.type;
 	int err;
 
-	if ((err = mutexCreate(&req.lock)) < 0)
+	if ((err = virtqueue_enqueue(vdev, vq, &req->vreq)) < 0)
 		return err;
+	virtqueue_notify(vdev, vq);
 
-	if ((err = condCreate(&req.cond)) < 0) {
-		resourceDestroy(req.lock);
+	/* TODO: fix race condition */
+	while (req->hdr.type == cmd)
+		condWait(req->cond, req->lock, 0);
+
+	if (le32toh(req->hdr.type) != resp)
+		return -EFAULT;
+
+	return EOK;
+}
+
+
+/* Opens request context */
+static virtiogpu_req_t *virtiogpu_open(void)
+{
+	virtiogpu_req_t *req;
+
+	if ((req = mmap(NULL, (sizeof(virtiogpu_req_t) + _PAGE_SIZE - 1) & ~(_PAGE_SIZE - 1), PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_ANONYMOUS, OID_CONTIGUOUS, 0)) == MAP_FAILED)
+		return NULL;
+
+	if (mutexCreate(&req->lock) < 0) {
+		munmap(req, (sizeof(virtiogpu_req_t) + _PAGE_SIZE - 1) & ~(_PAGE_SIZE - 1));
+		return NULL;
+	}
+
+	if (condCreate(&req->cond) < 0) {
+		resourceDestroy(req->lock);
+		munmap(req, (sizeof(virtiogpu_req_t) + _PAGE_SIZE - 1) & ~(_PAGE_SIZE - 1));
+		return NULL;
+	}
+
+	req->rseg.prev = &req->wseg;
+	req->rseg.next = &req->wseg;
+	req->wseg.prev = &req->rseg;
+	req->wseg.next = &req->rseg;
+	req->vreq.segs = &req->rseg;
+	req->vreq.rsegs = 1;
+	req->vreq.wsegs = 1;
+
+	return req;
+}
+
+
+/* Closes request context */
+static void virtiogpu_close(virtiogpu_req_t *req)
+{
+	resourceDestroy(req->cond);
+	resourceDestroy(req->lock);
+	munmap(req, (sizeof(virtiogpu_req_t) + _PAGE_SIZE - 1) & ~(_PAGE_SIZE - 1));
+}
+
+
+/* Retrieves display info */
+static int virtiogpu_displayInfo(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, virtiogpu_display_t *info)
+{
+	int i, err;
+
+	mutexLock(req->lock);
+
+	req->rseg.buff = &req->hdr;
+	req->rseg.len = sizeof(req->hdr);
+	req->wseg.buff = &req->hdr;
+	req->wseg.len = sizeof(req->hdr) + sizeof(req->info);
+
+	req->hdr.type = htole32(0x100);
+	req->hdr.flags = htole32(1 << 0);
+
+	if ((err = _virtiogpu_send(vgpu, &vgpu->ctlq, req, 0x1101)) < 0) {
+		mutexUnlock(req->lock);
 		return err;
 	}
 
-	req.header.buff = &req;
-	req.header.len = sizeof(req.hdr);
-	req.header.prev = &req.footer;
-	req.header.next = &req.footer;
-	req.footer.buff = &req;
-	req.footer.len = sizeof(req.hdr) + sizeof(req.pmodes);
-	req.footer.prev = &req.header;
-	req.footer.next = &req.header;
-	req.vreq.segs = &req.header;
-	req.vreq.rsegs = 1;
-	req.vreq.wsegs = 1;
+	for (i = 0; i < sizeof(info->pmodes) / sizeof(info->pmodes[0]); i++) {
+		info->pmodes[i].r.x = le32toh(req->info.pmodes[i].r.x);
+		info->pmodes[i].r.y = le32toh(req->info.pmodes[i].r.y);
+		info->pmodes[i].r.width = le32toh(req->info.pmodes[i].r.width);
+		info->pmodes[i].r.height = le32toh(req->info.pmodes[i].r.height);
+		info->pmodes[i].enabled = le32toh(req->info.pmodes[i].enabled);
+		info->pmodes[i].flags = le32toh(req->info.pmodes[i].flags);
+	}
 
-	mutexLock(req.lock);
+	mutexUnlock(req->lock);
 
-	req.hdr.type = 0x100;
-	req.hdr.fenceId = 0x1;
+	return EOK;
+}
 
-	virtqueue_enqueue(vdev, &gpudev->ctlq, &req.vreq);
-	virtqueue_notify(vdev, &gpudev->ctlq);
 
-	// while (req.hdr.type == 0x100)
-	// 	condWait(req.cond, req.lock, 0);
-	sleep(1);
+/* Retrieves display EDID */
+static int virtiogpu_EDID(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsigned int sid, void *edid)
+{
+	int err;
 
-	printf("Width: %u, Height: %u, Enabled: %u\n", req.pmodes[0].r.width, req.pmodes[0].r.height, req.pmodes[0].enabled);
-	printf("Type: %#x\n", req.hdr.type);
-	resourceDestroy(req.lock);
-	resourceDestroy(req.cond);
+	if (!(virtio_readFeatures(&vgpu->vdev) & (1ULL << 1)))
+		return -ENOTSUP;
 
-	return 0;
+	mutexLock(req->lock);
+	mutexLock(vgpu->rlock);
+
+	req->rseg.buff = &req->hdr;
+	req->rseg.len = sizeof(req->hdr) + sizeof(req->edid) - sizeof(req->edid.edid);
+	req->wseg.buff = &req->hdr;
+	req->wseg.len = sizeof(req->hdr) + sizeof(req->edid);
+
+	req->hdr.type = htole32(0x10a);
+	req->hdr.flags = htole32(1 << 0);
+	req->edid.size = htole32(sid);
+
+	if ((err = _virtiogpu_send(vgpu, &vgpu->ctlq, req, 0x1104)) < 0) {
+		mutexUnlock(vgpu->rlock);
+		mutexUnlock(req->lock);
+		return err;
+	}
+	memcpy(edid, req->edid.edid, sizeof(req->edid.edid));
+
+	mutexUnlock(vgpu->rlock);
+	mutexUnlock(req->lock);
+
+	return EOK;
+}
+
+
+/* Creates 2D resource */
+static int virtiogpu_resource2D(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsigned int format, unsigned int width, unsigned int height)
+{
+	int err, ret;
+
+	mutexLock(req->lock);
+	mutexLock(vgpu->rlock);
+
+	req->rseg.buff = &req->hdr;
+	req->rseg.len = sizeof(req->hdr) + sizeof(req->res2D);
+	req->wseg.buff = &req->hdr;
+	req->wseg.len = sizeof(req->hdr);
+
+	req->hdr.type = htole32(0x101);
+	req->hdr.flags = htole32(1 << 0);
+	req->res2D.format = htole32(format);
+	req->res2D.width = htole32(width);
+	req->res2D.height = htole32(height);
+	req->res2D.rid = htole32(1 << (__builtin_ffsl(vgpu->rbmp) - 1));
+
+	if ((err = _virtiogpu_send(vgpu, &vgpu->ctlq, req, 0x1100)) < 0) {
+		mutexUnlock(vgpu->rlock);
+		mutexUnlock(req->lock);
+		return err;
+	}
+	ret = le32toh(req->res2D.rid);
+	vgpu->rbmp &= ~ret;
+
+	mutexUnlock(vgpu->rlock);
+	mutexUnlock(req->lock);
+
+	return ret;
+}
+
+
+/* Destroys resource */
+static int virtiogpu_unref(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsigned int rid)
+{
+	int err;
+
+	mutexLock(req->lock);
+	mutexLock(vgpu->rlock);
+
+	req->rseg.buff = &req->hdr;
+	req->rseg.len = sizeof(req->hdr) + sizeof(req->unref);
+	req->wseg.buff = &req->hdr;
+	req->wseg.len = sizeof(req->hdr);
+
+	req->hdr.type = htole32(0x102);
+	req->hdr.flags = htole32(1 << 0);
+	req->unref.rid = htole32(rid);
+
+	if ((err = _virtiogpu_send(vgpu, &vgpu->ctlq, req, 0x1100)) < 0) {
+		mutexUnlock(vgpu->rlock);
+		mutexUnlock(req->lock);
+		return err;
+	}
+	vgpu->rbmp |= rid;
+
+	mutexUnlock(vgpu->rlock);
+	mutexUnlock(req->lock);
+
+	return EOK;
+}
+
+
+/* Sets scanout buffer for display */
+static int virtiogpu_scanout(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsigned int x, unsigned int y, unsigned int w, unsigned int h, unsigned int sid, unsigned int rid)
+{
+	int err;
+
+	mutexLock(req->lock);
+	mutexLock(vgpu->rlock);
+
+	req->rseg.buff = &req->hdr;
+	req->rseg.len = sizeof(req->hdr) + sizeof(req->scanout);
+	req->wseg.buff = &req->hdr;
+	req->wseg.len = sizeof(req->hdr);
+
+	req->hdr.type = htole32(0x103);
+	req->hdr.flags = htole32(1 << 0);
+	req->scanout.r.x = htole32(x);
+	req->scanout.r.y = htole32(y);
+	req->scanout.r.width = htole32(w);
+	req->scanout.r.height = htole32(h);
+	req->scanout.sid = htole32(sid);
+	req->scanout.rid = htole32(rid);
+
+	if ((err = _virtiogpu_send(vgpu, &vgpu->ctlq, req, 0x1100)) < 0) {
+		mutexUnlock(vgpu->rlock);
+		mutexUnlock(req->lock);
+		return err;
+	}
+
+	mutexUnlock(vgpu->rlock);
+	mutexUnlock(req->lock);
+
+	return EOK;
+}
+
+
+/* Flushes resource to display */
+static int virtiogpu_flush(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsigned int x, unsigned int y, unsigned int w, unsigned int h, unsigned int rid)
+{
+	int err;
+
+	mutexLock(req->lock);
+	mutexLock(vgpu->rlock);
+
+	req->rseg.buff = &req->hdr;
+	req->rseg.len = sizeof(req->hdr) + sizeof(req->flush);
+	req->wseg.buff = &req->hdr;
+	req->wseg.len = sizeof(req->hdr);
+
+	req->hdr.type = htole32(0x104);
+	req->hdr.flags = htole32(1 << 0);
+	req->flush.r.x = htole32(x);
+	req->flush.r.y = htole32(y);
+	req->flush.r.width = htole32(w);
+	req->flush.r.height = htole32(h);
+	req->flush.rid = htole32(rid);
+
+	if ((err = _virtiogpu_send(vgpu, &vgpu->ctlq, req, 0x1100)) < 0) {
+		mutexUnlock(vgpu->rlock);
+		mutexUnlock(req->lock);
+		return err;
+	}
+
+	mutexUnlock(vgpu->rlock);
+	mutexUnlock(req->lock);
+
+	return EOK;
+}
+
+
+/* Transfers data to host resource from underlying guest buffer */
+static int virtiogpu_transfer2D(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsigned int x, unsigned int y, unsigned int w, unsigned int h, unsigned int offs, unsigned int rid)
+{
+	int err;
+
+	mutexLock(req->lock);
+	mutexLock(vgpu->rlock);
+
+	req->rseg.buff = &req->hdr;
+	req->rseg.len = sizeof(req->hdr) + sizeof(req->trans2D);
+	req->wseg.buff = &req->hdr;
+	req->wseg.len = sizeof(req->hdr);
+
+	req->hdr.type = htole32(0x105);
+	req->hdr.flags = htole32(1 << 0);
+	req->trans2D.r.x = htole32(x);
+	req->trans2D.r.y = htole32(y);
+	req->trans2D.r.width = htole32(w);
+	req->trans2D.r.height = htole32(h);
+	req->trans2D.offset = htole64(offs);
+	req->trans2D.rid = htole32(rid);
+
+	if ((err = _virtiogpu_send(vgpu, &vgpu->ctlq, req, 0x1100)) < 0) {
+		mutexUnlock(vgpu->rlock);
+		mutexUnlock(req->lock);
+		return err;
+	}
+
+	mutexUnlock(vgpu->rlock);
+	mutexUnlock(req->lock);
+
+	return EOK;
+}
+
+
+/* Attaches guest buffer to host resource */
+static int virtiogpu_attach(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsigned int rid, void *buff, unsigned int len)
+{
+	int err;
+
+	mutexLock(req->lock);
+	mutexLock(vgpu->rlock);
+
+	req->rseg.buff = &req->hdr;
+	req->rseg.len =  sizeof(req->hdr) + sizeof(req->attach);
+	req->wseg.buff = &req->hdr;
+	req->wseg.len = sizeof(req->hdr);
+
+	req->hdr.type = htole32(0x106);
+	req->hdr.flags = htole32(1 << 0);
+	req->attach.rid = htole32(rid);
+	req->attach.nbuffs = htole32(1);
+	req->attach.addr = htole64(va2pa(buff));
+	req->attach.len = htole32(len);
+
+	if ((err = _virtiogpu_send(vgpu, &vgpu->ctlq, req, 0x1100)) < 0) {
+		mutexUnlock(vgpu->rlock);
+		mutexUnlock(req->lock);
+		return err;
+	}
+
+	mutexUnlock(vgpu->rlock);
+	mutexUnlock(req->lock);
+
+	return EOK;
+}
+
+
+/* Detaches guest buffer from resource */
+static int virtiogpu_detach(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsigned int rid)
+{
+	int err;
+
+	mutexLock(req->lock);
+	mutexLock(vgpu->rlock);
+
+	req->rseg.buff = &req->hdr;
+	req->rseg.len =  sizeof(req->hdr) + sizeof(req->detach);
+	req->wseg.buff = &req->hdr;
+	req->wseg.len = sizeof(req->hdr);
+
+	req->hdr.type = htole32(0x107);
+	req->hdr.flags = htole32(1 << 0);
+	req->detach.rid = htole32(rid);
+
+	if ((err = _virtiogpu_send(vgpu, &vgpu->ctlq, req, 0x1100)) < 0) {
+		mutexUnlock(vgpu->rlock);
+		mutexUnlock(req->lock);
+		return err;
+	}
+
+	mutexUnlock(vgpu->rlock);
+	mutexUnlock(req->lock);
+
+	return EOK;
+}
+
+
+/* Updates cursor icon and its position */
+static int virtiogpu_cursorUpdate(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsigned int x, unsigned int y, unsigned hx, unsigned hy, unsigned int sid, unsigned int rid)
+{
+	int err;
+
+	mutexLock(req->lock);
+	mutexLock(vgpu->rlock);
+
+	req->rseg.buff = &req->hdr;
+	req->rseg.len = sizeof(req->hdr) + sizeof(req->cursor);
+	req->wseg.buff = &req->hdr;
+	req->wseg.len = sizeof(req->hdr);
+
+	req->hdr.type = htole32(0x300);
+	req->hdr.flags = htole32(1 << 0);
+	req->cursor.pos.sid = htole32(sid);
+	req->cursor.pos.x = htole32(x);
+	req->cursor.pos.y = htole32(y);
+	req->cursor.rid = htole32(rid);
+	req->cursor.hx = htole32(hx);
+	req->cursor.hy = htole32(hy);
+
+	if ((err = _virtiogpu_send(vgpu, &vgpu->ctlq ,req, 0x1100)) < 0) {
+		mutexUnlock(vgpu->rlock);
+		mutexUnlock(req->lock);
+		return err;
+	}
+
+	mutexUnlock(vgpu->rlock);
+	mutexUnlock(req->lock);
+
+	return EOK;
+}
+
+
+/* Moves cursor */
+static int virtiogpu_cursorMove(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsigned int x, unsigned int y, unsigned int sid)
+{
+	int err;
+
+	mutexLock(req->lock);
+	mutexLock(vgpu->rlock);
+
+	req->rseg.buff = &req->hdr;
+	req->rseg.len =  sizeof(req->hdr) + sizeof(req->cursor);
+	req->wseg.buff = &req->hdr;
+	req->wseg.len = sizeof(req->hdr);
+
+	req->hdr.type = htole32(0x301);
+	req->hdr.flags = htole32(1 << 0);
+	req->cursor.pos.sid = htole32(sid);
+	req->cursor.pos.x = htole32(x);
+	req->cursor.pos.y = htole32(y);
+
+	if ((err = _virtiogpu_send(vgpu, &vgpu->ctlq ,req, 0x1100)) < 0) {
+		mutexUnlock(vgpu->rlock);
+		mutexUnlock(req->lock);
+		return err;
+	}
+
+	mutexUnlock(vgpu->rlock);
+	mutexUnlock(req->lock);
+
+	return EOK;
 }
 
 
 /* Initializes device */
-static int virtiogpu_initDev(virtiogpu_dev_t *gpudev)
+static int virtiogpu_initDev(virtiogpu_dev_t *vgpu)
 {
-	virtio_dev_t *vdev = &gpudev->vdev;
-	int err;
+	virtio_dev_t *vdev = &vgpu->vdev;
+	virtiogpu_display_t info;
+	virtiogpu_req_t *req;
+	int i, rid, err;
 
 	if ((err = virtio_initDev(vdev)) < 0)
 		return err;
 
 	do {
-		if ((err = virtio_writeFeatures(vdev, 0)) < 0)
+		/* Negotiate EDID support */
+		if ((err = virtio_writeFeatures(vdev, (1 << 1))) < 0)
 			break;
 
-		if ((err = virtqueue_init(vdev, &gpudev->ctlq, 0, 128)) < 0)
+		/* Get number of connected displays */
+		vgpu->ndisplays = virtio_readConfig32(vdev, 0x08);
+
+		if ((err = virtqueue_init(vdev, &vgpu->ctlq, 0, 64)) < 0)
 			break;
 
-        if ((err = virtqueue_init(vdev, &gpudev->curq, 1, 32)) < 0)
+		if ((err = virtqueue_init(vdev, &vgpu->curq, 1, 16)) < 0)
 			break;
 
-		if ((err = mutexCreate(&gpudev->lock)) < 0) {
-			virtqueue_destroy(vdev, &gpudev->ctlq);
-			virtqueue_destroy(vdev, &gpudev->curq);
-			break;
-		}
-
-		if ((err = condCreate(&gpudev->cond)) < 0) {
-			resourceDestroy(gpudev->lock);
-			virtqueue_destroy(vdev, &gpudev->ctlq);
-			virtqueue_destroy(vdev, &gpudev->curq);
+		if ((err = mutexCreate(&vgpu->lock)) < 0) {
+			virtqueue_destroy(vdev, &vgpu->ctlq);
+			virtqueue_destroy(vdev, &vgpu->curq);
 			break;
 		}
 
-		if ((err = beginthread(virtiogpu_intthr, 4, gpudev->istack, sizeof(gpudev->istack), gpudev)) < 0) {
-			resourceDestroy(gpudev->cond);
-			resourceDestroy(gpudev->lock);
-			virtqueue_destroy(vdev, &gpudev->ctlq);
-			virtqueue_destroy(vdev, &gpudev->curq);
+		if ((err = condCreate(&vgpu->cond)) < 0) {
+			resourceDestroy(vgpu->lock);
+			virtqueue_destroy(vdev, &vgpu->ctlq);
+			virtqueue_destroy(vdev, &vgpu->curq);
 			break;
 		}
 
-		if ((err = interrupt(vdev->info.irq, virtiogpu_int, gpudev, gpudev->cond, &gpudev->inth)) < 0) {
-			resourceDestroy(gpudev->cond);
-			resourceDestroy(gpudev->lock);
-			virtqueue_destroy(vdev, &gpudev->ctlq);
-			virtqueue_destroy(vdev, &gpudev->curq);
+		if ((err = beginthread(virtiogpu_intthr, 4, vgpu->istack, sizeof(vgpu->istack), vgpu)) < 0) {
+			resourceDestroy(vgpu->cond);
+			resourceDestroy(vgpu->lock);
+			virtqueue_destroy(vdev, &vgpu->ctlq);
+			virtqueue_destroy(vdev, &vgpu->curq);
+			break;
+		}
+
+		if ((err = interrupt(vdev->info.irq, virtiogpu_int, vgpu, vgpu->cond, &vgpu->inth)) < 0) {
+			resourceDestroy(vgpu->cond);
+			resourceDestroy(vgpu->lock);
+			virtqueue_destroy(vdev, &vgpu->ctlq);
+			virtqueue_destroy(vdev, &vgpu->curq);
 			break;
 		}
 
 		virtio_writeStatus(vdev, virtio_readStatus(vdev) | (1 << 2));
+
+		/* Initialize resources bitmap */
+		vgpu->rbmp = 0xffffffff;
+
+		if ((req = virtiogpu_open()) == NULL) {
+			err = -ENOMEM;
+			break;
+		}
+
+		/* Initialize displays */
+		for (i = 0; i < vgpu->ndisplays; i++) {
+			if ((err = virtiogpu_displayInfo(vgpu, req, &info)) < 0)
+				break;
+
+			if ((rid = virtiogpu_resource2D(vgpu, req, virtiogpu_endian() ? 121 : 3, info.pmodes[0].r.width, info.pmodes[0].r.height)) < 0) {
+				err = rid;
+				break;
+			}
+
+			if ((vgpu->displays[i] = mmap(NULL, (4 * info.pmodes[0].r.width * info.pmodes[0].r.height + _PAGE_SIZE - 1) & ~(_PAGE_SIZE - 1), PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_ANONYMOUS, OID_CONTIGUOUS, 0)) == MAP_FAILED) {
+				err = -ENOMEM;
+				break;
+			}
+
+			if ((err = virtiogpu_attach(vgpu, req, rid, vgpu->displays[i], 4 * info.pmodes[0].r.width * info.pmodes[0].r.height)) < 0)
+				break;
+
+			if ((err = virtiogpu_scanout(vgpu, req, 0, 0, info.pmodes[0].r.width, info.pmodes[0].r.height, i, rid)) < 0)
+				break;
+		}
+
+		if (err < 0)
+			break;
+
+		virtiogpu_close(req);
 
 		return EOK;
 	} while (0);
@@ -394,12 +786,12 @@ static int virtiogpu_initDev(virtiogpu_dev_t *gpudev)
 
 int main(void)
 {
-    virtiogpu_dev_t *gpudev;
+	virtiogpu_dev_t *vgpu;
 	virtio_dev_t vdev;
 	virtio_ctx_t vctx;
 	//char path[16];
 	oid_t oid;
-	int i, err, ngpudevs = 0;
+	int i, err, nvgpus = 0;
 
 	/* Wait for console */
 	while (write(STDOUT_FILENO, "", 0) < 0)
@@ -411,12 +803,12 @@ int main(void)
 
 	virtio_init();
 
-	/* Detect and initialize VirtIO block devices */
+	/* Detect and initialize VirtIO GPU devices */
 	for (i = 0; info[i].type != vdevNONE; i++) {
 		vctx.reset = 1;
 		while ((err = virtio_find(&info[i], &vdev, &vctx)) != -ENODEV) {
 			if (err < 0) {
-				fprintf(stderr, "virtio-blk: failed to process VirtIO %s block device ", (info[i].type == vdevPCI) ? "PCI" : "MMIO");
+				fprintf(stderr, "virtio-gpu: failed to process VirtIO %s GPU device ", (info[i].type == vdevPCI) ? "PCI" : "MMIO");
 				if (info[i].base.len)
 					fprintf(stderr, "direct descriptor, base: %p. ", info[i].base.addr);
 				else
@@ -425,28 +817,19 @@ int main(void)
 				continue;
 			}
 
-			if ((gpudev = malloc(sizeof(virtiogpu_dev_t))) == NULL) {
+			if ((vgpu = malloc(sizeof(virtiogpu_dev_t))) == NULL) {
 				fprintf(stderr, "virtio-gpu: out of memory\n");
 				return -ENOMEM;
 			}
-			gpudev->vdev = vdev;
+			vgpu->vdev = vdev;
 
-			if ((err = virtiogpu_initDev(gpudev)) < 0) {
+			if ((err = virtiogpu_initDev(vgpu)) < 0) {
 				if (err != -ENODEV)
 					fprintf(stderr, "virtio-gpu: failed to init VirtIO GPU device, base: %p. Skipping...\n", vdev.info.base.addr);
-				free(gpudev);
+				free(vgpu);
 				continue;
 			}
-            printf("Intialized GPU %d\n", ngpudevs);
-			virtiogpu_displayInfo(gpudev);
-			// sprintf(path, "/dev/vblk%c", 'a' + nbdevs);
-			// if ((err = virtioblk_registerDev(path, bdev)) < 0) {
-			// 	fprintf(stderr, "virtio-blk: failed to register VirtIO block device, base: %#x. Skipping...\n", vdev.info.base.addr);
-			// 	virtioblk_destroyDev(bdev);
-			// 	free(bdev);
-			// 	continue;
-			// }
-			ngpudevs++;
+			nvgpus++;
 		}
 	}
 
