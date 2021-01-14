@@ -66,7 +66,7 @@ typedef struct {
 
 typedef struct {
 	/* Reguest buffers (accessible by device) */
-	struct {
+	volatile struct {
 		/* Request header (device readable) */
 		struct {
 			uint32_t type;            /* Request/Response type */
@@ -263,9 +263,8 @@ static int _virtiogpu_send(virtiogpu_dev_t *vgpu, virtqueue_t *vq, virtiogpu_req
 		return err;
 	virtqueue_notify(vdev, vq);
 
-	/* TODO: fix race condition */
 	while (req->hdr.type == cmd)
-		condWait(req->cond, req->lock, 0);
+		condWait(req->cond, req->lock, 1);
 
 	if (le32toh(req->hdr.type) != resp)
 		return -EFAULT;
