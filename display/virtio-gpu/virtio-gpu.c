@@ -16,7 +16,6 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
 
 #include <sys/interrupt.h>
@@ -65,9 +64,9 @@ typedef struct {
 
 
 typedef struct {
-	/* Reguest buffers (accessible by device) */
-	volatile struct {
-		/* Request header (device readable) */
+	/* Request buffers (accessible by device) */
+	struct {
+		/* Request header (device readable/writable) */
 		struct {
 			uint32_t type;            /* Request/Response type */
 			uint32_t flags;           /* Request flags */
@@ -83,7 +82,7 @@ typedef struct {
 
 			/* EDID request */
 			struct {
-				uint32_t size;        /* EDID scanout/size */
+				uint32_t sid;         /* Scanout ID/EDID size */
 				uint32_t pad;         /* Padding */
 				uint8_t edid[1024];   /* EDID data */
 			} __attribute__((packed)) edid;
@@ -263,10 +262,10 @@ static int _virtiogpu_send(virtiogpu_dev_t *vgpu, virtqueue_t *vq, virtiogpu_req
 		return err;
 	virtqueue_notify(vdev, vq);
 
-	while (req->hdr.type == cmd)
+	while (*(volatile uint32_t *)(&req->hdr.type) == cmd)
 		condWait(req->cond, req->lock, 1);
 
-	if (le32toh(req->hdr.type) != resp)
+	if (le32toh(*(volatile uint32_t *)(&req->hdr.type)) != resp)
 		return -EFAULT;
 
 	return EOK;
@@ -334,12 +333,12 @@ static int virtiogpu_displayInfo(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, vi
 	}
 
 	for (i = 0; i < sizeof(info->pmodes) / sizeof(info->pmodes[0]); i++) {
-		info->pmodes[i].r.x = le32toh(req->info.pmodes[i].r.x);
-		info->pmodes[i].r.y = le32toh(req->info.pmodes[i].r.y);
-		info->pmodes[i].r.width = le32toh(req->info.pmodes[i].r.width);
-		info->pmodes[i].r.height = le32toh(req->info.pmodes[i].r.height);
-		info->pmodes[i].enabled = le32toh(req->info.pmodes[i].enabled);
-		info->pmodes[i].flags = le32toh(req->info.pmodes[i].flags);
+		info->pmodes[i].r.x = le32toh(*(volatile uint32_t *)(&req->info.pmodes[i].r.x));
+		info->pmodes[i].r.y = le32toh(*(volatile uint32_t *)(&req->info.pmodes[i].r.y));
+		info->pmodes[i].r.width = le32toh(*(volatile uint32_t *)(&req->info.pmodes[i].r.width));
+		info->pmodes[i].r.height = le32toh(*(volatile uint32_t *)(&req->info.pmodes[i].r.height));
+		info->pmodes[i].enabled = le32toh(*(volatile uint32_t *)(&req->info.pmodes[i].enabled));
+		info->pmodes[i].flags = le32toh(*(volatile uint32_t *)(&req->info.pmodes[i].flags));
 	}
 
 	mutexUnlock(req->lock);
@@ -349,9 +348,9 @@ static int virtiogpu_displayInfo(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, vi
 
 
 /* Retrieves display EDID */
-static int virtiogpu_EDID(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsigned int sid, void *edid)
+static int virtiogpu_EDID(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsigned int sid, void *edid, unsigned int *len)
 {
-	int err;
+	int i, err;
 
 	if (!(virtio_readFeatures(&vgpu->vdev) & (1ULL << 1)))
 		return -ENOTSUP;
@@ -366,14 +365,16 @@ static int virtiogpu_EDID(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsigned 
 
 	req->hdr.type = htole32(0x10a);
 	req->hdr.flags = htole32(1 << 0);
-	req->edid.size = htole32(sid);
+	req->edid.sid = htole32(sid);
 
 	if ((err = _virtiogpu_send(vgpu, &vgpu->ctlq, req, 0x1104)) < 0) {
 		mutexUnlock(vgpu->rlock);
 		mutexUnlock(req->lock);
 		return err;
 	}
-	memcpy(edid, req->edid.edid, sizeof(req->edid.edid));
+	*len = le32toh(*(volatile uint32_t *)(&req->edid.sid));
+	for (i = 0; i < *len; i++)
+		*((uint8_t *)edid + i) = *(volatile uint8_t *)(req->edid.edid + i);
 
 	mutexUnlock(vgpu->rlock);
 	mutexUnlock(req->lock);
