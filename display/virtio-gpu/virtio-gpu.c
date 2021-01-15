@@ -29,37 +29,37 @@
 
 typedef struct {
 	/* Device data */
-	virtio_dev_t vdev;                /* VirtIO device */
-	virtqueue_t ctlq;                 /* Control virtqueue */
-	virtqueue_t curq;                 /* Cursor virtqueue */
-	void *displays[16];               /* Displays buffers */
-	unsigned int ndisplays;           /* Number of connected displays */
-	unsigned int rbmp;                /* Host resources bitmap */
-	handle_t rlock;                   /* Host resources bitmap mutex */
+	virtio_dev_t vdev;              /* VirtIO device */
+	virtqueue_t ctlq;               /* Control virtqueue */
+	virtqueue_t curq;               /* Cursor virtqueue */
+	void *displays[16];             /* Displays buffers */
+	unsigned int ndisplays;         /* Number of connected displays */
+	unsigned int rbmp;              /* Host resources bitmap */
+	handle_t rlock;                 /* Host resources bitmap mutex */
 
 	/* Interrupt handling */
-	volatile unsigned int isr;        /* Interrupt status */
-	handle_t lock;                    /* Interrupt mutex */
-	handle_t cond;                    /* Interrupt condition variable */
-	handle_t inth;                    /* Interrupt handle */
+	volatile unsigned int isr;      /* Interrupt status */
+	handle_t lock;                  /* Interrupt mutex */
+	handle_t cond;                  /* Interrupt condition variable */
+	handle_t inth;                  /* Interrupt handle */
 	char istack[2048] __attribute__((aligned(8)));
 } virtiogpu_dev_t;
 
 
 typedef struct {
-	uint32_t x;                       /* Horizontal coordinate */
-	uint32_t y;                       /* Vertical coordinate */
-	uint32_t width;                   /* Rectangle width */
-	uint32_t height;                  /* Rectangle height */
+	uint32_t x;                     /* Horizontal coordinate */
+	uint32_t y;                     /* Vertical coordinate */
+	uint32_t width;                 /* Rectangle width */
+	uint32_t height;                /* Rectangle height */
 } __attribute__((packed)) virtiogpu_rect_t;
 
 
 typedef struct {
 	struct {
-		virtiogpu_rect_t r;           /* Display rectangle */
-		uint32_t enabled;             /* Is enabled? */
-		uint32_t flags;               /* Display flags */
-	} pmodes[16];                     /* Displays */
+		virtiogpu_rect_t r;         /* Display rectangle */
+		uint32_t enabled;           /* Is enabled? */
+		uint32_t flags;             /* Display flags */
+	} pmodes[16];                   /* Displays */
 } __attribute__((packed)) virtiogpu_display_t;
 
 
@@ -68,108 +68,109 @@ typedef struct {
 	struct {
 		/* Request header (device readable/writable) */
 		struct {
-			uint32_t type;            /* Request/Response type */
-			uint32_t flags;           /* Request flags */
-			uint64_t fence;           /* Request fence ID */
-			uint32_t ctx;             /* 3D rendering context */
-			uint32_t pad;             /* Padding */
-		} __attribute__((packed)) hdr;
+			uint32_t type;          /* Request/Response type */
+			uint32_t flags;         /* Request flags */
+			uint64_t fence;         /* Request fence ID */
+			uint32_t ctx;           /* 3D rendering context */
+			uint32_t pad;           /* Padding */
+		} hdr;
 
 		/* Request data (device access depends on request type) */
 		union {
 			/* Displays info request */
-			virtiogpu_display_t info; /* Displays info */
+			volatile virtiogpu_display_t info;
 
 			/* EDID request */
-			struct {
-				uint32_t sid;         /* Scanout ID/EDID size */
-				uint32_t pad;         /* Padding */
-				uint8_t edid[1024];   /* EDID data */
-			} __attribute__((packed)) edid;
+			volatile struct {
+				uint32_t sid;       /* Scanout ID/data size */
+				uint32_t pad;       /* Padding */
+				uint8_t data[1024]; /* EDID data */
+			} edid;
 
 			/* Create resource 2D request */
 			struct {
-				uint32_t rid;         /* Resource ID */
-				uint32_t format;      /* Resource format */
-				uint32_t width;       /* Resource width */
-				uint32_t height;      /* Resource height */
-			} __attribute__((packed)) res2D;
+				uint32_t rid;       /* Resource ID */
+				uint32_t format;    /* Resource format */
+				uint32_t width;     /* Resource width */
+				uint32_t height;    /* Resource height */
+			} res2D;
 
 			/* Unref resource request */
 			struct {
-				uint32_t rid;         /* Resource ID */
-				uint32_t pad;         /* Padding */
-			} __attribute__((packed)) unref;
+				uint32_t rid;       /* Resource ID */
+				uint32_t pad;       /* Padding */
+			} unref;
 
 			/* Set scanout request */
 			struct {
-				virtiogpu_rect_t r;   /* Scanout rectangle */
-				uint32_t sid;         /* Scanout ID */
-				uint32_t rid;         /* Resource ID */
-			} __attribute__((packed)) scanout;
+				virtiogpu_rect_t r; /* Scanout rectangle */
+				uint32_t sid;       /* Scanout ID */
+				uint32_t rid;       /* Resource ID */
+			} scanout;
 
 			/* Flush scanout request */
 			struct {
-				virtiogpu_rect_t r;   /* Scanout rectangle */
-				uint32_t rid;         /* Resource ID */
-				uint32_t pad;         /* Padding */
-			} __attribute__((packed)) flush;
+				virtiogpu_rect_t r; /* Scanout rectangle */
+				uint32_t rid;       /* Resource ID */
+				uint32_t pad;       /* Padding */
+			} flush;
 
 			/* Transfer resource 2D request */
 			struct {
-				virtiogpu_rect_t r;   /* Buffer rectangle */
-				uint64_t offset;      /* Resource offset */
-				uint32_t rid;         /* Resource ID */
-				uint32_t pad;         /* Padding */
-			} __attribute__((packed)) trans2D;
+				virtiogpu_rect_t r; /* Buffer rectangle */
+				uint64_t offset;    /* Resource offset */
+				uint32_t rid;       /* Resource ID */
+				uint32_t pad;       /* Padding */
+			} trans2D;
 
 			/* Attach resource request */
 			struct {
-				uint32_t rid;         /* Resource ID */
-				uint32_t nbuffs;      /* Number of attached buffers (one buffer only) */
-				uint64_t addr;        /* Buffer address */
-				uint32_t len;         /* Buffer length */
-				uint32_t pad;         /* Padding */
-			} __attribute__((packed)) attach;
+				uint32_t rid;       /* Resource ID */
+				uint32_t nbuffs;    /* Number of attached buffers (one buffer only) */
+				uint64_t addr;      /* Buffer address */
+				uint32_t len;       /* Buffer length */
+				uint32_t pad;       /* Padding */
+			} attach;
 
 			/* Detach resource request */
 			struct {
-				uint32_t rid;         /* Resource ID */
-				uint32_t pad;         /* Padding */
-			} __attribute__((packed)) detach;
+				uint32_t rid;       /* Resource ID */
+				uint32_t pad;       /* Padding */
+			} detach;
 
 			/* Update cursor request */
 			struct {
 				struct {
-					uint32_t sid;     /* Scanout ID */
-					uint32_t x;       /* Horizontal coordinate */
-					uint32_t y;       /* Vertical coordinate */
-					uint32_t pad;     /* Padding */
+					uint32_t sid;   /* Scanout ID */
+					uint32_t x;     /* Horizontal coordinate */
+					uint32_t y;     /* Vertical coordinate */
+					uint32_t pad;   /* Padding */
 				} pos;
-				uint32_t rid;         /* Resource ID */
-				uint32_t hx;          /* Hotspot x */
-				uint32_t hy;          /* Hotspot y */
-				uint32_t pad;         /* Padding */
-			} __attribute__((packed)) cursor;
+				uint32_t rid;       /* Resource ID */
+				uint32_t hx;        /* Hotspot x */
+				uint32_t hy;        /* Hotspot y */
+				uint32_t pad;       /* Padding */
+			} cursor;
 		};
 	} __attribute__((packed));
 
 	/* VirtIO request segments */
-	virtio_seg_t rseg;                /* Device readable segment */
-	virtio_seg_t wseg;                /* Device writeable segment */
-	virtio_req_t vreq;                /* VirtIO request */
+	virtio_seg_t rseg;              /* Device readable segment */
+	virtio_seg_t wseg;              /* Device writeable segment */
+	virtio_req_t vreq;              /* VirtIO request */
 
 	/* Custom helper fields */
-	handle_t lock;                    /* Request mutex */
-	handle_t cond;                    /* Request condition variable */
+	volatile int done;              /* Indicates request completion */
+	handle_t lock;                  /* Request mutex */
+	handle_t cond;                  /* Request condition variable */
 } virtiogpu_req_t;
 
 
-/* VirtIO GPU devices descriptors */
+/* VirtIO GPU device descriptors */
 static const virtio_devinfo_t info[] = {
 	{ .type = vdevPCI, .id = 0x1050 },
 #ifdef TARGET_RISCV64
-	/* Direct VirtIO MMIO QEMU block device descriptors */
+	/* Direct VirtIO MMIO QEMU GPU device descriptors */
 	{ .type = vdevMMIO, .id = 0x10, .irq = 8, .base = { (void *)0x10008000, 0x1000 } },
 	{ .type = vdevMMIO, .id = 0x10, .irq = 7, .base = { (void *)0x10007000, 0x1000 } },
 	{ .type = vdevMMIO, .id = 0x10, .irq = 6, .base = { (void *)0x10006000, 0x1000 } },
@@ -223,11 +224,19 @@ static void virtiogpu_intthr(void *arg)
 			condWait(vgpu->cond, vgpu->lock, 0);
 
 		if (vgpu->isr & (1 << 0)) {
-			while ((req = virtqueue_dequeue(vdev, &vgpu->ctlq, NULL)) != NULL)
+			while ((req = virtqueue_dequeue(vdev, &vgpu->ctlq, NULL)) != NULL) {
+				mutexLock(req->lock);
+				req->done = 1;
 				condSignal(req->cond);
+				mutexUnlock(req->lock);
+			}
 
-			while ((req = virtqueue_dequeue(vdev, &vgpu->curq, NULL)) != NULL)
+			while ((req = virtqueue_dequeue(vdev, &vgpu->curq, NULL)) != NULL) {
+				mutexLock(req->lock);
+				req->done = 1;
 				condSignal(req->cond);
+				mutexUnlock(req->lock);
+			}
 		}
 
 		if (vgpu->isr & (1 << 1)) {
@@ -240,12 +249,18 @@ static void virtiogpu_intthr(void *arg)
 		virtqueue_enableIRQ(vdev, &vgpu->curq);
 
 		/* Get requests that might have come after last virtqueue_dequeue() and before virtqueue_enableIRQ() */
-		if (vgpu->isr & (1 << 0)) {
-			while ((req = virtqueue_dequeue(vdev, &vgpu->ctlq, NULL)) != NULL)
-				condSignal(req->cond);
+		while ((req = virtqueue_dequeue(vdev, &vgpu->ctlq, NULL)) != NULL) {
+			mutexLock(req->lock);
+			req->done = 1;
+			condSignal(req->cond);
+			mutexUnlock(req->lock);
+		}
 
-			while ((req = virtqueue_dequeue(vdev, &vgpu->curq, NULL)) != NULL)
-				condSignal(req->cond);
+		while ((req = virtqueue_dequeue(vdev, &vgpu->curq, NULL)) != NULL) {
+			mutexLock(req->lock);
+			req->done = 1;
+			condSignal(req->cond);
+			mutexUnlock(req->lock);
 		}
 	}
 }
@@ -255,15 +270,15 @@ static void virtiogpu_intthr(void *arg)
 static int _virtiogpu_send(virtiogpu_dev_t *vgpu, virtqueue_t *vq, virtiogpu_req_t *req, unsigned int resp)
 {
 	virtio_dev_t *vdev = &vgpu->vdev;
-	uint32_t cmd = req->hdr.type;
 	int err;
 
+	req->done = 0;
 	if ((err = virtqueue_enqueue(vdev, vq, &req->vreq)) < 0)
 		return err;
 	virtqueue_notify(vdev, vq);
 
-	while (*(volatile uint32_t *)(&req->hdr.type) == cmd)
-		condWait(req->cond, req->lock, 1);
+	while (!req->done)
+		condWait(req->cond, req->lock, 0);
 
 	if (le32toh(*(volatile uint32_t *)(&req->hdr.type)) != resp)
 		return -EFAULT;
@@ -333,12 +348,12 @@ static int virtiogpu_displayInfo(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, vi
 	}
 
 	for (i = 0; i < sizeof(info->pmodes) / sizeof(info->pmodes[0]); i++) {
-		info->pmodes[i].r.x = le32toh(*(volatile uint32_t *)(&req->info.pmodes[i].r.x));
-		info->pmodes[i].r.y = le32toh(*(volatile uint32_t *)(&req->info.pmodes[i].r.y));
-		info->pmodes[i].r.width = le32toh(*(volatile uint32_t *)(&req->info.pmodes[i].r.width));
-		info->pmodes[i].r.height = le32toh(*(volatile uint32_t *)(&req->info.pmodes[i].r.height));
-		info->pmodes[i].enabled = le32toh(*(volatile uint32_t *)(&req->info.pmodes[i].enabled));
-		info->pmodes[i].flags = le32toh(*(volatile uint32_t *)(&req->info.pmodes[i].flags));
+		info->pmodes[i].r.x = le32toh(req->info.pmodes[i].r.x);
+		info->pmodes[i].r.y = le32toh(req->info.pmodes[i].r.y);
+		info->pmodes[i].r.width = le32toh(req->info.pmodes[i].r.width);
+		info->pmodes[i].r.height = le32toh(req->info.pmodes[i].r.height);
+		info->pmodes[i].enabled = le32toh(req->info.pmodes[i].enabled);
+		info->pmodes[i].flags = le32toh(req->info.pmodes[i].flags);
 	}
 
 	mutexUnlock(req->lock);
@@ -359,7 +374,7 @@ static int virtiogpu_EDID(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsigned 
 	mutexLock(vgpu->rlock);
 
 	req->rseg.buff = &req->hdr;
-	req->rseg.len = sizeof(req->hdr) + sizeof(req->edid) - sizeof(req->edid.edid);
+	req->rseg.len = sizeof(req->hdr) + sizeof(req->edid) - sizeof(req->edid.data);
 	req->wseg.buff = &req->hdr;
 	req->wseg.len = sizeof(req->hdr) + sizeof(req->edid);
 
@@ -372,9 +387,10 @@ static int virtiogpu_EDID(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsigned 
 		mutexUnlock(req->lock);
 		return err;
 	}
-	*len = le32toh(*(volatile uint32_t *)(&req->edid.sid));
+
+	*len = le32toh(req->edid.sid);
 	for (i = 0; i < *len; i++)
-		*((uint8_t *)edid + i) = *(volatile uint8_t *)(req->edid.edid + i);
+		*((uint8_t *)edid + i) = req->edid.data[i];
 
 	mutexUnlock(vgpu->rlock);
 	mutexUnlock(req->lock);
@@ -562,7 +578,7 @@ static int virtiogpu_attach(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsigne
 	mutexLock(vgpu->rlock);
 
 	req->rseg.buff = &req->hdr;
-	req->rseg.len =  sizeof(req->hdr) + sizeof(req->attach);
+	req->rseg.len = sizeof(req->hdr) + sizeof(req->attach);
 	req->wseg.buff = &req->hdr;
 	req->wseg.len = sizeof(req->hdr);
 
@@ -595,7 +611,7 @@ static int virtiogpu_detach(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsigne
 	mutexLock(vgpu->rlock);
 
 	req->rseg.buff = &req->hdr;
-	req->rseg.len =  sizeof(req->hdr) + sizeof(req->detach);
+	req->rseg.len = sizeof(req->hdr) + sizeof(req->detach);
 	req->wseg.buff = &req->hdr;
 	req->wseg.len = sizeof(req->hdr);
 
@@ -617,7 +633,7 @@ static int virtiogpu_detach(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsigne
 
 
 /* Updates cursor icon and its position */
-static int virtiogpu_cursorUpdate(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsigned int x, unsigned int y, unsigned hx, unsigned hy, unsigned int sid, unsigned int rid)
+static int virtiogpu_updateCursor(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsigned int x, unsigned int y, unsigned hx, unsigned hy, unsigned int sid, unsigned int rid)
 {
 	int err;
 
@@ -652,7 +668,7 @@ static int virtiogpu_cursorUpdate(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, u
 
 
 /* Moves cursor */
-static int virtiogpu_cursorMove(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsigned int x, unsigned int y, unsigned int sid)
+static int virtiogpu_moveCursor(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsigned int x, unsigned int y, unsigned int sid)
 {
 	int err;
 
@@ -660,7 +676,7 @@ static int virtiogpu_cursorMove(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, uns
 	mutexLock(vgpu->rlock);
 
 	req->rseg.buff = &req->hdr;
-	req->rseg.len =  sizeof(req->hdr) + sizeof(req->cursor);
+	req->rseg.len = sizeof(req->hdr) + sizeof(req->cursor);
 	req->wseg.buff = &req->hdr;
 	req->wseg.len = sizeof(req->hdr);
 
@@ -729,6 +745,10 @@ static int virtiogpu_initDev(virtiogpu_dev_t *vgpu)
 			break;
 		}
 
+		/* TODO: fix race condition below */
+		/* Added small delay for virtiogpu_intthr() to go to sleep before first intterupt */
+		usleep(10);
+
 		if ((err = interrupt(vdev->info.irq, virtiogpu_int, vgpu, vgpu->cond, &vgpu->inth)) < 0) {
 			resourceDestroy(vgpu->cond);
 			resourceDestroy(vgpu->lock);
@@ -789,7 +809,6 @@ int main(void)
 	virtiogpu_dev_t *vgpu;
 	virtio_dev_t vdev;
 	virtio_ctx_t vctx;
-	//char path[16];
 	oid_t oid;
 	int i, err, nvgpus = 0;
 
