@@ -71,8 +71,8 @@ static void ttypc_poolthr(void *arg)
 			break;
 
 		case mtGetAttr:
-			if ((msg.i.attr.type == atPollStatus) && (msg.i.io.oid.id < NVTS))
-				msg.o.attr.val = ttypc_vt_pollstatus(ttypc->vts + msg.i.io.oid.id);
+			if ((msg.i.attr.type == atPollStatus) && (msg.i.attr.oid.id < NVTS))
+				msg.o.attr.val = ttypc_vt_pollstatus(ttypc->vts + msg.i.attr.oid.id);
 			else
 				msg.o.attr.val = -EINVAL;
 			break;
