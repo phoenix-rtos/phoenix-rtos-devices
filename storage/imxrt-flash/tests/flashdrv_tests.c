@@ -152,10 +152,11 @@ int test_flashdrv_writeAndReadBytes(uint32_t addr)
 int test_flashdrv_eraseSector(uint32_t addr)
 {
 	int res = EOK, i;
-	uint32_t sector = 5;;
+	uint32_t sector = 31;
 	flash_context_t ctx;
 
 	char *readBuff;
+	char *writeBuff;
 
 	/* Initialize */
 	ctx.address = addr;
@@ -164,14 +165,37 @@ int test_flashdrv_eraseSector(uint32_t addr)
 		return res;
 	}
 
+	if ((writeBuff = (char *)malloc(ctx.properties.page_size)) == NULL) {
+		LOG_ERROR("cannot allocate memory.");
+		flash_contextDestroy(&ctx);
+		return -ENOMEM;
+	}
+	memset(writeBuff, 0xec, ctx.properties.page_size);
+
+	if ((readBuff = (char *)malloc(ctx.properties.page_size)) == NULL) {
+		LOG_ERROR("cannot allocate memory.");
+		flash_contextDestroy(&ctx);
+		free(writeBuff);
+		return -ENOMEM;
+	};
+
+	/* Write some data */
+	if (flash_bufferedPagesWrite(&ctx, sector * ctx.properties.sector_size, writeBuff, ctx.properties.page_size) != ctx.properties.page_size){
+		LOG_ERROR("writing page failed.");
+		flash_contextDestroy(&ctx);
+		free(writeBuff);
+		free(readBuff);
+		return -1;
+	}
+
 	flash_sync(&ctx);
+
 	flash_sectorErase(&ctx, sector * ctx.properties.sector_size);
 
-	/* Read data */
-	readBuff = (void *)(addr + sector * ctx.properties.sector_size);
+	flash_readData(&ctx, sector * ctx.properties.sector_size, readBuff, ctx.properties.page_size);
 
 	/* Verification */
-	for (i = 0; i < ctx.properties.sector_size; ++i) {
+	for (i = 0; i < ctx.properties.page_size; ++i) {
 		if (readBuff[i] != 0xff) {
 			res = -1;
 			break;
@@ -179,6 +203,8 @@ int test_flashdrv_eraseSector(uint32_t addr)
 	}
 
 	flash_contextDestroy(&ctx);
+	free(readBuff);
+	free(writeBuff);
 
 	return res;
 }
@@ -255,12 +281,11 @@ int test_flashdrv_iterativeRead(uint32_t addr)
 int test_flashdrv_eraseChip(uint32_t addr)
 {
 	int res = EOK, i, j;
-	uint16_t pageID;
+	const uint16_t sector = 30;
 	flash_context_t ctx;
 
-	const int MAX_BUFFERS = 5;
-
-	char *readBuffs[MAX_BUFFERS];
+	char *readBuff;
+	char *writeBuff;
 
 	/* Initialize */
 	ctx.address = addr;
@@ -269,31 +294,51 @@ int test_flashdrv_eraseChip(uint32_t addr)
 		return res;
 	}
 
-	/* Erase whole chip */
-	flash_sync(&ctx);
-
-	res = flash_chipErase(&ctx);
-
-	/* Check random pages */
-	for (i = 0, pageID = 0; i < MAX_BUFFERS - 2; ++i) {
-		pageID += 34;
-		readBuffs[i] = (void *)(addr + pageID * ctx.properties.page_size);
+	if ((writeBuff = (char *)malloc(ctx.properties.page_size)) == NULL) {
+		LOG_ERROR("cannot allocate memory.");
+		flash_contextDestroy(&ctx);
+		return -ENOMEM;
 	}
 
-	readBuffs[3] = (void *)(addr + 0x3000);
-	readBuffs[4] = (void *)(addr + 0x8000);
+	memset(writeBuff, 0xac, ctx.properties.page_size);
+
+	/* Write page */
+	if (flash_bufferedPagesWrite(&ctx,  sector * ctx.properties.sector_size, writeBuff, ctx.properties.page_size) != ctx.properties.page_size){
+		LOG_ERROR("writing page failed.");
+		flash_contextDestroy(&ctx);
+		free(writeBuff);
+		return -1;
+	}
+
+
+	flash_sync(&ctx);
+
+	/* Erase whole chip */
+	if ((res = flash_chipErase(&ctx)) < 0)
+		return res;
+
 
 	/* Verification */
+
+	if ((readBuff = (char *)malloc(ctx.properties.page_size)) == NULL) {
+		LOG_ERROR("cannot allocate memory.");
+		flash_contextDestroy(&ctx);
+		free(writeBuff);
+		return -ENOMEM;
+	}
+
+	flash_readData(&ctx, sector * ctx.properties.sector_size, readBuff, ctx.properties.page_size);
 	for (i = 0; i < ctx.properties.page_size; ++i) {
-		for (j = 0; j < MAX_BUFFERS; ++j){
-			if (readBuffs[j][i] != 0xff) {
-				res = -1;
-				break;
-			}
+		printf("0x%x ", readBuff[i]);
+		if (readBuff[i] != 0xff) {
+			res = -1;
+			break;
 		}
 	}
 
 	flash_contextDestroy(&ctx);
+	free(writeBuff);
+	free(readBuff);
 
 	return res;
 }

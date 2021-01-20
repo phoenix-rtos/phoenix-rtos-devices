@@ -20,20 +20,19 @@
 #include "utils.h"
 
 #include "../flashdrv.h"
-#include "../flashdrv.h"
 
 /* Tests module definitions */
-#define TESTS_INTERNAL_FLASH_DRIVER             1
+#define TESTS_INTERNAL_FLASH_DRIVER             0
 #define TESTS_EXTERNAL_FLASH_DRVIVER            1
-#define TESTS_FLASH_SERVER_CHIP_CMD             1
-#define TESTS_FLASH_SERVER_RAW_AND_MFS_PARTS    1
+// #define TESTS_FLASH_SERVER_CHIP_CMD             1
+// #define TESTS_FLASH_SERVER_RAW_AND_MFS_PARTS    1
 
 #define CLEAR_FLASHES                           0
 
 
 int main(int argc, char **argv)
 {
-	sleep(1);
+	// sleep(1);
 
 /* It is recommended to clear flash memories and write partition table to one of them before first usage */
 #if CLEAR_FLASHES
