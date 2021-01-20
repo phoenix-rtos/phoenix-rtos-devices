@@ -24,6 +24,7 @@
 #define WINDBOND_W25Q32JV_IQ             0x4016
 #define ISSI_DEV_IS25WP064A              0x7017
 #define MICRON_MT25QL512ABB              0xba20
+#define MICORN_MT25QL01GBBB              0xba21
 
 enum { flash_windbond = 0xef, flash_issi = 0x9d, flash_micron = 0x20 };
 
