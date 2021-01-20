@@ -30,6 +30,12 @@
 #include <libvirtio.h>
 
 
+/* Use polling instead of interrupts on RISCV64 (interrupt handler code triggers memory protection exception) */
+#ifdef TARGET_RISCV64
+#define USE_POLLING
+#endif
+
+
 typedef struct {
 	/* Device data */
 	virtio_dev_t vdev;           /* VirtIO device */
@@ -96,6 +102,7 @@ static const virtio_devinfo_t info[] = {
 };
 
 
+#ifndef USE_POLLING
 /* Interrupt handler */
 static int virtioblk_int(unsigned int n, void *arg)
 {
@@ -107,6 +114,7 @@ static int virtioblk_int(unsigned int n, void *arg)
 
 	return vblk->cond;
 }
+#endif
 
 
 /* Interrupt thread */
@@ -125,6 +133,15 @@ static void virtioblk_intthr(void *arg)
 			condWait(vblk->cond, vblk->lock, 0);
 		vblk->isr = 0;
 
+#ifdef USE_POLLING
+		/* Poll for processed request (in polling mode request are submitted and processed synchronously) */
+		while ((req = virtqueue_dequeue(vdev, &vblk->vq, &len)) == NULL);
+
+		mutexLock(req->lock);
+		req->len = len;
+		condSignal(req->cond);
+		mutexUnlock(req->lock);
+#else
 		while ((req = virtqueue_dequeue(vdev, &vblk->vq, &len)) != NULL) {
 			mutexLock(req->lock);
 			req->len = len;
@@ -140,6 +157,7 @@ static void virtioblk_intthr(void *arg)
 			condSignal(req->cond);
 			mutexUnlock(req->lock);
 		}
+#endif
 	}
 
 	endthread();
@@ -156,6 +174,13 @@ static int _virtioblk_send(virtioblk_dev_t *vblk, virtioblk_req_t *req)
 	if ((err = virtqueue_enqueue(vdev, &vblk->vq, &req->vreq)) < 0)
 		return err;
 	virtqueue_notify(vdev, &vblk->vq);
+
+#ifdef USE_POLLING
+	mutexLock(vblk->lock);
+	vblk->isr |= (1 << 0);
+	condSignal(vblk->cond);
+	mutexUnlock(vblk->lock);
+#endif
 
 	while (!req->len)
 		condWait(req->cond, req->lock, 0);
@@ -392,13 +417,16 @@ static int virtioblk_initDev(virtioblk_dev_t *vblk)
 			break;
 		}
 
+#ifdef USE_POLLING
+		virtqueue_disableIRQ(&vblk->vdev, &vblk->vq);
+#else
 		if ((err = interrupt(vdev->info.irq, virtioblk_int, vblk, vblk->cond, &vblk->inth)) < 0) {
 			resourceDestroy(vblk->cond);
 			resourceDestroy(vblk->lock);
 			virtqueue_destroy(vdev, &vblk->vq);
 			break;
 		}
-
+#endif
 		virtio_writeStatus(vdev, virtio_readStatus(vdev) | (1 << 2));
 
 		return EOK;
