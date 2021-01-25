@@ -683,7 +683,7 @@ static int ad7779_gpio_init(void)
 	pctl.iomux.mux = pctl_mux_gpio_b0_06;
 	platformctl(&pctl);
 	/* Hardware reset */
-	pctl.iomux.mux = pctl_mux_gpio_emc_23;
+	pctl.iomux.mux = pctl_mux_gpio_b0_07;
 	platformctl(&pctl);
 
 	pctl.type = pctl_iopad;
@@ -706,19 +706,19 @@ static int ad7779_gpio_init(void)
 	pctl.iopad.pad = pctl_pad_gpio_b0_06;
 	platformctl(&pctl);
 	/* Hardware reset */
-	pctl.iopad.pad = pctl_pad_gpio_emc_23;
+	pctl.iopad.pad = pctl_pad_gpio_b0_07;
 	platformctl(&pctl);
 
 	/* Set states */
 	gpio_setDir(id_gpio2, 4, 1);
 	gpio_setDir(id_gpio2, 5, 1);
 	gpio_setDir(id_gpio2, 6, 1);
-	gpio_setDir(id_gpio4, 23, 1);
+	gpio_setDir(id_gpio2, 7, 1);
 
 	gpio_setPin(id_gpio2, 4, 1);
 	gpio_setPin(id_gpio2, 5, 1);
 	gpio_setPin(id_gpio2, 6, 1);
-	gpio_setPin(id_gpio4, 23, 0);
+	gpio_setPin(id_gpio2, 7, 0);
 
 	return AD7779_OK;
 }
@@ -731,9 +731,9 @@ static int ad7779_reset(int hard)
 
 	/* Hardware reset */
 	if (hard) {
-		gpio_setPin(id_gpio4, 23, 1);
+		gpio_setPin(id_gpio2, 7, 1);
 		usleep(200000);
-		gpio_setPin(id_gpio4, 23, 0);
+		gpio_setPin(id_gpio2, 7, 0);
 	}
 
 	/* Software reset */
