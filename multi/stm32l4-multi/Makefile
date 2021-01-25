@@ -6,11 +6,11 @@
 
 MULTI_PATH = multi/stm32l4-multi/
 MULTIDRV_OBJS = stm32-multi.o rcc.o rtc.o gpio.o spi.o adc.o flash.o exti.o i2c.o tty.o uart.o
-MULTIDRV_LIBOBJS := $(addprefix lib/lib, dma.o spi.o i2c.o aes.o uart.o)
+MULTIDRV_LIBOBJS := $(addprefix libmulti/lib, dma.o spi.o i2c.o aes.o uart.o)
 
 MULTIDRV_OBJS := $(addprefix $(PREFIX_O)$(MULTI_PATH), $(MULTIDRV_OBJS))
 MULTIDRV_LIBOBJS := $(addprefix $(PREFIX_O)$(MULTI_PATH), $(MULTIDRV_LIBOBJS))
-SRCHEADERS := $(patsubst $(MULTI_PATH)lib/%,$(PREFIX_H)stm32l4-multi/%,$(wildcard  $(MULTI_PATH)lib/*.h))
+SRCHEADERS := $(patsubst $(MULTI_PATH)%,$(PREFIX_H)%,$(wildcard $(MULTI_PATH)libmulti/*.h))
 
 $(MULTIDRV_OBJS): $(SRCHEADERS)
 
@@ -20,10 +20,7 @@ $(PREFIX_PROG)stm32-multi: $(MULTIDRV_OBJS) $(PREFIX_A)libstm32l4-multi.a $(PREF
 $(PREFIX_A)libstm32l4-multi.a: $(MULTIDRV_LIBOBJS) $(PREFIX_H)libtty.h $(PREFIX_A)libtty.a
 	$(ARCH)
 
-$(PREFIX_H)stm32l4-multi/%.h: $(MULTI_PATH)lib/%.h
-	$(HEADER)
-
-$(PREFIX_H)stm32-multi.h: $(MULTI_PATH)stm32-multi.h
+$(PREFIX_H)%.h: $(MULTI_PATH)%.h
 	$(HEADER)
 
 all: $(PREFIX_A)libstm32l4-multi.a $(SRCHEADERS) $(PREFIX_PROG_STRIPPED)stm32-multi $(PREFIX_H)stm32-multi.h
