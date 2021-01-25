@@ -6,23 +6,24 @@
 
 MULTI_PATH = multi/stm32l4-multi/
 MULTIDRV_OBJS = stm32-multi.o rcc.o rtc.o gpio.o spi.o adc.o flash.o exti.o i2c.o tty.o uart.o
-MULTIDRV_LIBOBJS = $(addprefix lib/lib, dma.o spi.o i2c.o aes.o uart.o)
-SRCHEADERS := $(shell find $(MULTI_PATH)lib -name \*.h)
+MULTIDRV_LIBOBJS := $(addprefix lib/lib, dma.o spi.o i2c.o aes.o uart.o)
 
-headers: $(SRCHEADERS)
-	@echo "HEADERS $(PREFIX_H)stm32l4-multi/*"; \
-	mkdir -p "$(PREFIX_H)stm32l4-multi/"; \
-	cp -a $(SRCHEADERS) "$(PREFIX_H)stm32l4-multi/";
+MULTIDRV_OBJS := $(addprefix $(PREFIX_O)$(MULTI_PATH), $(MULTIDRV_OBJS))
+MULTIDRV_LIBOBJS := $(addprefix $(PREFIX_O)$(MULTI_PATH), $(MULTIDRV_LIBOBJS))
+SRCHEADERS := $(patsubst $(MULTI_PATH)lib/%,$(PREFIX_H)stm32l4-multi/%,$(wildcard  $(MULTI_PATH)lib/*.h))
 
-$(PREFIX_PROG)stm32-multi: $(addprefix $(PREFIX_O)multi/stm32l4-multi/, $(MULTIDRV_OBJS)) $(PREFIX_A)libstm32l4-multi.a $(PREFIX_A)libtty.a
+$(MULTIDRV_OBJS): $(SRCHEADERS)
+
+$(PREFIX_PROG)stm32-multi: $(MULTIDRV_OBJS) $(PREFIX_A)libstm32l4-multi.a $(PREFIX_A)libtty.a
 	$(LINK)
 
-$(PREFIX_A)libstm32l4-multi.a: $(addprefix $(PREFIX_O)multi/stm32l4-multi/, $(MULTIDRV_LIBOBJS)) $(PREFIX_H)libtty.h $(PREFIX_A)libtty.a
+$(PREFIX_A)libstm32l4-multi.a: $(MULTIDRV_LIBOBJS) $(PREFIX_H)libtty.h $(PREFIX_A)libtty.a
 	$(ARCH)
 
-$(PREFIX_H)stm32-multi.h: multi/stm32l4-multi/stm32-multi.h
+$(PREFIX_H)stm32l4-multi/%.h: $(MULTI_PATH)lib/%.h
 	$(HEADER)
 
-.PHONY: headers
+$(PREFIX_H)stm32-multi.h: $(MULTI_PATH)stm32-multi.h
+	$(HEADER)
 
-all: $(PREFIX_A)libstm32l4-multi.a headers $(PREFIX_PROG_STRIPPED)stm32-multi $(PREFIX_H)stm32-multi.h
+all: $(PREFIX_A)libstm32l4-multi.a $(SRCHEADERS) $(PREFIX_PROG_STRIPPED)stm32-multi $(PREFIX_H)stm32-multi.h
