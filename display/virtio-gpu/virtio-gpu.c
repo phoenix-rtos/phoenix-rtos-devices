@@ -371,7 +371,6 @@ static int virtiogpu_EDID(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsigned 
 		return -ENOTSUP;
 
 	mutexLock(req->lock);
-	mutexLock(vgpu->rlock);
 
 	req->rseg.buff = &req->hdr;
 	req->rseg.len = sizeof(req->hdr) + sizeof(req->edid) - sizeof(req->edid.data);
@@ -383,7 +382,6 @@ static int virtiogpu_EDID(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsigned 
 	req->edid.sid = htole32(sid);
 
 	if ((err = _virtiogpu_send(vgpu, &vgpu->ctlq, req, 0x1104)) < 0) {
-		mutexUnlock(vgpu->rlock);
 		mutexUnlock(req->lock);
 		return err;
 	}
@@ -392,7 +390,6 @@ static int virtiogpu_EDID(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsigned 
 	for (i = 0; i < *len; i++)
 		*((uint8_t *)edid + i) = req->edid.data[i];
 
-	mutexUnlock(vgpu->rlock);
 	mutexUnlock(req->lock);
 
 	return EOK;
@@ -471,7 +468,6 @@ static int virtiogpu_scanout(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsign
 	int err;
 
 	mutexLock(req->lock);
-	mutexLock(vgpu->rlock);
 
 	req->rseg.buff = &req->hdr;
 	req->rseg.len = sizeof(req->hdr) + sizeof(req->scanout);
@@ -488,12 +484,10 @@ static int virtiogpu_scanout(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsign
 	req->scanout.rid = htole32(rid);
 
 	if ((err = _virtiogpu_send(vgpu, &vgpu->ctlq, req, 0x1100)) < 0) {
-		mutexUnlock(vgpu->rlock);
 		mutexUnlock(req->lock);
 		return err;
 	}
 
-	mutexUnlock(vgpu->rlock);
 	mutexUnlock(req->lock);
 
 	return EOK;
@@ -506,7 +500,6 @@ static int virtiogpu_flush(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsigned
 	int err;
 
 	mutexLock(req->lock);
-	mutexLock(vgpu->rlock);
 
 	req->rseg.buff = &req->hdr;
 	req->rseg.len = sizeof(req->hdr) + sizeof(req->flush);
@@ -522,12 +515,10 @@ static int virtiogpu_flush(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsigned
 	req->flush.rid = htole32(rid);
 
 	if ((err = _virtiogpu_send(vgpu, &vgpu->ctlq, req, 0x1100)) < 0) {
-		mutexUnlock(vgpu->rlock);
 		mutexUnlock(req->lock);
 		return err;
 	}
 
-	mutexUnlock(vgpu->rlock);
 	mutexUnlock(req->lock);
 
 	return EOK;
@@ -540,7 +531,6 @@ static int virtiogpu_transfer2D(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, uns
 	int err;
 
 	mutexLock(req->lock);
-	mutexLock(vgpu->rlock);
 
 	req->rseg.buff = &req->hdr;
 	req->rseg.len = sizeof(req->hdr) + sizeof(req->trans2D);
@@ -557,12 +547,10 @@ static int virtiogpu_transfer2D(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, uns
 	req->trans2D.rid = htole32(rid);
 
 	if ((err = _virtiogpu_send(vgpu, &vgpu->ctlq, req, 0x1100)) < 0) {
-		mutexUnlock(vgpu->rlock);
 		mutexUnlock(req->lock);
 		return err;
 	}
 
-	mutexUnlock(vgpu->rlock);
 	mutexUnlock(req->lock);
 
 	return EOK;
@@ -575,7 +563,6 @@ static int virtiogpu_attach(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsigne
 	int err;
 
 	mutexLock(req->lock);
-	mutexLock(vgpu->rlock);
 
 	req->rseg.buff = &req->hdr;
 	req->rseg.len = sizeof(req->hdr) + sizeof(req->attach);
@@ -590,12 +577,10 @@ static int virtiogpu_attach(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsigne
 	req->attach.len = htole32(len);
 
 	if ((err = _virtiogpu_send(vgpu, &vgpu->ctlq, req, 0x1100)) < 0) {
-		mutexUnlock(vgpu->rlock);
 		mutexUnlock(req->lock);
 		return err;
 	}
 
-	mutexUnlock(vgpu->rlock);
 	mutexUnlock(req->lock);
 
 	return EOK;
@@ -608,7 +593,6 @@ static int virtiogpu_detach(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsigne
 	int err;
 
 	mutexLock(req->lock);
-	mutexLock(vgpu->rlock);
 
 	req->rseg.buff = &req->hdr;
 	req->rseg.len = sizeof(req->hdr) + sizeof(req->detach);
@@ -620,12 +604,10 @@ static int virtiogpu_detach(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, unsigne
 	req->detach.rid = htole32(rid);
 
 	if ((err = _virtiogpu_send(vgpu, &vgpu->ctlq, req, 0x1100)) < 0) {
-		mutexUnlock(vgpu->rlock);
 		mutexUnlock(req->lock);
 		return err;
 	}
 
-	mutexUnlock(vgpu->rlock);
 	mutexUnlock(req->lock);
 
 	return EOK;
@@ -638,7 +620,6 @@ static int virtiogpu_updateCursor(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, u
 	int err;
 
 	mutexLock(req->lock);
-	mutexLock(vgpu->rlock);
 
 	req->rseg.buff = &req->hdr;
 	req->rseg.len = sizeof(req->hdr) + sizeof(req->cursor);
@@ -655,12 +636,10 @@ static int virtiogpu_updateCursor(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, u
 	req->cursor.hy = htole32(hy);
 
 	if ((err = _virtiogpu_send(vgpu, &vgpu->ctlq ,req, 0x1100)) < 0) {
-		mutexUnlock(vgpu->rlock);
 		mutexUnlock(req->lock);
 		return err;
 	}
 
-	mutexUnlock(vgpu->rlock);
 	mutexUnlock(req->lock);
 
 	return EOK;
@@ -673,7 +652,6 @@ static int virtiogpu_moveCursor(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, uns
 	int err;
 
 	mutexLock(req->lock);
-	mutexLock(vgpu->rlock);
 
 	req->rseg.buff = &req->hdr;
 	req->rseg.len = sizeof(req->hdr) + sizeof(req->cursor);
@@ -687,12 +665,10 @@ static int virtiogpu_moveCursor(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, uns
 	req->cursor.pos.y = htole32(y);
 
 	if ((err = _virtiogpu_send(vgpu, &vgpu->ctlq ,req, 0x1100)) < 0) {
-		mutexUnlock(vgpu->rlock);
 		mutexUnlock(req->lock);
 		return err;
 	}
 
-	mutexUnlock(vgpu->rlock);
 	mutexUnlock(req->lock);
 
 	return EOK;
