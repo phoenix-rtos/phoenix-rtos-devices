@@ -20,8 +20,8 @@
 #include <errno.h>
 #include <stdint.h>
 
-#include "lib/libdma.h"
-#include "lib/libspi.h"
+#include "libmulti/libdma.h"
+#include "libmulti/libspi.h"
 
 #include "stm32-multi.h"
 #include "common.h"

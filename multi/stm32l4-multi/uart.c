@@ -19,7 +19,7 @@
 #include <sys/interrupt.h>
 #include <sys/platform.h>
 
-#include "lib/libuart.h"
+#include "libmulti/libuart.h"
 
 #include "stm32-multi.h"
 #include "config.h"

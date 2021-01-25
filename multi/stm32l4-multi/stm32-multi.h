@@ -15,9 +15,9 @@
 #define _STM32_MULTI_H_
 
 #include <sys/interrupt.h>
-#include <stm32l4-multi/libuart.h>
-#include <stm32l4-multi/libspi.h>
-#include <stm32l4-multi/libi2c.h>
+#include <libmulti/libuart.h>
+#include <libmulti/libspi.h>
+#include <libmulti/libi2c.h>
 
 
 enum { adc_get = 0, rtc_setcal, rtc_get, rtc_set, rtc_setalarm, i2c_get, i2c_getwreg,
