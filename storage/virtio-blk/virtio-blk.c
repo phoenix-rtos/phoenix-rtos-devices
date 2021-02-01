@@ -134,7 +134,7 @@ static void virtioblk_intthr(void *arg)
 		vblk->isr = 0;
 
 #ifdef USE_POLLING
-		/* Poll for processed request (in polling mode request are submitted and processed synchronously) */
+		/* Poll for processed request (in polling mode requests are submitted and processed synchronously) */
 		while ((req = virtqueue_dequeue(vdev, &vblk->vq, &len)) == NULL);
 
 		mutexLock(req->lock);
@@ -170,13 +170,14 @@ static int _virtioblk_send(virtioblk_dev_t *vblk, virtioblk_req_t *req)
 	virtio_dev_t *vdev = &vblk->vdev;
 	int err;
 
+#ifdef USE_POLLING
+	mutexLock(vblk->lock);
+#endif
 	req->len = 0;
 	if ((err = virtqueue_enqueue(vdev, &vblk->vq, &req->vreq)) < 0)
 		return err;
 	virtqueue_notify(vdev, &vblk->vq);
-
 #ifdef USE_POLLING
-	mutexLock(vblk->lock);
 	vblk->isr |= (1 << 0);
 	condSignal(vblk->cond);
 	mutexUnlock(vblk->lock);
