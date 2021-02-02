@@ -27,6 +27,12 @@
 #include <libvirtio.h>
 
 
+/* Use polling instead of interrupts on RISCV64 (interrupt handler code triggers memory protection exception) */
+#ifdef TARGET_RISCV64
+#define USE_POLLING
+#endif
+
+
 typedef struct {
 	/* Device data */
 	virtio_dev_t vdev;              /* VirtIO device */
@@ -77,17 +83,17 @@ typedef struct {
 
 		/* Request data (device access depends on request type) */
 		union {
-			/* Displays info request */
+			/* Displays info */
 			volatile virtiogpu_display_t info;
 
-			/* EDID request */
+			/* EDID */
 			volatile struct {
 				uint32_t sid;       /* Scanout ID/data size */
 				uint32_t pad;       /* Padding */
 				uint8_t data[1024]; /* EDID data */
 			} edid;
 
-			/* Create resource 2D request */
+			/* Create resource 2D */
 			struct {
 				uint32_t rid;       /* Resource ID */
 				uint32_t format;    /* Resource format */
@@ -95,27 +101,27 @@ typedef struct {
 				uint32_t height;    /* Resource height */
 			} res2D;
 
-			/* Unref resource request */
+			/* Unref resource */
 			struct {
 				uint32_t rid;       /* Resource ID */
 				uint32_t pad;       /* Padding */
 			} unref;
 
-			/* Set scanout request */
+			/* Set scanout */
 			struct {
 				virtiogpu_rect_t r; /* Scanout rectangle */
 				uint32_t sid;       /* Scanout ID */
 				uint32_t rid;       /* Resource ID */
 			} scanout;
 
-			/* Flush scanout request */
+			/* Flush scanout */
 			struct {
 				virtiogpu_rect_t r; /* Scanout rectangle */
 				uint32_t rid;       /* Resource ID */
 				uint32_t pad;       /* Padding */
 			} flush;
 
-			/* Transfer resource 2D request */
+			/* Transfer resource 2D */
 			struct {
 				virtiogpu_rect_t r; /* Buffer rectangle */
 				uint64_t offset;    /* Resource offset */
@@ -123,7 +129,7 @@ typedef struct {
 				uint32_t pad;       /* Padding */
 			} trans2D;
 
-			/* Attach resource request */
+			/* Attach resource */
 			struct {
 				uint32_t rid;       /* Resource ID */
 				uint32_t nbuffs;    /* Number of attached buffers (one buffer only) */
@@ -132,13 +138,13 @@ typedef struct {
 				uint32_t pad;       /* Padding */
 			} attach;
 
-			/* Detach resource request */
+			/* Detach resource */
 			struct {
 				uint32_t rid;       /* Resource ID */
 				uint32_t pad;       /* Padding */
 			} detach;
 
-			/* Update cursor request */
+			/* Update cursor */
 			struct {
 				struct {
 					uint32_t sid;   /* Scanout ID */
@@ -195,6 +201,7 @@ static inline int virtiogpu_endian(void)
 }
 
 
+#ifndef USE_POLLING
 /* Interrupt handler */
 static int virtiogpu_int(unsigned int n, void *arg)
 {
@@ -207,6 +214,7 @@ static int virtiogpu_int(unsigned int n, void *arg)
 
 	return vgpu->cond;
 }
+#endif
 
 
 /* Interrupt thread */
@@ -224,6 +232,15 @@ static void virtiogpu_intthr(void *arg)
 			condWait(vgpu->cond, vgpu->lock, 0);
 
 		if (vgpu->isr & (1 << 0)) {
+#ifdef USE_POLLING
+			/* Poll for processed request (in polling mode requests are submitted and processed synchronously) */
+			while (((req = virtqueue_dequeue(vdev, &vgpu->ctlq, NULL)) == NULL) && ((req = virtqueue_dequeue(vdev, &vgpu->curq, NULL)) == NULL));
+
+			mutexLock(req->lock);
+			req->done = 1;
+			condSignal(req->cond);
+			mutexUnlock(req->lock);
+#else
 			while ((req = virtqueue_dequeue(vdev, &vgpu->ctlq, NULL)) != NULL) {
 				mutexLock(req->lock);
 				req->done = 1;
@@ -237,14 +254,15 @@ static void virtiogpu_intthr(void *arg)
 				condSignal(req->cond);
 				mutexUnlock(req->lock);
 			}
+#endif
 		}
 
+		/* TODO: handle configuration change */
 		if (vgpu->isr & (1 << 1)) {
-			/* Handle configuration change */
-			printf("Configuration changed!\n");
 		}
 
 		vgpu->isr = 0;
+#ifndef USE_POLLING
 		virtqueue_enableIRQ(vdev, &vgpu->ctlq);
 		virtqueue_enableIRQ(vdev, &vgpu->curq);
 
@@ -262,7 +280,10 @@ static void virtiogpu_intthr(void *arg)
 			condSignal(req->cond);
 			mutexUnlock(req->lock);
 		}
+#endif
 	}
+
+	endthread();
 }
 
 
@@ -272,10 +293,18 @@ static int _virtiogpu_send(virtiogpu_dev_t *vgpu, virtqueue_t *vq, virtiogpu_req
 	virtio_dev_t *vdev = &vgpu->vdev;
 	int err;
 
+#ifdef USE_POLLING
+	mutexLock(vgpu->lock);
+#endif
 	req->done = 0;
 	if ((err = virtqueue_enqueue(vdev, vq, &req->vreq)) < 0)
 		return err;
 	virtqueue_notify(vdev, vq);
+#ifdef USE_POLLING
+	vgpu->isr |= (1 << 0);
+	condSignal(vgpu->cond);
+	mutexUnlock(vgpu->lock);
+#endif
 
 	while (!req->done)
 		condWait(req->cond, req->lock, 0);
@@ -722,9 +751,13 @@ static int virtiogpu_initDev(virtiogpu_dev_t *vgpu)
 		}
 
 		/* TODO: fix race condition below */
-		/* Added small delay for virtiogpu_intthr() to go to sleep before first intterupt */
-		usleep(10);
+		/* Added 100ms delay for virtiogpu_intthr() to go to sleep on vgpu->cond before first interrupt */
+		usleep(100000);
 
+#ifdef USE_POLLING
+		virtqueue_disableIRQ(&vgpu->vdev, &vgpu->ctlq);
+		virtqueue_disableIRQ(&vgpu->vdev, &vgpu->curq);
+#else
 		if ((err = interrupt(vdev->info.irq, virtiogpu_int, vgpu, vgpu->cond, &vgpu->inth)) < 0) {
 			resourceDestroy(vgpu->cond);
 			resourceDestroy(vgpu->lock);
@@ -732,7 +765,7 @@ static int virtiogpu_initDev(virtiogpu_dev_t *vgpu)
 			virtqueue_destroy(vdev, &vgpu->curq);
 			break;
 		}
-
+#endif
 		virtio_writeStatus(vdev, virtio_readStatus(vdev) | (1 << 2));
 
 		/* Initialize resources bitmap */
@@ -743,11 +776,12 @@ static int virtiogpu_initDev(virtiogpu_dev_t *vgpu)
 			break;
 		}
 
+		/* Get default display info (QEMU doesn't report other displays info until their configuration have changed) */
+		if ((err = virtiogpu_displayInfo(vgpu, req, &info)) < 0)
+			break;
+
 		/* Initialize displays */
 		for (i = 0; i < vgpu->ndisplays; i++) {
-			if ((err = virtiogpu_displayInfo(vgpu, req, &info)) < 0)
-				break;
-
 			if ((rid = virtiogpu_resource2D(vgpu, req, virtiogpu_endian() ? 121 : 3, info.pmodes[0].r.width, info.pmodes[0].r.height)) < 0) {
 				err = rid;
 				break;
@@ -785,15 +819,10 @@ int main(void)
 	virtiogpu_dev_t *vgpu;
 	virtio_dev_t vdev;
 	virtio_ctx_t vctx;
-	oid_t oid;
 	int i, err, nvgpus = 0;
 
 	/* Wait for console */
 	while (write(STDOUT_FILENO, "", 0) < 0)
-		usleep(10000);
-
-	/* Wait for root filesystem */
-	while (lookup("/", NULL, &oid) < 0)
 		usleep(10000);
 
 	virtio_init();
