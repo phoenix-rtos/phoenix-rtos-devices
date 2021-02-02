@@ -45,15 +45,4 @@ static inline void common_instrBarrier(void)
 }
 
 
-int common_setClock(int dev, unsigned int state);
-
-
-int common_setMux(int mux, char sion, char mode);
-
-
-int common_setPad(int pad, char hys, char pus, char pue, char pke, char ode, char speed, char dse, char sre);
-
-
-int common_setInput(int isel, char daisy);
-
 #endif
