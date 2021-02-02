@@ -339,7 +339,6 @@ static inline int common_setPad(int pad, char hys, char pus, char pue, char pke,
 	pctl.iopad.speed = speed;
 	pctl.iopad.dse = dse;
 	pctl.iopad.sre = sre;
-	pctl.iopad.apc = 0;
 
 	return platformctl(&pctl);
 }
