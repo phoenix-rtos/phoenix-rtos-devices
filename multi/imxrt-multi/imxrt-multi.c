@@ -54,7 +54,7 @@ static void multi_dispatchMsg(msg_t *msg)
 
 	imsg = (multi_i_t *)msg->i.raw;
 	id = imsg->id;
-
+#ifndef TARGET_IMXRT1170
 	switch (id) {
 		case id_gpio1:
 		case id_gpio2:
@@ -85,6 +85,7 @@ static void multi_dispatchMsg(msg_t *msg)
 		default:
 			return;
 	}
+#endif
 }
 
 
@@ -216,6 +217,27 @@ static int createDevFiles(void)
 		return -1;
 #endif
 
+#if UART9
+	if (mkFile(&dir, id_uart9, "uart9", common.uart_port) < 0)
+		return -1;
+#endif
+
+#if UART10
+	if (mkFile(&dir, id_uart10, "uart10", common.uart_port) < 0)
+		return -1;
+#endif
+
+#if UART11
+	if (mkFile(&dir, id_uart11, "uart11", common.uart_port) < 0)
+		return -1;
+#endif
+
+#if UART12
+	if (mkFile(&dir, id_uart12, "uart12", common.uart_port) < 0)
+		return -1;
+#endif
+
+#ifndef TARGET_IMXRT1170
 	/* GPIOs */
 
 	strcpy(name, "gpio1");
@@ -268,6 +290,8 @@ static int createDevFiles(void)
 #if I2C4
 	if (mkFile(&dir, id_i2c4, "i2c4", multi_port) < 0)
 		return -1;
+#endif
+
 #endif
 
 	return 0;
@@ -368,8 +392,10 @@ int main(void)
 	portCreate(&multi_port);
 
 	uart_init();
+#ifndef TARGET_IMXRT1170
 	gpio_init();
 	spi_init();
+#endif
 
 	for (i = 0; i < UART_THREADS_NO; ++i)
 		beginthread(uart_thread, THREADS_PRIORITY, common.stack[i], STACKSZ, (void *)i);

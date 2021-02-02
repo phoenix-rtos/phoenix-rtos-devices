@@ -29,6 +29,11 @@
 #define UART7_BASE ((void *)0x4019c000)
 #define UART8_BASE ((void *)0x401a0000)
 
+#define UART9_BASE  ((void *)-1)
+#define UART10_BASE ((void *)-1)
+#define UART11_BASE ((void *)-1)
+#define UART12_BASE ((void *)-1)
+
 #define UART1_CLK pctl_clk_lpuart1
 #define UART2_CLK pctl_clk_lpuart2
 #define UART3_CLK pctl_clk_lpuart3
@@ -38,6 +43,11 @@
 #define UART7_CLK pctl_clk_lpuart7
 #define UART8_CLK pctl_clk_lpuart8
 
+#define UART9_CLK  -1
+#define UART10_CLK -1
+#define UART11_CLK -1
+#define UART12_CLK -1
+
 #define UART1_IRQ 20 + 16
 #define UART2_IRQ 21 + 16
 #define UART3_IRQ 22 + 16
@@ -46,6 +56,11 @@
 #define UART6_IRQ 25 + 16
 #define UART7_IRQ 26 + 16
 #define UART8_IRQ 27 + 16
+
+#define UART9_IRQ  -1
+#define UART10_IRQ -1
+#define UART11_IRQ -1
+#define UART12_IRQ -1
 
 #define GPIO1_BASE ((void *)0x401b8000)
 #define GPIO2_BASE ((void *)0x401bc000)

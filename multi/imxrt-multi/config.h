@@ -92,8 +92,61 @@
 #define UART8_HW_FLOWCTRL 0
 #endif
 
+#ifdef TARGET_IMXRT1170
+
+#ifndef UART9
+#define UART9 0
+#endif
+
+#ifndef UART9_HW_FLOWCTRL
+#define UART9_HW_FLOWCTRL 0
+#endif
+
+#ifndef UART10
+#define UART10 0
+#endif
+
+#ifndef UART10_HW_FLOWCTRL
+#define UART10_HW_FLOWCTRL 0
+#endif
+
+#ifndef UART11
+#define UART11 1
+#endif
+
+#ifndef UART11_HW_FLOWCTRL
+#define UART11_HW_FLOWCTRL 0
+#endif
+
+#ifndef UART12
+#define UART12 0
+#endif
+
+#ifndef UART12_HW_FLOWCTRL
+#define UART12_HW_FLOWCTRL 0
+#endif
+
+#else
+#define UART9 0
+#define UART9_HW_FLOWCTRL 0
+#define UART10 0
+#define UART10_HW_FLOWCTRL 0
+#define UART11 0
+#define UART11_HW_FLOWCTRL 0
+#define UART12 0
+#define UART12_HW_FLOWCTRL 0
+#endif
+
 #ifndef UART_CONSOLE
+#if defined(TARGET_IMXRT1050)
 #define UART_CONSOLE 1
+#elif defined(TARGET_IMXRT1060)
+#define UART_CONSOLE 1
+#elif defined(TARGET_IMXRT1170)
+#define UART_CONSOLE 11
+#else
+#define UART_CONSOLE 1
+#endif
 #endif
 
 /* SPI */
