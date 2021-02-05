@@ -119,20 +119,29 @@ int gpio_handleMsg(msg_t *msg, int dev)
 int gpio_init(void)
 {
 	int i;
+	static const void *addresses[] = { GPIO1_BASE, GPIO2_BASE, GPIO3_BASE,
+		GPIO4_BASE, GPIO5_BASE, GPIO6_BASE, GPIO7_BASE, GPIO8_BASE, GPIO9_BASE,
+		GPIO10_BASE, GPIO11_BASE, GPIO12_BASE, GPIO13_BASE };
+
+#ifndef TARGET_IMXRT1170
 	platformctl_t pctl;
-	static const void *addresses[] = { GPIO1_BASE, GPIO2_BASE, GPIO3_BASE, GPIO4_BASE,
-		GPIO5_BASE, GPIO6_BASE, GPIO7_BASE, GPIO8_BASE, GPIO9_BASE};
-	static const unsigned int clocks[] = { GPIO1_CLK, GPIO2_CLK, GPIO3_CLK, GPIO4_CLK, GPIO5_CLK };
+	static const int clocks[] = { GPIO1_CLK, GPIO2_CLK, GPIO3_CLK,
+		GPIO4_CLK, GPIO5_CLK, GPIO6_CLK, GPIO7_CLK, GPIO8_CLK, GPIO9_CLK,
+		GPIO10_CLK, GPIO11_CLK, GPIO12_CLK, GPIO13_CLK };
 
 	pctl.action = pctl_set;
 	pctl.type = pctl_devclock;
 	pctl.devclock.state = clk_state_run;
 
 	for (i = 0; i < sizeof(clocks) / sizeof(clocks[0]); ++i) {
+		if (clocks[i] < 0)
+			continue;
+
 		pctl.devclock.dev = clocks[i];
 		if (platformctl(&pctl) < 0)
 			return -1;
 	}
+#endif
 
 	for (i = 0; i < sizeof(gpio_common.base) / sizeof(gpio_common.base[0]); ++i)
 		gpio_common.base[i] = (void *)addresses[i];

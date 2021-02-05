@@ -62,6 +62,8 @@
 #define UART11_IRQ -1
 #define UART12_IRQ -1
 
+#define GPIO_PORTS 9
+
 #define GPIO1_BASE ((void *)0x401b8000)
 #define GPIO2_BASE ((void *)0x401bc000)
 #define GPIO3_BASE ((void *)0x401c0000)
@@ -72,11 +74,25 @@
 #define GPIO8_BASE ((void *)0x42080000)
 #define GPIO9_BASE ((void *)0x420c0000)
 
+#define GPIO10_BASE NULL
+#define GPIO11_BASE NULL
+#define GPIO12_BASE NULL
+#define GPIO13_BASE NULL
+
 #define GPIO1_CLK pctl_clk_gpio1
 #define GPIO2_CLK pctl_clk_gpio2
 #define GPIO3_CLK pctl_clk_gpio3
 #define GPIO4_CLK pctl_clk_gpio4
 #define GPIO5_CLK pctl_clk_gpio5
+
+#define GPIO6_CLK  -1
+#define GPIO7_CLK  -1
+#define GPIO8_CLK  -1
+#define GPIO9_CLK  -1
+#define GPIO10_CLK -1
+#define GPIO11_CLK -1
+#define GPIO12_CLK -1
+#define GPIO13_CLK -1
 
 #define LPSPI1_BASE ((void *)0x40394000)
 #define LPSPI2_BASE ((void *)0x40398000)

@@ -4,9 +4,9 @@
 # Copyright 2019 Phoenix Systems
 #
 
-OBJS = imxrt-multi.o common.o uart.o
+OBJS = imxrt-multi.o common.o uart.o gpio.o
 ifneq ($(TARGET_SUBFAMILY), imxrt117x)
-	OBJS += gpio.o spi.o i2c.o
+	OBJS += spi.o i2c.o
 endif
 
 $(PREFIX_PROG)imxrt-multi: $(addprefix $(PREFIX_O)multi/imxrt-multi/, $(OBJS)) $(PREFIX_A)libtty.a

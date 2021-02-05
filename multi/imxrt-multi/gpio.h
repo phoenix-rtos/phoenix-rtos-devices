@@ -14,7 +14,7 @@
 #ifndef _GPIO_H_
 #define _GPIO_H_
 
-#define GPIO_PORTS 9
+#include <sys/msg.h>
 
 int gpio_handleMsg(msg_t *msg, int dev);
 

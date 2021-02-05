@@ -59,21 +59,37 @@
 #define UART11_IRQ lpuart11_irq
 #define UART12_IRQ lpuart12_irq
 
-#define GPIO1_BASE ((void *)NULL)
-#define GPIO2_BASE ((void *)NULL)
-#define GPIO3_BASE ((void *)NULL)
-#define GPIO4_BASE ((void *)NULL)
-#define GPIO5_BASE ((void *)NULL)
-#define GPIO6_BASE ((void *)NULL)
-#define GPIO7_BASE ((void *)NULL)
-#define GPIO8_BASE ((void *)NULL)
-#define GPIO9_BASE ((void *)NULL)
+#define GPIO_PORTS 13
 
-#define GPIO1_CLK -1
-#define GPIO2_CLK -1
-#define GPIO3_CLK -1
-#define GPIO4_CLK -1
-#define GPIO5_CLK -1
+#define GPIO1_BASE  ((void *)0x4012c000)
+#define GPIO2_BASE  ((void *)0x40130000)
+#define GPIO3_BASE  ((void *)0x40134000)
+#define GPIO4_BASE  ((void *)0x40138000)
+#define GPIO5_BASE  ((void *)0x4013c000)
+#define GPIO6_BASE  ((void *)0x40140000)
+#define GPIO7_BASE  ((void *)0x40c5c000)
+#define GPIO8_BASE  ((void *)0x40c60000)
+#define GPIO9_BASE  ((void *)0x40c64000)
+#define GPIO10_BASE ((void *)0x40c68000)
+#define GPIO11_BASE ((void *)0x40c6c000)
+#define GPIO12_BASE ((void *)0x40c70000)
+#define GPIO13_BASE ((void *)0x40ca0000)
+
+/* BUS_CLK_ROOT, BUS_LPSR_CLK_ROOT and RCOSC_16M. Should be already enabled */
+
+#define GPIO1_CLK  -1
+#define GPIO2_CLK  -1
+#define GPIO3_CLK  -1
+#define GPIO4_CLK  -1
+#define GPIO5_CLK  -1
+#define GPIO6_CLK  -1
+#define GPIO7_CLK  -1
+#define GPIO8_CLK  -1
+#define GPIO9_CLK  -1
+#define GPIO10_CLK -1
+#define GPIO11_CLK -1
+#define GPIO12_CLK -1
+#define GPIO13_CLK -1
 
 #ifndef UART1_TX_PIN
 #define UART1_TX_PIN ad_24

@@ -89,7 +89,7 @@ static int uart_handleIntr(unsigned int n, void *arg)
 
 	*(uart->base + ctrlr) &= ~((1 << 23) | (1 << 21));
 
-	return uart->cond;
+	return 1;
 }
 
 
