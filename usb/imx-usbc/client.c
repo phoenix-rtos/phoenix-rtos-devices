@@ -168,6 +168,8 @@ int usbclient_init(usb_desc_list_t *desList)
 	int i;
 	int res = 0;
 
+	phy_init();
+
 	imx_common.dc.irqLock = 0;
 	imx_common.dc.irqCond = 0;
 	imx_common.dc.endp0Lock = 0;
