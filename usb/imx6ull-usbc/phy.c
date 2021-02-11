@@ -3,8 +3,8 @@
  *
  * usbclient - usb device controller driver
  *
- * Copyright 2020 Phoenix Systems
- * Author: Hubert Buczynski
+ * Copyright 2020-2021 Phoenix Systems
+ * Author: Hubert Buczynski, Gerard Swiderski
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -47,4 +47,16 @@ void *phy_getBase(uint32_t size)
 uint32_t phy_getIrq(void)
 {
 	return 75;
+}
+
+
+void phy_reset(void)
+{
+
+}
+
+
+void phy_init(void)
+{
+
 }

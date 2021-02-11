@@ -3,8 +3,8 @@
  *
  * phy - depends on the platform
  *
- * Copyright 2020 Phoenix Systems
- * Author: Hubert Buczynski
+ * Copyright 2020-2021 Phoenix Systems
+ * Author: Hubert Buczynski, Gerard Swiderski
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -31,6 +31,12 @@ uint32_t phy_getIrq(void);
 
 
 void *phy_getBase(uint32_t size);
+
+
+void phy_reset(void);
+
+
+void phy_init(void);
 
 
 #endif
