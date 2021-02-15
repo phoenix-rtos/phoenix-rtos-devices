@@ -118,7 +118,7 @@ static int mfs_fileInfo(oid_t *oid, struct _info *info)
 	msg.o.data = NULL;
 	msg.o.size = 0;
 	i->type = meterfs_info;
-	i->oid = *oid;
+	i->id = oid->id;
 
 	if ((err = msgSend(oid->port, &msg)) != 0 )
 		LOG_ERROR("Cannot send msg.\n");
@@ -146,7 +146,7 @@ static int mfs_resizeFile(oid_t *oid, size_t filesz, size_t recordsz)
 	msg.o.data = NULL;
 	msg.o.size = 0;
 	i->type = meterfs_resize;
-	i->resize.oid = *oid;
+	i->resize.id = oid->id;
 	i->resize.filesz = filesz;
 	i->resize.recordsz = recordsz;
 

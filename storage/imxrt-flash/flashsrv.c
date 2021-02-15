@@ -360,21 +360,21 @@ static void flashsrv_meterfsThread(void *arg)
 			case mtRead:
 				mutexLock(flashsrv_common.flash_memories[part->fID].lock);
 				flashsrv_common.flash_memories[part->fID].currPart = part->oid.id;
-				msg.o.io.err = meterfs_readFile(&msg.i.io.oid, msg.i.io.offs, msg.o.data, msg.o.size, (meterfs_ctx_t *)part->fsCtx);
+				msg.o.io.err = meterfs_readFile(msg.i.io.oid.id, msg.i.io.offs, msg.o.data, msg.o.size, (meterfs_ctx_t *)part->fsCtx);
 				mutexUnlock(flashsrv_common.flash_memories[part->fID].lock);
 				break;
 
 			case mtWrite:
 				mutexLock(flashsrv_common.flash_memories[part->fID].lock);
 				flashsrv_common.flash_memories[part->fID].currPart = part->oid.id;
-				msg.o.io.err = meterfs_writeFile(&msg.i.io.oid, msg.i.data, msg.i.size, (meterfs_ctx_t *)part->fsCtx);
+				msg.o.io.err = meterfs_writeFile(msg.i.io.oid.id, msg.i.data, msg.i.size, (meterfs_ctx_t *)part->fsCtx);
 				mutexUnlock(flashsrv_common.flash_memories[part->fID].lock);
 				break;
 
 			case mtLookup:
 				mutexLock(flashsrv_common.flash_memories[part->fID].lock);
 				flashsrv_common.flash_memories[part->fID].currPart = part->oid.id;
-				msg.o.lookup.err = meterfs_lookup(msg.i.data, &msg.o.lookup.fil, (meterfs_ctx_t *)part->fsCtx);
+				msg.o.lookup.err = meterfs_lookup(msg.i.data, &msg.o.lookup.fil.id, (meterfs_ctx_t *)part->fsCtx);
 				msg.o.lookup.fil.port = part->oid.port;
 				mutexUnlock(flashsrv_common.flash_memories[part->fID].lock);
 				memcpy(&msg.o.lookup.dev, &msg.o.lookup.fil, sizeof(oid_t));
@@ -383,14 +383,14 @@ static void flashsrv_meterfsThread(void *arg)
 			case mtOpen:
 				mutexLock(flashsrv_common.flash_memories[part->fID].lock);
 				flashsrv_common.flash_memories[part->fID].currPart = part->oid.id;
-				msg.o.io.err = meterfs_open(&msg.i.openclose.oid, (meterfs_ctx_t *)part->fsCtx);
+				msg.o.io.err = meterfs_open(msg.i.openclose.oid.id, (meterfs_ctx_t *)part->fsCtx);
 				mutexUnlock(flashsrv_common.flash_memories[part->fID].lock);
 				break;
 
 			case mtClose:
 				mutexLock(flashsrv_common.flash_memories[part->fID].lock);
 				flashsrv_common.flash_memories[part->fID].currPart = part->oid.id;
-				msg.o.io.err = meterfs_close(&msg.i.openclose.oid, (meterfs_ctx_t *)part->fsCtx);
+				msg.o.io.err = meterfs_close(msg.i.openclose.oid.id, (meterfs_ctx_t *)part->fsCtx);
 				mutexUnlock(flashsrv_common.flash_memories[part->fID].lock);
 				break;
 

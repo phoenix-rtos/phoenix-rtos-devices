@@ -280,7 +280,7 @@ int test_flashdrv_iterativeRead(uint32_t addr)
 
 int test_flashdrv_eraseChip(uint32_t addr)
 {
-	int res = EOK, i, j;
+	int res = EOK, i;
 	const uint16_t sector = 30;
 	flash_context_t ctx;
 
