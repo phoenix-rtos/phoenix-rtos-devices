@@ -1,9 +1,11 @@
 This tool blows OTP fuses of iMX RT117x MCU.
 
 Usage from psh:
+
 	sysexec [map] imxrt117x-otp [-r | -w value] -f fuse
 
 Where:
+
 	map - memory map for data (created by plo, dtcm or ocram2 for example)
 	-r  - read fuse value
 	-w  - write value to fuse
