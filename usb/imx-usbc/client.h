@@ -3,8 +3,8 @@
  *
  * client - usb client
  *
- * Copyright 2019, 2020 Phoenix Systems
- * Author: Kamil Amanowicz, Hubert Buczynski
+ * Copyright 2019-2021 Phoenix Systems
+ * Author: Kamil Amanowicz, Hubert Buczynski, Gerard Swiderski
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -21,7 +21,7 @@
 
 #define USB_BUFFER_SIZE 0x1000
 
-#define ENDPOINTS_NUMBER 7
+#define ENDPOINTS_NUMBER 8
 #define ENDPOINTS_DIR_NB 2
 
 #define MIN(X, Y)           (((X) < (Y)) ? (X) : (Y))
@@ -84,7 +84,8 @@ enum {
 	DC_OP_RCV_ENDP0,
 	DC_OP_RCV_ERR,
 	DC_OP_EXIT,
-	DC_OP_INIT
+	DC_OP_INIT,
+	DC_OP_INIT_ERR,
 };
 
 
@@ -94,6 +95,11 @@ typedef struct _usb_dc_t {
 	volatile dqh_t *endptqh;
 	uint32_t status;
 	uint32_t dev_addr;
+	uint8_t connected;
+
+	void *ctxUser;
+	void (*cbEvent)(int, void *);
+	int (*cbClassSetup)(const usb_setup_packet_t *, void *, unsigned int, void *);
 
 	handle_t irqCond;
 	handle_t irqLock;
@@ -105,7 +111,8 @@ typedef struct _usb_dc_t {
 	volatile uint8_t op;
 	usb_setup_packet_t setup;
 
-	int runIrqThread;
+	volatile int endptFailed;
+	volatile int runIrqThread;
 	volatile uint32_t setupstat;
 } usb_dc_t;
 
@@ -168,6 +175,12 @@ extern int ctrl_init(usb_common_data_t *usb_data_in, usb_dc_t *dc_in);
 
 
 extern void ctrl_setAddress(uint32_t addr);
+
+
+extern void ctrl_initQtdMem(void);
+
+
+extern void ctrl_initQtd(void);
 
 
 extern int ctrl_endptInit(int endpt, endpt_data_t *ctrl_endptInit);

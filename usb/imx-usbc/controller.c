@@ -3,8 +3,8 @@
  *
  * imx-controller - usb device controller driver
  *
- * Copyright 2019, 2020 Phoenix Systems
- * Author: Kamil Amanowicz, Hubert Buczynski
+ * Copyright 2019-2021 Phoenix Systems
+ * Author: Kamil Amanowicz, Hubert Buczynski, Gerard Swiderski
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -55,10 +55,12 @@ enum {
 
 static int ctrl_allocBuff(int endpt, int dir)
 {
-	ctrl_common.data->endpts[endpt].buf[dir].vBuffer = usbclient_allocBuff(USB_BUFFER_SIZE);
+	/* Allocate buffer for the first time (initially vBuffer is NULL) */
+	if (ctrl_common.data->endpts[endpt].buf[dir].vBuffer == NULL)
+		ctrl_common.data->endpts[endpt].buf[dir].vBuffer = usbclient_allocBuff(USB_BUFFER_SIZE);
 
 	if (ctrl_common.data->endpts[endpt].buf[dir].vBuffer == MAP_FAILED)
-		return - ENOMEM;
+		return -ENOMEM;
 
 	ctrl_common.data->endpts[endpt].buf[dir].pBuffer = VM_2_PHYM((void *)ctrl_common.data->endpts[endpt].buf[dir].vBuffer);
 	ctrl_common.data->endpts[endpt].buf[dir].len = 0;
@@ -67,10 +69,27 @@ static int ctrl_allocBuff(int endpt, int dir)
 }
 
 
+void ctrl_initQtd(void)
+{
+	/*
+	 * Reset qtd offset for non control endpoints everytime device is re/connected to
+	 * host, at any time when desc_setup(REQ_SET_ADDRESS) is initiated
+	 */
+
+	ctrl_common.qtdOffs = 0;
+}
+
+
 static void *ctrl_allocQtdMem(void)
 {
 	if (!ctrl_common.qtdOffs) {
-		ctrl_common.dc->dtdMem = usbclient_allocBuff(USB_BUFFER_SIZE);
+		/* Allocate buffer for the first time (initially dtdMem is NULL) */
+		if (ctrl_common.dc->dtdMem == NULL)
+			ctrl_common.dc->dtdMem = usbclient_allocBuff(USB_BUFFER_SIZE);
+
+		if (ctrl_common.dc->dtdMem == MAP_FAILED)
+			return MAP_FAILED;
+
 		memset(ctrl_common.dc->dtdMem, 0, USB_BUFFER_SIZE);
 	}
 
@@ -83,7 +102,7 @@ static int ctrl_dtdInit(int endpt, int inQH, int outQh)
 	dtd_t *dtd;
 	int qh = endpt * 2;
 
-	if (!endpt)
+	if (endpt == 0)
 		return -EINVAL;
 
 	/* initialize dtd for selected endpoints */
@@ -131,6 +150,7 @@ static int ctrl_initEndptQh(int endpt, int dir, endpt_data_t *endpt_init)
 
 	setup |= endpt_init->ctrl[dir].data_toggle << (6 + dir * 16);
 	setup |= endpt_init->ctrl[dir].type << (2 + dir * 16);
+	setup |= endpt_init->ctrl[dir].stall << (0 + dir * 16);
 
 	return setup;
 }
@@ -168,17 +188,20 @@ int ctrl_endpt0Init(void)
 {
 	uint32_t qh_addr;
 
+	/* allocate ENDPT0_IN once, if already allocated reuse */
 	if (ctrl_allocBuff(0, USB_ENDPT_DIR_IN) < 0)
 		return -ENOMEM;
 
+	/* allocate ENDPT0_OUT once, if already allocated reuse */
 	if (ctrl_allocBuff(0, USB_ENDPT_DIR_OUT) < 0)
 		return -ENOMEM;
 
 	ctrl_common.data->endpts[0].caps[USB_ENDPT_DIR_IN].init = 1;
 	ctrl_common.data->endpts[0].caps[USB_ENDPT_DIR_OUT].init = 1;
 
-	/* map queue head list */
-	ctrl_common.dc->endptqh = usbclient_allocBuff(USB_BUFFER_SIZE);
+	/* allocate queue head list for the first time (initially endptqh is NULL) */
+	if (ctrl_common.dc->endptqh == NULL)
+		ctrl_common.dc->endptqh = usbclient_allocBuff(USB_BUFFER_SIZE);
 
 	if (ctrl_common.dc->endptqh == MAP_FAILED)
 		return -ENOMEM;
@@ -253,6 +276,7 @@ static int ctrl_buildDtd(dtd_t *dtd, uint32_t paddr, uint32_t size)
 }
 
 
+/* In case of non dTD error function may return NULL */
 dtd_t *ctrl_execTransfer(int endpt, uint32_t paddr, uint32_t sz, int dir)
 {
 	int shift;
@@ -261,34 +285,40 @@ dtd_t *ctrl_execTransfer(int endpt, uint32_t paddr, uint32_t sz, int dir)
 
 	int qh = (endpt << 1) + dir;
 
-	dtd = ctrl_getDtd(endpt, dir);
+	if (ctrl_common.dc->connected) {
+		dtd = ctrl_getDtd(endpt, dir);
 
-	ctrl_buildDtd((dtd_t *)dtd, paddr, sz);
+		ctrl_buildDtd((dtd_t *)dtd, paddr, sz);
 
-	shift = endpt + ((qh & 1) ? 16 : 0);
-	offs = (uint32_t)dtd & (((ctrl_common.dc->endptqh[qh].size) * sizeof(dtd_t)) - 1);
+		shift = endpt + ((qh & 1) ? 16 : 0);
+		offs = (uint32_t)dtd & (((ctrl_common.dc->endptqh[qh].size) * sizeof(dtd_t)) - 1);
 
-	ctrl_common.dc->endptqh[qh].dtd_next = (ctrl_common.dc->endptqh[qh].base + offs) & ~1;
-	ctrl_common.dc->endptqh[qh].dtd_token &= ~(1 << 6);
-	ctrl_common.dc->endptqh[qh].dtd_token &= ~(1 << 7);
+		ctrl_common.dc->endptqh[qh].dtd_next = (ctrl_common.dc->endptqh[qh].base + offs) & ~1;
+		ctrl_common.dc->endptqh[qh].dtd_token &= ~(1 << 6);
+		ctrl_common.dc->endptqh[qh].dtd_token &= ~(1 << 7);
 
-	while ((*(ctrl_common.dc->base + endptprime) & (1 << shift)))
-		;
+		while ((*(ctrl_common.dc->base + endptprime) & (1 << shift)))
+			;
 
-	*(ctrl_common.dc->base + endptprime) |= 1 << shift;
+		*(ctrl_common.dc->base + endptprime) |= 1 << shift;
 
-	/* prime the endpoint and wait for it to prime */
-	while ((*(ctrl_common.dc->base + endptprime) & (1 << shift)))
-		;
-	*(ctrl_common.dc->base + endptprime) |= 1 << shift;
-	while (!(*(ctrl_common.dc->base + endptprime) & (1 << shift)) && (*(ctrl_common.dc->base + endptstat) & (1 << shift)))
-		;
+		/* prime the endpoint and wait for it to prime */
+		while ((*(ctrl_common.dc->base + endptprime) & (1 << shift)))
+			;
+		*(ctrl_common.dc->base + endptprime) |= 1 << shift;
+		while (!(*(ctrl_common.dc->base + endptprime) & (1 << shift)) && (*(ctrl_common.dc->base + endptstat) & (1 << shift)) && (*(ctrl_common.dc->base + portsc1) & 1))
+			;
 
-	/* wait to finish transaction */
-	while (DTD_ACTIVE(dtd) && !DTD_ERROR(dtd))
-		;
+		/* wait to finish transaction while device is attached to the host */
+		while (DTD_ACTIVE(dtd) && !DTD_ERROR(dtd) && (*(ctrl_common.dc->base + portsc1) & 1))
+			;
 
-	return (dtd_t *)dtd;
+		/* check if device is attached */
+		if (*(ctrl_common.dc->base + portsc1) & 1)
+			return (dtd_t *)dtd;
+	}
+
+	return NULL;
 }
 
 
@@ -297,23 +327,41 @@ int ctrl_hfIrq(void)
 	int endpt = 0;
 
 	if ((ctrl_common.dc->setupstat = *(ctrl_common.dc->base + endptsetupstat)) & 0x1) {
-		/* trip winre set */
-		while (!((ctrl_common.dc->setupstat >> endpt) & 1))
-			endpt++;
+		/* Find setup transaction endpoint (0-15) */
+		while (!((ctrl_common.dc->setupstat >> endpt) & 1)) {
+			if (++endpt > 15) {
+				/* Clear USB interrupt */
+				*(ctrl_common.dc->base + usbsts) |= 1;
+				return 0;
+			}
+		}
+
+		/* Trip wire: ensure that the setup data payload is extracted from a QH by the DCD without being corrupted */
 		do {
 			*(ctrl_common.dc->base + usbcmd) |= 1 << 13;
 			memcpy(&ctrl_common.dc->setup, (void *)ctrl_common.dc->endptqh[endpt].setup_buff, sizeof(usb_setup_packet_t));
 		} while (!(*(ctrl_common.dc->base + usbcmd) & 1 << 13));
 
+		/* Acknowledge setup transfer */
 		*(ctrl_common.dc->base + endptsetupstat) |= 1 << endpt;
+
+		/* Trip wire semaphore clear */
 		*(ctrl_common.dc->base + usbcmd) &= ~(1 << 13);
+
+		/* Clear USB interrupt */
 		*(ctrl_common.dc->base + usbsts) |= 1;
 
 		ctrl_common.dc->endptqh[0].head = ctrl_common.dc->endptqh[0].tail;
 		ctrl_common.dc->endptqh[1].head = ctrl_common.dc->endptqh[1].tail;
 
-		while (*(ctrl_common.dc->base + endptsetupstat) & 1);
+		while (*(ctrl_common.dc->base + endptsetupstat) & 1)
+			;
+
 		desc_setup(&ctrl_common.dc->setup);
+	}
+	else {
+		/* Clear USB interrupt */
+		*(ctrl_common.dc->base + usbsts) |= 1;
 	}
 
 	return 1;
@@ -322,19 +370,43 @@ int ctrl_hfIrq(void)
 
 int ctrl_lfIrq(void)
 {
+	int status = ctrl_common.dc->connected;
+
+	ctrl_common.dc->connected = (*(ctrl_common.dc->base + portsc1) & 1) && (*(ctrl_common.dc->base + otgsc) & 1 << 9);
+
+	/* Reset received */
 	if ((*(ctrl_common.dc->base + usbsts) & 1 << 6)) {
 
 		*(ctrl_common.dc->base + endptsetupstat) = *(ctrl_common.dc->base + endptsetupstat);
 		*(ctrl_common.dc->base + endptcomplete) = *(ctrl_common.dc->base + endptcomplete);
 
-		while (*(ctrl_common.dc->base + endptprime));
+		while (*(ctrl_common.dc->base + endptprime))
+			;
 
 		*(ctrl_common.dc->base + endptflush) = 0xffffffff;
 
-		while (*(ctrl_common.dc->base + portsc1) & 1 << 8);
+		while (*(ctrl_common.dc->base + portsc1) & 1 << 8)
+			;
 
 		*(ctrl_common.dc->base + usbsts) |= 1 << 6;
 		ctrl_common.dc->status = DC_DEFAULT;
+
+		if (ctrl_common.dc->cbEvent)
+			ctrl_common.dc->cbEvent(USBCLIENT_EV_RESET, ctrl_common.dc->ctxUser); /* URI - RESET received */
+	}
+
+	/* Connect state has changed */
+	if (ctrl_common.dc->connected != status) {
+
+		while (*(ctrl_common.dc->base + endptprime))
+			;
+
+		*(ctrl_common.dc->base + endptflush) = 0xffffffff;
+
+		if (ctrl_common.dc->cbEvent) {
+			status = ctrl_common.dc->connected ? USBCLIENT_EV_CONNECT : USBCLIENT_EV_DISCONNECT;
+			ctrl_common.dc->cbEvent(status, ctrl_common.dc->ctxUser);
+		}
 	}
 
 	return 1;
@@ -351,7 +423,8 @@ static void ctrl_devInit(void)
 	ctrl_common.dc->status = DC_POWERED;
 
 	/* Run/Stop register is set to 0 when the reset process is complete. */
-	while (*(ctrl_common.dc->base + usbcmd) & (1 << 1));
+	while (*(ctrl_common.dc->base + usbcmd) & (1 << 1))
+		;
 
 	/* set usb mode to device */
 	*(ctrl_common.dc->base + usbmode) |= 2;
@@ -372,8 +445,9 @@ static void ctrl_devInit(void)
 int ctrl_init(usb_common_data_t *usb_data_in, usb_dc_t *dc_in)
 {
 	ctrl_common.dc = dc_in;
-	ctrl_common.qtdOffs = 0;
 	ctrl_common.data = usb_data_in;
+
+	ctrl_initQtd();
 
 	ctrl_devInit();
 
