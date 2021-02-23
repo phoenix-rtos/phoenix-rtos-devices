@@ -3,8 +3,8 @@
  *
  * client - usb client
  *
- * Copyright 2019, 2020 Phoenix Systems
- * Author: Kamil Amanowicz, Hubert Buczynski
+ * Copyright 2019-2021 Phoenix Systems
+ * Author: Kamil Amanowicz, Hubert Buczynski, Gerard Swiderski
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -30,7 +30,7 @@
 #define STACKSZ 512
 
 
-struct {	
+struct {
 	usb_dc_t dc;
 	usb_common_data_t data;
 
@@ -51,7 +51,7 @@ int usbclient_send(int endpt, const void *data, unsigned int len)
 	memcpy(imx_common.data.endpts[endpt].buf[USB_ENDPT_DIR_IN].vBuffer, data, len);
 	res = ctrl_execTransfer(endpt, imx_common.data.endpts[endpt].buf[USB_ENDPT_DIR_IN].pBuffer, len, USB_ENDPT_DIR_IN);
 
-	if (DTD_ERROR(res))
+	if (res == NULL || DTD_ERROR(res))
 		return -1;
 
 	return len - DTD_SIZE(res);
@@ -61,6 +61,8 @@ int usbclient_send(int endpt, const void *data, unsigned int len)
 static int usbclient_rcvEndp0(void *data, unsigned int len)
 {
 	int res = -1;
+
+	(void)len; /* FIXME: unused */
 
 	mutexLock(imx_common.dc.endp0Lock);
 	while ((imx_common.dc.op != DC_OP_RCV_ENDP0) && (imx_common.dc.op != DC_OP_RCV_ERR))
@@ -82,7 +84,7 @@ static int usbclient_rcvEndp0(void *data, unsigned int len)
 int usbclient_receive(int endpt, void *data, unsigned int len)
 {
 	dtd_t *dtd;
-	int res = -1;
+	int res;
 
 	if (len > USB_BUFFER_SIZE)
 		return -1;
@@ -90,27 +92,22 @@ int usbclient_receive(int endpt, void *data, unsigned int len)
 	if (!imx_common.data.endpts[endpt].caps[USB_ENDPT_DIR_OUT].init)
 		return -1;
 
-	if (endpt) {
-		dtd = ctrl_execTransfer(endpt, imx_common.data.endpts[endpt].buf[USB_ENDPT_DIR_OUT].pBuffer, USB_BUFFER_SIZE, USB_ENDPT_DIR_OUT);
+	if (endpt == 0)
+		return usbclient_rcvEndp0(data, len);
 
-		if (!DTD_ERROR(dtd)) {
-			res = USB_BUFFER_SIZE - DTD_SIZE(dtd);
-			if (res > len)
-				res = len;
+	dtd = ctrl_execTransfer(endpt, imx_common.data.endpts[endpt].buf[USB_ENDPT_DIR_OUT].pBuffer, USB_BUFFER_SIZE, USB_ENDPT_DIR_OUT);
 
-			memcpy(data, (const char *)imx_common.data.endpts[endpt].buf[USB_ENDPT_DIR_OUT].vBuffer, res);
-		}
-		else {
-			res = -1;
-		}
-	}
-	else {
-		res = usbclient_rcvEndp0(data, len);
-	}
+	if (dtd == NULL || DTD_ERROR(dtd))
+		return -1;
+
+	res = USB_BUFFER_SIZE - DTD_SIZE(dtd);
+	if (res > len)
+		res = len;
+
+	memcpy(data, (const char *)imx_common.data.endpts[endpt].buf[USB_ENDPT_DIR_OUT].vBuffer, res);
 
 	return res;
 }
-
 
 
 static int usbclient_intr(unsigned int intr, void *data)
@@ -123,6 +120,9 @@ static int usbclient_intr(unsigned int intr, void *data)
 
 static void usbclient_irqThread(void *arg)
 {
+	unsigned i;
+	int event;
+
 	mutexLock(imx_common.dc.irqLock);
 	while (imx_common.dc.runIrqThread) {
 		condWait(imx_common.dc.irqCond, imx_common.dc.irqLock, 0);
@@ -132,6 +132,28 @@ static void usbclient_irqThread(void *arg)
 			desc_classSetup(&imx_common.dc.setup);
 
 		ctrl_lfIrq();
+
+		/* Initialize endpoints */
+		if (imx_common.dc.op == DC_OP_INIT) {
+			imx_common.dc.endptFailed = 0;
+			event = USBCLIENT_EV_INIT;
+
+			ctrl_initQtd();
+
+			for (i = 1; i < ENDPOINTS_NUMBER; ++i) {
+				if (ctrl_endptInit(i, &imx_common.data.endpts[i]) < 0) {
+					imx_common.dc.endptFailed = i;
+					event = USBCLIENT_EV_FAULT;
+					break;
+				}
+			}
+
+			if (imx_common.dc.cbEvent) {
+				imx_common.dc.cbEvent(event, imx_common.dc.ctxUser);
+			}
+
+			imx_common.dc.op = DC_OP_NONE;
+		}
 	}
 	mutexUnlock(imx_common.dc.irqLock);
 
@@ -163,10 +185,27 @@ static void usbclient_cleanData(void)
 }
 
 
+void usbclient_setUserContext(void *ctxUser)
+{
+	imx_common.dc.ctxUser = ctxUser;
+}
+
+
+void usbclient_setEventCallback(void (*cbEvent)(int, void *))
+{
+	imx_common.dc.cbEvent = cbEvent;
+}
+
+
+void usbclient_setClassCallback(int (*cbClassSetup)(const usb_setup_packet_t *, void *, unsigned int, void *))
+{
+	imx_common.dc.cbClassSetup = cbClassSetup;
+}
+
+
 int usbclient_init(usb_desc_list_t *desList)
 {
 	int i;
-	int res = 0;
 
 	phy_init();
 
@@ -174,8 +213,10 @@ int usbclient_init(usb_desc_list_t *desList)
 	imx_common.dc.irqCond = 0;
 	imx_common.dc.endp0Lock = 0;
 	imx_common.dc.endp0Cond = 0;
+	imx_common.dc.endptFailed = 0;
 	imx_common.dc.runIrqThread = 1;
 
+	imx_common.dc.connected = 0;
 	imx_common.dc.dev_addr = 0;
 	imx_common.dc.base = phy_getBase(USB_BUFFER_SIZE);
 
@@ -237,14 +278,14 @@ int usbclient_init(usb_desc_list_t *desList)
 	beginthread(usbclient_irqThread, THREADS_PRIORITY, imx_common.stack, STACKSZ, NULL);
 	interrupt(phy_getIrq(), usbclient_intr, NULL, imx_common.dc.irqCond, &imx_common.dc.inth);
 
-	while (imx_common.dc.op != DC_OP_EXIT) {
-		if (imx_common.dc.op == DC_OP_INIT) {
-			for (i = 1; i <= ENDPOINTS_NUMBER; ++i) {
-				if ((res = ctrl_endptInit(i, &imx_common.data.endpts[i])) != EOK)
-					return res;
-			}
-			return res;
+	/* Wait 500ms and catch endpoint initialization error */
+	for (i = 0; i < 10; i++) {
+		if (imx_common.dc.endptFailed > 0) {
+			usbclient_destroy();
+			return -ENOMEM;
 		}
+
+		usleep(50 * 1000);
 	}
 
 	return EOK;
