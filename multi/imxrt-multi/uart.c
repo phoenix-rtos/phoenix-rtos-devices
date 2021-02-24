@@ -96,7 +96,7 @@ static int uart_handleIntr(unsigned int n, void *arg)
 	}
 
 	/* clear RX framing and noise error */
-	if (*(uart->base + statr) & (1 << 18) | (1 << 17))
+	if (*(uart->base + statr) & ((1 << 18) | (1 << 17)))
 		*(uart->base + statr) |= (1 << 18) | (1 << 17);
 
 	return 1;
