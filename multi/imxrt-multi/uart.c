@@ -680,6 +680,8 @@ int uart_init(void)
 
 	uart_initPins();
 
+	const speed_t default_baud[] = { UART_BAUDRATES };
+
 	for (i = 0, dev = 0; dev < sizeof(uartConfig) / sizeof(uartConfig[0]); ++dev) {
 		if (!uartConfig[dev])
 			continue;
@@ -721,7 +723,7 @@ int uart_init(void)
 
 		/* Set 115200 default baudrate */
 		t = *(uart->base + baudr) & ~((0x1f << 24) | (1 << 17) | 0x1fff);
-		*(uart->base + baudr) = t | calculate_baudrate(B115200);
+		*(uart->base + baudr) = t | calculate_baudrate(default_baud[dev]);
 
 		/* Set 8 bit and no parity mode */
 		*(uart->base + ctrlr) &= ~0x117;
