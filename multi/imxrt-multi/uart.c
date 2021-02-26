@@ -85,19 +85,19 @@ enum { veridr = 0, paramr, globalr, pincfgr, baudr, statr, ctrlr, datar, matchr,
 
 static int uart_handleIntr(unsigned int n, void *arg)
 {
+	uint32_t flags;
 	uart_t *uart = (uart_t *)arg;
 
 	*(uart->base + ctrlr) &= ~((1 << 27) | (1 << 26) | (1 << 25) | (1 << 23) | (1 << 21));
 
-	/* RX overrun - invalidate fifo and clear status flag */
-	if (*(uart->base + statr) & (1 << 19)) {
-		*(uart->base + fifor) |= (1 << 14);
-		*(uart->base + statr) |= (1 << 19);
-	}
+	/* Error flags: parity, framing, noise, overrun */
+	flags = *(uart->base + statr) & (0xf << 16);
 
-	/* clear RX framing and noise error */
-	if (*(uart->base + statr) & ((1 << 18) | (1 << 17)))
-		*(uart->base + statr) |= (1 << 18) | (1 << 17);
+	/* RX overrun: invalidate fifo */
+	if (flags & (1 << 19))
+		*(uart->base + fifor) |= 1 << 14;
+
+	*(uart->base + statr) |= flags;
 
 	return 1;
 }
