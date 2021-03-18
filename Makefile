@@ -20,6 +20,7 @@ MAKEFLAGS += --no-print-directory
 #TARGET ?= armv7a7-imx6ull
 TARGET ?= ia32-generic
 #TARGET ?= riscv64-spike
+#TARGET ?= host-pc
 
 include ../phoenix-rtos-build/Makefile.common
 include ../phoenix-rtos-build/Makefile.$(TARGET_SUFF)
