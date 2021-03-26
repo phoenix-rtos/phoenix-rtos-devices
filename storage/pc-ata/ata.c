@@ -134,31 +134,26 @@ static void ata_resetbus(ata_bus_t *bus)
 }
 
 
-static int ata_wait(ata_bus_t *bus, uint8_t clear, uint8_t set)
+static int ata_wait(ata_bus_t *bus, uint8_t clear, uint8_t set, uint8_t err)
 {
 	uint8_t status;
 
 	do {
-		status = (uint8_t)ata_readreg(bus->base, REG_STATUS, 1);
-
-		if (status & STATUS_ERR)
+		if ((status = (uint8_t)ata_readreg(bus->base, REG_STATUS, 1)) & err)
 			return -1;
-
-		if (status & STATUS_DF)
-			return -2;
-
 	} while ((status & clear) || (status & set) != set);
 
 	return EOK;
 }
 
 
-static void ata_select(ata_dev_t *dev, uint64_t lba, uint16_t sectors, uint8_t mode)
+static int ata_select(ata_dev_t *dev, uint64_t lba, uint16_t sectors, uint8_t mode)
 {
 	static ata_dev_t *ldev = NULL;
 	ata_bus_t *bus = dev->bus;
 	void *base = bus->base;
 	uint16_t c = 0, h = 0, s = 0;
+	int err;
 
 	/* Select addressing mode */
 	switch (mode) {
@@ -190,8 +185,9 @@ static void ata_select(ata_dev_t *dev, uint64_t lba, uint16_t sectors, uint8_t m
 
 		/* Send set features command */
 		ata_writereg(base, REG_CMD, CMD_SET_FEATUERS, 1);
-		/* Wait until BSY clears */
-		ata_wait(bus, STATUS_BSY, 0);
+		/* Wait until BSY clears (ignore error status bit) */
+		if ((err = ata_wait(bus, STATUS_BSY, 0, STATUS_DF)) < 0)
+			return err;
 
 		/* Don't update ldev on device initialization */
 		if (mode != -1)
@@ -209,6 +205,8 @@ static void ata_select(ata_dev_t *dev, uint64_t lba, uint16_t sectors, uint8_t m
 	ata_writereg(base, REG_SECTOR,    (s >> 0) & 0xff, 1);
 	ata_writereg(base, REG_LCYLINDER, (c >> 0) & 0xff, 1);
 	ata_writereg(base, REG_HCYLINDER, (c >> 8) & 0xff, 1);
+
+	return EOK;
 }
 
 
@@ -223,7 +221,7 @@ static ssize_t ata_pio(ata_dev_t *dev, uint16_t sectors, uint8_t *buff, uint8_t 
 
 	for (i = 0; i < sectors; i++) {
 		/* Wait until BSY clears and DRQ sets */
-		if ((err = ata_wait(bus, STATUS_BSY, STATUS_DRQ)) < 0)
+		if ((err = ata_wait(bus, STATUS_BSY, STATUS_DRQ, STATUS_ERR | STATUS_DF)) < 0)
 			return err;
 
 		switch (dir) {
@@ -250,7 +248,7 @@ static ssize_t ata_pio(ata_dev_t *dev, uint16_t sectors, uint8_t *buff, uint8_t 
 	}
 
 	/* Wait until DRQ clears and RDY sets */
-	if ((err = ata_wait(bus, STATUS_DRQ, STATUS_RDY)) < 0)
+	if ((err = ata_wait(bus, STATUS_DRQ, STATUS_RDY, STATUS_ERR | STATUS_DF)) < 0)
 		return err;
 
 	return ret;
@@ -263,12 +261,14 @@ static ssize_t _ata_access(ata_dev_t *dev, uint64_t lba, uint16_t sectors, uint8
 	void *base = bus->base;
 	ssize_t ret;
 
-	/* Wait until BSY clears */
-	if ((ret = ata_wait(bus, STATUS_BSY, 0)) < 0)
+	/* Wait until BSY clears (ignore error status bit) */
+	if ((ret = ata_wait(bus, STATUS_BSY, 0, STATUS_DF)) < 0)
 		return ret;
 
 	/* Select the device and prepare for the transfer */
-	ata_select(dev, lba, sectors, dev->mode);
+	if ((ret = ata_select(dev, lba, sectors, dev->mode)) < 0)
+		return ret;
+
 	/* Send the command */
 	ata_writereg(base, REG_CMD, cmd, 1);
 
@@ -369,26 +369,27 @@ static int ata_initdev(ata_bus_t *bus, ata_dev_t *dev)
 	dev->bus = bus;
 
 	/* Select the device */
-	ata_select(dev, 0, 0, -1);
+	if ((err = ata_select(dev, 0, 0, -1)) < 0)
+		return err;
 
 	/* Floating bus check */
 	if (ata_readreg(base, REG_STATUS, 1) == 0xff)
-		return -ENXIO;
+		return -ENODEV;
 
 	/* Send identify command */
 	ata_writereg(base, REG_CMD, CMD_IDENTIFY, 1);
 
 	/* Status = 0 => device doesn't exist */
 	if (!ata_readreg(base, REG_STATUS, 1))
-		return -ENXIO;
+		return -ENODEV;
 
 	/* Wait until BSY clears and DRQ sets */
-	if ((err = ata_wait(bus, STATUS_BSY, STATUS_DRQ)) < 0)
+	if ((err = ata_wait(bus, STATUS_BSY, STATUS_DRQ, STATUS_ERR | STATUS_DF)) < 0)
 		return err;
 
 	/* Check if it's ATA device */
 	if ((ata_readreg(base, REG_HCYLINDER, 1) << 8) | ata_readreg(base, REG_LCYLINDER, 1))
-		return -ENXIO;
+		return -ENODEV;
 
 	/* Read device identification info */
 	for (i = 0; i < sizeof(info) / sizeof(info[0]); i += 2) {
@@ -398,7 +399,7 @@ static int ata_initdev(ata_bus_t *bus, ata_dev_t *dev)
 	}
 
 	/* Wait until DRQ clears and RDY sets */
-	if ((err = ata_wait(bus, STATUS_DRQ, STATUS_RDY)) < 0)
+	if ((err = ata_wait(bus, STATUS_DRQ, STATUS_RDY, STATUS_ERR | STATUS_DF)) < 0)
 		return err;
 
 	/* Check advanced PIO mode support */
@@ -464,7 +465,7 @@ static int ata_initbus(void *base, void *ctrl, ata_bus_t *bus)
 
 	/* Floating bus check */
 	if (ata_readreg(base, REG_STATUS, 1) == 0xff)
-		return -ENXIO;
+		return -ENODEV;
 
 	if ((bus->devs[MASTER] = (ata_dev_t *)malloc(sizeof(ata_dev_t))) == NULL)
 		return -ENOMEM;
@@ -488,7 +489,7 @@ static int ata_initbus(void *base, void *ctrl, ata_bus_t *bus)
 	}
 
 	if (bus->devs[MASTER] == NULL && bus->devs[SLAVE] == NULL)
-		return -ENXIO;
+		return -ENODEV;
 
 	if ((err = mutexCreate(&bus->lock)) < 0) {
 		free(bus->devs[MASTER]);
