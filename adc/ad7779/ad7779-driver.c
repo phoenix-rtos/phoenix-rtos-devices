@@ -464,16 +464,14 @@ static int dev_ctl(msg_t *msg)
 	switch (dev_ctl.type) {
 		case adc_dev_ctl__enable:
 			common.enabled = 1;
-			common.current = 0;
-			edma_channel_enable(SAI1_RX_DMA_CHANNEL);
 			sai_rx_enable();
+			edma_channel_enable(SAI1_RX_DMA_CHANNEL);
 			return EOK;
 
 		case adc_dev_ctl__disable:
-			sai_rx_disable();
 			edma_channel_disable(SAI1_RX_DMA_CHANNEL);
+			sai_rx_disable();
 			common.enabled = 0;
-			common.current = 0;
 			return EOK;
 
 		case adc_dev_ctl__reset:
