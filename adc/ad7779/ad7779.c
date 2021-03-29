@@ -29,15 +29,15 @@
 #define COL_CYAN	"\033[1;36m"
 #define COL_NORMAL  "\033[0m"
 
-#define LOG_TAG "ad7779-drv: "
+#define LOG_TAG "ad7779: "
 
-#define log_info(fmt, ...)	  do { printf(COL_CYAN LOG_TAG fmt COL_NORMAL "\n", ##__VA_ARGS__); } while (0)
-#define log_error(fmt, ...)	 do { printf(COL_RED  LOG_TAG fmt COL_NORMAL "\n", ##__VA_ARGS__); } while (0)
+#define log_info(fmt, ...)      do { printf(COL_CYAN LOG_TAG fmt COL_NORMAL "\n", ##__VA_ARGS__); } while (0)
+#define log_error(fmt, ...)     do { printf(COL_RED  LOG_TAG fmt COL_NORMAL "\n", ##__VA_ARGS__); } while (0)
 
-#if 1
-#define log_debug(fmt, ...)	 do { printf(LOG_TAG fmt "\n", ##__VA_ARGS__); } while (0)
-#else
+#ifdef NDEBUG
 #define log_debug(fmt, ...)
+#else
+#define log_debug(fmt, ...)     do { printf(LOG_TAG fmt "\n", ##__VA_ARGS__); } while (0)
 #endif
 
 #define AD7779_CHn_CONFIG(n)              (0x00 + n)
@@ -517,7 +517,7 @@ int ad7779_get_channel_offset(uint8_t channel, uint32_t *offset)
 	val |= (reg << 16);
 	*offset = val;
 
-	// log_debug("current offset for channel %u is 0x%x", channel, *offset);
+	log_debug("current offset for channel %u is 0x%x", channel, *offset);
 
 	return AD7779_OK;
 }
@@ -529,7 +529,7 @@ int ad7779_set_channel_offset(uint8_t channel, uint32_t offset)
 	if (channel >= AD7779_NUM_OF_CHANNELS)
 		return AD7779_ARG_ERROR;
 
-	// log_debug("setting offset for channel %u to 0x%x", channel, offset);
+	log_debug("setting offset for channel %u to 0x%x", channel, offset);
 
 	if ((res = ad7779_write_reg(AD7779_CHn_OFFSET_LBYTE(channel),
 			offset & 0xff)) < 0)
@@ -564,7 +564,7 @@ int ad7779_get_channel_gain_correction(uint8_t channel, uint32_t *gain)
 	val |= (reg << 16);
 	*gain = val;
 
-	// log_debug("current gain correction for channel %u is 0x%x", channel, *gain);
+	log_debug("current gain correction for channel %u is 0x%x", channel, *gain);
 
 	return AD7779_OK;
 }
@@ -576,7 +576,7 @@ int ad7779_set_channel_gain_correction(uint8_t channel, uint32_t gain)
 	if (channel >= AD7779_NUM_OF_CHANNELS)
 		return AD7779_ARG_ERROR;
 
-	// log_debug("setting gain correction for channel %u to 0x%x", channel, gain);
+	log_debug("setting gain correction for channel %u to 0x%x", channel, gain);
 
 	if ((res = ad7779_write_reg(AD7779_CHn_GAIN_LBYTE(channel),
 			gain & 0xff)) < 0)

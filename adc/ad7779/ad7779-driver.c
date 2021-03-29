@@ -36,8 +36,14 @@
 #define COL_CYAN    "\033[1;36m"
 #define COL_NORMAL  "\033[0m"
 
-#define LOG_TAG "ad7779-drv: "
+#define LOG_TAG "ad7779: "
+
+#ifdef NDEBUG
+#define log_debug(fmt, ...)
+#else
 #define log_debug(fmt, ...)     do { printf(LOG_TAG fmt "\n", ##__VA_ARGS__); } while (0)
+#endif
+
 #define log_info(fmt, ...)      do { printf(LOG_TAG COL_CYAN fmt COL_NORMAL "\n", ##__VA_ARGS__); } while (0)
 #define log_error(fmt, ...)     do { printf(LOG_TAG COL_RED fmt COL_NORMAL "\n", ##__VA_ARGS__); } while (0)
 
