@@ -177,7 +177,7 @@ static ssize_t console_read(char *str, size_t bufflen, int mode)
 #if TTY1 || TTY2 || TTY3 || TTY4 || TTY5
 	return -ENOSYS;
 #else
-	return uart_read(UART_CONSOLE - 1, str, bufflen, mode, 0);
+	return uart_read(UART_CONSOLE - 1, str, bufflen, uart_mnormal, 0);
 #endif
 }
 
