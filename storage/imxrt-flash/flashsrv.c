@@ -68,7 +68,7 @@ typedef struct {
 
 struct {
 	flash_memory_t flash_memories[FLASH_MEMORIES_NO];
-	uint32_t flexspi_adresses[FLASH_MEMORIES_NO];
+	uint32_t flexspi_addresses[FLASH_MEMORIES_NO];
 } flashsrv_common;
 
 
@@ -679,8 +679,8 @@ static int flashsrv_flashMemoriesInit(void)
 
 	flash_memory_t *memory;
 
-	flashsrv_common.flexspi_adresses[0] = FLASH_EXT_DATA_ADDRESS;
-	flashsrv_common.flexspi_adresses[1] = FLASH_INTERNAL_DATA_ADDRESS;
+	flashsrv_common.flexspi_addresses[0] = FLASH_EXT_DATA_ADDRESS;
+	flashsrv_common.flexspi_addresses[1] = FLASH_INTERNAL_DATA_ADDRESS;
 
 	/* Wait on root */
 	while (lookup("/", NULL, &odir) < 0)
@@ -707,7 +707,7 @@ static int flashsrv_flashMemoriesInit(void)
 			return err;
 		}
 
-		memory->ctx.address = flashsrv_common.flexspi_adresses[i];
+		memory->ctx.address = flashsrv_common.flexspi_addresses[i];
 
 		if ((err = flash_init(&memory->ctx)) == EOK) {
 			memory->fStatus = flash_memory_active;
