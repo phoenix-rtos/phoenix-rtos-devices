@@ -112,10 +112,13 @@ static int tty_irqHandler(unsigned int n, void *arg)
 static void tty_irqthread(void *arg)
 {
 	tty_ctx_t *ctx = (tty_ctx_t *)arg;
+	int keptidle = 0;
+
+	/* TODO add small TX and RX buffers that can be directly read / written in irq handlers */
 
 	while (1) {
 		mutexLock(ctx->irqlock);
-		while ((!ctx->rxready && !(tty_txready(ctx) && libtty_txready(&ctx->tty_common))) || !(*(ctx->base + cr1) & 1))
+		while ((!ctx->rxready && !(tty_txready(ctx) && (libtty_txready(&ctx->tty_common) || keptidle))) || !(*(ctx->base + cr1) & 1))
 			condWait(ctx->cond, ctx->irqlock, 0);
 		mutexUnlock(ctx->irqlock);
 
@@ -124,9 +127,19 @@ static void tty_irqthread(void *arg)
 			ctx->rxready = 0;
 		}
 
-		if (tty_txready(ctx) && libtty_txready(&ctx->tty_common)) {
-			*(ctx->base + tdr) = libtty_getchar(&ctx->tty_common, NULL);
-			*(ctx->base + cr1) |= (1 << 7);
+		if (libtty_txready(&ctx->tty_common)) {
+			if (tty_txready(ctx)) {
+				if (!keptidle) {
+					keptidle = 1;
+					keepidle(1);
+				}
+				*(ctx->base + tdr) = libtty_getchar(&ctx->tty_common, NULL);
+				*(ctx->base + cr1) |= (1 << 7);
+			}
+		}
+		else if (keptidle) {
+			keptidle = 0;
+			keepidle(0);
 		}
 	}
 }
