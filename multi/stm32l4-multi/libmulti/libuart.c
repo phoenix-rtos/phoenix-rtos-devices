@@ -287,7 +287,7 @@ int libuart_init(libuart_ctx *ctx, unsigned int uart)
 	ctx->base = info[uart].base;
 
 	/* Set up UART to 9600,8,n,1 16-bit oversampling */
-	libuart_configure(ctx, 8, uart_parnone, 9600, 1);
+	libuart_configure(ctx, 8, uart_parnone, 115200, 1);
 
 	interrupt(info[uart].irq, libuart_rxirq, (void *)ctx, ctx->rxcond, NULL);
 	interrupt(info[uart].irq, libuart_txirq, (void *)ctx, ctx->txcond, NULL);

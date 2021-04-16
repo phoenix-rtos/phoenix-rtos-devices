@@ -404,7 +404,7 @@ int tty_init(void)
 
 		/* Set up UART to 9600,8,n,1 16-bit oversampling */
 		_tty_configure(ctx, 8, tty_parnone, 1);
-		tty_setBaudrate(ctx, B9600);
+		tty_setBaudrate(ctx, B115200);
 
 		interrupt(info[uart - usart1].irq, tty_irqHandler, (void *)ctx, ctx->cond, NULL);
 
