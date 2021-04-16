@@ -32,7 +32,7 @@ static int libuart_txirq(unsigned int n, void *arg)
 	libuart_ctx *ctx = (libuart_ctx *)arg;
 	int release = -1;
 
-	if (*(ctx->base + isr) & (1 << 7)) {
+	if ((*(ctx->base + cr1) & (1 << 7)) && (*(ctx->base + isr) & (1 << 7))) {
 		/* Txd buffer empty */
 		if (ctx->txbeg != ctx->txend) {
 			*(ctx->base + tdr) = *(ctx->txbeg++);

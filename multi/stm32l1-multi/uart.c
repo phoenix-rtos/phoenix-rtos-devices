@@ -71,7 +71,7 @@ static int uart_txirq(unsigned int n, void *arg)
 {
 	int uart = (int)arg, release = -1;
 
-	if ((*(uart_common[uart].base + sr) & (1 << 7))) {
+	if ((*(uart_common[uart].base + cr1) & (1 << 7)) && (*(uart_common[uart].base + sr) & (1 << 7))) {
 		/* Txd buffer empty */
 		if (uart_common[uart].txbeg != uart_common[uart].txend) {
 			*(uart_common[uart].base + dr) = *(uart_common[uart].txbeg++);
