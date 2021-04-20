@@ -348,7 +348,7 @@ static void tty_thread(void *arg)
 
 void tty_log(const char *str)
 {
-#if TTY_CNT != 0
+#if CONSOLE_IS_TTY
 	libtty_write(&tty_getCtx(0)->tty_common, str, strlen(str), 0);
 #endif
 }
@@ -376,6 +376,11 @@ int tty_init(void)
 
 	portCreate(&uart_common.port);
 	oid.port = uart_common.port;
+
+#if CONSOLE_IS_TTY
+	oid.id = 0;
+	portRegister(uart_common.port, "/dev/tty", &oid);
+#endif
 
 	for (uart = usart1; uart <= uart5; ++uart) {
 		if (!uartConfig[uart])
@@ -416,9 +421,6 @@ int tty_init(void)
 		oid.id = uart - usart1 + 1;
 		portRegister(uart_common.port, fname, &oid);
 	}
-
-	oid.id = 0;
-	portRegister(uart_common.port, "/dev/tty", &oid);
 
 	for (i = 0; i < THREAD_POOL; ++i)
 		beginthread(tty_thread, THREAD_PRIO, uart_common.poolstack[i], sizeof(uart_common.poolstack[i]), (void *)i);
