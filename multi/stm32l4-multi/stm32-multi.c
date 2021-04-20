@@ -163,7 +163,7 @@ static void handleMsg(msg_t *msg)
 
 static ssize_t console_write(const char *str, size_t len, int mode)
 {
-#if TTY1 || TTY2 || TTY3 || TTY4 || TTY5
+#if CONSOLE_IS_TTY
 	tty_log(str);
 	return (ssize_t)len;
 #else
@@ -174,7 +174,7 @@ static ssize_t console_write(const char *str, size_t len, int mode)
 
 static ssize_t console_read(char *str, size_t bufflen, int mode)
 {
-#if TTY1 || TTY2 || TTY3 || TTY4 || TTY5
+#if CONSOLE_IS_TTY
 	return -ENOSYS;
 #else
 	return uart_read(UART_CONSOLE - 1, str, bufflen, uart_mnormal, 0);
@@ -239,6 +239,11 @@ int main(void)
 
 	priority(THREADS_PRIORITY);
 
+#if !CONSOLE_IS_TTY
+	/* called before init functions to redirect logs here */
+	portCreate(&common.port);
+#endif
+
 	rcc_init();
 	exti_init();
 	tty_init();
@@ -250,7 +255,10 @@ int main(void)
 	i2c_init();
 	uart_init();
 
+#if CONSOLE_IS_TTY
 	portCreate(&common.port);
+#endif
+
 	portRegister(common.port, "/multi", &oid);
 
 	console_write(welcome, sizeof(welcome) - 1, 0);
