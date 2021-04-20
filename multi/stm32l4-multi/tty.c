@@ -403,7 +403,7 @@ int tty_init(void)
 		callbacks.set_cflag = tty_setCflag;
 		callbacks.signal_txready = tty_signalTxReady;
 
-		if (libtty_init(&ctx->tty_common, &callbacks, 64) < 0)
+		if (libtty_init(&ctx->tty_common, &callbacks, 512) < 0)
 			return -1;
 
 		mutexCreate(&ctx->irqlock);
