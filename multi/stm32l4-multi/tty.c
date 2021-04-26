@@ -375,7 +375,7 @@ int tty_init(void)
 	oid_t oid;
 	libtty_callbacks_t callbacks;
 	tty_ctx_t *ctx;
-	const struct {
+	static const struct {
 		volatile uint32_t *base;
 		int dev;
 		unsigned irq;

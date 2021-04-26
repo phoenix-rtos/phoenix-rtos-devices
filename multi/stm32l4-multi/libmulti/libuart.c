@@ -260,7 +260,7 @@ int libuart_read(libuart_ctx *ctx, void* buff, unsigned int count, char mode, un
 int libuart_init(libuart_ctx *ctx, unsigned int uart)
 {
 
-	const struct {
+	static const struct {
 		volatile uint32_t *base;
 		int dev;
 		unsigned irq;
@@ -296,5 +296,3 @@ int libuart_init(libuart_ctx *ctx, unsigned int uart)
 
 	return 0;
 }
-
-

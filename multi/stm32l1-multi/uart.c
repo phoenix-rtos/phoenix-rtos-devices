@@ -282,7 +282,7 @@ int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int 
 int uart_init(void)
 {
 	int i, uart;
-	const struct {
+	static const struct {
 		volatile uint32_t *base;
 		int dev;
 		unsigned irq;
