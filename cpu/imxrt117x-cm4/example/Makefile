@@ -1,0 +1,61 @@
+#
+# Makefile for blinky M4 example
+#
+# ARMv7 (Cortex-M4)
+#
+# Copyright 2021 Phoenix Systems
+#
+
+TARGET ?= armv7m4-imxrt117x
+CROSS ?= arm-none-eabi-
+CC = $(CROSS)gcc
+LD = $(CROSS)ld
+
+TOPDIR := $(CURDIR)
+PREFIX_BUILD ?= ../../../../_build/$(TARGET)
+PREFIX_BUILD := $(abspath $(PREFIX_BUILD))
+BUILD_DIR ?= $(PREFIX_BUILD)/$(notdir $(TOPDIR))
+BUILD_DIR := $(abspath $(BUILD_DIR))
+
+# build artifacts dir
+CURR_SUFFIX := $(patsubst $(TOPDIR)/%,%,$(abspath $(CURDIR))/)
+PREFIX_O := $(BUILD_DIR)/$(CURR_SUFFIX)
+
+# target install paths, can be provided exterally
+PREFIX_A ?= $(PREFIX_BUILD)/lib/
+PREFIX_H ?= $(PREFIX_BUILD)/include/
+PREFIX_PROG ?= $(PREFIX_BUILD)/prog/
+PREFIX_PROG_STRIPPED ?= $(PREFIX_BUILD)/prog.stripped/
+
+CFLAGS += -Wall -Wstrict-prototypes -g -nostartfiles -nostdlib\
+	-mthumb -fomit-frame-pointer -ffreestanding -mno-unaligned-access\
+	-fstack-usage -mcpu=cortex-m4 -mfloat-abi=hard -mfpu=fpv5-d16 \
+	-O2 -I $(PREFIX_H) -L $(PREFIX_A)
+
+LDFLAGS := -z max-page-size=0x10 --gc-sections -e _start --section-start .init=1ffe0000 -Tbss=20000000
+
+OBJS = $(addprefix $(PREFIX_O), blinky.o)
+LIBS = $(PREFIX_A)libcm4.a
+
+GCCLIB := $(shell $(CC) $(CFLAGS) -print-libgcc-file-name)
+
+$(PREFIX_O)%.o: %.c
+	@mkdir -p $(@D)
+	$(SIL)$(CC) -c $(CFLAGS) $< -o "$@"
+
+$(PREFIX_O)%.o: %.S
+	@mkdir -p $(@D)
+	$(SIL)$(CC) -c $(CFLAGS) $< -o "$@"
+
+$(PREFIX_PROG)blinky.elf: $(OBJS) $(LIBS) $(GCCLIB)
+	@mkdir -p $(@D)
+	$(SIL)$(LD) $(LDFLAGS) $(OBJS) $(LIBS) $(GCCLIB) -o "$@"
+
+$(PREFIX_PROG_STRIPPED)blinky.bin: $(PREFIX_PROG)blinky.elf
+	@mkdir -p $(@D)
+	$(SIL)$(CROSS)objcopy -Obinary "$<" "$@"
+
+all: $(PREFIX_PROG_STRIPPED)blinky.bin
+
+clean:
+	rm -f $(PREFIX_O)*.o $(PREFIX_O)*.su $(PREFIX_PROG)blinky.elf $(PREFIX_PROG_STRIPPED)blinky.bin
