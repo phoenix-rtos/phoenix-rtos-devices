@@ -1,0 +1,55 @@
+#
+# Makefile for libm4
+#
+# ARMv7 (Cortex-M4)
+#
+# Copyright 2021 Phoenix Systems
+#
+
+TARGET ?= armv7m4-imxrt117x
+CROSS ?= arm-none-eabi-
+CC = $(CROSS)gcc
+AR = $(CROSS)ar
+
+TOPDIR := $(CURDIR)
+PREFIX_BUILD ?= ../../../../_build/$(TARGET)
+PREFIX_BUILD := $(abspath $(PREFIX_BUILD))
+BUILD_DIR ?= $(PREFIX_BUILD)/$(notdir $(TOPDIR))
+BUILD_DIR := $(abspath $(BUILD_DIR))
+
+# build artifacts dir
+CURR_SUFFIX := $(patsubst $(TOPDIR)/%,%,$(abspath $(CURDIR))/)
+PREFIX_O := $(BUILD_DIR)/$(CURR_SUFFIX)
+
+# target install paths, can be provided exterally
+PREFIX_A ?= $(PREFIX_BUILD)/lib/
+PREFIX_H ?= $(PREFIX_BUILD)/include/
+PREFIX_PROG ?= $(PREFIX_BUILD)/prog/
+PREFIX_PROG_STRIPPED ?= $(PREFIX_BUILD)/prog.stripped/
+
+CFLAGS += -Wall -Wstrict-prototypes -g -nostartfiles -nostdlib\
+	-mthumb -fomit-frame-pointer -ffreestanding -mno-unaligned-access\
+	-fstack-usage -mcpu=cortex-m4 -mfloat-abi=hard -mfpu=fpv5-d16 -O2
+
+OBJS = $(addprefix $(PREFIX_O), crt0.o _startc.o cm4.o gpio.o string.o)
+HEADERS = $(addprefix $(PREFIX_H), gpio.h cm4.h string.h)
+
+$(PREFIX_O)%.o: %.c
+	@mkdir -p $(@D)
+	$(SIL)$(CC) -c $(CFLAGS) $< -o "$@"
+
+$(PREFIX_O)%.o: %.S
+	@mkdir -p $(@D)
+	$(SIL)$(CC) -c $(CFLAGS) $< -o "$@"
+
+$(PREFIX_A)libcm4.a: $(OBJS)
+	$(SIL)$(AR) -r $@ $^ 2>/dev/null
+
+$(PREFIX_H)%.h: %.h
+	$(SIL)mkdir -p $(@D)
+	cp -pR "$<" "$@"
+
+all: $(PREFIX_A)libcm4.a $(HEADERS)
+
+clean:
+	rm -f $(PREFIX_O)*.o $(PREFIX_O)*.su $(PREFIX_A)libcm4.a $(HEADERS)
