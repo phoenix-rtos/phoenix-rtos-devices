@@ -5,16 +5,15 @@
 # Author: Hubert Buczynski, Marcin Baran
 #
 
-OLED_CORE = oled-phy.o
-OLED_GRAPHIC = oled-graphic.o fonts/font.o fonts/5x7.o
+OLED_CORE := oled-phy.c
+OLED_GRAPHIC := oled-graphic.c fonts/font.c fonts/5x7.c
 
-$(PREFIX_PROG)oled-test: $(addprefix $(PREFIX_O)display/oled-128O064B0/, oled-test.o $(OLED_CORE))
-	$(LINK)
+NAME := oled-128O064B0
+LOCAL_SRCS := oled-dev.c $(OLED_GRAPHIC) $(OLED_CORE)
+LOCAL_HEADERS := oled-api.h
+DEPS := imxrt-multi
+include $(binary.mk)
 
-$(PREFIX_PROG)oled-128O064B0: $(addprefix $(PREFIX_O)display/oled-128O064B0/, oled-dev.o $(OLED_GRAPHIC) $(OLED_CORE))
-	$(LINK)
-
-$(PREFIX_H)oled-api.h: display/oled-128O064B0/oled-api.h
-	$(HEADER)
-
-all: $(addprefix $(PREFIX_PROG_STRIPPED), oled-test oled-128O064B0) $(PREFIX_H)oled-api.h
+NAME := oled-test
+LOCAL_SRCS := oled-test.c $(OLED_CORE)
+include $(binary.mk)

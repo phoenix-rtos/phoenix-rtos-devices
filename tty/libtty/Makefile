@@ -4,10 +4,7 @@
 # Copyright 2018, 2019 Phoenix Systems
 #
 
-$(PREFIX_A)libtty.a: $(addprefix $(PREFIX_O)tty/libtty/, libtty.o libtty_disc.o)
-	$(ARCH)
-	
-$(PREFIX_H)libtty.h: tty/libtty/libtty.h
-	$(HEADER)
-	
-all: $(PREFIX_A)libtty.a $(PREFIX_H)libtty.h
+NAME := libtty
+LOCAL_SRCS := libtty.c libtty_disc.c
+LOCAL_HEADERS := libtty.h
+include $(static-lib.mk)

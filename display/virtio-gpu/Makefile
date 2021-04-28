@@ -4,7 +4,8 @@
 # Copyright 2020 Phoenix Systems
 #
 
-$(PREFIX_PROG)virtio-gpu: $(addprefix $(PREFIX_O)display/virtio-gpu/, virtio-gpu.o) $(PREFIX_A)libvirtio.a
-	$(LINK)
+NAME := virtio-gpu
+LOCAL_SRCS := virtio-gpu.c
+LIBS := libvirtio
 
-all: $(addprefix $(PREFIX_PROG_STRIPPED), virtio-gpu)
+include $(binary.mk)

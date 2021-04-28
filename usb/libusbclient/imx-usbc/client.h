@@ -16,7 +16,7 @@
 
 #include <sys/types.h>
 
-#include "../common/usbclient.h"
+#include "../usbclient.h"
 
 
 #define USB_BUFFER_SIZE 0x1000

@@ -24,7 +24,7 @@
 #include <sys/msg.h>
 
 #include "flashdrv.h"
-#include "flashsrv.h"
+#include "imx6ull-flashsrv.h"
 
 #define FLASHDRV_PAGESZ (4096 + 224)
 

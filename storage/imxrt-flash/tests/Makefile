@@ -7,10 +7,11 @@
 # Author: Hubert Buczynski
 #
 
-$(PREFIX_PROG)flash-tests: $(addprefix $(PREFIX_O)storage/imxrt-flash/tests/, tests.o flashsrv_mfs_tests.o flashsrv_raw_tests.o flashdrv_tests.o) $(PREFIX_A)libflashdrv.a $(PREFIX_A)libptable.a $(PREFIX_A)libmeterfs.a
-	$(LINK)
+NAME := flash-tests
+LOCAL_SRCS := tests.c flashsrv_mfs_tests.c flashsrv_raw_tests.c flashdrv_tests.c
+DEPS := imxrt-flash
+DEP_LIBS := libflashdrv-imxrt
+LIBS := libptable libmeterfs
 
-$(PREFIX_O)storage/ imxrt-flash/tests/flash-tests.o: $(PREFIX_H)libflashdrv.h
-
-all: $(PREFIX_PROG_STRIPPED)flash-tests
+include $(binary.mk)
 

@@ -24,7 +24,7 @@
 #include <ptable.h>
 
 #include "flashdrv.h"
-#include "flashsrv.h"
+#include "imxrt-flashsrv.h"
 
 
 #define LOG_ERROR(str, ...) do { fprintf(stderr, __FILE__  ":%d error: " str "\n", __LINE__, ##__VA_ARGS__); } while (0)

@@ -8,21 +8,14 @@
 
 CFLAGS += -DTARGET_IMXRT
 
-ifneq (, $(findstring 117, $(TARGET)))
-	CFLAGS += -DTARGET_IMXRT1170
-else ifneq (, $(findstring 105, $(TARGET)))
-	CFLAGS += -DTARGET_IMXRT1050
-else ifneq (, $(findstring 106, $(TARGET)))
-	CFLAGS += -DTARGET_IMXRT1060
-endif
+DEFAULT_COMPONENTS := imxrt-multi libusbclient imxrt-flash
 
-include tty/libtty/Makefile
-include multi/imxrt-multi/Makefile
-include usb/common/Makefile
-include usb/imxrt-usbc/Makefile
-include storage/imxrt-flash/Makefile
-include storage/imxrt-flash/tests/Makefile
-include dma/imxrt-edma/Makefile
-#include adc/ad7779/Makefile
-#include display/oled-128O064B0/Makefile
-#include usb/imxrt-ehci/Makefile
+ifneq (, $(findstring 117, $(TARGET)))
+  CFLAGS += -DTARGET_IMXRT1170
+  DEFAULT_COMPONENTS += imxrt117x-otp imxrt117x-cm4
+else ifneq (, $(findstring 105, $(TARGET)))
+  CFLAGS += -DTARGET_IMXRT1050
+else ifneq (, $(findstring 106, $(TARGET)))
+  CFLAGS += -DTARGET_IMXRT1060
+  DEFAULT_COMPONENTS += libimxrt-edma
+endif

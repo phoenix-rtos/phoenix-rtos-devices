@@ -4,7 +4,6 @@
 # Copyright 2018, 2019 Phoenix Systems
 #
 
-$(PREFIX_PROG)imx6ull-otp: $(PREFIX_O)otp/imx6ull-otp/imx6ull-otp.o
-	$(LINK)
-
-all: $(PREFIX_PROG_STRIPPED)imx6ull-otp
+NAME := imx6ull-otp
+LOCAL_SRCS := imx6ull-otp.c
+include $(binary.mk)

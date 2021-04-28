@@ -6,9 +6,4 @@
 # Copyright 2019 Phoenix Systems
 #
 
-include tty/libtty/Makefile
-include tty/pc-tty/Makefile
-include tty/uart16550/Makefile
-include storage/pc-ata/Makefile
-#include storage/virtio-blk/Makefile
-#include display/virtio-gpu/Makefile
+DEFAULT_COMPONENTS := pc-tty uart16550 pc-ata

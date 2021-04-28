@@ -30,7 +30,7 @@
 #include "bcb.h"
 #include "test.h"
 
-#include "../../storage/imx6ull-flash/flashsrv.h"
+#include <imx6ull-flashsrv.h>
 
 #define PAGES_PER_BLOCK 64
 #define FLASH_PAGE_SIZE 0x1000

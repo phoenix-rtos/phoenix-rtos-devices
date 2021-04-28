@@ -7,14 +7,15 @@
 # Author: Hubert Buczynski
 #
 
-$(PREFIX_PROG)imxrt-flash: $(addprefix $(PREFIX_O)storage/imxrt-flash/, flashsrv.o flashdrv.o rom_api.o flash_config.o) $(PREFIX_A)libmeterfs.a $(PREFIX_A)libptable.a
-	$(LINK)
+NAME := libflashdrv-imxrt
+LOCAL_SRCS := flashdrv.c rom_api.c flash_config.c
 
-$(PREFIX_A)libflashdrv.a: $(addprefix $(PREFIX_O)storage/imxrt-flash/, flashdrv.o rom_api.o flash_config.o)
-	$(ARCH)
+include $(static-lib.mk)
 
-$(PREFIX_H)flashsrv.h: storage/imxrt-flash/flashsrv.h
-	$(HEADER)
+NAME := imxrt-flash
+LOCAL_SRCS := flashsrv.c
+LOCAL_HEADERS := imxrt-flashsrv.h
+DEP_LIBS := libflashdrv-imxrt
+LIBS := libmeterfs libptable
 
-all: $(PREFIX_PROG_STRIPPED)imxrt-flash $(PREFIX_A)libflashdrv.a $(PREFIX_H)flashsrv.h 
-
+include $(binary.mk)

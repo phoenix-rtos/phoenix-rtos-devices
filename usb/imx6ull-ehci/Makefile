@@ -4,13 +4,9 @@
 # Copyright 2018, 2019 Phoenix Systems
 #
 
-$(PREFIX_A)libusbehci.a: $(addprefix $(PREFIX_O)usb/imx6ull-ehci/, ehci.o dma.o phy.o)
-	$(ARCH)
-	
-$(PREFIX_H)dma.h: usb/imx6ull-ehci/dma.h
-	$(HEADER)
-
-$(PREFIX_H)ehci.h: usb/imx6ull-ehci/ehci.h
-	$(HEADER)
-
-all: $(PREFIX_A)libusbehci.a $(PREFIX_H)dma.h $(PREFIX_H)ehci.h
+# FIXME: rename usb host component
+NAME := libusbehci
+LOCAL_SRCS := ehci.c dma.c phy.c
+LOCAL_HEADERS := dma.h ehci.h
+DEPS := usb
+include $(static-lib.mk)
