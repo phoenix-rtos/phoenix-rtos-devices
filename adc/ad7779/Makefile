@@ -4,14 +4,16 @@
 # Copyright 2019, 2020 Phoenix Systems
 #
 
-$(PREFIX_PROG)ad7779-test: $(addprefix $(PREFIX_O)adc/ad7779/, ad7779-test.o)
-	$(LINK)
+NAME := ad7779
+LOCAL_SRCS := ad7779.c ad7779-driver.c
+LOCAL_HEADERS := adc-api.h
+DEP_LIBS := libimxrt-edma
+DEPS := imxrt-multi
 
-$(PREFIX_PROG)ad7779: $(addprefix $(PREFIX_O)adc/ad7779/, ad7779.o ad7779-driver.o) \
-	$(PREFIX_O)dma/imxrt-edma/imxrt-edma.o
-	$(LINK)
+include $(binary.mk)
 
-$(PREFIX_H)adc-api.h: adc/ad7779/adc-api.h
-	$(HEADER)
+NAME := ad7779-test
+LOCAL_SRCS := ad7779-test.c
+DEPS := ad7779
 
-all: $(PREFIX_PROG_STRIPPED)ad7779-test $(PREFIX_PROG_STRIPPED)ad7779 $(PREFIX_H)adc-api.h
+include $(binary.mk)

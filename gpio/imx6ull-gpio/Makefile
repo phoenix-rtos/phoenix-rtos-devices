@@ -4,10 +4,8 @@
 # Copyright 2018, 2019 Phoenix Systems
 #
 
-$(PREFIX_PROG)imx6ull-gpio: $(PREFIX_O)gpio/imx6ull-gpio/imx6ull-gpio.o
-	$(LINK)
+NAME := imx6ull-gpio
+LOCAL_SRCS := imx6ull-gpio.c
+LOCAL_HEADERS := imx6ull-gpio.h
 
-$(PREFIX_H)imx6ull-gpio.h: gpio/imx6ull-gpio/imx6ull-gpio.h
-	$(HEADER)
-
-all: $(PREFIX_PROG_STRIPPED)imx6ull-gpio $(PREFIX_H)imx6ull-gpio.h
+include $(binary.mk)

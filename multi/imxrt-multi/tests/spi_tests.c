@@ -18,8 +18,9 @@
 #include <errno.h>
 #include <unistd.h>
 #include <time.h>
+#include <stdint.h>
 
-#include "../imxrt-multi.h"
+#include <imxrt-multi.h>
 
 
 #define MAX_BUFFER_SZ 0x204

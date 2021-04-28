@@ -5,13 +5,14 @@
 # Copyright 2001, 2005-2006 Pawel Pisarczyk
 #
 
+NAME := uart16550
+LOCAL_SRCS := uart16550.c
+
 ifeq ($(TARGET_FAMILY),riscv64)
-    UARTLL = uarthw-riscv
+  LOCAL_SRCS += uarthw-riscv.c
 else ifeq ($(TARGET_FAMILY),ia32)
-    UARTLL = uarthw-pc
+  LOCAL_SRCS += uarthw-pc.c
 endif
 
-$(PREFIX_PROG)uart16550: $(PREFIX_O)tty/uart16550/uart16550.o $(PREFIX_O)tty/uart16550/$(UARTLL).o $(PREFIX_A)libtty.a
-	$(LINK)
-
-all: $(PREFIX_PROG_STRIPPED)uart16550
+DEP_LIBS := libtty
+include $(binary.mk)

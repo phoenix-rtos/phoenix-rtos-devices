@@ -6,18 +6,10 @@
 # Copyright 2019 Phoenix Systems
 #
 
-include dma/imx6ull-sdma/Makefile
-include gpio/imx6ull-gpio/Makefile
-include spi/imx6ull-ecspi/Makefile
+DEFAULT_COMPONENTS := imx6ull-sdma imx6ull-gpio libimx6ull-ecspi
+DEFAULT_COMPONENTS += imx6ull-flash imx6ull-nandtool
+DEFAULT_COMPONENTS += libusbclient
+DEFAULT_COMPONENTS += imx6ull-uart imx6ull-otp
 
-include storage/imx6ull-flash/Makefile
-include storage/imx6ull-nandtool/Makefile
-
-include tty/libtty/Makefile
-include tty/imx6ull-uart/Makefile
-
-include usb/common/Makefile
-include usb/imx6ull-ehci/Makefile
-include usb/imx6ull-usbc/Makefile
-
-include otp/imx6ull-otp/Makefile
+# FIXME: rename usb host component
+DEFAULT_COMPONENTS += libusbehci

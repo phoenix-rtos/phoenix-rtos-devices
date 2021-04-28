@@ -6,4 +6,4 @@
 # Copyright 2021 Phoenix Systems
 #
 
-include storage/host-flash/Makefile
+DEFAULT_COMPONENTS := host-flash

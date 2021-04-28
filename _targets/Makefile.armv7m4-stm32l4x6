@@ -8,5 +8,4 @@
 
 CFLAGS += -DTARGET_STM32 -DTARGET_STM32L4
 
-include tty/libtty/Makefile
-include multi/stm32l4-multi/Makefile
+DEFAULT_COMPONENTS := stm32-multi

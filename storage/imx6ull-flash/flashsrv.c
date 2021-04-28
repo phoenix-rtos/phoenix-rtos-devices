@@ -14,7 +14,7 @@
 
 #include "posix/utils.h"
 #include "posix/idtree.h"
-#include "flashsrv.h"
+#include "imx6ull-flashsrv.h"
 #include "flashdrv.h"
 
 #include "../../../phoenix-rtos-filesystems/jffs2/libjffs2.h"

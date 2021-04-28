@@ -3,11 +3,15 @@
 #
 # Copyright 2018, 2019 Phoenix Systems
 #
+NAME := libata
+LOCAL_SRCS := ata.c
+LOCAL_HEADERS: ata.h
 
-$(PREFIX_PROG)pc-ata: $(addprefix $(PREFIX_O)storage/pc-ata/, ata.o atasrv.o mbr.o) $(PREFIX_A)libext2.a
-	$(LINK)
+include $(static-lib.mk)
 
-$(PREFIX_A)libata.a: $(PREFIX_O)storage/pc-ata/ata.o
-	$(ARCH)
+NAME := pc-ata
+LOCAL_SRCS := atasrv.c mbr.c
+DEP_LIBS := libata
+LIBS := libext2
 
-all: $(PREFIX_PROG_STRIPPED)pc-ata $(PREFIX_A)libata.a
+include $(binary.mk)

@@ -4,16 +4,14 @@
 # Copyright 2018 Phoenix Systems
 #
 
-$(PREFIX_PROG)imx6ull-sdma: $(PREFIX_O)dma/imx6ull-sdma/imx6ull-sdma.o $(PREFIX_A)libsdma.a
-	$(LINK)
-	
-$(PREFIX_A)libsdma.a: $(PREFIX_O)dma/imx6ull-sdma/libsdma.o
-	$(ARCH)
-	
-$(PREFIX_H)sdma.h: dma/imx6ull-sdma/sdma.h
-	$(HEADER)
-	
-$(PREFIX_H)sdma-api.h: dma/imx6ull-sdma/sdma-api.h
-	$(HEADER)
+NAME := libsdma
+LOCAL_SRCS := libsdma.c
+LOCAL_HEADERS := sdma.h sdma-api.h
 
-all: $(PREFIX_PROG_STRIPPED)imx6ull-sdma $(PREFIX_H)sdma.h $(PREFIX_H)sdma-api.h
+include $(static-lib.mk)
+
+NAME := imx6ull-sdma
+LOCAL_SRCS := imx6ull-sdma.c
+DEP_LIBS := libsdma
+
+include $(binary.mk)

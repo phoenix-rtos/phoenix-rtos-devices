@@ -6,15 +6,8 @@
 # %LICENSE%
 #
 
-MODULE = host-flash
-LIBNAME = $(MODULE).a
-SRCS = host-flash.c host-flashsrv.c
-OBJS = $(addprefix $(PREFIX_O)storage/$(MODULE)/, $(SRCS:.c=.o))
+NAME := host-flash
+LOCAL_SRCS := host-flash.c host-flashsrv.c
+LOCAL_HEADERS := host-flashsrv.h
 
-$(PREFIX_A)$(LIBNAME): $(OBJS)
-	$(ARCH)
-
-$(PREFIX_H)host-flashsrv.h: storage/host-flash/host-flashsrv.h
-	$(HEADER)
-
-all: $(PREFIX_A)$(LIBNAME) $(PREFIX_H)host-flashsrv.h
+include $(static-lib.mk)

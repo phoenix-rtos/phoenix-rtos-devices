@@ -4,7 +4,8 @@
 # Copyright 2020 Phoenix Systems
 #
 
-$(PREFIX_H)edma.h: dma/imxrt-edma/edma.h
-	$(HEADER)
+NAME := libimxrt-edma
+LOCAL_SRCS := imxrt-edma.c
+LOCAL_HEADERS := edma.h
 
-all: $(PREFIX_H)edma.h
+include $(static-lib.mk)
