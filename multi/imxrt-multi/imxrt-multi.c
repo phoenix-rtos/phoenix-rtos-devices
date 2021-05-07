@@ -67,14 +67,19 @@ static void multi_dispatchMsg(msg_t *msg)
 		case id_gpio9:
 			gpio_handleMsg(msg, id);
 			break;
-#ifndef TARGET_IMXRT1170
+
 		case id_spi1:
 		case id_spi2:
 		case id_spi3:
 		case id_spi4:
+#ifdef TARGET_IMXRT1170
+		case id_spi5:
+		case id_spi6:
+#endif
 			spi_handleMsg(msg, id);
 			break;
 
+#ifndef TARGET_IMXRT1170
 		case id_i2c1:
 		case id_i2c2:
 		case id_i2c3:
@@ -241,7 +246,6 @@ static int createDevFiles(void)
 			return -1;
 	}
 
-#ifndef TARGET_IMXRT1170
 	/* SPIs */
 
 #if SPI1
@@ -264,8 +268,22 @@ static int createDevFiles(void)
 		return -1;
 #endif
 
+#ifdef TARGET_IMXRT1170
+
+#if SPI5
+	if (mkFile(&dir, id_spi5, "spi5", multi_port) < 0)
+		return -1;
+#endif
+
+#if SPI6
+	if (mkFile(&dir, id_spi6, "spi6", multi_port) < 0)
+		return -1;
+#endif
+
+#endif
 
 /* I2Cs */
+#ifndef TARGET_IMXRT1170
 
 #if I2C1
 	if (mkFile(&dir, id_i2c1, "i2c1", multi_port) < 0)
@@ -388,9 +406,7 @@ int main(void)
 
 	uart_init();
 	gpio_init();
-#ifndef TARGET_IMXRT1170
 	spi_init();
-#endif
 
 	for (i = 0; i < UART_THREADS_NO; ++i)
 		beginthread(uart_thread, THREADS_PRIORITY, common.stack[i], STACKSZ, (void *)i);

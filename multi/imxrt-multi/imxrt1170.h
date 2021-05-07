@@ -91,6 +91,29 @@
 #define GPIO12_CLK -1
 #define GPIO13_CLK -1
 
+
+#define LPSPI1_BASE ((void *)0x40114000)
+#define LPSPI2_BASE ((void *)0x40118000)
+#define LPSPI3_BASE ((void *)0x4011c000)
+#define LPSPI4_BASE ((void *)0x40120000)
+#define LPSPI5_BASE ((void *)0x40c2c000)
+#define LPSPI6_BASE ((void *)0x40c30000)
+
+#define LPSPI1_CLK pctl_clk_lpspi1
+#define LPSPI2_CLK pctl_clk_lpspi2
+#define LPSPI3_CLK pctl_clk_lpspi3
+#define LPSPI4_CLK pctl_clk_lpspi4
+#define LPSPI5_CLK pctl_clk_lpspi5
+#define LPSPI6_CLK pctl_clk_lpspi6
+
+#define LPSPI1_IRQ lpspi1_irq
+#define LPSPI2_IRQ lpspi2_irq
+#define LPSPI3_IRQ lpspi3_irq
+#define LPSPI4_IRQ lpspi4_irq
+#define LPSPI5_IRQ lpspi5_irq
+#define LPSPI6_IRQ lpspi6_irq
+
+
 #ifndef UART1_TX_PIN
 #define UART1_TX_PIN ad_24
 //#define UART1_TX_PIN disp_b1_02
@@ -192,6 +215,97 @@
 #define UART12_CTS_PIN lpsr_05
 
 
+#ifndef SPI1_SCK
+#define SPI1_SCK ad_28
+#endif
+#ifndef SPI1_SD0
+#define SPI1_SD0 ad_30
+#endif
+#ifndef SPI1_SDI
+#define SPI1_SDI ad_31
+#endif
+#ifndef SPI1_PCS0
+#define SPI1_PCS0 ad_29
+#endif
+#ifndef SPI1_PCS1
+#define SPI1_PCS1 ad_18
+#endif
+#ifndef SPI1_PCS2
+#define SPI1_PCS2 ad_19
+#endif
+#ifndef SPI1_PCS3
+#define SPI1_PCS3 ad_20
+#endif
+
+
+#ifndef SPI2_SCK
+#define SPI2_SCK sd_b2_07
+#endif
+#ifndef SPI2_SD0
+#define SPI2_SD0 sd_b2_09
+#endif
+#ifndef SPI2_SDI
+#define SPI2_SDI sd_b2_10
+#endif
+#ifndef SPI2_PCS0
+#define SPI2_PCS0 sd_b2_08
+#endif
+
+
+#ifndef SPI3_SCK
+#define SPI3_SCK disp_b1_04
+#endif
+#ifndef SPI3_SD0
+#define SPI3_SD0 disp_b1_06
+#endif
+#ifndef SPI3_SDI
+#define SPI3_SDI disp_b1_05
+#endif
+#ifndef SPI3_PCS0
+#define SPI3_PCS0 disp_b1_07
+#endif
+
+
+#ifndef SPI4_SCK
+#define SPI4_SCK disp_b2_12
+#endif
+#ifndef SPI4_SD0
+#define SPI4_SD0 disp_b2_14
+#endif
+#ifndef SPI4_SDI
+#define SPI4_SDI disp_b2_13
+#endif
+#ifndef SPI4_PCS0
+#define SPI4_PCS0 disp_b2_15
+#endif
+
+#ifndef SPI5_SCK
+#define SPI5_SCK lpsr_02
+#endif
+#ifndef SPI5_SD0
+#define SPI5_SD0 lpsr_03
+#endif
+#ifndef SPI5_SDI
+#define SPI5_SDI lpsr_05
+#endif
+#ifndef SPI5_PCS0
+#define SPI5_PCS0 lpsr_04
+#endif
+
+#ifndef SPI6_SCK
+#define SPI6_SCK lpsr_11
+#endif
+#ifndef SPI6_SD0
+#define SPI6_SD0 lpsr_10
+#endif
+#ifndef SPI6_SDI
+#define SPI6_SDI lpsr_12
+#endif
+#ifndef SPI6_PCS0
+#define SPI6_PCS0 lpsr_09
+#endif
+
+
 static inline int common_setClock(int clock, int div, int mux, int mfd, int mfn, int state)
 {
 	platformctl_t pctl;
@@ -252,6 +366,5 @@ static inline int common_setInput(int isel, char daisy)
 
 	return platformctl(&pctl);
 }
-
 
 #endif

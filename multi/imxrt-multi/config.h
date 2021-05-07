@@ -233,6 +233,15 @@
 #define SPI4 0
 #endif
 
+#ifndef SPI5
+#define SPI5 0
+#endif
+
+#ifndef SPI6
+#define SPI6 0
+#endif
+
+
 /* I2C */
 
 #ifndef I2C1
