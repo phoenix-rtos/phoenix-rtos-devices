@@ -3,9 +3,9 @@
 set -e
 
 cd ../lib
-make clean all
+make -f Makefile.ext clean all
 cd ../example
-make clean all
+make -f Makefile.ext clean all
 
 pushd ../../../../_build/armv7m4-imxrt117x/prog.stripped/
 
