@@ -29,8 +29,10 @@
 #define SPI2_POS (SPI1_POS + SPI1)
 #define SPI3_POS (SPI2_POS + SPI2)
 #define SPI4_POS (SPI3_POS + SPI3)
+#define SPI5_POS (SPI4_POS + SPI4)
+#define SPI6_POS (SPI5_POS + SPI5)
 
-#define SPI_CNT (SPI1 + SPI2 + SPI3 + SPI4)
+#define SPI_CNT (SPI1 + SPI2 + SPI3 + SPI4 + SPI5 + SPI6)
 
 #define MAX_FRAME_SZ 0x1000
 #define WORD_SIZE sizeof(uint32_t)
@@ -55,10 +57,10 @@ struct {
 } spi_common[SPI_CNT];
 
 
-static const int spiConfig[] = { SPI1, SPI2, SPI3, SPI4 };
+static const int spiConfig[] = { SPI1, SPI2, SPI3, SPI4 , SPI5, SPI6};
 
 
-static const int spiPos[] = { SPI1_POS, SPI2_POS, SPI3_POS, SPI4_POS };
+static const int spiPos[] = { SPI1_POS, SPI2_POS, SPI3_POS, SPI4_POS , SPI5_POS, SPI6_POS};
 
 
 static inline uint32_t spi_deserializeWord(const uint8_t *buff)
@@ -328,6 +330,273 @@ int spi_handleMsg(msg_t *msg, int dev)
 }
 
 
+#ifdef TARGET_IMXRT1170
+
+static int spi_getIsel(int mux, int *isel, int *val)
+{
+	switch (mux) {
+		case pctl_mux_gpio_emc_b2_01 :  *isel = pctl_isel_lpspi1_pcs_0; *val = 0; break;
+		case pctl_mux_gpio_ad_29 :      *isel = pctl_isel_lpspi1_pcs_0; *val = 1; break;
+		case pctl_mux_gpio_emc_b2_00 :  *isel = pctl_isel_lpspi1_sck; *val = 0; break;
+		case pctl_mux_gpio_ad_28 :      *isel = pctl_isel_lpspi1_sck; *val = 1; break;
+		case pctl_mux_gpio_emc_b2_03 :  *isel = pctl_isel_lpspi1_sdi; *val = 0; break;
+		case pctl_mux_gpio_ad_31 :      *isel = pctl_isel_lpspi1_sdi; *val = 1; break;
+		case pctl_mux_gpio_emc_b2_02 :  *isel = pctl_isel_lpspi1_sdo; *val = 0; break;
+		case pctl_mux_gpio_ad_30 :      *isel = pctl_isel_lpspi1_sdo; *val = 1; break;
+		case pctl_mux_gpio_ad_25 :      *isel = pctl_isel_lpspi2_pcs_0; *val = 0; break;
+		case pctl_mux_gpio_sd_b2_08 :   *isel = pctl_isel_lpspi2_pcs_0; *val = 1; break;
+		case pctl_mux_gpio_ad_21 :      *isel = pctl_isel_lpspi2_pcs_1; *val = 0; break;
+		case pctl_mux_gpio_sd_b2_11 :   *isel = pctl_isel_lpspi2_pcs_1; *val = 1; break;
+		case pctl_mux_gpio_ad_24 :      *isel = pctl_isel_lpspi2_sck; *val = 0; break;
+		case pctl_mux_gpio_sd_b2_07 :   *isel = pctl_isel_lpspi2_sck; *val = 1; break;
+		case pctl_mux_gpio_ad_27 :      *isel = pctl_isel_lpspi2_sdi; *val = 0; break;
+		case pctl_mux_gpio_sd_b2_10 :   *isel = pctl_isel_lpspi2_sdi; *val = 1; break;
+		case pctl_mux_gpio_ad_26 :      *isel = pctl_isel_lpspi2_sdo; *val = 0; break;
+		case pctl_mux_gpio_sd_b2_09 :   *isel = pctl_isel_lpspi2_sdo; *val = 1; break;
+		case pctl_mux_gpio_emc_b2_05 :  *isel = pctl_isel_lpspi3_pcs_0; *val = 0; break;
+		case pctl_mux_gpio_disp_b1_07 : *isel = pctl_isel_lpspi3_pcs_0; *val = 1; break;
+		case pctl_mux_gpio_emc_b2_08 :  *isel = pctl_isel_lpspi3_pcs_1; *val = 0; break;
+		case pctl_mux_gpio_disp_b1_08 : *isel = pctl_isel_lpspi3_pcs_1; *val = 1; break;
+		case pctl_mux_gpio_emc_b2_09 :  *isel = pctl_isel_lpspi3_pcs_2; *val = 0; break;
+		case pctl_mux_gpio_disp_b1_09 : *isel = pctl_isel_lpspi3_pcs_2; *val = 1; break;
+		case pctl_mux_gpio_emc_b2_10 :  *isel = pctl_isel_lpspi3_pcs_3; *val = 0; break;
+		case pctl_mux_gpio_disp_b1_10 : *isel = pctl_isel_lpspi3_pcs_3; *val = 1; break;
+		case pctl_mux_gpio_emc_b2_04 :  *isel = pctl_isel_lpspi3_sck; *val = 0; break;
+		case pctl_mux_gpio_disp_b1_04 : *isel = pctl_isel_lpspi3_sck; *val = 1; break;
+		case pctl_mux_gpio_emc_b2_07 :  *isel = pctl_isel_lpspi3_sdi; *val = 1; break;
+		case pctl_mux_gpio_disp_b1_05 : *isel = pctl_isel_lpspi3_sdi; *val = 0; break;
+		case pctl_mux_gpio_emc_b2_06 :  *isel = pctl_isel_lpspi3_sdo; *val = 0; break;
+		case pctl_mux_gpio_disp_b1_06 : *isel = pctl_isel_lpspi3_sdo; *val = 1; break;
+		case pctl_mux_gpio_sd_b2_01 :   *isel = pctl_isel_lpspi4_pcs_0; *val = 0; break;
+		case pctl_mux_gpio_disp_b2_15 : *isel = pctl_isel_lpspi4_pcs_0; *val = 1; break;
+		case pctl_mux_gpio_sd_b2_00 :   *isel = pctl_isel_lpspi4_sck; *val = 0; break;
+		case pctl_mux_gpio_disp_b2_12 : *isel = pctl_isel_lpspi4_sck; *val = 1; break;
+		case pctl_mux_gpio_sd_b2_03 :   *isel = pctl_isel_lpspi4_sdi; *val = 0; break;
+		case pctl_mux_gpio_disp_b2_13 : *isel = pctl_isel_lpspi4_sdi; *val = 1; break;
+		case pctl_mux_gpio_sd_b2_02 :   *isel = pctl_isel_lpspi4_sdo; *val = 0; break;
+		case pctl_mux_gpio_disp_b2_14 : *isel = pctl_isel_lpspi4_sdo; *val = 1; break;
+		case pctl_mux_gpio_lpsr_03 :    *isel = pctl_isel_lpspi5_pcs_0; *val = 0; break;
+		case pctl_mux_gpio_lpsr_13 :    *isel = pctl_isel_lpspi5_pcs_0; *val = 1; break;
+		case pctl_mux_gpio_lpsr_02 :    *isel = pctl_isel_lpspi5_sck; *val = 0; break;
+		case pctl_mux_gpio_lpsr_12 :    *isel = pctl_isel_lpspi5_sck; *val = 1; break;
+		case pctl_mux_gpio_lpsr_05 :    *isel = pctl_isel_lpspi5_sdi; *val = 0; break;
+		case pctl_mux_gpio_lpsr_15 :    *isel = pctl_isel_lpspi5_sdi; *val = 1; break;
+		case pctl_mux_gpio_lpsr_04 :    *isel = pctl_isel_lpspi5_sdo; *val = 0; break;
+		case pctl_mux_gpio_lpsr_14 :    *isel = pctl_isel_lpspi5_sdo; *val = 1; break;
+		default: return -1;
+	}
+
+	return 0;
+}
+
+
+static int spi_muxVal(int spi, int mux)
+{
+	if ((mux >= pctl_mux_gpio_lpsr_06 &&
+			mux <= pctl_mux_gpio_lpsr_08) ||
+			mux == pctl_mux_gpio_lpsr_12)
+		return (spi == 5) ? 4 : 8;
+
+	switch (mux) {
+		case pctl_mux_gpio_ad_28 :
+		case pctl_mux_gpio_ad_29 :
+		case pctl_mux_gpio_ad_30 :
+		case pctl_mux_gpio_ad_31 :
+			return 0;
+
+		case pctl_mux_gpio_ad_24 :
+		case pctl_mux_gpio_ad_25 :
+		case pctl_mux_gpio_ad_26 :
+		case pctl_mux_gpio_ad_27 :
+		case pctl_mux_gpio_lpsr_02 :
+		case pctl_mux_gpio_lpsr_03 :
+		case pctl_mux_gpio_lpsr_04 :
+		case pctl_mux_gpio_lpsr_05 :
+			return 1;
+
+		case pctl_mux_gpio_ad_18 :
+		case pctl_mux_gpio_ad_19 :
+		case pctl_mux_gpio_ad_20 :
+		case pctl_mux_gpio_ad_21 :
+		case pctl_mux_gpio_ad_22 :
+		case pctl_mux_gpio_ad_23 :
+			return 2;
+
+		case pctl_mux_gpio_sd_b2_06 :
+			return 3;
+
+		case pctl_mux_gpio_sd_b2_00 :
+		case pctl_mux_gpio_sd_b2_01 :
+		case pctl_mux_gpio_sd_b2_02 :
+		case pctl_mux_gpio_sd_b2_03 :
+		case pctl_mux_gpio_sd_b2_04 :
+		case pctl_mux_gpio_sd_b2_05 :
+		case pctl_mux_gpio_lpsr_09 :
+		case pctl_mux_gpio_lpsr_10 :
+		case pctl_mux_gpio_lpsr_11 :
+			return 4;
+
+		case pctl_mux_gpio_sd_b2_07 :
+		case pctl_mux_gpio_sd_b2_08 :
+		case pctl_mux_gpio_sd_b2_09 :
+		case pctl_mux_gpio_sd_b2_10 :
+		case pctl_mux_gpio_sd_b2_11 :
+			return 6;
+
+		case pctl_mux_gpio_disp_b1_04 :
+		case pctl_mux_gpio_disp_b1_05 :
+		case pctl_mux_gpio_disp_b1_06 :
+		case pctl_mux_gpio_disp_b1_07 :
+		case pctl_mux_gpio_disp_b1_08 :
+		case pctl_mux_gpio_disp_b1_09 :
+		case pctl_mux_gpio_disp_b1_10 :
+		case pctl_mux_gpio_disp_b2_12 :
+		case pctl_mux_gpio_disp_b2_13 :
+		case pctl_mux_gpio_disp_b2_14 :
+		case pctl_mux_gpio_disp_b2_15 :
+			return 9;
+
+		default :
+			return 8;
+	}
+}
+
+
+static void spi_initPins(void)
+{
+	int i, j, isel, val;
+	static const struct {
+		int spi;
+		int muxes[7];
+	} info[] = {
+#if SPI1
+		{ 0,
+		{ PIN2MUX(SPI1_SCK), PIN2MUX(SPI1_SD0), PIN2MUX(SPI1_SDI),
+#ifdef SPI1_PCS0
+		PIN2MUX(SPI1_PCS0),
+#endif
+#ifdef SPI1_PCS1
+		PIN2MUX(SPI1_PCS1),
+#endif
+#ifdef SPI1_PCS2
+		PIN2MUX(SPI1_PCS2),
+#endif
+#ifdef SPI1_PCS3
+		PIN2MUX(SPI1_PCS3),
+#endif
+		},
+		},
+#endif
+
+#if SPI2
+		{ 1,
+		{ PIN2MUX(SPI2_SCK), PIN2MUX(SPI2_SD0), PIN2MUX(SPI2_SDI),
+#ifdef SPI2_PCS0
+		PIN2MUX(SPI2_PCS0),
+#endif
+#ifdef SPI2_PCS1
+		PIN2MUX(SPI2_PCS1),
+#endif
+#ifdef SPI2_PCS2
+		PIN2MUX(SPI2_PCS2),
+#endif
+#ifdef SPI2_PCS3
+		PIN2MUX(SPI2_PCS3),
+#endif
+		},
+		},
+#endif
+
+#if SPI3
+		{ 2,
+		{ PIN2MUX(SPI3_SCK), PIN2MUX(SPI3_SD0), PIN2MUX(SPI3_SDI),
+#ifdef SPI3_PCS0
+		PIN2MUX(SPI3_PCS0),
+#endif
+#ifdef SPI3_PCS1
+		PIN2MUX(SPI3_PCS1),
+#endif
+#ifdef SPI3_PCS2
+		PIN2MUX(SPI3_PCS2),
+#endif
+#ifdef SPI3_PCS3
+		PIN2MUX(SPI3_PCS3),
+#endif
+		},
+		},
+#endif
+
+#if SPI4
+		{ 3,
+		{ PIN2MUX(SPI4_SCK), PIN2MUX(SPI4_SD0), PIN2MUX(SPI4_SDI),
+#ifdef SPI4_PCS0
+		PIN2MUX(SPI4_PCS0),
+#endif
+#ifdef SPI4_PCS1
+		PIN2MUX(SPI4_PCS1),
+#endif
+#ifdef SPI4_PCS2
+		PIN2MUX(SPI4_PCS2),
+#endif
+#ifdef SPI4_PCS3
+		PIN2MUX(SPI4_PCS3),
+#endif
+		},
+		},
+#endif
+
+#if SPI5
+		{ 4,
+		{ PIN2MUX(SPI5_SCK), PIN2MUX(SPI5_SD0), PIN2MUX(SPI5_SDI),
+#ifdef SPI5_PCS0
+		PIN2MUX(SPI5_PCS0),
+#endif
+#ifdef SPI5_PCS1
+		PIN2MUX(SPI5_PCS1),
+#endif
+#ifdef SPI5_PCS2
+		PIN2MUX(SPI5_PCS2),
+#endif
+#ifdef SPI5_PCS3
+		PIN2MUX(SPI5_PCS3),
+#endif
+		},
+		},
+#endif
+
+#if SPI6
+		{ 5,
+		{ PIN2MUX(SPI6_SCK), PIN2MUX(SPI6_SD0), PIN2MUX(SPI6_SDI),
+#ifdef SPI6_PCS0
+		PIN2MUX(SPI6_PCS0),
+#endif
+#ifdef SPI6_PCS1
+		PIN2MUX(SPI6_PCS1),
+#endif
+#ifdef SPI6_PCS2
+		PIN2MUX(SPI6_PCS2),
+#endif
+#ifdef SPI6_PCS3
+		PIN2MUX(SPI6_PCS3),
+#endif
+		},
+		},
+#endif
+
+	};
+
+	for (i = 0; i < sizeof(info) / sizeof(info[0]); ++i) {
+		for (j = 0; j < sizeof(info[i].muxes) / sizeof(info[i].muxes[0]); ++j) {
+			common_setMux(info[i].muxes[j], 0, spi_muxVal(info[i].spi, info[i].muxes[j]));
+
+			if (spi_getIsel(info[i].muxes[j], &isel, &val) == 0)
+				common_setInput(isel, val);
+		}
+	}
+}
+
+#else
+
 static int spi_getIsel(int mux, int *isel, int *val)
 {
 	switch (mux) {
@@ -489,6 +758,7 @@ static void spi_initPins(void)
 		PIN2MUX(SPI4_PCS3),
 #endif
 #endif
+
 	};
 
 	for (i = 0; i < sizeof(muxes) / sizeof(muxes[0]); ++i) {
@@ -499,6 +769,8 @@ static void spi_initPins(void)
 		common_setInput(isel, val);
 	}
 }
+
+#endif
 
 
 int spi_init(void)
@@ -513,7 +785,11 @@ int spi_init(void)
 		{ LPSPI1_BASE, LPSPI1_CLK, LPSPI1_IRQ },
 		{ LPSPI2_BASE, LPSPI2_CLK, LPSPI2_IRQ },
 		{ LPSPI3_BASE, LPSPI3_CLK, LPSPI3_IRQ },
-		{ LPSPI4_BASE, LPSPI4_CLK, LPSPI4_IRQ }
+		{ LPSPI4_BASE, LPSPI4_CLK, LPSPI4_IRQ },
+#ifdef TARGET_IMXRT1170
+		{ LPSPI5_BASE, LPSPI5_CLK, LPSPI5_IRQ },
+		{ LPSPI6_BASE, LPSPI6_CLK, LPSPI6_IRQ }
+#endif
 	};
 
 	spi_initPins();
@@ -522,7 +798,11 @@ int spi_init(void)
 		if (!spiConfig[spi])
 			continue;
 
+#ifdef TARGET_IMXRT1170
+		if (common_setClock(spiInfo[spi].clk, 0, 0, 0, 0, 1) < 0)
+#else
 		if (common_setClock(spiInfo[spi].clk, clk_state_run) < 0)
+#endif
 			return -EFAULT;
 
 		if (condCreate(&spi_common[i].cond) != EOK)
