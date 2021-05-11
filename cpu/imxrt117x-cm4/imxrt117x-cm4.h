@@ -12,11 +12,15 @@
 #ifndef IMXRT117X_HM4_H
 #define IMXRT117X_HM4_H
 
+// clang-format off
 enum { m4_loadFile = 0, m4_loadBuff, m4_runCore };
+// clang-format on
+
 
 typedef struct {
 	int type;
 } imxrt117xM4DevCtli_t;
+
 
 typedef struct {
 	int err;

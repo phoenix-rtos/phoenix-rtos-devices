@@ -12,6 +12,7 @@
  */
 
 #define __ASSEMBLY__
+#include "interrupt.h"
 
 .syntax unified
 .cpu cortex-m4
@@ -40,7 +41,7 @@ _init_vectors:
 .word _pendsv       /* PendSV */
 .word _systick      /* Systick */
 
-.rept 217
+.rept SIZE_INTERRUPTS
 .word _interrupt
 .endr
 .size _init_vectors, .-_init_vectors
@@ -164,6 +165,7 @@ _pendsv:
 .size _pendsv, .-_pendsv
 .ltorg
 
+.extern interrupt_dispatch
 
 .globl _interrupt
 .type _interrupt, %function
@@ -172,7 +174,7 @@ _interrupt:
 
 	mrs r0, ipsr
 
-	blx _interruptHandler
+	blx interrupt_dispatch
 
 	restoreCtx
 

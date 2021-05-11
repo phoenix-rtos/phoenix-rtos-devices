@@ -16,7 +16,7 @@
 
 #include "cm4.h"
 
-
+// clang-format off
 enum { stk_ctrl = 0, stk_load, stk_val, stk_calib };
 
 
@@ -32,6 +32,7 @@ enum { scb_cpuid = 0, scb_icsr, scb_vtor, scb_aircr, scb_scr, scb_ccr, scb_shp0,
 
 enum { nvic_iser = 0, nvic_icer = 32, nvic_ispr = 64, nvic_icpr = 96, nvic_iabr = 128,
 	nvic_ip = 256, nvic_stir = 896 };
+// clang-format on
 
 
 static struct {
@@ -325,6 +326,7 @@ uint32_t cm4_scbGetPriority(int8_t excpn)
 
 
 /* NVIC (Nested Vectored Interrupt Controller */
+/* NVIC is private for each core, we can use it freely */
 
 
 void cm4_nvicSetIRQ(int8_t irqn, uint8_t state)
@@ -416,11 +418,6 @@ uint32_t cm4_systickGet(void)
 
 /* Default handlers */
 
-
-void __attribute__((weak)) _interruptHandler(int n)
-{
-	(void)n;
-}
 
 void __attribute__((weak)) _exceptionHandler(int n)
 {
