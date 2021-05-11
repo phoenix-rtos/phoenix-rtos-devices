@@ -16,10 +16,12 @@
 
 #include <stdint.h>
 
+// clang-format off
 enum { gpio1 = 0, gpio2, gpio3, gpio4, gpio5, gpio6, gpio7, gpio8, gpio9, gpio10, gpio11, gpio12, gpio13};
 
 
 enum { gpio_in = 0, gpio_out };
+// clang-format on
 
 
 int gpio_setPin(int port, int pin, int state);

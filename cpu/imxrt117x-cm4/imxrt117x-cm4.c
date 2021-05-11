@@ -16,6 +16,7 @@
 #include <sys/msg.h>
 #include <posix/utils.h>
 #include <sys/platform.h>
+#include <sys/interrupt.h>
 #include <phoenix/arch/imxrt1170.h>
 
 #include "imxrt117x-cm4.h"
@@ -24,32 +25,188 @@
 #define M4_VTORS        (0x1ffe0000)
 #define M4_MEMORY_SIZE  (256 * 1024)
 
-struct {
-	unsigned int port;
-	volatile void *m4memory;
-	size_t m4memorysz;
 
-	volatile uint32_t *scr;
-} m4_common;
+// clang-format off
+enum { atr0 = 0, atr1, atr2, atr3, arr0, arr1, arr2, arr3, asr, acr };
 
 
 enum { chan0 = 0, chan1, chan2, chan3, chanLen };
 
 
 enum { scr_scr = 0, scr_smsr };
+// clang-format on
+
+
+typedef union {
+	struct {
+		char bno;
+		char payload[3];
+	} __attribute__((packed)) byte;
+	uint32_t word;
+} packet_t;
+
+
+typedef struct {
+	char buff[256];
+	volatile int wptr;
+	volatile int rptr;
+} fifo_t;
+
+
+struct {
+	unsigned int port;
+	volatile void *m4memory;
+	size_t m4memorysz;
+
+	volatile uint32_t *scr;
+	volatile uint32_t *mu;
+
+	struct {
+		fifo_t rx;
+		fifo_t tx;
+	} channel[chanLen];
+} m4_common;
+
+
+static void setTXirq(int channel, int state)
+{
+	if (channel < 0 || channel >= chanLen)
+		return;
+
+	if (state)
+		*(m4_common.mu + acr) |= (1 << (23 - channel));
+	else
+		*(m4_common.mu + acr) &= ~(1 << (23 - channel));
+}
+
+
+static inline int fifo_pop(char *byte, fifo_t *fifo)
+{
+	if (fifo->rptr == fifo->wptr)
+		return 0;
+
+	*byte = fifo->buff[fifo->rptr];
+	fifo->rptr = (fifo->rptr + 1) % sizeof(fifo->buff);
+
+	return 1;
+}
+
+
+static inline int fifo_popPacket(packet_t *packet, fifo_t *fifo)
+{
+	int i;
+
+	for (i = 0; i < sizeof(packet->byte.payload); ++i) {
+		if (!fifo_pop(&packet->byte.payload[i], fifo))
+			break;
+	}
+
+	packet->byte.bno = i;
+
+	return i;
+}
+
+
+static inline int fifo_push(char byte, fifo_t *fifo)
+{
+	if ((fifo->wptr + 1) % sizeof(fifo->buff) == fifo->wptr)
+		return 0;
+
+	fifo->buff[fifo->wptr] = byte;
+	fifo->wptr = (fifo->wptr + 1) % sizeof(fifo->buff);
+
+	return 1;
+}
+
+
+static inline int fifo_pushPacket(packet_t *packet, fifo_t *fifo)
+{
+	int i, size;
+
+	if (packet->byte.bno > sizeof(packet->byte.payload))
+		size = sizeof(packet->byte.payload);
+	else
+		size = packet->byte.bno;
+
+	for (i = 0; i < size; ++i) {
+		if (!fifo_push(packet->byte.payload[i], fifo))
+			break;
+	}
+
+	return i;
+}
+
+
+static int mu_irqHandler(unsigned int n, void *arg)
+{
+	int chan;
+	packet_t packet;
+
+	(void)n;
+	(void)arg;
+
+	/* TX */
+	for (chan = 0; chan < chanLen; ++chan) {
+		if (*(m4_common.mu + asr) & (1 << (23 - chan))) {
+			if (!fifo_popPacket(&packet, &m4_common.channel[chan].tx))
+				setTXirq(chan, 0);
+			else
+				*(m4_common.mu + atr0 + chan) = packet.word;
+		}
+	}
+
+	/* RX */
+	for (chan = 0; chan < chanLen; ++chan) {
+		if (*(m4_common.mu + asr) & (1 << (27 - chan))) {
+			packet.word = *(m4_common.mu + arr0 + chan);
+			fifo_pushPacket(&packet, &m4_common.channel[chan].rx);
+		}
+	}
+
+	return -1;
+}
 
 
 static ssize_t chanRead(id_t id, void *buff, size_t bufflen)
 {
-	/* TODO */
-	return -ENOSYS;
+	char *tbuff = buff;
+	ssize_t i;
+	fifo_t *fifo;
+
+	if (id < chan0 || id > chan3 || buff == NULL)
+		return -1;
+
+	fifo = &m4_common.channel[id].rx;
+
+	for (i = 0; i < bufflen; ++i) {
+		if (!fifo_pop(&tbuff[i], fifo))
+			break;
+	}
+
+	return i;
 }
 
 
 static ssize_t chanWrite(id_t id, const void *buff, size_t bufflen)
 {
-	/* TODO */
-	return -ENOSYS;
+	const char *tbuff = buff;
+	int i;
+	fifo_t *fifo;
+
+	if (id < chan0 || id > chan3 || buff == NULL)
+		return -1;
+
+	fifo = &m4_common.channel[id].tx;
+
+	for (i = 0; i < bufflen; ++i) {
+		if (!fifo_push(tbuff[i], fifo))
+			break;
+	}
+
+	if (i)
+		setTXirq(id, 1);
+
+	return i;
 }
 
 
@@ -100,7 +257,7 @@ static int loadFromFile(const char *path)
 
 		memcpy((void *)ptr, buff, r);
 		ptr += r;
-		total +=r;
+		total += r;
 	}
 
 	return (int)total;
@@ -212,6 +369,7 @@ int main(int argc, char *argv[])
 	m4_common.m4memorysz = M4_MEMORY_SIZE;
 
 	m4_common.scr = (void *)0x40c04000;
+	m4_common.mu = (void *)0x40c48000;
 
 	if (portCreate(&m4_common.port) < 0) {
 		fprintf(stderr, "imxrt117x-m4: Failed to create port\n");
@@ -227,6 +385,10 @@ int main(int argc, char *argv[])
 			return -1;
 		}
 	}
+
+	interrupt(mu_irq, mu_irqHandler, NULL, 0, NULL);
+
+	*(m4_common.mu + acr) |= 0xf << 24;
 
 	fprintf(stderr, "%s: Started\n", argv[0]);
 

@@ -16,6 +16,7 @@
 #include "cm4.h"
 #include "gpio.h"
 #include "string.h"
+#include "mu.h"
 
 extern char __bss_start;
 extern char _end;
@@ -31,6 +32,7 @@ __attribute__((noreturn)) void _startc(void)
 	/* Platform init */
 	cm4_init();
 	gpio_init();
+	mu_init();
 
 	__asm__ volatile ("cpsie if");
 

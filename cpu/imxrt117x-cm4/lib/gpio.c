@@ -21,7 +21,9 @@ struct {
 } gpio_common;
 
 
+// clang-format off
 enum { dr = 0, gdir, psr, icr1, icr2, imr, isr, edge_sel, dr_set = 33, dr_clr, dr_toggle };
+// clang-format on
 
 
 int gpio_setPin(int port, int pin, int state)
