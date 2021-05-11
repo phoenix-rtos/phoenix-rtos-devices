@@ -66,6 +66,25 @@ jobs:
         run: |
           git diff -U0 HEAD^ | clang-format-diff-10 -p1 | /tmp/reviewdog -f=diff -f.diff.strip=0 -name=clang-format-pr -reporter=github-pr-review
 
+
+  # reviewdog: codespell for PRs only
+  codespell-pr:
+    if: github.event_name == 'pull_request'
+    name: codespell-pr
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout current repo
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 2  # current PR merge commit + 1 back
+
+      - name: codespell
+        uses: plettich/action-codespell@master
+        with:
+          github_token: ${{ secrets.github_token }}
+          reporter: github-pr-review
+
+
   # reviewdog: shellcheck
   shellcheck-pr:
     if: github.event_name == 'pull_request'
