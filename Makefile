@@ -6,8 +6,6 @@
 # %LICENSE%
 #
 
-MAKEFLAGS += --no-print-directory
-
 include ../phoenix-rtos-build/Makefile.common
 # FIXME: this include should be done by Makefile.common
 include ../phoenix-rtos-build/Makefile.$(TARGET_SUFF)
@@ -23,6 +21,9 @@ endif
 
 # should define DEFAULT_COMPONENTS and target-specific variables
 include _targets/Makefile.$(TARGET_FAMILY)-$(TARGET_SUBFAMILY)
+
+# default path for the programs to be installed in rootfs
+DEFAULT_INSTALL_PATH := /sbin
 
 # read out all components
 ALL_MAKES := $(wildcard */*/Makefile) $(wildcard */*/*/Makefile)
