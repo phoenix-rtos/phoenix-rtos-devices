@@ -7,8 +7,8 @@
 # Author: Kamil Amanowicz, Hubert Buczynski
 
 NAME := libusbclient
-SRCS := $(wildcard usb/libusbclient/imx-usbc/*.c)
 LOCAL_PATH := $(call my-dir)
+SRCS := $(wildcard $(LOCAL_PATH)/imx-usbc/*.c)
 
 ifneq (, $(findstring imxrt, $(TARGET)))
   SRCS += $(wildcard $(LOCAL_PATH)/imxrt-usbc/*.c)
@@ -18,8 +18,6 @@ else
 $(NAME): ; $(error $(NAME) for $(TARGET) not implemented)
 endif
 
-
-SRCS += $(wildcard usb/libusbclient/$(USBC_PHY_TYPE)-usbc/*.c)
 LOCAL_HEADERS := usbclient.h
 DEPS := usb
 
