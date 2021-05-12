@@ -12,12 +12,12 @@
 #include <stdlib.h>
 #include <syslog.h>
 
-#include "posix/utils.h"
-#include "posix/idtree.h"
+#include <posix/utils.h>
+#include <posix/idtree.h>
 #include "imx6ull-flashsrv.h"
 #include "flashdrv.h"
 
-#include "../../../phoenix-rtos-filesystems/jffs2/libjffs2.h"
+#include <libjffs2.h>
 
 #define LOG_ERROR(str, ...) do { fprintf(stderr, __FILE__  ":%d error: " str "\n", __LINE__, ##__VA_ARGS__); } while (0)
 #define TRACE(str, ...) do { if (0) fprintf(stderr, __FILE__  ":%d trace: " str "\n", __LINE__, ##__VA_ARGS__); } while (0)
