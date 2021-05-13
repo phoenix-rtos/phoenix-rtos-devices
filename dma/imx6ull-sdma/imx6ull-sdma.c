@@ -285,7 +285,7 @@ static int sdma_context_dump(uint8_t channel_id, sdma_context_t *context)
 #define OCRAM_BASE              (0x900000)
 #define OCRAM_END               (0x920000)
 
-addr_t sdma_ocram_alloc(size_t size)
+static addr_t sdma_ocram_alloc(size_t size)
 {
 	unsigned n = (size + _PAGE_SIZE - 1)/_PAGE_SIZE;
 	addr_t paddr = 0;
@@ -298,7 +298,7 @@ addr_t sdma_ocram_alloc(size_t size)
 	return paddr;
 }
 
-void *sdma_alloc_uncached(size_t size, addr_t *paddr, int ocram)
+static void *sdma_alloc_uncached(size_t size, addr_t *paddr, int ocram)
 {
 	uint32_t n = (size + _PAGE_SIZE - 1)/_PAGE_SIZE;
 	oid_t *oid = OID_NULL;

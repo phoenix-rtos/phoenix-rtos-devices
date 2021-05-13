@@ -12,6 +12,5 @@ include $(static-lib.mk)
 
 NAME := imx6ull-sdma
 LOCAL_SRCS := imx6ull-sdma.c
-DEP_LIBS := libsdma
 
 include $(binary.mk)
