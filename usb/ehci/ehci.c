@@ -86,12 +86,6 @@
 #define PORTSC_CBITS (PORTSC_CSC | PORTSC_PEC | PORTSC_OCC)
 
 
-#define OCRAM2_BASE_ADRR_EHCI    0x20230000
-
-static uint8_t counter_OCRAM2_EHCI = 0;
-
-void hcdphy_init(hcd_t *hcd);
-
 enum {
 	/* identification regs */
 	id = 0x0, hwgeneral, hwhost, hwdevice, hwtxbuf, hwrxbuf,
@@ -263,6 +257,7 @@ typedef struct ehci {
 	volatile struct qh *async_head;
 
 	handle_t irq_cond, irq_handle, irq_lock, aai_cond, async_lock;
+	volatile unsigned portResetChange;
 	volatile unsigned status;
 	volatile unsigned port_change;
 	volatile unsigned portsc;
@@ -270,36 +265,14 @@ typedef struct ehci {
 	handle_t common_lock;
 } ehci_t;
 
-volatile int irq_happened = 0;
 
 static int ehci_irqHandler(unsigned int n, void *data)
 {
 	hcd_t *hcd = (hcd_t *) data;
 	ehci_t *ehci = (ehci_t *) hcd->priv;
 
-	irq_happened = 1;
 	ehci->status = *(hcd->base + usbsts);
 	*(hcd->base + usbsts) = ehci->status & 0x1f;
-
-	ehci->portsc = *(hcd->base + portsc1);
-
-	if (ehci->status & USBSTS_RCL) {
-	/* Async schedule is empty */
-	//	ehci->status &= ~USBSTS_RCL;
-	}
-
-	if (*(hcd->base + portsc1) & PORTSC_PEC) {
-		*(hcd->base + portsc1) = PORTSC_PEC;
-	}
-
-	ehci->port_change = 0;
-
-	if (ehci->status & USBSTS_PCI) {
-		if (*(hcd->base + portsc1) & PORTSC_CSC) {
-			ehci->port_change = 1;
-			*(hcd->base + portsc1) = PORTSC_CSC;
-		}
-	}
 
 	return -!(ehci->status & 0x1f);
 }
@@ -382,15 +355,17 @@ static int ehci_deviceAttached(hcd_t *hcd)
 
 static void ehci_resetPort(hcd_t *hcd, int port)
 {
+	ehci_t *ehci = (ehci_t *) hcd->priv;
 	volatile int *reg = (hcd->base + portsc1) + (port - 1);
 
-	for (int i = 0; i < 10; ++i) {
-		*reg |= PORTSC_PR;
-		*reg &= ~PORTSC_ENA;
-		while (*reg & PORTSC_PR) ;
-		*reg |= PORTSC_ENA;
-	}
+	*reg |= PORTSC_PR;
+	*reg &= ~PORTSC_ENA;
+	/* This is imx deviation. According to ehci documentation
+	 * it is up to software to set the PR bit 0 after waiting 20ms */
+	while (*reg & PORTSC_PR) ;
+	*reg |= PORTSC_ENA;
 
+	ehci->portResetChange = 1 << port;
 	/* Turn port power on */
 	*reg |= PORTSC_PP;
 }
@@ -408,16 +383,17 @@ static int hub_statusChanged(usb_hub_t *hub, uint32_t *status)
 	int i;
 
 	*status = 0;
-	printf("ehci: statusChanged\n");
+
 	/* Status not changed */
 	if ((ehci->status & USBSTS_PCI) == 0)
 		return 0;
 
+	ehci->status &= ~USBSTS_PCI;
+
 	for (i = 0; i < hub->nports; i++) {
 		portsc = hcd->base + portsc1 + i;
-		if (*portsc & PORTSC_CSC) {
+		if (*portsc & PORTSC_CSC)
 			*status |= 1 << (i + 1);
-		}
 	}
 
 	return 0;
@@ -426,6 +402,7 @@ static int hub_statusChanged(usb_hub_t *hub, uint32_t *status)
 static int hub_getPortStatus(usb_hub_t *hub, int port, usb_port_status_t *status)
 {
 	hcd_t *hcd = hub->hcd;
+	ehci_t *ehci = (ehci_t *) hcd->priv;
 	int val;
 
 	if (port > hub->nports)
@@ -468,6 +445,9 @@ static int hub_getPortStatus(usb_hub_t *hub, int port, usb_port_status_t *status
 	if ((val & PORTSC_PTC) != 0)
 		status->wPortStatus |= USB_PORT_STAT_TEST;
 
+	if (ehci->portResetChange & (1 << port))
+		status->wPortChange |= USB_PORT_STAT_C_RESET;
+
 	/* TODO: set HIGH SPEED and INDICATOR */
 	return 0;
 }
@@ -503,6 +483,7 @@ static int hub_setPortFeature(usb_hub_t *hub, int port, uint16_t wValue)
 static int hub_clearPortFeature(usb_hub_t *hub, int port, uint16_t wValue)
 {
 	hcd_t *hcd = hub->hcd;
+	ehci_t *ehci = (ehci_t *) hcd->priv;
 	volatile int *portsc = hcd->base + portsc1 + port - 1;
 	uint32_t val = *portsc;
 
@@ -510,7 +491,6 @@ static int hub_clearPortFeature(usb_hub_t *hub, int port, uint16_t wValue)
 		return -1;
 
 	val &= ~PORTSC_CBITS;
-
 	switch (wValue) {
 	/* For 'change' features, ack the change */
 	case USB_PORT_FEAT_C_CONNECTION:
@@ -522,6 +502,9 @@ static int hub_clearPortFeature(usb_hub_t *hub, int port, uint16_t wValue)
 	case USB_PORT_FEAT_C_OVER_CURRENT:
 		*portsc = val | PORTSC_OCC;
 		break;
+	case USB_PORT_FEAT_C_RESET:
+		ehci->portResetChange &= ~(1 << port);
+		break;
 	case USB_PORT_FEAT_ENABLE:
 		/* Disable port */
 		*portsc = val & ~PORTSC_ENA;
@@ -529,7 +512,6 @@ static int hub_clearPortFeature(usb_hub_t *hub, int port, uint16_t wValue)
 	case USB_PORT_FEAT_POWER:
 	case USB_PORT_FEAT_INDICATOR:
 	case USB_PORT_FEAT_SUSPEND:
-	case USB_PORT_FEAT_C_RESET:
 	case USB_PORT_FEAT_C_SUSPEND:
 		/* TODO */
 		break;
@@ -540,7 +522,31 @@ static int hub_clearPortFeature(usb_hub_t *hub, int port, uint16_t wValue)
 	return 0;
 }
 
-void phy_init(void);
+void phy_init(hcd_t *hcd);
+
+static void *ehci_periodicListAlloc(void)
+{
+	uintptr_t addr, tmp;
+
+	addr = (uintptr_t) mmap(NULL, 4096, PROT_WRITE | PROT_READ, MAP_ANONYMOUS | MAP_UNCACHED, OID_NULL, 0);
+	if (addr % 4096 == 0)
+		return (void *) addr;
+
+	munmap((void *) addr, 4096);
+
+	addr = (uintptr_t) mmap(NULL, 8192, PROT_WRITE | PROT_READ, MAP_ANONYMOUS | MAP_UNCACHED, OID_NULL, 0);
+	tmp = ((addr + 4096) / 4096) * 4096;
+
+	/* unmap memory prefix */
+	if (tmp != addr)
+		munmap((void *) addr, tmp - addr);
+
+	/* unmap memory sufix */
+	if (tmp + 4096 != addr)
+		munmap((void *) tmp + 4096, (addr + 8192) - (tmp + 4096));
+
+	return (void *) tmp;
+}
 
 int ehci_init(hcd_t *hcd)
 {
@@ -558,15 +564,7 @@ int ehci_init(hcd_t *hcd)
 	}
 
 	hcd->priv = ehci;
-	hcdphy_init(hcd);
-
-	hcd->roothub->statusChanged = hub_statusChanged;
-	hcd->roothub->getPortStatus = hub_getPortStatus;
-	hcd->roothub->clearPortFeature = hub_clearPortFeature;
-	hcd->roothub->setPortFeature = hub_setPortFeature;
-	hcd->roothub->nports = *(hcd->base + hcsparams) & 0xffff;
-	strncpy(hcd->roothub->dev->name, "USB 2.0 root hub", sizeof(hcd->roothub->dev->name));
-	/* TODO: set root hub device descriptors */
+	phy_init(hcd);
 
 	ehci->async_head = NULL;
 	condCreate(&ehci->aai_cond);
@@ -574,9 +572,7 @@ int ehci_init(hcd_t *hcd)
 	mutexCreate(&ehci->irq_lock);
 	mutexCreate(&ehci->async_lock);
 
-	/* TODO: allocate 4K-alligned, uncached memory */
-	ehci->periodic_list = (void *)(OCRAM2_BASE_ADRR_EHCI + 0x1000 * counter_OCRAM2_EHCI++);
-
+	ehci->periodic_list = ehci_periodicListAlloc();
 	for (i = 0; i < 1024; ++i)
 		ehci->periodic_list[i] = (link_pointer_t) { .type = 0, .zero = 0, .pointer = 0, .terminate = 1 };
 
@@ -598,6 +594,14 @@ int ehci_init(hcd_t *hcd)
 
 	/* Route all ports to this host controller */
 	*(hcd->base + configflag) = 1;
+
+	hcd->roothub->statusChanged = hub_statusChanged;
+	hcd->roothub->getPortStatus = hub_getPortStatus;
+	hcd->roothub->clearPortFeature = hub_clearPortFeature;
+	hcd->roothub->setPortFeature = hub_setPortFeature;
+	hcd->roothub->nports = *(hcd->base + hcsparams) & 0xf;
+	strncpy(hcd->roothub->dev->name, "USB 2.0 root hub", sizeof(hcd->roothub->dev->name));
+	/* TODO: set root hub device descriptors */
 
 	beginthread(ehci_irqThread, 2, malloc(0x1000), 0x1000, hcd);
 	interrupt(112 + 16, ehci_irqHandler, hcd, ehci->irq_cond, &ehci->irq_handle);
