@@ -27,7 +27,7 @@
 #include <sys/threads.h>
 #include <sys/types.h>
 
-#include <libvirtio.h>
+#include <virtio.h>
 
 
 /* Use polling instead of interrupts on RISCV64 (interrupt handler code triggers memory protection exception) */
@@ -38,20 +38,20 @@
 
 typedef struct {
 	/* Device data */
-	virtio_dev_t vdev;           /* VirtIO device */
-	virtqueue_t vq;              /* Device virtqueue */
-	unsigned int sectorsz;       /* Device sector size */
-	unsigned int size;           /* Device storage size */
+	virtio_dev_t vdev;     /* VirtIO device */
+	virtqueue_t vq;        /* Device virtqueue */
+	unsigned int sectorsz; /* Device sector size */
+	unsigned int size;     /* Device storage size */
 
 	/* Interrupt handling */
-	volatile unsigned int isr;   /* Interrupt status */
-	handle_t lock;               /* Interrupt mutex */
-	handle_t cond;               /* Interrupt condition variable */
-	handle_t inth;               /* Interrupt handle */
+	volatile unsigned int isr; /* Interrupt status */
+	handle_t lock;             /* Interrupt mutex */
+	handle_t cond;             /* Interrupt condition variable */
+	handle_t inth;             /* Interrupt handle */
 	char istack[2048] __attribute__((aligned(8)));
 
 	/* Block device data */
-	unsigned int port;           /* Device port */
+	unsigned int port; /* Device port */
 	char pstack[4][2048] __attribute__((aligned(8)));
 } virtioblk_dev_t;
 
@@ -60,26 +60,26 @@ typedef struct {
 	/* Request buffers (accessible by device) */
 	struct {
 		/* Request header (device read-only) */
-		uint32_t type;           /* Request type */
-		uint32_t reserved;       /* Reserved field (previously request priority) */
-		uint64_t sector;         /* Starting sector (512-byte offset) */
+		uint32_t type;     /* Request type */
+		uint32_t reserved; /* Reserved field (previously request priority) */
+		uint64_t sector;   /* Starting sector (512-byte offset) */
 
 		/* Footer (device write-only) */
 		volatile uint8_t status; /* Returned status */
 	} __attribute__((packed));
 
 	/* VirtIO request segments */
-	virtio_seg_t hdr;            /* Header segment */
-	virtio_seg_t data;           /* Data segment */
-	virtio_seg_t ftr;            /* Footer segment */
-	virtio_req_t vreq;           /* VirtIO request */
+	virtio_seg_t hdr;  /* Header segment */
+	virtio_seg_t data; /* Data segment */
+	virtio_seg_t ftr;  /* Footer segment */
+	virtio_req_t vreq; /* VirtIO request */
 
 	/* Custom helper fields */
-	volatile unsigned int len;   /* Number of bytes written to request buffers */
-	size_t buffsz;               /* Size of physciallly contiguous data buffer */
-	void *buff;                  /* Physcially contiguous data buffer */
-	handle_t lock;               /* Request mutex */
-	handle_t cond;               /* Request condition variable */
+	volatile unsigned int len; /* Number of bytes written to request buffers */
+	size_t buffsz;             /* Size of physciallly contiguous data buffer */
+	void *buff;                /* Physcially contiguous data buffer */
+	handle_t lock;             /* Request mutex */
+	handle_t cond;             /* Request condition variable */
 } virtioblk_req_t;
 
 
@@ -135,7 +135,8 @@ static void virtioblk_intthr(void *arg)
 
 #ifdef USE_POLLING
 		/* Poll for processed request (in polling mode requests are submitted and processed synchronously) */
-		while ((req = virtqueue_dequeue(vdev, &vblk->vq, &len)) == NULL);
+		while ((req = virtqueue_dequeue(vdev, &vblk->vq, &len)) == NULL)
+			;
 
 		mutexLock(req->lock);
 		req->len = len;
@@ -356,12 +357,12 @@ static ssize_t virtioblk_write(virtioblk_dev_t *vblk, void *rctx, offs_t offs, c
 static int virtioblk_getattr(virtioblk_dev_t *vblk, int type, int *attr)
 {
 	switch (type) {
-	case atSize:
-		*attr = vblk->size;
-		break;
+		case atSize:
+			*attr = vblk->size;
+			break;
 
-	default:
-		*attr = -EINVAL;
+		default:
+			*attr = -EINVAL;
 	}
 
 	return EOK;
@@ -456,25 +457,25 @@ static void virtioblk_poolthr(void *arg)
 			continue;
 
 		switch (msg.type) {
-		case mtOpen:
-		case mtClose:
-			msg.o.io.err = EOK;
-			break;
+			case mtOpen:
+			case mtClose:
+				msg.o.io.err = EOK;
+				break;
 
-		case mtRead:
-			msg.o.io.err = virtioblk_read(vblk, rctx, msg.i.io.offs, msg.o.data, msg.o.size);
-			break;
+			case mtRead:
+				msg.o.io.err = virtioblk_read(vblk, rctx, msg.i.io.offs, msg.o.data, msg.o.size);
+				break;
 
-		case mtWrite:
-			msg.o.io.err = virtioblk_write(vblk, rctx, msg.i.io.offs, msg.i.data, msg.i.size);
-			break;
+			case mtWrite:
+				msg.o.io.err = virtioblk_write(vblk, rctx, msg.i.io.offs, msg.i.data, msg.i.size);
+				break;
 
-		case mtGetAttr:
-			virtioblk_getattr(vblk, msg.i.attr.type, &msg.o.attr.val);
-			break;
+			case mtGetAttr:
+				virtioblk_getattr(vblk, msg.i.attr.type, &msg.o.attr.val);
+				break;
 
-		default:
-			msg.o.io.err = -EINVAL;
+			default:
+				msg.o.io.err = -EINVAL;
 		}
 
 		msgRespond(vblk->port, &msg, rid);

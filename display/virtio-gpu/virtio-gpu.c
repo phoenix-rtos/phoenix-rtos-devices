@@ -24,7 +24,7 @@
 #include <sys/threads.h>
 #include <sys/types.h>
 
-#include <libvirtio.h>
+#include <virtio.h>
 
 
 /* Use polling instead of interrupts on RISCV64 (interrupt handler code triggers memory protection exception) */
@@ -35,37 +35,37 @@
 
 typedef struct {
 	/* Device data */
-	virtio_dev_t vdev;              /* VirtIO device */
-	virtqueue_t ctlq;               /* Control virtqueue */
-	virtqueue_t curq;               /* Cursor virtqueue */
-	void *displays[16];             /* Displays buffers */
-	unsigned int ndisplays;         /* Number of connected displays */
-	unsigned int rbmp;              /* Host resources bitmap */
-	handle_t rlock;                 /* Host resources bitmap mutex */
+	virtio_dev_t vdev;      /* VirtIO device */
+	virtqueue_t ctlq;       /* Control virtqueue */
+	virtqueue_t curq;       /* Cursor virtqueue */
+	void *displays[16];     /* Displays buffers */
+	unsigned int ndisplays; /* Number of connected displays */
+	unsigned int rbmp;      /* Host resources bitmap */
+	handle_t rlock;         /* Host resources bitmap mutex */
 
 	/* Interrupt handling */
-	volatile unsigned int isr;      /* Interrupt status */
-	handle_t lock;                  /* Interrupt mutex */
-	handle_t cond;                  /* Interrupt condition variable */
-	handle_t inth;                  /* Interrupt handle */
+	volatile unsigned int isr; /* Interrupt status */
+	handle_t lock;             /* Interrupt mutex */
+	handle_t cond;             /* Interrupt condition variable */
+	handle_t inth;             /* Interrupt handle */
 	char istack[2048] __attribute__((aligned(8)));
 } virtiogpu_dev_t;
 
 
 typedef struct {
-	uint32_t x;                     /* Horizontal coordinate */
-	uint32_t y;                     /* Vertical coordinate */
-	uint32_t width;                 /* Rectangle width */
-	uint32_t height;                /* Rectangle height */
+	uint32_t x;      /* Horizontal coordinate */
+	uint32_t y;      /* Vertical coordinate */
+	uint32_t width;  /* Rectangle width */
+	uint32_t height; /* Rectangle height */
 } __attribute__((packed)) virtiogpu_rect_t;
 
 
 typedef struct {
 	struct {
-		virtiogpu_rect_t r;         /* Display rectangle */
-		uint32_t enabled;           /* Is enabled? */
-		uint32_t flags;             /* Display flags */
-	} pmodes[16];                   /* Displays */
+		virtiogpu_rect_t r; /* Display rectangle */
+		uint32_t enabled;   /* Is enabled? */
+		uint32_t flags;     /* Display flags */
+	} pmodes[16];           /* Displays */
 } __attribute__((packed)) virtiogpu_display_t;
 
 
@@ -74,11 +74,11 @@ typedef struct {
 	struct {
 		/* Request header (device readable/writable) */
 		struct {
-			uint32_t type;          /* Request/Response type */
-			uint32_t flags;         /* Request flags */
-			uint64_t fence;         /* Request fence ID */
-			uint32_t ctx;           /* 3D rendering context */
-			uint32_t pad;           /* Padding */
+			uint32_t type;  /* Request/Response type */
+			uint32_t flags; /* Request flags */
+			uint64_t fence; /* Request fence ID */
+			uint32_t ctx;   /* 3D rendering context */
+			uint32_t pad;   /* Padding */
 		} hdr;
 
 		/* Request data (device access depends on request type) */
@@ -95,16 +95,16 @@ typedef struct {
 
 			/* Create resource 2D */
 			struct {
-				uint32_t rid;       /* Resource ID */
-				uint32_t format;    /* Resource format */
-				uint32_t width;     /* Resource width */
-				uint32_t height;    /* Resource height */
+				uint32_t rid;    /* Resource ID */
+				uint32_t format; /* Resource format */
+				uint32_t width;  /* Resource width */
+				uint32_t height; /* Resource height */
 			} res2D;
 
 			/* Unref resource */
 			struct {
-				uint32_t rid;       /* Resource ID */
-				uint32_t pad;       /* Padding */
+				uint32_t rid; /* Resource ID */
+				uint32_t pad; /* Padding */
 			} unref;
 
 			/* Set scanout */
@@ -131,44 +131,44 @@ typedef struct {
 
 			/* Attach resource */
 			struct {
-				uint32_t rid;       /* Resource ID */
-				uint32_t nbuffs;    /* Number of attached buffers (one buffer only) */
-				uint64_t addr;      /* Buffer address */
-				uint32_t len;       /* Buffer length */
-				uint32_t pad;       /* Padding */
+				uint32_t rid;    /* Resource ID */
+				uint32_t nbuffs; /* Number of attached buffers (one buffer only) */
+				uint64_t addr;   /* Buffer address */
+				uint32_t len;    /* Buffer length */
+				uint32_t pad;    /* Padding */
 			} attach;
 
 			/* Detach resource */
 			struct {
-				uint32_t rid;       /* Resource ID */
-				uint32_t pad;       /* Padding */
+				uint32_t rid; /* Resource ID */
+				uint32_t pad; /* Padding */
 			} detach;
 
 			/* Update cursor */
 			struct {
 				struct {
-					uint32_t sid;   /* Scanout ID */
-					uint32_t x;     /* Horizontal coordinate */
-					uint32_t y;     /* Vertical coordinate */
-					uint32_t pad;   /* Padding */
+					uint32_t sid; /* Scanout ID */
+					uint32_t x;   /* Horizontal coordinate */
+					uint32_t y;   /* Vertical coordinate */
+					uint32_t pad; /* Padding */
 				} pos;
-				uint32_t rid;       /* Resource ID */
-				uint32_t hx;        /* Hotspot x */
-				uint32_t hy;        /* Hotspot y */
-				uint32_t pad;       /* Padding */
+				uint32_t rid; /* Resource ID */
+				uint32_t hx;  /* Hotspot x */
+				uint32_t hy;  /* Hotspot y */
+				uint32_t pad; /* Padding */
 			} cursor;
 		};
 	} __attribute__((packed));
 
 	/* VirtIO request segments */
-	virtio_seg_t rseg;              /* Device readable segment */
-	virtio_seg_t wseg;              /* Device writeable segment */
-	virtio_req_t vreq;              /* VirtIO request */
+	virtio_seg_t rseg; /* Device readable segment */
+	virtio_seg_t wseg; /* Device writeable segment */
+	virtio_req_t vreq; /* VirtIO request */
 
 	/* Custom helper fields */
-	volatile int done;              /* Indicates request completion */
-	handle_t lock;                  /* Request mutex */
-	handle_t cond;                  /* Request condition variable */
+	volatile int done; /* Indicates request completion */
+	handle_t lock;     /* Request mutex */
+	handle_t cond;     /* Request condition variable */
 } virtiogpu_req_t;
 
 
@@ -234,7 +234,8 @@ static void virtiogpu_intthr(void *arg)
 		if (vgpu->isr & (1 << 0)) {
 #ifdef USE_POLLING
 			/* Poll for processed request (in polling mode requests are submitted and processed synchronously) */
-			while (((req = virtqueue_dequeue(vdev, &vgpu->ctlq, NULL)) == NULL) && ((req = virtqueue_dequeue(vdev, &vgpu->curq, NULL)) == NULL));
+			while (((req = virtqueue_dequeue(vdev, &vgpu->ctlq, NULL)) == NULL) && ((req = virtqueue_dequeue(vdev, &vgpu->curq, NULL)) == NULL))
+				;
 
 			mutexLock(req->lock);
 			req->done = 1;
@@ -664,7 +665,7 @@ static int virtiogpu_updateCursor(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, u
 	req->cursor.hx = htole32(hx);
 	req->cursor.hy = htole32(hy);
 
-	if ((err = _virtiogpu_send(vgpu, &vgpu->ctlq ,req, 0x1100)) < 0) {
+	if ((err = _virtiogpu_send(vgpu, &vgpu->ctlq, req, 0x1100)) < 0) {
 		mutexUnlock(req->lock);
 		return err;
 	}
@@ -693,7 +694,7 @@ static int virtiogpu_moveCursor(virtiogpu_dev_t *vgpu, virtiogpu_req_t *req, uns
 	req->cursor.pos.x = htole32(x);
 	req->cursor.pos.y = htole32(y);
 
-	if ((err = _virtiogpu_send(vgpu, &vgpu->ctlq ,req, 0x1100)) < 0) {
+	if ((err = _virtiogpu_send(vgpu, &vgpu->ctlq, req, 0x1100)) < 0) {
 		mutexUnlock(req->lock);
 		return err;
 	}
