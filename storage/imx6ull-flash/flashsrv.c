@@ -530,6 +530,7 @@ static int flashsrv_devReadRaw(flash_i_devctl_t *idevctl, char *data)
 
 		size -= RAW_FLASH_PAGE_SIZE;
 		totalBytes += RAW_FLASH_PAGE_SIZE;
+		data += RAW_FLASH_PAGE_SIZE;
 		rp++;
 	}
 
