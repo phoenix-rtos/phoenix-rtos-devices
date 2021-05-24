@@ -751,6 +751,7 @@ int flashdrv_erase(flashdrv_dma_t *dma, uint32_t paddr)
 	flashdrv_wait4ready(dma, chip, EOK);
 	flashdrv_issue(dma, flash_erase_block, chip, &paddr, 0, NULL, NULL);
 	flashdrv_wait4ready(dma, chip, EOK);
+	flashdrv_issue(dma, flash_read_status, 0, NULL, 0, NULL, NULL);
 	flashdrv_readcompare(dma, chip, 0x3, 0, -1);
 	flashdrv_finish(dma);
 
