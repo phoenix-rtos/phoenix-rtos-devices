@@ -209,11 +209,11 @@ int flash_chipErase(flash_context_t *ctx)
 	return flexspi_norFlashEraseAll(ctx->instance, &ctx->config);
 }
 
-
+/* TODO: Proper returning of values if sector erase goes wrong. */
 int flash_sectorErase(flash_context_t *ctx, uint32_t offset)
 {
-	if (offset % ctx->properties.sector_size)
-		return -1;
+	/* Temporary solution */
+	offset &= ~(ctx->properties.sector_size - 1);
 
 	return flexspi_norFlashErase(ctx->instance, &ctx->config, offset, ctx->properties.sector_size);
 }
