@@ -87,22 +87,19 @@ static int lpspi_transaction(oid_t *device, int cs,
 
 
 static int ade7913_read_reg(oid_t *device, int cs,
-	uint8_t addr, uint8_t *data, size_t size)
+	uint8_t addr, uint8_t *data)
 {
-	uint8_t buff[size + 1];
-
-	if (size == 0)
-		return EOK;
+	uint8_t buff[2];
 
 	if (addr > ade7913_tempos)
 		return -EINVAL;
 
 	buff[0] = (addr << ADE7913_ADDR_OFFS) | ADE7913_READ_BIT;
 
-	if (lpspi_transaction(device, cs, buff, size) < 0)
+	if (lpspi_transaction(device, cs, buff, sizeof(buff)) < 0)
 		return -EIO;
 
-	memcpy(data, &buff[1], size);
+	*data = buff[1];
 
 	return EOK;
 }
@@ -120,7 +117,7 @@ static int ade7913_write_reg(oid_t *device, int cs,
 			addr > ade7913_emi_ctrl || addr == ade7913_status0)
 		return -EINVAL;
 
-	if ((res = lpspi_transaction(device, cs, buff, 2)) < 0)
+	if ((res = lpspi_transaction(device, cs, buff, sizeof(buff))) < 0)
 		return res;
 
 	if (addr == ade7913_lock_reg)
@@ -129,7 +126,7 @@ static int ade7913_write_reg(oid_t *device, int cs,
 	/* Check written register */
 	buff[0] = (addr << ADE7913_ADDR_OFFS) | ADE7913_READ_BIT;
 
-	if ((res = lpspi_transaction(device, cs, buff, 2)) < 0)
+	if ((res = lpspi_transaction(device, cs, buff, sizeof(buff))) < 0)
 		return res;
 
 	return value == buff[1] ? EOK : -EAGAIN;
@@ -142,7 +139,7 @@ static int ade7913_set_clear_bits(oid_t *device, int cs,
 	int res;
 	uint8_t val;
 
-	if ((res = ade7913_read_reg(device, cs, addr, &val, sizeof(val))) < 0)
+	if ((res = ade7913_read_reg(device, cs, addr, &val)) < 0)
 		return res;
 
 	val |= set;
@@ -159,7 +156,7 @@ int ade7913_ready(oid_t *device, int cs)
 {
 	uint8_t reg;
 
-	if (ade7913_read_reg(device, cs, ade7913_status0, &reg, sizeof(reg)))
+	if (ade7913_read_reg(device, cs, ade7913_status0, &reg))
 		return -EIO;
 
 	if (!(reg & ADE7913_STATUS0_RESET_ON))
@@ -199,7 +196,7 @@ int ade7913_version(oid_t *device, int cs)
 {
 	uint8_t reg;
 
-	if (ade7913_read_reg(device, cs, ade7913_status1, &reg, sizeof(reg)) < 0)
+	if (ade7913_read_reg(device, cs, ade7913_status1, &reg) < 0)
 		return -EIO;
 
 	return (reg & (0b11 << ADE7913_STATUS1_VERSION));
@@ -210,7 +207,7 @@ int ade7913_sample_lost(oid_t *device, int cs)
 {
 	uint8_t reg;
 
-	if (ade7913_read_reg(device, cs, ade7913_status1, &reg, sizeof(reg)) < 0)
+	if (ade7913_read_reg(device, cs, ade7913_status1, &reg) < 0)
 		return -EIO;
 
 	return (reg & ADE7913_STATUS1_ADC_NA);
@@ -221,8 +218,17 @@ int ade7913_sample_lost(oid_t *device, int cs)
 int ade7913_sample_regs_read(oid_t *device, int cs,
 	ade7913_burst_reg_t *reg)
 {
-	return ade7913_read_reg(device, cs, ade7913_iwv, (uint8_t *)reg,
-		sizeof(ade7913_burst_reg_t));
+	uint8_t buff[sizeof(ade7913_burst_reg_t) + 1];
+
+	buff[0] = (ade7913_iwv << ADE7913_ADDR_OFFS) | ADE7913_READ_BIT;
+	memset(buff + 1, 0xff, sizeof(ade7913_burst_reg_t));
+
+	if (lpspi_transaction(device, cs, buff, sizeof(ade7913_burst_reg_t) + 1) < 0)
+		return -EIO;
+
+	memcpy(reg, buff + 1, sizeof(ade7913_burst_reg_t));
+
+	return EOK;
 }
 
 
@@ -233,7 +239,7 @@ int ade7913_lock(oid_t *device, int cs)
 	if (ade7913_write_reg(device, cs, ade7913_lock_reg, ADE7913_LOCK_SEQ) < 0)
 		return -EIO;
 
-	if (ade7913_read_reg(device, cs, ade7913_status0, &reg, sizeof(reg)) < 0)
+	if (ade7913_read_reg(device, cs, ade7913_status0, &reg) < 0)
 		return -EIO;
 
 	if (!(reg & ADE7913_STATUS0_IC_PROT))
@@ -250,7 +256,7 @@ int ade7913_unlock(oid_t *device, int cs)
 	if (ade7913_write_reg(device, cs, ade7913_lock_reg, ADE7913_UNLOCK_SEQ) < 0)
 		return -EIO;
 
-	if (ade7913_read_reg(device, cs, ade7913_status0, &reg, sizeof(reg)) < 0)
+	if (ade7913_read_reg(device, cs, ade7913_status0, &reg) < 0)
 		return -EIO;
 
 	if (reg & ADE7913_STATUS0_IC_PROT)
@@ -263,14 +269,14 @@ int ade7913_unlock(oid_t *device, int cs)
 int ade7913_enable(oid_t *device, int cs)
 {
 	return ade7913_set_clear_bits(device, cs,
-		ade7913_config, ADE7913_CONFIG_PWRDWN_EN, 0);
+		ade7913_config, 0, ADE7913_CONFIG_PWRDWN_EN);
 }
 
 
 int ade7913_disable(oid_t *device, int cs)
 {
 	return ade7913_set_clear_bits(device, cs,
-		ade7913_config, 0, ADE7913_CONFIG_PWRDWN_EN);
+		ade7913_config, ADE7913_CONFIG_PWRDWN_EN, 0);
 }
 
 
