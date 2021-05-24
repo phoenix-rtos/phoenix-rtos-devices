@@ -248,13 +248,16 @@ static int flashsrv_erase(size_t start, size_t end)
 }
 
 
-static int flashsrv_partoff(id_t id, size_t start, size_t size, size_t *partoff)
+static int flashsrv_partoff(id_t id, size_t start, size_t size, size_t *partoff, size_t *partsize)
 {
 	flashsrv_partition_t *p = NULL;
 	id_t rootID = ROOT_ID;
 
 	if (id == rootID) {
 		*partoff = 0;
+		if (partsize)
+			*partsize = BLOCKS_CNT * ERASE_BLOCK_SIZE;  // FIXME: don't hardcode flash size
+
 		return EOK;
 	}
 
@@ -271,6 +274,9 @@ static int flashsrv_partoff(id_t id, size_t start, size_t size, size_t *partoff)
 
 	*partoff = p->start * FLASH_PAGE_SIZE * PAGES_PER_BLOCK;
 
+	if (partsize)
+		*partsize = p->size * ERASE_BLOCK_SIZE;
+
 	return EOK;
 }
 
@@ -284,7 +290,7 @@ static int flashsrv_write(id_t id, size_t start, char *data, size_t size)
 	size_t partoff = 0;
 	size_t writesz = size;
 
-	if (flashsrv_partoff(id, start, size, &partoff) < 0)
+	if (flashsrv_partoff(id, start, size, &partoff, NULL) < 0)
 		return -EINVAL;
 
 	start += partoff;
@@ -334,7 +340,7 @@ static int flashsrv_read(id_t id, size_t offset, char *data, size_t size)
 	dma = flashsrv_common.dma;
 	databuf = flashsrv_common.databuf;
 
-	if (flashsrv_partoff(id, offset, size, &partoff) < 0)
+	if (flashsrv_partoff(id, offset, size, &partoff, NULL) < 0)
 		return -EINVAL;
 
 	offset += partoff;
@@ -412,24 +418,25 @@ static void flashsrv_syncAll(void)
 }
 
 
-static int flashsrv_devErase(flash_i_devctl_t *idevctl, int type)
+static int flashsrv_devErase(const flash_i_devctl_t *idevctl, int type)
 {
-	size_t partoff = 0;
-	size_t start = 0;
-	size_t end = 0;
+	size_t start = idevctl->erase.offset;
+	size_t size = idevctl->erase.size;
 
-	if ( type == flashsrv_devctl_erase) {
-		if (flashsrv_partoff(idevctl->erase.oid.id, idevctl->erase.offset, idevctl->erase.size, &partoff) < 0)
+	TRACE("DevErase: off:%zu, size: %zu (type=%d)", start, size, type);
+
+	if (type == flashsrv_devctl_erase) {
+		size_t partoff, partsize;
+
+		if (flashsrv_partoff(idevctl->erase.oid.id, idevctl->erase.offset, idevctl->erase.size, &partoff, &partsize) < 0)
 			return -EINVAL;
+
+		start += partoff;
+		if (size == 0)
+			size = partsize;
 	}
 
-	start = idevctl->erase.offset + partoff;
-	end = start + idevctl->erase.size;
-
-	if (end % ERASE_BLOCK_SIZE || start % ERASE_BLOCK_SIZE)
-		return -EINVAL;
-
-	return flashsrv_erase(start, end);
+	return flashsrv_erase(start, start + size);
 }
 
 
@@ -629,7 +636,7 @@ static void flashsrv_devThread(void *arg)
 			break;
 
 		case mtGetAttr:
-			TRACE("DEV mtgetAttr");
+			TRACE("DEV mtgetAttr - id: %llu", msg.i.attr.oid.id);
 			msg.o.attr.val = flashsrv_fileAttr(msg.i.attr.type, msg.i.attr.oid.id);
 			break;
 
