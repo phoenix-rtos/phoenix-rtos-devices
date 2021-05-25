@@ -175,44 +175,48 @@ static ssize_t flashsrv_fsReadf1(unsigned int addr, void *buff, size_t bufflen)
 }
 
 
-static void flashsrv_fsEraseSectorf0(unsigned int addr)
+static int flashsrv_fsEraseSectorf0(unsigned int addr)
 {
-	flashsrv_eraseSector(0, addr);
+	return flashsrv_eraseSector(0, addr);
 }
 
 
-static void flashsrv_fsEraseSectorf1(unsigned int addr)
+static int flashsrv_fsEraseSectorf1(unsigned int addr)
 {
-	flashsrv_eraseSector(1, addr);
+	return flashsrv_eraseSector(1, addr);
 }
 
 
-static void flashsrv_fsPartitionErase(uint8_t fID)
+static int flashsrv_fsPartitionErase(uint8_t fID)
 {
-	int i;
+	int i, err;
 	uint32_t sectorsNb;
 	flash_memory_t *flash_memory;
 
 	if (FLASH_MEMORIES_NO <= fID)
-		return;
+		return -EINVAL;
 
 	flash_memory = flashsrv_common.flash_memories + fID;
 	sectorsNb = flash_memory->parts[flash_memory->currPart].pHeader->size / flash_memory->ctx.properties.sector_size;
 
-	for (i = 0; i < sectorsNb; ++i)
-		flashsrv_eraseSector(fID, flash_memory->parts[flash_memory->currPart].pHeader->offset + flash_memory->ctx.properties.sector_size * i);
+	for (i = 0; i < sectorsNb; ++i) {
+		if ((err = flashsrv_eraseSector(fID, flash_memory->parts[flash_memory->currPart].pHeader->offset + flash_memory->ctx.properties.sector_size * i)) < 0)
+			return err;
+	}
+
+	return 0;
 }
 
 
-static void flashsrv_fsPartitionErasef0(void)
+static int flashsrv_fsPartitionErasef0(void)
 {
-	flashsrv_fsPartitionErase(0);
+	return flashsrv_fsPartitionErase(0);
 }
 
 
-static void flashsrv_fsPartitionErasef1(void)
+static int flashsrv_fsPartitionErasef1(void)
 {
-	flashsrv_fsPartitionErase(1);
+	return flashsrv_fsPartitionErase(1);
 }
 
 
