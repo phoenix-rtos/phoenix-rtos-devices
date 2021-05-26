@@ -1,4 +1,4 @@
-# stm32-multi
+# stm32l1-multi
 
 This server acculumates all devices drivers of STM32L152 microcontrollers familly. It provides support for:
 

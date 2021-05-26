@@ -19,7 +19,7 @@
 
 #include "libmulti/libi2c.h"
 
-#include "stm32-multi.h"
+#include "stm32l4-multi.h"
 #include "common.h"
 #include "gpio.h"
 #include "i2c.h"

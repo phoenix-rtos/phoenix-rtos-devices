@@ -15,7 +15,7 @@
 #define _RTC_H_
 
 
-#include "stm32-multi.h"
+#include "stm32l1-multi.h"
 
 
 void rtc_setCalib(int value);

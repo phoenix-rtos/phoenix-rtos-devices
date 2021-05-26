@@ -20,7 +20,7 @@
 #include <sys/interrupt.h>
 #include <sys/platform.h>
 
-#include "stm32-multi.h"
+#include "stm32l1-multi.h"
 #include "common.h"
 #include "gpio.h"
 #include "uart.h"

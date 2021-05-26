@@ -19,7 +19,7 @@
 
 #include "common.h"
 #include "config.h"
-#include "stm32-multi.h"
+#include "stm32l1-multi.h"
 #include "gpio.h"
 #include "lcd.h"
 #include "rcc.h"

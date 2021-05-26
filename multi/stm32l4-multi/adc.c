@@ -20,7 +20,7 @@
 
 #include "common.h"
 #include "rcc.h"
-#include "stm32-multi.h"
+#include "stm32l4-multi.h"
 
 enum { adc1_offs = 0, adc2_offs = 64, adc3_offs = 128, common_offs = 192 };
 

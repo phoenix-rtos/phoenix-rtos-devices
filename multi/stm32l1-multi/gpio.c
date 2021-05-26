@@ -16,7 +16,7 @@
 #include <stdint.h>
 #include <sys/threads.h>
 
-#include "stm32-multi.h"
+#include "stm32l1-multi.h"
 #include "common.h"
 #include "rcc.h"
 

@@ -14,7 +14,7 @@
 #include <sys/threads.h>
 #include <sys/interrupt.h>
 
-#include "stm32-multi.h"
+#include "stm32l4-multi.h"
 #include "common.h"
 #include "exti.h"
 #include "rcc.h"
