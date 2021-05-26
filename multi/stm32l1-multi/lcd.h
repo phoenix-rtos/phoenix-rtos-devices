@@ -14,7 +14,7 @@
 #ifndef _LCD_H_
 #define _LCD_H_
 
-#include "stm32-multi.h"
+#include "stm32l1-multi.h"
 
 
 void lcd_getDisplay(lcdmsg_t *disp);

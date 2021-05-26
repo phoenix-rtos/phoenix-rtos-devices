@@ -19,7 +19,7 @@
 #include <unistd.h>
 #include <errno.h>
 
-#include "stm32-multi.h"
+#include "stm32l1-multi.h"
 #include "common.h"
 #include "dma.h"
 #include "rcc.h"

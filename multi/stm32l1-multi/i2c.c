@@ -17,7 +17,7 @@
 #include <sys/threads.h>
 #include <sys/interrupt.h>
 
-#include "stm32-multi.h"
+#include "stm32l1-multi.h"
 #include "common.h"
 #include "gpio.h"
 #include "i2c.h"
