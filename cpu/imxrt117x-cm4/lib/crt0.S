@@ -23,7 +23,7 @@
 .globl _init_vectors
 .type _init_vectors, %object
 _init_vectors:
-.word _end + 1024 + 256
+.word _end + 4096
 .word _start
 
 .word _exception    /* NMI */
@@ -99,6 +99,7 @@ _start:
 	ldr r1, =_init_vectors
 	str r1, [r0]
 	ldr r0, [r1]
+	bic r0, 7
 	msr msp, r0
 
 	ldr r0, =_startc

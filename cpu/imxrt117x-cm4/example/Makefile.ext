@@ -29,7 +29,7 @@ PREFIX_PROG_STRIPPED ?= $(PREFIX_BUILD)/prog.stripped/
 
 CFLAGS += -Wall -Wstrict-prototypes -g -nostartfiles -nostdlib\
 	-mthumb -fomit-frame-pointer -ffreestanding -mno-unaligned-access\
-	-fstack-usage -mcpu=cortex-m4 -mfloat-abi=hard -mfpu=fpv5-d16 \
+	-fstack-usage -mcpu=cortex-m4 -mfloat-abi=hard -mfpu=fpv5-sp-d16 \
 	-O2 -I $(PREFIX_H) -L $(PREFIX_A)
 
 LDFLAGS := -z max-page-size=0x10 --gc-sections -e _start --section-start .init=1ffe0000 -Tbss=20000000

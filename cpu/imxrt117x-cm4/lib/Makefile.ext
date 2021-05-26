@@ -29,7 +29,7 @@ PREFIX_PROG_STRIPPED ?= $(PREFIX_BUILD)/prog.stripped/
 
 CFLAGS += -Wall -Wstrict-prototypes -g -nostartfiles -nostdlib\
 	-mthumb -fomit-frame-pointer -ffreestanding -mno-unaligned-access\
-	-fstack-usage -mcpu=cortex-m4 -mfloat-abi=hard -mfpu=fpv5-d16 -O2
+	-fstack-usage -mcpu=cortex-m4 -mfloat-abi=hard -mfpu=fpv5-sp-d16 -O2
 
 OBJS = $(addprefix $(PREFIX_O), crt0.o _startc.o cm4.o gpio.o string.o interrupt.o mu.o)
 HEADERS = $(addprefix $(PREFIX_H), gpio.h cm4.h string.h interrupt.h mu.h)
