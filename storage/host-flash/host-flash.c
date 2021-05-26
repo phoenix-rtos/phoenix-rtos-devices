@@ -91,7 +91,7 @@ ssize_t hostflash_write(unsigned int addr, void *buff, size_t bufflen)
 }
 
 
-void hostflash_sectorErase(unsigned int addr)
+int hostflash_sectorErase(unsigned int addr)
 {
 	char tempTab[256];
 	ssize_t len = sizeof(tempTab);
@@ -102,7 +102,7 @@ void hostflash_sectorErase(unsigned int addr)
 	memset(tempTab, 0xff, sizeof(tempTab));
 
 	if (addr >= hostflash_common.flashsz)
-		return;
+		return -EINVAL;
 
 	sectorAddr = (addr / hostflash_common.sectorsz) * hostflash_common.sectorsz;
 
@@ -112,7 +112,7 @@ void hostflash_sectorErase(unsigned int addr)
 			if (errno == EINTR)
 				continue;
 
-			return;
+			return stat;
 		}
 
 		len -= stat;
@@ -122,11 +122,11 @@ void hostflash_sectorErase(unsigned int addr)
 		erased += stat;
 	}
 
-	return;
+	return 0;
 }
 
 
-void hostflash_chipErase(void)
+int hostflash_chipErase(void)
 {
 	char tempTab[256];
 	size_t erased = 0, len = sizeof(tempTab);
@@ -140,7 +140,7 @@ void hostflash_chipErase(void)
 			if (errno == EINTR)
 				continue;
 
-			return;
+			return stat;
 		}
 
 		len -= stat;
@@ -150,7 +150,7 @@ void hostflash_chipErase(void)
 		erased += stat;
 	}
 
-	return;
+	return 0;
 }
 
 

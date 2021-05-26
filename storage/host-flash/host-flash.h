@@ -20,10 +20,10 @@ ssize_t hostflash_read(unsigned int addr, void *buff, size_t bufflen);
 ssize_t hostflash_write(unsigned int addr, void *buff, size_t bufflen);
 
 
-void hostflash_sectorErase(unsigned int addr);
+int hostflash_sectorErase(unsigned int addr);
 
 
-void hostflash_chipErase(void);
+int hostflash_chipErase(void);
 
 
 int hostflash_init(size_t *flashsz, size_t *sectorsz, const char *fileName);
