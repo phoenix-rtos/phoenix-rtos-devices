@@ -65,7 +65,6 @@ void phy_dumpRegisters(hcd_t *hcd, FILE *stream)
 void phy_config(hcd_t *hcd)
 {
 	*(hcd->phybase + phy_ctrl) |= 7 << 14;
-	*(hcd->phybase + phy_ctrl) |= 2;
 	*(hcd->phybase + phy_ctrl) |= 1 << 11 | 1;
 }
 
@@ -89,6 +88,15 @@ static int setClock(int dev, unsigned int state)
 	pctl.devclock.state = state;
 
 	return platformctl(&pctl);
+}
+
+void phy_enableHighSpeedDisconnect(hcd_t *hcd, int enable)
+{
+	printf("phy: High Speed Disconnect: %x\n", enable);
+	if (enable)
+		*(hcd->phybase + phy_ctrl) |= 0x2;
+	else
+		*(hcd->phybase + phy_ctrl) &= ~0x2;
 }
 
 
