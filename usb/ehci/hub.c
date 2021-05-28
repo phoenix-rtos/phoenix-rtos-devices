@@ -9,21 +9,27 @@ void phy_enableHighSpeedDisconnect(hcd_t *hcd, int enable);
 
 static void hub_resetPort(hcd_t *hcd, int port)
 {
+	int i;
 	ehci_t *ehci = (ehci_t *)hcd->priv;
 	volatile int *reg = (hcd->base + portsc1) + (port - 1);
 
 	printf("resetting port: %d\n", port);
+	*reg &= ~0x0000002AU;
 	*reg |= PORTSC_PR;
-	*reg &= ~PORTSC_ENA;
-	/* This is imx deviation. According to ehci documentation
-	 * it is up to software to set the PR bit 0 after waiting 20ms */
 	while (*reg & PORTSC_PR);
+	// for (i = 0; i < 10; i++) {
+	// 	*reg |= PORTSC_PR;
+	// 	*reg &= ~PORTSC_ENA;
+	// 	/* This is imx deviation. According to ehci documentation
+	// 	 * it is up to software to set the PR bit 0 after waiting 20ms */
+	// 	while (*reg & PORTSC_PR);
 
-	*reg |= PORTSC_ENA;
+	// 	*reg |= PORTSC_ENA;
+	// }
 
 	ehci->portResetChange = 1 << port;
 	/* Turn port power on */
-	*reg |= PORTSC_PP;
+	//*reg |= PORTSC_PP;
 
 	if ((*reg & PORTSC_PSPD) == PORTSC_PSPD_HS)
 		phy_enableHighSpeedDisconnect(hcd, 1);
@@ -186,6 +192,7 @@ static int hub_clearPortFeature(usb_hub_t *hub, int port, uint16_t wValue)
 	default:
 		return -1;
 	}
+	printf("FEATURE CLEARED: %x\n", *portsc);
 
 	return 0;
 }
