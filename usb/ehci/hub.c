@@ -1,44 +1,50 @@
+/*
+ * Phoenix-RTOS
+ *
+ * ehci root hub implementation
+ *
+ * Copyright 2021 Phoenix Systems
+ * Author: Maciej Purski
+ *
+ * This file is part of Phoenix-RTOS.
+ *
+ * %LICENSE%
+ */
+
+
+#include <errno.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include <hcd.h>
 #include <hub.h>
 #include "ehci.h"
 
+
 void phy_enableHighSpeedDisconnect(hcd_t *hcd, int enable);
 
-static void hub_resetPort(hcd_t *hcd, int port)
+static void ehci_resetPort(hcd_t *hcd, int port)
 {
-	int i;
 	ehci_t *ehci = (ehci_t *)hcd->priv;
 	volatile int *reg = (hcd->base + portsc1) + (port - 1);
 
-	printf("resetting port: %d\n", port);
 	*reg &= ~0x0000002AU;
 	*reg |= PORTSC_PR;
+	/*
+	 * This is imx deviation. According to ehci documentation
+	 * it is up to software to set the PR bit 0 after waiting 20ms
+	 */
 	while (*reg & PORTSC_PR);
-	// for (i = 0; i < 10; i++) {
-	// 	*reg |= PORTSC_PR;
-	// 	*reg &= ~PORTSC_ENA;
-	// 	/* This is imx deviation. According to ehci documentation
-	// 	 * it is up to software to set the PR bit 0 after waiting 20ms */
-	// 	while (*reg & PORTSC_PR);
-
-	// 	*reg |= PORTSC_ENA;
-	// }
 
 	ehci->portResetChange = 1 << port;
-	/* Turn port power on */
-	//*reg |= PORTSC_PP;
 
 	if ((*reg & PORTSC_PSPD) == PORTSC_PSPD_HS)
 		phy_enableHighSpeedDisconnect(hcd, 1);
-
-	printf("PORT RESET SUCCESSFUL: PORTSC: %x\n", *reg);
 }
 
 
-static int hub_statusChanged(usb_hub_t *hub, uint32_t *status)
+static int ehci_statusChanged(usb_device_t *hub, uint32_t *status)
 {
 	hcd_t *hcd = hub->hcd;
 	ehci_t *ehci = (ehci_t *)hcd->priv;
@@ -53,7 +59,7 @@ static int hub_statusChanged(usb_hub_t *hub, uint32_t *status)
 
 	ehci->status &= ~USBSTS_PCI;
 
-	for (i = 0; i < hub->nports; i++) {
+	for (i = 0; i < hub->ndevices; i++) {
 		portsc = hcd->base + portsc1 + i;
 		if (*portsc & PORTSC_CSC)
 			*status |= 1 << (i + 1);
@@ -65,13 +71,13 @@ static int hub_statusChanged(usb_hub_t *hub, uint32_t *status)
 }
 
 
-static int hub_getPortStatus(usb_hub_t *hub, int port, usb_port_status_t *status)
+static int ehci_getPortStatus(usb_device_t *hub, int port, usb_port_status_t *status)
 {
 	hcd_t *hcd = hub->hcd;
 	ehci_t *ehci = (ehci_t *)hcd->priv;
 	int val;
 
-	if (port > hub->nports)
+	if (port > hub->ndevices)
 		return -1;
 
 	status->wPortChange = 0;
@@ -115,29 +121,27 @@ static int hub_getPortStatus(usb_hub_t *hub, int port, usb_port_status_t *status
 		status->wPortStatus |= USB_PORT_STAT_LOW_SPEED;
 	else if ((val & PORTSC_PSPD) >> 26 == 2)
 		status->wPortStatus |= USB_PORT_STAT_HIGH_SPEED;
-	printf("PORT STATUS PSPD: %x\n", (val & PORTSC_PSPD) >> 26);
 
 	/* TODO: set indicator */
-	printf("port status: %x change: %x\n", status->wPortStatus, status->wPortChange);
 
 	return 0;
 }
 
 
-static int hub_setPortFeature(usb_hub_t *hub, int port, uint16_t wValue)
+static int ehci_setPortFeature(usb_device_t *hub, int port, uint16_t wValue)
 {
 	hcd_t *hcd = hub->hcd;
 	volatile int *portsc = hcd->base + portsc1 + port - 1;
 	uint32_t val = *portsc;
 
-	if (port > hub->nports)
+	if (port > hub->ndevices)
 		return -1;
 
 	val &= ~PORTSC_CBITS;
 
 	switch (wValue) {
 	case USB_PORT_FEAT_RESET:
-		hub_resetPort(hcd, port);
+		ehci_resetPort(hcd, port);
 		break;
 	case USB_PORT_FEAT_SUSPEND:
 	case USB_PORT_FEAT_POWER:
@@ -153,17 +157,16 @@ static int hub_setPortFeature(usb_hub_t *hub, int port, uint16_t wValue)
 }
 
 
-static int hub_clearPortFeature(usb_hub_t *hub, int port, uint16_t wValue)
+static int ehci_clearPortFeature(usb_device_t *hub, int port, uint16_t wValue)
 {
 	hcd_t *hcd = hub->hcd;
 	ehci_t *ehci = (ehci_t *) hcd->priv;
 	volatile int *portsc = hcd->base + portsc1 + port - 1;
 	uint32_t val = *portsc;
 
-	if (port > hub->nports)
+	if (port > hub->ndevices)
 		return -1;
 
-	printf("hub: clearPortFeature: %x\n", wValue);
 	val &= ~PORTSC_CBITS;
 	switch (wValue) {
 	/* For 'change' features, ack the change */
@@ -192,19 +195,30 @@ static int hub_clearPortFeature(usb_hub_t *hub, int port, uint16_t wValue)
 	default:
 		return -1;
 	}
-	printf("FEATURE CLEARED: %x\n", *portsc);
 
 	return 0;
 }
 
+static usb_hub_ops_t ehci_hubOps = {
+	.statusChanged = ehci_statusChanged,
+	.getPortStatus = ehci_getPortStatus,
+	.clearPortFeature = ehci_clearPortFeature,
+	.setPortFeature = ehci_setPortFeature
+};
 
-void ehci_rootHubInit(usb_hub_t *hub, int nports)
+int ehci_rootHubInit(usb_device_t *hub, int nports)
 {
-	hub->statusChanged = hub_statusChanged;
-	hub->getPortStatus = hub_getPortStatus;
-	hub->clearPortFeature = hub_clearPortFeature;
-	hub->setPortFeature = hub_setPortFeature;
+	int i;
 	/* TODO: set root hub device descriptors */
-	hub->nports = nports;
-	strncpy(hub->dev->name, "USB 2.0 root hub", sizeof(hub->dev->name));
+	hub->hubOps = &ehci_hubOps;
+	hub->ndevices = nports;
+	if ((hub->devices = malloc(nports * sizeof(usb_device_t *))) == NULL)
+		return -ENOMEM;
+
+	for (i = 0; i < nports; i++)
+		hub->devices[i] = NULL;
+
+	strncpy(hub->name, "USB 2.0 root hub", sizeof(hub->name));
+
+	return 0;
 }

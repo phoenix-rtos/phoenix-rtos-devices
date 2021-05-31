@@ -373,4 +373,4 @@ typedef struct ehci {
 
 
 void phy_init(hcd_t *hcd);
-void ehci_rootHubInit(usb_hub_t *hub, int nports);
+int ehci_rootHubInit(usb_device_t *hub, int nports);
