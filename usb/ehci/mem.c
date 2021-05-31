@@ -56,6 +56,11 @@ void *ehci_allocPage(void)
 	return tmp;
 }
 
+void ehci_freePage(void *ptr)
+{
+	munmap(ptr, EHCI_PAGE_SIZE);
+}
+
 static ehci_buf_t *ehci_allocBuffer(void)
 {
 	char *p;

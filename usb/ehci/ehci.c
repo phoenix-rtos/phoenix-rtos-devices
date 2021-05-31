@@ -405,7 +405,7 @@ static void ehci_irqThread(void *arg)
 	mutexLock(ehci->irq_lock);
 	for (;;) {
 		condWait(ehci->irq_cond, ehci->irq_lock, 0);
-		mutexLock(hcd->transfer_lock);
+		mutexLock(hcd->transLock);
 		if ((t = hcd->transfers) != NULL) {
 			do {
 				qh_node = (struct qh_node *)t->endpoint->hcdpriv;
@@ -423,7 +423,7 @@ static void ehci_irqThread(void *arg)
 				}
 			} while (hcd->transfers && (t = t->next) != hcd->transfers);
 		}
-		mutexUnlock(hcd->transfer_lock);
+		mutexUnlock(hcd->transLock);
 	}
 }
 
@@ -543,10 +543,10 @@ static int ehci_transferEnqueue(hcd_t *hcd, usb_transfer_t *t)
 
 	qtds = (struct qtd_node *)t->hcdpriv;
 
-	mutexLock(hcd->transfer_lock);
+	mutexLock(hcd->transLock);
 	LIST_ADD(&hcd->transfers, t);
 	ehci_enqueueQtd(qh_node, qtds->qtd, qtds->prev->qtd);
-	mutexUnlock(hcd->transfer_lock);
+	mutexUnlock(hcd->transLock);
 
 	return 0;
 }
@@ -558,32 +558,35 @@ static void ehci_devDestroy(hcd_t *hcd, usb_device_t *dev)
 	struct qh_node *qh;
 	usb_transfer_t *t, *p;
 
-	fprintf(stderr, "DEVICE DESTROYING\n");
 	/* Deactivate device's qtds */
 	if ((t = hcd->transfers) != NULL) {
-		mutexLock(hcd->transfer_lock);
+		mutexLock(hcd->transLock);
 		do {
-			fprintf(stderr, "ehci: Freeing transfer\n");
 			if (t->endpoint->device == dev)
 				ehci_qtdsDeactivate((struct qtd_node *)t->hcdpriv);
 		} while ((t = t->next) != hcd->transfers);
-		mutexUnlock(hcd->transfer_lock);
+		mutexUnlock(hcd->transLock);
 	}
 
 	/* Remove endpoints Queue Heads */
 	/* TODO: remove other endpoints than 0 */
 	qh = (struct qh_node *)dev->ep0->hcdpriv;
-	mutexLock(ehci->async_lock);
-	while (qh->qh->transfer_overlay.active);
-	ehci_unlinkQh(hcd, qh);
-	ehci_free(qh->qh);
-	free(qh);
-	mutexUnlock(ehci->async_lock);
+	if (qh != NULL) {
+		mutexLock(ehci->async_lock);
+
+		while (qh->qh->transfer_overlay.active);
+
+		ehci_unlinkQh(hcd, qh);
+		ehci_free(qh->qh);
+		free(qh);
+
+		mutexUnlock(ehci->async_lock);
+	}
+
 
 	if ((t = hcd->transfers) != NULL) {
-		mutexLock(hcd->transfer_lock);
+		mutexLock(hcd->transLock);
 		do {
-			fprintf(stderr, "ehci: Freeing transfer\n");
 			if (t->endpoint->device == dev) {
 				p = t->prev;
 				LIST_REMOVE(&hcd->transfers, t);
@@ -595,7 +598,7 @@ static void ehci_devDestroy(hcd_t *hcd, usb_device_t *dev)
 			}
 
 		} while (hcd->transfers && (t = t->next) != hcd->transfers);
-		mutexUnlock(hcd->transfer_lock);
+		mutexUnlock(hcd->transLock);
 	}
 }
 
@@ -605,7 +608,7 @@ static int ehci_init(hcd_t *hcd)
 	int nports;
 	int i;
 
-	if ((ehci = malloc(sizeof(ehci_t))) == NULL) {
+	if ((ehci = calloc(1, sizeof(ehci_t))) == NULL) {
 		fprintf(stderr, "ehci: Can't allocate hcd ehci!\n");
 		return -ENOMEM;
 	}
@@ -619,14 +622,18 @@ static int ehci_init(hcd_t *hcd)
 	phy_init(hcd);
 
 	nports = *(hcd->base + hcsparams) & 0xf;
-	ehci_rootHubInit(hcd->roothub, nports);
+	if (ehci_rootHubInit(hcd->roothub, nports) != 0) {
+		ehci_freePage(ehci->periodic_list);
+		free(ehci);
+		return -ENOMEM;
+	}
 
 	ehci->async_head = NULL;
+
 	condCreate(&ehci->aai_cond);
 	condCreate(&ehci->irq_cond);
 	mutexCreate(&ehci->irq_lock);
 	mutexCreate(&ehci->async_lock);
-	mutexCreate(&hcd->transfer_lock);
 
 	for (i = 0; i < 1024; ++i)
 		ehci->periodic_list[i] = (link_pointer_t) { .type = 0, .zero = 0, .pointer = 0, .terminate = 1 };
@@ -730,7 +737,6 @@ static void ehci_printPortStatus(hcd_t *hcd)
 
 static void ehci_dumpRegisters(hcd_t *hcd, FILE *stream)
 {
-	printf("DUMP REGISTERS\n");
 	fprintf(stream, "%18s: %08x", "id", *(hcd->base + id));
 	fprintf(stream, "%18s: %08x\n", "hwgeneral", *(hcd->base + hwgeneral));
 	fprintf(stream, "%18s: %08x", "hwhost", *(hcd->base + hwhost));
