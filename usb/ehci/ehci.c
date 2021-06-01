@@ -34,9 +34,9 @@
 #include "ehci.h"
 #include "mem.h"
 
-#define TRACE(x, ...) fprintf(stderr, "ehci: " x "\n", ##__VA_ARGS__);
+#define TRACE(x, ...) /* fprintf(stderr, "ehci: " x "\n", ##__VA_ARGS__); */
 #define TRACE_FAIL(x, ...) fprintf(stderr, "ehci error: " x "\n", ##__VA_ARGS__);
-#define FUN_TRACE fprintf(stderr, "ehci trace: %s\n", __PRETTY_FUNCTION__);
+#define FUN_TRACE /* fprintf(stderr, "ehci trace: %s\n", __PRETTY_FUNCTION__); */
 
 struct qtd_node {
 	struct qtd_node *prev, *next;
@@ -82,12 +82,12 @@ static void ehci_consQtd(struct qtd *qtd, struct qh *qh)
 }
 
 
-static void ehci_enqueueQtd(struct qh_node *qh_node, struct qtd *first, struct qtd *last)
+static void ehci_enqueue(struct qh_node *qh_node, struct qtd *first, struct qtd *last)
 {
 	FUN_TRACE;
 	struct qtd *prev_last = qh_node->last;
 
-	printf("ehci enqueue first: %x last: %x\n", first, last);
+	//printf("ehci enqueue first: %x last: %x\n", first, last);
 
 	qh_node->last = last;
 	last->next.terminate = 1;
@@ -155,7 +155,6 @@ struct qtd *ehci_allocQtd(int token, char *buffer, size_t *size, int datax)
 		qtd->bytes_to_transfer = initial_size - *size;
 	}
 
-	printf("qtd addr: %p qtd buffer: %x bytes_to_transfer: %d\n", qtd, (qtd->page0 << 20) + qtd->offset, qtd->bytes_to_transfer);
 	return qtd;
 }
 
@@ -545,18 +544,36 @@ static int ehci_transferEnqueue(hcd_t *hcd, usb_transfer_t *t)
 
 	mutexLock(hcd->transLock);
 	LIST_ADD(&hcd->transfers, t);
-	ehci_enqueueQtd(qh_node, qtds->qtd, qtds->prev->qtd);
+	ehci_enqueue(qh_node, qtds->qtd, qtds->prev->qtd);
 	mutexUnlock(hcd->transLock);
 
 	return 0;
 }
 
+static void ehci_epDestroy(hcd_t *hcd, usb_endpoint_t *ep)
+{
+	ehci_t *ehci = (ehci_t *)hcd->priv;
+	struct qh_node *qh = (struct qh_node *)ep->hcdpriv;
+
+	if (qh != NULL) {
+		mutexLock(ehci->async_lock);
+
+		while (qh->qh->transfer_overlay.active);
+
+		ehci_unlinkQh(hcd, qh);
+		ehci_free(qh->qh);
+		free(qh);
+
+		mutexUnlock(ehci->async_lock);
+	}
+}
 
 static void ehci_devDestroy(hcd_t *hcd, usb_device_t *dev)
 {
 	ehci_t *ehci = (ehci_t *)hcd->priv;
 	struct qh_node *qh;
 	usb_transfer_t *t, *p;
+	int i, j;
 
 	/* Deactivate device's qtds */
 	if ((t = hcd->transfers) != NULL) {
@@ -569,21 +586,12 @@ static void ehci_devDestroy(hcd_t *hcd, usb_device_t *dev)
 	}
 
 	/* Remove endpoints Queue Heads */
-	/* TODO: remove other endpoints than 0 */
-	qh = (struct qh_node *)dev->ep0->hcdpriv;
-	if (qh != NULL) {
-		mutexLock(ehci->async_lock);
-
-		while (qh->qh->transfer_overlay.active);
-
-		ehci_unlinkQh(hcd, qh);
-		ehci_free(qh->qh);
-		free(qh);
-
-		mutexUnlock(ehci->async_lock);
+	for (i = 0; i < dev->nifs; i++) {
+		for (j = 0; j < dev->ifs[i].neps; j++)
+			ehci_epDestroy(hcd, &dev->ifs[i].eps[j]);
 	}
 
-
+	/* Remove transfers */
 	if ((t = hcd->transfers) != NULL) {
 		mutexLock(hcd->transLock);
 		do {

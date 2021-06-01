@@ -16,6 +16,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #include <hcd.h>
 #include <hub.h>
@@ -36,7 +37,9 @@ static void ehci_resetPort(hcd_t *hcd, int port)
 	 * it is up to software to set the PR bit 0 after waiting 20ms
 	 */
 	while (*reg & PORTSC_PR);
+	usleep(20 * 1000);
 
+	*reg |= PORTSC_PP;
 	ehci->portResetChange = 1 << port;
 
 	if ((*reg & PORTSC_PSPD) == PORTSC_PSPD_HS)
@@ -217,8 +220,6 @@ int ehci_rootHubInit(usb_device_t *hub, int nports)
 
 	for (i = 0; i < nports; i++)
 		hub->devices[i] = NULL;
-
-	strncpy(hub->name, "USB 2.0 root hub", sizeof(hub->name));
 
 	return 0;
 }
