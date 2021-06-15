@@ -18,6 +18,7 @@
 #include <sys/threads.h>
 #include <sys/list.h>
 #include <sys/interrupt.h>
+#include <sys/minmax.h>
 
 #include <errno.h>
 #include <stdint.h>
@@ -117,12 +118,12 @@ static void ehci_continue(struct qh_node *qh_node, struct qtd *last)
 }
 
 
-struct qtd *ehci_allocQtd(int token, char *buffer, size_t *size, int datax)
+static struct qtd *ehci_allocQtd(int token, size_t maxpacksz, char *buffer, size_t *size, int datax)
 {
 	FUN_TRACE;
 	struct qtd *qtd = NULL;
-	size_t initial_size;
-	int ix, offset;
+	size_t bytes;
+	int i, offs;
 
 	if ((qtd = ehci_alloc()) == NULL)
 		return NULL;
@@ -136,23 +137,25 @@ struct qtd *ehci_allocQtd(int token, char *buffer, size_t *size, int datax)
 	qtd->error_counter = 3;
 
 	if (buffer != NULL) {
-		initial_size = *size;
-		offset = (uintptr_t)buffer & (EHCI_PAGE_SIZE - 1);
-		qtd->offset = offset;
+		qtd->offset = (uintptr_t)buffer & (EHCI_PAGE_SIZE - 1);
+		qtd->page0 = va2pa(buffer) >> 12;
+		offs = min(EHCI_PAGE_SIZE - qtd->offset, *size);
+		bytes += offs;
+		buffer += offs;
 
-		for (ix = 0; ix < 5 && *size; ++ix) {
-			qtd->buffers[ix].page = va2pa(buffer) >> 12;
-			buffer += EHCI_PAGE_SIZE - offset;
+		for (i = 1; i < 5 && bytes != *size; i++) {
+			qtd->buffers[i].page = va2pa(buffer) >> 12;
+			offs = min(*size - bytes, EHCI_PAGE_SIZE);
+			/* If the data does not fit one qtd, don't leave a trailing short packet */
+			if (i == 4 && bytes + offs < *size)
+				offs = ((bytes + offs) & ~(maxpacksz - 1)) - bytes;
 
-			if (*size > EHCI_PAGE_SIZE - offset)
-				*size -= EHCI_PAGE_SIZE - offset;
-			else
-				*size = 0;
-
-			offset = 0;
+			bytes += offs;
+			buffer += offs;
 		}
 
-		qtd->bytes_to_transfer = initial_size - *size;
+		qtd->bytes_to_transfer = bytes;
+		*size -= bytes;
 	}
 
 	return qtd;
@@ -448,7 +451,7 @@ static void ehci_transferFree(hcd_t *hcd, usb_transfer_t *t)
 }
 
 
-static int ehci_addQtd(struct qtd_node **list, int token, char *buf, size_t size, int dt)
+static int ehci_addQtd(struct qtd_node **list, int token, size_t maxpacksz, char *buf, size_t size, int dt)
 {
 	struct qtd_node *tmp;
 	size_t remaining = size;
@@ -457,7 +460,7 @@ static int ehci_addQtd(struct qtd_node **list, int token, char *buf, size_t size
 		if ((tmp = malloc(sizeof(struct qtd_node))) == NULL)
 			return -ENOMEM;
 
-		if ((tmp->qtd = ehci_allocQtd(token, buf + size - remaining, &remaining, dt)) == NULL) {
+		if ((tmp->qtd = ehci_allocQtd(token, maxpacksz, buf + size - remaining, &remaining, dt)) == NULL) {
 			free(tmp);
 			return -ENOMEM;
 		}
@@ -503,7 +506,7 @@ static int ehci_transferEnqueue(hcd_t *hcd, usb_transfer_t *t)
 
 	/* Setup stage */
 	if (t->type == usb_transfer_control) {
-		if (ehci_addQtd(&qtds, setup_token, (char *)t->setup, sizeof(usb_setup_packet_t), 0) < 0) {
+		if (ehci_addQtd(&qtds, setup_token, ep->max_packet_len, (char *)t->setup, sizeof(usb_setup_packet_t), 0) < 0) {
 			ehci_qtdsFree(qtds);
 			t->hcdpriv = NULL;
 			return -ENOMEM;
@@ -512,7 +515,7 @@ static int ehci_transferEnqueue(hcd_t *hcd, usb_transfer_t *t)
 
 	/* Data stage */
 	if ((t->type == usb_transfer_control && t->size > 0) || t->type == usb_transfer_bulk) {
-		if (ehci_addQtd(&qtds, token, t->buffer, t->size, 1) < 0) {
+		if (ehci_addQtd(&qtds, token, ep->max_packet_len, t->buffer, t->size, 1) < 0) {
 			ehci_qtdsFree(qtds);
 			t->hcdpriv = NULL;
 			return -ENOMEM;
@@ -522,7 +525,7 @@ static int ehci_transferEnqueue(hcd_t *hcd, usb_transfer_t *t)
 	/* Status stage */
 	if (t->type == usb_transfer_control) {
 		token = (token == in_token) ? out_token : in_token;
-		if (ehci_addQtd(&qtds, token, NULL, 0, 1) < 0) {
+		if (ehci_addQtd(&qtds, token, ep->max_packet_len, NULL, 0, 1) < 0) {
 			ehci_qtdsFree(qtds);
 			t->hcdpriv = NULL;
 			return -ENOMEM;
@@ -830,6 +833,7 @@ static void ehci_dumpQueue(FILE *stream, struct qh *qh, struct qtd_node *qtd)
 	fprintf(stream, "%18s: %08x\n", "current", qh->current_qtd);
 
 	fprintf(stream, "%18s: %08x\n", "next", qh->transfer_overlay.next);
+	fprintf(stream, "%18s: %08x\n", "alternate", qh->transfer_overlay.alt_next);
 	fprintf(stream, "%18s: %08x\n", "pid_code", qh->transfer_overlay.pid_code);
 	fprintf(stream, "%18s: %08x\n", "error_counter", qh->transfer_overlay.error_counter);
 	fprintf(stream, "%18s: %08x\n", "current_page", qh->transfer_overlay.current_page);
