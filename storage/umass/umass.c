@@ -114,7 +114,6 @@ static int umass_transmit(umass_dev_t *dev, void *cmd, size_t clen, char *data, 
 {
 	umass_cbw_t cbw = { 0 };
 	umass_csw_t csw = { 0 };
-	int retry;
 
 	if (clen > 16)
 		return -1;
@@ -127,22 +126,18 @@ static int umass_transmit(umass_dev_t *dev, void *cmd, size_t clen, char *data, 
 	cbw.clen = clen;
 	memcpy(cbw.cmd, cmd, clen);
 
-	for (retry = MAX_USB_RETRIES; retry; --retry) {
-		if (usb_transferBulk(dev->pipeOut, &cbw, sizeof(cbw), usb_dir_out) != 0)
-			continue;
+	if (usb_transferBulk(dev->pipeOut, &cbw, sizeof(cbw), usb_dir_out) != 0)
+		return -1;
 
-		if (dlen > 0) {
-			if (usb_transferBulk((dir == usb_dir_in) ? dev->pipeIn : dev->pipeOut, data, dlen, dir) != 0)
-				continue;
-		}
-
-		if (usb_transferBulk(dev->pipeIn, &csw, sizeof(csw), usb_dir_in) != 0)
-			continue;
-
-		break;
+	if (dlen > 0) {
+		if (usb_transferBulk((dir == usb_dir_in) ? dev->pipeIn : dev->pipeOut, data, dlen, dir) != 0)
+			return -1;
 	}
 
-	if (retry == 0 || csw.sig != CSW_SIG || csw.tag != cbw.tag || csw.status != 0) {
+	if (usb_transferBulk(dev->pipeIn, &csw, sizeof(csw), usb_dir_in) != 0)
+		return -1;
+
+	if (csw.sig != CSW_SIG || csw.tag != cbw.tag || csw.status != 0) {
 		fprintf(stderr, "umass: transmit fail\n");
 		return -1;
 	}
@@ -197,7 +192,6 @@ static int umass_read(umass_dev_t *dev, offs_t offs, char *buf, size_t len)
 {
 	scsi_cdb10_t readcmd = { .opcode = 0x28 };
 
-	fprintf(stderr, "umass: READ offs: %lld len: %lu\n", offs, len);
 	if (offs + len > dev->partSize * UMASS_SECTOR_SIZE)
 		return -EINVAL;
 
@@ -215,7 +209,6 @@ static int umass_write(umass_dev_t *dev, offs_t offs, char *buf, size_t len)
 {
 	scsi_cdb10_t writecmd = { .opcode = 0x2a };
 
-	fprintf(stderr, "umass: WRITE offs: %lld len: %lu\n", offs, len);
 	if (offs + len > dev->partSize * UMASS_SECTOR_SIZE)
 		return -EINVAL;
 
