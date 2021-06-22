@@ -30,6 +30,7 @@
 #define LOG_ERROR(str, ...) do { fprintf(stderr, __FILE__  ":%d error: " str "\n", __LINE__, ##__VA_ARGS__); } while (0)
 #define TRACE(str, ...) do { if (0) fprintf(stderr, __FILE__  ":%d trace: " str "\n", __LINE__, ##__VA_ARGS__); } while (0)
 
+#define METERFS_STACKSZ              1024
 #define THREAD_STACKSZ               512
 #define THREAD_PRIORITY              4
 
@@ -608,12 +609,12 @@ static int flashsrv_mountPart(flashsrv_partition_t *part)
 				return res;
 			}
 
-			if ((mem = malloc(THREAD_STACKSZ)) == NULL) {
+			if ((mem = malloc(METERFS_STACKSZ)) == NULL) {
 				LOG_ERROR("imxrt-flashsrv: cannot alloc memory.");
 				return -ENOMEM;
 			}
 
-			beginthread(flashsrv_meterfsThread, THREAD_PRIORITY, mem, THREAD_STACKSZ, (void *)part);
+			beginthread(flashsrv_meterfsThread, THREAD_PRIORITY, mem, METERFS_STACKSZ, (void *)part);
 			part->pStatus = flash_memory_active;
 			break;
 
