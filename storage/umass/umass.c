@@ -16,6 +16,7 @@
 #include <errno.h>
 #include <sys/list.h>
 #include <sys/msg.h>
+#include <sys/minmax.h>
 #include <sys/types.h>
 #include <sys/file.h>
 #include <sys/threads.h>
@@ -48,9 +49,6 @@
 #define CBW_SIG 0x43425355
 #define CSW_SIG 0x53425355
 
-#define MAX_SECS          32
-#define MAX_USB_RETRIES   2
-#define MAX_SCSI_RETRIES  4
 
 typedef struct umass_cbw {
 	uint32_t sig;
@@ -83,15 +81,17 @@ typedef struct scsi_cdb10 {
 
 
 typedef struct umass_dev {
-	char buffer[UMASS_SECTOR_SIZE * 2];
+	char buffer[UMASS_SECTOR_SIZE];
 	char stack[1024] __attribute__ ((aligned(8)));
 	struct umass_dev *prev, *next;
 	usb_insertion_t instance;
+	char path[32];
 	int pipeCtrl;
 	int pipeIn;
 	int pipeOut;
 	int id;
 	int tag;
+	int tid;
 	unsigned port;
 	uint32_t partOffset;
 	uint32_t partSize;
@@ -104,10 +104,10 @@ static struct {
 } umass_common;
 
 
-static void umass_cswDump(umass_csw_t *csw)
-{
-	fprintf(stderr, "sig:%x tag:%x dr:%x status:%x\n", csw->sig, csw->tag, csw->dr, csw->status);
-}
+static const usb_device_id_t filters[] = {
+	/* USB Mass Storage class */
+	{ USBDRV_ANY, USBDRV_ANY, USB_CLASS_MASS_STORAGE, USBDRV_ANY, USBDRV_ANY },
+};
 
 
 static int umass_transmit(umass_dev_t *dev, void *cmd, size_t clen, char *data, size_t dlen, int dir)
@@ -126,15 +126,15 @@ static int umass_transmit(umass_dev_t *dev, void *cmd, size_t clen, char *data, 
 	cbw.clen = clen;
 	memcpy(cbw.cmd, cmd, clen);
 
-	if (usb_transferBulk(dev->pipeOut, &cbw, sizeof(cbw), usb_dir_out) != 0)
+	if (usb_transferBulk(dev->pipeOut, &cbw, sizeof(cbw), usb_dir_out) < 0)
 		return -1;
 
 	if (dlen > 0) {
-		if (usb_transferBulk((dir == usb_dir_in) ? dev->pipeIn : dev->pipeOut, data, dlen, dir) != 0)
+		if (usb_transferBulk((dir == usb_dir_in) ? dev->pipeIn : dev->pipeOut, data, dlen, dir) < 0)
 			return -1;
 	}
 
-	if (usb_transferBulk(dev->pipeIn, &csw, sizeof(csw), usb_dir_in) != 0)
+	if (usb_transferBulk(dev->pipeIn, &csw, sizeof(csw), usb_dir_in) < 0)
 		return -1;
 
 	if (csw.sig != CSW_SIG || csw.tag != cbw.tag || csw.status != 0) {
@@ -168,23 +168,10 @@ static int umass_check(umass_dev_t *dev)
 
 	/* Read only the first partition */
 	dev->partOffset = mbr->pent[0].start;
-	dev->partSize = mbr->pent[0].sectors;
+	/* For now, our OS can only handle disks smaller than 4 GiB */
+	dev->partSize = min(mbr->pent[0].sectors, 8388607UL);
 
 	return 0;
-}
-
-
-static int umass_reset(umass_dev_t *dev)
-{
-	usb_setup_packet_t setup = (usb_setup_packet_t) {
-		.bmRequestType = REQUEST_DIR_HOST2DEV | REQUEST_TYPE_CLASS | REQUEST_RECIPIENT_INTERFACE,
-		.bRequest = 0xff,
-		.wValue = 0,
-		.wIndex = dev->instance.interface,
-		.wLength = 0,
-	};
-
-	return usb_transferControl(dev->pipeCtrl, &setup, NULL, 0, usb_dir_out);
 }
 
 
@@ -192,10 +179,10 @@ static int umass_read(umass_dev_t *dev, offs_t offs, char *buf, size_t len)
 {
 	scsi_cdb10_t readcmd = { .opcode = 0x28 };
 
-	if (offs + len > dev->partSize * UMASS_SECTOR_SIZE)
+	if ((offs % UMASS_SECTOR_SIZE) || (len % UMASS_SECTOR_SIZE))
 		return -EINVAL;
 
-	if ((offs % UMASS_SECTOR_SIZE) || (len % UMASS_SECTOR_SIZE))
+	if (offs + len > dev->partSize * UMASS_SECTOR_SIZE)
 		return -EINVAL;
 
 	readcmd.lba = htonl(offs / UMASS_SECTOR_SIZE + dev->partOffset);
@@ -209,10 +196,10 @@ static int umass_write(umass_dev_t *dev, offs_t offs, char *buf, size_t len)
 {
 	scsi_cdb10_t writecmd = { .opcode = 0x2a };
 
-	if (offs + len > dev->partSize * UMASS_SECTOR_SIZE)
+	if ((offs % UMASS_SECTOR_SIZE) || (len % UMASS_SECTOR_SIZE))
 		return -EINVAL;
 
-	if ((offs % UMASS_SECTOR_SIZE) || (len % UMASS_SECTOR_SIZE))
+	if (offs + len > dev->partSize * UMASS_SECTOR_SIZE)
 		return -EINVAL;
 
 	writecmd.lba = htonl(offs / UMASS_SECTOR_SIZE + dev->partOffset);
@@ -237,15 +224,16 @@ static int umass_getattr(umass_dev_t *dev, int type, int *attr)
 }
 
 
-static void umass_poolthr(void *arg)
+static void umass_msgthr(void *arg)
 {
 	umass_dev_t *dev = (umass_dev_t *)arg;
 	unsigned long rid;
 	msg_t msg;
 
+	dev->tid = gettid();
 	for (;;) {
 		if (msgRecv(dev->port, &msg, &rid) < 0)
-			continue;
+			break;
 
 		switch (msg.type) {
 		case mtOpen:
@@ -277,11 +265,10 @@ static void umass_poolthr(void *arg)
 
 static int umass_handleInsertion(usb_insertion_t *insertion)
 {
-	char path[32];
 	umass_dev_t *dev;
 	oid_t oid;
 
-	dev = (umass_dev_t *)malloc(sizeof(umass_dev_t));
+	dev = malloc(sizeof(umass_dev_t));
 	dev->instance = *insertion;
 
 	if ((dev->pipeCtrl = usb_open(insertion, usb_transfer_control, usb_dir_bi)) < 0) {
@@ -294,6 +281,7 @@ static int umass_handleInsertion(usb_insertion_t *insertion)
 		return -EINVAL;
 	}
 
+	fprintf(stderr, "umass: setConfiguration success\n");
 	if ((dev->pipeIn = usb_open(insertion, usb_transfer_bulk, usb_dir_in)) < 0) {
 		free(dev);
 		return -EINVAL;
@@ -310,8 +298,6 @@ static int umass_handleInsertion(usb_insertion_t *insertion)
 		return -EINVAL;
 	}
 
-	//fprintf(stderr, "umass: Check success, trying to create port\n");
-
 	if (portCreate(&dev->port) != 0) {
 		fprintf(stderr, "umass: Can't create port!\n");
 		return -EINVAL;
@@ -323,38 +309,59 @@ static int umass_handleInsertion(usb_insertion_t *insertion)
 	else
 		dev->id = umass_common.devices->prev->id + 1;
 
-	snprintf(path, sizeof(path), "/dev/umass%d", dev->id);
+	snprintf(dev->path, sizeof(dev->path), "/dev/umass%d", dev->id);
 	oid.port = dev->port;
 	oid.id = dev->id;
-	if (create_dev(&oid, path) != 0) {
+	if (create_dev(&oid, dev->path) != 0) {
 		fprintf(stderr, "usb: Can't create dev!\n");
 		return -EINVAL;
 	}
 
 	LIST_ADD(&umass_common.devices, dev);
+	fprintf(stderr, "umass: New USB Mass Storage device: %s\n", dev->path);
 
-	return beginthread(umass_poolthr, 4, dev->stack, sizeof(dev->stack), dev);
+	return beginthread(umass_msgthr, 4, dev->stack, sizeof(dev->stack), dev);
+}
+
+
+static int umass_handleDeletion(usb_deletion_t *del)
+{
+	umass_dev_t *dev = umass_common.devices;
+
+	if (dev == NULL)
+		return 0;
+
+	do {
+		if (dev->instance.bus == del->bus && dev->instance.dev == del->dev &&
+		    dev->instance.interface == del->interface) {
+			LIST_REMOVE(&umass_common.devices, dev);
+			portDestroy(dev->port);
+			remove(dev->path);
+
+ 			while (threadJoin(0) != dev->tid)
+				;
+
+			free(dev);
+			break;
+		}
+	} while ((dev = dev->next) != umass_common.devices);
+
+	return 0;
 }
 
 
 int main(int argc, char *argv[])
 {
-	oid_t oid;
 	int ret;
 	msg_t msg;
 	usb_msg_t *umsg = (usb_msg_t *)msg.i.raw;
-	usb_device_id_t id = { USB_CONNECT_WILDCARD,
-	                       USB_CONNECT_WILDCARD,
-	                       USB_CLASS_MASS_STORAGE,
-	                       USB_CONNECT_WILDCARD,
-	                       USB_CONNECT_WILDCARD };
 
 	if (portCreate(&umass_common.drvport) != 0) {
 		fprintf(stderr, "umass: Can't create port!\n");
 		return -EINVAL;
 	}
 
-	if ((usb_connect(&id, umass_common.drvport)) < 0) {
+	if ((usb_connect(filters, sizeof(filters) / sizeof(filters[0]), umass_common.drvport)) < 0) {
 		fprintf(stderr, "umass: Fail to connect to usb host!\n");
 		return -EINVAL;
 	}
@@ -368,6 +375,7 @@ int main(int argc, char *argv[])
 				umass_handleInsertion(&umsg->insertion);
 				break;
 			case usb_msg_deletion:
+				umass_handleDeletion(&umsg->deletion);
 				break;
 			default:
 				fprintf(stderr, "umass: Error when receiving event from host\n");
