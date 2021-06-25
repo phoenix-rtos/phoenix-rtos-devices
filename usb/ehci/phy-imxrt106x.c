@@ -92,7 +92,6 @@ static int setClock(int dev, unsigned int state)
 
 void phy_enableHighSpeedDisconnect(hcd_t *hcd, int enable)
 {
-	printf("phy: High Speed Disconnect: %x\n", enable);
 	if (enable)
 		*(hcd->phybase + phy_ctrl) |= 0x2;
 	else
@@ -106,7 +105,6 @@ void phy_init(hcd_t *hcd)
 	hcd->phybase = (volatile int *) hcd->info->phyaddr;
 	hcd->base = (volatile int *) hcd->info->hcdaddr;
 
-	printf("Phy init clock: %d\n", hcd->info->clk);
 	setClock(hcd->info->clk, clk_state_run);
 	phy_reset(hcd);
 	phy_config(hcd);
