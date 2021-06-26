@@ -8,7 +8,7 @@
 #
 
 NAME := libflashdrv-imxrt
-LOCAL_SRCS := flashdrv.c rom_api.c flash_config.c
+LOCAL_SRCS := flashdrv.c rom_api-$(TARGET_SUBFAMILY).c flash_config.c
 
 include $(static-lib.mk)
 

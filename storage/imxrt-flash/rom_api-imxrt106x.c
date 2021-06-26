@@ -3,7 +3,7 @@
  *
  * i.MX RT ROM API driver for FlexSPI
  *
- * Copyright 2019, 2020 Phoenix Systems
+ * Copyright 2019-2021 Phoenix Systems
  * Author: Hubert Buczynski
  *
  * This file is part of Phoenix-RTOS.
@@ -12,7 +12,6 @@
  */
 
 
-#include <errno.h>
 #include "rom_api.h"
 
 
