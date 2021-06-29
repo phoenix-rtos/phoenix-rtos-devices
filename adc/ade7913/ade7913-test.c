@@ -39,10 +39,10 @@ static int lpspi_config(oid_t *device, int spi)
 	imsg->id = id_spi1 + spi;
 	imsg->spi.type = spi_config;
 	imsg->spi.config.cs = 0;
-	imsg->spi.config.mode = spi_mode_0;
+	imsg->spi.config.mode = spi_mode_3;
 	imsg->spi.config.endian = spi_msb;
-	imsg->spi.config.sckDiv = 4;
-	imsg->spi.config.prescaler = 3;
+	imsg->spi.config.sckDiv = 0;
+	imsg->spi.config.prescaler = 1;
 
 	return msgSend(device->port, &msg);
 }

@@ -8,7 +8,15 @@
 #
 
 NAME := ade7913-test
-LOCAL_SRCS := ade7913.c ade7913-test.c
+LOCAL_SRCS := gpio.c ade7913.c ade7913-test.c
 DEPS := imxrt-multi
+
+include $(binary.mk)
+
+NAME := ade7913-driver
+LOCAL_SRCS := gpio.c ade7913.c ade7913-driver.c
+LOCAL_HEADERS := adc-api.h
+DEPS := imxrt-multi
+DEP_LIBS := libimxrt-edma
 
 include $(binary.mk)

@@ -19,9 +19,15 @@
 #include <unistd.h>
 
 #include <sys/msg.h>
+#include <sys/platform.h>
 
 #include <imxrt-multi.h>
 
+#ifdef TARGET_IMXRT1170
+#include <phoenix/arch/imxrt1170.h>
+#endif
+
+#include "gpio.h"
 #include "ade7913.h"
 
 
@@ -34,7 +40,7 @@ enum { ade7913_iwv = 0, ade7913_v1wv, ade7913_v2wv, ade7913_adc_crc = 4, ade7913
 #define ADE7913_CONFIG_CLKOUT_EN (1 << 0)
 #define ADE7913_CONFIG_PWRDWN_EN (1 << 2)
 #define ADE7913_CONFIG_TEMP_EN   (1 << 3)
-#define ADE7913_CONFIG_ADC_FREQ  (1 << 4)
+#define ADE7913_CONFIG_ADC_FREQ  (0x4)
 #define ADE7913_CONFIG_SWRST     (1 << 6)
 #define ADE7913_CONFIG_BW        (1 << 7)
 
@@ -51,15 +57,14 @@ enum { ade7913_iwv = 0, ade7913_v1wv, ade7913_v2wv, ade7913_adc_crc = 4, ade7913
 #define ADE7913_STATUS1_ADC_NA  (1 << 3)
 
 /* ADE7913 communication utils */
-#define ADE7913_READ_BIT         0x4
+#define ADE7913_READ_BIT         (1 << 2)
 #define ADE7913_ADDR_OFFS        0x3
 #define ADE7913_LOCK_SEQ         0xca
 #define ADE7913_UNLOCK_SEQ       0x9c
-#define ADE7913_CONFIG_FREQ_8KHZ (0x00 << ADE7913_CONFIG_ADC_FREQ)
-#define ADE7913_CONFIG_FREQ_4KHZ (0x01 << ADE7913_CONFIG_ADC_FREQ)
-#define ADE7913_CONFIG_FREQ_2KHZ (0x10 << ADE7913_CONFIG_ADC_FREQ)
-#define ADE7913_CONFIG_FREQ_1KHZ (0x11 << ADE7913_CONFIG_ADC_FREQ)
-#define ADE7913_READY            1
+#define ADE7913_CONFIG_FREQ_8KHZ (0b00 << ADE7913_CONFIG_ADC_FREQ)
+#define ADE7913_CONFIG_FREQ_4KHZ (0b01 << ADE7913_CONFIG_ADC_FREQ)
+#define ADE7913_CONFIG_FREQ_2KHZ (0b10 << ADE7913_CONFIG_ADC_FREQ)
+#define ADE7913_CONFIG_FREQ_1KHZ (0b11 << ADE7913_CONFIG_ADC_FREQ)
 
 
 static int lpspi_transaction(oid_t *device, int cs,
@@ -191,6 +196,132 @@ int ade7913_init(oid_t *device, int cs, int clkout)
 	return EOK;
 }
 
+int ade7913_set_sampling_rate(oid_t *device, int cs, int freq_hz)
+{
+	int set;
+
+	if (freq_hz == 8000)
+		set = ADE7913_CONFIG_FREQ_8KHZ;
+	else if (freq_hz == 4000)
+		set = ADE7913_CONFIG_FREQ_4KHZ;
+	else if (freq_hz == 2000)
+		set = ADE7913_CONFIG_FREQ_2KHZ;
+	else if (freq_hz == 1000)
+		set = ADE7913_CONFIG_FREQ_1KHZ;
+	else
+		return -EINVAL;
+
+	if (ade7913_set_clear_bits(device, cs, ade7913_config, set, 0) < 0)
+		return -EIO;
+
+	return EOK;
+}
+
+int ade7913_get_sampling_rate(oid_t *device, int cs, int *freq_hz)
+{
+	uint8_t config_freq;
+
+	if (ade7913_read_reg(device, cs, ade7913_config, &config_freq) < 0)
+		return -EAGAIN;
+
+	config_freq = (config_freq & ADE7913_CONFIG_FREQ_1KHZ) >> ADE7913_CONFIG_ADC_FREQ;
+
+	if (config_freq == ADE7913_CONFIG_FREQ_8KHZ)
+		*freq_hz = 8000;
+	else if (config_freq == ADE7913_CONFIG_FREQ_4KHZ)
+		*freq_hz = 4000;
+	else if (config_freq == ADE7913_CONFIG_FREQ_2KHZ)
+		*freq_hz = 2000;
+	else if (config_freq == ADE7913_CONFIG_FREQ_1KHZ)
+		*freq_hz = 1000;
+	else
+		return -EIO;
+
+	return EOK;
+}
+
+/* TODO: make this function generic */
+int ade7913_sync(oid_t *device, const char *cs, int devcnt, int snap)
+{
+	int i, res;
+	int modes[4];
+	oid_t gpiodev;
+	platformctl_t pctl;
+
+	int muxes[4] = { pctl_mux_gpio_ad_18, pctl_mux_gpio_ad_19,
+		pctl_mux_gpio_ad_20, pctl_mux_gpio_ad_29 };
+
+	int pins[4] = { 17, 18, 19, 28 };
+
+	uint8_t buff[2] = { (ade7913_sync_snap << ADE7913_ADDR_OFFS), ADE7913_SYNC_SNAP_SYNC };
+
+	if (snap)
+		buff[1] = ADE7913_SYNC_SNAP_SNAP;
+
+	if (lookup("/dev/gpio3", NULL, &gpiodev))
+		return -ENODEV;
+
+	if (devcnt <= 0 || cs == NULL)
+		return -EINVAL;
+
+	for (i = 0; i < devcnt; ++i) {
+		if ((int)(cs[i] - '0') >= 4 || (int)(cs[i] - '0') < 0)
+			return -EINVAL;
+	}
+
+	/* Get SPI muxes */
+	pctl.action = pctl_get;
+	pctl.type = pctl_iomux;
+
+	for (i = 0; i < devcnt; ++i) {
+		pctl.iomux.mux = muxes[(int)(cs[i] - '0')];
+		platformctl(&pctl);
+		modes[(int)(cs[i] - '0')] = pctl.iomux.mode;
+	}
+
+	/* Set CS GPIOs to inactive */
+	for (i = 0; i < devcnt; ++i) {
+		gpio_setDir(&gpiodev, id_gpio3, pins[(int)(cs[i] - '0')], 1);
+		gpio_setPin(&gpiodev, id_gpio3, pins[(int)(cs[i] - '0')], 1);
+	}
+
+	/* Set muxes to gpio */
+	pctl.action = pctl_set;
+	pctl.iomux.sion = 0;
+	pctl.iomux.mode = 5;
+
+	for (i = 0; i < 4; ++i) {
+		pctl.iomux.mux = muxes[(int)(cs[i] - '0')];
+		platformctl(&pctl);
+	}
+
+	/* Set CS GPIOs to active */
+	for (i = 0; i < devcnt; ++i) {
+		gpio_setPin(&gpiodev, id_gpio3, pins[(int)(cs[i] - '0')], 0);
+	}
+
+	/* Send broadcast */
+	if ((res = lpspi_transaction(device, 0, buff, sizeof(buff))) < 0)
+		return res;
+
+	/* Set CS GPIOs to inactive */
+	for (i = 0; i < devcnt; ++i) {
+		gpio_setPin(&gpiodev, id_gpio3, pins[(int)(cs[i] - '0')], 1);
+	}
+
+	/* Set muxes back to SPI CS */
+	pctl.action = pctl_set;
+	pctl.iomux.sion = 0;
+
+	for (i = 0; i < devcnt; ++i) {
+		pctl.iomux.mux = muxes[(int)(cs[i] - '0')];
+		pctl.iomux.mode = modes[(int)(cs[i] - '0')];
+		platformctl(&pctl);
+	}
+
+	return EOK;
+}
+
 
 int ade7913_version(oid_t *device, int cs)
 {
@@ -221,6 +352,8 @@ int ade7913_sample_regs_read(oid_t *device, int cs,
 	uint8_t buff[sizeof(ade7913_burst_reg_t) + 1];
 
 	buff[0] = (ade7913_iwv << ADE7913_ADDR_OFFS) | ADE7913_READ_BIT;
+
+	/* Next 8 sent bytes cannot be 0 so as not to reset ade7193 */
 	memset(buff + 1, 0xff, sizeof(ade7913_burst_reg_t));
 
 	if (lpspi_transaction(device, cs, buff, sizeof(ade7913_burst_reg_t) + 1) < 0)
