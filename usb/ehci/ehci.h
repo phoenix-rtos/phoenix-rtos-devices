@@ -1,3 +1,18 @@
+/*
+ * Phoenix-RTOS
+ *
+ * USB EHCI host controller
+ *
+ * Copyright 2021 Phoenix Systems
+ * Author: Maciej Purski
+ *
+ * This file is part of Phoenix-RTOS.
+ *
+ * %LICENSE%
+ */
+
+#ifndef _USB_EHCI_H_
+#define _USB_EHCI_H_
 
 #define USBSTS_AS  (1 << 15)
 #define USBSTS_PS  (1 << 14)
@@ -96,30 +111,30 @@ struct itd {
 
 	union {
 		struct {
-			uint32_t offset      : 12;
-			uint32_t page_select :  3;
-			uint32_t ioc         :  1;
-			uint32_t length      : 12;
-			uint32_t status      :  4;
+			uint32_t offset : 12;
+			uint32_t pageSelect : 3;
+			uint32_t ioc : 1;
+			uint32_t length : 12;
+			uint32_t status : 4;
 		};
 		uint32_t raw;
 	} transactions[8];
 
 	union {
 		struct {
-			uint32_t reserved   : 12;
-			uint32_t pointer    : 20;
+			uint32_t reserved : 12;
+			uint32_t pointer : 20;
 		} buffers[7];
 
 		struct {
-			uint32_t device_address  :  7;
-			uint32_t reserved        :  1;
-			uint32_t endpoint        :  4;
-			uint32_t page0           : 20;
-			uint32_t max_packet_size : 11;
-			uint32_t direction       :  1;
-			uint32_t page1           : 20;
-			uint32_t mult            :  2;
+			uint32_t devAddress : 7;
+			uint32_t reserved : 1;
+			uint32_t ep : 4;
+			uint32_t page0 : 20;
+			uint32_t maxPacketSize : 11;
+			uint32_t direction : 1;
+			uint32_t page1 : 20;
+			uint32_t mult : 2;
 		};
 	};
 } __attribute__ ((__packed__));
@@ -128,67 +143,67 @@ struct itd {
 struct sitd {
 	link_pointer_t next;
 
-	uint32_t device_addr : 7;
-	uint32_t reserved0   : 1;
-	uint32_t endpoint    : 4;
-	uint32_t reserved1   : 4;
-	uint32_t hub_addr    : 7;
-	uint32_t reserved2   : 1;
-	uint32_t port_number : 7;
-	uint32_t direction   : 1;
+	uint32_t devAddr : 7;
+	uint32_t reserved0 : 1;
+	uint32_t ep : 4;
+	uint32_t reserved1 : 4;
+	uint32_t hubAddr : 7;
+	uint32_t reserved2 : 1;
+	uint32_t portNumber : 7;
+	uint32_t direction : 1;
 
-	uint32_t split_start_mask : 8;
-	uint32_t split_completion_mask : 8;
+	uint32_t splitStartMask : 8;
+	uint32_t splitCompletionMask : 8;
 	uint32_t reserved3 : 16;
 
 	uint32_t status : 8;
-	uint32_t split_progress_mask : 8;
-	uint32_t bytes_to_transfer : 10;
+	uint32_t splitProgressMask : 8;
+	uint32_t bytesToTransfer : 10;
 	uint32_t reserved4 : 4;
-	uint32_t page_select : 1;
+	uint32_t pageSelect : 1;
 	uint32_t ioc : 1;
 
-	uint32_t current_offset : 12;
-	uint32_t page0          : 20;
+	uint32_t currentOffset : 12;
+	uint32_t page0 : 20;
 
-	uint32_t transaction_count    :  3;
-	uint32_t transaction_position :  2;
-	uint32_t reserved5            :  7;
-	uint32_t page1                : 20;
+	uint32_t transactionCount : 3;
+	uint32_t transactionPosition : 2;
+	uint32_t reserved5 : 7;
+	uint32_t page1 : 20;
 
-	link_pointer_t back_link;
+	link_pointer_t backLink;
 } __attribute__ ((__packed__));
 
 
 struct qtd {
-	link_pointer_t next; /* TODO: rename */
-	link_pointer_t alt_next;
+	link_pointer_t next;
+	link_pointer_t altNext;
 
-	uint32_t ping_state : 1;
-	uint32_t split_state : 1;
-	uint32_t missed_uframe : 1;
-	uint32_t transaction_error : 1;
+	uint32_t pingState : 1;
+	uint32_t splitState : 1;
+	uint32_t missedUframe : 1;
+	uint32_t transactionError : 1;
 	uint32_t babble : 1;
-	uint32_t buffer_error : 1;
+	uint32_t bufferError : 1;
 	uint32_t halted : 1;
 	uint32_t active : 1;
 
-	uint32_t pid_code : 2;
-	uint32_t error_counter : 2;
-	uint32_t current_page : 3;
+	uint32_t pid : 2;
+	uint32_t errorCounter : 2;
+	uint32_t currentPage : 3;
 	uint32_t ioc : 1;
-	uint32_t bytes_to_transfer : 15;
-	uint32_t data_toggle : 1;
+	uint32_t bytesToTransfer : 15;
+	uint32_t dt : 1;
 
 	union {
 		struct {
 			uint32_t reserved : 12;
-			uint32_t page     : 20;
+			uint32_t page : 20;
 		} buffers[5];
 
 		struct {
 			uint32_t offset : 12;
-			uint32_t page0  : 20;
+			uint32_t page0 : 20;
 		};
 	};
 } __attribute__ ((__packed__));
@@ -197,40 +212,42 @@ struct qtd {
 struct qh {
 	link_pointer_t horizontal;
 
-	uint32_t device_addr : 7;
+	uint32_t devAddr : 7;
 	uint32_t inactivate : 1;
-	uint32_t endpoint : 4;
-	uint32_t endpoint_speed : 2;
-	uint32_t data_toggle : 1;
-	uint32_t head_of_reclamation : 1;
-	uint32_t max_packet_len : 11;
-	uint32_t control_endpoint : 1;
-	uint32_t nak_count_reload : 4;
+	uint32_t ep : 4;
+	uint32_t epSpeed : 2;
+	uint32_t dt : 1;
+	uint32_t headOfReclamation : 1;
+	uint32_t maxPacketLen : 11;
+	uint32_t ctrlEp : 1;
+	uint32_t nakCountReload : 4;
 
-	uint32_t interrupt_schedule_mask : 8;
-	uint32_t split_completion_mask : 8;
-	uint32_t hub_addr : 7;
-	uint32_t port_number : 7;
-	uint32_t pipe_multiplier : 2;
+	uint32_t smask : 8;
+	uint32_t cmask : 8;
+	uint32_t hubAddr : 7;
+	uint32_t portNumber : 7;
+	uint32_t pipeMult : 2;
 
-	link_pointer_t current_qtd;
+	link_pointer_t currentQtd;
 
-	struct qtd transfer_overlay;
+	struct qtd transferOverlay;
 } __attribute__ ((__packed__));
 
 typedef struct ehci {
-	link_pointer_t *periodic_list;
-	volatile struct qh_node *async_head;
+	link_pointer_t *periodicList;
+	volatile struct qh_node *asyncList;
 
-	handle_t irq_cond, irq_handle, irq_lock, aai_cond, async_lock;
+	handle_t irqCond, irqHandle, irqLock, aaiCond, asyncLock;
 	volatile unsigned portResetChange;
 	volatile unsigned status;
-	volatile unsigned port_change;
+	volatile unsigned portChange;
 	volatile unsigned portsc;
 
-	handle_t common_lock;
+	handle_t commonLock;
 } ehci_t;
 
 
 void phy_init(hcd_t *hcd);
 int ehci_rootHubInit(usb_device_t *hub, int nports);
+
+#endif /* _USB_EHCI_H_ */

@@ -32,11 +32,7 @@ enum { phy_pwd, phy_pwd_set, phy_pwd_clr, phy_pwd_tog, phy_tx, phy_tx_set,
 
 /* NOTE: This should be later implemented using device tree */
 static const hcd_info_t imxrt_info[] = {
-	{ .type = "ehci",
-	  .hcdaddr = 0x402e0200,
-	  .phyaddr = 0x400da000,
-	  .clk = pctl_clk_usboh3,
-	  .irq = 128 },
+	{ .type = "ehci", .hcdaddr = 0x402e0200, .phyaddr = 0x400da000, .clk = pctl_clk_usboh3, .irq = 128 },
 };
 
 
