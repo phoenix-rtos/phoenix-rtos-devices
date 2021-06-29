@@ -29,7 +29,7 @@
 
 #include "../libtty/fifo.h"
 
-#define RX_FIFO_SIZE (2 * _PAGE_SIZE)
+#define RX_FIFO_SIZE (8 * _PAGE_SIZE)
 
 typedef struct usbacm_dev {
 	char stack[2][1024] __attribute__ ((aligned(8)));
@@ -42,7 +42,7 @@ typedef struct usbacm_dev {
 	int pipeBulkIN;
 	int pipeBulkOUT;
 	int id;
-	char rxbuf[1024];
+	char rxbuf[512];
 	char txbuf[1024];
 	unsigned port;
 	handle_t readLock;
