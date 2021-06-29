@@ -29,6 +29,10 @@ typedef struct {
 
 
 int ade7913_init(oid_t *device, int cs, int clkout);
+int ade7913_sync(oid_t *device, const char *cs, int devcnt, int snap);
+
+int ade7913_get_sampling_rate(oid_t *device, int cs, int *freq_hz);
+int ade7913_set_sampling_rate(oid_t *device, int cs, int freq_hz);
 
 int ade7913_version(oid_t *device, int cs);
 int ade7913_ready(oid_t *device, int cs);
