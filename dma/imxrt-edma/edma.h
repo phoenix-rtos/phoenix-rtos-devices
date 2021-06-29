@@ -66,11 +66,15 @@ uint8_t edma_get_tcd_attr_xsize(uint8_t num_of_bytes);
 
 /* Checks if there is a pending hardware request for given channel */
 int edma_is_hw_req_pending(unsigned channel);
+uint32_t edma_error_status(unsigned channel);
+uint32_t edma_error_channel(void);
 
 void edma_channel_enable(unsigned channel);
 void edma_channel_disable(unsigned channel);
 
 void edma_clear_interrupt(unsigned channel);
 void edma_clear_error(unsigned channel);
+
+void edma_software_request_start(int channel);
 
 #endif /* IMXRT_EDMA_H */
