@@ -14,14 +14,25 @@
 #include <stdlib.h>
 #include <sys/interrupt.h>
 #include <sys/platform.h>
+
+#if defined(TARGET_IMXRT1060)
 #include <phoenix/arch/imxrt.h>
+#elif defined(TARGET_IMXRT1170)
+#include <phoenix/arch/imxrt1170.h>
+#endif
 
 #include "edma.h"
 
+#if defined(TARGET_IMXRT1060)
 #define EDMA_BASE_ADDR      ((void*)0x400e8000)
 #define EDMA_CLK            pctl_clk_dma
+#elif defined(TARGET_IMXRT1170)
+#define EDMA_BASE_ADDR ((void *)0x40070000)
+#define EDMA_CLK       pctl_clk_bus
+#endif
 
-#define DMA_MUX_BASE_ADDR   ((void*)0x400ec000)
+#define DMA_MUX_BASE_ADDR EDMA_BASE_ADDR + 0x4000
+
 
 struct edma_regs_s {
 	uint32_t cr;
@@ -127,7 +138,11 @@ int edma_init(int (*error_isr)(unsigned int n, void *arg))
 	pctl.action = pctl_set;
 	pctl.type = pctl_devclock;
 	pctl.devclock.dev = EDMA_CLK;
+#if defined(TARGET_IMXRT1060)
 	pctl.devclock.state = clk_state_run;
+#elif defined(TARGET_IMXRT1170)
+	pctl.devclock.state = 1;
+#endif
 
 	if ((res = platformctl(&pctl)) != 0)
 		return res;
@@ -253,4 +268,19 @@ void edma_clear_interrupt(unsigned channel)
 void edma_clear_error(unsigned channel)
 {
 	edma_regs->cerr |= channel;
+}
+
+void edma_software_request_start(int channel)
+{
+	edma_regs->ssrt = channel & 0x1F;
+}
+
+uint32_t edma_error_status(unsigned channel)
+{
+	return edma_regs->es;
+}
+
+uint32_t edma_error_channel(void)
+{
+	return edma_regs->err;
 }
