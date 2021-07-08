@@ -19,7 +19,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdio.h>
-#include "mem.h"
+#include "ehci-mem.h"
 
 static struct {
 	ehci_buf_t *buffer;

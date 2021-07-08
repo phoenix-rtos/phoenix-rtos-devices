@@ -236,8 +236,9 @@ struct qh {
 typedef struct ehci {
 	link_pointer_t *periodicList;
 	volatile struct qh_node *asyncList;
+	struct qh_node **periodicNodes;
 
-	handle_t irqCond, irqHandle, irqLock, aaiCond, asyncLock;
+	handle_t irqCond, irqHandle, irqLock, asyncLock, periodicLock;
 	volatile unsigned portResetChange;
 	volatile unsigned status;
 	volatile unsigned portChange;
@@ -248,6 +249,9 @@ typedef struct ehci {
 
 
 void phy_init(hcd_t *hcd);
-int ehci_rootHubInit(usb_device_t *hub, int nports);
+
+int ehci_roothubReq(usb_transfer_t *t);
+
+uint32_t ehci_getHubStatus(usb_dev_t *hub);
 
 #endif /* _USB_EHCI_H_ */

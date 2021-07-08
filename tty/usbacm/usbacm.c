@@ -36,7 +36,7 @@ typedef struct usbacm_dev {
 	int tid[2];
 	struct usbacm_dev *prev, *next;
 	char path[32];
-	usb_insertion_t instance;
+	usb_devinfo_t instance;
 	int pipeCtrl;
 	int pipeIntIN;
 	int pipeBulkIN;
@@ -172,7 +172,7 @@ static void usbacm_readthr(void *arg)
 			fprintf(stderr, "usbacm%d: read failed\n", dev->id);
 			break;
 		}
-
+		// fprintf(stderr, "usbacm: Received %d bytes\n", ret);
 		mutexLock(dev->readLock);
 		for (i = 0; i < ret && !fifo_is_full(dev->fifo); i++)
 			fifo_push(dev->fifo, dev->rxbuf[i]);
@@ -236,7 +236,7 @@ static void usbacm_msgthr(void *arg)
 }
 
 
-static int usbacm_handleInsertion(usb_insertion_t *insertion)
+static int usbacm_handleInsertion(usb_devinfo_t *insertion)
 {
 	usbacm_dev_t *dev;
 	usb_modeswitch_t *mode;
@@ -259,7 +259,7 @@ static int usbacm_handleInsertion(usb_insertion_t *insertion)
 	}
 	dev->instance = *insertion;
 
-	if ((dev->pipeCtrl = usb_open(insertion, usb_transfer_control, usb_dir_bi)) < 0) {
+	if ((dev->pipeCtrl = usb_open(insertion, usb_transfer_control, 0)) < 0) {
 		free(dev);
 		return -EINVAL;
 	}

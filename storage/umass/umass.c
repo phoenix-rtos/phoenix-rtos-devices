@@ -84,7 +84,7 @@ typedef struct umass_dev {
 	char buffer[UMASS_SECTOR_SIZE];
 	char stack[1024] __attribute__ ((aligned(8)));
 	struct umass_dev *prev, *next;
-	usb_insertion_t instance;
+	usb_devinfo_t instance;
 	char path[32];
 	int pipeCtrl;
 	int pipeIn;
@@ -263,15 +263,16 @@ static void umass_msgthr(void *arg)
 	endthread();
 }
 
-static int umass_handleInsertion(usb_insertion_t *insertion)
+static int umass_handleInsertion(usb_devinfo_t *insertion)
 {
 	umass_dev_t *dev;
 	oid_t oid;
 
-	dev = malloc(sizeof(umass_dev_t));
-	dev->instance = *insertion;
+	if ((dev = malloc(sizeof(umass_dev_t))) == NULL)
+		return -EINVAL;
 
-	if ((dev->pipeCtrl = usb_open(insertion, usb_transfer_control, usb_dir_bi)) < 0) {
+	dev->instance = *insertion;
+	if ((dev->pipeCtrl = usb_open(insertion, usb_transfer_control, 0)) < 0) {
 		free(dev);
 		return -EINVAL;
 	}
@@ -281,7 +282,6 @@ static int umass_handleInsertion(usb_insertion_t *insertion)
 		return -EINVAL;
 	}
 
-	fprintf(stderr, "umass: setConfiguration success\n");
 	if ((dev->pipeIn = usb_open(insertion, usb_transfer_bulk, usb_dir_in)) < 0) {
 		free(dev);
 		return -EINVAL;
