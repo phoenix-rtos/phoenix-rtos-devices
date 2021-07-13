@@ -78,37 +78,23 @@ static void uart_signaltxready(void *_uart)
 void uart_intthr(void *arg)
 {
 	uart_t *uart = (uart_t *)arg;
-	uint64_t iir, lsr;
-	char c;
+	uint8_t iir;
 
 	mutexLock(uart->mutex);
 	for (;;) {
-
 		while ((iir = uarthw_read(uart->hwctx, REG_IIR)) & IIR_IRQPEND)
 			condWait(uart->intcond, uart->mutex, 0);
 
 		/* Receive */
-		if ((iir & IIR_DR) == IIR_DR) {
-
-			while (1) {
-				lsr = uarthw_read(uart->hwctx, REG_LSR);
-
-				if ((lsr & 1) == 0)
-					break;
-
-				c = uarthw_read(uart->hwctx, REG_RBR);
-
-				libtty_putchar(&uart->tty, c, NULL);
-			}
+		if (iir & IIR_DR) {
+			while (uarthw_read(uart->hwctx, REG_LSR) & 0x1)
+				libtty_putchar(&uart->tty, uarthw_read(uart->hwctx, REG_RBR), NULL);
 		}
 
 		/* Transmit */
-		if ((iir & IIR_THRE) == IIR_THRE) {
-			
-			if (libtty_txready(&uart->tty)) {
-				c = libtty_getchar(&uart->tty, NULL);
-				uarthw_write(uart->hwctx, REG_THR, c);
-			}
+		if (iir & IIR_THRE) {
+			if (libtty_txready(&uart->tty))
+				uarthw_write(uart->hwctx, REG_THR, libtty_getchar(&uart->tty, NULL));
 			else
 				uarthw_write(uart->hwctx, REG_IMR, IMR_DR);
 		}
@@ -204,8 +190,9 @@ static void uart_ioctl(unsigned port, msg_t *msg)
 }
 
 
-int _uart_init(unsigned int uartn, unsigned int speed, uart_t **uart)
+static int _uart_init(unsigned int uartn, unsigned int speed, uart_t **uart)
 {
+	unsigned int divisor = 115200 / speed;
 	uint8_t buff[64];
 	char s[64];
 	libtty_callbacks_t callbacks;
@@ -245,22 +232,22 @@ int _uart_init(unsigned int uartn, unsigned int speed, uart_t **uart)
 
 	interrupt(uarthw_irq((*uart)->hwctx), uart_interrupt, (*uart), (*uart)->intcond, &(*uart)->inth);
 
-	/* Enable FIFO */
-	uarthw_write((*uart)->hwctx, 2, 0x01);
+	/* Set speed (MOD) */
+	uarthw_write((*uart)->hwctx, REG_LCR, LCR_DLAB);
+	uarthw_write((*uart)->hwctx, REG_LSB, divisor);
+	uarthw_write((*uart)->hwctx, REG_MSB, divisor >> 8);
+
+	/* Set data format (MOD) */
+	uarthw_write((*uart)->hwctx, REG_LCR, LCR_D8N1);
+
+	/* Enable and configure FIFOs */
+	uarthw_write((*uart)->hwctx, REG_FCR, 0xa7);
 
 	/* Enable hardware interrupts */
 	uarthw_write((*uart)->hwctx, REG_MCR, MCR_OUT2);
 
 	/* Set interrupt mask */
 	uarthw_write((*uart)->hwctx, REG_IMR, IMR_DR);
-
-	/* Set speed (MOD) */
-	uarthw_write((*uart)->hwctx, REG_LCR, LCR_DLAB);
-	uarthw_write((*uart)->hwctx, REG_LSB, speed);
-	uarthw_write((*uart)->hwctx, REG_MSB, 0);
-
-	/* Set data format (MOD) */
-	uarthw_write((*uart)->hwctx, REG_LCR, LCR_D8N1);
 
 	return EOK;
 }
@@ -321,6 +308,7 @@ void poolthr(void *arg)
 int main(void)
 {
 	unsigned int n;
+	char path[12];
 	uint32_t port;
 	void *stack;
 
@@ -328,11 +316,15 @@ int main(void)
 
 	portCreate(&port);
 
-	for (n = 0; n < 4; n++) {
-		if (_uart_init(n, B115200, &uarts[n]) < 0)
+	for (n = 0; n < sizeof(uarts) / sizeof(uarts[0]); n++) {
+		if (_uart_init(n, 115200, &uarts[n]) < 0)
 			continue;
-		
-		if (portRegister(port, "/dev/ttyS0", &uarts[n]->oid) < 0) {
+
+		snprintf(path, sizeof(path), "/dev/ttyS%u", n);
+		uarts[n]->oid.port = port;
+		uarts[n]->oid.id = n;
+
+		if (portRegister(port, path, &uarts[n]->oid) < 0) {
 			fprintf(stderr, DRIVER ": Can't register port %d\n", port);
 			return -1;
 		}
