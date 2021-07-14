@@ -6,6 +6,7 @@
 
 NAME := libflashdrv-imx6ull
 LOCAL_SRCS := flashdrv.c
+LOCAL_HEADERS := imx6ull-flashdrv.h
 
 include $(static-lib.mk)
 

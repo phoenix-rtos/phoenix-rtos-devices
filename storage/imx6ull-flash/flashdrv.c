@@ -26,7 +26,7 @@
 #include <sys/platform.h>
 #include <phoenix/arch/imx6ull.h>
 
-#include "flashdrv.h"
+#include "imx6ull-flashdrv.h"
 
 
 enum {

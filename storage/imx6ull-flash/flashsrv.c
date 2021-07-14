@@ -15,7 +15,7 @@
 #include <posix/utils.h>
 #include <posix/idtree.h>
 #include "imx6ull-flashsrv.h"
-#include "flashdrv.h"
+#include "imx6ull-flashdrv.h"
 
 #include <libjffs2.h>
 
