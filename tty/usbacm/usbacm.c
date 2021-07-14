@@ -239,7 +239,7 @@ static void usbacm_msgthr(void *arg)
 static int usbacm_handleInsertion(usb_devinfo_t *insertion)
 {
 	usbacm_dev_t *dev;
-	usb_modeswitch_t *mode;
+	const usb_modeswitch_t *mode;
 	oid_t oid;
 	int ret;
 

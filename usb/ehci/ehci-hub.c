@@ -201,16 +201,9 @@ static int ehci_getDesc(usb_dev_t *hub, char *buf, size_t len)
 uint32_t ehci_getHubStatus(usb_dev_t *hub)
 {
 	hcd_t *hcd = hub->hcd;
-	ehci_t *ehci = (ehci_t *)hcd->priv;
 	volatile int *portsc;
 	uint32_t status = 0;
 	int i;
-
-	// /* Status not changed */
-	// if ((ehci->status & USBSTS_PCI) == 0)
-	// 	return 0;
-
-	// ehci->status &= ~USBSTS_PCI;
 
 	for (i = 0; i < hub->nports; i++) {
 		portsc = hcd->base + portsc1 + i;

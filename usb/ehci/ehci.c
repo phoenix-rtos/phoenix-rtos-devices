@@ -80,15 +80,6 @@ static void ehci_enqueue(struct qh_node *qhnode, struct qtd *first, struct qtd *
 }
 
 
-// static void ehci_insertPeriodic(struct qh *qh)
-// {
-// 	link_pointer_t ptr = { 0 };
-// 	ptr.pointer = va2pa(qh) >> 5;
-// 	ptr.type = ehci_item_fstn;
-// 	ehci_common.periodic_list[0] = ptr;
-// }
-
-
 static void ehci_continue(struct qh_node *qhnode, struct qtd *last)
 {
 	struct qh *qh = qhnode->qh;
@@ -410,71 +401,6 @@ static int ehci_transferStatus(hcd_t *hcd, usb_transfer_t *t)
 }
 
 
-static void ehci_dumpQueue(FILE *stream, struct qh *qh, struct qtd_node *qtd)
-{
-	struct qtd_node *tmp = qtd;
-
-	fprintf(stream, "%18s: %08x\n", "horizontal", qh->horizontal);
-	fprintf(stream, "%18s: %08x\n", "device_addr", qh->devAddr);
-	fprintf(stream, "%18s: %08x\n", "inactivate", qh->inactivate);
-	fprintf(stream, "%18s: %08x\n", "endpoint", qh->ep);
-	fprintf(stream, "%18s: %08x\n", "endpoint_speed", qh->epSpeed);
-	fprintf(stream, "%18s: %08x\n", "data_toggle", qh->dt);
-	fprintf(stream, "%18s: %08x\n", "head_of_reclamation", qh->headOfReclamation);
-	fprintf(stream, "%18s: %08x\n", "max_packet_len ", qh->maxPacketLen);
-	fprintf(stream, "%18s: %08x\n", "control_endpoint", qh->ctrlEp);
-	fprintf(stream, "%18s: %08x\n", "nak_count_reload", qh->nakCountReload);
-
-	fprintf(stream, "%18s: %08x\n", "interrupt_schedule_mask", qh->smask);
-	fprintf(stream, "%18s: %08x\n", "split_completion_mask", qh->cmask);
-	fprintf(stream, "%18s: %08x\n", "hub_addr", qh->hubAddr);
-	fprintf(stream, "%18s: %08x\n", "port_number", qh->portNumber);
-	fprintf(stream, "%18s: %08x\n", "pipe_multiplier", qh->pipeMult);
-
-	fprintf(stream, "%18s: %08x\n", "ping_state", qh->transferOverlay.pingState);
-	fprintf(stream, "%18s: %08x\n", "split_state", qh->transferOverlay.splitState);
-	fprintf(stream, "%18s: %08x\n", "missed_uframe", qh->transferOverlay.missedUframe);
-	fprintf(stream, "%18s: %08x\n", "transaction_error", qh->transferOverlay.transactionError);
-	fprintf(stream, "%18s: %08x\n", "babble", qh->transferOverlay.babble);
-	fprintf(stream, "%18s: %08x\n", "buffer_error", qh->transferOverlay.bufferError);
-	fprintf(stream, "%18s: %08x\n", "halted", qh->transferOverlay.halted);
-	fprintf(stream, "%18s: %08x\n", "active", qh->transferOverlay.active);
-
-	fprintf(stream, "%18s: %08x\n", "current", qh->currentQtd);
-
-	fprintf(stream, "%18s: %08x\n", "next", qh->transferOverlay.next);
-	fprintf(stream, "%18s: %08x\n", "alternate", qh->transferOverlay.altNext);
-	fprintf(stream, "%18s: %08x\n", "pid_code", qh->transferOverlay.pid);
-	fprintf(stream, "%18s: %08x\n", "error_counter", qh->transferOverlay.errorCounter);
-	fprintf(stream, "%18s: %08x\n", "current_page", qh->transferOverlay.currentPage);
-	fprintf(stream, "%18s: %08x\n", "ioc", qh->transferOverlay.ioc);
-	fprintf(stream, "%18s: %08x\n", "bytes_to_transfer", qh->transferOverlay.bytesToTransfer);
-	fprintf(stream, "%18s: %08x\n", "data_toggle", qh->transferOverlay.dt);
-	fprintf(stream, "%18s: %08x\n", "page0", qh->transferOverlay.page0);
-
-	do {
-		printf("==========QTD===========\n");
-		fprintf(stream, "%18s: %08x\n", "ping_state", tmp->qtd->pingState);
-		fprintf(stream, "%18s: %08x\n", "split_state", tmp->qtd->splitState);
-		fprintf(stream, "%18s: %08x\n", "missed_uframe", tmp->qtd->missedUframe);
-		fprintf(stream, "%18s: %08x\n", "transaction_error", tmp->qtd->transactionError);
-		fprintf(stream, "%18s: %08x\n", "babble", tmp->qtd->babble);
-		fprintf(stream, "%18s: %08x\n", "buffer_error", tmp->qtd->bufferError);
-		fprintf(stream, "%18s: %08x\n", "halted", tmp->qtd->halted);
-		fprintf(stream, "%18s: %08x\n", "active", tmp->qtd->active);
-
-		fprintf(stream, "%18s: %08x\n", "next", tmp->qtd->next);
-		fprintf(stream, "%18s: %08x\n", "pid_code", tmp->qtd->pid);
-		fprintf(stream, "%18s: %08x\n", "error_counter", tmp->qtd->errorCounter);
-		fprintf(stream, "%18s: %08x\n", "current_page", tmp->qtd->currentPage);
-		fprintf(stream, "%18s: %08x\n", "ioc", tmp->qtd->ioc);
-		fprintf(stream, "%18s: %08x\n", "bytes_to_transfer", tmp->qtd->bytesToTransfer);
-		fprintf(stream, "%18s: %08x\n", "data_toggle", tmp->qtd->dt);
-		fprintf(stream, "%18s: %08x\n", "page0", tmp->qtd->page0);
-		tmp = tmp->next;
-	} while (tmp != qtd);
-}
-
 static void ehci_updateTransfersStatus(hcd_t *hcd, usb_dev_t *dev)
 {
 	struct qh_node *qh;
@@ -509,7 +435,6 @@ static void ehci_irqThread(void *arg)
 {
 	hcd_t *hcd = (hcd_t *)arg;
 	ehci_t *ehci = (ehci_t *)hcd->priv;
-	volatile int *portsc = (hcd->base + portsc1);
 
 	mutexLock(ehci->irqLock);
 	for (;;) {
@@ -680,7 +605,6 @@ static void ehci_devDestroy(hcd_t *hcd, usb_dev_t *dev)
 static int ehci_init(hcd_t *hcd)
 {
 	ehci_t *ehci;
-	int nports;
 	int i;
 
 	if ((ehci = calloc(1, sizeof(ehci_t))) == NULL) {
@@ -776,7 +700,7 @@ static int ehci_init(hcd_t *hcd)
 }
 
 
-static hcd_ops_t ehci_ops = {
+static const hcd_ops_t ehci_ops = {
 	.type = "ehci",
 	.init = ehci_init,
 	.transferEnqueue = ehci_transferEnqueue,
