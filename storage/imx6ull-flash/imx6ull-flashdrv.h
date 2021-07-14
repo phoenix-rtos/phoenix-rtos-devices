@@ -33,16 +33,18 @@ enum {
 };
 
 
+/* possible values of flashdrv_meta_t->errors[] */
 enum {
 	flash_no_errors = 0,
+	/* 0x01 - 0x28: number of bits corrected */
 	flash_uncorrectable = 0xfe,
 	flash_erased = 0xff
 };
 
 
-typedef struct _flashdrv_meta_t {
-	char metadata[16];
-	char errors[9];
+typedef struct {
+	char metadata[16]; /* externally useable (by FS) */
+	char errors[9];    /* ECC status: (one of the above enums) */
 } flashdrv_meta_t;
 
 

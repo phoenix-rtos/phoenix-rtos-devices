@@ -16,7 +16,7 @@
 #define _BCB_H
 
 #include <stdint.h>
-#include "../../storage/imx6ull-flash/flashdrv.h"
+#include <imx6ull-flashdrv.h>
 
 #define PAGE_SIZE 4096
 #define RAW_PAGE_SIZE 4320

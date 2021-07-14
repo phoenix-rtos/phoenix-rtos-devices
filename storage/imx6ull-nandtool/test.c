@@ -4,7 +4,7 @@
 
 #include <sys/mman.h>
 
-#include "../imx6ull-flash/flashdrv.h"
+#include <imx6ull-flashdrv.h>
 
 #include "test.h"
 
