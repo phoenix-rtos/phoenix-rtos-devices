@@ -23,15 +23,15 @@ typedef struct {
 	volatile int enabled;
 	int bits;
 
-	volatile char * volatile txbeg;
-	volatile char * volatile txend;
+	volatile char *volatile txbeg;
+	volatile char *volatile txend;
 
 	volatile char rxdfifo[64];
 	volatile unsigned int rxdr;
 	volatile unsigned int rxdw;
-	volatile char * volatile rxbeg;
-	volatile char * volatile rxend;
-	volatile unsigned int *read;
+	volatile char *volatile rxbeg;
+	volatile char *volatile rxend;
+	volatile unsigned int *volatile read;
 
 	handle_t rxlock;
 	handle_t rxcond;
