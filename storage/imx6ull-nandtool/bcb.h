@@ -18,6 +18,7 @@
 #include <stdint.h>
 #include <imx6ull-flashdrv.h>
 
+/* FIXME: should not be hardcoded, get from flashdrv/flashsrv */
 #define PAGE_SIZE 4096
 #define RAW_PAGE_SIZE 4320
 #define PAGES_PER_BLOCK 64
