@@ -194,6 +194,13 @@ typedef struct _flashdrv_dma_t {
 } flashdrv_dma_t;
 
 
+typedef struct {
+	uint8_t manufacturerid;
+	uint8_t deviceid;
+	uint8_t bytes[3];
+} __attribute__((packed)) flash_id_t;
+
+
 struct {
 	volatile uint32_t *gpmi;
 	volatile uint32_t *bch;
@@ -202,11 +209,12 @@ struct {
 
 	handle_t mutex, wait_mutex, bch_cond, dma_cond;
 	handle_t intbch, intdma, intgpmi;
-	unsigned pagesz, metasz;
+	unsigned rawmetasz; /* user metadata + ECC16 metadata bytes */
 
 	int result, bch_status, bch_done;
 
 	uint8_t *uncached_buf;
+	flashdrv_info_t info;
 } flashdrv_common;
 
 
@@ -649,6 +657,38 @@ int flashdrv_reset(flashdrv_dma_t *dma)
 }
 
 
+int flashdrv_readid(flashdrv_dma_t *dma, flash_id_t *flash_id)
+{
+	int chip = 0, channel = 0, err;
+	char addr[1] = { 0 };
+
+	dma->first = NULL;
+	dma->last = NULL;
+
+	flashdrv_wait4ready(dma, chip, EOK);
+	flashdrv_issue(dma, flash_read_id, chip, addr, 0, NULL, NULL);
+	flashdrv_wait4ready(dma, chip, EOK);
+	flashdrv_readback(dma, chip, 5, flash_id, NULL);
+	flashdrv_disablebch(dma, chip);
+	flashdrv_wait4ready(dma, chip, EOK);
+	flashdrv_finish(dma);
+
+	mutexLock(flashdrv_common.mutex);
+	flashdrv_common.result = 1;
+	dma_run((dma_t *)dma->first, channel);
+
+	mutexLock(flashdrv_common.wait_mutex);
+	while (flashdrv_common.result > 0)
+		condWait(flashdrv_common.dma_cond, flashdrv_common.wait_mutex, 0);
+	mutexUnlock(flashdrv_common.wait_mutex);
+
+	err = flashdrv_common.result;
+	mutexUnlock(flashdrv_common.mutex);
+
+	return err;
+}
+
+
 int flashdrv_write(flashdrv_dma_t *dma, uint32_t paddr, void *data, char *aux)
 {
 	int chip = 0, channel = 0, sz;
@@ -657,9 +697,9 @@ int flashdrv_write(flashdrv_dma_t *dma, uint32_t paddr, void *data, char *aux)
 	memcpy(addr + 2, &paddr, 3);
 
 	if (data != NULL)
-		sz = flashdrv_common.pagesz;
+		sz = flashdrv_common.info.writesz + flashdrv_common.info.metasz;
 	else
-		sz = flashdrv_common.metasz;
+		sz = flashdrv_common.rawmetasz;
 
 	dma->first = NULL;
 	dma->last = NULL;
@@ -678,7 +718,7 @@ int flashdrv_write(flashdrv_dma_t *dma, uint32_t paddr, void *data, char *aux)
 		*(flashdrv_common.bch + bch_flash0layout0) &= ~(0xff << 24);
 
 		*(flashdrv_common.bch + bch_flash0layout1) &= ~(0xffff << 16);
-		*(flashdrv_common.bch + bch_flash0layout1) |= flashdrv_common.metasz << 16;
+		*(flashdrv_common.bch + bch_flash0layout1) |= flashdrv_common.rawmetasz << 16;
 	}
 
 	flashdrv_common.result = 1;
@@ -695,7 +735,7 @@ int flashdrv_write(flashdrv_dma_t *dma, uint32_t paddr, void *data, char *aux)
 		*(flashdrv_common.bch + bch_flash0layout0) |= 8 << 24;
 
 		*(flashdrv_common.bch + bch_flash0layout1) &= ~(0xffff << 16);
-		*(flashdrv_common.bch + bch_flash0layout1) |= flashdrv_common.pagesz << 16;
+		*(flashdrv_common.bch + bch_flash0layout1) |= (flashdrv_common.info.writesz + flashdrv_common.info.metasz) << 16;
 	}
 
 	mutexUnlock(flashdrv_common.mutex);
@@ -711,9 +751,9 @@ int flashdrv_read(flashdrv_dma_t *dma, uint32_t paddr, void *data, flashdrv_meta
 	memcpy(addr + 2, &paddr, 3);
 
 	if (data != NULL)
-		sz = flashdrv_common.pagesz;
+		sz = flashdrv_common.info.writesz + flashdrv_common.info.metasz;
 	else
-		sz = flashdrv_common.metasz;
+		sz = flashdrv_common.rawmetasz;
 
 	dma->first = NULL;
 	dma->last = NULL;
@@ -932,6 +972,43 @@ void flashdrv_rundma(flashdrv_dma_t *dma)
 }
 
 
+static void setup_flash_info(void)
+{
+	flash_id_t *flash_id = (flash_id_t *)flashdrv_common.uncached_buf;
+	flashdrv_dma_t *dma = flashdrv_dmanew();
+
+	flashdrv_reset(dma);
+	memset(flash_id, 0, sizeof(*flash_id));
+	flashdrv_readid(dma, flash_id);
+
+
+	if (flash_id->manufacturerid == 0x98 && flash_id->deviceid == 0xd3) {
+		flashdrv_common.info.name = "Kioxia TH58NV 16Gbit NAND";
+		flashdrv_common.info.size = 4096ull * 64 * 8192;
+		flashdrv_common.info.writesz = 4096u;
+		flashdrv_common.info.metasz = 256u;
+		flashdrv_common.info.erasesz = 4096u * 64;
+	}
+	else if (flash_id->manufacturerid == 0x2c && flash_id->deviceid == 0xd3) {
+		flashdrv_common.info.name = "Micron MT29F8G 8Gbit NAND";
+		flashdrv_common.info.size = 4096ull * 64 * 4096;
+		flashdrv_common.info.writesz = 4096u;
+		flashdrv_common.info.metasz = 224u;
+		flashdrv_common.info.erasesz = 4096u * 64;
+	}
+	else {
+		/* use sane defaults */
+		flashdrv_common.info.name = "Unknown 8Gbit NAND";
+		flashdrv_common.info.size = 4096ull * 64 * 4096;
+		flashdrv_common.info.writesz = 4096u;
+		flashdrv_common.info.metasz = 224u;
+		flashdrv_common.info.erasesz = 4096u * 64;
+	}
+
+	flashdrv_dmadestroy(dma);
+}
+
+
 void flashdrv_init(void)
 {
 	flashdrv_common.dma  = mmap(NULL, 2 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x1804000);
@@ -940,8 +1017,8 @@ void flashdrv_init(void)
 	flashdrv_common.mux  = mmap(NULL, 4 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x20e0000);
 	flashdrv_common.uncached_buf = mmap(NULL, 2 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0);
 
-	flashdrv_common.pagesz = 4096 + 224;
-	flashdrv_common.metasz = 16 + 26;
+	/* 16 bytes of user metadada + ECC16 * bits per parity level (13) / 8 = 26 bytes for ECC  */
+	flashdrv_common.rawmetasz = 16 + 26;
 
 	flashdrv_common.dma_cond = flashdrv_common.bch_cond = flashdrv_common.mutex = 0;
 
@@ -970,6 +1047,8 @@ void flashdrv_init(void)
 	*(flashdrv_common.bch + bch_ctrl_clr) = (1 << 31);
 	*(flashdrv_common.bch + bch_ctrl_clr) = (1 << 30);
 
+	/* set address setup = 4 (20ns), data hold = 2 (10ns), data setup = 3 (15ns) */
+	*(flashdrv_common.gpmi + gpmi_timing0) = (4 << 16) | (2 << 8) | (3 << 0);
 	/* Set wait for ready timeout */
 	*(flashdrv_common.gpmi + gpmi_timing1) = 0xffff << 16;
 
@@ -988,6 +1067,12 @@ void flashdrv_init(void)
 	/* set #R/B busy-low, WP */
 	*(flashdrv_common.gpmi + gpmi_ctrl1) |= (1 << 2) | (1 << 3) | (1 << 18);
 
+	interrupt(32 + 13, dma_irqHandler, NULL, flashdrv_common.dma_cond, &flashdrv_common.intdma);
+	interrupt(32 + 16, gpmi_irqHandler, NULL, 0, &flashdrv_common.intgpmi);
+
+	/* read NAND configuration before BCH setup */
+	setup_flash_info();
+
 	/* set BCH up */
 	*(flashdrv_common.bch + bch_ctrl_set) = 1 << 8;
 	*(flashdrv_common.bch + bch_layoutselect) = 0;
@@ -995,10 +1080,15 @@ void flashdrv_init(void)
 	/* 8 blocks/page, 16 bytes metadata, ECC16, GF13, 0 word data0 */
 	*(flashdrv_common.bch + bch_flash0layout0) = 8 << 24 | 16 << 16 | 8 << 11 | 0 << 10 | 0;
 
-	/* 4096 + 218 page size, ECC14, GF13, 128 word dataN (512 bytes) */
-	*(flashdrv_common.bch + bch_flash0layout1) = flashdrv_common.pagesz << 16 | 7 << 11 | 0 << 10 | 128;
+	/* flash layout takes only 4096 + 224 bytes, but it's universal across used NAND chips */
+	/* 4096 + 256 page size, ECC14, GF13, 128 word dataN (512 bytes) */
+	*(flashdrv_common.bch + bch_flash0layout1) = (flashdrv_common.info.writesz + flashdrv_common.info.metasz) << 16 | 7 << 11 | 0 << 10 | 128;
 
-	interrupt(32 + 13, dma_irqHandler, NULL, flashdrv_common.dma_cond, &flashdrv_common.intdma);
 	interrupt(32 + 15, bch_irqHandler, NULL, flashdrv_common.bch_cond, &flashdrv_common.intbch);
-	interrupt(32 + 16, gpmi_irqHandler, NULL, 0, &flashdrv_common.intgpmi);
+}
+
+
+const flashdrv_info_t *flashdrv_info(void)
+{
+	return &flashdrv_common.info;
 }
