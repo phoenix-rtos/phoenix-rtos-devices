@@ -43,8 +43,8 @@ enum {
 
 
 typedef struct {
-	char metadata[16]; /* externally useable (by FS) */
-	char errors[9];    /* ECC status: (one of the above enums) */
+	uint8_t metadata[16]; /* externally usable (by FS) */
+	uint8_t errors[9];    /* ECC status: (one of the above enums) */
 } flashdrv_meta_t;
 
 
@@ -70,6 +70,12 @@ extern int flashdrv_writeraw(flashdrv_dma_t *dma, uint32_t paddr, void *data, in
 
 
 extern int flashdrv_readraw(flashdrv_dma_t *dma, uint32_t paddr, void *data, int sz);
+
+
+extern int flashdrv_isbad(flashdrv_dma_t *dma, uint32_t paddr);
+
+
+extern int flashdrv_markbad(flashdrv_dma_t *dma, uint32_t paddr);
 
 
 extern void flashdrv_init(void);
