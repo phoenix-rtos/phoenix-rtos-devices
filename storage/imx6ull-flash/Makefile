@@ -17,3 +17,10 @@ DEP_LIBS := libflashdrv-imx6ull
 LIBS := libjffs2
 
 include $(binary.mk)
+
+# NAND flash test program
+NAME := imx6ull-flash-test
+LOCAL_SRCS := imx6ull-flash-test.c
+DEP_LIBS := libflashdrv-imx6ull
+
+include $(binary.mk)
