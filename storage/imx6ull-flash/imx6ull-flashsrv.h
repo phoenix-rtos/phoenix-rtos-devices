@@ -18,49 +18,59 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define PAGES_PER_BLOCK 64
-#define FLASH_PAGE_SIZE 0x1000
-#define RAW_FLASH_PAGE_SIZE 4320
-#define BLOCKS_CNT 4096
 
-#define ERASE_BLOCK_SIZE (FLASH_PAGE_SIZE * PAGES_PER_BLOCK)
-#define ROOT_ID -1
+enum { flashsrv_devctl_info = 0, flashsrv_devctl_erase, flashsrv_devctl_writeraw, flashsrv_devctl_writemeta,
+	 flashsrv_devctl_readraw, flashsrv_devctl_isbad, flashsrv_devctl_markbad };
 
-enum { flashsrv_devctl_erase = 0, flashsrv_devctl_chiperase, flashsrv_devctl_writeraw, flashsrv_devctl_writemeta,
-	 flashsrv_devctl_readraw };
+/* information about NAND flash configuration */
+typedef struct {
+	uint64_t size;    /* total NAND size in bytes */
+	uint32_t writesz; /* write page DATA size in bytes */
+	uint32_t metasz;  /* write page METADATA size in bytes */
+	uint32_t erasesz; /* erase block size in bytes (multiply of writesize) */
+} flashsrv_info_t;
+
+/* message to /dev/flashX   - chip operation - absolute address
+ * message to /dev/flashXpY - partition operation - address relative to the beginning of the partition
+ */
 
 typedef struct {
 	int type;
 
 	union {
+		/* erase: automatically skips bad blocks, returns erased blocks count */
 		struct {
-			size_t size;
-			size_t offset;
 			oid_t oid;
+			size_t address; /* multiply of erasesz */
+			size_t size;    /* multiply of erasesz, 0 == full partition / device */
 		} erase;
 
-		struct {
-			size_t size;
-			size_t offset;
-		} chiperase;
-
+		/* writeraw, writemeta */
 		struct {
 			oid_t oid;
 			uint32_t address;
 			size_t size;
 		} write;
 
+		/* readraw */
 		struct {
 			oid_t oid;
-			uint32_t address;
-			size_t size;
+			uint32_t address; /* multiply of (writesz + metasz) */
+			size_t size;      /* multiply of (writesz + metasz) */
 		} readraw;
+
+		/* isbad, markbad */
+		struct {
+			oid_t oid;
+			uint32_t address; /* multiply of erasesz */
+		} badblock;
 	};
 } __attribute__((packed)) flash_i_devctl_t;
 
 
 typedef struct {
 	int err;
+	flashsrv_info_t info; /* valid only for flashsrv_devctl_info */
 } __attribute__((packed)) flash_o_devctl_t;
 
 #endif
