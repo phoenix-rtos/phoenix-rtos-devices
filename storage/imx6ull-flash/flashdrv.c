@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
+#include <assert.h>
 
 #include <sys/msg.h>
 #include <sys/threads.h>
@@ -204,6 +205,8 @@ struct {
 	unsigned pagesz, metasz;
 
 	int result, bch_status, bch_done;
+
+	uint8_t *uncached_buf;
 } flashdrv_common;
 
 
@@ -752,7 +755,7 @@ int flashdrv_erase(flashdrv_dma_t *dma, uint32_t paddr)
 	flashdrv_issue(dma, flash_erase_block, chip, &paddr, 0, NULL, NULL);
 	flashdrv_wait4ready(dma, chip, EOK);
 	flashdrv_issue(dma, flash_read_status, 0, NULL, 0, NULL, NULL);
-	flashdrv_readcompare(dma, chip, 0x3, 0, -1);
+	flashdrv_readcompare(dma, chip, 0x1, 0, -1);
 	flashdrv_finish(dma);
 
 	mutexLock(flashdrv_common.mutex);
@@ -836,6 +839,89 @@ int flashdrv_readraw(flashdrv_dma_t *dma, uint32_t paddr, void *data, int sz)
 }
 
 
+/* valid addresses are only the beginning of erase block */
+int flashdrv_isbad(flashdrv_dma_t *dma, uint32_t paddr)
+{
+	int chip = 0, channel = 0, isbad = 0;
+	uint8_t *data = flashdrv_common.uncached_buf;
+	char addr[5] = { 0 };
+	memcpy(addr + 2, &paddr, 3);
+
+	assert((paddr % 64) == 0);
+
+	dma->first = NULL;
+	dma->last = NULL;
+
+	/* read RAW first 16 bytes (metadata) to skip ECC checks */
+	flashdrv_wait4ready(dma, chip, EOK);
+	flashdrv_issue(dma, flash_read_page, chip, addr, 0, NULL, NULL);
+	flashdrv_wait4ready(dma, chip, EOK);
+	flashdrv_readback(dma, chip, 16, data, NULL);
+	flashdrv_disablebch(dma, chip);
+	flashdrv_wait4ready(dma, chip, EOK);
+	flashdrv_finish(dma);
+
+	mutexLock(flashdrv_common.mutex);
+	flashdrv_common.result = 1;
+	dma_run((dma_t *)dma->first, channel);
+
+	mutexLock(flashdrv_common.wait_mutex);
+	while (flashdrv_common.result > 0)
+		condWait(flashdrv_common.dma_cond, flashdrv_common.wait_mutex, 0);
+	mutexUnlock(flashdrv_common.wait_mutex);
+
+	isbad = flashdrv_common.result;
+	if (isbad < 0)
+		isbad = 1; /* read error, assume badblock */
+	else
+		isbad = data[0] == 0x00; /* badblock marker present */
+	mutexUnlock(flashdrv_common.mutex);
+
+	return isbad;
+}
+
+
+int flashdrv_markbad(flashdrv_dma_t *dma, uint32_t paddr)
+{
+	int chip = 0, channel = 0, err;
+	uint8_t *data = flashdrv_common.uncached_buf;
+	const unsigned int metasz = 16;
+	char addr[5] = { 0 };
+	memcpy(addr + 2, &paddr, 3);
+
+	assert((paddr % 64) == 0);
+
+	dma->first = NULL;
+	dma->last = NULL;
+
+	/* NOTE: writing without ECC */
+	flashdrv_wait4ready(dma, chip, EOK);
+	flashdrv_issue(dma, flash_program_page, chip, addr, metasz, data, NULL);
+	flashdrv_wait4ready(dma, chip, EOK);
+	flashdrv_issue(dma, flash_read_status, 0, NULL, 0, NULL, NULL);
+	flashdrv_readcompare(dma, 0, 0x3, 0, -1);
+	flashdrv_finish(dma);
+
+	mutexLock(flashdrv_common.mutex);
+
+	memset(data, 0xff, flashdrv_common.info.writesz + flashdrv_common.info.metasz);
+	memset(data, 0x0, metasz);
+
+	flashdrv_common.result = 1;
+	dma_run((dma_t *)dma->first, channel);
+
+	mutexLock(flashdrv_common.wait_mutex);
+	while (flashdrv_common.result > 0)
+		condWait(flashdrv_common.dma_cond, flashdrv_common.wait_mutex, 0);
+	mutexUnlock(flashdrv_common.wait_mutex);
+
+	err = flashdrv_common.result;
+	mutexUnlock(flashdrv_common.mutex);
+
+	return err;
+}
+
+
 void flashdrv_rundma(flashdrv_dma_t *dma)
 {
 	int channel = 0;
@@ -852,6 +938,7 @@ void flashdrv_init(void)
 	flashdrv_common.gpmi = mmap(NULL, 2 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x1806000);
 	flashdrv_common.bch  = mmap(NULL, 4 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x1808000);
 	flashdrv_common.mux  = mmap(NULL, 4 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x20e0000);
+	flashdrv_common.uncached_buf = mmap(NULL, 2 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0);
 
 	flashdrv_common.pagesz = 4096 + 224;
 	flashdrv_common.metasz = 16 + 26;
