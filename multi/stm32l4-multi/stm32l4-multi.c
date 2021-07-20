@@ -36,7 +36,7 @@
 
 #define THREADS_NO 3
 #define THREADS_PRIORITY 1
-#define STACKSZ 512
+#define STACKSZ 640
 
 
 struct {

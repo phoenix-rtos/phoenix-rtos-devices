@@ -39,12 +39,12 @@
 #define TTY_CNT (TTY1 + TTY2 + TTY3 + TTY4 + TTY5)
 
 #define THREAD_POOL 3
-#define THREAD_STACKSZ 512
+#define THREAD_STACKSZ 768
 #define THREAD_PRIO 1
 
 #if TTY_CNT != 0
 typedef struct {
-	char stack[256] __attribute__ ((aligned(8)));
+	char stack[512] __attribute__ ((aligned(8)));
 
 	volatile unsigned int *base;
 	volatile int enabled;
