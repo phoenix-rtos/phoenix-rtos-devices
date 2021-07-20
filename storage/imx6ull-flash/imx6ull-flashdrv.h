@@ -2,6 +2,7 @@
  * Phoenix-RTOS
  *
  * IMX6ULL NAND flash driver.
+ * Low level API to be used by flashsrv and FS implementations.
  *
  * Copyright 2018 Phoenix Systems
  * Author: Jan Sikorski
@@ -48,6 +49,17 @@ typedef struct {
 } flashdrv_meta_t;
 
 
+/* information about NAND flash configuration */
+typedef struct {
+	const char *name;
+	uint64_t size;    /* total NAND size in bytes */
+	uint32_t writesz; /* write page DATA size in bytes */
+	uint32_t metasz;  /* write page METADATA size in bytes */
+	uint32_t erasesz; /* erase block size in bytes (multiply of writesize) */
+} flashdrv_info_t;
+
+/* paddr: page address, so NAND address / writesz */
+
 extern flashdrv_dma_t *flashdrv_dmanew(void);
 
 
@@ -79,5 +91,8 @@ extern int flashdrv_markbad(flashdrv_dma_t *dma, uint32_t paddr);
 
 
 extern void flashdrv_init(void);
+
+
+extern const flashdrv_info_t *flashdrv_info(void);
 
 #endif
