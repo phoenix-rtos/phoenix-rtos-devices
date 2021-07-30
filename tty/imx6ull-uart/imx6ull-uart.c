@@ -37,7 +37,7 @@ enum { urxd = 0, utxd = 16, ucr1 = 32, ucr2, ucr3, ucr4, ufcr, usr1, usr2,
 	uesc, utim, ubir, ubmr, ubrc, onems, uts, umcr };
 
 uint32_t uart_addr[8] = { 0x02020000, 0x021E8000, 0x021EC000, 0x021F0000,
-	0x021F4000, 0x021FC000, 0x02018000, 0x02284000 };
+	0x021F4000, 0x021FC000, 0x02018000, 0x02288000 };
 
 uint32_t uart_pctl_clk[8] = { pctl_clk_uart1, pctl_clk_uart2, pctl_clk_uart3, pctl_clk_uart4,
 	pctl_clk_uart5, pctl_clk_uart6, pctl_clk_uart7, pctl_clk_uart8 };
