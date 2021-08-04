@@ -44,7 +44,7 @@ typedef struct {
 	char bca[446];    /* Bootstrap Code Area */
 	pentry_t pent[4]; /* Partition entries */
 	uint16_t magic;   /* MBR magic */
-} mbr_t;
+} __attribute__((packed)) mbr_t;
 
 
 /* Reads MBR */
