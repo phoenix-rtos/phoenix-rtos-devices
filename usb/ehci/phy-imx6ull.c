@@ -22,82 +22,65 @@
 
 #include <hcd.h>
 
-enum { hcdphy_pwd, hcdphy_pwd_set, hcdphy_pwd_clr, hcdphy_pwd_tog, hcdphy_tx, hcdphy_tx_set,
-	hcdphy_tx_clr, hcdphy_tx_tog, hcdphy_rx, hcdphy_rx_set, hcdphy_rx_clr, hcdphy_rx_tog,
-	hcdphy_ctrl, hcdphy_ctrl_set, hcdphy_ctrl_clr, hcdphy_ctrl_tog, hcdphy_status,
-	hcdphy_debug = hcdphy_status + 4, hcdphy_debug_set, hcdphy_debug_clr, hcdphy_debug_tog,
-	hcdphy_debug0_status, hcdphy_debug1 = hcdphy_debug0_status + 4, hcdphy_debug1_set,
-	hcdphy_debug1_clr, hcdphy_debug1_tog, hcdphy_version };
+enum { phy_pwd, phy_pwd_set, phy_pwd_clr, phy_pwd_tog, phy_tx, phy_tx_set,
+	phy_tx_clr, phy_tx_tog, phy_rx, phy_rx_set, phy_rx_clr, phy_rx_tog,
+	phy_ctrl, phy_ctrl_set, phy_ctrl_clr, phy_ctrl_tog, phy_status,
+	phy_debug = phy_status + 4, phy_debug_set, phy_debug_clr, phy_debug_tog,
+	phy_debug0_status, phy_debug1 = phy_debug0_status + 4, phy_debug1_set,
+	phy_debug1_clr, phy_debug1_tog, phy_version };
 
 
 /* NOTE: This should be obtained using device tree */
 static const hcd_info_t imx6ull_info[] = {
-	{ .type = "ehci",
-	  .hcdaddr = 0x02184080,
-	  .phyaddr = 0x020c9400,
-	  .clk = pctl_clk_usboh3,
-	  .irq = 128,  },
+	{
+		.type = "ehci",
+		.hcdaddr = 0x02184200,
+		.phyaddr = 0x020ca000,
+		.clk = pctl_clk_usboh3,
+		.irq = 74,
+	},
 };
 
 int hcd_getInfo(const hcd_info_t **info)
 {
-	info = imx6ull_info;
+	*info = imx6ull_info;
 
 	return sizeof(imx6ull_info) / sizeof(hcd_info_t);
 }
 
 
-void hcdphy_dumpRegisters(hcd_t *hcd, FILE *stream)
+void phy_dumpRegisters(hcd_t *hcd, FILE *stream)
 {
-	fprintf(stream, "%18s: %08x", "hcdphy_pwd", *(hcd->phybase + hcdphy_pwd));
-	fprintf(stream, "%18s: %08x\n", "hcdphy_tx", *(hcd->phybase + hcdphy_tx));
-	fprintf(stream, "%18s: %08x", "hcdphy_rx", *(hcd->phybase + hcdphy_rx));
-	fprintf(stream, "%18s: %08x\n", "hcdphy_ctrl", *(hcd->phybase + hcdphy_ctrl));
-	fprintf(stream, "%18s: %08x", "hcdphy_status", *(hcd->phybase + hcdphy_status));
-	fprintf(stream, "%18s: %08x\n", "hcdphy_debug", *(hcd->phybase + hcdphy_debug));
-	fprintf(stream, "%18s: %08x", "hcdphy_debug0_status", *(hcd->phybase + hcdphy_debug0_status));
-	fprintf(stream, "%18s: %08x\n", "hcdphy_debug1", *(hcd->phybase + hcdphy_debug1));
-	fprintf(stream, "%18s: %08x\n\n", "hcdphy_version", *(hcd->phybase + hcdphy_version));
+	fprintf(stream, "%18s: %08x", "phy_pwd", *(hcd->phybase + phy_pwd));
+	fprintf(stream, "%18s: %08x\n", "phy_tx", *(hcd->phybase + phy_tx));
+	fprintf(stream, "%18s: %08x", "phy_rx", *(hcd->phybase + phy_rx));
+	fprintf(stream, "%18s: %08x\n", "phy_ctrl", *(hcd->phybase + phy_ctrl));
+	fprintf(stream, "%18s: %08x", "phy_status", *(hcd->phybase + phy_status));
+	fprintf(stream, "%18s: %08x\n", "phy_debug", *(hcd->phybase + phy_debug));
+	fprintf(stream, "%18s: %08x", "phy_debug0_status", *(hcd->phybase + phy_debug0_status));
+	fprintf(stream, "%18s: %08x\n", "phy_debug1", *(hcd->phybase + phy_debug1));
+	fprintf(stream, "%18s: %08x\n\n", "phy_version", *(hcd->phybase + phy_version));
 }
 
 
-void hcdphy_config(hcd_t *hcd)
+void phy_config(hcd_t *hcd)
 {
-	*(hcd->phybase + hcdphy_ctrl) |= 3 << 14;
-	*(hcd->phybase + hcdphy_ctrl) |= 2;
-	*(hcd->phybase + hcdphy_ctrl) |= 1 << 11;
-}
-
-void phy_initPad(void)
-{
-	platformctl_t set_mux = {
-		.action = pctl_set,
-		.type = pctl_iomux,
-		.iomux = { .mux = pctl_mux_sd1_d1, .sion = 0, .mode = 8 },
-	};
-
-	platformctl_t set_pad = {
-		.action = pctl_set,
-		.type = pctl_iopad,
-		.iopad = { .pad = pctl_pad_sd1_d1, .hys = 0, .pus = 0, .pue = 0,
-			.pke = 0, .ode = 0, .speed = 2, .dse = 4, .sre = 0 },
-	};
-
-	platformctl(&set_mux);
-	platformctl(&set_pad);
+	*(hcd->phybase + phy_ctrl) |= 3 << 14;
+	*(hcd->phybase + phy_ctrl) |= 2;
+	*(hcd->phybase + phy_ctrl) |= 1 << 11;
 }
 
 
-void hcdphy_reset(hcd_t *hcd)
+void phy_reset(hcd_t *hcd)
 {
-	*(hcd->phybase + hcdphy_ctrl) |= (1 << 31);
-	*(hcd->phybase + hcdphy_ctrl) &= ~(1 << 30);
-	*(hcd->phybase + hcdphy_ctrl) &= ~(1 << 31);
-	*(hcd->phybase + hcdphy_pwd) = 0;
+	*(hcd->phybase + phy_ctrl) |= (1 << 31);
+	*(hcd->phybase + phy_ctrl) &= ~(1 << 30);
+	*(hcd->phybase + phy_ctrl) &= ~(1 << 31);
+	*(hcd->phybase + phy_pwd) = 0;
 }
 
 
-void hcdphy_initClock(hcd_t *hcd)
+void phy_initClock(hcd_t *hcd)
 {
 	platformctl_t ctl = (platformctl_t) {
 		.action = pctl_set,
@@ -112,7 +95,7 @@ void hcdphy_initClock(hcd_t *hcd)
 }
 
 
-void hcdphy_disableClock(hcd_t *hcd)
+void phy_disableClock(hcd_t *hcd)
 {
 	platformctl_t ctl = (platformctl_t) {
 		.action = pctl_set,
@@ -126,14 +109,24 @@ void hcdphy_disableClock(hcd_t *hcd)
 	platformctl(&ctl);
 }
 
-
-void hcdphy_init(hcd_t *hcd)
+void phy_enableHighSpeedDisconnect(hcd_t *hcd, int enable)
 {
-	hcd->phybase = mmap(NULL, 2 * _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, hcd->info->phyaddr);
-	hcd->base = mmap(NULL, 4 * _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, hcd->info->hcdaddr);
+	/* No-OP */
+}
 
-	hcdphy_initClock(hcd);
-	hcdphy_initPad(hcd);
-	hcdphy_reset(hcd);
-	hcdphy_config(hcd);
+void phy_init(hcd_t *hcd)
+{
+	off_t offs;
+
+	offs = hcd->info->phyaddr % _PAGE_SIZE;
+	hcd->phybase = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, hcd->info->phyaddr - offs);
+	hcd->phybase += (offs / sizeof(int));
+
+	offs = hcd->info->hcdaddr % _PAGE_SIZE;
+	hcd->base = mmap(NULL, 2 * _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, hcd->info->hcdaddr - offs);
+	hcd->base += (offs / sizeof(int));
+
+	phy_initClock(hcd);
+	phy_reset(hcd);
+	phy_config(hcd);
 }

@@ -112,7 +112,7 @@ static struct qtd *ehci_allocQtd(int token, size_t maxpacksz, char *buffer, size
 	qtd->errorCounter = 3;
 
 	if (buffer != NULL) {
-		qtd->offset = (uintptr_t)buffer & (EHCI_PAGE_SIZE - 1);
+		qtd->offset = (uintptr_t)va2pa(buffer) & (EHCI_PAGE_SIZE - 1);
 		qtd->page0 = va2pa(buffer) >> 12;
 		offs = min(EHCI_PAGE_SIZE - qtd->offset, *size);
 		bytes += offs;
@@ -726,7 +726,7 @@ static int ehci_init(hcd_t *hcd)
 	*(hcd->base + configflag) = 1;
 
 	beginthread(ehci_irqThread, 2, malloc(1024), 1024, hcd);
-	interrupt(112 + 16, ehci_irqHandler, hcd, ehci->irqCond, &ehci->irqHandle);
+	interrupt(hcd->info->irq, ehci_irqHandler, hcd, ehci->irqCond, &ehci->irqHandle);
 
 	return 0;
 }

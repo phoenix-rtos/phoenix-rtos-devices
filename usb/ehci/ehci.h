@@ -88,8 +88,6 @@ enum {
 	endptnaken, configflag, portsc1, otgsc = 0x69, usbmode, endptsetupstat,
 	endptprime, endptflush, endptstat, endptcomplete, endptctrl0, endptctrl1,
 	endptctrl2, endptctrl3, endptctrl4, endptctrl5, endptctrl6, endptctrl7,
-
-	otg1_ctrl = 0x100, otg2_ctrl,
 };
 
 
