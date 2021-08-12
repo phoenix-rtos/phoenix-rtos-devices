@@ -64,8 +64,8 @@ int dbbt_flash(flashdrv_dma_t *dma, dbbt_t *dbbt)
 {
 	int i, err;
 	uint32_t page_num = DBBT_START;
-	void *data = mmap(NULL, PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0);
-	void *meta = mmap(NULL, PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0);
+	void *data = mmap(NULL, PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
+	void *meta = mmap(NULL, PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
 
 	dbbt_fingerprint(dbbt);
 
@@ -88,7 +88,7 @@ int dbbt_flash(flashdrv_dma_t *dma, dbbt_t *dbbt)
 	}
 
 	munmap(data, PAGE_SIZE);
-	munmap(data, PAGE_SIZE);
+	munmap(meta, PAGE_SIZE);
 	return 0;
 }
 
@@ -138,6 +138,7 @@ void fcb_init(fcb_t *fcb)
 	fcb->checksum = bcb_checksum(((uint8_t *)fcb) + 4, sizeof(fcb_t) - 4);
 }
 
+
 int fcb_flash(flashdrv_dma_t *dma, fcb_t *fcb_ret)
 {
 	char *sbuf, *tbuf;
@@ -149,7 +150,7 @@ int fcb_flash(flashdrv_dma_t *dma, fcb_t *fcb_ret)
 	if ((sbuf = mmap(NULL, PAGE_SIZE * 2, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0)) == MAP_FAILED)
 		return 1;
 
-	if ((tbuf = mmap(NULL, PAGE_SIZE * 2, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0)) == MAP_FAILED)
+	if ((tbuf = mmap(NULL, PAGE_SIZE * 2, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0)) == MAP_FAILED)
 		return 1;
 
 	memset(sbuf, 0x0, PAGE_SIZE * 2);

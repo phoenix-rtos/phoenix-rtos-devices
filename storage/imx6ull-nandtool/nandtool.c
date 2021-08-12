@@ -307,7 +307,7 @@ int flash_write_cleanmarkers(void *arg, int start, int end)
 	else
 		dma = (flashdrv_dma_t *)arg;
 
-	metabuf = mmap(NULL, PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0);
+	metabuf = mmap(NULL, PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
 	memset(metabuf, 0xff, PAGE_SIZE);
 	memcpy(metabuf, &oob_cleanmarker, 8);
 	for (i = start; i < end; i++) {
@@ -316,6 +316,7 @@ int flash_write_cleanmarkers(void *arg, int start, int end)
 
 	return ret;
 }
+
 
 void set_nandboot(char *primary, char *secondary, char *rootfs, size_t rootfssz, int rwfs_erase)
 {
