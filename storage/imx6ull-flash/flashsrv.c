@@ -797,8 +797,8 @@ int main(int argc, char **argv)
 	flashsrv_partition(0, flashsrv_common.info.size / flashsrv_common.info.erasesz);
 
 	flashsrv_common.dma = flashdrv_dmanew();
-	flashsrv_common.databuf = mmap(NULL, 2 * flashsrv_common.info.writesz, PROT_READ | PROT_WRITE, MAP_UNCACHED, NULL, -1);
-	flashsrv_common.metabuf = mmap(NULL, flashsrv_common.info.writesz, PROT_READ | PROT_WRITE, MAP_UNCACHED, NULL, -1);
+	flashsrv_common.databuf = mmap(NULL, 2 * flashsrv_common.info.writesz, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
+	flashsrv_common.metabuf = mmap(NULL, flashsrv_common.info.writesz, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
 
 	for (i = 0; i < sizeof(flashsrv_common.poolStacks) / sizeof(flashsrv_common.poolStacks[0]); ++i)
 		beginthread(flashsrv_poolThread, 4, flashsrv_common.poolStacks[i], sizeof(flashsrv_common.poolStacks[i]), NULL);

@@ -1015,7 +1015,7 @@ void flashdrv_init(void)
 	flashdrv_common.gpmi = mmap(NULL, 2 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x1806000);
 	flashdrv_common.bch  = mmap(NULL, 4 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x1808000);
 	flashdrv_common.mux  = mmap(NULL, 4 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x20e0000);
-	flashdrv_common.uncached_buf = mmap(NULL, 2 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0);
+	flashdrv_common.uncached_buf = mmap(NULL, 2 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
 
 	/* 16 bytes of user metadada + ECC16 * bits per parity level (13) / 8 = 26 bytes for ECC  */
 	flashdrv_common.rawmetasz = 16 + 26;

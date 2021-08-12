@@ -119,7 +119,7 @@ void test_write_fcb(void)
 	uint8_t *data;
 	int err;
 
-	data = mmap(NULL, _PAGE_SIZE * 2, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0);
+	data = mmap(NULL, _PAGE_SIZE * 2, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
 	if (data == MAP_FAILED)
 		FAIL("failed to mmap data buffer\n");
 
@@ -155,7 +155,7 @@ void test_meta(void)
 	const unsigned int blockno = 0;
 	uint32_t paddr = blockno * 64;
 
-	data = mmap(NULL, _PAGE_SIZE * 2, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0);
+	data = mmap(NULL, _PAGE_SIZE * 2, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
 	meta = data + _PAGE_SIZE;
 	aux = (flashdrv_meta_t *)meta;
 
@@ -247,7 +247,7 @@ void test_badblocks(void)
 	int err;
 	int total_read_fails = 0, total_bad_blocks = 0;
 
-	data = mmap(NULL, _PAGE_SIZE * 2, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0);
+	data = mmap(NULL, _PAGE_SIZE * 2, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
 	if (data == MAP_FAILED)
 		FAIL("failed to mmap data buffer\n");
 
@@ -322,8 +322,8 @@ void test_stress_one_block(void)
 
 	dma = flashdrv_dmanew();
 
-	data = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0);
-	m = meta = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0);
+	data = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
+	m = meta = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
 
 	for (int i = 0; i < 0x1000; ++i) {
 		((char *)data)[i] = (char)i;
@@ -532,8 +532,8 @@ void test_write_read_erase(void)
 	uint8_t *data, *meta;
 	unsigned int blockno;
 
-	data = mmap(NULL, _PAGE_SIZE * 2, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0);
-	meta = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0);
+	data = mmap(NULL, _PAGE_SIZE * 2, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
+	meta = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
 	if (data == MAP_FAILED || meta == MAP_FAILED)
 		FAIL("failed to mmap data buffers\n");
 
@@ -626,6 +626,7 @@ void test_3(void)
 
 	printf("done\n");
 }
+
 
 int main(int argc, char **argv)
 {
