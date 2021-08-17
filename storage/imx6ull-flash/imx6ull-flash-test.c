@@ -32,6 +32,7 @@ static flashdrv_info_t flashinfo;
 
 #define FLASHDRV_PAGESZ  (flashinfo.writesz + flashinfo.metasz)
 #define TOTAL_BLOCKS_CNT (flashinfo.size / flashinfo.erasesz)
+#define BLOCK_PAGES_CNT  (flashinfo.erasesz / flashinfo.writesz)
 
 #define FAIL(...) \
 	do { \
@@ -109,6 +110,198 @@ void print_block(const uint8_t *data, unsigned int len)
 
 		printf("\n");
 	}
+}
+
+
+/* Flips n bits in a raw block (assume n <= end - start) */
+int flip_bits(unsigned int n, unsigned int nblock, unsigned int start, unsigned int end, int check_ecc)
+{
+	unsigned int i, j, mapped_cnt, offs, paddr = nblock * BLOCK_PAGES_CNT;
+	flashdrv_dma_t *dma;
+	flashdrv_meta_t *aux;
+	uint8_t **data;
+	int err = EOK;
+
+	if ((end > BLOCK_PAGES_CNT * FLASHDRV_PAGESZ) || (end <= start) || (n > end - start))
+		return -EINVAL;
+
+	if (!n)
+		return EOK;
+
+	if ((dma = flashdrv_dmanew()) == MAP_FAILED) {
+		err = -ENOMEM;
+		printf("dmanew() failed, err: %d\n", err);
+		return err;
+	}
+
+	if ((data = malloc(BLOCK_PAGES_CNT * sizeof(uint8_t *))) == NULL) {
+		err = -ENOMEM;
+		printf("malloc() failed, err: %d\n", err);
+		flashdrv_dmadestroy(dma);
+		return err;
+	}
+
+	do {
+		/* Read raw block data into memory and flip bits */
+		for (mapped_cnt = 0; mapped_cnt < BLOCK_PAGES_CNT; mapped_cnt++) {
+			if ((data[mapped_cnt] = mmap(NULL, (FLASHDRV_PAGESZ + _PAGE_SIZE - 1) & ~(_PAGE_SIZE - 1), PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0)) == MAP_FAILED) {
+				err = -ENOMEM;
+				printf("mmap() failed: %d\n", err);
+				break;
+			}
+
+			if ((err = flashdrv_readraw(dma, paddr + mapped_cnt, data[mapped_cnt], FLASHDRV_PAGESZ)) < 0) {
+				printf("readraw() failed: %d\n", err);
+				break;
+			}
+
+			/* Page start offset within the block */
+			offs = mapped_cnt * FLASHDRV_PAGESZ;
+
+			/* Flip bits (one bit flip per byte) */
+			while (start < end) {
+				/* Skip pages outside the bit flip range */
+				if ((start < offs) || (start >= offs + FLASHDRV_PAGESZ))
+					break;
+
+				data[mapped_cnt][start - offs] ^= 1 << rand() % 8;
+
+				/* Keep bytes with bit flips evenly distributed */
+				start += (end - start) / n--;
+			}
+		}
+
+		if (err)
+			break;
+
+		/* Erase the block */
+		if ((err = flashdrv_erase(dma, paddr)) < 0) {
+			printf("erase() failed: %d\n", err);
+			break;
+		}
+
+		/* Write back raw block data with flipped bits */
+		for (i = 0; i < BLOCK_PAGES_CNT; i++) {
+			if ((err = flashdrv_writeraw(dma, paddr + i, data[i], FLASHDRV_PAGESZ)) < 0) {
+				printf("writeraw() failed: %d\n", err);
+				break;
+			}
+
+			/* Print ECC errors info */
+			if (check_ecc) {
+				aux = (flashdrv_meta_t *)(data[i] + flashinfo.writesz);
+				if ((err = flashdrv_read(dma, paddr + i, data[i], aux)) < 0) {
+					printf("read() failed: %d\n", err);
+					break;
+				}
+
+				for (j = 0; j < sizeof(aux->errors); j++) {
+					if (aux->errors[j] && (aux->errors[j] != 0xff)) {
+						printf("[%4u]: ", paddr + i);
+
+						if (aux->errors[j] == 0xfe)
+							printf("uncorrectable data in chunk %u\n", j);
+						else
+							printf("%u corrections in chunk %u\n", aux->errors[j], j);
+					}
+				}
+			}
+		}
+	} while (0);
+
+	for (i = 0; i < mapped_cnt; i++)
+		munmap(data[i], (FLASHDRV_PAGESZ + _PAGE_SIZE - 1) & ~(_PAGE_SIZE - 1));
+	free(data);
+	flashdrv_dmadestroy(dma);
+
+	return err;
+}
+
+
+/* Breaks ECC correction / sets BBM in FCB, DBBT, FW1 and FW2 */
+/* (after running the test the BootROM shouldn't be able to boot from NAND flash) */
+void test_bootrom(void)
+{
+	const unsigned int rawmetasz = 16 + 26;  /* 16B META + 26B ECC16 */
+	const unsigned int rawdatasz = 512 + 22; /* 512B DATA + 22.75B ECC14 (skipping 6 bits for byte alignment) */
+	flashdrv_dma_t *dma;
+
+	if ((dma = flashdrv_dmanew()) == MAP_FAILED) {
+		printf("dmanew() failed, err: %d\n", -ENOMEM);
+		return;
+	}
+
+	do {
+		/* FCB structure encoded with BCH40 (as expected by the BootROM) */
+		/* [32B]  8x[128B + 65B]   [536B] */
+		/* [META] 8x[DATA + ECC40] [SPARE] */
+
+		/* Break FCB0 first data chunk (ECC should correct up to 40 bit flips) */
+		/* Passing check_ecc = 0 since our ECC would always fail due to different configuration */
+		printf("Breaking FCB0 ECC...\n");
+		if (flip_bits(41, 0, 32, 32 + 128 + 65, 0) < 0) {
+			printf("failed to break FCB0\n");
+			break;
+		}
+
+#if 0
+		/* Set FCB0 BBM */
+		if (flashdrv_markbad(dma, 0 * 64) < 0) {
+			printf("failed to set FCB0 BBM\n");
+			break;
+		}
+#endif
+
+		/* Default page structure (only FCB is read with different configuration by the BootROM) */
+		/* [16B + 26B]    8x[512B + 22.75B] [32B] */
+		/* [META + ECC16] 8x[DATA + ECC14]  [SPARE] */
+
+		/* Break DBBT0 first data chunk (ECC should correct up to 14 bit flips) */
+		printf("Breaking DBBT0 ECC...\n");
+		if (flip_bits(15, 4, rawmetasz, rawmetasz + rawdatasz, 1) < 0) {
+			printf("failed to break DBBT0\n");
+			break;
+		}
+
+#if 0
+		/* Set DBBT0 BBM */
+		if (flashdrv_markbad(dma, 4 * 64) < 0) {
+			printf("failed to set DBBT0 BBM\n");
+			break;
+		}
+#endif
+
+		/* Break FW1 first data chunk (ECC should correct up to 14 bit flips) */
+		printf("Breaking FW1 ECC...\n");
+		if (flip_bits(15, 8, rawmetasz, rawmetasz + rawdatasz, 1) < 0) {
+			printf("failed to break FW1\n");
+			break;
+		}
+
+#if 0
+		/* Set FW1 BBM */
+		if (flashdrv_markbad(dma, 8 * 64) < 0) {
+			printf("failed to set FW1 BBM\n");
+			break;
+		}
+#endif
+		printf("Breaking FW2 ECC...\n");
+		/* Break FW2 first data chunk (ECC should correct up to 14 bit flips) */
+		if (flip_bits(15, 24, rawmetasz, rawmetasz + rawdatasz, 1) < 0) {
+			printf("failed to break FW2\n");
+			break;
+		}
+
+#if 0
+		/* Set FW2 BBM */
+		if (flashdrv_markbad(dma, 24 * 64) < 0) {
+			printf("failed to set FW2 BBM\n");
+			break;
+		}
+#endif
+	} while (0);
+
+	flashdrv_dmadestroy(dma);
 }
 
 
@@ -638,14 +831,15 @@ int main(int argc, char **argv)
 	test_meta();
 	//test_write_fcb();
 	//test_badblocks();
-//	test_write_read_erase();
-//	test_stress_one_block();
-//	test_flashsrv("/dev/flash0");
-//	test_flashsrv("/dev/flash1");
-//	test_flashsrv( "/dev/flash2");
-//	test_flashsrv( "/dev/flash3");
-//	test_flashsrv( "/dev/flashsrv");
-//	test_3();
+	//test_write_read_erase();
+	//test_stress_one_block();
+	//test_flashsrv("/dev/flash0");
+	//test_flashsrv("/dev/flash1");
+	//test_flashsrv( "/dev/flash2");
+	//test_flashsrv( "/dev/flash3");
+	//test_flashsrv( "/dev/flashsrv");
+	//test_3();
+	//test_bootrom();
 	printf("%s: tests finished\n", argv[0]);
 	usleep(3 * 1000 * 1000);
 	reboot(PHOENIX_REBOOT_MAGIC);
