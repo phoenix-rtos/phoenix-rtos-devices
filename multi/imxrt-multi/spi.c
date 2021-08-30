@@ -799,7 +799,7 @@ int spi_init(void)
 			continue;
 
 #ifdef TARGET_IMXRT1170
-		if (common_setClock(spiInfo[spi].clk, 0, 0, 0, 0, 1) < 0)
+		if (common_setClock(spiInfo[spi].clk, -1, -1, -1, -1, 1) < 0)
 #else
 		if (common_setClock(spiInfo[spi].clk, clk_state_run) < 0)
 #endif

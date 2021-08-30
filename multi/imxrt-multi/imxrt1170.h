@@ -308,16 +308,32 @@
 
 static inline int common_setClock(int clock, int div, int mux, int mfd, int mfn, int state)
 {
+	int res;
 	platformctl_t pctl;
 
-	pctl.action = pctl_set;
+	pctl.action = pctl_get;
 	pctl.type = pctl_devclock;
 	pctl.devclock.dev = clock;
-	pctl.devclock.div = div;
-	pctl.devclock.mfd = mfd;
-	pctl.devclock.mfn = mfn;
-	pctl.devclock.mux = mux;
-	pctl.devclock.state = state;
+
+	if ((res = platformctl(&pctl)) != 0)
+		return res;
+
+	pctl.action = pctl_set;
+
+	if (div >= 0)
+		pctl.devclock.div = div;
+
+	if (mux >= 0)
+		pctl.devclock.mux = mux;
+
+	if (mfd >= 0)
+		pctl.devclock.mfd = mfd;
+
+	if (mfn >= 0)
+		pctl.devclock.mfn = mfn;
+
+	if (state >= 0)
+		pctl.devclock.state = state;
 
 	return platformctl(&pctl);
 }
@@ -340,6 +356,10 @@ static inline int common_setMux(int mux, char sion, char mode)
 static inline int common_setPad(int pad, char hys, char pus, char pue, char pke, char ode, char speed, char dse, char sre)
 {
 	platformctl_t pctl;
+
+	(void)hys;
+	(void)pke;
+	(void)speed;
 
 	pctl.action = pctl_set;
 	pctl.type = pctl_iopad;
