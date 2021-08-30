@@ -135,9 +135,15 @@ int edma_init(int (*error_isr)(unsigned int n, void *arg))
 	int res;
 	platformctl_t pctl;
 
-	pctl.action = pctl_set;
+	pctl.action = pctl_get;
 	pctl.type = pctl_devclock;
 	pctl.devclock.dev = EDMA_CLK;
+
+	if ((res = platformctl(&pctl)) != 0)
+		return res;
+
+	pctl.action = pctl_set;
+
 #if defined(TARGET_IMXRT1060)
 	pctl.devclock.state = clk_state_run;
 #elif defined(TARGET_IMXRT1170)
