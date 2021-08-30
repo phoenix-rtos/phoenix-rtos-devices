@@ -424,7 +424,7 @@ static int ehci_transferStatus(hcd_t *hcd, usb_transfer_t *t)
 
 	t->finished = finished;
 	t->error = error;
-	t->transfered = t->size - qtds->prev->qtd->bytesToTransfer;
+	t->transferred = t->size - qtds->prev->qtd->bytesToTransfer;
 
 	return finished;
 }

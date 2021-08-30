@@ -242,11 +242,11 @@ int ehci_roothubReq(usb_transfer_t *t)
 	t->finished = 1;
 	if (ret != 0) {
 		t->error = 1;
-		t->transfered = 0;
+		t->transferred = 0;
 	}
 	else {
 		t->error = 0;
-		t->transfered = t->size;
+		t->transferred = t->size;
 	}
 
 	return 0;
