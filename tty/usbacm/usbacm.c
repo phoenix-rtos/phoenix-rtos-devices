@@ -64,7 +64,7 @@ static const usb_device_id_t filters[] = {
 	/* Huawei E3372 - PPP mode */
 	{ 0x12d1, 0x1001, USBDRV_ANY, USBDRV_ANY, USBDRV_ANY },
 	/* Telit FN980 */
-	{ 0x1bC7, 0x0036, USBDRV_ANY, USBDRV_ANY, USBDRV_ANY },
+	{ 0x1bC7, 0x1050, 0xFF, 0, 0 },
 	/* USB CDC ACM class */
 	{ USBDRV_ANY, USBDRV_ANY, USB_CLASS_CDC, USB_SUBCLASS_ACM, USBDRV_ANY },
 };
@@ -89,28 +89,14 @@ static const usb_modeswitch_t modeswitch[] = {
 
 static int usbacm_init(usbacm_dev_t *dev)
 {
-	usb_cdc_line_coding_t line_coding;
 	usb_setup_packet_t setup;
 
-	line_coding.dwDTERate = 0xc1200;
-	line_coding.bCharFormat = 0;
-	line_coding.bParityType = 0;
-	line_coding.bDataBits = 8;
-
 	setup.bmRequestType = REQUEST_DIR_HOST2DEV | REQUEST_TYPE_CLASS | REQUEST_RECIPIENT_INTERFACE;
-	setup.bRequest = USB_CDC_REQ_SET_LINE_CODING;
-	setup.wIndex = dev->instance.interface;
-	setup.wValue = 0;
-	setup.wLength = sizeof(line_coding);
-
-	if (usb_transferControl(dev->pipeCtrl, &setup, &line_coding, sizeof(line_coding), usb_dir_out) < 0) {
-		fprintf(stderr, "usbacm: Control transfer failed\n");
-		return -EIO;
-	}
-
 	setup.bRequest = USB_CDC_REQ_SET_CONTROL_LINE_STATE;
+	setup.wIndex = dev->instance.interface;
 	setup.wValue = 3;
 	setup.wLength = 0;
+
 	if (usb_transferControl(dev->pipeCtrl, &setup, NULL, 0, usb_dir_out) < 0) {
 		fprintf(stderr, "usbacm: Control transfer failed\n");
 		return -EIO;
