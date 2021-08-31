@@ -111,7 +111,10 @@ void phy_disableClock(hcd_t *hcd)
 
 void phy_enableHighSpeedDisconnect(hcd_t *hcd, int enable)
 {
-	/* No-OP */
+	if (enable)
+		*(hcd->phybase + phy_ctrl) |= 0x2;
+	else
+		*(hcd->phybase + phy_ctrl) &= ~0x2;
 }
 
 void phy_init(hcd_t *hcd)
