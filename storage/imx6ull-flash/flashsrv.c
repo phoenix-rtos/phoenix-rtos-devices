@@ -275,7 +275,7 @@ static int flashsrv_partoff(id_t id, int raw, size_t start, size_t size, size_t 
 		return -ENOENT;
 
 	TRACE("Partition: size %u, start %u (in EB)", p->size, p->start);
-	if ((start + size) > (p->size * erase_block_size))
+	if (start + size > (p->start + p->size) * erase_block_size)
 		return -EINVAL;
 
 	*partoff = p->start * erase_block_size;
