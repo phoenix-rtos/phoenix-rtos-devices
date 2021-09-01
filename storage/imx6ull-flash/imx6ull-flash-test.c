@@ -650,6 +650,95 @@ void test_badblocks(void)
 }
 
 
+/* Continuously reads blocks and checks for appearing bad bits (reads few different blocks to avoid cache usage) */
+void test_read_disturb(void)
+{
+	const unsigned int blocks[] = { rand() % TOTAL_BLOCKS_CNT, rand() % TOTAL_BLOCKS_CNT }; /* Tested blocks */
+	const unsigned int nblocks = sizeof(blocks) / sizeof(blocks[0]);                        /* Number of tested blocks */
+	flashdrv_dma_t *dma;
+	flashdrv_meta_t *aux;
+	uint8_t *data, errors[nblocks][BLOCK_PAGES_CNT][sizeof(aux->errors)];
+	unsigned int i, j, k;
+	int err, done;
+
+	if ((dma = flashdrv_dmanew()) == MAP_FAILED) {
+		printf("dmanew() failed, err: %d\n", -ENOMEM);
+		return;
+	}
+
+	if ((data = mmap(NULL, pagemapsz, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0)) == MAP_FAILED) {
+		printf("mmap() failed: %d\n", -ENOMEM);
+		flashdrv_dmadestroy(dma);
+		return;
+	}
+	aux = (flashdrv_meta_t *)(data + _PAGE_SIZE);
+	memset(errors, 0, nblocks * BLOCK_PAGES_CNT * sizeof(aux->errors));
+
+	/* Erase the blocks */
+	for (i = 0; i < nblocks; i++) {
+		if ((err = flashdrv_erase(dma, blocks[i] * BLOCK_PAGES_CNT)) < 0) {
+			printf("erase() failed: %d\n", err);
+			munmap(data, pagemapsz);
+			flashdrv_dmadestroy(dma);
+			return;
+		}
+	}
+
+	/* Program the blocks */
+	for (i = 0; i < flashinfo.writesz; i++)
+		data[i] = i;
+	memset(aux, 0xff, flashinfo.metasz);
+
+	for (i = 0; i < nblocks; i++) {
+		for (j = 0; j < BLOCK_PAGES_CNT; j++) {
+			if ((err = flashdrv_write(dma, blocks[i] * BLOCK_PAGES_CNT + j, data, (char *)aux)) < 0) {
+				printf("write() failed: %d\n", err);
+				munmap(data, pagemapsz);
+				flashdrv_dmadestroy(dma);
+				return;
+			}
+		}
+	}
+
+	err = done = 0;
+	for (i = 0; (err >= 0) && !done; i++) {
+		printf("\rRead block %u time(s)...", i / nblocks + 1);
+
+		/* Read block pages and check for errors */
+		for (j = 0; (j < BLOCK_PAGES_CNT) && !done; j++) {
+			if ((err = flashdrv_read(dma, blocks[i % nblocks] * BLOCK_PAGES_CNT + j, data, aux)) < 0) {
+				printf("\rread() failed: %d\n", err);
+				break;
+			}
+
+			for (k = 0; k < sizeof(aux->errors); k++) {
+				switch (aux->errors[k]) {
+					case flash_erased:
+						break;
+
+					case flash_uncorrectable:
+						done = 1;
+						break;
+
+					default:
+						if (errors[i % nblocks][j][k] != aux->errors[k]) {
+							printf("\r[%4u]: %u corrections in chunk %u after %u block reads\n", blocks[i % nblocks] * BLOCK_PAGES_CNT + j, aux->errors[k], k, i / nblocks + 1);
+							errors[i % nblocks][j][k] = aux->errors[k];
+						}
+				}
+			}
+		}
+	}
+	printf("\n");
+
+	if (done)
+		printf("[%4u]: uncorrectable number of errors appeared after %u block reads\n", blocks[i % nblocks] * BLOCK_PAGES_CNT + j, i / nblocks + 1);
+
+	munmap(data, pagemapsz);
+	flashdrv_dmadestroy(dma);
+}
+
+
 /* continuously erase/write/read single block */
 void test_stress_one_block(void)
 {
@@ -994,6 +1083,7 @@ int main(int argc, char **argv)
 	//test_flashsrv( "/dev/flashsrv");
 	//test_3();
 	//test_ecc();
+	//test_read_disturb();
 	//test_bootrom();
 	printf("%s: tests finished\n", argv[0]);
 	usleep(3 * 1000 * 1000);
