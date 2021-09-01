@@ -31,9 +31,6 @@
 
 
 typedef struct usbacm_dev {
-	char rxbuf[1024] __attribute__ ((aligned(32)));
-	char txbuf[1024] __attribute__ ((aligned(32)));
-
 	struct usbacm_dev *prev, *next;
 	char path[32];
 	usb_devinfo_t instance;
@@ -44,9 +41,6 @@ typedef struct usbacm_dev {
 	int id;
 	unsigned port;
 	oid_t oid;
-	handle_t readLock;
-	handle_t writeLock;
-	int valid;
 } usbacm_dev_t;
 
 
@@ -108,23 +102,12 @@ static int usbacm_init(usbacm_dev_t *dev)
 
 static int usbacm_read(usbacm_dev_t *dev, char *data, size_t len)
 {
-	size_t toread = 0;
 	int ret = 0;
 
-	/* NOTE: rxbuf and txbuf are needed, because the USB stack requires buffer
-	 * to reside in an uncached memory. For optimal utilization they should be
-	 * 32-byte alligned */
-	toread = min(sizeof(dev->rxbuf), len);
-
-	mutexLock(dev->readLock);
-	if ((ret = usb_transferBulk(dev->pipeBulkIN, dev->rxbuf, toread, usb_dir_in)) >= 0) {
-		memcpy(data, dev->rxbuf, ret);
-	}
-	else {
+	if ((ret = usb_transferBulk(dev->pipeBulkIN, data, len, usb_dir_in)) < 0) {
 		fprintf(stderr, "usbacm: read failed\n");
 		ret = -EIO;
 	}
-	mutexUnlock(dev->readLock);
 
 	return ret;
 }
@@ -132,21 +115,12 @@ static int usbacm_read(usbacm_dev_t *dev, char *data, size_t len)
 
 static int usbacm_write(usbacm_dev_t *dev, char *data, size_t len)
 {
-	size_t written = 0, tmp;
 	int ret = 0;
 
-	mutexLock(dev->writeLock);
-	while (written < len) {
-		tmp = min(sizeof(dev->txbuf), len);
-		memcpy(dev->txbuf, data + written, tmp);
-		if ((ret = usb_transferBulk(dev->pipeBulkOUT, dev->txbuf, tmp, usb_dir_out)) < 0) {
-			fprintf(stderr, "usbacm: write failed\n");
-			ret = -EIO;
-			break;
-		}
-		written += tmp;
+	if ((ret = usb_transferBulk(dev->pipeBulkOUT, data, len, usb_dir_out)) < 0) {
+		fprintf(stderr, "usbacm: write failed\n");
+		ret = -EIO;
 	}
-	mutexUnlock(dev->writeLock);
 
 	return ret;
 }
@@ -158,7 +132,7 @@ static usbacm_dev_t *usbacm_devFind(int id)
 
 	if (tmp != NULL) {
 		do {
-			if (tmp->id == id - 1 && tmp->valid)
+			if (tmp->id == id - 1)
 				return tmp;
 			tmp = tmp->next;
 		} while (tmp != usbacm_common.devices);
@@ -170,46 +144,22 @@ static usbacm_dev_t *usbacm_devFind(int id)
 
 static usbacm_dev_t *usbacm_devAlloc(void)
 {
-	usbacm_dev_t *dev, *tmp;
+	usbacm_dev_t *dev;
 
-	/* Try to find a free device entry, otherwise allocate it */
-	dev = NULL;
-	tmp = usbacm_common.devices;
-	if (tmp != NULL) {
-		do {
-			if (!tmp->valid) {
-				dev = tmp;
-				break;
-			}
-		} while ((tmp = tmp->next) != usbacm_common.devices);
+
+	if ((dev = malloc(sizeof(usbacm_dev_t))) == NULL) {
+		fprintf(stderr, "usbacm: Not enough memory\n");
+		return NULL;
 	}
 
-	if (dev == NULL) {
-		if ((dev = malloc(sizeof(usbacm_dev_t))) == NULL) {
-			fprintf(stderr, "usbacm: Not enough memory\n");
-			return NULL;
-		}
+	/* Get next device number */
+	if (usbacm_common.devices == NULL)
+		dev->id = 0;
+	else
+		dev->id = usbacm_common.devices->prev->id + 1;
 
-		/* Get next device number */
-		if (usbacm_common.devices == NULL)
-			dev->id = 0;
-		else
-			dev->id = usbacm_common.devices->prev->id + 1;
-
-		if (mutexCreate(&dev->readLock)) {
-			free(dev);
-			return NULL;
-		}
-
-		if (mutexCreate(&dev->writeLock)) {
-			free(dev);
-			return NULL;
-		}
-
-		snprintf(dev->path, sizeof(dev->path), "/dev/usbacm%d", dev->id);
-		dev->valid = 0;
-		LIST_ADD(&usbacm_common.devices, dev);
-	}
+	snprintf(dev->path, sizeof(dev->path), "/dev/usbacm%d", dev->id);
+	LIST_ADD(&usbacm_common.devices, dev);
 
 	return dev;
 }
@@ -315,7 +265,6 @@ static int usbacm_handleInsertion(usb_devinfo_t *insertion)
 		return -EINVAL;
 	}
 
-	dev->valid = 1;
 	fprintf(stderr, "usbacm: New device: %s\n", dev->path);
 
 	return 0;
@@ -324,19 +273,23 @@ static int usbacm_handleInsertion(usb_devinfo_t *insertion)
 
 static int usbacm_handleDeletion(usb_deletion_t *del)
 {
-	usbacm_dev_t *dev = usbacm_common.devices;
+	usbacm_dev_t *next, *dev = usbacm_common.devices;
 
 	if (dev == NULL)
 		return 0;
 
 	do {
-		if (dev->valid && dev->instance.bus == del->bus && dev->instance.dev == del->dev &&
+		next = dev->next;
+		if (dev->instance.bus == del->bus && dev->instance.dev == del->dev &&
 		    dev->instance.interface == del->interface) {
-			dev->valid = 0;
 			remove(dev->path);
+			LIST_REMOVE(&usbacm_common.devices, dev);
 			fprintf(stderr, "usbacm: Device removed: %s\n", dev->path);
+			free(dev);
+			if (dev == next)
+				break;
 		}
-		dev = dev->next;
+		dev = next;
 	} while (dev != usbacm_common.devices);
 
 	return 0;

@@ -33,7 +33,6 @@
 #include <hcd.h>
 
 #include "ehci.h"
-#include "ehci-mem.h"
 
 #define EHCI_PERIODIC_SIZE 128
 
@@ -100,7 +99,7 @@ static struct qtd *ehci_allocQtd(int token, size_t maxpacksz, char *buffer, size
 	size_t bytes = 0;
 	int i, offs;
 
-	if ((qtd = ehci_alloc()) == NULL)
+	if ((qtd = usb_alloc(sizeof(struct qtd))) == NULL)
 		return NULL;
 
 	qtd->dt = datax;
@@ -141,7 +140,7 @@ static struct qh *ehci_allocQh(struct qh_node *node, usb_endpoint_t *ep)
 {
 	struct qh *qh;
 
-	if ((qh = ehci_alloc()) == NULL)
+	if ((qh = usb_alloc(sizeof(struct qh))) == NULL)
 		return NULL;
 
 	qh->horizontal.terminate = 1;
@@ -314,7 +313,7 @@ static void ehci_qtdsFree(struct qtd_node **head)
 
 	while ((q = *head) != NULL) {
 		LIST_REMOVE(head, q);
-		ehci_free(q->qtd);
+		usb_free(q->qtd, sizeof(struct qtd));
 		free(q);
 	}
 }
@@ -600,7 +599,7 @@ static void ehci_epDestroy(hcd_t *hcd, usb_endpoint_t *ep)
 		mutexUnlock(ehci->periodicLock);
 	}
 
-	ehci_free(qh->qh);
+	usb_free(qh->qh, sizeof(struct qh));
 	free(qh);
 }
 
@@ -645,8 +644,7 @@ static int ehci_init(hcd_t *hcd)
 		return -ENOMEM;
 	}
 
-	/* TODO: allocate less memory */
-	if ((ehci->periodicList = ehci_allocPage()) == NULL) {
+	if ((ehci->periodicList = usb_allocAligned(EHCI_PERIODIC_SIZE * sizeof(link_pointer_t), 4096)) == NULL) {
 		fprintf(stderr, "ehci: Out of memory!\n");
 		free(ehci);
 		return -ENOMEM;
@@ -654,7 +652,7 @@ static int ehci_init(hcd_t *hcd)
 
 	if ((ehci->periodicNodes = calloc(EHCI_PERIODIC_SIZE, sizeof(struct qh_node *))) == NULL) {
 		fprintf(stderr, "ehci: Out of memory!\n");
-		ehci_freePage(ehci->periodicList);
+		usb_freeAligned(ehci->periodicList, EHCI_PERIODIC_SIZE * sizeof(link_pointer_t));
 		free(ehci);
 		return -ENOMEM;
 	}
@@ -666,7 +664,7 @@ static int ehci_init(hcd_t *hcd)
 
 	if (condCreate(&ehci->irqCond) < 0) {
 		fprintf(stderr, "ehci: Out of memory!\n");
-		ehci_freePage(ehci->periodicList);
+		usb_freeAligned(ehci->periodicList, EHCI_PERIODIC_SIZE * sizeof(link_pointer_t));
 		free(ehci->periodicNodes);
 		free(ehci);
 		return -ENOMEM;
@@ -674,7 +672,7 @@ static int ehci_init(hcd_t *hcd)
 
 	if (mutexCreate(&ehci->irqLock) < 0) {
 		fprintf(stderr, "ehci: Out of memory!\n");
-		ehci_freePage(ehci->periodicList);
+		usb_freeAligned(ehci->periodicList, EHCI_PERIODIC_SIZE * sizeof(link_pointer_t));
 		resourceDestroy(ehci->irqCond);
 		free(ehci->periodicNodes);
 		free(ehci);
@@ -683,7 +681,7 @@ static int ehci_init(hcd_t *hcd)
 
 	if (mutexCreate(&ehci->asyncLock) < 0) {
 		fprintf(stderr, "ehci: Out of memory!\n");
-		ehci_freePage(ehci->periodicList);
+		usb_freeAligned(ehci->periodicList, EHCI_PERIODIC_SIZE * sizeof(link_pointer_t));
 		resourceDestroy(ehci->irqCond);
 		resourceDestroy(ehci->irqLock);
 		free(ehci->periodicNodes);
@@ -693,7 +691,7 @@ static int ehci_init(hcd_t *hcd)
 
 	if (mutexCreate(&ehci->periodicLock) < 0) {
 		fprintf(stderr, "ehci: Out of memory!\n");
-		ehci_freePage(ehci->periodicList);
+		usb_freeAligned(ehci->periodicList, EHCI_PERIODIC_SIZE * sizeof(link_pointer_t));
 		resourceDestroy(ehci->irqCond);
 		resourceDestroy(ehci->irqLock);
 		resourceDestroy(ehci->asyncLock);
