@@ -236,7 +236,7 @@ void usb_serialDisconnect(usb_dev_t* dev)
 }
 
 
-static usb_driver_t serialDriver = {
+static usb_drv_t serialDriver = {
 	.probe = usb_serialProbe,
 	.disconnect = usb_serialDisconnect,
 };

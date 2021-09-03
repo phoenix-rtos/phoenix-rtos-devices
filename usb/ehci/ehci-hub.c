@@ -23,8 +23,6 @@
 #include "ehci.h"
 
 
-void phy_enableHighSpeedDisconnect(hcd_t *hcd, int enable);
-
 static void ehci_resetPort(hcd_t *hcd, int port)
 {
 	ehci_t *ehci = (ehci_t *)hcd->priv;
@@ -219,7 +217,7 @@ uint32_t ehci_getHubStatus(usb_dev_t *hub)
 
 int ehci_roothubReq(usb_transfer_t *t)
 {
-	usb_dev_t *hub = t->ep->device;
+	usb_dev_t *hub = t->pipe->dev;
 	usb_setup_packet_t *setup = t->setup;
 	int ret = 0;
 

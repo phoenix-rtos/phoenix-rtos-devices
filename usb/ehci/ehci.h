@@ -248,8 +248,14 @@ typedef struct ehci {
 
 void phy_init(hcd_t *hcd);
 
+
+void phy_enableHighSpeedDisconnect(hcd_t *hcd, int enable);
+
+
 int ehci_roothubReq(usb_transfer_t *t);
 
+
 uint32_t ehci_getHubStatus(usb_dev_t *hub);
+
 
 #endif /* _USB_EHCI_H_ */
