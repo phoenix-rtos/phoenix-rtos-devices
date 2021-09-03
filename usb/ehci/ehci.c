@@ -451,7 +451,7 @@ static void ehci_updateTransfersStatus(hcd_t *hcd, usb_dev_t *dev)
 			ehci_qtdsFree(&qtd);
 			t->hcdpriv = NULL;
 
-			t->handler(t);
+			usb_transferFinished(t);
 			if (n != t)
 				cont = 1;
 		}
