@@ -66,3 +66,27 @@ read data:
 ## Note
 
 Input/output multiplexers and physical pad control is performed independently by kernel's platformctl interface and should be performed by user prior to usage of GPIO driver.
+
+
+## Text write mode
+
+The `dir` and `port` files support also text write mode for easier usage from shell scripts.
+
+The syntax is `[+/-][pin]`, eg `+28`, `-7`, where:
+ - `+` means _value high_ for `port` and _output_ for `dir`
+ - `-` means _value low_ for `port` and _input_ for `dir`
+ - `pin` is the numeric pin value in <0, 31> range
+
+This interface allows changing only one pin value / direction at a time (state of other pins won't be changed).
+
+Please note that the byte length of the text message can't be divisible by 4 to avoid confusing it with the binary interface.
+
+
+### Example
+
+```bash
+# set direction to output
+echo -n "+9" > /dev/gpio2/dir
+# set output value to LOW
+echo -n "-9" > /dev/gpio2/port
+```

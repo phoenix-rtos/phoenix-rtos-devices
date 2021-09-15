@@ -15,6 +15,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/msg.h>
@@ -207,14 +208,34 @@ void thread(void *arg)
 				break;
 
 			case mtWrite:
-				if (msg.i.data != NULL && msg.i.size >= sizeof(uint32_t)) {
-					memcpy(&val, msg.i.data, sizeof(uint32_t));
+				if (msg.i.data != NULL && msg.i.size >= 2) {
+					uint8_t *data = (uint8_t *)msg.i.data;
 
-					if (msg.i.size >= sizeof(uint32_t) << 1)
-						memcpy(&mask, msg.i.data + sizeof(uint32_t), sizeof(uint32_t));
-					else
-						mask = (uint32_t)-1;
 					/* NOTE: ignoring msg.i.io.offs to allow repetetive writes without seek / reopen */
+
+					if ((msg.i.size % sizeof(uint32_t) != 0) && ((data[0] == '+') || (data[0] == '-'))) {
+						/* text mode [+/-][pin] -> 1/0 as out/in or value */
+						uint32_t pin = 0;
+						for (d = 1; d < msg.i.size && isdigit(data[d]); ++d)
+							pin = pin * 10 + (data[d] - '0');
+
+						if (pin > 31)
+							break; /* -EINVAL */
+
+						mask = 1 << pin;
+						val = ((data[0] == '+') ? 1 : 0) << pin;
+					}
+					else { /* binary mode */
+						if (msg.i.size < sizeof(uint32_t))
+							break; /* -EINVAL */
+
+						memcpy(&val, msg.i.data, sizeof(uint32_t));
+
+						if (msg.i.size >= sizeof(uint32_t) * 2)
+							memcpy(&mask, msg.i.data + sizeof(uint32_t), sizeof(uint32_t));
+						else
+							mask = (uint32_t)-1;
+					}
 
 					d = msg.i.io.oid.id;
 
