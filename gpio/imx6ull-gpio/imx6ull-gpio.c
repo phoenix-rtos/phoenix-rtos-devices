@@ -38,8 +38,6 @@ enum { dr = 0, gdir, psr, icr1, icr2, imr, isr, edge };
 struct {
 	struct {
 		volatile uint32_t *base;
-		id_t port;
-		id_t dir;
 		handle_t lock;
 	} gpio[5];
 
@@ -54,7 +52,7 @@ static const int clocks[] = { pctl_clk_gpio1, pctl_clk_gpio2, pctl_clk_gpio3, pc
 int init(void)
 {
 	int i, err;
-	char devpath[11];
+	char devpath[sizeof("gpioX/port")];
 	platformctl_t pctl;
 	oid_t dev;
 
@@ -72,7 +70,7 @@ int init(void)
 
 	for (i = 0; i < sizeof(common.gpio) / sizeof(common.gpio[0]); ++i) {
 
-		sprintf(devpath, "gpio%d/port", i + 1);
+		snprintf(devpath, sizeof(devpath), "gpio%u/port", (i + 1) % 10);
 
 		dev.port = common.port;
 		dev.id = gpio1 + i;
@@ -82,9 +80,7 @@ int init(void)
 			return - 1;
 		}
 
-		common.gpio[i].port = dev.id;
-
-		sprintf(devpath, "gpio%d/dir", i + 1);
+		snprintf(devpath, sizeof(devpath), "gpio%u/dir", (i + 1) % 10);
 
 		dev.port = common.port;
 		dev.id = dir1 + i;
@@ -93,8 +89,6 @@ int init(void)
 			printf("gpiodrv: Could not create direction file #%d (err %d)\n", i + 1, err);
 			return - 1;
 		}
-
-		common.gpio[i].dir = dev.id;
 
 		pctl.action = pctl_set;
 		pctl.type = pctl_devclock;
@@ -196,6 +190,7 @@ void thread(void *arg)
 			case mtRead:
 				if (msg.o.data != NULL && msg.o.size >= sizeof(uint32_t)) {
 					d = msg.i.io.oid.id;
+					/* NOTE: ignoring msg.i.io.offs to allow repetetive reads without seek / reopen */
 
 					if (d >= gpio1 && d <= gpio5) {
 						msg.o.io.err = gpioread(d, &val);
@@ -219,6 +214,7 @@ void thread(void *arg)
 						memcpy(&mask, msg.i.data + sizeof(uint32_t), sizeof(uint32_t));
 					else
 						mask = (uint32_t)-1;
+					/* NOTE: ignoring msg.i.io.offs to allow repetetive writes without seek / reopen */
 
 					d = msg.i.io.oid.id;
 
@@ -228,7 +224,7 @@ void thread(void *arg)
 						msg.o.io.err = gpiosetdir(d, val, mask);
 
 					if (msg.o.io.err == EOK)
-						msg.o.io.err = (msg.i.size >= (sizeof(uint32_t) << 1)) ? sizeof(uint32_t) << 1 : sizeof(uint32_t);
+						msg.o.io.err = msg.i.size;
 				}
 				break;
 		}
