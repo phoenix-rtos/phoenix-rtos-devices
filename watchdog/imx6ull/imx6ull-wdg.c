@@ -51,12 +51,9 @@ static void wdog_setup(void)
 	/* Set default timeout */
 	/* 0x00 - 0.5 sec, 0x01 - 1 sec and so on... */
 	val |= (default_timeout * 2 - 1) << 8;
-	/* Make sure watchdog is not enabled */
-	val &= ~(1 << 2);
-	*(wdog.base + wcr) = val;
 
-	/* Enable watchdog */
-	val |= 1 << 2;
+	/* Enable watchdog, enable suspend in Debug mode */
+	val |= (1 << 2) | (1 << 1);
 	*(wdog.base + wcr) = val;
 }
 
@@ -72,6 +69,8 @@ static int wdog_settimeout(int timeout)
 	val |= (timeout * 2 - 1) << 8;
 	*(wdog.base + wcr) = val;
 
+	/* new timeout will be used only after kicking the watchdog */
+	wdog_kick();
 	return timeout;
 }
 
@@ -132,7 +131,7 @@ void wdog_handle(void)
 				break;
 			case mtWrite:
 				wdog_kick();
-				msg.o.io.err = EOK;
+				msg.o.io.err = msg.i.size;
 				break;
 			case mtDevCtl:
 				op_ioctl(&msg);
