@@ -441,9 +441,9 @@ static int flashsrv_devErase(const flash_i_devctl_t *idevctl)
 	if ((err = flashsrv_partoff(idevctl->erase.oid.id, 0, start, size, &partoff, &partsize)) < 0)
 		return err;
 
-	start += partoff;
 	if (size == 0)
-		size = partsize;
+		size = partsize - start;
+	start += partoff;
 
 	return flashsrv_erase(start, start + size);
 }
