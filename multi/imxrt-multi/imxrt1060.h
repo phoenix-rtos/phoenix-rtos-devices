@@ -124,6 +124,8 @@
 #define I2C3_IRQ 30 + 16
 #define I2C4_IRQ 31 + 16
 
+#define TRNG_BASE ((void *)0x400cc000)
+
 #define UART1_TX_PIN ad_b0_12
 #define UART1_RX_PIN ad_b0_13
 #define UART1_RTS_PIN ad_b0_15
