@@ -260,4 +260,9 @@
 #define I2C4 0
 #endif
 
+/* TRNG */
+#ifndef TRNG
+#define TRNG 0
+#endif
+
 #endif

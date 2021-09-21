@@ -33,6 +33,7 @@
 #include "gpio.h"
 #include "spi.h"
 #include "i2c.h"
+#include "trng.h"
 
 #define MULTI_THREADS_NO 2
 #define UART_THREADS_NO 2
@@ -85,6 +86,9 @@ static void multi_dispatchMsg(msg_t *msg)
 		case id_i2c3:
 		case id_i2c4:
 			i2c_handleMsg(msg, id);
+			break;
+		case id_trng:
+			trng_handleMsg(msg);
 			break;
 #endif
 	}
@@ -305,6 +309,11 @@ static int createDevFiles(void)
 		return -1;
 #endif
 
+#if TRNG
+	if (mkFile(&dir, id_trng, "trng", multi_port) < 0)
+		return -1;
+#endif
+
 #endif
 
 	return 0;
@@ -407,6 +416,10 @@ int main(void)
 	uart_init();
 	gpio_init();
 	spi_init();
+
+#if TRNG
+	trng_init();
+#endif
 
 	for (i = 0; i < UART_THREADS_NO; ++i)
 		beginthread(uart_thread, THREADS_PRIORITY, common.stack[i], STACKSZ, (void *)i);
