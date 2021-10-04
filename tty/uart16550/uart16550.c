@@ -3,32 +3,27 @@
  *
  * UART 16550 device driver
  *
- * Copyright 2012-2015, 2020 Phoenix Systems
+ * Copyright 2012-2015, 2020, 2021 Phoenix Systems
  * Copyright 2001, 2008 Pawel Pisarczyk
- * Author: Pawel Pisarczyk, Pawel Kolodziej, Julia Kosowska
+ * Author: Pawel Pisarczyk, Pawel Kolodziej, Julia Kosowska, Lukasz Kosinski
  *
  * %LICENSE%
  */
 
 #include <errno.h>
-#include <poll.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/threads.h>
-#include <sys/interrupt.h>
+
 #include <sys/file.h>
-#include <unistd.h>
+#include <sys/interrupt.h>
 #include <sys/msg.h>
-#include <sys/mman.h>
+#include <sys/threads.h>
+#include <sys/types.h>
 
 #include <libtty.h>
-#include "uart16550.h"
+
 #include "uarthw.h"
-
-
-#define DRIVER "uart16550"
+#include "uart16550.h"
 
 
 typedef struct {
@@ -40,42 +35,58 @@ typedef struct {
 
 	oid_t oid;
 	libtty_common_t tty;
+
+	char stack[1024] __attribute__((aligned(8)));
 } uart_t;
 
 
-static uart_t *uarts[4];
+static struct {
+	uart_t uarts[4];
+	char stack[1024] __attribute__((aligned(8)));
+} uart_common;
 
 
-static int uart_interrupt(unsigned int n, void *arg)
+static uart_t *uart_get(oid_t *oid)
+{
+	unsigned int i;
+
+	for (i = 0; i < sizeof(uart_common.uarts) / sizeof(uart_common.uarts[0]); i++) {
+		if ((uart_common.uarts[i].oid.port == oid->port) && (uart_common.uarts[i].oid.id == oid->id))
+			return uart_common.uarts + i;
+	}
+
+	return NULL;
+}
+
+
+static void set_baudrate(void *_uart, speed_t baud)
+{
+	/* TODO */
+}
+
+
+static void set_cflag(void *_uart, tcflag_t *cflag)
+{
+	/* TODO */
+}
+
+
+static void signal_txready(void *arg)
 {
 	uart_t *uart = (uart_t *)arg;
-
-	return uart->intcond;
-}
-
-
-static void uart_setbaudrate(void *_uart, speed_t baud)
-{
-	/* TODO */
-}
-
-
-static void uart_setcflag(void *_uart, tcflag_t *cflag)
-{
-	/* TODO */
-}
-
-
-static void uart_signaltxready(void *_uart)
-{
-	uart_t *uart = _uart;
 
 	uarthw_write(uart->hwctx, REG_IMR, IMR_THRE | IMR_DR);
 	condSignal(uart->intcond);
 }
 
 
-void uart_intthr(void *arg)
+static int uart_interrupt(unsigned int n, void *arg)
+{
+	return ((uart_t *)arg)->intcond;
+}
+
+
+static void uart_intthr(void *arg)
 {
 	uart_t *uart = (uart_t *)arg;
 	uint8_t iir;
@@ -102,202 +113,72 @@ void uart_intthr(void *arg)
 }
 
 
-static int uart_write(uint8_t d, size_t len, char *buff, int mode)
+static void uart_ioctl(unsigned int port, msg_t *msg)
 {
-	uart_t *serial;
-
-	if (d >= sizeof(uarts) / sizeof(uart_t *))
-		return -EINVAL;
-
-	if ((serial = uarts[d]) == NULL)
-		return -ENOENT;
-
-	if (!len)
-		return 0;
-
-	return libtty_write(&serial->tty, buff, len, mode);
-}
-
-
-static int uart_read(uint8_t d, size_t len, char *buff, int mode)
-{
-	uart_t *serial;
-
-	if (d >= sizeof(uarts) / sizeof(uart_t *))
-		return -EINVAL;
-
-	if ((serial = uarts[d]) == NULL)
-		return -ENOENT;
-
-	return libtty_read(&serial->tty, buff, len, mode);
-}
-
-
-static int uart_poll_status(uint8_t d)
-{
-	uart_t *serial;
-
-	if (d >= sizeof(uarts) / sizeof(uart_t *))
-		return POLLNVAL;
-
-	if ((serial = uarts[d]) == NULL)
-		return POLLNVAL;
-
-	return libtty_poll_status(&serial->tty);
-}
-
-
-uint8_t uart_get(oid_t *oid)
-{
-	unsigned int i;
-
-	for (i = 0; i < sizeof(uarts) / sizeof(uart_t *); i++) {
-		if ((uarts[i]->oid.id == oid->id) && (uarts[i]->oid.port == oid->port))
-			return i;
-	}
-	return -ENOENT;
-}
-
-
-static void uart_ioctl(unsigned port, msg_t *msg)
-{
-	uart_t *serial;
-	unsigned long request;
-	const void *in_data, *out_data;
-	pid_t pid;
+	const void *idata, *odata = NULL;
+	oid_t oid = { .port = port };
+	uart_t *uart;
+	unsigned long req;
 	int err;
-	oid_t oid;
-	uint8_t d;
 
-	oid.port = port;
+	idata = ioctl_unpack(msg, &req, &oid.id);
 
-	in_data = ioctl_unpack(msg, &request, &oid.id);
-	out_data = NULL;
-	pid = ioctl_getSenderPid(msg);
-
-	d = uart_get(&oid);
-
-	if (d >= sizeof(uarts) / sizeof(uart_t *))
+	if ((uart = uart_get(&oid)) == NULL)
 		err = -EINVAL;
-
-	else if ((serial = uarts[d]) == NULL)
-		err = -ENOENT;
-
 	else
-		err = libtty_ioctl(&serial->tty, pid, request, in_data, &out_data);
+		err = libtty_ioctl(&uart->tty, ioctl_getSenderPid(msg), req, idata, &odata);
 
-	ioctl_setResponse(msg, request, err, out_data);
+	ioctl_setResponse(msg, req, err, odata);
 }
 
 
-static int _uart_init(unsigned int uartn, unsigned int speed, uart_t **uart)
+static void poolthr(void *arg)
 {
-	unsigned int divisor = 115200 / speed;
-	uint8_t buff[64];
-	char s[64];
-	libtty_callbacks_t callbacks;
-	uint8_t *stack;
-
-	if (uarthw_init(uartn, buff, sizeof(buff)) < 0)
-		return -ENOENT;
-
-	printf(DRIVER ": Detected uart interface (%s)\n", uarthw_dump(buff, s, sizeof(s)));
-
-	/* Allocate and map memory for driver structures */
-	if ((*uart = malloc(sizeof(uart_t))) == NULL) {
-		fprintf(stderr, DRIVER ": Out of memory!\n");
-		return -ENOMEM;
-	}
-
-	/* Initialize uart strcture */
-	memset((*uart), 0, sizeof(uart_t));
-	memcpy((*uart)->hwctx, buff, sizeof(buff));
-
-	callbacks.arg = *uart;
-	callbacks.set_baudrate = uart_setbaudrate;
-	callbacks.set_cflag = uart_setcflag;
-	callbacks.signal_txready = uart_signaltxready;
-
-	libtty_init(&(*uart)->tty, &callbacks, _PAGE_SIZE);
-
-	condCreate(&(*uart)->intcond);
-	mutexCreate(&(*uart)->mutex);
-
-	/* Install interrupt */
-	if ((stack = (uint8_t *)malloc(2 * 4096)) == NULL) {
-		fprintf(stderr, DRIVER ": Out of memory!\n");
-		return -ENOMEM;
-	}
-	beginthread(uart_intthr, 1, stack, 2 * 4096, (void *)*uart);
-
-	interrupt(uarthw_irq((*uart)->hwctx), uart_interrupt, (*uart), (*uart)->intcond, &(*uart)->inth);
-
-	/* Set speed (MOD) */
-	uarthw_write((*uart)->hwctx, REG_LCR, LCR_DLAB);
-	uarthw_write((*uart)->hwctx, REG_LSB, divisor);
-	uarthw_write((*uart)->hwctx, REG_MSB, divisor >> 8);
-
-	/* Set data format (MOD) */
-	uarthw_write((*uart)->hwctx, REG_LCR, LCR_D8N1);
-
-	/* Enable and configure FIFOs */
-	uarthw_write((*uart)->hwctx, REG_FCR, 0xa7);
-
-	/* Enable hardware interrupts */
-	uarthw_write((*uart)->hwctx, REG_MCR, MCR_OUT2);
-
-	/* Set interrupt mask */
-	uarthw_write((*uart)->hwctx, REG_IMR, IMR_DR);
-
-	return EOK;
-}
-
-
-void poolthr(void *arg)
-{
-	uint32_t port = (uint32_t)(unsigned long)arg;
+	unsigned int port = (uintptr_t)arg;
+	uart_t *uart;
+	unsigned long rid;
 	msg_t msg;
-	unsigned long rid, d;
 
 	for (;;) {
 		if (msgRecv(port, &msg, &rid) < 0)
 			continue;
 
 		switch (msg.type) {
-		case mtOpen:
-			break;
-		case mtWrite: {
-			if ((d = uart_get(&msg.i.io.oid)) < 0) {
-				msg.o.io.err = -ENOENT;
-				break;
-			}
-			msg.o.io.err = uart_write(d, msg.i.size, msg.i.data, msg.i.io.mode);
-		}
-			break;
-		case mtRead:
-			if ((d = uart_get(&msg.i.io.oid)) < 0) {
-				msg.o.io.err = -ENOENT;
-				break;
-			}
-
-			msg.o.io.err = uart_read(d, msg.o.size, msg.o.data, msg.i.io.mode);
-			break;
-		case mtClose:
-			break;
-		case mtGetAttr:
-			if (msg.i.attr.type == atPollStatus) {
-				if ((d = uart_get(&msg.i.io.oid)) < 0) {
-					msg.o.io.err = -ENOENT;
+			case mtOpen:
+			case mtClose:
+				if ((uart = uart_get(&msg.i.io.oid)) == NULL) {
+					msg.o.io.err = -EINVAL;
 					break;
 				}
-				msg.o.attr.val = uart_poll_status(d);
-			}
-			else
-				msg.o.attr.val = -EINVAL;
-			break;
-		case mtDevCtl:
-			uart_ioctl(port, &msg);
-			break;
+				msg.o.io.err = EOK;
+				break;
+
+			case mtRead:
+				if ((uart = uart_get(&msg.i.io.oid)) == NULL)
+					msg.o.io.err = -EINVAL;
+				else
+					msg.o.io.err = libtty_read(&uart->tty, msg.o.data, msg.o.size, msg.i.io.mode);
+				break;
+
+			case mtWrite:
+				if ((uart = uart_get(&msg.i.io.oid)) == NULL)
+					msg.o.io.err = -EINVAL;
+				else
+					msg.o.io.err = libtty_write(&uart->tty, msg.i.data, msg.i.size, msg.i.io.mode);
+				break;
+
+			case mtGetAttr:
+				if ((msg.i.attr.type != atPollStatus) || ((uart = uart_get(&msg.i.attr.oid)) == NULL)) {
+					msg.o.attr.val = -EINVAL;
+					break;
+				}
+				msg.o.attr.val = libtty_poll_status(&uart->tty);
+				msg.o.attr.err = EOK;
+				break;
+
+			case mtDevCtl:
+				uart_ioctl(port, &msg);
+				break;
 		}
 
 		msgRespond(port, &msg, rid);
@@ -305,38 +186,75 @@ void poolthr(void *arg)
 }
 
 
+static int _uart_init(uart_t *uart, unsigned int port, unsigned int id, unsigned int speed)
+{
+	unsigned int divisor = 115200 / speed;
+	libtty_callbacks_t callbacks;
+	int err;
+
+	if ((err = uarthw_init(id, uart->hwctx, sizeof(uart->hwctx))) < 0)
+		return err;
+
+	callbacks.arg = uart;
+	callbacks.set_baudrate = set_baudrate;
+	callbacks.set_cflag = set_cflag;
+	callbacks.signal_txready = signal_txready;
+
+	if ((err = libtty_init(&uart->tty, &callbacks, _PAGE_SIZE)) < 0)
+		return err;
+
+	condCreate(&uart->intcond);
+	mutexCreate(&uart->mutex);
+
+	beginthread(uart_intthr, 1, uart->stack, sizeof(uart->stack), uart);
+	interrupt(uarthw_irq(uart->hwctx), uart_interrupt, uart, uart->intcond, &uart->inth);
+
+	/* Set speed (MOD) */
+	uarthw_write(uart->hwctx, REG_LCR, LCR_DLAB);
+	uarthw_write(uart->hwctx, REG_LSB, divisor);
+	uarthw_write(uart->hwctx, REG_MSB, divisor >> 8);
+
+	/* Set data format (MOD) */
+	uarthw_write(uart->hwctx, REG_LCR, LCR_D8N1);
+
+	/* Enable and configure FIFOs */
+	uarthw_write(uart->hwctx, REG_FCR, 0xa7);
+
+	/* Enable hardware interrupts */
+	uarthw_write(uart->hwctx, REG_MCR, MCR_OUT2);
+
+	/* Set interrupt mask */
+	uarthw_write(uart->hwctx, REG_IMR, IMR_DR);
+
+	return EOK;
+}
+
+
 int main(void)
 {
-	unsigned int n;
+	unsigned int i, port;
 	char path[12];
-	uint32_t port;
-	void *stack;
-
-	printf(DRIVER ": Initializing UART 16550 driver\n");
+	int err;
 
 	portCreate(&port);
 
-	for (n = 0; n < sizeof(uarts) / sizeof(uarts[0]); n++) {
-		if (_uart_init(n, 115200, &uarts[n]) < 0)
+	for (i = 0; i < sizeof(uart_common.uarts) / sizeof(uart_common.uarts[0]); i++) {
+		snprintf(path, sizeof(path), "/dev/ttyS%u", i);
+
+		if ((err = _uart_init(&uart_common.uarts[i], port, i, 115200)) < 0) {
+			if (err != -ENODEV)
+				fprintf(stderr, "uart16550: failed to init %s, err: %d\n", path, err);
 			continue;
+		}
 
-		snprintf(path, sizeof(path), "/dev/ttyS%u", n);
-		uarts[n]->oid.port = port;
-		uarts[n]->oid.id = n;
-
-		if (portRegister(port, path, &uarts[n]->oid) < 0) {
-			fprintf(stderr, DRIVER ": Can't register port %d\n", port);
-			return -1;
+		if ((err = portRegister(port, path, &uart_common.uarts[i].oid)) < 0) {
+			fprintf(stderr, "uart16550: failed to register %s, err: %d\n", path, err);
+			return err;
 		}
 	}
 
-	/* Run driver threads for message processing */
-	if ((stack = malloc(2048)) == NULL) {
-		fprintf(stderr, DRIVER ": Out of memory!\n");
-		return -ENOMEM;
-	}
-	beginthread(poolthr, 4, stack, 2048, (void *)(unsigned long)port);
-	poolthr((void *)(unsigned long)port);
+	beginthread(poolthr, 4, uart_common.stack, sizeof(uart_common.stack), (void *)(uintptr_t)port);
+	poolthr((void *)(uintptr_t)port);
 
-	return 0;
+	return EOK;
 }

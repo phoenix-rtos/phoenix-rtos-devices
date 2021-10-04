@@ -38,10 +38,10 @@
 
 typedef struct {
 	/* Device data */
-	virtio_dev_t vdev;     /* VirtIO device */
-	virtqueue_t vq;        /* Device virtqueue */
-	unsigned int sectorsz; /* Device sector size */
-	unsigned int size;     /* Device storage size */
+	virtio_dev_t vdev;       /* VirtIO device */
+	virtqueue_t vq;          /* Device virtqueue */
+	unsigned int sectorsz;   /* Device sector size */
+	unsigned long long size; /* Device storage size */
 
 	/* Interrupt handling */
 	volatile unsigned int isr; /* Interrupt status */
@@ -354,15 +354,15 @@ static ssize_t virtioblk_write(virtioblk_dev_t *vblk, void *rctx, offs_t offs, c
 
 
 /* Reads device attributes */
-static int virtioblk_getattr(virtioblk_dev_t *vblk, int type, int *attr)
+static int virtioblk_getattr(virtioblk_dev_t *vblk, int type, long long *attr)
 {
 	switch (type) {
 		case atSize:
-			*attr = vblk->size;
+			*attr = (off_t)vblk->size;
 			break;
 
 		default:
-			*attr = -EINVAL;
+			return -EINVAL;
 	}
 
 	return EOK;
@@ -471,7 +471,7 @@ static void virtioblk_poolthr(void *arg)
 				break;
 
 			case mtGetAttr:
-				virtioblk_getattr(vblk, msg.i.attr.type, &msg.o.attr.val);
+				msg.o.attr.err = virtioblk_getattr(vblk, msg.i.attr.type, &msg.o.attr.val);
 				break;
 
 			default:

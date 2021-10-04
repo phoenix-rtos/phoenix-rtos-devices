@@ -267,7 +267,7 @@ static void uart_dispatchMsg(void *arg)
 				break;
 
 			case mtGetAttr:
-				if (msg.i.attr.type == atPollStatus && (uart = uart_get(&msg.i.io.oid)) != NULL) {
+				if (msg.i.attr.type == atPollStatus && (uart = uart_get(&msg.i.attr.oid)) != NULL) {
 					msg.o.attr.val = libtty_poll_status(&uart->tty);
 					msg.o.attr.err = EOK;
 					break;

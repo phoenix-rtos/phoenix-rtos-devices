@@ -326,16 +326,12 @@ static void tty_thread(void *arg)
 			break;
 
 		case mtGetAttr:
-			if ((ctx = tty_getCtx(msg.i.attr.oid.id)) == NULL) {
-				msg.o.attr.val = -EINVAL;
+			if ((msg.i.attr.type != atPollStatus) || ((ctx = tty_getCtx(msg.i.attr.oid.id)) == NULL)) {
+				msg.o.attr.err = -EINVAL;
 				break;
 			}
-
-			if (msg.i.attr.type != atPollStatus)
-				msg.o.attr.val = -EINVAL;
-			else
-				msg.o.attr.val = libtty_poll_status(&ctx->tty_common);
-
+			msg.o.attr.val = libtty_poll_status(&ctx->tty_common);
+			msg.o.attr.err = EOK;
 			break;
 
 		case mtDevCtl:

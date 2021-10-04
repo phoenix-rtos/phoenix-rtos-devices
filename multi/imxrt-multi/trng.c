@@ -91,7 +91,7 @@ int trng_handleMsg(msg_t *msg)
 			msg->o.io.err = trng_read(msg->o.data, msg->o.size);
 			break;
 		case mtGetAttr:
-			msg->o.attr.val = -EINVAL;
+			msg->o.attr.err = -EINVAL;
 			break;
 		default:
 			msg->o.io.err = -EINVAL;

@@ -660,7 +660,7 @@ static void flashsrv_devCtrl(msg_t *msg)
 }
 
 
-static int flashsrv_fileAttr(int type, id_t id)
+static int flashsrv_fileAttr(int type, id_t id, long long *attr)
 {
 	flashsrv_partition_t *p = NULL;
 
@@ -673,14 +673,18 @@ static int flashsrv_fileAttr(int type, id_t id)
 
 	switch (type) {
 		case atSize:
-			return p->size * flashsrv_common.info.erasesz;
+			*attr = (off_t)p->size * flashsrv_common.info.erasesz;
+			break;
 
 		case atDev:
-			return p->start * flashsrv_common.info.erasesz;
+			*attr = (off_t)p->start * flashsrv_common.info.erasesz;
+			break;
 
 		default:
-			return -1;
+			return -EINVAL;
 	}
+
+	return EOK;
 }
 
 
@@ -719,7 +723,7 @@ static void flashsrv_devThread(void *arg)
 
 		case mtGetAttr:
 			TRACE("DEV mtgetAttr - id: %llu", msg.i.attr.oid.id);
-			msg.o.attr.val = flashsrv_fileAttr(msg.i.attr.type, msg.i.attr.oid.id);
+			msg.o.attr.err = flashsrv_fileAttr(msg.i.attr.type, msg.i.attr.oid.id, &msg.o.attr.val);
 			break;
 
 		case mtOpen:

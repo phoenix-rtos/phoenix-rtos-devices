@@ -279,10 +279,12 @@ int uart_handleMsg(msg_t *msg, int dev)
 			break;
 
 		case mtGetAttr:
-			if (msg->i.attr.type == atPollStatus)
-				msg->o.attr.val = libtty_poll_status(&uart->tty_common);
-			else
-				msg->o.attr.val = -EINVAL;
+			if (msg->i.attr.type != atPollStatus) {
+				msg->o.attr.err = -EINVAL;
+				break;
+			}
+			msg->o.attr.val = libtty_poll_status(&uart->tty_common);
+			msg->o.attr.err = EOK;
 			break;
 
 		case mtDevCtl:
