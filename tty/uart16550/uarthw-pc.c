@@ -62,14 +62,14 @@ int uarthw_init(unsigned int uartn, void *hwctx, size_t hwctxsz)
 		return -EINVAL;
 
 	if (uartn >= 4)
-		return -ENOENT;
+		return -ENODEV;
 
 	((uarthw_ctx_t *)hwctx)->base = uarts[uartn].base;
 	((uarthw_ctx_t *)hwctx)->irq = uarts[uartn].irq;
 
 	/* Detect device presence */
 	if (uarthw_read(hwctx, REG_IIR) == 0xff)
-		return -ENOENT;
+		return -ENODEV;
 
 	return EOK;
 }

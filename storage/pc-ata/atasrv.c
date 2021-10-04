@@ -416,7 +416,7 @@ static int atasrv_mount(id_t id, const char *name, oid_t *oid)
 }
 
 
-static int atasrv_getattr(id_t id, int type, int *attr)
+static int atasrv_getattr(id_t id, int type, long long *attr)
 {
 	atasrv_dev_t *sdev;
 
@@ -424,17 +424,20 @@ static int atasrv_getattr(id_t id, int type, int *attr)
 		return -ENODEV;
 
 	switch (type) {
-	case atSize:
-		switch (sdev->type) {
-		case DEV_BASE:
-			*attr = sdev->base->dev->size;
+		case atSize:
+			switch (sdev->type) {
+				case DEV_BASE:
+					*attr = (off_t)sdev->base->dev->size;
+					break;
+
+				case DEV_PART:
+					*attr = (off_t)sdev->part->sectors * sdev->part->bdev->base->dev->sectorsz;
+					break;
+			}
 			break;
 
-		case DEV_PART:
-			*attr = sdev->part->sectors * sdev->part->bdev->base->dev->sectorsz;
-			break;
-		}
-		break;
+		default:
+			return -EINVAL;
 	}
 
 	return EOK;
@@ -476,7 +479,7 @@ static void atasrv_msgloop(void *arg)
 			break;
 
 		case mtGetAttr:
-			atasrv_getattr(msg.i.attr.oid.id, msg.i.attr.type, &msg.o.attr.val);
+			msg.o.attr.err = atasrv_getattr(msg.i.attr.oid.id, msg.i.attr.type, &msg.o.attr.val);
 			break;
 
 		default:
