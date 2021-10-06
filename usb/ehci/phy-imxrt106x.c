@@ -38,8 +38,9 @@ static const hcd_info_t imxrt_info[] = {
 		.phyaddr = 0x400da000,
 		.clk = pctl_clk_usboh3,
 		.irq = 128
-	},
+	}
 };
+
 
 int hcd_getInfo(const hcd_info_t **hcinfo)
 {
@@ -100,13 +101,15 @@ void phy_enableHighSpeedDisconnect(hcd_t *hcd, int enable)
 }
 
 
-void phy_init(hcd_t *hcd)
+int phy_init(hcd_t *hcd)
 {
 	/* No mmapping, since we are on NOMMU architecture */
-	hcd->phybase = (volatile int *) hcd->info->phyaddr;
-	hcd->base = (volatile int *) hcd->info->hcdaddr;
+	hcd->phybase = (volatile int *)hcd->info->phyaddr;
+	hcd->base = (volatile int *)hcd->info->hcdaddr;
 
 	setClock(hcd->info->clk, clk_state_run);
 	phy_reset(hcd);
 	phy_config(hcd);
+
+	return 0;
 }

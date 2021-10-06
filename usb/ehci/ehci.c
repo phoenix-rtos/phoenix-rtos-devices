@@ -47,9 +47,15 @@ struct qh_node {
 	struct qtd *last;
 	struct qh *qh;
 	unsigned period; /* [ms], interrupt transfer only */
-	unsigned phase; /* [ms], interrupt transfer only */
+	unsigned phase;  /* [ms], interrupt transfer only */
 	unsigned uframe; /* interrupt transfer and high-speed only */
 };
+
+
+static inline void ehci_memDmb(void)
+{
+	asm volatile ("dmb" ::: "memory");
+}
 
 
 static int ehci_linkQtd(struct qtd *prev, struct qtd *next)
@@ -72,8 +78,7 @@ static void ehci_enqueue(struct qh_node *qhnode, struct qtd *first, struct qtd *
 
 	prevlast->next.pointer = va2pa(first) >> 5;
 	prevlast->next.type = 0;
-
-	asm volatile ("dmb" ::: "memory");
+	ehci_memDmb();
 
 	prevlast->next.terminate = 0;
 }
@@ -209,11 +214,9 @@ static void ehci_allocPeriodicBandwidth(ehci_t *ehci, struct qh_node *node)
 
 	/* Find the best microframe in a frame. For periods equal to 1, send it every microframe */
 	if (node->qh->epSpeed == usb_high_speed && node->period > 1) {
-		tmp = ehci->periodicNodes[node->phase];
-		while (tmp != NULL) {
+		for (tmp = ehci->periodicNodes[node->phase]; tmp != NULL; tmp = tmp->next) {
 			if (tmp->uframe != 0xff)
 				ucnt[tmp->uframe]++;
-			tmp = tmp->next;
 		}
 
 		best = (unsigned)-1;
@@ -241,7 +244,7 @@ static void ehci_linkPeriodicQh(hcd_t *hcd, struct qh_node *node)
 	node->qh->cmask = 0xff;
 
 	t = ehci->periodicNodes[node->phase];
-	while (t && t->next != NULL && t->next->period >= node->period)
+	while (t != NULL && t->next != NULL && t->next->period >= node->period)
 		t = t->next;
 
 	if (t == NULL || t->period < node->period) {
@@ -280,7 +283,7 @@ static void ehci_linkPeriodicQh(hcd_t *hcd, struct qh_node *node)
 static void ehci_linkAsyncQh(hcd_t *hcd, struct qh_node *node)
 {
 	ehci_t *ehci = (ehci_t *)hcd->priv;
-	int first = ehci->asyncList == NULL;
+	int first = (ehci->asyncList == NULL) ? 1 : 0;
 	struct qh *prev;
 
 	mutexLock(ehci->asyncLock);
@@ -302,7 +305,8 @@ static void ehci_linkAsyncQh(hcd_t *hcd, struct qh_node *node)
 
 		*(hcd->base + asynclistaddr) = va2pa(node->qh);
 		*(hcd->base + usbcmd) |= USBCMD_ASE;
-		while ((*(hcd->base + usbsts) & USBSTS_AS) == 0);
+		while ((*(hcd->base + usbsts) & USBSTS_AS) == 0)
+			;
 	}
 }
 
@@ -412,10 +416,7 @@ static int ehci_transferStatus(hcd_t *hcd, usb_transfer_t *t)
 
 	finished = !qtds->prev->qtd->active || qtds->prev->qtd->halted;
 	do {
-		if (qtds->qtd->transactionError)
-			error++;
-
-		if (qtds->qtd->babble)
+		if (qtds->qtd->transactionError || qtds->qtd->babble)
 			error++;
 
 		qtds = qtds->next;
@@ -611,7 +612,8 @@ static void ehci_pipeDestroy(hcd_t *hcd, usb_pipe_t *pipe)
 
 	if (pipe->type == usb_transfer_bulk || pipe->type == usb_transfer_control) {
 		mutexLock(ehci->asyncLock);
-		while (qh->qh->transferOverlay.active);
+		while (qh->qh->transferOverlay.active)
+			;
 		ehci_unlinkQhAsync(hcd, qh);
 		mutexUnlock(ehci->asyncLock);
 	}
@@ -651,7 +653,13 @@ static int ehci_init(hcd_t *hcd)
 
 	hcd->priv = ehci;
 
-	phy_init(hcd);
+	if (phy_init(hcd) != 0) {
+		fprintf(stderr, "ehci: Phy init failed!\n");
+		usb_freeAligned(ehci->periodicList, EHCI_PERIODIC_SIZE * sizeof(link_pointer_t));
+		free(ehci);
+		return -EINVAL;
+	}
+
 	ehci->asyncList = NULL;
 
 	if (condCreate(&ehci->irqCond) < 0) {
@@ -698,7 +706,8 @@ static int ehci_init(hcd_t *hcd)
 
 	/* Reset controller */
 	*(hcd->base + usbcmd) |= 2;
-	while (*(hcd->base + usbcmd) & 2);
+	while (*(hcd->base + usbcmd) & 2)
+		;
 
 	/* Set host mode */
 	*(hcd->base + usbmode) |= 3;
@@ -715,7 +724,7 @@ static int ehci_init(hcd_t *hcd)
 	/* Route all ports to this host controller */
 	*(hcd->base + configflag) = 1;
 
-	beginthread(ehci_irqThread, 2, malloc(1024), 1024, hcd);
+	beginthread(ehci_irqThread, 2, ehci->stack, sizeof(ehci->stack), hcd);
 	interrupt(hcd->info->irq, ehci_irqHandler, hcd, ehci->irqCond, &ehci->irqHandle);
 
 	return 0;
@@ -731,7 +740,7 @@ static const hcd_ops_t ehci_ops = {
 };
 
 
-__attribute__ ((constructor)) static void ehci_register(void)
+__attribute__((constructor)) static void ehci_register(void)
 {
 	hcd_register(&ehci_ops);
 }

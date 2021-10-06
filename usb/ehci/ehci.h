@@ -14,43 +14,43 @@
 #ifndef _USB_EHCI_H_
 #define _USB_EHCI_H_
 
-#define USBSTS_AS  (1 << 15)
-#define USBSTS_PS  (1 << 14)
-#define USBSTS_RCL (1 << 13)
-#define USBSTS_URI (1 << 6)
-#define USBSTS_SRI (1 << 7)
-#define USBSTS_SLI (1 << 8)
+#define USBSTS_AS    (1 << 15)
+#define USBSTS_PS    (1 << 14)
+#define USBSTS_RCL   (1 << 13)
+#define USBSTS_URI   (1 << 6)
+#define USBSTS_SRI   (1 << 7)
+#define USBSTS_SLI   (1 << 8)
 #define USBSTS_ULPII (1 << 10)
-#define USBSTS_HCH (1 << 12)
-#define USBSTS_IAA (1 << 5)
-#define USBSTS_SEI (1 << 4)
-#define USBSTS_FRI (1 << 3)
-#define USBSTS_PCI (1 << 2)
-#define USBSTS_UEI (1 << 1)
-#define USBSTS_UI  (1 << 0)
+#define USBSTS_HCH   (1 << 12)
+#define USBSTS_IAA   (1 << 5)
+#define USBSTS_SEI   (1 << 4)
+#define USBSTS_FRI   (1 << 3)
+#define USBSTS_PCI   (1 << 2)
+#define USBSTS_UEI   (1 << 1)
+#define USBSTS_UI    (1 << 0)
 
 #define USBCMD_ASE (1 << 5)
 #define USBCMD_IAA (1 << 6)
 
 #define PORTSC_PTS_1 (3 << 30)
-#define PORTSC_STS (1 << 29)
-#define PORTSC_PPTW (1 << 28)
-#define PORTSC_PSPD (3 << 26)
+#define PORTSC_STS   (1 << 29)
+#define PORTSC_PPTW  (1 << 28)
+#define PORTSC_PSPD  (3 << 26)
 #define PORTSC_PTS_2 (1 << 25)
-#define PORTSC_PFSC (1 << 24)
-#define PORTSC_PHCD (1 << 23)
+#define PORTSC_PFSC  (1 << 24)
+#define PORTSC_PHCD  (1 << 23)
 
-#define PORTSC_WKOC (1 << 22)
+#define PORTSC_WKOC     (1 << 22)
 #define PORTSC_WKDSCNNT (1 << 21)
-#define PORTSC_WKCNT (1 << 20)
-#define PORTSC_PTC (0xf << 16)
-#define PORTSC_PIC (3 << 14)
-#define PORTSC_PO (1 << 13)
-#define PORTSC_PP (1 << 12)
-#define PORTSC_LS (3 << 10)
-#define PORTSC_HSP (1 << 9)
-#define PORTSC_PR (1 << 8)
-#define PORTSC_SUSP (1 << 7)
+#define PORTSC_WKCNT    (1 << 20)
+#define PORTSC_PTC      (0xf << 16)
+#define PORTSC_PIC      (3 << 14)
+#define PORTSC_PO       (1 << 13)
+#define PORTSC_PP       (1 << 12)
+#define PORTSC_LS       (3 << 10)
+#define PORTSC_HSP      (1 << 9)
+#define PORTSC_PR       (1 << 8)
+#define PORTSC_SUSP     (1 << 7)
 
 #define PORTSC_FPR (1 << 6)
 #define PORTSC_OCC (1 << 5)
@@ -67,8 +67,8 @@
 #define PORTSC_CBITS (PORTSC_CSC | PORTSC_PEC | PORTSC_OCC)
 
 
-#define EHCI_PAGE_SIZE          4096
-#define EHCI_MAX_QTD_BUF_SIZE   (4 * EHCI_PAGE_SIZE)
+#define EHCI_PAGE_SIZE        4096
+#define EHCI_MAX_QTD_BUF_SIZE (4 * EHCI_PAGE_SIZE)
 
 enum {
 	/* identification regs */
@@ -96,12 +96,12 @@ enum { usb_otg1_ctrl = 0x200, usb_otg2_ctrl, usb_otg1_phy_ctrl = usb_otg2_ctrl +
 enum { ehci_item_itd = 0, ehci_item_qh, ehci_item_sitd, ehci_item_fstn };
 
 
-typedef struct link_pointer {
+typedef struct {
 	uint32_t terminate : 1;
 	uint32_t type : 2;
 	uint32_t zero : 2;
 	uint32_t pointer : 27;
-} __attribute__ ((__packed__)) link_pointer_t;
+} __attribute__((__packed__)) link_pointer_t;
 
 
 struct itd {
@@ -135,7 +135,7 @@ struct itd {
 			uint32_t mult : 2;
 		};
 	};
-} __attribute__ ((__packed__));
+} __attribute__((__packed__));
 
 
 struct sitd {
@@ -170,7 +170,7 @@ struct sitd {
 	uint32_t page1 : 20;
 
 	link_pointer_t backLink;
-} __attribute__ ((__packed__));
+} __attribute__((__packed__));
 
 
 struct qtd {
@@ -204,7 +204,7 @@ struct qtd {
 			uint32_t page0 : 20;
 		};
 	};
-} __attribute__ ((__packed__));
+} __attribute__((__packed__));
 
 
 struct qh {
@@ -229,9 +229,10 @@ struct qh {
 	link_pointer_t currentQtd;
 
 	struct qtd transferOverlay;
-} __attribute__ ((__packed__));
+} __attribute__((__packed__));
 
-typedef struct ehci {
+typedef struct {
+	char stack[1024] __attribute__((aligned(8)));
 	link_pointer_t *periodicList;
 	volatile struct qh_node *asyncList;
 	struct qh_node **periodicNodes;
@@ -246,7 +247,7 @@ typedef struct ehci {
 } ehci_t;
 
 
-void phy_init(hcd_t *hcd);
+int phy_init(hcd_t *hcd);
 
 
 void phy_enableHighSpeedDisconnect(hcd_t *hcd, int enable);

@@ -45,7 +45,7 @@ typedef struct usbacm_dev {
 
 
 static struct {
-	char stack[USBACM_N_MSG_THREADS][1024] __attribute__ ((aligned(8)));
+	char stack[USBACM_N_MSG_THREADS][1024] __attribute__((aligned(8)));
 	usbacm_dev_t *devices;
 	unsigned drvport;
 	unsigned msgport;
@@ -58,26 +58,25 @@ static const usb_device_id_t filters[] = {
 	/* Huawei E3372 - PPP mode */
 	{ 0x12d1, 0x1001, USBDRV_ANY, USBDRV_ANY, USBDRV_ANY },
 	/* Telit FN980 */
-	{ 0x1bC7, 0x1050, 0xFF, 0, 0 },
+	{ 0x1bc7, 0x1050, 0xff, 0, 0 },
 	/* USB CDC ACM class */
 	{ USBDRV_ANY, USBDRV_ANY, USB_CLASS_CDC, USB_SUBCLASS_ACM, USBDRV_ANY },
 };
 
 static const usb_modeswitch_t modeswitch[] = {
+	/* Huawei E3372 ACM mode */
 	{
-		/* Huawei E3372 ACM mode */
 		.vid = 0x12d1,
 		.pid = 0x1f01,
 		.msg = { 0x55, 0x53, 0x42, 0x43,
-		         0x12, 0x34, 0x56, 0x78,
-				 0x00, 0x00, 0x00, 0x00,
-				 0x00, 0x00, 0x00, 0x11,
-				 0x06, 0x30, 0x00, 0x00,
-				 0x01, 0x00, 0x00, 0x00,
-				 0x00, 0x00, 0x00, 0x00,
-				 0x00, 0x00, 0x00},
-		.scsiresp = 1
-	},
+			0x12, 0x34, 0x56, 0x78,
+			0x00, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x11,
+			0x06, 0x30, 0x00, 0x00,
+			0x01, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00 },
+		.scsiresp = 1 },
 };
 
 
@@ -146,7 +145,6 @@ static usbacm_dev_t *usbacm_devAlloc(void)
 {
 	usbacm_dev_t *dev;
 
-
 	if ((dev = malloc(sizeof(usbacm_dev_t))) == NULL) {
 		fprintf(stderr, "usbacm: Not enough memory\n");
 		return NULL;
@@ -159,7 +157,6 @@ static usbacm_dev_t *usbacm_devAlloc(void)
 		dev->id = usbacm_common.devices->prev->id + 1;
 
 	snprintf(dev->path, sizeof(dev->path), "/dev/usbacm%d", dev->id);
-	LIST_ADD(&usbacm_common.devices, dev);
 
 	return dev;
 }
@@ -170,6 +167,7 @@ static void usbacm_msgthr(void *arg)
 	usbacm_dev_t *dev;
 	unsigned long rid;
 	msg_t msg;
+	int id;
 
 	for (;;) {
 		if (msgRecv(usbacm_common.msgport, &msg, &rid) < 0) {
@@ -183,9 +181,13 @@ static void usbacm_msgthr(void *arg)
 			msgRespond(usbacm_common.msgport, &msg, rid);
 			continue;
 		}
+		if (msg.type == mtGetAttr)
+			id = msg.i.attr.oid.id;
+		else
+			id = msg.i.io.oid.id;
 
 		mutexLock(usbacm_common.lock);
-		dev = usbacm_devFind(msg.i.io.oid.id);
+		dev = usbacm_devFind(id);
 		mutexUnlock(usbacm_common.lock);
 
 		if (dev == NULL) {
@@ -229,8 +231,8 @@ static int usbacm_handleInsertion(usb_devinfo_t *insertion)
 	oid_t oid;
 
 	if ((mode = usb_modeswitchFind(insertion->descriptor.idVendor,
-	                               insertion->descriptor.idProduct,
-								   modeswitch, sizeof(modeswitch) / sizeof(modeswitch[0]))) != NULL) {
+			insertion->descriptor.idProduct,
+			modeswitch, sizeof(modeswitch) / sizeof(modeswitch[0]))) != NULL) {
 		return usb_modeswitchHandle(insertion, mode);
 	}
 
@@ -239,21 +241,31 @@ static int usbacm_handleInsertion(usb_devinfo_t *insertion)
 
 	dev->instance = *insertion;
 
-	if ((dev->pipeCtrl = usb_open(insertion, usb_transfer_control, 0)) < 0)
+	if ((dev->pipeCtrl = usb_open(insertion, usb_transfer_control, 0)) < 0) {
+		free(dev);
 		return -EINVAL;
+	}
 
-	if (usb_setConfiguration(dev->pipeCtrl, 1) != 0)
+	if (usb_setConfiguration(dev->pipeCtrl, 1) != 0) {
+		free(dev);
 		return -EINVAL;
+	}
 
-	if ((dev->pipeBulkIN = usb_open(insertion, usb_transfer_bulk, usb_dir_in)) < 0)
+	if ((dev->pipeBulkIN = usb_open(insertion, usb_transfer_bulk, usb_dir_in)) < 0) {
+		free(dev);
 		return -EINVAL;
+	}
 
-	if ((dev->pipeBulkOUT = usb_open(insertion, usb_transfer_bulk, usb_dir_out)) < 0)
+	if ((dev->pipeBulkOUT = usb_open(insertion, usb_transfer_bulk, usb_dir_out)) < 0) {
+		free(dev);
 		return -EINVAL;
+	}
 
+	/* Interrupt pipe is optional */
 	dev->pipeIntIN = usb_open(insertion, usb_transfer_interrupt, usb_dir_in);
 
 	if (usbacm_init(dev) != EOK) {
+		free(dev);
 		fprintf(stderr, "usbacm: Init failed\n");
 		return -EINVAL;
 	}
@@ -261,9 +273,12 @@ static int usbacm_handleInsertion(usb_devinfo_t *insertion)
 	oid.port = usbacm_common.msgport;
 	oid.id = dev->id + 1;
 	if (create_dev(&oid, dev->path) != 0) {
+		free(dev);
 		fprintf(stderr, "usbacm: Can't create dev!\n");
 		return -EINVAL;
 	}
+
+	LIST_ADD(&usbacm_common.devices, dev);
 
 	fprintf(stderr, "usbacm: New device: %s\n", dev->path);
 
@@ -281,7 +296,7 @@ static int usbacm_handleDeletion(usb_deletion_t *del)
 	do {
 		next = dev->next;
 		if (dev->instance.bus == del->bus && dev->instance.dev == del->dev &&
-		    dev->instance.interface == del->interface) {
+				dev->instance.interface == del->interface) {
 			remove(dev->path);
 			LIST_REMOVE(&usbacm_common.devices, dev);
 			fprintf(stderr, "usbacm: Device removed: %s\n", dev->path);

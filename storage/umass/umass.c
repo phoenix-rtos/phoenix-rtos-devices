@@ -14,6 +14,7 @@
 
 #include <arpa/inet.h>
 #include <errno.h>
+#include <limits.h>
 #include <sys/list.h>
 #include <sys/msg.h>
 #include <sys/minmax.h>
@@ -34,44 +35,34 @@
 #define UMASS_N_MSG_THREADS 1
 
 #define UMASS_SECTOR_SIZE 512
-#define UMASS_MAX_SECTORS 8
-#define UMASS_PART_OFFSET 32
-
-#define UMASS_CACHE_SIZE 8
 
 #define UMASS_WRITE 0
 #define UMASS_READ  0x80
-
-#define STATE_READY    0
-#define STATE_REMOVED -1
-#define STATE_CHANGED -2
-#define STATE_ERROR   -4
-#define STATE_HALT    -5
 
 #define CBW_SIG 0x43425355
 #define CSW_SIG 0x53425355
 
 
-typedef struct umass_cbw {
+typedef struct {
 	uint32_t sig;
 	uint32_t tag;
 	uint32_t dlen;
-	uint8_t  flags;
-	uint8_t  lun;
-	uint8_t  clen;
-	uint8_t  cmd[16];
+	uint8_t flags;
+	uint8_t lun;
+	uint8_t clen;
+	uint8_t cmd[16];
 } __attribute__((packed)) umass_cbw_t;
 
 
-typedef struct umass_csw {
+typedef struct {
 	uint32_t sig;
 	uint32_t tag;
 	uint32_t dr;
-	uint8_t  status;
+	uint8_t status;
 } __attribute__((packed)) umass_csw_t;
 
 
-typedef struct scsi_cdb10 {
+typedef struct {
 	uint8_t opcode;
 	uint8_t action : 5;
 	uint8_t misc0 : 3;
@@ -96,13 +87,12 @@ typedef struct umass_dev {
 	uint32_t partOffset;
 	uint32_t partSize;
 	handle_t lock;
-	int valid;
 } umass_dev_t;
 
 
 static struct {
 	umass_dev_t *devices;
-	char stack[UMASS_N_MSG_THREADS][1024] __attribute__ ((aligned(8)));
+	char stack[UMASS_N_MSG_THREADS][1024] __attribute__((aligned(8)));
 	unsigned drvport;
 	unsigned msgport;
 	handle_t lock;
@@ -153,7 +143,7 @@ static int umass_transmit(umass_dev_t *dev, void *cmd, size_t clen, char *data, 
 		return -EIO;
 	}
 
-	/* Transfered finished, check transfer correctness */
+	/* Transferred finished, check transfer correctness */
 	if (csw.sig != CSW_SIG || csw.tag != cbw.tag || csw.status != 0) {
 		fprintf(stderr, "umass_transmit: transfer incorrect\n");
 		return -EIO;
@@ -177,7 +167,6 @@ static int umass_check(umass_dev_t *dev)
 		return -1;
 	}
 
-
 	/* Read MBR */
 	if (umass_transmit(dev, &readcmd, sizeof(readcmd), dev->buffer, UMASS_SECTOR_SIZE, usb_dir_in) < 0) {
 		fprintf(stderr, "umass_transmit 2 failed\n");
@@ -191,7 +180,7 @@ static int umass_check(umass_dev_t *dev)
 	/* Read only the first partition */
 	dev->partOffset = mbr->pent[0].start;
 	/* For now, our OS can only handle disks smaller than 4 GiB */
-	dev->partSize = min(mbr->pent[0].sectors, 8388607UL);
+	dev->partSize = min(mbr->pent[0].sectors, ((long long)LONG_MAX + 1) / UMASS_SECTOR_SIZE - 1);
 
 	return 0;
 }
@@ -250,12 +239,12 @@ static int umass_write(umass_dev_t *dev, offs_t offs, char *buf, size_t len)
 static int umass_getattr(umass_dev_t *dev, int type, int *attr)
 {
 	switch (type) {
-	case atSize:
-		*attr = dev->partSize * UMASS_SECTOR_SIZE;
-		break;
+		case atSize:
+			*attr = dev->partSize * UMASS_SECTOR_SIZE;
+			break;
 
-	default:
-		*attr = -EINVAL;
+		default:
+			*attr = -EINVAL;
 	}
 
 	return EOK;
@@ -267,7 +256,7 @@ static umass_dev_t *umass_devFind(int id)
 
 	if (tmp != NULL) {
 		do {
-			if (tmp->id == id - 1 && tmp->valid)
+			if (tmp->id == id - 1)
 				return tmp;
 			tmp = tmp->next;
 		} while (tmp != umass_common.devices);
@@ -280,6 +269,7 @@ static void umass_msgthr(void *arg)
 {
 	umass_dev_t *dev;
 	unsigned long rid;
+	int id;
 	msg_t msg;
 
 	for (;;) {
@@ -293,8 +283,13 @@ static void umass_msgthr(void *arg)
 			continue;
 		}
 
+		if (msg.type == mtGetAttr)
+			id = msg.i.attr.oid.id;
+		else
+			id = msg.i.io.oid.id;
+
 		mutexLock(umass_common.lock);
-		dev = umass_devFind(msg.i.io.oid.id);
+		dev = umass_devFind(id);
 		mutexUnlock(umass_common.lock);
 
 		if (dev == NULL) {
@@ -335,41 +330,25 @@ static void umass_msgthr(void *arg)
 
 static umass_dev_t *umass_devAlloc(void)
 {
-	umass_dev_t *dev, *tmp;
+	umass_dev_t *dev;
 
-	/* Try to find a free device entry, otherwise allocate it */
-	dev = NULL;
-	tmp = umass_common.devices;
-	if (tmp != NULL) {
-		do {
-			if (!tmp->valid) {
-				dev = tmp;
-				break;
-			}
-		} while ((tmp = tmp->next) != umass_common.devices);
+	if ((dev = malloc(sizeof(umass_dev_t))) == NULL) {
+		fprintf(stderr, "umass: Not enough memory\n");
+		return NULL;
 	}
 
-	if (dev == NULL) {
-		if ((dev = malloc(sizeof(umass_dev_t))) == NULL) {
-			fprintf(stderr, "umass: Not enough memory\n");
-			return NULL;
-		}
+	/* Get next device number */
+	if (umass_common.devices == NULL)
+		dev->id = 0;
+	else
+		dev->id = umass_common.devices->prev->id + 1;
 
-		/* Get next device number */
-		if (umass_common.devices == NULL)
-			dev->id = 0;
-		else
-			dev->id = umass_common.devices->prev->id + 1;
-
-		if (mutexCreate(&dev->lock)) {
-			free(dev);
-			return NULL;
-		}
-
-		snprintf(dev->path, sizeof(dev->path), "/dev/umass%d", dev->id);
-		dev->valid = 0;
-		LIST_ADD(&umass_common.devices, dev);
+	if (mutexCreate(&dev->lock)) {
+		free(dev);
+		return NULL;
 	}
+
+	snprintf(dev->path, sizeof(dev->path), "/dev/umass%d", dev->id);
 
 	return dev;
 }
@@ -421,11 +400,12 @@ static int umass_handleInsertion(usb_devinfo_t *insertion)
 	oid.port = umass_common.msgport;
 	oid.id = dev->id + 1;
 	if (create_dev(&oid, dev->path) != 0) {
+		free(dev);
 		fprintf(stderr, "usb: Can't create dev!\n");
 		return -EINVAL;
 	}
 
-	dev->valid = 1;
+	LIST_ADD(&umass_common.devices, dev);
 	fprintf(stderr, "umass: New USB Mass Storage device: %s sectors: %d\n", dev->path, dev->partSize);
 
 	return 0;
@@ -434,19 +414,23 @@ static int umass_handleInsertion(usb_devinfo_t *insertion)
 
 static int umass_handleDeletion(usb_deletion_t *del)
 {
-	umass_dev_t *dev = umass_common.devices;
+	umass_dev_t *next, *dev = umass_common.devices;
 
 	if (dev == NULL)
 		return 0;
 
 	do {
-		if (dev->valid && dev->instance.bus == del->bus && dev->instance.dev == del->dev &&
-		    dev->instance.interface == del->interface) {
-			dev->valid = 0;
+		next = dev->next;
+		if (dev->instance.bus == del->bus && dev->instance.dev == del->dev &&
+				dev->instance.interface == del->interface) {
 			remove(dev->path);
+			LIST_REMOVE(&umass_common.devices, dev);
 			fprintf(stderr, "umass: Device removed: %s\n", dev->path);
+			free(dev);
+			if (dev == next)
+				break;
 		}
-		dev = dev->next;
+		dev = next;
 	} while (dev != umass_common.devices);
 
 	return 0;

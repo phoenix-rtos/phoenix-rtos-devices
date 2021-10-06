@@ -2,7 +2,7 @@
 /*
  * Phoenix-RTOS
  *
- * Operating system kernel
+ * EHCI USB Physical Layer for imx6ull
  *
  * ehci/phy.c
  *
@@ -37,8 +37,8 @@ static const hcd_info_t imx6ull_info[] = {
 		.hcdaddr = 0x02184200,
 		.phyaddr = 0x020ca000,
 		.clk = pctl_clk_usboh3,
-		.irq = 74,
-	},
+		.irq = 74
+	}
 };
 
 int hcd_getInfo(const hcd_info_t **info)
@@ -117,19 +117,27 @@ void phy_enableHighSpeedDisconnect(hcd_t *hcd, int enable)
 		*(hcd->phybase + phy_ctrl) &= ~0x2;
 }
 
-void phy_init(hcd_t *hcd)
+int phy_init(hcd_t *hcd)
 {
 	off_t offs;
 
 	offs = hcd->info->phyaddr % _PAGE_SIZE;
 	hcd->phybase = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, hcd->info->phyaddr - offs);
+	if (hcd->phybase == MAP_FAILED)
+		return -ENOMEM;
 	hcd->phybase += (offs / sizeof(int));
 
 	offs = hcd->info->hcdaddr % _PAGE_SIZE;
 	hcd->base = mmap(NULL, 2 * _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, hcd->info->hcdaddr - offs);
+	if (hcd->base == MAP_FAILED) {
+		munmap(hcd->phybase, _PAGE_SIZE);
+		return -ENOMEM;
+	}
 	hcd->base += (offs / sizeof(int));
 
 	phy_initClock(hcd);
 	phy_reset(hcd);
 	phy_config(hcd);
+
+	return 0;
 }

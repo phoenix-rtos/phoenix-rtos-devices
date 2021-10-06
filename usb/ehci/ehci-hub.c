@@ -28,13 +28,14 @@ static void ehci_resetPort(hcd_t *hcd, int port)
 	ehci_t *ehci = (ehci_t *)hcd->priv;
 	volatile int *reg = (hcd->base + portsc1) + (port - 1);
 
-	*reg &= ~0x0000002AU;
+	*reg &= ~0x2aU;
 	*reg |= PORTSC_PR;
 	/*
 	 * This is imx deviation. According to ehci documentation
 	 * it is up to software to set the PR bit 0 after waiting 20ms
 	 */
-	while (*reg & PORTSC_PR);
+	while (*reg & PORTSC_PR)
+		;
 	usleep(20 * 1000);
 
 	*reg |= PORTSC_PP;
@@ -134,7 +135,7 @@ static int ehci_setPortFeature(usb_dev_t *hub, int port, uint16_t wValue)
 static int ehci_clearPortFeature(usb_dev_t *hub, int port, uint16_t wValue)
 {
 	hcd_t *hcd = hub->hcd;
-	ehci_t *ehci = (ehci_t *) hcd->priv;
+	ehci_t *ehci = (ehci_t *)hcd->priv;
 	volatile int *portsc = hcd->base + portsc1 + port - 1;
 	uint32_t val = *portsc;
 
@@ -189,7 +190,7 @@ static int ehci_getDesc(usb_dev_t *hub, char *buf, size_t len)
 	desc->bPwrOn2PwrGood = 10;
 	desc->bHubContrCurrent = 10;
 	desc->bNbrPorts = *(hcd->base + hcsparams) & 0xf;
-	desc->variable[0] = 0; /* Device not removable */
+	desc->variable[0] = 0;    /* Device not removable */
 	desc->variable[1] = 0xff; /* PortPwrCtrlMask */
 
 	return 0;
