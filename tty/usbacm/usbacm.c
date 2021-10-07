@@ -17,6 +17,7 @@
 #include <sys/file.h>
 #include <sys/threads.h>
 #include <sys/minmax.h>
+#include <poll.h>
 #include <posix/utils.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,11 +28,17 @@
 #include <usbdriver.h>
 #include <cdc.h>
 
+#include "../libtty/fifo.h"
+
 #define USBACM_N_MSG_THREADS 2
 
+#define RX_FIFO_SIZE  4096
+#define RX_STACK_SIZE 2048
 
-typedef struct usbacm_dev {
-	struct usbacm_dev *prev, *next;
+typedef struct _usbacm_dev {
+	struct _usbacm_dev *prev, *next;
+	char *stack;
+	int rxtid;
 	char path[32];
 	usb_devinfo_t instance;
 	int pipeCtrl;
@@ -39,8 +46,14 @@ typedef struct usbacm_dev {
 	int pipeBulkIN;
 	int pipeBulkOUT;
 	int id;
+	int flags;
+	volatile int rxRunning;
+	volatile int thrFinished;
 	unsigned port;
+	fifo_t *fifo;
 	oid_t oid;
+	handle_t fifoLock;
+	handle_t fifoFull;
 } usbacm_dev_t;
 
 
@@ -52,6 +65,7 @@ static struct {
 	handle_t lock;
 } usbacm_common;
 
+
 static const usb_device_id_t filters[] = {
 	/* Huawei E3372 - Mass Storage mode for modeswitch */
 	{ 0x12d1, 0x1f01, USBDRV_ANY, USBDRV_ANY, USBDRV_ANY },
@@ -62,6 +76,7 @@ static const usb_device_id_t filters[] = {
 	/* USB CDC ACM class */
 	{ USBDRV_ANY, USBDRV_ANY, USB_CLASS_CDC, USB_SUBCLASS_ACM, USBDRV_ANY },
 };
+
 
 static const usb_modeswitch_t modeswitch[] = {
 	/* Huawei E3372 ACM mode */
@@ -99,13 +114,76 @@ static int usbacm_init(usbacm_dev_t *dev)
 }
 
 
+static void usbacm_rxthr(void *arg)
+{
+	usbacm_dev_t *dev = (usbacm_dev_t *)arg;
+	char buf[512];
+	int i, ret;
+
+	mutexLock(dev->fifoLock);
+	dev->rxRunning = 1;
+	dev->rxtid = gettid();
+	mutexUnlock(dev->fifoLock);
+
+	for (;;) {
+		if ((ret = usb_transferBulk(dev->pipeBulkIN, buf, sizeof(buf), usb_dir_in)) < 0) {
+			fprintf(stderr, "usbacm%d: read failed\n", dev->id);
+			break;
+		}
+
+		mutexLock(dev->fifoLock);
+		for (i = 0; i < ret; i++) {
+			while (fifo_is_full(dev->fifo))
+				condWait(dev->fifoFull, dev->fifoLock, 0);
+			fifo_push(dev->fifo, buf[i]);
+		}
+		mutexUnlock(dev->fifoLock);
+	}
+
+	mutexLock(dev->fifoLock);
+	dev->rxRunning = 0;
+	mutexUnlock(dev->fifoLock);
+
+	endthread();
+}
+
+
+static int _usbacm_readNonblock(usbacm_dev_t *dev, char *data, size_t len)
+{
+	int full, i;
+
+	if (!dev->rxRunning)
+		return -EIO;
+
+	full = fifo_is_full(dev->fifo);
+	for (i = 0; i < len && !fifo_is_empty(dev->fifo); i++)
+		data[i] = fifo_pop_back(dev->fifo);
+	if (full)
+		condSignal(dev->fifoFull);
+
+	return i;
+}
+
+
 static int usbacm_read(usbacm_dev_t *dev, char *data, size_t len)
 {
 	int ret = 0;
+	int flags;
 
-	if ((ret = usb_transferBulk(dev->pipeBulkIN, data, len, usb_dir_in)) < 0) {
-		fprintf(stderr, "usbacm: read failed\n");
-		ret = -EIO;
+	mutexLock(usbacm_common.lock);
+	flags = dev->flags;
+	mutexUnlock(usbacm_common.lock);
+
+	if (flags & O_NONBLOCK) {
+		mutexLock(dev->fifoLock);
+		ret = _usbacm_readNonblock(dev, data, len);
+		mutexUnlock(dev->fifoLock);
+	}
+	else {
+		if ((ret = usb_transferBulk(dev->pipeBulkIN, data, len, usb_dir_in)) < 0) {
+			fprintf(stderr, "usbacm: read failed\n");
+			ret = -EIO;
+		}
 	}
 
 	return ret;
@@ -127,17 +205,22 @@ static int usbacm_write(usbacm_dev_t *dev, char *data, size_t len)
 
 static usbacm_dev_t *usbacm_devFind(int id)
 {
-	usbacm_dev_t *tmp = usbacm_common.devices;
+	usbacm_dev_t *tmp, *dev = NULL;
 
+	mutexLock(usbacm_common.lock);
+	tmp = usbacm_common.devices;
 	if (tmp != NULL) {
 		do {
-			if (tmp->id == id - 1)
-				return tmp;
+			if (tmp->id == id - 1) {
+				dev = tmp;
+				break;
+			}
 			tmp = tmp->next;
 		} while (tmp != usbacm_common.devices);
 	}
+	mutexUnlock(usbacm_common.lock);
 
-	return NULL;
+	return dev;
 }
 
 
@@ -145,7 +228,7 @@ static usbacm_dev_t *usbacm_devAlloc(void)
 {
 	usbacm_dev_t *dev;
 
-	if ((dev = malloc(sizeof(usbacm_dev_t))) == NULL) {
+	if ((dev = calloc(1, sizeof(usbacm_dev_t))) == NULL) {
 		fprintf(stderr, "usbacm: Not enough memory\n");
 		return NULL;
 	}
@@ -159,6 +242,59 @@ static usbacm_dev_t *usbacm_devAlloc(void)
 	snprintf(dev->path, sizeof(dev->path), "/dev/usbacm%d", dev->id);
 
 	return dev;
+}
+
+
+static int _usbacm_open(usbacm_dev_t *dev, int flags)
+{
+	fifo_t *fifo;
+
+	if (dev->flags != 0)
+		return -EIO;
+
+	if (flags & O_NONBLOCK && dev->fifo == NULL) {
+		if ((fifo = malloc(sizeof(fifo_t) + RX_FIFO_SIZE)) == NULL)
+			return -ENOMEM;
+
+		fifo_init(fifo, RX_FIFO_SIZE);
+
+		if (mutexCreate(&dev->fifoLock) != 0) {
+			free(fifo);
+			return -ENOMEM;
+		}
+
+		if (condCreate(&dev->fifoFull) != 0) {
+			resourceDestroy(dev->fifoLock);
+			free(fifo);
+			return -ENOMEM;
+		}
+
+		if ((dev->stack = malloc(RX_STACK_SIZE)) == NULL) {
+			free(fifo);
+			resourceDestroy(dev->fifoLock);
+			resourceDestroy(dev->fifoFull);
+			return -ENOMEM;
+		}
+
+		if (beginthread(usbacm_rxthr, 4, dev->stack, RX_STACK_SIZE, dev) != 0) {
+			resourceDestroy(dev->fifoLock);
+			resourceDestroy(dev->fifoFull);
+			free(fifo);
+			free(dev->stack);
+			return -ENOMEM;
+		}
+		dev->fifo = fifo;
+	}
+
+	dev->flags = flags;
+
+	return EOK;
+}
+
+
+static void _usbacm_close(usbacm_dev_t *dev)
+{
+	dev->flags = 0;
 }
 
 
@@ -181,16 +317,15 @@ static void usbacm_msgthr(void *arg)
 			msgRespond(usbacm_common.msgport, &msg, rid);
 			continue;
 		}
+
 		if (msg.type == mtGetAttr)
 			id = msg.i.attr.oid.id;
+		else if (msg.type == mtOpen)
+			id = msg.i.openclose.oid.id;
 		else
 			id = msg.i.io.oid.id;
 
-		mutexLock(usbacm_common.lock);
-		dev = usbacm_devFind(id);
-		mutexUnlock(usbacm_common.lock);
-
-		if (dev == NULL) {
+		if ((dev = usbacm_devFind(id)) == NULL) {
 			msg.o.io.err = -ENOENT;
 			msgRespond(usbacm_common.msgport, &msg, rid);
 			continue;
@@ -198,11 +333,23 @@ static void usbacm_msgthr(void *arg)
 
 		switch (msg.type) {
 			case mtOpen:
+				mutexLock(usbacm_common.lock);
+				msg.o.io.err = _usbacm_open(dev, msg.i.openclose.flags);
+				mutexUnlock(usbacm_common.lock);
+				break;
+
 			case mtClose:
+				mutexLock(usbacm_common.lock);
+				_usbacm_close(dev);
+				mutexUnlock(usbacm_common.lock);
 				msg.o.io.err = EOK;
 				break;
+
 			case mtRead:
-				msg.o.io.err = usbacm_read(dev, msg.o.data, msg.o.size);
+				if ((msg.o.io.err = usbacm_read(dev, msg.o.data, msg.o.size)) == 0) {
+					if (msg.i.io.mode & O_NONBLOCK)
+						msg.o.io.err = -EWOULDBLOCK;
+				}
 				break;
 
 			case mtWrite:
@@ -210,9 +357,14 @@ static void usbacm_msgthr(void *arg)
 				break;
 
 			case mtGetAttr:
-				msg.o.attr.val = -EINVAL;
-				break;
-
+				if ((msg.i.attr.type == atPollStatus)) {
+					msg.o.attr.val = fifo_is_empty(dev->fifo) ? POLLOUT : POLLOUT | POLLIN;
+					msg.o.attr.err = EOK;
+					break;
+				}
+				else {
+					msg.o.attr.err = -EINVAL;
+				}
 			default:
 				msg.o.io.err = -EINVAL;
 		}
@@ -224,7 +376,7 @@ static void usbacm_msgthr(void *arg)
 }
 
 
-static int usbacm_handleInsertion(usb_devinfo_t *insertion)
+static int _usbacm_handleInsertion(usb_devinfo_t *insertion)
 {
 	usbacm_dev_t *dev;
 	const usb_modeswitch_t *mode;
@@ -286,7 +438,31 @@ static int usbacm_handleInsertion(usb_devinfo_t *insertion)
 }
 
 
-static int usbacm_handleDeletion(usb_deletion_t *del)
+static int _usbacm_threadJoin(usbacm_dev_t *dev)
+{
+	usbacm_dev_t *tmp;
+	int err;
+
+	while (!dev->thrFinished) {
+		if ((err = threadJoin(0)) < 0)
+			return err;
+
+		/* Find a device, whose thread has ended */
+		tmp = usbacm_common.devices;
+		do {
+			if (tmp->rxtid == err) {
+				tmp->thrFinished = 1;
+				break;
+			}
+			tmp = tmp->next;
+		} while (tmp != usbacm_common.devices);
+	}
+
+	return 0;
+}
+
+
+static int _usbacm_handleDeletion(usb_deletion_t *del)
 {
 	usbacm_dev_t *next, *dev = usbacm_common.devices;
 
@@ -297,9 +473,18 @@ static int usbacm_handleDeletion(usb_deletion_t *del)
 		next = dev->next;
 		if (dev->instance.bus == del->bus && dev->instance.dev == del->dev &&
 				dev->instance.interface == del->interface) {
+			fprintf(stderr, "usbacm: Device removed: %s\n", dev->path);
+			if (dev->fifo != NULL) {
+				_usbacm_threadJoin(dev);
+				/* Non-blocking device */
+				free(dev->fifo);
+				dev->fifo = NULL;
+				resourceDestroy(dev->fifoLock);
+				resourceDestroy(dev->fifoFull);
+				free(dev->stack);
+			}
 			remove(dev->path);
 			LIST_REMOVE(&usbacm_common.devices, dev);
-			fprintf(stderr, "usbacm: Device removed: %s\n", dev->path);
 			free(dev);
 			if (dev == next)
 				break;
@@ -354,10 +539,10 @@ int main(int argc, char *argv[])
 		mutexLock(usbacm_common.lock);
 		switch (umsg->type) {
 			case usb_msg_insertion:
-				usbacm_handleInsertion(&umsg->insertion);
+				_usbacm_handleInsertion(&umsg->insertion);
 				break;
 			case usb_msg_deletion:
-				usbacm_handleDeletion(&umsg->deletion);
+				_usbacm_handleDeletion(&umsg->deletion);
 				break;
 			default:
 				fprintf(stderr, "usbacm: Error when receiving event from host\n");
