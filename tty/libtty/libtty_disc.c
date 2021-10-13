@@ -66,10 +66,10 @@
 #define COL_NORMAL  "\033[0m"
 
 #define LOG_TAG "libtty-disc: "
-#define log_debug(fmt, ...)     do { if (1) printf(LOG_TAG fmt "\n", ##__VA_ARGS__); } while (0)
-#define log_info(fmt, ...)      do { if (1) printf(COL_CYAN LOG_TAG fmt "\n" COL_NORMAL, ##__VA_ARGS__); } while (0)
-#define log_warn(fmt, ...)      do { if (1) printf(COL_YELLOW LOG_TAG fmt "\n" COL_NORMAL, ##__VA_ARGS__); } while (0)
-#define log_error(fmt, ...)     do { if (1) printf(COL_RED  LOG_TAG fmt "\n" COL_NORMAL, ##__VA_ARGS__); } while (0)
+#define log_debug(fmt, ...)     do { if (0) printf(LOG_TAG fmt "\n", ##__VA_ARGS__); } while (0)
+#define log_info(fmt, ...)      do { if (0) printf(COL_CYAN LOG_TAG fmt "\n" COL_NORMAL, ##__VA_ARGS__); } while (0)
+#define log_warn(fmt, ...)      do { if (0) printf(COL_YELLOW LOG_TAG fmt "\n" COL_NORMAL, ##__VA_ARGS__); } while (0)
+#define log_error(fmt, ...)     do { if (0) printf(COL_RED  LOG_TAG fmt "\n" COL_NORMAL, ##__VA_ARGS__); } while (0)
 // } DEBUG
 
 #define CALLBACK(cb_name, ...) do {\
@@ -270,11 +270,11 @@ int libtty_putchar(libtty_common_t *tty, unsigned char c, int *wake_reader)
 
 processed:
 	mutexLock(tty->rx_mutex);
-	if (!fifo_is_full(tty->rx_fifo)) {
-		fifo_push(tty->rx_fifo, c);
-	} else {
+	if (fifo_is_full(tty->rx_fifo)) {
 		log_warn("RX OVERRUN!");
+		fifo_pop_back(tty->rx_fifo);
 	}
+	fifo_push(tty->rx_fifo, c);
 
 	libttydisc_echo(tty, c);
 
