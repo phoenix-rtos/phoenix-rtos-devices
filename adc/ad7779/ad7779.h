@@ -14,7 +14,10 @@
 #ifndef AD7779_H
 #define AD7779_H
 
+#include <stdio.h>
 #include <stdint.h>
+
+#include "ad7779-low.h"
 
 #define AD7779_OK                       (0)
 #define AD7779_ARG_ERROR                (-1)
@@ -88,5 +91,23 @@ int ad7779_get_status(uint8_t *status_buf);
 
 /* For debugging purposes */
 int ad7779_print_status(void);
+
+/* Logging */
+#define COL_RED    "\033[1;31m"
+#define COL_CYAN   "\033[1;36m"
+#define COL_NORMAL "\033[0m"
+
+#define LOG_TAG "ad7779: "
+
+/* clang-format off */
+#ifdef NDEBUG
+#define log_debug(fmt, ...)
+#else
+#define log_debug(fmt, ...) do { printf(LOG_TAG fmt "\n", ##__VA_ARGS__); } while (0)
+#endif
+
+#define log_info(fmt, ...) do { printf(LOG_TAG COL_CYAN fmt COL_NORMAL "\n", ##__VA_ARGS__); } while (0)
+#define log_error(fmt, ...) do { printf(LOG_TAG COL_RED fmt COL_NORMAL "\n", ##__VA_ARGS__); } while (0)
+/*clang-format on */
 
 #endif /* AD7779_H */
