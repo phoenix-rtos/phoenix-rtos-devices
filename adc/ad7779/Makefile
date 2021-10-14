@@ -14,6 +14,11 @@ ifneq (, $(findstring imxrt, $(TARGET)))
   DEP_LIBS := libimxrt-edma
   DEPS := imxrt-multi
   CFLAGS += -DAD7779_BUFFER_CNT=32 -DAD7779_BUFFER_SIZE=2048
+else ifneq (, $(findstring imx6ull, $(TARGET)))
+  SRCS += $(wildcard $(LOCAL_PATH)imx6ull/*.c)
+  DEP_LIBS := libsdma libimx6ull-ecspi
+  DEPS := imx6ull-gpio
+  CFLAGS += -DAD7779_BUFFER_CNT=2 -DAD7779_BUFFER_SIZE=4096
 else
 $(NAME): ; $(error $(NAME) for $(TARGET) not implemented)
 endif
