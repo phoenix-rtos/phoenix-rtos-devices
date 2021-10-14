@@ -208,7 +208,7 @@ static void sdma_enable_channel(uint8_t channel_id)
 	common.regs->HSTART = (1 << channel_id);
 }
 
-static void __attribute__((unused)) sdma_disable_channel(uint8_t channel_id)
+static void sdma_disable_channel(uint8_t channel_id)
 {
 	common.regs->HSTART &= ~(1 << channel_id);
 	common.active_mask &= ~(1 << channel_id);
@@ -719,6 +719,10 @@ static int dev_ctl(msg_t *msg)
 			sdma_enable_channel(channel);
 			return EOK;
 
+		case sdma_dev_ctl__disable:
+			sdma_disable_channel(channel);
+			return EOK;
+
 		case sdma_dev_ctl__ocram_alloc:
 			dev_ctl.alloc.paddr = sdma_ocram_alloc(dev_ctl.alloc.size);
 			memcpy(msg->o.raw, &dev_ctl, sizeof(sdma_dev_ctl_t));
@@ -1058,7 +1062,7 @@ int main(int argc, char *argv[])
 		if (res == -ETIME) {
 
 			/* If any channel is active */
-			if (common.active_mask && !common.broken) {
+			if ((common.active_mask & ~0x1) && !common.broken) {
 
 				create_flag_file(SDMA_BROKEN_FILE);
 
