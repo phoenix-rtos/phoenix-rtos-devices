@@ -129,6 +129,10 @@ static void uart_dispatchMsg(msg_t *msg)
 		case id_uart6:
 		case id_uart7:
 		case id_uart8:
+		case id_uart9:
+		case id_uart10:
+		case id_uart11:
+		case id_uart12:
 			uart_handleMsg(msg, id);
 			break;
 	}
