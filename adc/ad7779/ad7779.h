@@ -89,4 +89,58 @@ int ad7779_get_status(uint8_t *status_buf);
 /* For debugging purposes */
 int ad7779_print_status(void);
 
+/* Logging */
+#define COL_RED    "\033[1;31m"
+#define COL_CYAN   "\033[1;36m"
+#define COL_NORMAL "\033[0m"
+
+#define LOG_TAG "ad7779: "
+
+#ifdef NDEBUG
+#define log_debug(fmt, ...)
+#else
+#define log_debug(fmt, ...) \
+	do { \
+		printf(LOG_TAG fmt "\n", ##__VA_ARGS__); \
+	} while (0)
+#endif
+
+#define log_info(fmt, ...) \
+	do { \
+		printf(LOG_TAG COL_CYAN fmt COL_NORMAL "\n", ##__VA_ARGS__); \
+	} while (0)
+#define log_error(fmt, ...) \
+	do { \
+		printf(LOG_TAG COL_RED fmt COL_NORMAL "\n", ##__VA_ARGS__); \
+	} while (0)
+
+/* DMA api */
+void dma_enable(void);
+void dma_disable(void);
+int dma_read(void *data, size_t len);
+int dma_init(size_t size, size_t count, addr_t *phys_addr);
+void dma_free(void);
+
+/* SAI api */
+#define SAI_FIFO_WATERMARK (8)
+
+int sai_init(void);
+void sai_rx_enable(void);
+void sai_rx_disable(void);
+addr_t sai_get_rx_fifo_ptr(void);
+
+/* SPI api */
+int spi_exchange(uint8_t *buff, uint8_t len);
+int spi_init(void);
+
+/* GPIO api */
+typedef enum {
+	start,
+	reset,
+	hardreset
+} ad7779_gpio_t;
+
+int ad7779_gpio(ad7779_gpio_t gpio, int state);
+int ad7779_gpio_init(void);
+
 #endif /* AD7779_H */
