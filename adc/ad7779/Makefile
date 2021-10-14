@@ -13,6 +13,10 @@ ifneq (, $(findstring imxrt, $(TARGET)))
   SRCS += $(wildcard $(LOCAL_PATH)/imxrt/*.c)
   DEP_LIBS := libimxrt-edma
   DEPS := imxrt-multi
+else ifneq (, $(findstring imx6ull, $(TARGET)))
+  SRCS += $(wildcard $(LOCAL_PATH)/imx6ull/*.c)
+  DEP_LIBS := libsdma libimx6ull-ecspi
+  DEPS := imx6ull-gpio
 else
 $(NAME): ; $(error $(NAME) for $(TARGET) not implemented)
 endif
