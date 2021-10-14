@@ -133,6 +133,16 @@ int sdma_enable(sdma_t *s)
 	return sdma_dev_ctl(s, &dev_ctl, NULL, 0);
 }
 
+int sdma_disable(sdma_t *s)
+{
+	sdma_dev_ctl_t dev_ctl;
+
+	dev_ctl.oid = s->oid;
+	dev_ctl.type = sdma_dev_ctl__disable;
+
+	return sdma_dev_ctl(s, &dev_ctl, NULL, 0);
+}
+
 int sdma_trigger(sdma_t *s)
 {
 	sdma_dev_ctl_t dev_ctl;

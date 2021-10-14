@@ -32,6 +32,7 @@ int sdma_context_dump(sdma_t *s, sdma_context_t *ctx);
 int sdma_context_set(sdma_t *s, const sdma_context_t *ctx);
 
 int sdma_enable(sdma_t *s);
+int sdma_disable(sdma_t *s);
 int sdma_trigger(sdma_t *s);
 
 /* cnt - number of interrupts for this channel registered up until this point */
