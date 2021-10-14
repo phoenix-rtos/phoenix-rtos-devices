@@ -20,25 +20,7 @@
 #include <string.h>
 #include <fcntl.h>
 
-#include <phoenix/arch/imxrt.h>
-#include <imxrt-multi.h>
-
 #include "ad7779.h"
-
-#define COL_RED	 "\033[1;31m"
-#define COL_CYAN	"\033[1;36m"
-#define COL_NORMAL  "\033[0m"
-
-#define LOG_TAG "ad7779: "
-
-#define log_info(fmt, ...)      do { printf(COL_CYAN LOG_TAG fmt COL_NORMAL "\n", ##__VA_ARGS__); } while (0)
-#define log_error(fmt, ...)     do { printf(COL_RED  LOG_TAG fmt COL_NORMAL "\n", ##__VA_ARGS__); } while (0)
-
-#ifdef NDEBUG
-#define log_debug(fmt, ...)
-#else
-#define log_debug(fmt, ...)     do { printf(LOG_TAG fmt "\n", ##__VA_ARGS__); } while (0)
-#endif
 
 #define AD7779_CHn_CONFIG(n)              (0x00 + n)
 #define CHn_GAIN_SHIFT                    (6)
@@ -92,119 +74,6 @@
 
 #define AD7779_MCLK_FREQ                  ((uint32_t)8192*1000)
 
-
-static struct {
-	oid_t multidrv;
-} ad7779_common;
-
-
-/* Pin config:
- * /START -> GPIO_B0_04 (ALT5 GPIO2_IO04)
- * /RESET -> GPIO_B0_05 (ALT5 GPIO2_IO05)
- * /DRDY -> GPIO_B0_14 (ALT3 SAI1_RX_SYNC)
- * DCLK -> GPIO_B0_15 (ALT3 SAI1_RX_BCLK)
- * DOUT3 -> GPIO_B0_12 (ALT3 SAI1_RX_DATA03)
- * DOUT2 -> GPIO_B0_11 (ALT3 SAI1_RX_DATA02)
- * DOUT1 -> GPIO_B0_10 (ALT3 SAI1_RX_DATA01)
- * DOUT0 -> GPIO_B1_00 (ALT3 SAI1_RX_DATA00)
- * /CS -> GPIO_B0_00 (managed by Multidrv)
- * SCLK -> GPIO_B0_03 (managed by Multidrv)
- * SDO -> GPIO_B0_01 (managed by Multidrv)
- * SDI -> GPIO_B0_02 (managed by Multidrv)
- * CLK_SEL -> GPIO_B0_06 (ALT5 GPIO2_IO06)
- */
-
-
-static void gpio_setPin(int gpio, int pin, int state)
-{
-	msg_t msg;
-	multi_i_t *imsg = NULL;
-
-	msg.type = mtDevCtl;
-	msg.i.data = NULL;
-	msg.i.size = 0;
-	msg.o.data = NULL;
-	msg.o.size = 0;
-
-	imsg = (multi_i_t *)msg.i.raw;
-
-	imsg->id = gpio;
-	imsg->gpio.type = gpio_set_port;
-	imsg->gpio.port.val = !!state << pin;
-	imsg->gpio.port.mask = 1 << pin;
-
-	msgSend(ad7779_common.multidrv.port, &msg);
-}
-
-
-static void gpio_setDir(int gpio, int pin, int dir)
-{
-	msg_t msg;
-	multi_i_t *imsg = NULL;
-
-	msg.type = mtDevCtl;
-	msg.i.data = NULL;
-	msg.i.size = 0;
-	msg.o.data = NULL;
-	msg.o.size = 0;
-
-	imsg = (multi_i_t *)msg.i.raw;
-
-	imsg->id = gpio;
-	imsg->gpio.type = gpio_set_dir;
-	imsg->gpio.dir.val = !!dir << pin;
-	imsg->gpio.dir.mask = 1 << pin;
-
-	msgSend(ad7779_common.multidrv.port, &msg);
-}
-
-
-static int lpspi_transaction(char *buff, size_t bufflen)
-{
-	msg_t msg;
-	multi_i_t *imsg = (multi_i_t *)msg.i.raw;
-	multi_o_t *omsg = (multi_o_t *)msg.o.raw;
-
-	msg.type = mtDevCtl;
-	msg.i.data = buff;
-	msg.i.size = bufflen;
-	msg.o.data = buff;
-	msg.o.size = bufflen;
-
-	imsg->id = id_spi4;
-	imsg->spi.type = spi_transaction;
-	imsg->spi.transaction.cs = 0;
-	imsg->spi.transaction.frameSize = bufflen;
-
-	msgSend(ad7779_common.multidrv.port, &msg);
-
-	return omsg->err;
-}
-
-
-static int lpspi_config(void)
-{
-	msg_t msg;
-	multi_i_t *imsg = (multi_i_t *)msg.i.raw;
-
-	msg.type = mtDevCtl;
-	msg.i.data = NULL;
-	msg.i.size = 0;
-	msg.o.data = NULL;
-	msg.o.size = 0;
-
-	imsg->id = id_spi4;
-	imsg->spi.type = spi_config;
-	imsg->spi.config.cs = 0;
-	imsg->spi.config.mode = spi_mode_0;
-	imsg->spi.config.endian = spi_msb;
-	imsg->spi.config.sckDiv = 4;
-	imsg->spi.config.prescaler = 3;
-
-	return msgSend(ad7779_common.multidrv.port, &msg);
-}
-
-
 #define AD7779_READ_BIT		 (0x80)
 
 static int ad7779_read(uint8_t addr, uint8_t *data, uint8_t len)
@@ -216,7 +85,7 @@ static int ad7779_read(uint8_t addr, uint8_t *data, uint8_t len)
 
 	buff[0] = addr | AD7779_READ_BIT;
 	memset(buff + 1, 0, len);
-	if (lpspi_transaction((void *)buff, len + 1) < 0)
+	if (spi_exchange(buff, len + 1) < 0)
 		return AD7779_CTRL_IO_ERROR;
 
 	memcpy(data, buff + 1, len);
@@ -244,7 +113,7 @@ static int ad7779_write(uint8_t addr, const uint8_t *data, uint8_t len)
 	buff[0] = addr;
 	memcpy(buff + 1, data, len);
 
-	if (lpspi_transaction((void *)buff, len + 1) < 0)
+	if (spi_exchange(buff, len + 1) < 0)
 		return AD7779_CTRL_IO_ERROR;
 
 	if (buff[0] != 0x20)
@@ -661,69 +530,6 @@ int ad7779_print_status(void)
 }
 
 
-static int ad7779_gpio_init(void)
-{
-	platformctl_t pctl;
-
-	pctl.action = pctl_set;
-	pctl.type = pctl_iomux;
-
-	pctl.iomux.sion = 0;
-	pctl.iomux.mode = 5;
-
-	/* Configure as GPIOs */
-
-	/* /START */
-	pctl.iomux.mux = pctl_mux_gpio_b0_04;
-	platformctl(&pctl);
-	/* /RESET */
-	pctl.iomux.mux = pctl_mux_gpio_b0_05;
-	platformctl(&pctl);
-	/* /CLK_SEL */
-	pctl.iomux.mux = pctl_mux_gpio_b0_06;
-	platformctl(&pctl);
-	/* Hardware reset */
-	pctl.iomux.mux = pctl_mux_gpio_b0_07;
-	platformctl(&pctl);
-
-	pctl.type = pctl_iopad;
-	pctl.iopad.hys = 0;
-	pctl.iopad.pus = 0b11;
-	pctl.iopad.pue = 0;
-	pctl.iopad.pke = 1;
-	pctl.iopad.ode = 0;
-	pctl.iopad.speed = 2;
-	pctl.iopad.dse = 1;
-	pctl.iopad.sre = 0;
-
-	/* /START */
-	pctl.iopad.pad = pctl_pad_gpio_b0_04;
-	platformctl(&pctl);
-	/* /RESET */
-	pctl.iopad.pad = pctl_pad_gpio_b0_05;
-	platformctl(&pctl);
-	/* /CLK_SEL */
-	pctl.iopad.pad = pctl_pad_gpio_b0_06;
-	platformctl(&pctl);
-	/* Hardware reset */
-	pctl.iopad.pad = pctl_pad_gpio_b0_07;
-	platformctl(&pctl);
-
-	/* Set states */
-	gpio_setDir(id_gpio2, 4, 1);
-	gpio_setDir(id_gpio2, 5, 1);
-	gpio_setDir(id_gpio2, 6, 1);
-	gpio_setDir(id_gpio2, 7, 1);
-
-	gpio_setPin(id_gpio2, 4, 1);
-	gpio_setPin(id_gpio2, 5, 1);
-	gpio_setPin(id_gpio2, 6, 1);
-	gpio_setPin(id_gpio2, 7, 0);
-
-	return AD7779_OK;
-}
-
-
 static int ad7779_reset(int hard)
 {
 	int i;
@@ -731,19 +537,19 @@ static int ad7779_reset(int hard)
 
 	/* Hardware reset */
 	if (hard) {
-		gpio_setPin(id_gpio2, 7, 1);
+		ad7779_gpio(hardreset, 1);
 		usleep(200000);
-		gpio_setPin(id_gpio2, 7, 0);
+		ad7779_gpio(hardreset, 0);
 	}
 
 	/* Software reset */
-	gpio_setPin(id_gpio2, 4, 0);
+	ad7779_gpio(start, 0);
 	usleep(10000);
-	gpio_setPin(id_gpio2, 5, 0);
+	ad7779_gpio(reset, 0);
 	usleep(200000);
-	gpio_setPin(id_gpio2, 4, 1);
+	ad7779_gpio(start, 1);
 	usleep(100000);
-	gpio_setPin(id_gpio2, 5, 1);
+	ad7779_gpio(reset, 1);
 
 	memset(status, 0, sizeof(status));
 
@@ -764,10 +570,7 @@ int ad7779_init(int hard)
 {
 	int res;
 
-	while (lookup("/dev/gpio1", NULL, &ad7779_common.multidrv) < 0)
-		usleep(100 * 1000);
-
-	if ((res = lpspi_config()) < 0)
+	if ((res = spi_init()) < 0)
 		return res;
 
 	if ((res = ad7779_gpio_init()) < 0)
@@ -776,7 +579,8 @@ int ad7779_init(int hard)
 	if ((res = ad7779_reset(hard)) < 0)
 		return res;
 
-	ad7779_set_clear_bits(AD7779_GENERAL_USER_CONFIG_1, ALL_CH_DIS_MCLK_EN, 0);
+	if ((res = ad7779_set_clear_bits(AD7779_GENERAL_USER_CONFIG_1, ALL_CH_DIS_MCLK_EN, 0)) < 0)
+		return res;
 
 	if ((res = ad7779_write_reg(AD7779_CH_DISABLE, 0xFF)) < 0)
 		return res;
@@ -793,7 +597,8 @@ int ad7779_init(int hard)
 		return res;
 
 	/* Power up internal reference */
-	ad7779_set_clear_bits(AD7779_GENERAL_USER_CONFIG_1, PDB_REFOUT_BUF, 0);
+	if ((res = ad7779_set_clear_bits(AD7779_GENERAL_USER_CONFIG_1, PDB_REFOUT_BUF, 0)) < 0)
+		return res;
 
 	log_debug("switching to high resolution mode");
 	if ((res = ad7779_set_mode(ad7779_mode__high_resolution)) < 0)
@@ -801,7 +606,7 @@ int ad7779_init(int hard)
 
 	/* Use one DOUTx line; DCLK_CLK_DIV = 1 */
 	log_debug("setting DOUT_FORMAT");
-	if ((res = ad7779_write_reg(AD7779_DOUT_FORMAT, 0xe0)) < 0)
+	if ((res = ad7779_write_reg(AD7779_DOUT_FORMAT, 0xc0)) < 0)
 		return res;
 
 	/* Make sure SRC_LOAD_SOURCE bit is cleared */
