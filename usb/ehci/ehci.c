@@ -409,13 +409,12 @@ static int ehci_irqHandler(unsigned int n, void *data)
 }
 
 
-static int ehci_transferStatus(hcd_t *hcd, usb_transfer_t *t)
+static void ehci_qtdsCheck(hcd_t *hcd, usb_transfer_t *t)
 {
 	struct qtd_node *qtds = (struct qtd_node *)t->hcdpriv;
 	int finished;
 	int error = 0;
 
-	finished = !qtds->prev->qtd->active || qtds->prev->qtd->halted;
 	do {
 		if (qtds->qtd->transactionError || qtds->qtd->babble)
 			error++;
@@ -423,15 +422,15 @@ static int ehci_transferStatus(hcd_t *hcd, usb_transfer_t *t)
 		qtds = qtds->next;
 	} while (qtds != t->hcdpriv);
 
-	t->finished = finished;
+	if (!qtds->prev->qtd->active || qtds->prev->qtd->halted || error > 0)
+		t->finished = 1;
+
 	t->error = error;
 	t->transferred = t->size - qtds->prev->qtd->bytesToTransfer;
-
-	return finished;
 }
 
 
-static void ehci_updateTransfersStatus(hcd_t *hcd)
+static void ehci_transUpdate(hcd_t *hcd)
 {
 	struct qh_node *qh;
 	struct qtd_node *qtd;
@@ -446,12 +445,12 @@ static void ehci_updateTransfersStatus(hcd_t *hcd)
 		qtd = (struct qtd_node *)t->hcdpriv;
 		cont = 0;
 		n = t->next;
-		if (ehci_transferStatus(hcd, t) != 0) {
-			/* Transfer finished */
-			if (qh != NULL && qtd != NULL) {
-				ehci_continue(qh, qtd->prev->qtd);
-				ehci_qtdsFree(&qtd);
-			}
+
+		ehci_qtdsCheck(hcd, t);
+
+		if (t->finished) {
+			ehci_continue(qh, qtd->prev->qtd);
+			ehci_qtdsFree(&qtd);
 
 			LIST_REMOVE(&hcd->transfers, t);
 			t->hcdpriv = NULL;
@@ -473,7 +472,7 @@ static void ehci_irqThread(void *arg)
 	for (;;) {
 		condWait(ehci->irqCond, ehci->irqLock, 0);
 		mutexLock(hcd->transLock);
-		ehci_updateTransfersStatus(hcd);
+		ehci_transUpdate(hcd);
 		mutexUnlock(hcd->transLock);
 	}
 }
@@ -607,7 +606,7 @@ static void ehci_pipeDestroy(hcd_t *hcd, usb_pipe_t *pipe)
 				t->hcdpriv = NULL;
 			}
 		} while ((t = t->next) != hcd->transfers);
-		ehci_updateTransfersStatus(hcd);
+		ehci_transUpdate(hcd);
 	}
 	mutexUnlock(hcd->transLock);
 
