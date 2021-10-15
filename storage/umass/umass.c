@@ -82,6 +82,7 @@ typedef struct umass_dev {
 	int pipeIn;
 	int pipeOut;
 	int id;
+	int fileId;
 	int tag;
 	unsigned port;
 	uint32_t partOffset;
@@ -96,6 +97,7 @@ static struct {
 	unsigned drvport;
 	unsigned msgport;
 	handle_t lock;
+	int lastId;
 } umass_common;
 
 
@@ -179,8 +181,7 @@ static int umass_check(umass_dev_t *dev)
 
 	/* Read only the first partition */
 	dev->partOffset = mbr->pent[0].start;
-	/* For now, our OS can only handle disks smaller than 4 GiB */
-	dev->partSize = min(mbr->pent[0].sectors, ((long long)LONG_MAX + 1) / UMASS_SECTOR_SIZE - 1);
+	dev->partSize = mbr->pent[0].sectors;
 
 	return 0;
 }
@@ -236,19 +237,16 @@ static int umass_write(umass_dev_t *dev, offs_t offs, char *buf, size_t len)
 }
 
 
-static int umass_getattr(umass_dev_t *dev, int type, int *attr)
+static int umass_getattr(umass_dev_t *dev, int type, long long int *attr)
 {
-	switch (type) {
-		case atSize:
-			*attr = dev->partSize * UMASS_SECTOR_SIZE;
-			break;
+	if (type != atSize)
+		return -EINVAL;
 
-		default:
-			*attr = -EINVAL;
-	}
+	*attr = dev->partSize * UMASS_SECTOR_SIZE;
 
 	return EOK;
 }
+
 
 static umass_dev_t *umass_devFind(int id)
 {
@@ -256,7 +254,7 @@ static umass_dev_t *umass_devFind(int id)
 
 	if (tmp != NULL) {
 		do {
-			if (tmp->id == id - 1)
+			if (tmp->fileId == id)
 				return tmp;
 			tmp = tmp->next;
 		} while (tmp != umass_common.devices);
@@ -264,6 +262,7 @@ static umass_dev_t *umass_devFind(int id)
 
 	return NULL;
 }
+
 
 static void umass_msgthr(void *arg)
 {
@@ -314,7 +313,7 @@ static void umass_msgthr(void *arg)
 				break;
 
 			case mtGetAttr:
-				umass_getattr(dev, msg.i.attr.type, &msg.o.attr.val);
+				msg.o.attr.err = umass_getattr(dev, msg.i.attr.type, &msg.o.attr.val);
 				break;
 
 			default:
@@ -342,6 +341,8 @@ static umass_dev_t *umass_devAlloc(void)
 		dev->id = 0;
 	else
 		dev->id = umass_common.devices->prev->id + 1;
+
+	dev->fileId = umass_common.lastId++;
 
 	if (mutexCreate(&dev->lock)) {
 		free(dev);
@@ -396,9 +397,8 @@ static int umass_handleInsertion(usb_devinfo_t *insertion)
 		return -EINVAL;
 	}
 
-	snprintf(dev->path, sizeof(dev->path), "/dev/umass%d", dev->id);
 	oid.port = umass_common.msgport;
-	oid.id = dev->id + 1;
+	oid.id = dev->fileId;
 	if (create_dev(&oid, dev->path) != 0) {
 		free(dev);
 		fprintf(stderr, "usb: Can't create dev!\n");
@@ -446,36 +446,38 @@ int main(int argc, char *argv[])
 	/* Port for communication with the USB stack */
 	if (portCreate(&umass_common.drvport) != 0) {
 		fprintf(stderr, "umass: Can't create port!\n");
-		return -ENOMEM;
+		return 1;
 	}
 
 	/* Port for communication with driver clients */
 	if (portCreate(&umass_common.msgport) != 0) {
 		fprintf(stderr, "umass: Can't create port!\n");
-		return -ENOMEM;
+		return 1;
 	}
 
 	if ((usb_connect(filters, sizeof(filters) / sizeof(filters[0]), umass_common.drvport)) < 0) {
 		fprintf(stderr, "umass: Fail to connect to usb host!\n");
-		return -EINVAL;
+		return 1;
 	}
 
 	if (mutexCreate(&umass_common.lock)) {
 		fprintf(stderr, "umass: Can't create mutex!\n");
-		return -ENOMEM;
+		return 1;
 	}
+
+	umass_common.lastId = 1;
 
 	for (i = 0; i < UMASS_N_MSG_THREADS; i++) {
 		if ((ret = beginthread(umass_msgthr, 4, umass_common.stack[i], sizeof(umass_common.stack[i]), NULL)) != 0) {
 			fprintf(stderr, "umass: fail to beginthread ret: %d\n", ret);
-			return -1;
+			return 1;
 		}
 	}
 
 	for (;;) {
 		ret = usb_eventsWait(umass_common.drvport, &msg);
 		if (ret != 0)
-			continue;
+			return 1;
 		mutexLock(umass_common.lock);
 		switch (umsg->type) {
 			case usb_msg_insertion:

@@ -344,7 +344,8 @@ void ehci_unlinkQhAsync(hcd_t *hcd, struct qh_node *qh)
 	if (qh->qh == qh->next->qh) {
 		ehci->asyncList = NULL;
 		*(hcd->base + usbcmd) &= ~USBCMD_ASE;
-		while (*(hcd->base + usbsts) & USBSTS_AS);
+		while (*(hcd->base + usbsts) & USBSTS_AS)
+			;
 		*(hcd->base + asynclistaddr) = 1;
 	}
 	else if (qh == ehci->asyncList) {
@@ -656,6 +657,7 @@ static int ehci_init(hcd_t *hcd)
 	if (phy_init(hcd) != 0) {
 		fprintf(stderr, "ehci: Phy init failed!\n");
 		usb_freeAligned(ehci->periodicList, EHCI_PERIODIC_SIZE * sizeof(link_pointer_t));
+		free(ehci->periodicNodes);
 		free(ehci);
 		return -EINVAL;
 	}
@@ -724,7 +726,15 @@ static int ehci_init(hcd_t *hcd)
 	/* Route all ports to this host controller */
 	*(hcd->base + configflag) = 1;
 
-	beginthread(ehci_irqThread, 2, ehci->stack, sizeof(ehci->stack), hcd);
+	if (beginthread(ehci_irqThread, 2, ehci->stack, sizeof(ehci->stack), hcd) != 0) {
+		usb_freeAligned(ehci->periodicList, EHCI_PERIODIC_SIZE * sizeof(link_pointer_t));
+		resourceDestroy(ehci->irqCond);
+		resourceDestroy(ehci->irqLock);
+		resourceDestroy(ehci->asyncLock);
+		free(ehci->periodicNodes);
+		free(ehci);
+		return -ENOMEM;
+	}
 	interrupt(hcd->info->irq, ehci_irqHandler, hcd, ehci->irqCond, &ehci->irqHandle);
 
 	return 0;

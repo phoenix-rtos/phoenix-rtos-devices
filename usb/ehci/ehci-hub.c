@@ -106,13 +106,9 @@ static int ehci_getPortStatus(usb_dev_t *hub, int port, usb_port_status_t *statu
 static int ehci_setPortFeature(usb_dev_t *hub, int port, uint16_t wValue)
 {
 	hcd_t *hcd = hub->hcd;
-	volatile int *portsc = hcd->base + portsc1 + port - 1;
-	uint32_t val = *portsc;
 
 	if (port > hub->nports)
 		return -1;
-
-	val &= ~PORTSC_CBITS;
 
 	switch (wValue) {
 		case USB_PORT_FEAT_RESET:
@@ -200,15 +196,14 @@ static int ehci_getDesc(usb_dev_t *hub, char *buf, size_t len)
 uint32_t ehci_getHubStatus(usb_dev_t *hub)
 {
 	hcd_t *hcd = hub->hcd;
-	volatile int *portsc;
 	uint32_t status = 0;
-	int i;
+	int i, val;
 
 	for (i = 0; i < hub->nports; i++) {
-		portsc = hcd->base + portsc1 + i;
-		if (*portsc & PORTSC_CSC)
+		val = *(hcd->base + portsc1 + i);
+		if (val & PORTSC_CSC)
 			status |= 1 << (i + 1);
-		if ((*portsc & PORTSC_CSC) && (*portsc & PORTSC_CCS) == 0)
+		if ((val & PORTSC_CSC) && (val & PORTSC_CCS) == 0)
 			phy_enableHighSpeedDisconnect(hcd, 0);
 	}
 

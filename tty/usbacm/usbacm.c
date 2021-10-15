@@ -46,6 +46,7 @@ typedef struct _usbacm_dev {
 	int pipeBulkIN;
 	int pipeBulkOUT;
 	int id;
+	int fileId;
 	int flags;
 	volatile int rxRunning;
 	volatile int thrFinished;
@@ -63,6 +64,7 @@ static struct {
 	unsigned drvport;
 	unsigned msgport;
 	handle_t lock;
+	int lastId;
 } usbacm_common;
 
 
@@ -211,7 +213,7 @@ static usbacm_dev_t *usbacm_devFind(int id)
 	tmp = usbacm_common.devices;
 	if (tmp != NULL) {
 		do {
-			if (tmp->id == id - 1) {
+			if (tmp->fileId == id) {
 				dev = tmp;
 				break;
 			}
@@ -238,6 +240,8 @@ static usbacm_dev_t *usbacm_devAlloc(void)
 		dev->id = 0;
 	else
 		dev->id = usbacm_common.devices->prev->id + 1;
+
+	dev->fileId = usbacm_common.lastId++;
 
 	snprintf(dev->path, sizeof(dev->path), "/dev/usbacm%d", dev->id);
 
@@ -423,7 +427,7 @@ static int _usbacm_handleInsertion(usb_devinfo_t *insertion)
 	}
 
 	oid.port = usbacm_common.msgport;
-	oid.id = dev->id + 1;
+	oid.id = dev->fileId;
 	if (create_dev(&oid, dev->path) != 0) {
 		free(dev);
 		fprintf(stderr, "usbacm: Can't create dev!\n");
@@ -506,36 +510,38 @@ int main(int argc, char *argv[])
 	/* Port for communication with the USB stack */
 	if (portCreate(&usbacm_common.drvport) != 0) {
 		fprintf(stderr, "usbacm: Can't create port!\n");
-		return -ENOMEM;
+		return 1;
 	}
 
 	/* Port for communication with driver clients */
 	if (portCreate(&usbacm_common.msgport) != 0) {
 		fprintf(stderr, "usbacm: Can't create port!\n");
-		return -ENOMEM;
+		return 1;
 	}
 
 	if (mutexCreate(&usbacm_common.lock)) {
 		fprintf(stderr, "usbacm: Can't create mutex!\n");
-		return -ENOMEM;
+		return 1;
 	}
 
 	if ((usb_connect(filters, sizeof(filters) / sizeof(filters[0]), usbacm_common.drvport)) < 0) {
 		fprintf(stderr, "usbacm: Fail to connect to usb host!\n");
-		return -EINVAL;
+		return 1;
 	}
+
+	usbacm_common.lastId = 1;
 
 	for (i = 0; i < USBACM_N_MSG_THREADS; i++) {
 		if ((ret = beginthread(usbacm_msgthr, 4, usbacm_common.stack[i], sizeof(usbacm_common.stack[i]), NULL)) != 0) {
 			fprintf(stderr, "usbacm: fail to beginthread ret: %d\n", ret);
-			return -1;
+			return 1;
 		}
 	}
 
 	for (;;) {
 		ret = usb_eventsWait(usbacm_common.drvport, &msg);
 		if (ret != 0)
-			continue;
+			return 1;
 		mutexLock(usbacm_common.lock);
 		switch (umsg->type) {
 			case usb_msg_insertion:

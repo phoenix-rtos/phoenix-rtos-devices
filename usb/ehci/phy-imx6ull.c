@@ -41,11 +41,12 @@ static const hcd_info_t imx6ull_info[] = {
 	}
 };
 
+
 int hcd_getInfo(const hcd_info_t **info)
 {
 	*info = imx6ull_info;
 
-	return sizeof(imx6ull_info) / sizeof(hcd_info_t);
+	return sizeof(imx6ull_info) / sizeof(*imx6ull_info);
 }
 
 
