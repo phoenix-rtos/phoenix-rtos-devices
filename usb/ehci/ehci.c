@@ -161,7 +161,7 @@ static struct qh *ehci_allocQh(struct qh_node *node, usb_pipe_t *pipe)
 	qh->nakCountReload = 3;
 
 	if (pipe->type == usb_transfer_interrupt) {
-		if (node->qh->epSpeed == usb_high_speed) {
+		if (pipe->dev->speed == usb_high_speed) {
 			node->period = ((1 << (pipe->interval - 1))) >> 3;
 			/* Assume, that for 1-8 microframes period, we send it every microframe */
 			if (node->period == 0)
@@ -172,7 +172,6 @@ static struct qh *ehci_allocQh(struct qh_node *node, usb_pipe_t *pipe)
 			while (node->period * 2 < pipe->interval)
 				node->period *= 2;
 		}
-		fprintf(stderr, "ehci: allocQh period: %d\n", node->period);
 	}
 
 	if (pipe->type == usb_transfer_control && pipe->dev->speed != usb_high_speed)
@@ -210,7 +209,6 @@ static void ehci_allocPeriodicBandwidth(ehci_t *ehci, struct qh_node *node)
 			node->phase = i;
 		}
 	}
-	fprintf(stderr, "ehci: allocPeriodicBandwidth period: %d phase: %d\n", node->period, node->phase);
 
 	/* Find the best microframe in a frame. For periods equal to 1, send it every microframe */
 	if (node->qh->epSpeed == usb_high_speed && node->period > 1) {
@@ -412,7 +410,6 @@ static int ehci_irqHandler(unsigned int n, void *data)
 static void ehci_qtdsCheck(hcd_t *hcd, usb_transfer_t *t)
 {
 	struct qtd_node *qtds = (struct qtd_node *)t->hcdpriv;
-	int finished;
 	int error = 0;
 
 	do {
@@ -451,10 +448,8 @@ static void ehci_transUpdate(hcd_t *hcd)
 		if (t->finished) {
 			ehci_continue(qh, qtd->prev->qtd);
 			ehci_qtdsFree(&qtd);
-
 			LIST_REMOVE(&hcd->transfers, t);
 			t->hcdpriv = NULL;
-
 			usb_transferFinished(t);
 			if (n != t)
 				cont = 1;
@@ -471,9 +466,11 @@ static void ehci_irqThread(void *arg)
 	mutexLock(ehci->irqLock);
 	for (;;) {
 		condWait(ehci->irqCond, ehci->irqLock, 0);
-		mutexLock(hcd->transLock);
-		ehci_transUpdate(hcd);
-		mutexUnlock(hcd->transLock);
+		if (ehci->status & 0x3) {
+			mutexLock(hcd->transLock);
+			ehci_transUpdate(hcd);
+			mutexUnlock(hcd->transLock);
+		}
 	}
 }
 
@@ -597,15 +594,16 @@ static void ehci_pipeDestroy(hcd_t *hcd, usb_pipe_t *pipe)
 
 	qh = (struct qh_node *)pipe->hcdpriv;
 	mutexLock(hcd->transLock);
-	pipe->hcdpriv = NULL;
+
+	t = hcd->transfers;
 	/* Deactivate device's qtds */
-	if ((t = hcd->transfers) != NULL) {
+	if (t != NULL) {
 		do {
 			if (t->pipe == pipe) {
 				ehci_qtdsDeactivate((struct qtd_node *)t->hcdpriv);
-				t->hcdpriv = NULL;
 			}
-		} while ((t = t->next) != hcd->transfers);
+			t = t->next;
+		} while (t != hcd->transfers);
 		ehci_transUpdate(hcd);
 	}
 	mutexUnlock(hcd->transLock);

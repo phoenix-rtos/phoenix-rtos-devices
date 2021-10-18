@@ -398,21 +398,25 @@ static int _usbacm_handleInsertion(usb_devinfo_t *insertion)
 	dev->instance = *insertion;
 
 	if ((dev->pipeCtrl = usb_open(insertion, usb_transfer_control, 0)) < 0) {
+		fprintf(stderr, "usbacm: Fail to open control pipe\n");
 		free(dev);
 		return -EINVAL;
 	}
 
 	if (usb_setConfiguration(dev->pipeCtrl, 1) != 0) {
+		fprintf(stderr, "usbacm: Fail to set configuration\n");
 		free(dev);
 		return -EINVAL;
 	}
 
 	if ((dev->pipeBulkIN = usb_open(insertion, usb_transfer_bulk, usb_dir_in)) < 0) {
+		fprintf(stderr, "usbacm: Fail to open bulk pipe\n");
 		free(dev);
 		return -EINVAL;
 	}
 
 	if ((dev->pipeBulkOUT = usb_open(insertion, usb_transfer_bulk, usb_dir_out)) < 0) {
+		fprintf(stderr, "usbacm: Fail to open bulk pipe\n");
 		free(dev);
 		return -EINVAL;
 	}
