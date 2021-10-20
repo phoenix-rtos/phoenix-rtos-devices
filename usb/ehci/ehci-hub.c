@@ -233,14 +233,12 @@ int ehci_roothubReq(usb_transfer_t *t)
 			break;
 	}
 
-	t->finished = 1;
+
 	if (ret != 0) {
-		t->error = 1;
-		t->transferred = 0;
+		usb_transferFinished(t, -1);
 	}
 	else {
-		t->error = 0;
-		t->transferred = t->size;
+		usb_transferFinished(t, t->size);
 	}
 
 	return 0;

@@ -407,10 +407,11 @@ static int ehci_irqHandler(unsigned int n, void *data)
 }
 
 
-static void ehci_qtdsCheck(hcd_t *hcd, usb_transfer_t *t)
+static int ehci_qtdsCheck(hcd_t *hcd, usb_transfer_t *t, int *status)
 {
 	struct qtd_node *qtds = (struct qtd_node *)t->hcdpriv;
 	int error = 0;
+	int finished = 0;
 
 	do {
 		if (qtds->qtd->transactionError || qtds->qtd->babble)
@@ -419,11 +420,18 @@ static void ehci_qtdsCheck(hcd_t *hcd, usb_transfer_t *t)
 		qtds = qtds->next;
 	} while (qtds != t->hcdpriv);
 
-	if (!qtds->prev->qtd->active || qtds->prev->qtd->halted || error > 0)
-		t->finished = 1;
+	if (error > 0) {
+		finished = 1;
+		*status = -error;
+	}
 
-	t->error = error;
-	t->transferred = t->size - qtds->prev->qtd->bytesToTransfer;
+	/* Finished no error */
+	if (!qtds->prev->qtd->active || qtds->prev->qtd->halted) {
+		finished = 1;
+		*status = t->size - qtds->prev->qtd->bytesToTransfer;
+	}
+
+	return finished;
 }
 
 
@@ -433,6 +441,7 @@ static void ehci_transUpdate(hcd_t *hcd)
 	struct qtd_node *qtd;
 	usb_transfer_t *t, *n;
 	int cont;
+	int status;
 
 	if ((t = hcd->transfers) == NULL)
 		return;
@@ -443,14 +452,12 @@ static void ehci_transUpdate(hcd_t *hcd)
 		cont = 0;
 		n = t->next;
 
-		ehci_qtdsCheck(hcd, t);
-
-		if (t->finished) {
+		if (ehci_qtdsCheck(hcd, t, &status)) {
 			ehci_continue(qh, qtd->prev->qtd);
 			ehci_qtdsFree(&qtd);
 			LIST_REMOVE(&hcd->transfers, t);
 			t->hcdpriv = NULL;
-			usb_transferFinished(t);
+			usb_transferFinished(t, status);
 			if (n != t)
 				cont = 1;
 		}
