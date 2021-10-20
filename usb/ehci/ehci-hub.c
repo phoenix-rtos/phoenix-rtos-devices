@@ -228,6 +228,7 @@ int ehci_roothubReq(usb_transfer_t *t)
 			break;
 		case REQ_GET_DESCRIPTOR:
 			ret = ehci_getDesc(hub, t->buffer, t->size);
+			break;
 		case REQ_SET_CONFIGURATION:
 			break;
 	}

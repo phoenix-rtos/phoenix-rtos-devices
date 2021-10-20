@@ -415,6 +415,7 @@ static int umass_handleInsertion(usb_devinfo_t *insertion)
 static int umass_handleDeletion(usb_deletion_t *del)
 {
 	umass_dev_t *next, *dev = umass_common.devices;
+	int cont = 1;
 
 	if (dev == NULL)
 		return 0;
@@ -423,11 +424,13 @@ static int umass_handleDeletion(usb_deletion_t *del)
 		next = dev->next;
 		if (dev->instance.bus == del->bus && dev->instance.dev == del->dev &&
 				dev->instance.interface == del->interface) {
+			if (dev == next)
+				cont = 0;
 			remove(dev->path);
 			LIST_REMOVE(&umass_common.devices, dev);
 			fprintf(stderr, "umass: Device removed: %s\n", dev->path);
 			free(dev);
-			if (dev == next)
+			if (!cont)
 				break;
 		}
 		dev = next;

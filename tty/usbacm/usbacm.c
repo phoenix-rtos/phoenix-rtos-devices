@@ -473,6 +473,7 @@ static int _usbacm_threadJoin(usbacm_dev_t *dev)
 static int _usbacm_handleDeletion(usb_deletion_t *del)
 {
 	usbacm_dev_t *next, *dev = usbacm_common.devices;
+	int cont = 1;
 
 	if (dev == NULL)
 		return 0;
@@ -482,6 +483,8 @@ static int _usbacm_handleDeletion(usb_deletion_t *del)
 		if (dev->instance.bus == del->bus && dev->instance.dev == del->dev &&
 				dev->instance.interface == del->interface) {
 			fprintf(stderr, "usbacm: Device removed: %s\n", dev->path);
+			if (dev == next)
+				cont = 0;
 			if (dev->fifo != NULL) {
 				_usbacm_threadJoin(dev);
 				/* Non-blocking device */
@@ -494,7 +497,7 @@ static int _usbacm_handleDeletion(usb_deletion_t *del)
 			remove(dev->path);
 			LIST_REMOVE(&usbacm_common.devices, dev);
 			free(dev);
-			if (dev == next)
+			if (!cont)
 				break;
 		}
 		dev = next;
