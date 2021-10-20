@@ -466,7 +466,7 @@ static void ehci_irqThread(void *arg)
 	mutexLock(ehci->irqLock);
 	for (;;) {
 		condWait(ehci->irqCond, ehci->irqLock, 0);
-		if (ehci->status & 0x3) {
+		if (ehci->status & (USBSTS_UI | USBSTS_UEI)) {
 			mutexLock(hcd->transLock);
 			ehci_transUpdate(hcd);
 			mutexUnlock(hcd->transLock);

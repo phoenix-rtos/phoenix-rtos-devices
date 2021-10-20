@@ -28,7 +28,7 @@ static void ehci_resetPort(hcd_t *hcd, int port)
 	ehci_t *ehci = (ehci_t *)hcd->priv;
 	volatile int *reg = (hcd->base + portsc1) + (port - 1);
 
-	*reg &= ~0x2aU;
+	*reg &= ~PORTSC_ENA;
 	*reg |= PORTSC_PR;
 	/*
 	 * This is imx deviation. According to ehci documentation
@@ -38,7 +38,6 @@ static void ehci_resetPort(hcd_t *hcd, int port)
 		;
 	usleep(20 * 1000);
 
-	*reg |= PORTSC_PP;
 	ehci->portResetChange = 1 << port;
 
 	if ((*reg & PORTSC_PSPD) == PORTSC_PSPD_HS)
@@ -201,7 +200,7 @@ uint32_t ehci_getHubStatus(usb_dev_t *hub)
 
 	for (i = 0; i < hub->nports; i++) {
 		val = *(hcd->base + portsc1 + i);
-		if (val & PORTSC_CSC)
+		if (val & (PORTSC_CSC | PORTSC_PEC | PORTSC_OCC))
 			status |= 1 << (i + 1);
 		if ((val & PORTSC_CSC) && (val & PORTSC_CCS) == 0)
 			phy_enableHighSpeedDisconnect(hcd, 0);
