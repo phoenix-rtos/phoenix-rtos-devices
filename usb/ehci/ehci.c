@@ -627,7 +627,7 @@ static void ehci_pipeDestroy(hcd_t *hcd, usb_pipe_t *pipe)
 		ehci_unlinkQhPeriodic(hcd, qh);
 		mutexUnlock(ehci->periodicLock);
 	}
-
+	pipe->hcdpriv = NULL;
 	usb_free(qh->qh, sizeof(struct qh));
 	free(qh);
 }
