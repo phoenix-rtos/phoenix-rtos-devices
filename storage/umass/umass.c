@@ -294,7 +294,6 @@ static void umass_msgthr(void *arg)
 		if (dev == NULL) {
 			msg.o.io.err = -ENOENT;
 			msgRespond(umass_common.msgport, &msg, rid);
-			fprintf(stderr, "umass: msg type %d to wrong oid: %d\n", msg.type, msg.i.io.oid.id);
 			continue;
 		}
 

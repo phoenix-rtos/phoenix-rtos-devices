@@ -15,6 +15,7 @@
  * %LICENSE%
  */
 
+#include <errno.h>
 #include <sys/mman.h>
 #include <sys/platform.h>
 #include <phoenix/arch/imx6ull.h>
@@ -131,7 +132,7 @@ int phy_init(hcd_t *hcd)
 	offs = hcd->info->hcdaddr % _PAGE_SIZE;
 	hcd->base = mmap(NULL, 2 * _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, hcd->info->hcdaddr - offs);
 	if (hcd->base == MAP_FAILED) {
-		munmap(hcd->phybase, _PAGE_SIZE);
+		munmap((void *)hcd->phybase, _PAGE_SIZE);
 		return -ENOMEM;
 	}
 	hcd->base += (offs / sizeof(int));
