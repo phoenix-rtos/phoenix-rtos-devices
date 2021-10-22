@@ -413,6 +413,7 @@ static int ehci_qtdsCheck(hcd_t *hcd, usb_transfer_t *t, int *status)
 	int error = 0;
 	int finished = 0;
 
+	*status = 0;
 	do {
 		if (qtds->qtd->transactionError || qtds->qtd->babble)
 			error++;
