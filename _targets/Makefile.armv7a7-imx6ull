@@ -12,5 +12,4 @@ DEFAULT_COMPONENTS += libusbclient
 DEFAULT_COMPONENTS += imx6ull-uart imx6ull-otp
 DEFAULT_COMPONENTS += imx6ull-wdg imx6ull-i2c
 
-# FIXME: rename usb host component
-DEFAULT_COMPONENTS += libusbehci
+DEFAULT_COMPONENTS += libusbehci umass usbacm

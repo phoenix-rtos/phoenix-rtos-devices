@@ -18,7 +18,6 @@ else
 $(NAME): ; $(error $(NAME) for $(TARGET) not implemented)
 endif
 
-LOCAL_HEADERS := usbclient.h
 DEPS := usb
 
 include $(static-lib.mk)

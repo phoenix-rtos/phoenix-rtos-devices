@@ -1,7 +1,7 @@
 #
 # Makefile for Phoenix-RTOS virtio-blk driver
 #
-# Copyright 2020 Phoenix Systems
+# Copyright 2021 Phoenix Systems
 #
 
 NAME := virtio-blk
