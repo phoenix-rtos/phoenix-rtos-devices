@@ -8,7 +8,7 @@
 
 CFLAGS += -DTARGET_IMXRT
 
-DEFAULT_COMPONENTS := imxrt-multi libusbclient imxrt-flash libusbehci umass usbacm
+DEFAULT_COMPONENTS := imxrt-multi libusbclient imxrt-flash
 
 ifneq (, $(findstring 117, $(TARGET)))
   CFLAGS += -DTARGET_IMXRT1170
@@ -17,5 +17,5 @@ else ifneq (, $(findstring 105, $(TARGET)))
   CFLAGS += -DTARGET_IMXRT1050
 else ifneq (, $(findstring 106, $(TARGET)))
   CFLAGS += -DTARGET_IMXRT1060
-  DEFAULT_COMPONENTS += libimxrt-edma
+  DEFAULT_COMPONENTS += libimxrt-edma libusbehci umass usbacm
 endif
