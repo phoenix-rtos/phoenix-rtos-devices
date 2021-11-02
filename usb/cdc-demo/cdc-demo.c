@@ -53,7 +53,7 @@ typedef struct {
 	} time;
 
 	struct {
-		size_t totalTransfered;
+		size_t totaltransferred;
 	} stat;
 
 	struct {
@@ -95,7 +95,7 @@ static void cdc_demoEventNotify(int evType, void *ctxUser)
 
 		case CDC_EV_CARRIER_ACTIVATE:
 			if (ctx->flags.isConnected) {
-				ctx->stat.totalTransfered = 0;
+				ctx->stat.totaltransferred = 0;
 				ctx->flags.isDrop = 1;
 				ctx->flags.canPushData = 1;
 			}
@@ -108,11 +108,11 @@ static void cdc_demoProgress(cdc_demo_ctx_t *ctx)
 {
 
 	if (ctx->flags.canPushData) {
-		uint32_t delta = ctx->time.current > ctx->time.start ? (ctx->time.current - ctx->time.start) / TIME_ONESECOND : ctx->stat.totalTransfered;
+		uint32_t delta = ctx->time.current > ctx->time.start ? (ctx->time.current - ctx->time.start) / TIME_ONESECOND : ctx->stat.totaltransferred;
 
 		ctx->time.schedule += TIME_ONESECOND;
 
-		printf("\rTotal %u bytes transfered at %u kB/s\033[0J", ctx->stat.totalTransfered, ctx->stat.totalTransfered / (delta * 1000));
+		printf("\rTotal %u bytes transferred at %u kB/s\033[0J", ctx->stat.totaltransferred, ctx->stat.totaltransferred / (delta * 1000));
 	}
 	else {
 		ctx->time.schedule += TIME_ONESECOND / 4;
@@ -132,7 +132,7 @@ static void cdc_demoPepareData(cdc_demo_ctx_t *ctx)
 
 	if (ctx->flags.isDrop) {
 		ctx->flags.isDrop = 0;
-		/* send block of zeros - mark droped real time data */
+		/* send block of zeros - mark dropped real time data */
 		bzero(ctx->buf.ptr, ctx->buf.size);
 	}
 	else {
@@ -160,7 +160,7 @@ static void cdc_demoSend(cdc_demo_ctx_t *ctx)
 		return;
 	}
 
-	ctx->stat.totalTransfered += res;
+	ctx->stat.totaltransferred += res;
 }
 
 
@@ -174,7 +174,7 @@ static void cdc_demoRecv(cdc_demo_ctx_t *ctx)
 		return;
 	}
 
-	ctx->stat.totalTransfered += res;
+	ctx->stat.totaltransferred += res;
 }
 
 
