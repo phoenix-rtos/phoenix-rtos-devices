@@ -20,13 +20,20 @@
 #include <cdc_client.h>
 
 
-#define TIME_ONESECOND              1000000000ULL
-#define TIME_REALTIME_OVERFLOW      (TIME_ONESECOND / 5)
+#define TIME_ONESECOND         1000000000ULL
+#define TIME_REALTIME_OVERFLOW (TIME_ONESECOND / 5)
 
-#define USB_BUF_SIZE                0x1000
+#define USB_BUF_SIZE 0x1000
 
-#define LOG(str, ...)               do { if (1) fprintf(stderr, "cdc-demo: " str "\n", ##__VA_ARGS__); } while (0)
-#define LOG_ERROR(str, ...)         do { fprintf(stderr, __FILE__  ":%d error: " str "\n", __LINE__, ##__VA_ARGS__); } while (0)
+#define LOG(str, ...) \
+	do { \
+		if (1) \
+			fprintf(stderr, "cdc-demo: " str "\n", ##__VA_ARGS__); \
+	} while (0)
+#define LOG_ERROR(str, ...) \
+	do { \
+		fprintf(stderr, __FILE__ ":%d error: " str "\n", __LINE__, ##__VA_ARGS__); \
+	} while (0)
 
 
 static const char animHourGlass[] = { '/', '|', '\\', '-' };
@@ -101,9 +108,7 @@ static void cdc_demoProgress(cdc_demo_ctx_t *ctx)
 {
 
 	if (ctx->flags.canPushData) {
-		uint32_t delta = ctx->time.current > ctx->time.start
-			? (ctx->time.current - ctx->time.start) / TIME_ONESECOND
-			: ctx->stat.totalTransfered;
+		uint32_t delta = ctx->time.current > ctx->time.start ? (ctx->time.current - ctx->time.start) / TIME_ONESECOND : ctx->stat.totalTransfered;
 
 		ctx->time.schedule += TIME_ONESECOND;
 
@@ -113,7 +118,7 @@ static void cdc_demoProgress(cdc_demo_ctx_t *ctx)
 		ctx->time.schedule += TIME_ONESECOND / 4;
 
 		printf("\rIdle %c (%s host)\033[0J",
-				animHourGlass[ctx->time.steps % sizeof(animHourGlass)], ctx->flags.isConnected ? "connected to" : "disconnected from");
+			animHourGlass[ctx->time.steps % sizeof(animHourGlass)], ctx->flags.isConnected ? "connected to" : "disconnected from");
 	}
 
 	fflush(stdout);

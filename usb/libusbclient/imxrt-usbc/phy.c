@@ -46,8 +46,8 @@ enum {
  * defined below, uncached map should be aligned to 0x800 both base and
  * end addresses
  */
-#define UNCACHED_BASE_ADDR     0x20050000
-#define UNCACHED_END_ADDR      0x20058000
+#define UNCACHED_BASE_ADDR 0x20050000
+#define UNCACHED_END_ADDR  0x20058000
 
 
 static void *uncached_ptr = (void *)UNCACHED_END_ADDR;
