@@ -81,9 +81,9 @@ static int uart_interrupt(unsigned int n, void *arg)
 {
 	uart_t *uart = (uart_t *)arg;
 
-	/* Clear RX Trigger status */
+	/* RX Trigger IRQ occurred */
 	if (*(uart->base + isr) & 0x1)
-		*(uart->base + isr) = 0x1;
+		*(uart->base + idr) = 0x1; /* Disable IRQ to not receive more interrupts */
 
 	return 1;
 }
@@ -106,6 +106,12 @@ static void uart_intThread(void *arg)
 		/* Transmit data until TX TTY buffer is empty or TX FIFO is full */
 		while (libtty_txready(&uart->tty) && !(*(uart->base + sr) & (0x1 << 4)))
 			*(uart->base + fifo) = libtty_getchar(&uart->tty, NULL);
+
+		/* RX Trigger IRQ occurred */
+		if (*(uart->base + isr) & 0x1) {
+			*(uart->base + isr) = 0x1; /* RX Trigger status can be cleared after getting data from RX FIFO */
+			*(uart->base + ier) = 0x1; /* Enable RX Trigger irq which has been disabled in uart irq handler */
+		}
 	}
 }
 
@@ -425,14 +431,15 @@ static int uart_init(unsigned int n, speed_t baud)
 	/* normal mode, 1 stop bit, no parity, 8 bits */
 	uart_setCFlag(uart, &uart->tty.term.c_cflag);
 
+	/* Set trigger level, range: 1-63 */
+	*(uart->base + rxwm) = 1;
+	/* Enable RX FIFO trigger */
+	*(uart->base + ier) |= 0x1;
+
 	/* Uart Control Register
 	 * TXEN = 0x1; RXEN = 0x1; TXRES = 0x1; RXRES = 0x1 */
 	*(uart->base + cr) = (*(uart->base + cr) & ~0x000001ff) | 0x00000017;
 
-	/* Enable RX FIFO trigger */
-	*(uart->base + ier) |= 0x1;
-	/* Set trigger level, range: 1-63 */
-	*(uart->base + rxwm) = 1;
 
 	beginthread(uart_intThread, 4, &uart->stack, sizeof(uart->stack), (void *)uart);
 	interrupt(info[n].irq, uart_interrupt, uart, uart->cond, &uart->inth);
