@@ -38,10 +38,10 @@ ssize_t libi2c_read(libi2c_ctx_t *ctx, unsigned char addr, void *buff, size_t le
 ssize_t libi2c_readReg(libi2c_ctx_t *ctx, unsigned char addr, unsigned char reg, void *buff, size_t len);
 
 
-ssize_t libi2c_write(libi2c_ctx_t *ctx, unsigned char addr, void *buff, size_t len);
+ssize_t libi2c_write(libi2c_ctx_t *ctx, unsigned char addr, const void *buff, size_t len);
 
 
-ssize_t libi2c_writeReg(libi2c_ctx_t *ctx, unsigned char addr, unsigned char reg, void *buff, size_t len);
+ssize_t libi2c_writeReg(libi2c_ctx_t *ctx, unsigned char addr, unsigned char reg, const void *buff, size_t len);
 
 
 int libi2c_init(libi2c_ctx_t *ctx, int i2c);
