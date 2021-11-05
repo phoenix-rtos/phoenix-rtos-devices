@@ -194,28 +194,27 @@ static void set_cflag(void *_uart, tcflag_t* cflag)
 }
 
 
-static uint32_t calculate_baudrate(speed_t baud)
+static uint32_t calculate_baudrate(uint32_t baud)
 {
-	uint32_t osr, sbr, bestSbr = 0, bestOsr = 0, bestDiff, t, tDiff, baud_rate;
+	uint32_t osr, sbr, bestSbr = 0, bestOsr = 0, bestDiff, t, tDiff;
 
-	bestDiff = baud_rate = (uint32_t)libtty_baudrate_to_int(baud);
-
-	if ((int)baud_rate <= 0) {
+	if (baud == 0)
 		return 0;
-	}
+
+	bestDiff = baud;
 
 	for (osr = 4; osr <= 32; ++osr) {
 		/* find sbr value in range between 1 and 8191 */
-		sbr = (UART_CLK / (baud_rate * osr)) & 0x1fff;
+		sbr = (UART_CLK / (baud * osr)) & 0x1fff;
 		sbr = (sbr == 0) ? 1 : sbr;
 
 		/* baud rate difference based on temporary osr and sbr */
-		tDiff = UART_CLK / (osr * sbr) - baud_rate;
+		tDiff = UART_CLK / (osr * sbr) - baud;
 		t = UART_CLK / (osr * (sbr + 1));
 
 		/* select best values between sbr and sbr+1 */
-		if (tDiff > baud_rate - t) {
-			tDiff = baud_rate - t;
+		if (tDiff > baud - t) {
+			tDiff = baud - t;
 			sbr += (sbr < 0x1fff);
 		}
 
@@ -232,11 +231,12 @@ static uint32_t calculate_baudrate(speed_t baud)
 
 static void set_baudrate(void *_uart, speed_t baud)
 {
-	uint32_t reg, t;
+	uint32_t reg = 0, t;
+	int b;
 	uart_t *uartptr = (uart_t *)_uart;
 
-	reg = calculate_baudrate(baud);
-
+	if ((b = libtty_baudrate_to_int(baud)) > 0)
+		reg = calculate_baudrate((uint32_t)b);
 
 	/* disable TX and RX */
 	*(uartptr->base + ctrlr) &= ~((1 << 19) | (1 << 18));
@@ -682,7 +682,7 @@ int uart_init(void)
 
 	uart_initPins();
 
-	const speed_t default_baud[] = { UART_BAUDRATES };
+	const uint32_t default_baud[] = { UART_BAUDRATES };
 
 	for (i = 0, dev = 0; dev < sizeof(uartConfig) / sizeof(uartConfig[0]); ++dev) {
 		if (!uartConfig[dev])
