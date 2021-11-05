@@ -37,7 +37,7 @@
 #endif
 
 #ifndef UART1_BAUDRATE
-#define UART1_BAUDRATE B115200
+#define UART1_BAUDRATE 115200
 #endif
 
 #ifndef UART2
@@ -49,7 +49,7 @@
 #endif
 
 #ifndef UART2_BAUDRATE
-#define UART2_BAUDRATE B115200
+#define UART2_BAUDRATE 115200
 #endif
 
 #ifndef UART3
@@ -61,7 +61,7 @@
 #endif
 
 #ifndef UART3_BAUDRATE
-#define UART3_BAUDRATE B115200
+#define UART3_BAUDRATE 115200
 #endif
 
 #ifndef UART4
@@ -73,7 +73,7 @@
 #endif
 
 #ifndef UART4_BAUDRATE
-#define UART4_BAUDRATE B115200
+#define UART4_BAUDRATE 115200
 #endif
 
 #ifndef UART5
@@ -85,7 +85,7 @@
 #endif
 
 #ifndef UART5_BAUDRATE
-#define UART5_BAUDRATE B115200
+#define UART5_BAUDRATE 115200
 #endif
 
 #ifndef UART6
@@ -97,7 +97,7 @@
 #endif
 
 #ifndef UART6_BAUDRATE
-#define UART6_BAUDRATE B115200
+#define UART6_BAUDRATE 115200
 #endif
 
 #ifndef UART7
@@ -109,7 +109,7 @@
 #endif
 
 #ifndef UART7_BAUDRATE
-#define UART7_BAUDRATE B115200
+#define UART7_BAUDRATE 115200
 #endif
 
 #ifndef UART8
@@ -121,7 +121,7 @@
 #endif
 
 #ifndef UART8_BAUDRATE
-#define UART8_BAUDRATE B115200
+#define UART8_BAUDRATE 115200
 #endif
 
 #ifdef TARGET_IMXRT1170
@@ -135,7 +135,7 @@
 #endif
 
 #ifndef UART9_BAUDRATE
-#define UART9_BAUDRATE B115200
+#define UART9_BAUDRATE 115200
 #endif
 
 #ifndef UART10
@@ -147,7 +147,7 @@
 #endif
 
 #ifndef UART10_BAUDRATE
-#define UART10_BAUDRATE B115200
+#define UART10_BAUDRATE 115200
 #endif
 
 #ifndef UART11
@@ -159,7 +159,7 @@
 #endif
 
 #ifndef UART11_BAUDRATE
-#define UART11_BAUDRATE B115200
+#define UART11_BAUDRATE 115200
 #endif
 
 #ifndef UART12
@@ -171,7 +171,7 @@
 #endif
 
 #ifndef UART12_BAUDRATE
-#define UART12_BAUDRATE B115200
+#define UART12_BAUDRATE 115200
 #endif
 
 #else
