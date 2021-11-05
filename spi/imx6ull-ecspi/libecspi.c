@@ -205,7 +205,7 @@ static void set_mux(int dev_no, uint8_t chan_msk)
 	ctl.action = pctl_set;
 	ctl.type = pctl_ioisel;
 
-	for (i = 0; i < 3; i++) {
+	for (i = 0; i < 4; i++) {
 		if (i < 3 || (chan_msk & (1 << (i - 3)))) {
 			ctl.ioisel.isel = ecspi_pctl_isel[(dev_no - 1)][i].pctl;
 			ctl.ioisel.daisy = ecspi_pctl_isel[(dev_no - 1)][i].val;
