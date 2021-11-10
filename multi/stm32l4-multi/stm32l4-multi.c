@@ -26,6 +26,7 @@
 #include "adc.h"
 #include "exti.h"
 #include "flash.h"
+#include "fs.h"
 #include "gpio.h"
 #include "i2c.h"
 #include "rcc.h"
@@ -244,6 +245,7 @@ int main(void)
 	portCreate(&common.port);
 #endif
 
+	fs_init();
 	rcc_init();
 	exti_init();
 	tty_init();
