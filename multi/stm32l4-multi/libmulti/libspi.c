@@ -71,6 +71,12 @@ static unsigned char libspi_readwrite(libspi_ctx_t *ctx, unsigned char txd)
 	/* Initiate transmission */
 	*((volatile uint8_t *)(ctx->base + dr)) = txd;
 
+	/* Wait until TXNE==1 */
+	while (!(*(ctx->base + sr) & 0x2))
+		;
+	/* Clear data register */
+	rxd = *((volatile uint8_t *)(ctx->base + dr));
+
 	/* Wait until RXNE==1 */
 	while (!(*(ctx->base + sr) & 0x1))
 		;
