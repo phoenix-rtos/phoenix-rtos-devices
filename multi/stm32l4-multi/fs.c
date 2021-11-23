@@ -25,7 +25,7 @@
 #define MSGTHR_STACKSZ 4096
 
 struct {
-	char stack[MSGTHR_STACKSZ] __attribute__ ((aligned(8)));
+	char stack[MSGTHR_STACKSZ] __attribute__((aligned(8)));
 	unsigned port;
 } fs_common;
 
