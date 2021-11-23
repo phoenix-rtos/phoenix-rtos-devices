@@ -25,6 +25,7 @@
 #define MSGTHR_STACKSZ 4096
 
 struct {
+	char stack[MSGTHR_STACKSZ] __attribute__ ((aligned(8)));
 	unsigned port;
 } fs_common;
 
@@ -118,7 +119,7 @@ static void msgthr(void *ctx)
 
 			case mtReaddir:
 				msg.o.io.err = dummyfs_readdir(ctx, &msg.i.readdir.dir, msg.i.readdir.offs,
-						msg.o.data, msg.o.size);
+					msg.o.data, msg.o.size);
 				break;
 		}
 		msgRespond(fs_common.port, &msg, rid);
@@ -129,20 +130,13 @@ static void msgthr(void *ctx)
 int fs_init(void)
 {
 	void *ctx;
-	char *stack;
 	oid_t root = { 0 };
 
-	if ((stack = malloc(MSGTHR_STACKSZ)) == NULL)
-		return -ENOMEM;
-
-	if (portCreate(&fs_common.port) != 0) {
-		free(stack);
+	if (portCreate(&fs_common.port) != 0)
 		return -1;
-	}
 
 	if (portRegister(fs_common.port, "/", &root)) {
 		portDestroy(fs_common.port);
-		free(stack);
 		return -1;
 	}
 
@@ -150,21 +144,18 @@ int fs_init(void)
 	if (dummyfs_mount(&ctx, NULL, 0, &root) != EOK) {
 		printf("dummyfs mount failed\n");
 		portDestroy(fs_common.port);
-		free(stack);
 		return -1;
 	}
 
 	if (syspage_create(ctx, &root) != EOK) {
 		dummyfs_unmount(ctx);
 		portDestroy(fs_common.port);
-		free(stack);
 		return -1;
 	}
 
-	if (beginthread(msgthr, 4, stack, MSGTHR_STACKSZ, ctx) != EOK) {
+	if (beginthread(msgthr, 4, fs_common.stack, MSGTHR_STACKSZ, ctx) != EOK) {
 		dummyfs_unmount(ctx);
 		portDestroy(fs_common.port);
-		free(stack);
 		return -1;
 	}
 

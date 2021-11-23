@@ -245,7 +245,6 @@ int main(void)
 	portCreate(&common.port);
 #endif
 
-	fs_init();
 	rcc_init();
 	exti_init();
 	tty_init();
@@ -260,6 +259,8 @@ int main(void)
 #if CONSOLE_IS_TTY
 	portCreate(&common.port);
 #endif
+
+	fs_init();
 
 	portRegister(common.port, "/multi", &oid);
 
