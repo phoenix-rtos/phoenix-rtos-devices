@@ -104,4 +104,8 @@
 
 #define CONSOLE_IS_TTY ((UART_CONSOLE == 1 && TTY1) || (UART_CONSOLE == 2 && TTY2) || (UART_CONSOLE == 3 && TTY3) || (UART_CONSOLE == 4 && TTY4) || (UART_CONSOLE == 5 && TTY5))
 
+#ifndef BUILTIN_DUMMYFS
+#define BUILTIN_DUMMYFS 1
+#endif
+
 #endif

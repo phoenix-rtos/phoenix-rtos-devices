@@ -26,6 +26,7 @@
 #include "adc.h"
 #include "exti.h"
 #include "flash.h"
+#include "fs.h"
 #include "gpio.h"
 #include "i2c.h"
 #include "rcc.h"
@@ -257,6 +258,10 @@ int main(void)
 
 #if CONSOLE_IS_TTY
 	portCreate(&common.port);
+#endif
+
+#if BUILTIN_DUMMYFS
+	fs_init();
 #endif
 
 	portRegister(common.port, "/multi", &oid);
