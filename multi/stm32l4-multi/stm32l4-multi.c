@@ -260,7 +260,9 @@ int main(void)
 	portCreate(&common.port);
 #endif
 
+#if BUILTIN_DUMMYFS
 	fs_init();
+#endif
 
 	portRegister(common.port, "/multi", &oid);
 
