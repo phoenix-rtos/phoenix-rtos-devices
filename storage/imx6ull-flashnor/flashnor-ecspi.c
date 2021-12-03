@@ -63,7 +63,8 @@ typedef struct {
 
 /* Supported NOR flash chips */
 static const chip_t chips[] = {
-	{ .jedec = { 0xef, 0x40, 0x15 }, .sectorsz = 4 * 1024, .flashsz = 2 * 1024 * 1024 } /* Winbond 25Q16JV */
+	{ .jedec = { 0xef, 0x40, 0x15 }, .sectorsz = 4 * 1024, .flashsz = 2 * 1024 * 1024 }, /* Winbond 25Q16JV */
+	{ .jedec = { 0x1f, 0x47, 0x08 }, .sectorsz = 4 * 1024, .flashsz = 4 * 1024 * 1024 }  /* Adesto AT25FF321A */
 };
 
 
