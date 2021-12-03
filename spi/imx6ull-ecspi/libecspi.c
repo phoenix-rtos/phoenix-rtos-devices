@@ -50,7 +50,7 @@ static const addr_t ecspi_addr[4] = { 0x2008000, 0x200C000, 0x2010000, 0x2014000
 static const unsigned int ecspi_intr_number[4] = { 63, 64, 65, 66 };
 
 ecspi_pctl_t ecspi_pctl_mux[4][7] = {
-	{ { pctl_mux_csi_d7,      3 }, { pctl_mux_csi_d6,     3 }, { pctl_mux_csi_d4,    3 }, { pctl_mux_csi_d5,     3 },
+	{ { pctl_mux_lcd_d23,     2 }, { pctl_mux_lcd_d22,    2 }, { pctl_mux_lcd_d20,   2 }, { pctl_mux_lcd_d21,    2 },
 	  { pctl_mux_lcd_d5,      8 }, { pctl_mux_lcd_d6,     8 }, { pctl_mux_lcd_d7,    8 } },
 	{ { pctl_mux_csi_d3,      3 }, { pctl_mux_csi_d2,     3 }, { pctl_mux_csi_d0,    3 }, { pctl_mux_csi_d1,     3 },
 	  { pctl_mux_lcd_hsync,   8 }, { pctl_mux_lcd_vsync,  8 }, { pctl_mux_lcd_rst,   8 } },
@@ -61,7 +61,7 @@ ecspi_pctl_t ecspi_pctl_mux[4][7] = {
 };
 
 ecspi_pctl_t ecspi_pctl_isel[4][4] = {
-	{ { pctl_isel_ecspi1_miso, 1 }, { pctl_isel_ecspi1_mosi, 1 }, { pctl_isel_ecspi1_sclk, 1 }, { pctl_isel_ecspi1_ss0, 1 } },
+	{ { pctl_isel_ecspi1_miso, 0 }, { pctl_isel_ecspi1_mosi, 0 }, { pctl_isel_ecspi1_sclk, 0 }, { pctl_isel_ecspi1_ss0, 0 } },
 	{ { pctl_isel_ecspi2_miso, 0 }, { pctl_isel_ecspi2_mosi, 1 }, { pctl_isel_ecspi2_sclk, 0 }, { pctl_isel_ecspi2_ss0, 0 } },
 	{ { pctl_isel_ecspi3_miso, 0 }, { pctl_isel_ecspi3_mosi, 0 }, { pctl_isel_ecspi3_sclk, 0 }, { pctl_isel_ecspi3_ss0, 0 } },
 	{ { pctl_isel_ecspi4_miso, 0 }, { pctl_isel_ecspi4_mosi, 0 }, { pctl_isel_ecspi4_sclk, 0 }, { pctl_isel_ecspi4_ss0, 0 } }
