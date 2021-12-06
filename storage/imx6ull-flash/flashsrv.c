@@ -5,6 +5,7 @@
 #include <sys/threads.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
+#include <sys/reboot.h>
 #include <sys/file.h>
 #include <string.h>
 #include <errno.h>
@@ -847,8 +848,15 @@ static int parse_opts(int argc, char **argv)
 
 	flashsrv_common.rootfs_partid = rootfs_first;
 	if (rootfs_second > 0) {
-		LOG("TODO: check if mount second filesystem");
-		//flashsrv_common.rootfs_partid = rootfs_second;
+		/* imx6ull-specific reboot reason - check if we're booting from secondary boot image */
+		uint32_t reason = 0;
+		if (reboot_reason(&reason) < 0)
+			LOG_ERROR("reboot_reason: failed");
+
+		if (reason & (1u << 30)) {
+			LOG("using secondary boot image");
+			flashsrv_common.rootfs_partid = rootfs_second;
+		}
 	}
 
 
