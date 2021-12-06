@@ -342,7 +342,7 @@ int main(void)
 		return -EIO;
 	}
 
-	log_info("ad7779: initialized");
+	log_info("initialized");
 
 	msg_loop();
 
