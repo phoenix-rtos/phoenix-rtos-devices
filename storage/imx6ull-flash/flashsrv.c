@@ -19,8 +19,13 @@
 
 #include <libjffs2.h>
 
-#define LOG_ERROR(str, ...) do { fprintf(stderr, __FILE__  ":%d error: " str "\n", __LINE__, ##__VA_ARGS__); } while (0)
-#define TRACE(str, ...) do { if (0) fprintf(stderr, __FILE__  ":%d trace: " str "\n", __LINE__, ##__VA_ARGS__); } while (0)
+/* clang-format off */
+#define LOG(str_, ...) do { printf("imx6ull-flash: " str_ "\n", ##__VA_ARGS__); } while (0)
+#define LOG_ERROR(str_, ...) LOG(__FILE__ ":%d error: " str_, __LINE__, ##__VA_ARGS__)
+#define TRACE(str_, ...) do { if (0) LOG(__FILE__ ":%d trace: " str_, __LINE__, ##__VA_ARGS__); } while (0)
+/* clang-format on */
+
+#define FLASH_PART_ID 0
 
 typedef struct {
 	void *next, *prev;
@@ -49,8 +54,9 @@ typedef struct {
 
 typedef struct {
 	idnode_t node;
-	size_t start; /* in erase blocks */
-	size_t size;  /* in erase blocks */
+	size_t start;     /* in erase blocks */
+	size_t size;      /* in erase blocks */
+	const char *name; /* optional: partition name -> we will create symlink if non-null */
 } flashsrv_partition_t;
 
 
@@ -61,6 +67,9 @@ struct {
 	idtree_t partitions;
 	flashsrv_request_t *queue;
 	handle_t lock, cond;
+
+	int rootfs_partid;
+	const char *rootfs_fsname;
 
 	flashdrv_dma_t *dma;
 	flashsrv_info_t info;
@@ -176,7 +185,7 @@ static void flashsrv_fsThread(void *arg)
 }
 
 
-static flashsrv_filesystem_t *flashsrv_mountFs(flashsrv_partition_t *partition, unsigned mode, char *name)
+static flashsrv_filesystem_t *flashsrv_mountFs(flashsrv_partition_t *partition, unsigned mode, const char *name)
 {
 	flashsrv_filesystem_t *fs;
 
@@ -743,21 +752,26 @@ static void flashsrv_devThread(void *arg)
 }
 
 
-static int flashsrv_partition(size_t start, size_t size)
+static int flashsrv_addPartition(size_t start, size_t size, const char *name)
 {
 	flashsrv_partition_t *p;
+	int ret;
 
 	p = malloc(sizeof(*p));
 
+	if (p == NULL)
+		return -1;
+
 	p->start = start;
 	p->size = size;
+	p->name = (name != NULL) ? strdup(name) : NULL;
 
 	mutexLock(flashsrv_common.lock);
-	idtree_alloc(&flashsrv_common.partitions, &p->node);
-	TRACE("partition allocated, start: %u, size:%u,  id %d", start, size, idtree_id(&p->node));
+	ret = idtree_alloc(&flashsrv_common.partitions, &p->node);
 	mutexUnlock(flashsrv_common.lock);
 
-	return EOK;
+	TRACE("partition allocated, start: %zu, size:%zu, name: %s, id:%d", start, size, name, ret);
+	return ret;
 }
 
 
@@ -767,20 +781,131 @@ static void daemonize(void)
 }
 
 
+static int parse_opts(int argc, char **argv)
+{
+	int c, rootfs_first = -1, rootfs_second = -1;
+	char *p, *part_name;
+	size_t part_start, part_size;
+
+	while ((c = getopt(argc, argv, "r:p:")) != -1) {
+		switch (c) {
+			case 'r': /* fs_name:rootfs_part_id[:secondary_rootfs_part_id] */
+
+				flashsrv_common.rootfs_fsname = optarg;
+				p = strchr(optarg, ':');
+				if (!p) {
+					LOG_ERROR("missing rootfs filesystem name");
+					return -1;
+				}
+
+				*p++ = '\0';
+
+				errno = 0;
+				rootfs_first = strtol(p, &p, 10);
+				if (*p++ == ':') {
+					rootfs_second = strtol(p, &p, 10);
+				}
+
+				break;
+
+			case 'p': /* start:size[:name] */
+				/* TODO: switch to positional arguments to highlight partition order matter */
+
+				errno = 0;
+				part_start = strtol(optarg, &p, 10);
+				if (*p++ != ':') {
+					LOG_ERROR("missing partition size");
+					return -1;
+				}
+
+				part_size = strtol(p, &p, 10);
+				if (errno == ERANGE) {
+					LOG_ERROR("partition parameters out of range");
+					return -1;
+				}
+
+				part_name = (*p == ':') ? (p + 1) : NULL;
+
+				if (flashsrv_addPartition(part_start, part_size, part_name) < 0) {
+					LOG_ERROR("failed to add partition %zu:%zu", part_start, part_size);
+					return -1;
+				}
+				break;
+
+			default:
+				break;
+		}
+	}
+
+	/* TODO: add partition table support here */
+
+	if ((flashsrv_common.rootfs_fsname == NULL) || (rootfs_first <= 0)) {
+		/* code path for psu/psd */
+		LOG("missing/invalid rootfs definition, not mounting '/'");
+		return 0;
+	}
+
+	flashsrv_common.rootfs_partid = rootfs_first;
+	if (rootfs_second > 0) {
+		LOG("TODO: check if mount second filesystem");
+		//flashsrv_common.rootfs_partid = rootfs_second;
+	}
+
+
+	return 0;
+}
+
+
+/* create symlink manually as at this point we might not have '/' yet, so resolve_path would fail */
+static int create_devfs_symlink(const char *name, const char *target)
+{
+	oid_t dir;
+	msg_t msg = { 0 };
+	int len1, len2;
+	int ret;
+
+	if ((ret = lookup("devfs", NULL, &dir)) < 0)
+		return ret;
+
+	msg.type = mtCreate;
+
+	memcpy(&msg.i.create.dir, &dir, sizeof(oid_t));
+	msg.i.create.type = otSymlink;
+	/* POSIX: symlink file permissions are undefined, use sane default */
+	msg.i.create.mode = S_IFLNK | 0777;
+
+	len1 = strlen(name);
+	len2 = strlen(target);
+
+	msg.i.size = len1 + len2 + 2;
+	msg.i.data = malloc(msg.i.size);
+	if (msg.i.data == NULL)
+		return -ENOMEM;
+
+	memset(msg.i.data, 0, msg.i.size);
+
+	memcpy(msg.i.data, name, len1);
+	memcpy(msg.i.data + len1 + 1, target, len2);
+
+	ret = msgSend(dir.port, &msg);
+	free(msg.i.data);
+
+	return ret != EOK ? -EIO : msg.o.create.err;
+}
+
+
 int main(int argc, char **argv)
 {
-	int i, c;
-	oid_t oid = {0, 0}, rootoid;
-	flashsrv_filesystem_t *rootfs = NULL;
-	flashsrv_partition_t *p;
+	unsigned int i;
+	oid_t oid = { 0 };
 	const flashdrv_info_t *drvinfo;
 	rbnode_t *n;
 	unsigned port;
 	char path[32];
+	flashsrv_partition_t *p;
+	flashsrv_filesystem_t *rootfs;
+	int err;
 
-	portCreate(&port);
-
-	TRACE("got port %d", port);
 
 	condCreate(&flashsrv_common.cond);
 	mutexCreate(&flashsrv_common.lock);
@@ -789,16 +914,26 @@ int main(int argc, char **argv)
 
 	flashsrv_common.queue = NULL;
 
+	/* reserve ID 0 for "full flash" partition - for now with bogus size */
+	flashsrv_addPartition(0, 1, NULL);
+	if (parse_opts(argc, argv) < 0)
+		return 1;
+
+	portCreate(&port);
+
+	TRACE("got port %d", port);
+
 	flashdrv_init();
 	drvinfo = flashdrv_info();
-	printf("imx6ull-flash: %s\n", drvinfo->name);
+	LOG("%s", drvinfo->name);
 	flashsrv_common.info.size = drvinfo->size;
 	flashsrv_common.info.writesz = drvinfo->writesz;
 	flashsrv_common.info.metasz = drvinfo->metasz;
 	flashsrv_common.info.erasesz = drvinfo->erasesz;
 
-	/* create root partition covering full interface */
-	flashsrv_partition(0, flashsrv_common.info.size / flashsrv_common.info.erasesz);
+	/* update "full flash" partition size */
+	p = lib_treeof(flashsrv_partition_t, node, idtree_find(&flashsrv_common.partitions, FLASH_PART_ID));
+	p->size = flashsrv_common.info.size / flashsrv_common.info.erasesz;
 
 	flashsrv_common.dma = flashdrv_dmanew();
 	flashsrv_common.databuf = mmap(NULL, 2 * flashsrv_common.info.writesz, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
@@ -807,64 +942,55 @@ int main(int argc, char **argv)
 	for (i = 0; i < sizeof(flashsrv_common.poolStacks) / sizeof(flashsrv_common.poolStacks[0]); ++i)
 		beginthread(flashsrv_poolThread, 4, flashsrv_common.poolStacks[i], sizeof(flashsrv_common.poolStacks[i]), NULL);
 
-	while ((c = getopt(argc, argv, "r:p:")) != -1) {
-		switch (c) {
-		case 'r':
-			if (argv[optind] == NULL) {
-				LOG_ERROR("invalid number of arguments");
-				return -1;
-			}
-			p = lib_treeof(flashsrv_partition_t, node, idtree_find(&flashsrv_common.partitions, atoi(argv[optind])));
-
-			if (p == NULL) {
-				LOG_ERROR("partition %d not found", atoi(argv[optind]));
-				return -1;
-			}
-
-			rootfs = flashsrv_mountFs(p, 0, argv[optind - 1]);
-			optind += 1;
-
-			if (rootfs == NULL) {
-				LOG_ERROR("failed to mount root partition");
-				return -1;
-			}
-
-			rootoid.port = rootfs->port;
-			rootoid.id = rootfs->root;
-			break;
-
-		case 'p':
-			if (argv[optind] == NULL) {
-				LOG_ERROR("invalid number of arguments");
-				return -1;
-			}
-			flashsrv_partition(atoi(argv[optind - 1]), atoi(argv[optind]));
-			optind += 1;
-			break;
-
-		default:
-			break;
-		}
-	}
-
+	/* create devices for all partitions */
 	for (n = lib_rbMinimum(flashsrv_common.partitions.root); n; n = lib_rbNext(n)) {
 		p = lib_treeof(flashsrv_partition_t, node, n);
 		oid.id = idtree_id(&p->node);
 		oid.port = port;
 
-		if (oid.id == 0)
+		if (oid.id == FLASH_PART_ID)
 			sprintf(path, "flash0"); /* root device */
 		else
 			sprintf(path, "flash0p%u", (unsigned int)oid.id);
 
-		create_dev(&oid, path);
+		if (create_dev(&oid, path) < 0)
+			LOG_ERROR("failed to create device file for partition id: %ju\n", oid.id); /* assume it's non-fatal */
+
+		LOG("%-8s <%4zu, %4zu>: name: %s", path, p->start, p->start + p->size, p->name ? p->name : "(nil)");
+
+		if (p->name) {
+			if ((err = create_devfs_symlink(p->name, path)) < 0)
+				LOG_ERROR("symlink creation failed: %s", strerror(err));
+		}
 	}
 
-	if (rootfs == NULL)
-		daemonize();
-	else
-		portRegister(rootfs->port, "/", &rootoid);
+	/* mount / symlink rootfs partition */
+	if (flashsrv_common.rootfs_partid > 0) {
+		p = lib_treeof(flashsrv_partition_t, node, idtree_find(&flashsrv_common.partitions, flashsrv_common.rootfs_partid));
+		if (p == NULL) {
+			LOG_ERROR("rootfs partition %d not found", flashsrv_common.rootfs_partid);
+			return 1;
+		}
 
-	printf("imx6ull-flash: initialized\n");
+		rootfs = flashsrv_mountFs(p, 0, flashsrv_common.rootfs_fsname);
+		if (rootfs == NULL) {
+			LOG_ERROR("failed to mount root partition");
+			return 1;
+		}
+
+		oid.port = rootfs->port;
+		oid.id = rootfs->root;
+		portRegister(rootfs->port, "/", &oid);
+
+		sprintf(path, "flash0p%u", (unsigned int)idtree_id(&p->node));
+		LOG("mounting %s as a rootfs (%s)", path, flashsrv_common.rootfs_fsname);
+		if ((err = create_devfs_symlink("root", path)) < 0)
+			LOG_ERROR("root symlink creation failed: %s", strerror(err));
+	}
+	else {
+		daemonize();
+	}
+
+	LOG("initialized");
 	flashsrv_devThread((void *)port);
 }
