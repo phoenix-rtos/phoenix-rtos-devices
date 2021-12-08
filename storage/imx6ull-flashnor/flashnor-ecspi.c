@@ -222,34 +222,6 @@ static int flashnor_ecspiEraseSector(unsigned int addr)
 }
 
 
-static int flashnor_escpiEraseChip(void)
-{
-	unsigned char cmd = cmd_erase_chip;
-	int err;
-
-	mutexLock(flashnor_common.lock);
-
-	if ((err = _flashnor_ecspiWriteEnable()) < 0) {
-		mutexUnlock(flashnor_common.lock);
-		return err;
-	}
-
-	if ((err = ecspi_exchangeBusy(flashnor_common.ndev, &cmd, &cmd, 1)) < 0) {
-		mutexUnlock(flashnor_common.lock);
-		return err;
-	}
-
-	if ((err = _flashnor_ecspiWaitBusy()) < 0) {
-		mutexUnlock(flashnor_common.ndev);
-		return err;
-	}
-
-	mutexUnlock(flashnor_common.lock);
-
-	return EOK;
-}
-
-
 int flashnor_ecspiInit(unsigned int ndev, storage_t *dev)
 {
 	unsigned char *jedec, data[4] = { cmd_jedec, 0xff, 0xff, 0xff };
@@ -292,7 +264,6 @@ int flashnor_ecspiInit(unsigned int ndev, storage_t *dev)
 			flashnor_common.ctx.read = flashnor_ecspiRead;
 			flashnor_common.ctx.write = flashnor_ecspiWrite;
 			flashnor_common.ctx.eraseSector = flashnor_ecspiEraseSector;
-			flashnor_common.ctx.partitionErase = flashnor_escpiEraseChip;
 			flashnor_common.ctx.powerCtrl = NULL;
 
 			if ((err = meterfs_init(&flashnor_common.ctx)) < 0) {
