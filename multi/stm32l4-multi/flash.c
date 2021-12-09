@@ -32,6 +32,7 @@ enum { flash_acr = 0, flash_pdkeyr, flash_keyr, flash_optkeyr, flash_sr, flash_c
 struct {
 	volatile unsigned int *flash;
 	volatile int operr;
+	unsigned int bankflip;
 	handle_t lock;
 	handle_t irqcond;
 	handle_t irqlock;
@@ -72,6 +73,8 @@ static int _flash_wait(void)
 static inline void _flash_clearFlags(void)
 {
 	*(flash_common.flash + flash_sr) |= 0xc3fb;
+	dataBarier();
+	flash_common.operr = 0;
 }
 
 
@@ -138,12 +141,12 @@ static int _program_erasePage(uint32_t addr)
 	page = taddr / FLASH_PAGE_SIZE;
 
 	if ((err = _flash_wait()) < 0)
-		return  err;
+		return err;
 
 	_flash_clearFlags();
 
 	t = *(flash_common.flash + flash_cr) & ~((1 << 11) | (0xff << 3) | 1);
-	*(flash_common.flash + flash_cr) = t | (bank << 11) | (page << 3) | (1 << 1);
+	*(flash_common.flash + flash_cr) = t | ((bank ^ flash_common.bankflip) << 11) | (page << 3) | (1 << 1);
 	dataBarier();
 	*(flash_common.flash + flash_cr) |= 1 << 16;
 
@@ -231,7 +234,12 @@ size_t flash_writeData(uint32_t offset, const char *buff, size_t size)
 
 int flash_init(void)
 {
-	flash_common.flash = (void *) 0x40022000;
+	volatile unsigned int *syscfg = (void *)0x40010000;
+
+	flash_common.flash = (void *)0x40022000;
+
+	/* Check what flash bank is mapped at FLASH_PROGRAM_1_ADDR */
+	flash_common.bankflip = ((*syscfg & (1 << 8)) != 0) ? 1 : 0;
 
 	mutexCreate(&flash_common.lock);
 	mutexCreate(&flash_common.irqlock);
