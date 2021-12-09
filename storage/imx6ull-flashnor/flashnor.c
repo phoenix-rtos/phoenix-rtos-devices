@@ -71,6 +71,7 @@ static void meterfs_handler(void *arg, msg_t *msg)
 			break;
 
 		case mtLookup:
+			msg->o.lookup.fil.port = msg->i.lookup.dir.port;
 			msg->o.lookup.err = meterfs_lookup(msg->i.data, &msg->o.lookup.fil.id, ctx);
 			break;
 
