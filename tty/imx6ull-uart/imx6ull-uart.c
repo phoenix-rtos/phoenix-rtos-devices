@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <unistd.h>
+#include <paths.h>
 #include <string.h>
 #include <sys/threads.h>
 #include <sys/mman.h>
@@ -30,6 +31,7 @@
 #include <posix/utils.h>
 
 #include <libtty.h>
+#include <libklog.h>
 
 #include <phoenix/arch/imx6ull.h>
 
@@ -313,11 +315,19 @@ char __attribute__((aligned(8))) stack[2048];
 char __attribute__((aligned(8))) stack0[2048];
 
 static void print_usage(const char* progname) {
-	printf("Usage: %s [mode] [device] [speed] [parity] [use_rts_cts] or no args for default settings (cooked, uart1, B115200, 8N1)\n", progname);
+	printf("Usage: %s [mode] [device] [speed] [parity] [use_rts_cts] [option] or no args for default settings (cooked, uart1, B115200, 8N1)\n", progname);
 	printf("\tmode: 0 - raw, 1 - cooked\n\tdevice: 1 to 8\n");
 	printf("\tspeed: baud_rate\n\tparity: 0 - none, 1 - odd, 2 - even\n");
 	printf("\tuse_rts_cts: 0 - no hardware flow control, 1 - use hardware flow control\n");
+	printf("\toption: -t - make it a default console device, might be empty\n");
 }
+
+
+static void libklog_clbk(const char *data, size_t size)
+{
+	libtty_write(&uart.tty_common, data, size, 0);
+}
+
 
 int main(int argc, char **argv)
 {
@@ -329,6 +339,7 @@ int main(int argc, char **argv)
 	int parity = 0;
 	int is_cooked = 1;
 	int use_rts_cts = 0;
+	int is_console = 0;
 
 	libtty_callbacks_t callbacks = {
 		.arg = &uart,
@@ -342,12 +353,23 @@ int main(int argc, char **argv)
 
 	if (argc == 1) {
 		uart.dev_no = 1;
-	} else if (argc == 6) {
+		is_console = 1;
+	}
+	else if (argc == 6 || argc == 7) {
 		is_cooked = atoi(argv[1]);
 		uart.dev_no = atoi(argv[2]);
 		parity = atoi(argv[4]);
 		baud = libtty_int_to_baudrate(atoi(argv[3]));
 		use_rts_cts = atoi(argv[5]);
+		if (argc == 7) {
+			if (!strcmp(argv[6], "-t")) {
+				is_console = 1;
+			}
+			else {
+				print_usage(argv[0]);
+				return 0;
+			}
+		}
 	} else {
 		print_usage(argv[0]);
 		return 0;
@@ -430,6 +452,13 @@ int main(int argc, char **argv)
 
 	if ((err = create_dev(&dev, uartn)))
 		debug("imx6ull-uart: Could not create device file\n");
+
+#if KLOG_ENABLE
+	if (is_console)
+		create_dev(&dev, _PATH_CONSOLE);
+
+	libklog_init(libklog_clbk, &uart.tty_common);
+#endif /* KLOG_ENABLE */
 
 	uart_thr((void *)port);
 

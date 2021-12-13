@@ -6,5 +6,5 @@
 
 NAME := imx6ull-uart
 LOCAL_SRCS := imx6ull-uart.c
-DEP_LIBS := libtty
+DEP_LIBS := libtty libklog
 include $(binary.mk)
