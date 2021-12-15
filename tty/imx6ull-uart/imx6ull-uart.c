@@ -370,7 +370,8 @@ int main(int argc, char **argv)
 				return 0;
 			}
 		}
-	} else {
+	}
+	else {
 		print_usage(argv[0]);
 		return 0;
 	}
