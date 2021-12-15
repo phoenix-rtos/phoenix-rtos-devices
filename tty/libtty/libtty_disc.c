@@ -460,7 +460,7 @@ ssize_t libttydisc_read_raw(libtty_common_t *tty, char *data, size_t size, unsig
 								return len;
 							}
 
-							int ret = condWait(tty->rx_waitq, tty->rx_mutex, (len == 0) ? first_char_timeout : vtime);
+							int ret = condWait(tty->rx_waitq, tty->rx_mutex, ((len == 0) ? first_char_timeout : vtime) * 1000);
 							if (ret == -ETIME) {
 								mutexUnlock(tty->rx_mutex);
 								return len; // timer expired
