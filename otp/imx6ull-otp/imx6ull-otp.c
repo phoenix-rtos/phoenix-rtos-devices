@@ -13,6 +13,7 @@
  * %LICENSE%
  */
 
+#include <ctype.h>
 #include <errno.h>
 #include <unistd.h>
 #include <stdint.h>
@@ -24,6 +25,9 @@
 #include <sys/msg.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+
+#define SN_FORMAT_RAW "DDDDDDDDDDDDDDDD"
+#define SN_FORMAT     "DDDDD-DDDDDDDD-DD-D"
 
 #define OTP_BASE_ADDR 0x21BC000
 
@@ -377,43 +381,54 @@ int write_mac(char *mac1_str, char *mac2_str, char *mac3_str) {
 }
 
 
-int check_sn(const char *sn, const size_t len)
+int check_sn(const char *sn, const size_t len, int raw, unsigned *out)
 {
-	int i;
+	int i, j;
+	int ret = 0;
 
-	if (len < 8) {
-		printf("Serial number too short\n");
+	if ((raw && len != 16) || (!raw && len != 19)) {
+		printf("Wrong serial number length!\n");
 		return -EINVAL;
 	}
 
-	if (len > 16) {
-		printf("Serial number too long\n");
-		return -EINVAL;
-	}
-
-	for (i = 0; i < 3; i++) {
-		if (sn[i] < 'A' || sn[i] > 'Z') {
-			printf("Invalid manufacturer id (only capital letters)\n");
-			return -EINVAL;
+	j = 0;
+	for (i = 0; i < len; i++) {
+		if (raw) {
+			if (isdigit(sn[i])) {
+				out[j++] = sn[i];
+			}
+			else {
+				ret = -EINVAL;
+				break;
+			}
+		}
+		else {
+			if (isdigit(sn[i]) && i != 5 && i != 14 && i != 17) {
+				out[j++] = sn[i];
+			}
+			else if (sn[i] == '-' && (i == 5 || i == 14 || i == 17)) {
+				continue;
+			}
+			else {
+				ret = -EINVAL;
+				break;
+			}
 		}
 	}
 
-	for (; i < len; i++) {
-		if (sn[i] < '0' || sn[i] > '9') {
-			printf("Invalid s/n (only digits after manufacturer id)\n");
-			return -EINVAL;
-		}
-	}
+	if (ret < 0)
+		printf("Wrong serial number format. Expected: %s\n", raw ? SN_FORMAT_RAW : SN_FORMAT);
 
-	return 0;
+	return ret;
 }
 
 
-int read_sn(int silent)
+int read_sn(int silent, int raw)
 {
 	int res = 1;
 	unsigned sn0, sn1, sn2, sn3, lock;
-	char sn[17] = { 0 };
+	char sn[20] = { 0 };
+	int i;
 
 	otp_reload();
 	lock = *(otp.base + ocotp_lock);
@@ -430,28 +445,35 @@ int read_sn(int silent)
 	if (!sn0 && !sn1 && !sn2 && !sn3)
 		res = 0;
 
-	sn[0] = (char)((sn0 >> 24) & 0xFF);
-	sn[1] = (char)((sn0 >> 16) & 0xFF);
-	sn[2] = (char)((sn0 >> 8) & 0xFF);
-	sn[3] = (char)((sn0) & 0xFF);
+	i = 0;
+	sn[i++] = (char)((sn0 >> 24) & 0xFF);
+	sn[i++] = (char)((sn0 >> 16) & 0xFF);
+	sn[i++] = (char)((sn0 >> 8) & 0xFF);
+	sn[i++] = (char)(sn0 & 0xFF);
+	sn[i++] = (char)((sn1 >> 24) & 0xFF);
 
-	sn[4] = (char)((sn1 >> 24) & 0xFF);
-	sn[5] = (char)((sn1 >> 16) & 0xFF);
-	sn[6] = (char)((sn1 >> 8) & 0xFF);
-	sn[7] = (char)((sn1) & 0xFF);
+	if (!raw)
+		sn[i++] = '-';
+	sn[i++] = (char)((sn1 >> 16) & 0xFF);
+	sn[i++] = (char)((sn1 >> 8) & 0xFF);
+	sn[i++] = (char)(sn1 & 0xFF);
+	sn[i++] = (char)((sn2 >> 24) & 0xFF);
+	sn[i++] = (char)((sn2 >> 16) & 0xFF);
+	sn[i++] = (char)((sn2 >> 8) & 0xFF);
+	sn[i++] = (char)(sn2 & 0xFF);
+	sn[i++] = (char)((sn3 >> 24) & 0xFF);
 
-	sn[8] = (char)((sn2 >> 24) & 0xFF);
-	sn[9] = (char)((sn2 >> 16) & 0xFF);
-	sn[10] = (char)((sn2 >> 8) & 0xFF);
-	sn[11] = (char)((sn2) & 0xFF);
+	if (!raw)
+		sn[i++] = '-';
+	sn[i++] = (char)((sn3 >> 16) & 0xFF);
+	sn[i++] = (char)((sn3 >> 8) & 0xFF);
 
-	sn[12] = (char)((sn3 >> 24) & 0xFF);
-	sn[13] = (char)((sn3 >> 16) & 0xFF);
-	sn[14] = (char)((sn3 >> 8) & 0xFF);
-	sn[15] = (char)((sn3) & 0xFF);
+	if (!raw)
+		sn[i++] = '-';
+	sn[i++] = (char)(sn3 & 0xFF);
 
 	if (strlen(sn) == 0)
-		sprintf(sn, "DEV000001");
+		sprintf(sn, "%s", raw ? "0000000000000000" : "00000-00000000-00-0");
 
 	if (!silent)
 		printf("%s\n", sn);
@@ -460,13 +482,14 @@ int read_sn(int silent)
 }
 
 
-int write_sn(const char *sn)
+int write_sn(const char *sn, int raw)
 {
 	int ret = 0, i = 0;
 	size_t len;
 	unsigned sn0 = 0, sn1 = 0, sn2 = 0, sn3 = 0, lock = 0;
+	unsigned buf[16];
 
-	if (read_sn(1)) {
+	if (read_sn(1, raw)) {
 		printf("S/N already written\n");
 		return -1;
 	}
@@ -476,28 +499,28 @@ int write_sn(const char *sn)
 
 	len = strlen(sn);
 
-	if (check_sn(sn, len))
+	if (check_sn(sn, len, raw, buf))
 		return -1;
 
-	sn0 |= ((unsigned)sn[i++] << 24) & (0xFF << 24);
-	sn0 |= ((unsigned)sn[i++] << 16) & (0xFF << 16);
-	sn0 |= ((unsigned)sn[i++] << 8) & (0xFF << 8);
-	sn0 |= ((unsigned)sn[i++]) & 0xFF;
+	sn0 |= (buf[i++] << 24) & (0xFF << 24);
+	sn0 |= (buf[i++] << 16) & (0xFF << 16);
+	sn0 |= (buf[i++] << 8) & (0xFF << 8);
+	sn0 |= buf[i++] & 0xFF;
 
-	sn1 |= ((unsigned)sn[i++] << 24) & (0xFF << 24);
-	sn1 |= ((unsigned)sn[i++] << 16) & (0xFF << 16);
-	sn1 |= ((unsigned)sn[i++] << 8) & (0xFF << 8);
-	sn1 |= ((unsigned)sn[i++]) & 0xFF;
+	sn1 |= (buf[i++] << 24) & (0xFF << 24);
+	sn1 |= (buf[i++] << 16) & (0xFF << 16);
+	sn1 |= (buf[i++] << 8) & (0xFF << 8);
+	sn1 |= buf[i++] & 0xFF;
 
-	sn2 |= len > i ? ((unsigned)sn[i++] << 24) & (0xFF << 24) : 0;
-	sn2 |= len > i ? ((unsigned)sn[i++] << 16) & (0xFF << 16) : 0;
-	sn2 |= len > i ? ((unsigned)sn[i++] << 8) & (0xFF << 8) : 0;
-	sn2 |= len > i ? (((unsigned)sn[i++]) & 0xFF) : 0;
+	sn2 |= (buf[i++] << 24) & (0xFF << 24);
+	sn2 |= (buf[i++] << 16) & (0xFF << 16);
+	sn2 |= (buf[i++] << 8) & (0xFF << 8);
+	sn2 |= buf[i++] & 0xFF;
 
-	sn3 |= len > i ? ((unsigned)sn[i++] << 24) & (0xFF << 24) : 0;
-	sn3 |= len > i ? ((unsigned)sn[i++] << 16) & (0xFF << 16) : 0;
-	sn3 |= len > i ? ((unsigned)sn[i++] << 8) & (0xFF << 8) : 0;
-	sn3 |= len > i ? (((unsigned)sn[i++]) & 0xFF) : 0;
+	sn3 |= (buf[i++] << 24) & (0xFF << 24);
+	sn3 |= (buf[i++] << 16) & (0xFF << 16);
+	sn3 |= (buf[i++] << 8) & (0xFF << 8);
+	sn3 |= buf[i++] & 0xFF;
 
 	otp_reload();
 	lock = *(otp.base + ocotp_lock);
@@ -516,7 +539,7 @@ int write_sn(const char *sn)
 	if (ret)
 		printf("Writing S/N failed\n");
 	else
-		read_sn(0);
+		read_sn(0, raw);
 
 	return ret;
 }
@@ -525,6 +548,7 @@ int write_sn(const char *sn)
 int main(int argc, char **argv)
 {
 	int res;
+	int raw = 0;
 	char *mac[3] = { 0 };
 	char *sn = NULL;
 
@@ -534,7 +558,7 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
-	while ((res = getopt(argc, argv, "Ss:buMm:")) >= 0) {
+	while ((res = getopt(argc, argv, "r:RSs:buMm:")) >= 0) {
 		switch (res) {
 		case 'b':
 			common.blow_boot = 1;
@@ -575,11 +599,22 @@ int main(int argc, char **argv)
 			}
 			common.rw_mac = OTP_OP_READ;
 			break;
+		case 'r':
+			sn = optarg;
+			raw = 1;
+			common.rw_sn = OTP_OP_WRITE;
+			break;
+		case 'R':
+			raw = 1;
+			common.rw_sn = OTP_OP_READ;
+			break;
 		case 's':
 			sn = optarg;
+			raw = 0;
 			common.rw_sn = OTP_OP_WRITE;
 			break;
 		case 'S':
+			raw = 0;
 			common.rw_sn = OTP_OP_READ;
 			break;
 		default:
@@ -594,16 +629,18 @@ int main(int argc, char **argv)
 		printf("\t-u\t\t\tGet unique ID\n\r");
 		printf("\t-m MAC1 MAC2 PLC_MAC\twrite MAC addresses (MAC format XX:XX:XX:XX:XX:XX)\n\r");
 		printf("\t-M [1 - 3]\t\tprint MAC address [1 = MAC1, 2 = MAC2, 3 = PLC] or all [no arg]\n\r");
-		printf("\t-s S/N\t\t\twrite serial number\n\r");
-		printf("\t-S\t\t\tprint serial number\n\r");
+		printf("\t-r S/N\t\t\twrite serial number format raw %s\n\r", SN_FORMAT_RAW);
+		printf("\t-R\t\t\tprint serial number format raw %s\n\r", SN_FORMAT_RAW);
+		printf("\t-s S/N\t\t\twrite serial number format %s\n\r", SN_FORMAT);
+		printf("\t-S\t\t\tprint serial number format %s\n\r", SN_FORMAT);
 		return 1;
 	}
 
 	if (common.rw_sn == OTP_OP_WRITE)
-		write_sn(sn);
+		write_sn(sn, raw);
 
 	if (common.rw_sn == OTP_OP_READ)
-		read_sn(0);
+		read_sn(0, raw);
 
 	if (common.blow_boot)
 		blow_boot_fuses();
