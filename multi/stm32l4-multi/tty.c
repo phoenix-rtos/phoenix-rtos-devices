@@ -16,6 +16,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <posix/utils.h>
 #include <sys/pwman.h>
 #include <sys/interrupt.h>
 #include <sys/platform.h>
@@ -363,11 +364,11 @@ void tty_log(const char *str)
 }
 
 
-int tty_init(void)
+int tty_init(unsigned int *port)
 {
 #if TTY_CNT != 0
 	unsigned int uart, i;
-	char fname[] = "/dev/uartx";
+	char fname[] = "uartx";
 	oid_t oid;
 	libtty_callbacks_t callbacks;
 	tty_ctx_t *ctx;
@@ -383,12 +384,16 @@ int tty_init(void)
 		{ (void *)0x40005000, pctl_uart5, uart5_irq },
 	};
 
-	portCreate(&uart_common.port);
+	if (port == NULL)
+		portCreate(&uart_common.port);
+	else
+		uart_common.port = *port;
+
 	oid.port = uart_common.port;
 
 #if CONSOLE_IS_TTY
 	oid.id = 0;
-	portRegister(uart_common.port, "/dev/tty", &oid);
+	create_dev(&oid, "tty");
 #endif
 
 	for (uart = usart1; uart <= uart5; ++uart) {
@@ -428,7 +433,7 @@ int tty_init(void)
 
 		fname[sizeof(fname) - 2] = '0' + uart - usart1;
 		oid.id = uart - usart1 + 1;
-		portRegister(uart_common.port, fname, &oid);
+		create_dev(&oid, fname);
 	}
 
 	for (i = 0; i < THREAD_POOL; ++i)

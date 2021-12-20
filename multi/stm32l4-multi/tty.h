@@ -18,7 +18,7 @@
 void tty_log(const char *str);
 
 
-int tty_init(void);
+int tty_init(unsigned int *port);
 
 
 #endif
