@@ -12,11 +12,7 @@
  */
 
 
-#include <sys/threads.h>
-#include <sys/msg.h>
 #include <sys/pwman.h>
-#include <sys/interrupt.h>
-#include <unistd.h>
 #include <errno.h>
 #include <stdint.h>
 
@@ -25,16 +21,17 @@
 #include "libspi.h"
 
 
-static const int spi2pctl[] = { pctl_spi1, pctl_spi2, pctl_spi3 };
-
-
 enum { cr1 = 0, cr2 = 2, sr = 4, dr = 6, crcpr = 8, rxcrcr = 10, txcrcr = 12 };
 
 
 static const struct {
 	unsigned int base;
-	int irq;
-} spiinfo[3] = { { 0x40013000, spi1_irq }, { 0x40003800, spi2_irq }, { 0x40003c00, spi3_irq } };
+	unsigned int pctl;
+} spiinfo[] = {
+	{ 0x40013000, pctl_spi1 },
+	{ 0x40003800, pctl_spi2 },
+	{ 0x40003c00, pctl_spi3 }
+};
 
 
 static int libspi_spino(libspi_ctx_t *ctx)
@@ -45,22 +42,6 @@ static int libspi_spino(libspi_ctx_t *ctx)
 		return spi2;
 
 	return spi3;
-}
-
-
-static int libspi_irqHandler(unsigned int n, void *arg)
-{
-	libspi_ctx_t *ctx = (libspi_ctx_t *)arg;
-
-	*(ctx->ibuff++) = *((volatile uint8_t *)(ctx->base + dr));
-	if (--ctx->cnt)
-		*((volatile uint8_t *)(ctx->base + dr)) = *(ctx->obuff++);
-	else {
-		*(ctx->base + cr2) &= ~(1 << 6);
-		return 1;
-	}
-
-	return -1;
 }
 
 
@@ -78,23 +59,6 @@ static unsigned char libspi_readwrite(libspi_ctx_t *ctx, unsigned char txd)
 	rxd = *((volatile uint8_t *)(ctx->base + dr));
 
 	return rxd;
-}
-
-
-static void libspi_readwriteIrq(libspi_ctx_t *ctx, unsigned char *ibuff, const unsigned char *obuff, size_t bufflen)
-{
-	ctx->ibuff = ibuff;
-	ctx->obuff = obuff + 1;
-	ctx->cnt = bufflen;
-
-	/* Initiate transmission */
-	*(ctx->base + cr2) |= 1 << 6;
-	*((volatile uint8_t *)(ctx->base + dr)) = obuff[0];
-
-	mutexLock(ctx->irqLock);
-	while (ctx->cnt)
-		condWait(ctx->cond, ctx->irqLock, 1);
-	mutexUnlock(ctx->irqLock);
 }
 
 
@@ -148,11 +112,8 @@ int libspi_transaction(libspi_ctx_t *ctx, int dir, unsigned char cmd, unsigned i
 	if (flags & spi_dummy)
 		libspi_readwrite(ctx, 0);
 
-	if (bufflen >= 6) {
-		if (ctx->usedma)
-			libspi_readwriteDma(ctx, ibuff, obuff, bufflen);
-		else
-			libspi_readwriteIrq(ctx, ibuff, obuff, bufflen);
+	if (bufflen >= 6 && ctx->usedma) {
+		libspi_readwriteDma(ctx, ibuff, obuff, bufflen);
 	}
 	else {
 		if (dir == spi_dir_read) {
@@ -183,7 +144,7 @@ int libspi_configure(libspi_ctx_t *ctx, char mode, char bdiv, int enable)
 {
 	unsigned int t;
 
-	devClk(spi2pctl[libspi_spino(ctx) - spi1], 1);
+	devClk(spiinfo[libspi_spino(ctx) - spi1].pctl, 1);
 	*(ctx->base + cr1) &= ~(1 << 6);
 
 	/* Set mode and baud div */
@@ -196,7 +157,7 @@ int libspi_configure(libspi_ctx_t *ctx, char mode, char bdiv, int enable)
 	if (enable)
 		*(ctx->base + cr1) |= 1 << 6;
 	else
-		devClk(spi2pctl[libspi_spino(ctx) - spi1], 0);
+		devClk(spiinfo[libspi_spino(ctx) - spi1].pctl, 0);
 
 	return EOK;
 }
@@ -213,17 +174,11 @@ int libspi_init(libspi_ctx_t *ctx, unsigned int spi, int useDma)
 	ctx->base = (void *)spiinfo[spi - spi1].base;
 	ctx->usedma = useDma;
 
-	mutexCreate(&ctx->irqLock);
-	condCreate(&ctx->cond);
-
 	libspi_configure(ctx, 0, 0, 1);
 
 	if (useDma) {
 		libdma_configureSpi(spi, dma_mem2per, 0x1, (void *)(ctx->base + dr), 0x0, 0x0, 0x1, 0x0);
 		libdma_configureSpi(spi, dma_per2mem, 0x1, (void *)(ctx->base + dr), 0x0, 0x0, 0x1, 0x0);
-	}
-	else {
-		interrupt(spiinfo[spi - spi1].irq, libspi_irqHandler, (void *)ctx, ctx->cond, &ctx->inth);
 	}
 
 	return 0;

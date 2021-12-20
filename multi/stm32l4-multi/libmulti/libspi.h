@@ -28,10 +28,6 @@ typedef struct {
 	size_t cnt;
 
 	int usedma;
-
-	handle_t irqLock;
-	handle_t cond;
-	handle_t inth;
 } libspi_ctx_t;
 
 
