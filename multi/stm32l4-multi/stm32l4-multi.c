@@ -237,17 +237,32 @@ int main(void)
 	int i;
 	oid_t oid;
 	static const char welcome[] = "multidrv: Started\n";
+#if CONSOLE_IS_TTY
+	unsigned int ttyConsolePort;
+#endif
 
 	priority(THREADS_PRIORITY);
 
-#if !CONSOLE_IS_TTY
-	/* called before init functions to redirect logs here */
+#if CONSOLE_IS_TTY
+	portCreate(&ttyConsolePort);
+#endif
 	portCreate(&common.port);
+
+#if BUILTIN_DUMMYFS
+	fs_init();
+#else
+	/* Wait for the filesystem */
+	while (lookup("/", NULL, &oid) < 0)
+		usleep(10000);
 #endif
 
 	rcc_init();
 	exti_init();
-	tty_init();
+#if CONSOLE_IS_TTY
+	tty_init(&ttyConsolePort);
+#else
+	tty_init(NULL);
+#endif
 	gpio_init();
 	spi_init();
 	adc_init();
@@ -255,14 +270,6 @@ int main(void)
 	flash_init();
 	i2c_init();
 	uart_init();
-
-#if CONSOLE_IS_TTY
-	portCreate(&common.port);
-#endif
-
-#if BUILTIN_DUMMYFS
-	fs_init();
-#endif
 
 	portRegister(common.port, "/multi", &oid);
 
