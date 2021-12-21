@@ -511,7 +511,7 @@ void test_meta(void)
 	if ((err = flashdrv_erase(dma, paddr) < 0))
 		printf("erase() failed: %d\n", err);
 
-	/* test writing page data + meta */
+	/* test writing meta + data */
 	memset(data, 0xff, pagemapsz);
 	for (i = 0; i < sizeof(aux->metadata); ++i) {
 		aux->metadata[i] = i;
@@ -547,23 +547,26 @@ void test_meta(void)
 	print_block(data, FLASHDRV_PAGESZ);
 #endif
 
-
 	if ((err = flashdrv_erase(dma, paddr) < 0))
 		printf("erase() failed: %d\n", err);
 
-	/* test writing meta only */
+	/* test writing meta followed by data (partial page programming) */
 	memset(meta, 0xff, _PAGE_SIZE);
 	for (i = 0; i < sizeof(aux->metadata); ++i) {
 		aux->metadata[i] = i;
 	}
 
 	if ((err = flashdrv_write(dma, paddr, NULL, (char *)meta)))
-		printf("write() failed: %d\n", err);
+		printf("write() meta failed: %d\n", err);
 
-	memset(meta, 0x0, _PAGE_SIZE);
+	for (i = 0; i < flashinfo.writesz; ++i) {
+		data[i] = i & 0xff;
+	}
 
-	/* read only metadata */
-	if ((err = flashdrv_read(dma, paddr, NULL, aux) < 0))
+	if ((err = flashdrv_write(dma, paddr, data, NULL)))
+		printf("write() data failed: %d\n", err);
+
+	if ((err = flashdrv_read(dma, paddr, data, aux) < 0))
 		printf("read() failed: %d\n", err);
 
 	for (i = 0; i < sizeof(aux->metadata); ++i) {
@@ -571,8 +574,52 @@ void test_meta(void)
 			printf("FAIL: meta[%2u] = 0x%02x\n", i, aux->metadata[i]);
 	}
 
-	if (aux->errors[0] > 0) /* errors[0] is for metadata ECC */
-		printf("WARN: errors[0] = 0x%02x\n", aux->errors[0]);
+	for (i = 0; i < sizeof(aux->errors); ++i) {
+		if (aux->errors[i] > 0)
+			printf("WARN: errors[%2u] = 0x%02x\n", i, aux->errors[i]);
+	}
+
+	for (i = 0; i < flashinfo.writesz; ++i) {
+		if (data[i] != (i & 0xff))
+			printf("FAIL: data[%u] = 0x%02x\n", i, data[i]);
+	}
+
+	if ((err = flashdrv_erase(dma, paddr) < 0))
+		printf("erase() failed: %d\n", err);
+
+	/* test writing data followed by metadata (partial page programming) */
+	for (i = 0; i < flashinfo.writesz; ++i) {
+		data[i] = i & 0xff;
+	}
+
+	if ((err = flashdrv_write(dma, paddr, data, NULL)))
+		printf("write() data failed: %d\n", err);
+
+	memset(meta, 0xff, _PAGE_SIZE);
+	for (i = 0; i < sizeof(aux->metadata); ++i) {
+		aux->metadata[i] = i;
+	}
+
+	if ((err = flashdrv_write(dma, paddr, NULL, (char *)meta)))
+		printf("write() meta failed: %d\n", err);
+
+	if ((err = flashdrv_read(dma, paddr, data, aux) < 0))
+		printf("read() failed: %d\n", err);
+
+	for (i = 0; i < sizeof(aux->metadata); ++i) {
+		if (aux->metadata[i] != i)
+			printf("FAIL: meta[%2u] = 0x%02x\n", i, aux->metadata[i]);
+	}
+
+	for (i = 0; i < sizeof(aux->errors); ++i) {
+		if (aux->errors[i] > 0)
+			printf("WARN: errors[%2u] = 0x%02x\n", i, aux->errors[i]);
+	}
+
+	for (i = 0; i < flashinfo.writesz; ++i) {
+		if (data[i] != (i & 0xff))
+			printf("FAIL: data[%u] = 0x%02x\n", i, data[i]);
+	}
 
 	if ((err = flashdrv_erase(dma, paddr) < 0))
 		printf("erase() failed: %d\n", err);
