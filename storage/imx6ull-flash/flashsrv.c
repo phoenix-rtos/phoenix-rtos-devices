@@ -302,7 +302,6 @@ static int flashsrv_write(id_t id, size_t start, char *data, size_t size)
 	flashdrv_dma_t *dma;
 	int i, err;
 	char *databuf;
-	void *metabuf;
 	size_t partoff = 0;
 	size_t writesz = size;
 
@@ -324,15 +323,11 @@ static int flashsrv_write(id_t id, size_t start, char *data, size_t size)
 
 	dma = flashsrv_common.dma;
 	databuf = flashsrv_common.databuf;
-	metabuf = flashsrv_common.metabuf;
-
-	/* FIXME: this breaks meta parity bits, we need to read meta before writing data? */
-	memset(metabuf, 0xff, sizeof(flashdrv_meta_t));
 
 	for (i = 0; size; i++) {
 		/* TODO: should we skip badblocks ? */
 		memcpy(databuf, data + flashsrv_common.info.writesz * i, flashsrv_common.info.writesz);
-		err = flashdrv_write(dma, start / flashsrv_common.info.writesz + i, databuf, metabuf);
+		err = flashdrv_write(dma, start / flashsrv_common.info.writesz + i, databuf, NULL);
 
 		if (err) {
 			LOG_ERROR("write error %d", err);
