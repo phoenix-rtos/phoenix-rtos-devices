@@ -87,6 +87,11 @@ static void handleMsg(msg_t *msg)
 			err = flash_writeData(imsg->flash_addr, msg->i.data, msg->i.size);
 			break;
 
+		case flash_switch:
+			if (imsg->flash_magic == FLASH_REBOOT_MAGIC)
+				err = flash_switchBanks();
+			break;
+
 		case rtc_setcal:
 			rtc_setCalib(imsg->rtc_calib);
 			break;

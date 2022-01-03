@@ -61,6 +61,9 @@ extern size_t flash_readData(uint32_t offset, char *buff, size_t size);
 extern size_t flash_writeData(uint32_t offset, const char *buff, size_t size);
 
 
+extern int flash_switchBanks(void);
+
+
 extern int flash_init(void);
 
 

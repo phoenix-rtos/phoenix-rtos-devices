@@ -20,9 +20,13 @@
 #include <libmulti/libi2c.h>
 
 
+#define FLASH_REBOOT_MAGIC 0x88bb77aaUL
+
+
 enum { adc_get = 0, rtc_setcal, rtc_get, rtc_set, rtc_setalarm, i2c_get, i2c_getwreg,
 	i2c_set, i2c_setwreg, gpio_def, gpio_get, gpio_set, uart_def, uart_get, uart_set,
-	flash_get, flash_set, spi_get, spi_set, spi_rw, spi_def, exti_def, exti_map };
+	flash_get, flash_set, flash_switch, spi_get, spi_set, spi_rw, spi_def, exti_def,
+	exti_map };
 
 /* RTC */
 
@@ -177,6 +181,7 @@ typedef struct {
 		extidef_t exti_def;
 		extimap_t exti_map;
 		unsigned int flash_addr;
+		unsigned int flash_magic;
 	};
 } __attribute__((packed)) multi_i_t;
 
