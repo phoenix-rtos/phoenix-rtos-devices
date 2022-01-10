@@ -1,0 +1,8 @@
+test:
+    type: unit
+    targets:
+        value: [armv7a9-zynq7000]
+    tests:
+        - name: test_flashdrv
+          exec: test_flashdrv
+
