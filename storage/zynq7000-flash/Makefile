@@ -1,0 +1,14 @@
+#
+# Phoenix-RTOS
+#
+# nor flash driver
+#
+# Copyright 2021 Phoenix Systems
+# Author: Hubert Buczynski
+#
+
+NAME := libflashdrv-zynq
+LOCAL_SRCS := qspi.c flashcfg.c flashdrv.c
+LOCAL_HEADERS := flashdrv.h flashcfg.h
+
+include $(static-lib.mk)
