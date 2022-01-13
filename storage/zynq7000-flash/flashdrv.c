@@ -291,7 +291,7 @@ int flashdrv_sectorErase(addr_t offs)
 		return -EINVAL;
 
 	res = flashdrv_regionFind(offs, &id);
-	if (id < 0)
+	if (res < 0)
 		return res;
 
 	/* Check offset alligment */
