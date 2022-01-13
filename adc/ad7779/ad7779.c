@@ -606,7 +606,7 @@ int ad7779_init(int hard)
 
 	/* Use one DOUTx line; DCLK_CLK_DIV = 1 */
 	log_debug("setting DOUT_FORMAT");
-	if ((res = ad7779_write_reg(AD7779_DOUT_FORMAT, 0xc0)) < 0)
+	if ((res = ad7779_write_reg(AD7779_DOUT_FORMAT, 0xe0)) < 0)
 		return res;
 
 	/* Make sure SRC_LOAD_SOURCE bit is cleared */
