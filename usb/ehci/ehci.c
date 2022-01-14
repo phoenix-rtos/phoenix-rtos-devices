@@ -707,9 +707,19 @@ static int ehci_init(hcd_t *hcd)
 		return -ENOMEM;
 	}
 
-
 	for (i = 0; i < EHCI_PERIODIC_SIZE; ++i)
 		ehci->periodicList[i] = (link_pointer_t) { .type = 0, .zero = 0, .pointer = 0, .terminate = 1 };
+
+	if (beginthread(ehci_irqThread, 2, ehci->stack, sizeof(ehci->stack), hcd) != 0) {
+		usb_freeAligned(ehci->periodicList, EHCI_PERIODIC_SIZE * sizeof(link_pointer_t));
+		resourceDestroy(ehci->irqCond);
+		resourceDestroy(ehci->irqLock);
+		resourceDestroy(ehci->asyncLock);
+		free(ehci->periodicNodes);
+		free(ehci);
+		return -ENOMEM;
+	}
+	interrupt(hcd->info->irq, ehci_irqHandler, hcd, ehci->irqCond, &ehci->irqHandle);
 
 	/* Reset controller */
 	*(hcd->base + usbcmd) |= 2;
@@ -730,17 +740,6 @@ static int ehci_init(hcd_t *hcd)
 
 	/* Route all ports to this host controller */
 	*(hcd->base + configflag) = 1;
-
-	if (beginthread(ehci_irqThread, 2, ehci->stack, sizeof(ehci->stack), hcd) != 0) {
-		usb_freeAligned(ehci->periodicList, EHCI_PERIODIC_SIZE * sizeof(link_pointer_t));
-		resourceDestroy(ehci->irqCond);
-		resourceDestroy(ehci->irqLock);
-		resourceDestroy(ehci->asyncLock);
-		free(ehci->periodicNodes);
-		free(ehci);
-		return -ENOMEM;
-	}
-	interrupt(hcd->info->irq, ehci_irqHandler, hcd, ehci->irqCond, &ehci->irqHandle);
 
 	return 0;
 }
