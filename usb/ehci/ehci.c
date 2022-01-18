@@ -403,6 +403,9 @@ static int ehci_irqHandler(unsigned int n, void *data)
 	ehci->status = *(hcd->base + usbsts);
 	*(hcd->base + usbsts) = ehci->status & 0x1f;
 
+	if (ehci->status & USBSTS_PCI)
+		ehci->portsc = *(hcd->base + portsc1);
+
 	return -!(ehci->status & 0x1f);
 }
 
@@ -466,6 +469,20 @@ static void ehci_transUpdate(hcd_t *hcd)
 }
 
 
+static void ehci_portStatusChanged(hcd_t *hcd)
+{
+	usb_dev_t *hub = hcd->roothub;
+	uint32_t status;
+
+	status = ehci_getHubStatus(hub);
+
+	if (status != 0 && !usb_transferCheck(hub->statusTransfer)) {
+		memcpy(hub->statusTransfer->buffer, &status, sizeof(status));
+		usb_transferFinished(hub->statusTransfer, hub->statusTransfer->size);
+	}
+}
+
+
 static void ehci_irqThread(void *arg)
 {
 	hcd_t *hcd = (hcd_t *)arg;
@@ -474,11 +491,15 @@ static void ehci_irqThread(void *arg)
 	mutexLock(ehci->irqLock);
 	for (;;) {
 		condWait(ehci->irqCond, ehci->irqLock, 0);
+
 		if (ehci->status & (USBSTS_UI | USBSTS_UEI)) {
 			mutexLock(hcd->transLock);
 			ehci_transUpdate(hcd);
 			mutexUnlock(hcd->transLock);
 		}
+
+		if (ehci->status & USBSTS_PCI)
+			ehci_portStatusChanged(hcd);
 	}
 }
 
@@ -513,7 +534,7 @@ static int ehci_transferEnqueue(hcd_t *hcd, usb_transfer_t *t)
 	struct qtd_node *qtds = NULL;
 	int token = t->direction == usb_dir_in ? in_token : out_token;
 
-	if (t->pipe->dev == hcd->roothub)
+	if (usb_isRoothub(t->pipe->dev))
 		return ehci_roothubReq(t);
 
 	if (pipe->hcdpriv == NULL) {
@@ -730,7 +751,7 @@ static int ehci_init(hcd_t *hcd)
 	*(hcd->base + usbmode) |= 3;
 
 	/* Enable interrupts */
-	*(hcd->base + usbintr) = 0x1f & ~(1 << 3);
+	*(hcd->base + usbintr) = USBSTS_UI | USBSTS_UEI;
 
 	/* Set periodic frame list */
 	*(hcd->base + periodiclistbase) = va2pa(ehci->periodicList);
