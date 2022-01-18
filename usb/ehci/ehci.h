@@ -240,7 +240,6 @@ typedef struct {
 	handle_t irqCond, irqHandle, irqLock, asyncLock, periodicLock;
 	volatile unsigned portResetChange;
 	volatile unsigned status;
-	volatile unsigned portChange;
 	volatile unsigned portsc;
 
 	handle_t commonLock;
