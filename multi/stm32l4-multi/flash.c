@@ -306,6 +306,15 @@ int flash_switchBanks(void)
 }
 
 
+void flash_getInfo(flashinfo_t *info)
+{
+	info->dualbank = !!(_flash_getOptions() & (1 << opt_dualbank));
+	info->dualboot = !!(_flash_getOptions() & (1 << opt_bfb2));
+	info->remap = flash_common.bankflip;
+	info->activebank = flash_common.activebank;
+}
+
+
 int flash_init(void)
 {
 	volatile unsigned int *syscfg = (void *)0x40010000;

@@ -92,6 +92,10 @@ static void handleMsg(msg_t *msg)
 				err = flash_switchBanks();
 			break;
 
+		case flash_info:
+			flash_getInfo(&omsg->flash_info);
+			break;
+
 		case rtc_setcal:
 			rtc_setCalib(imsg->rtc_calib);
 			break;
