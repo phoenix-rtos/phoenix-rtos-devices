@@ -25,8 +25,8 @@
 
 enum { adc_get = 0, rtc_setcal, rtc_get, rtc_set, rtc_setalarm, i2c_get, i2c_getwreg,
 	i2c_set, i2c_setwreg, gpio_def, gpio_get, gpio_set, uart_def, uart_get, uart_set,
-	flash_get, flash_set, flash_switch, spi_get, spi_set, spi_rw, spi_def, exti_def,
-	exti_map };
+	flash_get, flash_set, flash_switch, flash_info, spi_get, spi_set, spi_rw, spi_def,
+	exti_def, exti_map };
 
 /* RTC */
 
@@ -159,6 +159,17 @@ typedef struct {
 } adcget_t;
 
 
+/* FLASH */
+
+
+typedef struct {
+	unsigned char dualbank;
+	unsigned char dualboot;
+	unsigned char remap;
+	unsigned char activebank;
+} __attribute__((packed)) flashinfo_t;
+
+
 /* MULTI */
 
 
@@ -193,6 +204,7 @@ typedef struct {
 		unsigned short adc_valmv;
 		rtctimestamp_t rtc_timestamp;
 		unsigned int gpio_get;
+		flashinfo_t flash_info;
 	};
 } __attribute__((packed)) multi_o_t;
 

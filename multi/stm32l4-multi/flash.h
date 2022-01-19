@@ -16,6 +16,8 @@
 
 #include <stdint.h>
 
+#include "stm32l4-multi.h"
+
 #define FLASH_PAGE_SIZE         2048
 #define FLASH_OB_1_ADDR         0x1fff7800
 #define FLASH_OB_2_ADDR         0x1ffff800
@@ -62,6 +64,9 @@ extern size_t flash_writeData(uint32_t offset, const char *buff, size_t size);
 
 
 extern int flash_switchBanks(void);
+
+
+extern void flash_getInfo(flashinfo_t *info);
 
 
 extern int flash_init(void);
