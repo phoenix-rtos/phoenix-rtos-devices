@@ -49,6 +49,7 @@ typedef struct _usbacm_dev {
 	int fileId;
 	int flags;
 	volatile int rxRunning;
+	volatile int rfcnt;
 	volatile int thrFinished;
 	unsigned port;
 	fifo_t *fifo;
@@ -128,10 +129,8 @@ static void usbacm_rxthr(void *arg)
 	mutexUnlock(dev->fifoLock);
 
 	for (;;) {
-		if ((ret = usb_transferBulk(dev->pipeBulkIN, buf, sizeof(buf), usb_dir_in)) < 0) {
-			fprintf(stderr, "usbacm%d: read failed\n", dev->id);
+		if ((ret = usb_transferBulk(dev->pipeBulkIN, buf, sizeof(buf), usb_dir_in)) < 0)
 			break;
-		}
 
 		mutexLock(dev->fifoLock);
 		for (i = 0; i < ret; i++) {
@@ -196,7 +195,7 @@ static int usbacm_write(usbacm_dev_t *dev, char *data, size_t len)
 {
 	int ret = 0;
 
-	if ((ret = usb_transferBulk(dev->pipeBulkOUT, data, len, usb_dir_out)) < 0) {
+	if ((ret = usb_transferBulk(dev->pipeBulkOUT, data, len, usb_dir_out)) <= 0) {
 		fprintf(stderr, "usbacm: write failed\n");
 		ret = -EIO;
 	}
@@ -205,7 +204,7 @@ static int usbacm_write(usbacm_dev_t *dev, char *data, size_t len)
 }
 
 
-static usbacm_dev_t *usbacm_devFind(int id)
+static usbacm_dev_t *usbacm_get(int id)
 {
 	usbacm_dev_t *tmp, *dev = NULL;
 
@@ -215,6 +214,7 @@ static usbacm_dev_t *usbacm_devFind(int id)
 		do {
 			if (tmp->fileId == id) {
 				dev = tmp;
+				dev->rfcnt++;
 				break;
 			}
 			tmp = tmp->next;
@@ -223,6 +223,53 @@ static usbacm_dev_t *usbacm_devFind(int id)
 	mutexUnlock(usbacm_common.lock);
 
 	return dev;
+}
+
+
+static void _usbacm_threadJoin(usbacm_dev_t *dev)
+{
+	usbacm_dev_t *tmp;
+	int err;
+
+	while (!dev->thrFinished) {
+		while ((err = threadJoin(0)) == -EINTR)
+			;
+
+		/* Find a device, whose thread has ended */
+		tmp = usbacm_common.devices;
+		do {
+			if (tmp->rxtid == err) {
+				tmp->thrFinished = 1;
+				break;
+			}
+			tmp = tmp->next;
+		} while (tmp != usbacm_common.devices);
+	}
+}
+
+
+static void _usbacm_put(usbacm_dev_t *dev)
+{
+	if (--dev->rfcnt == 0) {
+		if (dev->fifo != NULL) {
+			_usbacm_threadJoin(dev);
+			free(dev->fifo);
+			dev->fifo = NULL;
+			resourceDestroy(dev->fifoLock);
+			resourceDestroy(dev->fifoFull);
+			free(dev->stack);
+		}
+		LIST_REMOVE(&usbacm_common.devices, dev);
+		free(dev);
+	}
+}
+
+
+static void usbacm_put(usbacm_dev_t *dev)
+{
+	mutexLock(usbacm_common.lock);
+	_usbacm_put(dev);
+	mutexUnlock(usbacm_common.lock);
 }
 
 
@@ -329,7 +376,7 @@ static void usbacm_msgthr(void *arg)
 		else
 			id = msg.i.io.oid.id;
 
-		if ((dev = usbacm_devFind(id)) == NULL) {
+		if ((dev = usbacm_get(id)) == NULL) {
 			msg.o.io.err = -ENOENT;
 			msgRespond(usbacm_common.msgport, &msg, rid);
 			continue;
@@ -372,7 +419,7 @@ static void usbacm_msgthr(void *arg)
 			default:
 				msg.o.io.err = -EINVAL;
 		}
-
+		usbacm_put(dev);
 		msgRespond(usbacm_common.msgport, &msg, rid);
 	}
 
@@ -438,33 +485,10 @@ static int _usbacm_handleInsertion(usb_devinfo_t *insertion)
 		return -EINVAL;
 	}
 
+	dev->rfcnt = 1;
 	LIST_ADD(&usbacm_common.devices, dev);
 
 	fprintf(stderr, "usbacm: New device: %s\n", dev->path);
-
-	return 0;
-}
-
-
-static int _usbacm_threadJoin(usbacm_dev_t *dev)
-{
-	usbacm_dev_t *tmp;
-	int err;
-
-	while (!dev->thrFinished) {
-		if ((err = threadJoin(0)) < 0)
-			return err;
-
-		/* Find a device, whose thread has ended */
-		tmp = usbacm_common.devices;
-		do {
-			if (tmp->rxtid == err) {
-				tmp->thrFinished = 1;
-				break;
-			}
-			tmp = tmp->next;
-		} while (tmp != usbacm_common.devices);
-	}
 
 	return 0;
 }
@@ -485,18 +509,9 @@ static int _usbacm_handleDeletion(usb_deletion_t *del)
 			fprintf(stderr, "usbacm: Device removed: %s\n", dev->path);
 			if (dev == next)
 				cont = 0;
-			if (dev->fifo != NULL) {
-				_usbacm_threadJoin(dev);
-				/* Non-blocking device */
-				free(dev->fifo);
-				dev->fifo = NULL;
-				resourceDestroy(dev->fifoLock);
-				resourceDestroy(dev->fifoFull);
-				free(dev->stack);
-			}
+
 			remove(dev->path);
-			LIST_REMOVE(&usbacm_common.devices, dev);
-			free(dev);
+			_usbacm_put(dev);
 			if (!cont)
 				break;
 		}
