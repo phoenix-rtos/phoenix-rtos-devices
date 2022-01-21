@@ -237,7 +237,12 @@ typedef struct {
 	volatile struct qh_node *asyncList;
 	struct qh_node **periodicNodes;
 
-	handle_t irqCond, irqHandle, irqLock, asyncLock, periodicLock;
+	handle_t irqCond;
+	handle_t irqHandle;
+	handle_t irqLock;
+	handle_t asyncLock;
+	handle_t periodicLock;
+	handle_t iaaCond;
 	volatile unsigned portResetChange;
 	volatile unsigned status;
 	volatile unsigned portsc;
@@ -252,7 +257,7 @@ int phy_init(hcd_t *hcd);
 void phy_enableHighSpeedDisconnect(hcd_t *hcd, int enable);
 
 
-int ehci_roothubReq(usb_transfer_t *t);
+int ehci_roothubTransfer(hcd_t *hcd, usb_transfer_t *t);
 
 
 uint32_t ehci_getHubStatus(usb_dev_t *hub);

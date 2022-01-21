@@ -126,21 +126,21 @@ static int umass_transmit(umass_dev_t *dev, void *cmd, size_t clen, char *data, 
 	cbw.clen = clen;
 	memcpy(cbw.cmd, cmd, clen);
 
-	if ((ret = usb_transferBulk(dev->pipeOut, &cbw, sizeof(cbw), usb_dir_out)) != sizeof(cbw)) {
+	if ((ret = usb_transferBulk(dev->pipeOut, &cbw, sizeof(cbw), usb_dir_out, 2000)) != sizeof(cbw)) {
 		fprintf(stderr, "umass_transmit: usb_transferBulk OUT failed\n");
 		return -EIO;
 	}
 
 	/* Optional data transfer */
 	if (dlen > 0) {
-		if ((ret = usb_transferBulk(dataPipe, data, dlen, dir)) < 0) {
+		if ((ret = usb_transferBulk(dataPipe, data, dlen, dir, 2000)) < 0) {
 			fprintf(stderr, "umass_transmit: umass_transmit data transfer failed\n");
 			return ret;
 		}
 		bytes = ret;
 	}
 
-	if ((ret = usb_transferBulk(dev->pipeIn, &csw, sizeof(csw), usb_dir_in)) != sizeof(csw)) {
+	if ((ret = usb_transferBulk(dev->pipeIn, &csw, sizeof(csw), usb_dir_in, 2000)) != sizeof(csw)) {
 		fprintf(stderr, "umass_transmit: usb_transferBulk IN transfer failed\n");
 		return -EIO;
 	}

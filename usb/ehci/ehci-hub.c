@@ -336,9 +336,9 @@ uint32_t ehci_getHubStatus(usb_dev_t *hub)
 }
 
 
-int ehci_roothubReq(usb_transfer_t *t)
+int ehci_roothubTransfer(hcd_t *hcd, usb_transfer_t *t)
 {
-	usb_dev_t *hub = t->pipe->dev;
+	usb_dev_t *hub = hcd->roothub;
 	usb_setup_packet_t *setup = t->setup;
 	int ret = 0;
 
@@ -371,7 +371,14 @@ int ehci_roothubReq(usb_transfer_t *t)
 			break;
 	}
 
-	usb_transferFinished(t, ret);
+	t->finished = 1;
+	if (ret >= 0) {
+		t->error = 0;
+		t->transferred = ret;
+	}
+	else {
+		t->error = ret;
+	}
 
 	return 0;
 }

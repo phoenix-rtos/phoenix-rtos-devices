@@ -108,7 +108,7 @@ static int usbacm_init(usbacm_dev_t *dev)
 	setup.wValue = 3;
 	setup.wLength = 0;
 
-	if (usb_transferControl(dev->pipeCtrl, &setup, NULL, 0, usb_dir_out) < 0) {
+	if (usb_transferControl(dev->pipeCtrl, &setup, NULL, 0, usb_dir_out, 2000) < 0) {
 		fprintf(stderr, "usbacm: Control transfer failed\n");
 		return -EIO;
 	}
@@ -129,7 +129,7 @@ static void usbacm_rxthr(void *arg)
 	mutexUnlock(dev->fifoLock);
 
 	for (;;) {
-		if ((ret = usb_transferBulk(dev->pipeBulkIN, buf, sizeof(buf), usb_dir_in)) < 0)
+		if ((ret = usb_transferBulk(dev->pipeBulkIN, buf, sizeof(buf), usb_dir_in, 0)) < 0)
 			break;
 
 		mutexLock(dev->fifoLock);
@@ -181,7 +181,7 @@ static int usbacm_read(usbacm_dev_t *dev, char *data, size_t len)
 		mutexUnlock(dev->fifoLock);
 	}
 	else {
-		if ((ret = usb_transferBulk(dev->pipeBulkIN, data, len, usb_dir_in)) < 0) {
+		if ((ret = usb_transferBulk(dev->pipeBulkIN, data, len, usb_dir_in, 2000)) < 0) {
 			fprintf(stderr, "usbacm: read failed\n");
 			ret = -EIO;
 		}
@@ -195,7 +195,7 @@ static int usbacm_write(usbacm_dev_t *dev, char *data, size_t len)
 {
 	int ret = 0;
 
-	if ((ret = usb_transferBulk(dev->pipeBulkOUT, data, len, usb_dir_out)) <= 0) {
+	if ((ret = usb_transferBulk(dev->pipeBulkOUT, data, len, usb_dir_out, 5000)) <= 0) {
 		fprintf(stderr, "usbacm: write failed\n");
 		ret = -EIO;
 	}
