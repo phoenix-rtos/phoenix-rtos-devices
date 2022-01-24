@@ -149,8 +149,8 @@ static struct qh *ehci_allocQh(struct qh_node *node, usb_pipe_t *pipe)
 		return NULL;
 
 	qh->horizontal.terminate = 1;
-	qh->devAddr = pipe->dev->address;
-	qh->epSpeed = pipe->dev->speed;
+	qh->devAddr = pipe->devaddr;
+	qh->epSpeed = pipe->speed;
 	qh->dt = pipe->type == usb_transfer_control ? 1 : 0;
 
 	qh->currentQtd.terminate = 1;
@@ -161,7 +161,7 @@ static struct qh *ehci_allocQh(struct qh_node *node, usb_pipe_t *pipe)
 	qh->nakCountReload = 3;
 
 	if (pipe->type == usb_transfer_interrupt) {
-		if (pipe->dev->speed == usb_high_speed) {
+		if (pipe->speed == usb_high_speed) {
 			node->period = ((1 << (pipe->interval - 1))) >> 3;
 			/* Assume, that for 1-8 microframes period, we send it every microframe */
 			if (node->period == 0)
@@ -174,7 +174,7 @@ static struct qh *ehci_allocQh(struct qh_node *node, usb_pipe_t *pipe)
 		}
 	}
 
-	if (pipe->type == usb_transfer_control && pipe->dev->speed != usb_high_speed)
+	if (pipe->type == usb_transfer_control && pipe->speed != usb_high_speed)
 		qh->ctrlEp = 1;
 
 	node->last = &qh->transferOverlay;
@@ -429,14 +429,14 @@ static void ehci_qtdsCheck(hcd_t *hcd, usb_transfer_t *t)
 
 	if (error > 0) {
 		t->finished = 1;
-		t->error = -error;
+		t->error = error;
 	}
 
 	/* Finished no error */
 	if (!qtds->prev->qtd->active || qtds->prev->qtd->halted) {
 		t->finished = 1;
 		t->transferred = t->size - qtds->prev->qtd->bytesToTransfer;
-		t->error;
+		t->error = error;
 	}
 }
 
@@ -491,6 +491,7 @@ static void ehci_transUpdate(hcd_t *hcd)
 			t->hcdpriv = NULL;
 			notify = 1;
 		}
+
 		t = t->next;
 	} while (t != hcd->transfers);
 
@@ -569,8 +570,8 @@ static int ehci_transferEnqueue(hcd_t *hcd, usb_transfer_t *t)
 	}
 	else {
 		node = (struct qh_node *)pipe->hcdpriv;
-		if (node->qh->devAddr != pipe->dev->address)
-			node->qh->devAddr = pipe->dev->address;
+		if (node->qh->devAddr != pipe->devaddr)
+			node->qh->devAddr = pipe->devaddr;
 		if (node->qh->maxPacketLen != pipe->maxPacketLen)
 			node->qh->maxPacketLen = pipe->maxPacketLen;
 	}
@@ -626,7 +627,6 @@ static void ehci_pipeDestroy(hcd_t *hcd, usb_pipe_t *pipe)
 {
 	usb_transfer_t *t;
 	struct qh_node *qh;
-	ehci_t *ehci = (ehci_t *)hcd->priv;
 
 	if (pipe->hcdpriv == NULL)
 		return;
@@ -655,6 +655,12 @@ static void ehci_pipeDestroy(hcd_t *hcd, usb_pipe_t *pipe)
 
 	mutexLock(hcd->transLock);
 	ehci_transUpdate(hcd);
+	if (t != NULL) {
+		do {
+			if (t->pipe == pipe)
+				t->pipe = NULL;
+		} while (t != hcd->transfers);
+	}
 	mutexUnlock(hcd->transLock);
 
 	pipe->hcdpriv = NULL;
