@@ -76,8 +76,13 @@ static void ehci_enqueue(struct qh_node *qhnode, struct qtd *first, struct qtd *
 	last->next.terminate = 1;
 	last->ioc = 1;
 
+	/* There was an error on this qh, recover it */
+	if (prevlast == &qhnode->qh->transferOverlay && prevlast->halted && !prevlast->active)
+		prevlast->halted = 0;
+
 	prevlast->next.pointer = va2pa(first) >> 5;
 	prevlast->next.type = 0;
+
 	ehci_memDmb();
 
 	prevlast->next.terminate = 0;
