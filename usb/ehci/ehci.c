@@ -325,7 +325,7 @@ static void ehci_qtdsFree(struct qtd_node **head)
 	}
 }
 
-static void ehci_qtdsDeactivate(struct qtd_node *qtds)
+static void ehci_qtdsDeactivate(struct qh_node *qh, struct qtd_node *qtds)
 {
 	struct qtd_node *e = qtds;
 
@@ -334,6 +334,9 @@ static void ehci_qtdsDeactivate(struct qtd_node *qtds)
 			e->qtd->active = 0;
 		} while ((e = e->next) != qtds);
 	}
+
+	qh->qh->transferOverlay.active = 0;
+	ehci_memDmb();
 }
 
 
@@ -458,7 +461,7 @@ static void ehci_transferDequeue(hcd_t *hcd, usb_transfer_t *t)
 	if (qtd == NULL)
 		return;
 
-	ehci_qtdsDeactivate(qtd);
+	ehci_qtdsDeactivate(qh, qtd);
 	while (qh->qh->transferOverlay.active)
 		;
 
@@ -643,7 +646,7 @@ static void ehci_pipeDestroy(hcd_t *hcd, usb_pipe_t *pipe)
 	if (t != NULL) {
 		do {
 			if (t->pipe == pipe)
-				ehci_qtdsDeactivate((struct qtd_node *)t->hcdpriv);
+				ehci_qtdsDeactivate(qh, (struct qtd_node *)t->hcdpriv);
 			t = t->next;
 		} while (t != hcd->transfers);
 	}
