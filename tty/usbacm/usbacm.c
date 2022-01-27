@@ -34,6 +34,7 @@
 
 #define RX_FIFO_SIZE  4096
 #define RX_STACK_SIZE 2048
+#define RX_N_RETRIES  10
 
 typedef struct _usbacm_dev {
 	struct _usbacm_dev *prev, *next;
@@ -122,6 +123,7 @@ static void usbacm_rxthr(void *arg)
 	usbacm_dev_t *dev = (usbacm_dev_t *)arg;
 	char buf[512];
 	int i, ret;
+	int retries = RX_N_RETRIES;
 
 	mutexLock(dev->fifoLock);
 	dev->rxRunning = 1;
@@ -129,9 +131,21 @@ static void usbacm_rxthr(void *arg)
 	mutexUnlock(dev->fifoLock);
 
 	for (;;) {
-		if ((ret = usb_transferBulk(dev->pipeBulkIN, buf, sizeof(buf), usb_dir_in, 0)) < 0)
-			break;
-
+		if ((ret = usb_transferBulk(dev->pipeBulkIN, buf, sizeof(buf), usb_dir_in, 0)) < 0) {
+			/* USB error, try to recover */
+			if (ret == -EIO) {
+				printf("%s: Read failed\n", dev->path);
+				/* Don't sleep for a first time */
+				if (retries < RX_N_RETRIES)
+					sleep(5);
+				retries--;
+				continue;
+			}
+			else {
+				break;
+			}
+		}
+		retries = RX_N_RETRIES;
 		mutexLock(dev->fifoLock);
 		for (i = 0; i < ret; i++) {
 			while (fifo_is_full(dev->fifo))
@@ -195,9 +209,12 @@ static int usbacm_write(usbacm_dev_t *dev, char *data, size_t len)
 {
 	int ret = 0;
 
-	if ((ret = usb_transferBulk(dev->pipeBulkOUT, data, len, usb_dir_out, 5000)) <= 0) {
-		fprintf(stderr, "usbacm: write failed\n");
+	if ((ret = usb_transferBulk(dev->pipeBulkOUT, data, len, usb_dir_out, 5000)) < 0) {
+		printf("%s: Write failed code %d\n", dev->path, ret);
 		ret = -EIO;
+	}
+	else if (ret == 0) {
+		ret = -EWOULDBLOCK;
 	}
 
 	return ret;
@@ -373,7 +390,7 @@ static void usbacm_msgthr(void *arg)
 
 		if (msg.type == mtGetAttr)
 			id = msg.i.attr.oid.id;
-		else if (msg.type == mtOpen)
+		else if (msg.type == mtOpen || msg.type == mtClose)
 			id = msg.i.openclose.oid.id;
 		else
 			id = msg.i.io.oid.id;
