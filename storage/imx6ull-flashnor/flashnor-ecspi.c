@@ -112,7 +112,7 @@ static int _flashnor_ecspiWaitBusy(void)
 }
 
 
-static ssize_t flashnor_ecspiRead(unsigned int addr, void *buff, size_t bufflen)
+ssize_t flashnor_ecspiRead(unsigned int addr, void *buff, size_t bufflen)
 {
 	unsigned char cmd[256];
 	size_t size, len = 0;
@@ -146,7 +146,7 @@ static ssize_t flashnor_ecspiRead(unsigned int addr, void *buff, size_t bufflen)
 }
 
 
-static ssize_t flashnor_ecspiWrite(unsigned int addr, void *buff, size_t bufflen)
+ssize_t flashnor_ecspiWrite(unsigned int addr, void *buff, size_t bufflen)
 {
 	unsigned char cmd[256];
 	size_t size, len = 0;
@@ -194,7 +194,7 @@ static ssize_t flashnor_ecspiWrite(unsigned int addr, void *buff, size_t bufflen
 }
 
 
-static int flashnor_ecspiEraseSector(unsigned int addr)
+int flashnor_ecspiEraseSector(unsigned int addr)
 {
 	unsigned char cmd[4] = { cmd_erase4, addr >> 16, addr >> 8, addr };
 	int err;
