@@ -142,7 +142,7 @@ static int flashsrv_chipErase(unsigned char fID)
 
 /* Callbacks to meterfs - wrappers for basic flash functions */
 
-static ssize_t flashsrv_fsWritef0(unsigned int addr, void *buff, size_t bufflen)
+static ssize_t flashsrv_fsWritef0(unsigned int addr, const void *buff, size_t bufflen)
 {
 	flash_memory_t *flash_memory = flashsrv_common.flash_memories + 0;
 
@@ -153,7 +153,7 @@ static ssize_t flashsrv_fsWritef0(unsigned int addr, void *buff, size_t bufflen)
 }
 
 
-static ssize_t flashsrv_fsWritef1(unsigned int addr, void *buff, size_t bufflen)
+static ssize_t flashsrv_fsWritef1(unsigned int addr, const void *buff, size_t bufflen)
 {
 	flash_memory_t *flash_memory = flashsrv_common.flash_memories + 1;
 
