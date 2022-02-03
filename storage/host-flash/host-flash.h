@@ -17,7 +17,7 @@
 ssize_t hostflash_read(unsigned int addr, void *buff, size_t bufflen);
 
 
-ssize_t hostflash_write(unsigned int addr, void *buff, size_t bufflen);
+ssize_t hostflash_write(unsigned int addr, const void *buff, size_t bufflen);
 
 
 int hostflash_sectorErase(unsigned int addr);

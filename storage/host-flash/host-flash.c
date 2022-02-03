@@ -50,7 +50,7 @@ ssize_t hostflash_read(unsigned int addr, void *buff, size_t bufflen)
 }
 
 
-ssize_t hostflash_write(unsigned int addr, void *buff, size_t bufflen)
+ssize_t hostflash_write(unsigned int addr, const void *buff, size_t bufflen)
 {
 	char tempTab[256];
 	size_t wrote = 0, i;
@@ -71,7 +71,7 @@ ssize_t hostflash_write(unsigned int addr, void *buff, size_t bufflen)
 			return readsz;
 
 		for (i = 0; i < readsz; i++)
-			tempTab[i] = tempTab[i] & *((char *)buff + wrote + i);
+			tempTab[i] = tempTab[i] & *((const char *)buff + wrote + i);
 
 		len = 0;
 		while (len != readsz) {
