@@ -124,6 +124,7 @@ int main(int argc, char **argv)
 		return 3;
 	}
 
+	puts("temp: initialized");
 	thread((void *)port);
 
 	printf("temp: exiting\n");

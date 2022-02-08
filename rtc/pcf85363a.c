@@ -368,6 +368,7 @@ int main(int argc, char **argv)
 
 	setup_rtc();
 
+	puts("rtc: initialized");
 	thread((void *)port);
 
 	printf("rtc: exiting\n");

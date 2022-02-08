@@ -122,6 +122,7 @@ int main(int argc, char **argv)
 		return 3;
 	}
 
+	puts("i2c: initialized");
 	thread((void *)port);
 
 	printf("i2c: exiting\n");
