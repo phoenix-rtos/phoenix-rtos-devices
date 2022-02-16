@@ -231,11 +231,28 @@ struct qh {
 	struct qtd transferOverlay;
 } __attribute__((__packed__));
 
+
+typedef struct _ehci_qtd {
+	struct _ehci_qtd *prev, *next;
+	volatile struct qtd *hw;
+} ehci_qtd_t;
+
+
+typedef struct _ehci_qh {
+	struct _ehci_qh *prev, *next;
+	volatile struct qh *hw;
+	volatile struct qtd *qtdlast;
+	unsigned period; /* [ms], interrupt transfer only */
+	unsigned phase;  /* [ms], interrupt transfer only */
+	unsigned uframe; /* interrupt transfer and high-speed only */
+} ehci_qh_t;
+
+
 typedef struct {
 	char stack[1024] __attribute__((aligned(8)));
 	link_pointer_t *periodicList;
-	volatile struct qh_node *asyncList;
-	struct qh_node **periodicNodes;
+	ehci_qh_t *asyncList;
+	ehci_qh_t **periodicNodes;
 
 	handle_t irqCond, irqHandle, irqLock, asyncLock, periodicLock;
 	volatile unsigned portResetChange;
