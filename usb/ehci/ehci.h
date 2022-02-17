@@ -110,6 +110,9 @@
 #define EHCI_PERIODIC_ALIGN   4096
 #define EHCI_MAX_QTD_BUF_SIZE (4 * EHCI_PAGE_SIZE)
 
+#define EHCI_MAX_QTD_POOL 20
+#define EHCI_MAX_QH_POOL  10
+
 enum {
 	/* identification regs */
 	id = 0x0, hwgeneral, hwhost, hwdevice, hwtxbuf, hwrxbuf,
@@ -179,12 +182,15 @@ typedef struct {
 	ehci_qh_t *asyncList;
 	ehci_qh_t **periodicNodes;
 
+	ehci_qh_t *qhPool;
+	size_t nqhs;
+	ehci_qtd_t *qtdPool;
+	size_t nqtds;
+
 	handle_t irqCond, irqHandle, irqLock, asyncLock, periodicLock;
 	volatile unsigned portResetChange;
 	volatile unsigned status;
 	volatile unsigned portsc;
-
-	handle_t commonLock;
 } ehci_t;
 
 

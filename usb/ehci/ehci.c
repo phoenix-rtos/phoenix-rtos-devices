@@ -102,17 +102,61 @@ static void ehci_continue(ehci_t *ehci, ehci_qh_t *qh, ehci_qtd_t *last)
 }
 
 
-static ehci_qtd_t *ehci_qtdAlloc(int pid, size_t maxpacksz, char *data, size_t *size, int datax)
+static ehci_qtd_t *ehci_qtdGet(ehci_t *ehci)
+{
+	ehci_qtd_t *qtd;
+
+	mutexLock(ehci->asyncLock);
+	qtd = ehci->qtdPool;
+
+	if (qtd != NULL) {
+		LIST_REMOVE(&ehci->qtdPool, qtd);
+		ehci->nqtds--;
+	}
+	mutexUnlock(ehci->asyncLock);
+
+	return qtd;
+}
+
+
+static void ehci_qtdsPut(ehci_t *ehci, ehci_qtd_t **head)
+{
+	ehci_qtd_t *q, *t;
+
+	mutexLock(ehci->asyncLock);
+	while ((q = *head) != NULL) {
+		LIST_REMOVE(head, q);
+
+		if (ehci->nqtds >= EHCI_MAX_QTD_POOL) {
+			t = ehci->qtdPool;
+			LIST_REMOVE(&ehci->qtdPool, t);
+			usb_free((void *)t->hw, sizeof(*t->hw));
+			free(t);
+			ehci->nqtds--;
+		}
+		LIST_ADD(&ehci->qtdPool, q);
+		ehci->nqtds++;
+	}
+	mutexUnlock(ehci->asyncLock);
+}
+
+
+static ehci_qtd_t *ehci_qtdAlloc(ehci_t *ehci, int pid, size_t maxpacksz, char *data, size_t *size, int datax)
 {
 	ehci_qtd_t *qtd;
 	size_t bytes = 0;
 	int i, offs;
 
-	if ((qtd = malloc(sizeof(ehci_qtd_t))) == NULL)
-		return NULL;
+	/* Try to reuse a qtd */
+	if ((qtd = ehci_qtdGet(ehci)) == NULL) {
+		if ((qtd = malloc(sizeof(ehci_qtd_t))) == NULL)
+			return NULL;
 
-	if ((qtd->hw = usb_alloc(sizeof(struct qtd))) == NULL)
-		return NULL;
+		if ((qtd->hw = usb_alloc(sizeof(struct qtd))) == NULL) {
+			free(qtd);
+			return NULL;
+		}
+	}
 
 	qtd->hw->token = (datax << 31) | (pid << 8) | (EHCI_TRANS_ERRORS << 10) | QTD_ACTIVE;
 
@@ -144,15 +188,56 @@ static ehci_qtd_t *ehci_qtdAlloc(int pid, size_t maxpacksz, char *data, size_t *
 }
 
 
-static ehci_qh_t *ehci_qhAlloc(void)
+static ehci_qh_t *ehci_qhGet(ehci_t *ehci)
 {
 	ehci_qh_t *qh;
 
-	if ((qh = malloc(sizeof(ehci_qh_t))) == NULL)
-		return NULL;
+	mutexLock(ehci->asyncLock);
+	qh = ehci->qhPool;
 
-	if ((qh->hw = usb_alloc(sizeof(struct qh))) == NULL)
-		return NULL;
+	if (qh != NULL) {
+		LIST_REMOVE(&ehci->qhPool, qh);
+		ehci->nqhs--;
+	}
+	mutexUnlock(ehci->asyncLock);
+
+	return qh;
+}
+
+
+static void ehci_qhPut(ehci_t *ehci, ehci_qh_t *qh)
+{
+	ehci_qh_t *t;
+
+	mutexLock(ehci->asyncLock);
+
+	if (ehci->nqhs >= EHCI_MAX_QH_POOL) {
+		t = ehci->qhPool;
+		LIST_REMOVE(&ehci->qhPool, t);
+		usb_free((void *)t->hw, sizeof(*t->hw));
+		free(t);
+		ehci->nqhs--;
+	}
+
+	LIST_ADD(&ehci->qhPool, qh);
+	ehci->nqhs++;
+	mutexUnlock(ehci->asyncLock);
+}
+
+
+static ehci_qh_t *ehci_qhAlloc(ehci_t *ehci)
+{
+	ehci_qh_t *qh;
+
+	if ((qh = ehci_qhGet(ehci)) == NULL) {
+		if ((qh = malloc(sizeof(ehci_qh_t))) == NULL)
+			return NULL;
+
+		if ((qh->hw = usb_alloc(sizeof(struct qh))) == NULL) {
+			free(qh);
+			return NULL;
+		}
+	}
 
 	qh->hw->info[0] = 0;
 	qh->hw->info[1] = 0;
@@ -311,17 +396,6 @@ static void ehci_qhLinkAsync(hcd_t *hcd, ehci_qh_t *qh)
 }
 
 
-static void ehci_qtdsFree(ehci_qtd_t **head)
-{
-	ehci_qtd_t *q;
-
-	while ((q = *head) != NULL) {
-		LIST_REMOVE(head, q);
-		usb_free((void *)q->hw, sizeof(struct qtd));
-		free(q);
-	}
-}
-
 static void ehci_qtdsDeactivate(ehci_qtd_t *qtds)
 {
 	ehci_qtd_t *e = qtds;
@@ -457,7 +531,7 @@ static void ehci_transUpdate(hcd_t *hcd)
 
 		if (ehci_qtdsCheck(hcd, t, &status)) {
 			ehci_continue(hcd->priv, qh, qtd->prev);
-			ehci_qtdsFree(&qtd);
+			ehci_qtdsPut(hcd->priv, &qtd);
 			LIST_REMOVE(&hcd->transfers, t);
 			t->hcdpriv = NULL;
 			usb_transferFinished(t, status);
@@ -503,16 +577,14 @@ static void ehci_irqThread(void *arg)
 }
 
 
-static int ehci_qtdAdd(ehci_qtd_t **list, int token, size_t maxpacksz, char *buf, size_t size, int dt)
+static int ehci_qtdAdd(ehci_t *ehci, ehci_qtd_t **list, int token, size_t maxpacksz, char *buf, size_t size, int dt)
 {
 	ehci_qtd_t *tmp;
 	size_t remaining = size;
 
 	do {
-		if ((tmp = ehci_qtdAlloc(token, maxpacksz, buf + size - remaining, &remaining, dt)) == NULL) {
-			free(tmp);
+		if ((tmp = ehci_qtdAlloc(ehci, token, maxpacksz, buf + size - remaining, &remaining, dt)) == NULL)
 			return -ENOMEM;
-		}
 
 		LIST_ADD(list, tmp);
 		dt = !dt;
@@ -533,7 +605,7 @@ static int ehci_transferEnqueue(hcd_t *hcd, usb_transfer_t *t)
 		return ehci_roothubReq(t);
 
 	if (pipe->hcdpriv == NULL) {
-		if ((qh = ehci_qhAlloc()) == NULL)
+		if ((qh = ehci_qhAlloc(hcd->priv)) == NULL)
 			return -ENOMEM;
 
 		ehci_qhConf(qh, pipe);
@@ -557,8 +629,8 @@ static int ehci_transferEnqueue(hcd_t *hcd, usb_transfer_t *t)
 
 	/* Setup stage */
 	if (t->type == usb_transfer_control) {
-		if (ehci_qtdAdd(&qtds, setup_token, pipe->maxPacketLen, (char *)t->setup, sizeof(usb_setup_packet_t), 0) < 0) {
-			ehci_qtdsFree(&qtds);
+		if (ehci_qtdAdd(hcd->priv, &qtds, setup_token, pipe->maxPacketLen, (char *)t->setup, sizeof(usb_setup_packet_t), 0) < 0) {
+			ehci_qtdsPut(hcd->priv, &qtds);
 			t->hcdpriv = NULL;
 			return -ENOMEM;
 		}
@@ -567,8 +639,8 @@ static int ehci_transferEnqueue(hcd_t *hcd, usb_transfer_t *t)
 	/* Data stage */
 	if ((t->type == usb_transfer_control && t->size > 0) || t->type == usb_transfer_bulk ||
 		t->type == usb_transfer_interrupt) {
-		if (ehci_qtdAdd(&qtds, token, pipe->maxPacketLen, t->buffer, t->size, 1) < 0) {
-			ehci_qtdsFree(&qtds);
+		if (ehci_qtdAdd(hcd->priv, &qtds, token, pipe->maxPacketLen, t->buffer, t->size, 1) < 0) {
+			ehci_qtdsPut(hcd->priv, &qtds);
 			t->hcdpriv = NULL;
 			return -ENOMEM;
 		}
@@ -577,8 +649,8 @@ static int ehci_transferEnqueue(hcd_t *hcd, usb_transfer_t *t)
 	/* Status stage */
 	if (t->type == usb_transfer_control) {
 		token = (token == in_token) ? out_token : in_token;
-		if (ehci_qtdAdd(&qtds, token, pipe->maxPacketLen, NULL, 0, 1) < 0) {
-			ehci_qtdsFree(&qtds);
+		if (ehci_qtdAdd(hcd->priv, &qtds, token, pipe->maxPacketLen, NULL, 0, 1) < 0) {
+			ehci_qtdsPut(hcd->priv, &qtds);
 			t->hcdpriv = NULL;
 			return -ENOMEM;
 		}
@@ -634,8 +706,7 @@ static void ehci_pipeDestroy(hcd_t *hcd, usb_pipe_t *pipe)
 	mutexUnlock(hcd->transLock);
 
 	pipe->hcdpriv = NULL;
-	usb_free((void *)qh->hw, sizeof(struct qh));
-	free(qh);
+	ehci_qhPut(hcd->priv, qh);
 }
 
 
@@ -715,7 +786,7 @@ static int ehci_init(hcd_t *hcd)
 
 	/* Initialize Async List with a dummy qh to optimize
 	 * accesses and make them safer */
-	if ((qh = ehci_qhAlloc()) == NULL) {
+	if ((qh = ehci_qhAlloc(ehci)) == NULL) {
 		fprintf(stderr, "ehci: Out of memory!\n");
 		ehci_free(ehci);
 		return -ENOMEM;
