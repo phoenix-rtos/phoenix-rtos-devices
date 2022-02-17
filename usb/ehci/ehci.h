@@ -63,11 +63,51 @@
 
 #define PORTSC_PSPD_HS (2 << 26)
 
+#define QTD_DT            (1 << 31)
+#define QTD_LEN(token)    (((token) >> 16) & 0x7fff)
+#define QTD_IOC           (1 << 15)
+#define QTD_CERR(token)   (((token) >> 10) & 0x3)
+#define QTD_PID(token)    (((token) >> 8) & 0x3)
+#define QTD_ACTIVE        (1 << 7)
+#define QTD_HALTED        (1 << 6)
+#define QTD_BUFERR        (1 << 5)
+#define QTD_BABBLE        (1 << 4)
+#define QTD_XACT          (1 << 3)
+#define QTD_MISSED_UFRAME (1 << 2)
+#define QTD_SPLIT         (1 << 1)
+#define QTD_PING          (1 << 0)
+#define QTD_OFFSET(buf)   ((buf) & 0xfff)
+
+#define QTD_PTR(addr)   ((uint32_t)va2pa((void *)(addr)->hw) & ~0x1f)
+#define QTD_PTR_INVALID 0x1
+
+#define EHCI_TRANS_ERRORS 3
+
+#define QH_CTRL           (1 << 27)
+#define QH_PACKLEN(info0) (((info0) >> 16) & 0x7ff)
+#define QH_DEVADDR(info0) ((info0) & 0x7f)
+#define QH_HEAD           (1 << 15)
+#define QH_DT             (1 << 14)
+#define QH_HIGH_SPEED     (2 << 12)
+#define QH_LOW_SPEED      (1 << 12)
+#define QH_FULL_SPEED     (0 << 12)
+#define QH_INACTIVATE     (1 << 7)
+
+#define QH_SMASK   0x000000ff
+#define QH_CMASK   0x0000ff00
+#define QH_HUBADDR 0x007f0000
+#define QH_HUBPORT 0x3f800000
+#define QH_MULT    0xc0000000
+
+#define QH_PTR(addr)   (((uint32_t)va2pa((void *)(addr)->hw) & ~0x1f) | 0x2)
+#define QH_PTR_INVALID 0x1
+
 /* 'change' bits cleared by writing 1 */
 #define PORTSC_CBITS (PORTSC_CSC | PORTSC_PEC | PORTSC_OCC)
 
 
 #define EHCI_PAGE_SIZE        4096
+#define EHCI_PERIODIC_ALIGN   4096
 #define EHCI_MAX_QTD_BUF_SIZE (4 * EHCI_PAGE_SIZE)
 
 enum {
@@ -96,140 +136,25 @@ enum { usb_otg1_ctrl = 0x200, usb_otg2_ctrl, usb_otg1_phy_ctrl = usb_otg2_ctrl +
 enum { ehci_item_itd = 0, ehci_item_qh, ehci_item_sitd, ehci_item_fstn };
 
 
-typedef struct {
-	uint32_t terminate : 1;
-	uint32_t type : 2;
-	uint32_t zero : 2;
-	uint32_t pointer : 27;
-} __attribute__((__packed__)) link_pointer_t;
-
-
-struct itd {
-	link_pointer_t next;
-
-	union {
-		struct {
-			uint32_t offset : 12;
-			uint32_t pageSelect : 3;
-			uint32_t ioc : 1;
-			uint32_t length : 12;
-			uint32_t status : 4;
-		};
-		uint32_t raw;
-	} transactions[8];
-
-	union {
-		struct {
-			uint32_t reserved : 12;
-			uint32_t pointer : 20;
-		} buffers[7];
-
-		struct {
-			uint32_t devAddress : 7;
-			uint32_t reserved : 1;
-			uint32_t ep : 4;
-			uint32_t page0 : 20;
-			uint32_t maxPacketSize : 11;
-			uint32_t direction : 1;
-			uint32_t page1 : 20;
-			uint32_t mult : 2;
-		};
-	};
-} __attribute__((__packed__));
-
-
-struct sitd {
-	link_pointer_t next;
-
-	uint32_t devAddr : 7;
-	uint32_t reserved0 : 1;
-	uint32_t ep : 4;
-	uint32_t reserved1 : 4;
-	uint32_t hubAddr : 7;
-	uint32_t reserved2 : 1;
-	uint32_t portNumber : 7;
-	uint32_t direction : 1;
-
-	uint32_t splitStartMask : 8;
-	uint32_t splitCompletionMask : 8;
-	uint32_t reserved3 : 16;
-
-	uint32_t status : 8;
-	uint32_t splitProgressMask : 8;
-	uint32_t bytesToTransfer : 10;
-	uint32_t reserved4 : 4;
-	uint32_t pageSelect : 1;
-	uint32_t ioc : 1;
-
-	uint32_t currentOffset : 12;
-	uint32_t page0 : 20;
-
-	uint32_t transactionCount : 3;
-	uint32_t transactionPosition : 2;
-	uint32_t reserved5 : 7;
-	uint32_t page1 : 20;
-
-	link_pointer_t backLink;
-} __attribute__((__packed__));
-
-
 struct qtd {
-	link_pointer_t next;
-	link_pointer_t altNext;
-
-	uint32_t pingState : 1;
-	uint32_t splitState : 1;
-	uint32_t missedUframe : 1;
-	uint32_t transactionError : 1;
-	uint32_t babble : 1;
-	uint32_t bufferError : 1;
-	uint32_t halted : 1;
-	uint32_t active : 1;
-
-	uint32_t pid : 2;
-	uint32_t errorCounter : 2;
-	uint32_t currentPage : 3;
-	uint32_t ioc : 1;
-	uint32_t bytesToTransfer : 15;
-	uint32_t dt : 1;
-
-	union {
-		struct {
-			uint32_t reserved : 12;
-			uint32_t page : 20;
-		} buffers[5];
-
-		struct {
-			uint32_t offset : 12;
-			uint32_t page0 : 20;
-		};
-	};
-} __attribute__((__packed__));
+	uint32_t next;
+	uint32_t altnext;
+	uint32_t token;
+	uint32_t buf[5];
+};
 
 
 struct qh {
-	link_pointer_t horizontal;
+	uint32_t horizontal;
+	uint32_t info[2];
+	uint32_t current;
 
-	uint32_t devAddr : 7;
-	uint32_t inactivate : 1;
-	uint32_t ep : 4;
-	uint32_t epSpeed : 2;
-	uint32_t dt : 1;
-	uint32_t headOfReclamation : 1;
-	uint32_t maxPacketLen : 11;
-	uint32_t ctrlEp : 1;
-	uint32_t nakCountReload : 4;
-
-	uint32_t smask : 8;
-	uint32_t cmask : 8;
-	uint32_t hubAddr : 7;
-	uint32_t portNumber : 7;
-	uint32_t pipeMult : 2;
-
-	link_pointer_t currentQtd;
-
-	struct qtd transferOverlay;
-} __attribute__((__packed__));
+	/* Overlay area */
+	uint32_t nextQtd;
+	uint32_t altnextQtd;
+	uint32_t token;
+	uint32_t buf[5];
+};
 
 
 typedef struct _ehci_qtd {
@@ -241,7 +166,7 @@ typedef struct _ehci_qtd {
 typedef struct _ehci_qh {
 	struct _ehci_qh *prev, *next;
 	volatile struct qh *hw;
-	volatile struct qtd *qtdlast;
+	volatile struct qtd *lastQtd;
 	unsigned period; /* [ms], interrupt transfer only */
 	unsigned phase;  /* [ms], interrupt transfer only */
 	unsigned uframe; /* interrupt transfer and high-speed only */
@@ -250,7 +175,7 @@ typedef struct _ehci_qh {
 
 typedef struct {
 	char stack[1024] __attribute__((aligned(8)));
-	link_pointer_t *periodicList;
+	uint32_t *periodicList;
 	ehci_qh_t *asyncList;
 	ehci_qh_t **periodicNodes;
 
