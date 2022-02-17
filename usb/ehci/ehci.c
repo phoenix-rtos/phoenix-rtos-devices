@@ -43,7 +43,28 @@ static inline void ehci_memDmb(void)
 }
 
 
-static void ehci_linkQtd(ehci_qtd_t *prev, ehci_qtd_t *next)
+static void ehci_startAsync(hcd_t *hcd)
+{
+	ehci_t *ehci = (ehci_t *)hcd->priv;
+
+	*(hcd->base + asynclistaddr) = va2pa((void *)ehci->asyncList->hw);
+	*(hcd->base + usbcmd) |= USBCMD_ASE;
+	ehci_memDmb();
+	while ((*(hcd->base + usbsts) & USBSTS_AS) == 0)
+		;
+}
+
+
+static void ehci_stopAsync(hcd_t *hcd)
+{
+	*(hcd->base + usbcmd) &= ~USBCMD_ASE;
+	ehci_memDmb();
+	while ((*(hcd->base + usbsts) & USBSTS_AS) != 0)
+		;
+}
+
+
+static void ehci_qtdLink(ehci_qtd_t *prev, ehci_qtd_t *next)
 {
 	prev->hw->next = QTD_PTR(next);
 	ehci_memDmb();
@@ -66,8 +87,9 @@ static void ehci_enqueue(ehci_qh_t *qh, ehci_qtd_t *first, ehci_qtd_t *last)
 }
 
 
-static void ehci_continue(ehci_qh_t *qh, ehci_qtd_t *last)
+static void ehci_continue(ehci_t *ehci, ehci_qh_t *qh, ehci_qtd_t *last)
 {
+	mutexLock(ehci->asyncLock);
 	if (qh->lastQtd == last->hw) {
 		qh->lastQtd = NULL;
 		qh->hw->nextQtd = QTD_PTR_INVALID;
@@ -76,10 +98,11 @@ static void ehci_continue(ehci_qh_t *qh, ehci_qtd_t *last)
 		qh->hw->nextQtd = last->hw->next;
 	}
 	ehci_memDmb();
+	mutexUnlock(ehci->asyncLock);
 }
 
 
-static ehci_qtd_t *ehci_allocQtd(int pid, size_t maxpacksz, char *data, size_t *size, int datax)
+static ehci_qtd_t *ehci_qtdAlloc(int pid, size_t maxpacksz, char *data, size_t *size, int datax)
 {
 	ehci_qtd_t *qtd;
 	size_t bytes = 0;
@@ -121,7 +144,7 @@ static ehci_qtd_t *ehci_allocQtd(int pid, size_t maxpacksz, char *data, size_t *
 }
 
 
-static ehci_qh_t *ehci_allocQh(usb_pipe_t *pipe)
+static ehci_qh_t *ehci_qhAlloc(void)
 {
 	ehci_qh_t *qh;
 
@@ -131,10 +154,27 @@ static ehci_qh_t *ehci_allocQh(usb_pipe_t *pipe)
 	if ((qh->hw = usb_alloc(sizeof(struct qh))) == NULL)
 		return NULL;
 
+	qh->hw->info[0] = 0;
+	qh->hw->info[1] = 0;
+	qh->hw->token = 0;
 	qh->hw->horizontal = QH_PTR_INVALID;
 	qh->hw->current = QTD_PTR_INVALID;
 	qh->hw->nextQtd = QTD_PTR_INVALID;
+	qh->hw->altnextQtd = QTD_PTR_INVALID;
 
+	qh->next = NULL;
+	qh->prev = NULL;
+	qh->period = 0;
+	qh->uframe = 0;
+	qh->phase = 0;
+	qh->lastQtd = NULL;
+
+	return qh;
+}
+
+
+static void ehci_qhConf(ehci_qh_t *qh, usb_pipe_t *pipe)
+{
 	qh->hw->info[0] = pipe->dev->address;
 	qh->hw->info[0] |= (pipe->num << 8);
 	qh->hw->info[0] |= (pipe->dev->speed << 12);
@@ -160,14 +200,10 @@ static ehci_qh_t *ehci_allocQh(usb_pipe_t *pipe)
 				qh->period *= 2;
 		}
 	}
-
-	qh->lastQtd = NULL;
-
-	return qh;
 }
 
 
-static void ehci_allocPeriodicBandwidth(ehci_t *ehci, ehci_qh_t *qh)
+static void ehci_bandAlloc(ehci_t *ehci, ehci_qh_t *qh)
 {
 	ehci_qh_t *tmp;
 	unsigned int i, n, best;
@@ -212,14 +248,14 @@ static void ehci_allocPeriodicBandwidth(ehci_t *ehci, ehci_qh_t *qh)
 }
 
 
-static void ehci_linkPeriodicQh(hcd_t *hcd, ehci_qh_t *qh)
+static void ehci_qhLinkPeriodic(hcd_t *hcd, ehci_qh_t *qh)
 {
 	ehci_t *ehci = (ehci_t *)hcd->priv;
 	ehci_qh_t *t;
 	int i;
 
 	mutexLock(ehci->periodicLock);
-	ehci_allocPeriodicBandwidth(ehci, qh);
+	ehci_bandAlloc(ehci, qh);
 	qh->hw->info[1] = (qh->uframe != 0xff) ? (1 << qh->uframe) : QH_SMASK;
 	qh->hw->info[1] |= QH_CMASK;
 	/* TODO: Handle SPLIT transactions */
@@ -254,32 +290,24 @@ static void ehci_linkPeriodicQh(hcd_t *hcd, ehci_qh_t *qh)
 }
 
 
-static void ehci_linkAsyncQh(hcd_t *hcd, ehci_qh_t *qh)
+static void ehci_qhLinkAsync(hcd_t *hcd, ehci_qh_t *qh)
 {
 	ehci_t *ehci = (ehci_t *)hcd->priv;
-	int first = (ehci->asyncList == NULL) ? 1 : 0;
-	ehci_qh_t *prev;
 
 	mutexLock(ehci->asyncLock);
 
-	LIST_ADD(&ehci->asyncList, qh);
+	/* Insert after dummy qh */
+	qh->next = ehci->asyncList->next;
+	qh->prev = ehci->asyncList;
 
-	qh->hw->horizontal = QH_PTR(qh->next);
+	qh->next->prev = qh;
+	ehci->asyncList->next = qh;
 
-	prev = qh->prev;
-	prev->hw->horizontal = QH_PTR(qh);
+	qh->hw->horizontal = ehci->asyncList->hw->horizontal;
+	ehci->asyncList->hw->horizontal = QH_PTR(qh);
 	ehci_memDmb();
 
 	mutexUnlock(ehci->asyncLock);
-
-	if (first) {
-		qh->hw->info[0] |= QH_HEAD;
-
-		*(hcd->base + asynclistaddr) = va2pa((void *)qh->hw);
-		*(hcd->base + usbcmd) |= USBCMD_ASE;
-		while ((*(hcd->base + usbsts) & USBSTS_AS) == 0)
-			;
-	}
 }
 
 
@@ -307,37 +335,31 @@ static void ehci_qtdsDeactivate(ehci_qtd_t *qtds)
 }
 
 
-void ehci_unlinkQhAsync(hcd_t *hcd, ehci_qh_t *qh)
+static void ehci_qhUnlinkAsync(hcd_t *hcd, ehci_qh_t *qh)
 {
 	ehci_t *ehci = (ehci_t *)hcd->priv;
 
-	if (qh->hw->info[0] & QH_HEAD)
-		qh->next->hw->info[0] |= QH_HEAD;
+	mutexLock(ehci->asyncLock);
 
-	if (qh->hw == qh->next->hw) {
-		ehci->asyncList = NULL;
-		*(hcd->base + usbcmd) &= ~USBCMD_ASE;
-		while (*(hcd->base + usbsts) & USBSTS_AS)
-			;
-		*(hcd->base + asynclistaddr) = 1;
-	}
-	else if (qh == ehci->asyncList) {
-		ehci->asyncList = qh->next;
-		*(hcd->base + asynclistaddr) = va2pa((void *)qh->next->hw);
-	}
-
+	ehci_stopAsync(hcd);
 	qh->prev->hw->horizontal = qh->hw->horizontal;
+	ehci_startAsync(hcd);
 	ehci_memDmb();
-	LIST_REMOVE(&ehci->asyncList, qh);
+
+	qh->prev->next = qh->next;
+	qh->next->prev = qh->prev;
+
+	mutexUnlock(ehci->asyncLock);
 }
 
 
-void ehci_unlinkQhPeriodic(hcd_t *hcd, ehci_qh_t *qh)
+void ehci_qhUnlinkPeriodic(hcd_t *hcd, ehci_qh_t *qh)
 {
 	ehci_t *ehci = (ehci_t *)hcd->priv;
 	ehci_qh_t *tmp;
 	int i;
 
+	mutexLock(ehci->periodicLock);
 	/* TODO: do we have to stop the periodic queue? */
 	for (i = 0; i < EHCI_PERIODIC_SIZE; i++) {
 		/* Count Qhs linked to this periodic index */
@@ -368,6 +390,7 @@ void ehci_unlinkQhPeriodic(hcd_t *hcd, ehci_qh_t *qh)
 		}
 	}
 	ehci_memDmb();
+	mutexUnlock(ehci->periodicLock);
 }
 
 
@@ -433,7 +456,7 @@ static void ehci_transUpdate(hcd_t *hcd)
 		n = t->next;
 
 		if (ehci_qtdsCheck(hcd, t, &status)) {
-			ehci_continue(qh, qtd->prev);
+			ehci_continue(hcd->priv, qh, qtd->prev);
 			ehci_qtdsFree(&qtd);
 			LIST_REMOVE(&hcd->transfers, t);
 			t->hcdpriv = NULL;
@@ -480,13 +503,13 @@ static void ehci_irqThread(void *arg)
 }
 
 
-static int ehci_addQtd(ehci_qtd_t **list, int token, size_t maxpacksz, char *buf, size_t size, int dt)
+static int ehci_qtdAdd(ehci_qtd_t **list, int token, size_t maxpacksz, char *buf, size_t size, int dt)
 {
 	ehci_qtd_t *tmp;
 	size_t remaining = size;
 
 	do {
-		if ((tmp = ehci_allocQtd(token, maxpacksz, buf + size - remaining, &remaining, dt)) == NULL) {
+		if ((tmp = ehci_qtdAlloc(token, maxpacksz, buf + size - remaining, &remaining, dt)) == NULL) {
 			free(tmp);
 			return -ENOMEM;
 		}
@@ -510,15 +533,16 @@ static int ehci_transferEnqueue(hcd_t *hcd, usb_transfer_t *t)
 		return ehci_roothubReq(t);
 
 	if (pipe->hcdpriv == NULL) {
-		if ((qh = ehci_allocQh(pipe)) == NULL)
+		if ((qh = ehci_qhAlloc()) == NULL)
 			return -ENOMEM;
 
+		ehci_qhConf(qh, pipe);
 		pipe->hcdpriv = qh;
 
 		if (t->type == usb_transfer_bulk || t->type == usb_transfer_control)
-			ehci_linkAsyncQh(hcd, qh);
+			ehci_qhLinkAsync(hcd, qh);
 		else
-			ehci_linkPeriodicQh(hcd, qh);
+			ehci_qhLinkPeriodic(hcd, qh);
 	}
 	else {
 		qh = (ehci_qh_t *)pipe->hcdpriv;
@@ -533,7 +557,7 @@ static int ehci_transferEnqueue(hcd_t *hcd, usb_transfer_t *t)
 
 	/* Setup stage */
 	if (t->type == usb_transfer_control) {
-		if (ehci_addQtd(&qtds, setup_token, pipe->maxPacketLen, (char *)t->setup, sizeof(usb_setup_packet_t), 0) < 0) {
+		if (ehci_qtdAdd(&qtds, setup_token, pipe->maxPacketLen, (char *)t->setup, sizeof(usb_setup_packet_t), 0) < 0) {
 			ehci_qtdsFree(&qtds);
 			t->hcdpriv = NULL;
 			return -ENOMEM;
@@ -543,7 +567,7 @@ static int ehci_transferEnqueue(hcd_t *hcd, usb_transfer_t *t)
 	/* Data stage */
 	if ((t->type == usb_transfer_control && t->size > 0) || t->type == usb_transfer_bulk ||
 		t->type == usb_transfer_interrupt) {
-		if (ehci_addQtd(&qtds, token, pipe->maxPacketLen, t->buffer, t->size, 1) < 0) {
+		if (ehci_qtdAdd(&qtds, token, pipe->maxPacketLen, t->buffer, t->size, 1) < 0) {
 			ehci_qtdsFree(&qtds);
 			t->hcdpriv = NULL;
 			return -ENOMEM;
@@ -553,7 +577,7 @@ static int ehci_transferEnqueue(hcd_t *hcd, usb_transfer_t *t)
 	/* Status stage */
 	if (t->type == usb_transfer_control) {
 		token = (token == in_token) ? out_token : in_token;
-		if (ehci_addQtd(&qtds, token, pipe->maxPacketLen, NULL, 0, 1) < 0) {
+		if (ehci_qtdAdd(&qtds, token, pipe->maxPacketLen, NULL, 0, 1) < 0) {
 			ehci_qtdsFree(&qtds);
 			t->hcdpriv = NULL;
 			return -ENOMEM;
@@ -566,7 +590,7 @@ static int ehci_transferEnqueue(hcd_t *hcd, usb_transfer_t *t)
 
 	t->hcdpriv = qtds;
 	do {
-		ehci_linkQtd(qtds, qtds->next);
+		ehci_qtdLink(qtds, qtds->next);
 		qtds = qtds->next;
 	} while (qtds != t->hcdpriv);
 
@@ -585,48 +609,59 @@ static void ehci_pipeDestroy(hcd_t *hcd, usb_pipe_t *pipe)
 {
 	usb_transfer_t *t;
 	ehci_qh_t *qh;
-	ehci_t *ehci = (ehci_t *)hcd->priv;
 
 	if (pipe->hcdpriv == NULL)
 		return;
 
 	qh = (ehci_qh_t *)pipe->hcdpriv;
-	mutexLock(hcd->transLock);
 
+	if (pipe->type == usb_transfer_bulk || pipe->type == usb_transfer_control)
+		ehci_qhUnlinkAsync(hcd, qh);
+	else if (pipe->type == usb_transfer_interrupt)
+		ehci_qhUnlinkPeriodic(hcd, qh);
+
+	mutexLock(hcd->transLock);
 	t = hcd->transfers;
 	/* Deactivate device's qtds */
 	if (t != NULL) {
 		do {
-			if (t->pipe == pipe) {
+			if (t->pipe == pipe)
 				ehci_qtdsDeactivate((ehci_qtd_t *)t->hcdpriv);
-			}
 			t = t->next;
 		} while (t != hcd->transfers);
 		ehci_transUpdate(hcd);
 	}
 	mutexUnlock(hcd->transLock);
 
-	if (pipe->type == usb_transfer_bulk || pipe->type == usb_transfer_control) {
-		mutexLock(ehci->asyncLock);
-		while (qh->hw->token & QTD_ACTIVE)
-			;
-		ehci_unlinkQhAsync(hcd, qh);
-		mutexUnlock(ehci->asyncLock);
-	}
-	else if (pipe->type == usb_transfer_interrupt) {
-		mutexLock(ehci->periodicLock);
-		ehci_unlinkQhPeriodic(hcd, qh);
-		mutexUnlock(ehci->periodicLock);
-	}
 	pipe->hcdpriv = NULL;
 	usb_free((void *)qh->hw, sizeof(struct qh));
 	free(qh);
 }
 
 
+static void ehci_free(ehci_t *ehci)
+{
+	if (ehci->periodicList != NULL)
+		usb_freeAligned(ehci->periodicList, EHCI_PERIODIC_SIZE * sizeof(uint32_t));
+
+	if (ehci->irqCond != 0)
+		resourceDestroy(ehci->irqCond);
+
+	if (ehci->irqLock != 0)
+		resourceDestroy(ehci->irqLock);
+
+	if (ehci->asyncLock != 0)
+		resourceDestroy(ehci->asyncLock);
+
+	free(ehci->periodicNodes);
+	free(ehci);
+}
+
+
 static int ehci_init(hcd_t *hcd)
 {
 	ehci_t *ehci;
+	ehci_qh_t *qh;
 	int i;
 
 	if ((ehci = calloc(1, sizeof(ehci_t))) == NULL) {
@@ -636,14 +671,13 @@ static int ehci_init(hcd_t *hcd)
 
 	if ((ehci->periodicList = usb_allocAligned(EHCI_PERIODIC_SIZE * sizeof(uint32_t), EHCI_PERIODIC_ALIGN)) == NULL) {
 		fprintf(stderr, "ehci: Out of memory!\n");
-		free(ehci);
+		ehci_free(ehci);
 		return -ENOMEM;
 	}
 
 	if ((ehci->periodicNodes = calloc(EHCI_PERIODIC_SIZE, sizeof(ehci_qh_t *))) == NULL) {
 		fprintf(stderr, "ehci: Out of memory!\n");
-		usb_freeAligned(ehci->periodicList, EHCI_PERIODIC_SIZE * sizeof(uint32_t));
-		free(ehci);
+		ehci_free(ehci);
 		return -ENOMEM;
 	}
 
@@ -651,62 +685,50 @@ static int ehci_init(hcd_t *hcd)
 
 	if (phy_init(hcd) != 0) {
 		fprintf(stderr, "ehci: Phy init failed!\n");
-		usb_freeAligned(ehci->periodicList, EHCI_PERIODIC_SIZE * sizeof(uint32_t));
-		free(ehci->periodicNodes);
-		free(ehci);
+		ehci_free(ehci);
 		return -EINVAL;
 	}
 
-	ehci->asyncList = NULL;
-
 	if (condCreate(&ehci->irqCond) < 0) {
 		fprintf(stderr, "ehci: Out of memory!\n");
-		usb_freeAligned(ehci->periodicList, EHCI_PERIODIC_SIZE * sizeof(uint32_t));
-		free(ehci->periodicNodes);
-		free(ehci);
+		ehci_free(ehci);
 		return -ENOMEM;
 	}
 
 	if (mutexCreate(&ehci->irqLock) < 0) {
 		fprintf(stderr, "ehci: Out of memory!\n");
-		usb_freeAligned(ehci->periodicList, EHCI_PERIODIC_SIZE * sizeof(uint32_t));
-		resourceDestroy(ehci->irqCond);
-		free(ehci->periodicNodes);
-		free(ehci);
+		ehci_free(ehci);
 		return -ENOMEM;
 	}
 
 	if (mutexCreate(&ehci->asyncLock) < 0) {
 		fprintf(stderr, "ehci: Out of memory!\n");
-		usb_freeAligned(ehci->periodicList, EHCI_PERIODIC_SIZE * sizeof(uint32_t));
-		resourceDestroy(ehci->irqCond);
-		resourceDestroy(ehci->irqLock);
-		free(ehci->periodicNodes);
-		free(ehci);
+		ehci_free(ehci);
 		return -ENOMEM;
 	}
 
 	if (mutexCreate(&ehci->periodicLock) < 0) {
 		fprintf(stderr, "ehci: Out of memory!\n");
-		usb_freeAligned(ehci->periodicList, EHCI_PERIODIC_SIZE * sizeof(uint32_t));
-		resourceDestroy(ehci->irqCond);
-		resourceDestroy(ehci->irqLock);
-		resourceDestroy(ehci->asyncLock);
-		free(ehci->periodicNodes);
-		free(ehci);
+		ehci_free(ehci);
 		return -ENOMEM;
 	}
+
+	/* Initialize Async List with a dummy qh to optimize
+	 * accesses and make them safer */
+	if ((qh = ehci_qhAlloc()) == NULL) {
+		fprintf(stderr, "ehci: Out of memory!\n");
+		ehci_free(ehci);
+		return -ENOMEM;
+	}
+	qh->hw->info[0] |= QH_HEAD;
+	qh->hw->horizontal = QH_PTR(qh);
+	LIST_ADD(&ehci->asyncList, qh);
 
 	for (i = 0; i < EHCI_PERIODIC_SIZE; ++i)
 		ehci->periodicList[i] = QH_PTR_INVALID;
 
 	if (beginthread(ehci_irqThread, 2, ehci->stack, sizeof(ehci->stack), hcd) != 0) {
-		usb_freeAligned(ehci->periodicList, EHCI_PERIODIC_SIZE * sizeof(uint32_t));
-		resourceDestroy(ehci->irqCond);
-		resourceDestroy(ehci->irqLock);
-		resourceDestroy(ehci->asyncLock);
-		free(ehci->periodicNodes);
-		free(ehci);
+		ehci_free(ehci);
 		return -ENOMEM;
 	}
 	interrupt(hcd->info->irq, ehci_irqHandler, hcd, ehci->irqCond, &ehci->irqHandle);
@@ -730,6 +752,8 @@ static int ehci_init(hcd_t *hcd)
 
 	/* Route all ports to this host controller */
 	*(hcd->base + configflag) = 1;
+
+	ehci_startAsync(hcd);
 
 	return 0;
 }
