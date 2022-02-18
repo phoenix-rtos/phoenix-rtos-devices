@@ -77,6 +77,7 @@
 #define QTD_SPLIT         (1 << 1)
 #define QTD_PING          (1 << 0)
 #define QTD_OFFSET(buf)   ((buf) & 0xfff)
+#define QTD_ERRMASK       (QTD_XACT | QTD_BABBLE | QTD_BUFERR | QTD_HALTED)
 
 #define QTD_PTR(addr)   ((uint32_t)va2pa((void *)(addr)->hw) & ~0x1f)
 #define QTD_PTR_INVALID 0x1
@@ -163,6 +164,7 @@ struct qh {
 typedef struct _ehci_qtd {
 	struct _ehci_qtd *prev, *next;
 	volatile struct qtd *hw;
+	size_t bytes;
 } ehci_qtd_t;
 
 

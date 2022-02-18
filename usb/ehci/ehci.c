@@ -90,12 +90,17 @@ static void ehci_enqueue(ehci_qh_t *qh, ehci_qtd_t *first, ehci_qtd_t *last)
 static void ehci_continue(ehci_t *ehci, ehci_qh_t *qh, ehci_qtd_t *last)
 {
 	mutexLock(ehci->asyncLock);
+	/* Queue for this qh is empty */
 	if (qh->lastQtd == last->hw) {
 		qh->lastQtd = NULL;
 		qh->hw->nextQtd = QTD_PTR_INVALID;
 	}
-	else if ((qh->hw->token & QTD_ACTIVE) == 0 && (qh->hw->current == QTD_PTR(last))) {
+
+	/* The qh is halted after error, move it forward and cleanup the status */
+	if (!(qh->hw->token & QTD_ACTIVE) && (qh->hw->current == QTD_PTR(last)) &&
+			(qh->hw->token & QTD_ERRMASK)) {
 		qh->hw->nextQtd = last->hw->next;
+		qh->hw->token &= ~0x7e;
 	}
 	ehci_memDmb();
 	mutexUnlock(ehci->asyncLock);
