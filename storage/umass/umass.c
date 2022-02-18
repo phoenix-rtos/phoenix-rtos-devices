@@ -425,6 +425,7 @@ static int umass_handleDeletion(usb_deletion_t *del)
 				dev->instance.interface == del->interface) {
 			if (dev == next)
 				cont = 0;
+			resourceDestroy(dev->lock);
 			remove(dev->path);
 			LIST_REMOVE(&umass_common.devices, dev);
 			fprintf(stderr, "umass: Device removed: %s\n", dev->path);
