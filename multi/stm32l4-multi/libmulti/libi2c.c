@@ -15,7 +15,7 @@
 #include <sys/threads.h>
 #include <sys/pwman.h>
 #include <errno.h>
-#include "libi2c.h"
+#include "libmulti/libi2c.h"
 #include "../common.h"
 
 

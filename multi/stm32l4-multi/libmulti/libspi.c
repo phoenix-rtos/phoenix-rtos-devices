@@ -17,8 +17,8 @@
 #include <stdint.h>
 
 #include "../common.h"
-#include "libdma.h"
-#include "libspi.h"
+#include "libmulti/libdma.h"
+#include "libmulti/libspi.h"
 
 
 enum { cr1 = 0, cr2 = 2, sr = 4, dr = 6, crcpr = 8, rxcrcr = 10, txcrcr = 12 };

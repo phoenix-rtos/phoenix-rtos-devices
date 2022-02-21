@@ -10,7 +10,7 @@
  */
 
 #include "../common.h"
-#include "libaes.h"
+#include "libmulti/libaes.h"
 
 
 enum { cr = 0, sr, dinr, doutr, keyr0, ivr0 = keyr0 + 4, keyr4 = ivr0 + 4, susp0r = keyr4 + 4 };

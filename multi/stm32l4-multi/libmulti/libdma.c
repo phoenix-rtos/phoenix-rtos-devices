@@ -15,7 +15,7 @@
 #include <sys/interrupt.h>
 
 #include "../common.h"
-#include "libdma.h"
+#include "libmulti/libdma.h"
 
 struct {
 	volatile unsigned int *base;

@@ -20,7 +20,7 @@
 #include <sys/pwman.h>
 #include <sys/interrupt.h>
 
-#include "libuart.h"
+#include "libmulti/libuart.h"
 #include "../common.h"
 
 
