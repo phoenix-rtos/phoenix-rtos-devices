@@ -79,17 +79,16 @@ otp_t otp = { 0 };
 #define OTP_WR_UNLOCK (0x3e77 << 16)
 
 
-struct common_s {
+static struct {
 	int blow_boot;
 	int get_uid;
 	int rw_mac;
 	int r_mac_no;
 	int rw_sn;
-	int display_usage;
 } common;
 
 
-int otp_check_err(void)
+static int otp_check_err(void)
 {
 	if (*(otp.base + ocotp_ctrl) & OTP_ERROR)
 		return 1;
@@ -97,7 +96,7 @@ int otp_check_err(void)
 }
 
 
-void otp_clear_err(void)
+static void otp_clear_err(void)
 {
 	*(otp.base + ocotp_ctrl_clr) = OTP_ERROR;
 	while (*(otp.base + ocotp_ctrl) & (OTP_BUSY | OTP_ERROR)) usleep(10000);
@@ -105,7 +104,7 @@ void otp_clear_err(void)
 }
 
 
-int otp_cnc_err(void)
+static int otp_cnc_err(void)
 {
 	int res;
 
@@ -115,14 +114,14 @@ int otp_cnc_err(void)
 }
 
 
-void otp_wait(unsigned extra_fl)
+static void otp_wait(unsigned extra_fl)
 {
 	while (*(otp.base + ocotp_ctrl) & (OTP_BUSY | extra_fl)) usleep(10000);
 	usleep(100000);
 }
 
 
-int otp_write(unsigned addr, unsigned data)
+static int otp_write(unsigned addr, unsigned data)
 {
 	int ret = 0;
 
@@ -161,7 +160,7 @@ int otp_write(unsigned addr, unsigned data)
 }
 
 
-int otp_reload(void)
+static int otp_reload(void)
 {
 	/* check busy */
 	otp_wait(OTP_NONE);
@@ -185,13 +184,13 @@ int otp_reload(void)
 }
 
 
-int otp_write_reload(unsigned addr, unsigned data)
+static int otp_write_reload(unsigned addr, unsigned data)
 {
 	return otp_write(addr, data) ? -1 : otp_reload();
 }
 
 
-int blow_boot_fuses(void)
+static int blow_boot_fuses(void)
 {
 	if (otp_write(0x5, 0x1090)) /* set nand options (64 pages per block, 4 fcb)*/
 		return -1;
@@ -204,7 +203,7 @@ int blow_boot_fuses(void)
 }
 
 
-unsigned long long get_unique_id(void)
+static unsigned long long get_unique_id(void)
 {
 	uint64_t uid;
 
@@ -216,7 +215,7 @@ unsigned long long get_unique_id(void)
 }
 
 
-int check_hex(char c)
+static int check_hex(char c)
 {
 	if (c >= 'A' && c <= 'F')
 		return 0;
@@ -225,7 +224,7 @@ int check_hex(char c)
 	return -1;
 }
 
-int verify_mac(char *mac[])
+static int verify_mac(char *mac[])
 {
 	int i;
 
@@ -240,7 +239,8 @@ int verify_mac(char *mac[])
 }
 
 
-int read_mac(int silent, int mac_no)
+/* returns non-zero if ETH1 and ETH2 macs are non-zero */
+static int read_mac(int silent, int mac_no)
 {
 	unsigned int mac0, mac1, mac, res = 1, plc0, plc1;
 	unsigned m1[6] = { 0 };
@@ -295,7 +295,8 @@ int read_mac(int silent, int mac_no)
 }
 
 
-int write_mac(char *mac1_str, char *mac2_str, char *mac3_str) {
+static int write_mac(char *mac1_str, char *mac2_str, char *mac3_str)
+{
 
 	int i, ret = 0;
 	char *mac1[6] = { 0 };
@@ -321,20 +322,17 @@ int write_mac(char *mac1_str, char *mac2_str, char *mac3_str) {
 		mac3[i] = calloc(1, 4);
 	}
 	printf("mac1: %s mac2: %s mac3: %s\n", mac1_str, mac2_str, mac3_str);
-	if (sscanf(mac1_str, "%2s:%2s:%2s:%2s:%2s:%3s",
-		mac1[0], mac1[1], mac1[2], mac1[3], mac1[4], mac1[5]) != 6) {
+	if (sscanf(mac1_str, "%2s:%2s:%2s:%2s:%2s:%2s", mac1[0], mac1[1], mac1[2], mac1[3], mac1[4], mac1[5]) != 6) {
 		printf("Invalid MAC1 address format\n");
 		ret = -1;
 	}
 
-	if (!ret && sscanf(mac2_str, "%2s:%2s:%2s:%2s:%2s:%3s",
-		mac2[0], mac2[1], mac2[2], mac2[3], mac2[4], mac2[5]) != 6) {
+	if (!ret && sscanf(mac2_str, "%2s:%2s:%2s:%2s:%2s:%2s", mac2[0], mac2[1], mac2[2], mac2[3], mac2[4], mac2[5]) != 6) {
 		printf("Invalid MAC2 address format\n");
 		ret = -1;
 	}
 
-	if (!ret && sscanf(mac3_str, "%2s:%2s:%2s:%2s:%2s:%3s",
-		mac3[0], mac3[1], mac3[2], mac3[3], mac3[4], mac3[5]) != 6) {
+	if (!ret && sscanf(mac3_str, "%2s:%2s:%2s:%2s:%2s:%2s", mac3[0], mac3[1], mac3[2], mac3[3], mac3[4], mac3[5]) != 6) {
 		printf("Invalid PLC MAC address format\n");
 		ret = -1;
 	}
@@ -366,7 +364,7 @@ int write_mac(char *mac1_str, char *mac2_str, char *mac3_str) {
 		ret |= otp_write(OTP_ADDR_MAC2, (unsigned)(m2[3] | m2[2] << 8 | m2[1] << 16 | m2[0] << 24));
 
 		ret |= otp_write(OTP_ADDR_PLC_MAC0, (unsigned)(m3[5] | m3[4] << 8 | m3[3] << 16 | m3[2] << 24));
-		ret |= otp_write(OTP_ADDR_PLC_MAC1,  (unsigned)(m3[1] | m3[0] << 8) & 0xFFFF);
+		ret |= otp_write(OTP_ADDR_PLC_MAC1, (unsigned)(m3[1] | m3[0] << 8) & 0xFFFF);
 
 		otp_reload();
 	}
@@ -374,6 +372,7 @@ int write_mac(char *mac1_str, char *mac2_str, char *mac3_str) {
 	for (i = 0; i < 6; i++) {
 		free(mac1[i]);
 		free(mac2[i]);
+		free(mac3[i]);
 	}
 
 	printf("MAC addrs %s\n", !ret ? "written" : "write failed");
@@ -381,7 +380,7 @@ int write_mac(char *mac1_str, char *mac2_str, char *mac3_str) {
 }
 
 
-int check_sn(const char *sn, const size_t len, int raw, unsigned *out)
+static int check_sn(const char *sn, const size_t len, int raw, unsigned *out)
 {
 	int i, j;
 	int ret = 0;
@@ -423,7 +422,7 @@ int check_sn(const char *sn, const size_t len, int raw, unsigned *out)
 }
 
 
-int read_sn(int silent, int raw)
+static int read_sn(int silent, int raw)
 {
 	int res = 1;
 	unsigned sn0, sn1, sn2, sn3, lock;
@@ -482,14 +481,14 @@ int read_sn(int silent, int raw)
 }
 
 
-int write_sn(const char *sn, int raw)
+static int write_sn(const char *sn, int raw)
 {
 	int ret = 0, i = 0;
 	size_t len;
 	unsigned sn0 = 0, sn1 = 0, sn2 = 0, sn3 = 0, lock = 0;
 	unsigned buf[16];
 
-	if (read_sn(1, raw)) {
+	if (read_sn(1, raw) && !(common.force == 0)) {
 		printf("S/N already written\n");
 		return -1;
 	}
@@ -545,18 +544,28 @@ int write_sn(const char *sn, int raw)
 }
 
 
+static void usage(const char *progname)
+{
+	printf("Usage: %s [-b] [-u] [-m MAC1 MAC2 PLC_MAC]\n", progname);
+	printf("\t-b                       Blow boot fuses\n");
+	printf("\t-u                       Get unique ID\n");
+	printf("\t-m MAC1 MAC2 PLC_MAC     write MAC addresses (MAC format XX:XX:XX:XX:XX:XX)\n");
+	printf("\t-M [1 - 3]               print MAC address [1 = MAC1, 2 = MAC2, 3 = PLC] or all [no arg]\n");
+	printf("\t-r " SN_FORMAT_RAW "      write serial number format raw\n");
+	printf("\t-R                       print serial number format raw " SN_FORMAT_RAW "\n");
+	printf("\t-s " SN_FORMAT "   write serial number format\n");
+	printf("\t-S                       print serial number format " SN_FORMAT "\n");
+	printf("\t-f                       force OTP writing even if already written\n");
+	printf("\t-n                       dry run - perform all checks apart from real OTP writing\n");
+}
+
+
 int main(int argc, char **argv)
 {
 	int res;
 	int raw = 0;
 	char *mac[3] = { 0 };
 	char *sn = NULL;
-
-	otp.base = mmap(NULL, 0x1000, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, OTP_BASE_ADDR);
-	if (otp.base == NULL) {
-		printf("OTP mmap failed\n");
-		return -1;
-	}
 
 	while ((res = getopt(argc, argv, "r:RSs:buMm:")) >= 0) {
 		switch (res) {
@@ -567,36 +576,34 @@ int main(int argc, char **argv)
 			common.get_uid = 1;
 			break;
 		case 'm':
-			if (argc < 5) {
-				common.display_usage = 1;
-				break;
+			if (argc - (optind - 1) < 3) {
+				usage(argv[0]);
+				return EXIT_FAILURE;
 			}
+			/* WARN: using multiple positional arguments with getopt options is implementation-defined */
 			mac[0] = argv[optind - 1];
 			if (argv[optind] == NULL || argv[optind][0] == '-') {
-				common.display_usage = 1;
-				break;
+				usage(argv[0]);
+				return EXIT_FAILURE;
 			}
 			mac[1] = argv[optind];
 			optind++;
 			if (argv[optind] == NULL || argv[optind][0] == '-') {
-				common.display_usage = 1;
-				break;
+				usage(argv[0]);
+				return EXIT_FAILURE;
 			}
 			mac[2] = argv[optind];
 			optind++;
 			common.rw_mac = OTP_OP_WRITE;
 			break;
-		case 'M':
+		case 'M': /* phoenix getopt doesn't support optional arguments, parse by hand */
 			if (argv[optind] == NULL || argv[optind][0] == '-') {
 				common.r_mac_no = 0;
 			}
-			else if (sscanf(argv[optind], "%d", &common.r_mac_no) == 1) {
-				if (common.r_mac_no <= 0 || common.r_mac_no > 3)
-					common.display_usage = 1;
-			}
 			else {
-				common.display_usage = 1;
+				common.r_mac_no = strtol(argv[optind], NULL, 10);
 			}
+
 			common.rw_mac = OTP_OP_READ;
 			break;
 		case 'r':
@@ -617,23 +624,31 @@ int main(int argc, char **argv)
 			raw = 0;
 			common.rw_sn = OTP_OP_READ;
 			break;
+		case 'h':
+			usage(argv[0]);
+			return EXIT_SUCCESS;
 		default:
-			common.display_usage = 1;
-			break;
+			usage(argv[0]);
+			return EXIT_FAILURE;
 		}
 	}
 
-	if (common.display_usage || (!common.blow_boot && !common.get_uid && !common.rw_mac && !common.rw_sn)) {
-		printf("Usage: imx6ull-otp [-b] [-u] [-m MAC1 MAC2]\n\r");
-		printf("\t-b\t\t\tBlow boot fuses\n\r");
-		printf("\t-u\t\t\tGet unique ID\n\r");
-		printf("\t-m MAC1 MAC2 PLC_MAC\twrite MAC addresses (MAC format XX:XX:XX:XX:XX:XX)\n\r");
-		printf("\t-M [1 - 3]\t\tprint MAC address [1 = MAC1, 2 = MAC2, 3 = PLC] or all [no arg]\n\r");
-		printf("\t-r S/N\t\t\twrite serial number format raw %s\n\r", SN_FORMAT_RAW);
-		printf("\t-R\t\t\tprint serial number format raw %s\n\r", SN_FORMAT_RAW);
-		printf("\t-s S/N\t\t\twrite serial number format %s\n\r", SN_FORMAT);
-		printf("\t-S\t\t\tprint serial number format %s\n\r", SN_FORMAT);
-		return 1;
+	if (!common.blow_boot && !common.get_uid && !common.rw_mac && !common.rw_sn) {
+		printf("Nothing to do\n");
+		usage(argv[0]);
+		return EXIT_FAILURE;
+	}
+
+	if (common.r_mac_no < 0 || common.r_mac_no > 3) {
+		printf("Invalid MAC number\n");
+		usage(argv[0]);
+		return EXIT_FAILURE;
+	}
+
+	otp.base = mmap(NULL, 0x1000, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, OTP_BASE_ADDR);
+	if (otp.base == NULL) {
+		printf("OTP mmap failed\n");
+		return EXIT_FAILURE;
 	}
 
 	if (common.rw_sn == OTP_OP_WRITE)
@@ -654,5 +669,6 @@ int main(int argc, char **argv)
 	if (common.rw_mac == OTP_OP_READ)
 		read_mac(0, common.r_mac_no);
 
+	munmap((void *)otp.base, 0x1000);
 	return 0;
 }
