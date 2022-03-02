@@ -85,6 +85,8 @@ static struct {
 	int rw_mac;
 	int r_mac_no;
 	int rw_sn;
+	int force;
+	int dry_run;
 } common;
 
 
@@ -124,6 +126,9 @@ static void otp_wait(unsigned extra_fl)
 static int otp_write(unsigned addr, unsigned data)
 {
 	int ret = 0;
+
+	if (common.dry_run == 1)
+		return 0;
 
 	/* check busy */
 	otp_wait(OTP_NONE);
@@ -306,7 +311,7 @@ static int write_mac(char *mac1_str, char *mac2_str, char *mac3_str)
 	unsigned m2[6] = { 0 };
 	unsigned m3[6] = { 0 };
 
-	if (read_mac(1, 0)) {
+	if (read_mac(1, 0) && !(common.force == 0)) {
 		printf("MACs are already written\n");
 		return -1;
 	}
@@ -567,7 +572,7 @@ int main(int argc, char **argv)
 	char *mac[3] = { 0 };
 	char *sn = NULL;
 
-	while ((res = getopt(argc, argv, "r:RSs:buMm:")) >= 0) {
+	while ((res = getopt(argc, argv, "r:RSs:buMm:fn")) >= 0) {
 		switch (res) {
 		case 'b':
 			common.blow_boot = 1;
@@ -623,6 +628,12 @@ int main(int argc, char **argv)
 		case 'S':
 			raw = 0;
 			common.rw_sn = OTP_OP_READ;
+			break;
+		case 'f':
+			common.force = 1;
+			break;
+		case 'n':
+			common.dry_run = 1;
 			break;
 		case 'h':
 			usage(argv[0]);
