@@ -662,24 +662,25 @@ int main(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
+	res = 0;
 	if (common.rw_sn == OTP_OP_WRITE)
-		write_sn(sn, raw);
+		res |= write_sn(sn, raw);
 
 	if (common.rw_sn == OTP_OP_READ)
-		read_sn(0, raw);
+		res |= read_sn(0, raw);
 
 	if (common.blow_boot)
-		blow_boot_fuses();
+		res |= blow_boot_fuses();
 
 	if (common.get_uid)
-		get_unique_id();
+		res |= get_unique_id();
 
 	if (common.rw_mac == OTP_OP_WRITE)
-		write_mac(mac[0], mac[1], mac[2]);
+		res |= write_mac(mac[0], mac[1], mac[2]);
 
 	if (common.rw_mac == OTP_OP_READ)
-		read_mac(0, common.r_mac_no);
+		res |= read_mac(0, common.r_mac_no);
 
 	munmap((void *)otp.base, 0x1000);
-	return 0;
+	return res == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
