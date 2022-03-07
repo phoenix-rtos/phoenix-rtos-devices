@@ -961,7 +961,7 @@ void _writeraw_and_check(flashdrv_dma_t *dma, uint32_t blockno, uint8_t *data, u
 	TIMEPROF_START();
 	memset(data, byte, FLASHDRV_PAGESZ);
 	if ((err = flashdrv_writeraw(dma, addr, data, FLASHDRV_PAGESZ)) < 0)
-		printf("\n[%4u] writeraw(0x%02x) failed: %d\n", blockno, byte, err);
+		printf("[%4u] writeraw(0x%02x) failed: %d\n", blockno, byte, err);
 	TIMEPROF_END_WARN(30, "writeraw");
 
 	TIMEPROF_START();
@@ -1023,7 +1023,7 @@ void test_write_read_erase(void)
 
 	/* check every erease block (read first page metadata as RAW to omit ECC checks) */
 	for (blockno = 0; blockno < TOTAL_BLOCKS_CNT; ++blockno) {
-		printf("\rblock %4u", blockno);
+		//printf("\rblock %4u\n", blockno);
 		test_single_block_raw(dma, blockno, data, meta);
 	}
 
@@ -1118,10 +1118,10 @@ int main(int argc, char **argv)
 	assert(flashinfo.writesz <= _PAGE_SIZE);
 	pagemapsz = (FLASHDRV_PAGESZ + _PAGE_SIZE - 1) & ~(_PAGE_SIZE - 1);
 
-	test_meta();
+	//test_meta();
 	//test_write_fcb();
 	//test_badblocks();
-	//test_write_read_erase();
+	test_write_read_erase();
 	//test_stress_one_block();
 	//test_flashsrv("/dev/flash0");
 	//test_flashsrv("/dev/flash1");
