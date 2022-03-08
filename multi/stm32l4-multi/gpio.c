@@ -47,6 +47,7 @@ int gpio_setPort(int port, unsigned int mask, unsigned int val)
 	t |= (mask & ~val) << 16;
 
 	*(gpio_common.base[port - gpioa] + bsrr) = t;
+	dataBarier();
 
 	return EOK;
 }
@@ -57,6 +58,7 @@ int gpio_getPort(int port, unsigned int *val)
 	if (port < gpioa || port > gpioi)
 		return -EINVAL;
 
+	dataBarier();
 	(*val) = *(gpio_common.base[port - gpioa] + idr) & 0xffff;
 
 	return EOK;
@@ -81,9 +83,6 @@ int gpio_configPin(int port, char pin, char mode, char af, char otype, char ospe
 		gpio_common.enableMask |= (1 << (port - gpioa));
 	}
 
-	t = *(reg + moder) & ~(0x3 << (pin << 1));
-	*(reg + moder) = t | (mode & 0x3) << (pin << 1);
-
 	t = *(reg + otyper) & ~(1 << pin);
 	*(reg + otyper) = t | (otype & 1) << pin;
 
@@ -105,6 +104,13 @@ int gpio_configPin(int port, char pin, char mode, char af, char otype, char ospe
 		*(reg + ascr) |= 1 << pin;
 	else
 		*(reg + ascr) &= ~(1 << pin);
+
+	dataBarier();
+
+	t = *(reg + moder) & ~(0x3 << (pin << 1));
+	*(reg + moder) = t | (mode & 0x3) << (pin << 1);
+
+	dataBarier();
 
 	mutexUnlock(gpio_common.lock);
 
