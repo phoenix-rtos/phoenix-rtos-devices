@@ -1006,9 +1006,101 @@ void test_single_block_raw(flashdrv_dma_t *dma, uint32_t blockno, uint8_t *data,
 	TIMEPROF_END_WARN(100, "erase(3)");
 }
 
+/* write, read and check */
+void _write_and_check(flashdrv_dma_t *dma, uint32_t blockno, uint8_t *data, uint8_t *meta, uint8_t byte)
+{
+	uint32_t addr = blockno * 64;
+	unsigned int i;
+	int err;
+	flashdrv_meta_t *aux = (flashdrv_meta_t *)meta;
+
+	memset(data, byte, pagemapsz);
+	for (i = 0; i < sizeof(aux->metadata); ++i) {
+		aux->metadata[i] = i;
+	}
+
+	if ((err = flashdrv_write(dma, addr, data, (char *)meta)) < 0)
+		printf("[%4u] write(0x%02x) failed: %d\n", blockno, byte, err);
+
+	memset(data, 0, pagemapsz);
+	if ((err = flashdrv_read(dma, addr, data, aux)) < 0)
+		printf("[%4u] read(0x%02x) failed: %d\n", blockno, byte, err);
+
+	for (i = 0; i < sizeof(aux->metadata); i++) {
+		if (aux->metadata[i] != i)
+			printf("[%4u] meta[%2u] invalid data 0x%02x\n", blockno, i, aux->metadata[i]);
+	}
+
+	for (i = 0; i < sizeof(aux->errors); i++) {
+		switch (aux->errors[i]) {
+			case flash_no_errors:
+			case flash_erased:
+				break;
+
+			case flash_uncorrectable:
+				printf("[%4u] uncorrectable data in chunk %u\n", blockno, i);
+				break;
+
+			default:
+				printf("[%4u] %u corrections in chunk %u\n", blockno, aux->errors[i], i);
+		}
+	}
+
+	for (i = 0; i < flashinfo.writesz; ++i) {
+		if (data[i] != byte)
+			printf("[%4u] write/read(0x%02x)[%u] invalid data: 0x%02x\n", blockno, byte, i, data[i]);
+	}
+}
+
+void test_single_block(flashdrv_dma_t *dma, uint32_t blockno, uint8_t *data, uint8_t *meta)
+{
+	int err;
+	uint32_t addr = blockno * 64;
+
+	if (flashdrv_isbad(dma, addr) != 0) {
+		printf("[%4u] bad block\n", blockno);
+		return;
+	}
+
+	if ((err = flashdrv_erase(dma, addr)) < 0) {
+		printf("[%4u] erase(1) failed: %d\n", blockno, err);
+		return;
+	}
+
+	_write_and_check(dma, blockno, data, meta, 0x55);
+
+	if ((err = flashdrv_erase(dma, addr) < 0))
+		printf("[%4u] erase(2) failed: %d\n", blockno, err);
+
+	_write_and_check(dma, blockno, data, meta, 0xAA);
+
+	if ((err = flashdrv_erase(dma, addr) < 0))
+		printf("[%4u] erase(3) failed: %d\n", blockno, err);
+}
 
 /* test writes with 0x55 and 0xAA pattarn (+ read, erase) */
 void test_write_read_erase(void)
+{
+	flashdrv_dma_t *dma;
+	uint8_t *data, *meta;
+	unsigned int blockno;
+
+	data = mmap(NULL, pagemapsz, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
+	if (data == MAP_FAILED)
+		FAIL("failed to mmap data buffers\n");
+
+	meta = data + _PAGE_SIZE;
+	dma = flashdrv_dmanew();
+
+	for (blockno = 0; blockno < TOTAL_BLOCKS_CNT; ++blockno)
+		test_single_block(dma, blockno, data, meta);
+
+	flashdrv_dmadestroy(dma);
+	munmap(data, pagemapsz);
+}
+
+/* test raw writes with 0x55 and 0xAA pattarn (+ raw read, erase) */
+void test_write_read_erase_raw(void)
 {
 	flashdrv_dma_t *dma;
 	uint8_t *data, *meta;
@@ -1122,6 +1214,7 @@ int main(int argc, char **argv)
 	//test_write_fcb();
 	//test_badblocks();
 	test_write_read_erase();
+	//test_write_read_erase_raw();
 	//test_stress_one_block();
 	//test_flashsrv("/dev/flash0");
 	//test_flashsrv("/dev/flash1");
