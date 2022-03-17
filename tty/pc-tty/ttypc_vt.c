@@ -37,20 +37,8 @@ static void _ttypc_vt_sdraw(ttypc_vt_t *vt, char c)
 }
 
 
-/* Updates screen and scrollback buffers */
-static void _ttypc_vt_updatescroll(ttypc_vt_t *vt)
+static void _ttypc_vt_sput(ttypc_vt_t *vt, char c)
 {
-	if (vt->cpos >= (vt->bottom + 1) * vt->cols) {
-		_ttypc_vga_rollup(vt, 1);
-		vt->cpos -= vt->cols;
-	}
-}
-
-
-static int _ttypc_vt_sput(ttypc_vt_t *vt, char c)
-{
-	int ret = 1;
-
 	/* Cancel scrolling */
 	_ttypc_vga_scrollcancel(vt);
 
@@ -77,7 +65,6 @@ static int _ttypc_vt_sput(ttypc_vt_t *vt, char c)
 				vt->ccol = vt->cols - 1;
 				vt->cpos += vt->cols - 1;
 			}
-			ret = 0;
 			break;
 
 		case 0x09: /* TAB */
@@ -97,16 +84,14 @@ static int _ttypc_vt_sput(ttypc_vt_t *vt, char c)
 					vt->ccol = 0;
 				}
 				vt->cpos += vt->cols;
-				_ttypc_vt_updatescroll(vt);
 			}
+			vt->lc = 0;
 			break;
 
 		case 0x0d: /* CR */
 			vt->cpos -= vt->ccol;
 			vt->ccol = 0;
-			if (vt == vt->ttypc->vt)
-				_ttypc_vga_setcursor(vt);
-			return ret;
+			break;
 
 		case 0x0e: /* SO */
 			vt->GL = &vt->G1;
@@ -162,6 +147,7 @@ static int _ttypc_vt_sput(ttypc_vt_t *vt, char c)
 
 			_ttypc_vt_sdraw(vt, c);
 
+			vt->lc = 0;
 			if (vt->ccol < vt->cols - 1) {
 				vt->ccol++;
 				vt->cpos++;
@@ -169,12 +155,7 @@ static int _ttypc_vt_sput(ttypc_vt_t *vt, char c)
 			else if (vt->awm) {
 				vt->ccol = 0;
 				vt->cpos++;
-				vt->crow = vt->cpos / vt->cols;
 				vt->lc = 1;
-				_ttypc_vt_updatescroll(vt);
-				if (vt == vt->ttypc->vt)
-					_ttypc_vga_setcursor(vt);
-				return ret;
 			}
 			break;
 
@@ -617,13 +598,16 @@ static int _ttypc_vt_sput(ttypc_vt_t *vt, char c)
 		}
 	}
 
+	/* Update screen and scrollback buffer */
+	if (vt->cpos >= (vt->bottom + 1) * vt->cols) {
+		_ttypc_vga_rollup(vt, 1);
+		vt->cpos -= vt->cols;
+	}
 	vt->crow = vt->cpos / vt->cols;
-	vt->lc = 0;
 
+	/* Update cursor */
 	if (vt == vt->ttypc->vt)
 		_ttypc_vga_setcursor(vt);
-
-	return ret;
 }
 
 
