@@ -109,7 +109,7 @@ static void adc_disable(int adc)
 static void adc_calibration(int adc)
 {
 	volatile unsigned int *base = adc_common.base + adc_getOffs(adc);
-	useconds_t sleep = 1 * 1000;
+	useconds_t sleep = 2 * 1000;
 
 	*(base + cr) &= ~(1 << 30);
 	*(base + cr) |= 1 << 31;
@@ -141,7 +141,7 @@ static unsigned short adc_probeChannel(int adc, char chan)
 
 	/* Wait for overrun */
 	while (!(*(base + isr) & (1 << 4)))
-		usleep(0);
+		usleep(1000);
 
 	/* Clear flags */
 	*(base + isr) |= 0x7ff;
