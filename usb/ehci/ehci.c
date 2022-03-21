@@ -66,24 +66,28 @@ static void ehci_stopAsync(hcd_t *hcd)
 
 static void ehci_qtdLink(ehci_qtd_t *prev, ehci_qtd_t *next)
 {
-	prev->hw->next = QTD_PTR(next);
+	prev->hw->next = next->paddr;
 	ehci_memDmb();
 }
 
 
-static void ehci_enqueue(ehci_qh_t *qh, ehci_qtd_t *first, ehci_qtd_t *last)
+static void ehci_enqueue(hcd_t *hcd, ehci_qh_t *qh, ehci_qtd_t *first, ehci_qtd_t *last)
 {
+	ehci_t *ehci = (ehci_t *)hcd->priv;
+
+	mutexLock(ehci->asyncLock);
 	last->hw->next = QTD_PTR_INVALID;
 	last->hw->token |= QTD_IOC;
 
 	/* No qtds linked */
 	if (qh->lastQtd == NULL)
-		qh->hw->nextQtd = QTD_PTR(first);
+		qh->hw->nextQtd = first->paddr;
 	else
-		qh->lastQtd->next = QTD_PTR(first);
+		qh->lastQtd->next = first->paddr;
 	ehci_memDmb();
 
 	qh->lastQtd = last->hw;
+	mutexUnlock(ehci->asyncLock);
 }
 
 
@@ -96,9 +100,12 @@ static void ehci_continue(ehci_t *ehci, ehci_qh_t *qh, ehci_qtd_t *last)
 		qh->hw->nextQtd = QTD_PTR_INVALID;
 	}
 
-	/* The qh is halted after error, move it forward and cleanup the status */
-	if (!(qh->hw->token & QTD_ACTIVE) && (qh->hw->current == QTD_PTR(last)) &&
-			(qh->hw->token & QTD_ERRMASK)) {
+	/* The queue got stuck, as the last qtd has been updated, when the qh had a copy in overlay area */
+	if (qh->hw->nextQtd == QTD_PTR_INVALID && (qh->hw->current == last->paddr))
+		qh->hw->nextQtd = last->hw->next;
+
+	/* Cleanup error state */
+	if (qh->hw->token & QTD_ERRMASK) {
 		qh->hw->nextQtd = last->hw->next;
 		qh->hw->token &= ~0x7e;
 	}
@@ -161,6 +168,7 @@ static ehci_qtd_t *ehci_qtdAlloc(ehci_t *ehci, int pid, size_t maxpacksz, char *
 			free(qtd);
 			return NULL;
 		}
+		qtd->paddr = QTD_PTR(qtd);
 	}
 
 	qtd->hw->token = (datax << 31) | (pid << 8) | (EHCI_TRANS_ERRORS << 10) | QTD_ACTIVE;
@@ -675,7 +683,7 @@ static int ehci_transferEnqueue(hcd_t *hcd, usb_transfer_t *t)
 
 	mutexLock(hcd->transLock);
 	LIST_ADD(&hcd->transfers, t);
-	ehci_enqueue(qh, qtds, qtds->prev);
+	ehci_enqueue(hcd, qh, qtds, qtds->prev);
 	mutexUnlock(hcd->transLock);
 
 	return 0;

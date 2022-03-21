@@ -164,6 +164,7 @@ struct qh {
 typedef struct _ehci_qtd {
 	struct _ehci_qtd *prev, *next;
 	volatile struct qtd *hw;
+	uint32_t paddr;
 	size_t bytes;
 } ehci_qtd_t;
 
