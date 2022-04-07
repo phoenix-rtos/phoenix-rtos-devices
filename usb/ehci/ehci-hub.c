@@ -346,7 +346,7 @@ int ehci_roothubReq(usb_transfer_t *t)
 	if (t->type == usb_transfer_interrupt) {
 		/* Enable Port Status Changed interrupt if this is a first call */
 		if ((*(hub->hcd->base + usbintr) & USBSTS_PCI) == 0)
-			*(hub->hcd->base + usbintr) |= (1 << 2);
+			*(hub->hcd->base + usbintr) |= USBSTS_PCI;
 		return 0;
 	}
 
