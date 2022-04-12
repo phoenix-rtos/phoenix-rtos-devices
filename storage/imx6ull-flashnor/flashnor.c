@@ -16,6 +16,7 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #include <sys/file.h>
@@ -170,13 +171,13 @@ int main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 
 	if ((err = storage_init(flashnor_msgloop, 16)) < 0) {
-		fprintf(stderr, "imx6ull-flashnor: failed to initialize server, err: %d\n", err);
+		printf("imx6ull-flashnor: failed to initialize server, err: %s\n", strerror(err));
 		return err;
 	}
 	port = err;
 
 	if ((err = storage_registerfs("meterfs", meterfs_mount, meterfs_umount, meterfs_handler)) < 0) {
-		fprintf(stderr, "imx6ull-flashnor: failed to register filesystem, err: %d\n", err);
+		printf("imx6ull-flashnor: failed to register filesystem, err: %s\n", strerror(err));
 		return err;
 	}
 
@@ -186,17 +187,17 @@ int main(int argc, char *argv[])
 				case 'e':
 					if ((dev = malloc(sizeof(storage_t))) == NULL) {
 						err = -ENOMEM;
-						fprintf(stderr, "imx6ull-flashnor: failed to allocate device, err: %d\n", err);
+						printf("imx6ull-flashnor: failed to allocate device, err: %s\n", strerror(err));
 						return err;
 					}
 
 					if ((err = flashnor_ecspiInit(strtoul(optarg, NULL, 0), dev)) < 0) {
-						fprintf(stderr, "imx6ull-flashnor: failed to initialize device, err: %d\n", err);
+						printf("imx6ull-flashnor: failed to initialize device, err: %s\n", strerror(err));
 						return err;
 					}
 
 					if ((err = storage_add(dev)) < 0) {
-						fprintf(stderr, "imx6ull-flashnor: failed to register device, err: %d\n", err);
+						printf("imx6ull-flashnor: failed to register device, err: %s\n", strerror(err));
 						return err;
 					}
 
@@ -204,12 +205,12 @@ int main(int argc, char *argv[])
 					oid.id = err;
 					if (snprintf(path, sizeof(path), "/dev/%s%u", prefix, id++) >= sizeof(path)) {
 						err = -ENAMETOOLONG;
-						fprintf(stderr, "imx6ull-flashnor: failed to build device file path, err: %d\n", err);
+						printf("imx6ull-flashnor: failed to build device file path, err: %s\n", strerror(err));
 						return err;
 					}
 
 					if ((err = create_dev(&oid, path)) < 0) {
-						fprintf(stderr, "imx6ull-flashnor: failed to create device file, err: %d\n", err);
+						printf("imx6ull-flashnor: failed to create device file, err: %s\n", strerror(err));
 						return err;
 					}
 					break;
@@ -221,19 +222,19 @@ int main(int argc, char *argv[])
 				case 'p':
 					if ((arg = optind - 1) + 3 > argc) {
 						err = -EINVAL;
-						fprintf(stderr, "imx6ull-flashnor: missing arg(s) for -p option, err: %d\n", err);
+						printf("imx6ull-flashnor: missing arg(s) for -p option, err: %s\n", strerror(err));
 						return err;
 					}
 
 					if ((dev = malloc(sizeof(storage_t))) == NULL) {
 						err = -ENOMEM;
-						fprintf(stderr, "imx6ull-flashnor: failed to allocate device, err: %d\n", err);
+						printf("imx6ull-flashnor: failed to allocate device, err: %s\n", strerror(err));
 						return err;
 					}
 
 					if ((parent = storage_get(strtoul(argv[arg++], NULL, 0))) == NULL) {
 						err = -EINVAL;
-						fprintf(stderr, "imx6ull-flashnor: failed to find parent device, err: %d\n", err);
+						printf("imx6ull-flashnor: failed to find parent device, err: %s\n", strerror(err));
 						return err;
 					}
 
@@ -244,7 +245,7 @@ int main(int argc, char *argv[])
 					optind += 2;
 
 					if ((err = storage_add(dev)) < 0) {
-						fprintf(stderr, "imx6ull-flashnor: failed to create partition, err: %d\n", err);
+						printf("imx6ull-flashnor: failed to create partition, err: %s\n", strerror(err));
 						return err;
 					}
 
@@ -252,12 +253,12 @@ int main(int argc, char *argv[])
 					oid.id = err;
 					if (snprintf(path, sizeof(path), "/dev/%s%u", prefix, id++) >= sizeof(path)) {
 						err = -ENAMETOOLONG;
-						fprintf(stderr, "imx6ull-flashnor: failed to build partition file path, err: %d\n", err);
+						printf("imx6ull-flashnor: failed to build partition file path, err: %s\n", strerror(err));
 						return err;
 					}
 
 					if ((err = create_dev(&oid, path)) < 0) {
-						fprintf(stderr, "imx6ull-flashnor: failed to create partition file, err: %d\n", err);
+						printf("imx6ull-flashnor: failed to create partition file, err: %s\n", strerror(err));
 						return err;
 					}
 					break;
@@ -269,7 +270,7 @@ int main(int argc, char *argv[])
 				case 'n':
 					if ((arg = optind - 1) + 2 > argc) {
 						err = -EINVAL;
-						fprintf(stderr, "imx6ull-flashnor: missing arg(s) for -n option, err: %d\n", err);
+						printf("imx6ull-flashnor: missing arg(s) for -n option, err: %s\n", strerror(err));
 						return err;
 					}
 
