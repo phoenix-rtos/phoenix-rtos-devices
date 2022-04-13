@@ -17,7 +17,7 @@
 
 #include <stdint.h>
 
-typedef struct _flashdrv_dma_t flashdrv_dma_t;
+typedef struct _flashdrv_dmaBuff_t flashdrv_dmaBuff_t;
 
 
 enum {
@@ -60,34 +60,34 @@ typedef struct {
 
 /* paddr: page address, so NAND address / writesz */
 
-extern flashdrv_dma_t *flashdrv_dmanew(void);
+extern flashdrv_dmaBuff_t *flashdrv_dmanew(void);
 
 
-extern void flashdrv_dmadestroy(flashdrv_dma_t *dma);
+extern void flashdrv_dmadestroy(flashdrv_dmaBuff_t *dma);
 
 
-extern int flashdrv_reset(flashdrv_dma_t *dma);
+extern int flashdrv_reset(flashdrv_dmaBuff_t *dma);
 
 
-extern int flashdrv_write(flashdrv_dma_t *dma, uint32_t paddr, void *data, char *metadata);
+extern int flashdrv_write(flashdrv_dmaBuff_t *dma, uint32_t paddr, void *data, char *metadata);
 
 
-extern int flashdrv_read(flashdrv_dma_t *dma, uint32_t paddr, void *data, flashdrv_meta_t *meta);
+extern int flashdrv_read(flashdrv_dmaBuff_t *dma, uint32_t paddr, void *data, flashdrv_meta_t *meta);
 
 
-extern int flashdrv_erase(flashdrv_dma_t *dma, uint32_t paddr);
+extern int flashdrv_erase(flashdrv_dmaBuff_t *dma, uint32_t paddr);
 
 
-extern int flashdrv_writeraw(flashdrv_dma_t *dma, uint32_t paddr, void *data, int sz);
+extern int flashdrv_writeraw(flashdrv_dmaBuff_t *dma, uint32_t paddr, void *data, int sz);
 
 
-extern int flashdrv_readraw(flashdrv_dma_t *dma, uint32_t paddr, void *data, int sz);
+extern int flashdrv_readraw(flashdrv_dmaBuff_t *dma, uint32_t paddr, void *data, int sz);
 
 
-extern int flashdrv_isbad(flashdrv_dma_t *dma, uint32_t paddr);
+extern int flashdrv_isbad(flashdrv_dmaBuff_t *dma, uint32_t paddr);
 
 
-extern int flashdrv_markbad(flashdrv_dma_t *dma, uint32_t paddr);
+extern int flashdrv_markbad(flashdrv_dmaBuff_t *dma, uint32_t paddr);
 
 
 extern void flashdrv_init(void);

@@ -7,7 +7,7 @@ This work is licensed under a BSD license. See the LICENSE file for details.
 
 This library gives abstraction layer for i.MX 6ULL NAND memory controller.
 
-  typedef struct _flashdrv_dma_t flashdrv_dma_t;
+  typedef struct _flashdrv_dmaBuff_t flashdrv_dmaBuff_t;
 
 Structure holding internal context of flash DMA.
 
@@ -36,42 +36,42 @@ List of operations which can be issued to the NAND controler.
 Structure for holding NAND block metadata.
 
 
-	extern flashdrv_dma_t *flashdrv_dmanew(void);
+	extern flashdrv_dmaBuff_t *flashdrv_dmanew(void);
 
-flashdrv_dma_t initializer.
-
-
-    extern void flashdrv_dmadestroy(flashdrv_dma_t *dma);
-
-flashdrv_dma_t deinitializer.
+flashdrv_dmaBuff_t initializer.
 
 
-    extern int flashdrv_reset(flashdrv_dma_t *dma);
+    extern void flashdrv_dmadestroy(flashdrv_dmaBuff_t *dma);
+
+flashdrv_dmaBuff_t deinitializer.
+
+
+    extern int flashdrv_reset(flashdrv_dmaBuff_t *dma);
 
 This function resets the NAND chip.
 
 
-    extern int flashdrv_write(flashdrv_dma_t *dma, uint32_t paddr, void *data, char *metadata);
+    extern int flashdrv_write(flashdrv_dmaBuff_t *dma, uint32_t paddr, void *data, char *metadata);
 
 This function writes one page of data to the NAND.
 
 
-    extern int flashdrv_read(flashdrv_dma_t *dma, uint32_t paddr, void *data, flashdrv_meta_t *meta);
+    extern int flashdrv_read(flashdrv_dmaBuff_t *dma, uint32_t paddr, void *data, flashdrv_meta_t *meta);
 
 This function reads one page of data from the NAND.
 
 
-    extern int flashdrv_erase(flashdrv_dma_t *dma, uint32_t paddr);
+    extern int flashdrv_erase(flashdrv_dmaBuff_t *dma, uint32_t paddr);
 
 This function erases one block of the NAND.
 
 
-    extern int flashdrv_writeraw(flashdrv_dma_t *dma, uint32_t paddr, void *data, int sz);
+    extern int flashdrv_writeraw(flashdrv_dmaBuff_t *dma, uint32_t paddr, void *data, int sz);
 
 Analogue to flashdrv_write, but ignores metadata.
 
 
-    extern int flashdrv_readraw(flashdrv_dma_t *dma, uint32_t paddr, void *data, int sz);
+    extern int flashdrv_readraw(flashdrv_dmaBuff_t *dma, uint32_t paddr, void *data, int sz);
 
 Analogue to flashdrv_read, but ignores metadata.
 
