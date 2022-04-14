@@ -1065,8 +1065,8 @@ void flashdrv_init(void)
 	*(flashdrv_common.bch + bch_ctrl_clr) = (1 << 31);
 	*(flashdrv_common.bch + bch_ctrl_clr) = (1 << 30);
 
-	/* set address setup = 4 (20ns), data hold = 2 (10ns), data setup = 3 (15ns) */
-	*(flashdrv_common.gpmi + gpmi_timing0) = (4 << 16) | (2 << 8) | (3 << 0);
+	/* GPMI clock = 198 MHz (~5ns period), address setup = 3 (~15ns), data hold = 2 (~10ns), data setup = 3 (~15ns) */
+	*(flashdrv_common.gpmi + gpmi_timing0) = (3 << 16) | (2 << 8) | (3 << 0);
 	/* Set wait for ready timeout */
 	*(flashdrv_common.gpmi + gpmi_timing1) = 0xffff << 16;
 
@@ -1082,8 +1082,10 @@ void flashdrv_init(void)
 		*(flashdrv_common.mux + i + 94) = 0;
 	}
 
-	/* set #R/B busy-low, WP */
-	*(flashdrv_common.gpmi + gpmi_ctrl1) |= (1 << 2) | (1 << 3) | (1 << 18);
+	/* Set DECOUPLE_CS, WRN no delay, GANGED_RDYBUSY, BCH, RDN_DELAY, WP, #R/B busy-low */
+	*(flashdrv_common.gpmi + gpmi_ctrl1) = (1 << 24) | (3 << 22) | (1 << 19) | (1 << 18) | (14 << 12) | (1 << 3) | (1 << 2);
+	/* Enable DLL */
+	*(flashdrv_common.gpmi + gpmi_ctrl1_set) = (1 << 17);
 
 	interrupt(32 + 13, dma_irqHandler, NULL, flashdrv_common.dma_cond, &flashdrv_common.intdma);
 	interrupt(32 + 16, gpmi_irqHandler, NULL, 0, &flashdrv_common.intgpmi);
