@@ -29,6 +29,8 @@
 #define USBSTS_UEI   (1 << 1)
 #define USBSTS_UI    (1 << 0)
 
+#define EHCI_INTRMASK (USBSTS_PCI | USBSTS_UEI | USBSTS_UI)
+
 #define USBCMD_ASE (1 << 5)
 #define USBCMD_IAA (1 << 6)
 

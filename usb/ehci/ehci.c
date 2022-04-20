@@ -485,14 +485,23 @@ static int ehci_irqHandler(unsigned int n, void *data)
 {
 	hcd_t *hcd = (hcd_t *)data;
 	ehci_t *ehci = (ehci_t *)hcd->priv;
+	uint32_t currentStatus;
 
-	ehci->status = *(hcd->base + usbsts);
-	*(hcd->base + usbsts) = ehci->status & 0x1f;
+	currentStatus = *(hcd->base + usbsts);
+	do {
+		*(hcd->base + usbsts) = currentStatus & EHCI_INTRMASK;
+
+		ehci->status |= currentStatus;
+
+		/* For edge triggered interrupts to prevent losing interrupts,
+		 * poll the usbsts register until it is stable */
+		currentStatus = *(hcd->base + usbsts);
+	} while ((currentStatus & EHCI_INTRMASK) != 0);
 
 	if (ehci->status & USBSTS_PCI)
 		ehci->portsc = *(hcd->base + portsc1);
 
-	return -!(ehci->status & 0x1f);
+	return -!(ehci->status & EHCI_INTRMASK);
 }
 
 
