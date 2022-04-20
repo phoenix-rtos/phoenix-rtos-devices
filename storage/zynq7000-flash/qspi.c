@@ -33,6 +33,7 @@ struct {
 	volatile uint32_t *base;
 	handle_t cond;
 	handle_t inth;
+	handle_t irqLock;
 	handle_t lock;
 } qspi_common;
 
@@ -61,11 +62,12 @@ static inline time_t qspi_timeMsGet(void)
 
 
 /* TODO: add timeout exit condition to be compliant with MISRA */
-void qspi_stop(void)
+static inline void qspi_cleanFifo(void)
 {
 	/* Clean up RX Fifo */
-	while ((*(qspi_common.base + sr) & (1 << 4)))
+	while ((*(qspi_common.base + sr) & (1 << 4))) {
 		*(qspi_common.base + rxd);
+	}
 
 	*(qspi_common.base + cr) |= (1 << 10);
 	qspi_dataMemoryBarrier();
@@ -74,8 +76,17 @@ void qspi_stop(void)
 }
 
 
+void qspi_stop(void)
+{
+	qspi_cleanFifo();
+	mutexUnlock(qspi_common.lock);
+}
+
+
 void qspi_start(void)
 {
+	mutexLock(qspi_common.lock);
+
 	*(qspi_common.base + rxth) = 0x1;
 	*(qspi_common.base + cr) &= ~(1 << 10);
 	qspi_dataMemoryBarrier();
@@ -158,28 +169,32 @@ ssize_t qspi_transfer(const uint8_t *txBuff, uint8_t *rxBuff, size_t size, time_
 	size_t tempSz, txSz = size, rxSz = 0;
 	time_t interval = 0, start = 0;
 
-	if (timeout != 0)
+	if (timeout != 0) {
 		start = qspi_timeMsGet();
+	}
 
 	while (txSz || rxSz) {
 		/* Transmit data */
 		while (txSz) {
 			/* Incomplete word has to be send and receive as a last transfer
 			 * otherwise there is an undefined behaviour.                   */
-			if ((txSz < sizeof(uint32_t)) && (rxSz >= sizeof(uint32_t)))
+			if ((txSz < sizeof(uint32_t)) && (rxSz >= sizeof(uint32_t))) {
 				break;
+			}
 
 			/* TX Fifo is full */
-			if ((*(qspi_common.base + sr) & (1 << 3)))
+			if ((*(qspi_common.base + sr) & (1 << 3))) {
 				break;
+			}
 
 			tempSz = qspi_txData(txBuff, txSz);
 
 			txSz -= tempSz;
 			rxSz += tempSz;
 
-			if (txBuff != NULL)
+			if (txBuff != NULL) {
 				txBuff += tempSz;
+			}
 		}
 
 		/* TX FIFO not full enable irq */
@@ -188,31 +203,36 @@ ssize_t qspi_transfer(const uint8_t *txBuff, uint8_t *rxBuff, size_t size, time_
 		*(qspi_common.base + cr) |= (1 << 16);
 
 		/* Wait until TX Fifo is empty */
-		mutexLock(qspi_common.lock);
-		while ((*(qspi_common.base + sr) & (1 << 2)) == 0)
-			err = condWait(qspi_common.cond, qspi_common.lock, (timeout - interval) * 1000);
-		mutexUnlock(qspi_common.lock);
+		mutexLock(qspi_common.irqLock);
+		while ((*(qspi_common.base + sr) & (1 << 2)) == 0) {
+			err = condWait(qspi_common.cond, qspi_common.irqLock, (timeout - interval) * 1000);
+		}
+		mutexUnlock(qspi_common.irqLock);
 
-		if (err < 0)
+		if (err < 0) {
 			return err;
+		}
 
 		/* Receive data */
 		while (rxSz) {
 			/* RX Fifo is empty */
-			if ((*(qspi_common.base + sr) & (1 << 4)) == 0)
+			if ((*(qspi_common.base + sr) & (1 << 4)) == 0) {
 				break;
+			}
 
 			tempSz = qspi_rxData(rxBuff, rxSz);
 			rxSz -= tempSz;
 
-			if (rxBuff != NULL)
+			if (rxBuff != NULL) {
 				rxBuff += tempSz;
+			}
 		}
 
 		if (timeout != 0) {
 			interval = qspi_timeMsGet() - start;
-			if (interval > timeout)
+			if (interval > timeout) {
 				return -ETIMEDOUT;
+			}
 		}
 	}
 
@@ -329,8 +349,9 @@ static int qspi_setPin(uint32_t pin)
 {
 	platformctl_t ctl;
 
-	if (pin < pctl_mio_pin_01 && pin > pctl_mio_pin_06)
+	if (pin < pctl_mio_pin_01 && pin > pctl_mio_pin_06) {
 		return -EINVAL;
+	}
 
 	ctl.action = pctl_set;
 	ctl.type = pctl_mio;
@@ -367,8 +388,9 @@ static int qspi_initPins(void)
 
 	for (i = 0; i < sizeof(pins) / sizeof(pins[0]); ++i) {
 		res = qspi_setPin(pins[i]);
-		if (res < 0)
+		if (res < 0) {
 			break;
+		}
 	}
 
 	return res;
@@ -377,7 +399,13 @@ static int qspi_initPins(void)
 
 int qspi_deinit(void)
 {
-	qspi_stop();
+	qspi_cleanFifo();
+
+	resourceDestroy(qspi_common.cond);
+	resourceDestroy(qspi_common.lock);
+	resourceDestroy(qspi_common.irqLock);
+
+	munmap((void *)qspi_common.base, _PAGE_SIZE);
 
 	return qspi_setAmbaClk(pctl_amba_lqspi_clk, 0);
 }
@@ -390,27 +418,40 @@ int qspi_init(void)
 	/* Set IO PLL as source clock and set divider:
 	 * IO_PLL / 0x5 :  1000 MHz / 5 = 200 MHz     */
 	res = qspi_initClk();
-	if (res < 0)
+	if (res < 0) {
 		return -EIO;
+	}
 
 	/* Enable clock */
 	res = qspi_setAmbaClk(pctl_amba_lqspi_clk, 1);
-	if (res < 0)
+	if (res < 0) {
 		return -EIO;
+	}
 
 	/* Single SS, 4-bit I/O */
 	res = qspi_initPins();
-	if (res < 0)
+	if (res < 0) {
 		return -EIO;
+	}
 
 	qspi_common.base = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, 0xe000d000);
-	if (qspi_common.base == MAP_FAILED)
+	if (qspi_common.base == MAP_FAILED) {
+		qspi_setAmbaClk(pctl_amba_lqspi_clk, 0);
 		return -ENOMEM;
+	}
 
 	res = condCreate(&qspi_common.cond);
 	if (res < 0) {
 		munmap((void *)qspi_common.base, _PAGE_SIZE);
-		qspi_deinit();
+		qspi_setAmbaClk(pctl_amba_lqspi_clk, 0);
+		return -ENOENT;
+	}
+
+	res = mutexCreate(&qspi_common.irqLock);
+	if (res < 0) {
+		munmap((void *)qspi_common.base, _PAGE_SIZE);
+		resourceDestroy(qspi_common.cond);
+		qspi_setAmbaClk(pctl_amba_lqspi_clk, 0);
 		return -ENOENT;
 	}
 
@@ -418,7 +459,8 @@ int qspi_init(void)
 	if (res < 0) {
 		munmap((void *)qspi_common.base, _PAGE_SIZE);
 		resourceDestroy(qspi_common.cond);
-		qspi_deinit();
+		resourceDestroy(qspi_common.irqLock);
+		qspi_setAmbaClk(pctl_amba_lqspi_clk, 0);
 		return -ENOENT;
 	}
 
