@@ -90,8 +90,8 @@ int flashcfg_infoResolve(flash_info_t *info)
 		info->cfi.fdiDesc = 0x0102;
 		info->cfi.pageSize = 0x08;
 		info->cfi.regsCount = 1;
-		info->cfi.regs[0].count = 0xfff;
-		info->cfi.regs[0].size = 0x10;
+		info->cfi.regs[0].count = 0xff;
+		info->cfi.regs[0].size = 0x100;
 
 		memcpy(info->cmds, defCmds, sizeof(defCmds));
 
