@@ -616,6 +616,17 @@ static int ehci_qtdAdd(ehci_t *ehci, ehci_qtd_t **list, int token, size_t maxpac
 }
 
 
+static void ehci_transferDequeue(hcd_t *hcd, usb_transfer_t *t)
+{
+	mutexLock(hcd->transLock);
+	/* note: not tested for interrupt transfers */
+	if (t->hcdpriv != NULL)
+		ehci_qtdsDeactivate((ehci_qtd_t *)t->hcdpriv);
+	ehci_transUpdate(hcd);
+	mutexUnlock(hcd->transLock);
+}
+
+
 static int ehci_transferEnqueue(hcd_t *hcd, usb_transfer_t *t)
 {
 	usb_pipe_t *pipe = t->pipe;
@@ -856,6 +867,7 @@ static const hcd_ops_t ehci_ops = {
 	.type = "ehci",
 	.init = ehci_init,
 	.transferEnqueue = ehci_transferEnqueue,
+	.transferDequeue = ehci_transferDequeue,
 	.pipeDestroy = ehci_pipeDestroy,
 	.getRoothubStatus = ehci_getHubStatus
 };
