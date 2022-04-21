@@ -7,4 +7,4 @@
 #
 
 DEFAULT_COMPONENTS := zynq7000-uart
-DEFAULT_COMPONENTS += libflashdrv-zynq test_flashdrv
+DEFAULT_COMPONENTS += libflashdrv-zynq zynq7000-flash test_flashdrv

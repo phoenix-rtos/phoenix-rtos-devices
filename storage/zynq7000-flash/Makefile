@@ -13,3 +13,10 @@ LOCAL_HEADERS := flashdrv.h flashcfg.h
 LIBS := libstorage
 
 include $(static-lib.mk)
+
+NAME := zynq7000-flash
+LOCAL_SRCS := zynq7000-flash.c
+DEP_LIBS := libflashdrv-zynq
+LIBS := libstorage libjffs2 libmtd
+
+include $(binary.mk)
