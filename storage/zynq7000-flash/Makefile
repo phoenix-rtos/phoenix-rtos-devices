@@ -10,5 +10,6 @@
 NAME := libflashdrv-zynq
 LOCAL_SRCS := qspi.c flashcfg.c flashdrv.c
 LOCAL_HEADERS := flashdrv.h flashcfg.h
+LIBS := libstorage
 
 include $(static-lib.mk)
