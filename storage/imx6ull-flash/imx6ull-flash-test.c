@@ -121,7 +121,7 @@ void print_block(const uint8_t *data, unsigned int len)
 int flip_bits(unsigned int n, unsigned int nblock, unsigned int start, unsigned int end, int check_ecc)
 {
 	unsigned int i, j, mapped_cnt, offs, paddr = nblock * BLOCK_PAGES_CNT;
-	flashdrv_dmaBuff_t *dma;
+	flashdrv_dma_t *dma;
 	flashdrv_meta_t *aux;
 	uint8_t **data;
 	int err = EOK;
@@ -234,7 +234,7 @@ void test_bootrom(void)
 	const unsigned int rawmetasz = 16 + 26;  /* 16B META + 26B ECC16 */
 	const unsigned int rawdatasz = 512 + 23; /* 512B DATA + 22.75B ECC14 (adding 2 bits for byte alignment) */
 	const unsigned int seed = 0xaa55aa55;    /* Use fixed rand() seed (so we could revert the bit flips by running the test again) */
-	flashdrv_dmaBuff_t *dma;
+	flashdrv_dma_t *dma;
 
 	if ((dma = flashdrv_dmanew()) == MAP_FAILED) {
 		printf("dmanew() failed, err: %d\n", -ENOMEM);
@@ -329,7 +329,7 @@ void test_ecc(void)
 	const unsigned int nblock = paddr / BLOCK_PAGES_CNT;
 	const unsigned int start = (paddr % BLOCK_PAGES_CNT) * FLASHDRV_PAGESZ;
 	flashdrv_meta_t *aux;
-	flashdrv_dmaBuff_t *dma;
+	flashdrv_dma_t *dma;
 	unsigned int offs;
 	uint8_t *data;
 	int i, err;
@@ -459,7 +459,7 @@ void test_ecc(void)
 /* write predefined FCB block */
 void test_write_fcb(void)
 {
-	flashdrv_dmaBuff_t *dma;
+	flashdrv_dma_t *dma;
 	uint8_t *data;
 	int err;
 
@@ -490,7 +490,7 @@ void test_write_fcb(void)
 
 void test_meta(void)
 {
-	flashdrv_dmaBuff_t *dma;
+	flashdrv_dma_t *dma;
 	uint8_t *data, *meta;
 	flashdrv_meta_t *aux;
 	int err, i;
@@ -632,7 +632,7 @@ void test_meta(void)
 /* should be done on factory-new or completely ereased NAND flash */
 void test_badblocks(void)
 {
-	flashdrv_dmaBuff_t *dma;
+	flashdrv_dma_t *dma;
 	uint8_t *data;
 	unsigned int blockno;
 	int err;
@@ -702,7 +702,7 @@ void test_read_disturb(void)
 {
 	const unsigned int blocks[] = { rand() % TOTAL_BLOCKS_CNT, rand() % TOTAL_BLOCKS_CNT }; /* Tested blocks */
 	const unsigned int nblocks = sizeof(blocks) / sizeof(blocks[0]);                        /* Number of tested blocks */
-	flashdrv_dmaBuff_t *dma;
+	flashdrv_dma_t *dma;
 	flashdrv_meta_t *aux;
 	uint8_t *data, errors[nblocks][BLOCK_PAGES_CNT][sizeof(aux->errors)];
 	unsigned int i, j, k;
@@ -790,7 +790,7 @@ void test_read_disturb(void)
 void test_stress_one_block(void)
 {
 	uint8_t *data, *meta;
-	flashdrv_dmaBuff_t *dma;
+	flashdrv_dma_t *dma;
 	int err;
 	unsigned int block_no = TOTAL_BLOCKS_CNT - 1; /* use last block */
 	uint32_t addr = block_no * 64;
@@ -951,7 +951,7 @@ void test_flashsrv(const char *path)
 
 
 /* write, read and check */
-void _writeraw_and_check(flashdrv_dmaBuff_t *dma, uint32_t blockno, uint8_t *data, uint8_t byte)
+void _writeraw_and_check(flashdrv_dma_t *dma, uint32_t blockno, uint8_t *data, uint8_t byte)
 {
 	uint32_t addr = blockno * 64;
 	unsigned int i;
@@ -977,7 +977,7 @@ void _writeraw_and_check(flashdrv_dmaBuff_t *dma, uint32_t blockno, uint8_t *dat
 }
 
 
-void test_single_block_raw(flashdrv_dmaBuff_t *dma, uint32_t blockno, uint8_t *data, uint8_t *meta)
+void test_single_block_raw(flashdrv_dma_t *dma, uint32_t blockno, uint8_t *data, uint8_t *meta)
 {
 	int err;
 	uint32_t addr = blockno * 64;
@@ -1007,7 +1007,7 @@ void test_single_block_raw(flashdrv_dmaBuff_t *dma, uint32_t blockno, uint8_t *d
 }
 
 /* write, read and check */
-void _write_and_check(flashdrv_dmaBuff_t *dma, uint32_t blockno, uint8_t *data, uint8_t *meta, uint8_t byte)
+void _write_and_check(flashdrv_dma_t *dma, uint32_t blockno, uint8_t *data, uint8_t *meta, uint8_t byte)
 {
 	uint32_t addr = blockno * 64;
 	unsigned int i;
@@ -1052,7 +1052,7 @@ void _write_and_check(flashdrv_dmaBuff_t *dma, uint32_t blockno, uint8_t *data, 
 	}
 }
 
-void test_single_block(flashdrv_dmaBuff_t *dma, uint32_t blockno, uint8_t *data, uint8_t *meta)
+void test_single_block(flashdrv_dma_t *dma, uint32_t blockno, uint8_t *data, uint8_t *meta)
 {
 	int err;
 	uint32_t addr = blockno * 64;
@@ -1081,7 +1081,7 @@ void test_single_block(flashdrv_dmaBuff_t *dma, uint32_t blockno, uint8_t *data,
 /* test writes with 0x55 and 0xAA pattarn (+ read, erase) */
 void test_write_read_erase(void)
 {
-	flashdrv_dmaBuff_t *dma;
+	flashdrv_dma_t *dma;
 	uint8_t *data, *meta;
 	unsigned int blockno;
 
@@ -1102,7 +1102,7 @@ void test_write_read_erase(void)
 /* test raw writes with 0x55 and 0xAA pattarn (+ raw read, erase) */
 void test_write_read_erase_raw(void)
 {
-	flashdrv_dmaBuff_t *dma;
+	flashdrv_dma_t *dma;
 	uint8_t *data, *meta;
 	unsigned int blockno;
 
@@ -1129,7 +1129,7 @@ void test_write_read_erase_raw(void)
 void test_3(void)
 {
 	void *buffer = mmap(NULL, 16 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_PHYSMEM, 0x900000);
-	flashdrv_dmaBuff_t *dma;
+	flashdrv_dma_t *dma;
 	int err;
 
 	memset(buffer, 0, 16 * _PAGE_SIZE);
