@@ -166,6 +166,7 @@ struct qh {
 typedef struct _ehci_qtd {
 	struct _ehci_qtd *prev, *next;
 	volatile struct qtd *hw;
+	struct _ehci_qh *qh;
 	uint32_t paddr;
 	size_t bytes;
 } ehci_qtd_t;
@@ -205,7 +206,7 @@ int phy_init(hcd_t *hcd);
 void phy_enableHighSpeedDisconnect(hcd_t *hcd, int enable);
 
 
-int ehci_roothubReq(usb_transfer_t *t);
+int ehci_roothubReq(usb_dev_t *hub, usb_transfer_t *t);
 
 
 uint32_t ehci_getHubStatus(usb_dev_t *hub);
