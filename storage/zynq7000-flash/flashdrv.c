@@ -402,9 +402,9 @@ static ssize_t flashdrv_blkRead(struct _storage_t *strg, off_t start, void *data
 		return -EINVAL;
 	}
 
-	mutexLock(fdrv_common.regs[strg->dev->id].lock);
-	res = _flashdrv_read(strg->dev->id, start + strg->start, data, size);
-	mutexUnlock(fdrv_common.regs[strg->dev->id].lock);
+	mutexLock(fdrv_common.regs[strg->dev->ctx->id].lock);
+	res = _flashdrv_read(strg->dev->ctx->id, start + strg->start, data, size);
+	mutexUnlock(fdrv_common.regs[strg->dev->ctx->id].lock);
 
 	return res;
 }
@@ -426,7 +426,7 @@ static ssize_t flashdrv_blkWrite(struct _storage_t *strg, off_t start, const voi
 		return 0;
 	}
 
-	regID = strg->dev->id;
+	regID = strg->dev->ctx->id;
 	sectSz = CFI_SIZE_SECTION(fdrv_common.info.cfi.regs[regID].size);
 
 	mutexLock(fdrv_common.regs[regID].lock);
@@ -474,7 +474,7 @@ static ssize_t flashdrv_blkWrite(struct _storage_t *strg, off_t start, const voi
 			return res;
 		}
 	}
-	mutexUnlock(fdrv_common.regs[strg->dev->id].lock);
+	mutexUnlock(fdrv_common.regs[strg->dev->ctx->id].lock);
 
 	return saveSz;
 }
@@ -488,9 +488,9 @@ static int flashdrv_blkSync(struct _storage_t *strg)
 		return -EINVAL;
 	}
 
-	mutexLock(fdrv_common.regs[strg->dev->id].lock);
-	res = _flashdrv_sync(strg->dev->id, strg->start);
-	mutexUnlock(fdrv_common.regs[strg->dev->id].lock);
+	mutexLock(fdrv_common.regs[strg->dev->ctx->id].lock);
+	res = _flashdrv_sync(strg->dev->ctx->id, strg->start);
+	mutexUnlock(fdrv_common.regs[strg->dev->ctx->id].lock);
 
 	return res;
 }
@@ -509,26 +509,26 @@ static int flashdrv_mtdErase(struct _storage_t *strg, off_t offs, size_t size)
 {
 	int res;
 	size_t len = 0;
-	size_t secSz = CFI_SIZE_SECTION(fdrv_common.info.cfi.regs[strg->dev->id].size);
+	size_t secSz = CFI_SIZE_SECTION(fdrv_common.info.cfi.regs[strg->dev->ctx->id].size);
 
 	if ((offs == 0) && (size == CFI_SIZE_FLASH(fdrv_common.info.cfi.chipSize))) {
-		mutexLock(fdrv_common.regs[strg->dev->id].lock);
-		res = _flashdrv_chipErase(strg->dev->id);
-		mutexUnlock(fdrv_common.regs[strg->dev->id].lock);
+		mutexLock(fdrv_common.regs[strg->dev->ctx->id].lock);
+		res = _flashdrv_chipErase(strg->dev->ctx->id);
+		mutexUnlock(fdrv_common.regs[strg->dev->ctx->id].lock);
 		return res;
 	}
 
-	mutexLock(fdrv_common.regs[strg->dev->id].lock);
+	mutexLock(fdrv_common.regs[strg->dev->ctx->id].lock);
 	while (len < size) {
-		res = _flashdrv_sectorErase(strg->dev->id, offs + strg->start + len);
+		res = _flashdrv_sectorErase(strg->dev->ctx->id, offs + strg->start + len);
 		if (res < 0) {
-			mutexUnlock(fdrv_common.regs[strg->dev->id].lock);
+			mutexUnlock(fdrv_common.regs[strg->dev->ctx->id].lock);
 			return res;
 		}
 
 		len += secSz;
 	}
-	mutexUnlock(fdrv_common.regs[strg->dev->id].lock);
+	mutexUnlock(fdrv_common.regs[strg->dev->ctx->id].lock);
 
 	return EOK;
 }
@@ -538,9 +538,9 @@ static ssize_t flashdrv_mtdRead(struct _storage_t *strg, off_t offs, void *data,
 {
 	int res;
 
-	mutexLock(fdrv_common.regs[strg->dev->id].lock);
-	res = _flashdrv_read(strg->dev->id, offs + strg->start, data, len);
-	mutexUnlock(fdrv_common.regs[strg->dev->id].lock);
+	mutexLock(fdrv_common.regs[strg->dev->ctx->id].lock);
+	res = _flashdrv_read(strg->dev->ctx->id, offs + strg->start, data, len);
+	mutexUnlock(fdrv_common.regs[strg->dev->ctx->id].lock);
 
 	return res;
 }
@@ -551,13 +551,13 @@ static ssize_t flashdrv_mtdWrite(struct _storage_t *strg, off_t offs, const void
 	ssize_t res = 0;
 	size_t tempSz = 0, chunkSz = 0;
 
-	mutexLock(fdrv_common.regs[strg->dev->id].lock);
+	mutexLock(fdrv_common.regs[strg->dev->ctx->id].lock);
 	chunkSz = offs % strg->dev->mtd->writeBuffsz;
 	if (chunkSz != 0) {
 		chunkSz = len < (strg->dev->mtd->writeBuffsz - chunkSz) ? len : (strg->dev->mtd->writeBuffsz - chunkSz);
-		res = _flashdrv_pageProgram(strg->dev->id, strg->start + offs, data, chunkSz);
+		res = _flashdrv_pageProgram(strg->dev->ctx->id, strg->start + offs, data, chunkSz);
 		if (res < 0) {
-			mutexUnlock(fdrv_common.regs[strg->dev->id].lock);
+			mutexUnlock(fdrv_common.regs[strg->dev->ctx->id].lock);
 			return res;
 		}
 
@@ -566,15 +566,15 @@ static ssize_t flashdrv_mtdWrite(struct _storage_t *strg, off_t offs, const void
 
 	while (tempSz < len) {
 		chunkSz = ((len - tempSz) > strg->dev->mtd->writeBuffsz) ? strg->dev->mtd->writeBuffsz : (len - tempSz);
-		res = _flashdrv_pageProgram(strg->dev->id, strg->start + offs + tempSz, (const char *)data + tempSz, chunkSz);
+		res = _flashdrv_pageProgram(strg->dev->ctx->id, strg->start + offs + tempSz, (const char *)data + tempSz, chunkSz);
 		if (res < 0) {
-			mutexUnlock(fdrv_common.regs[strg->dev->id].lock);
+			mutexUnlock(fdrv_common.regs[strg->dev->ctx->id].lock);
 			return res;
 		}
 
 		tempSz += res;
 	}
-	mutexUnlock(fdrv_common.regs[strg->dev->id].lock);
+	mutexUnlock(fdrv_common.regs[strg->dev->ctx->id].lock);
 
 	return tempSz;
 }
@@ -614,12 +614,13 @@ int flashdrv_done(storage_t *strg)
 
 	res = flashdrv_blkSync(strg);
 
-	free(fdrv_common.regs[strg->dev->id].buff);
-	fdrv_common.regs[strg->dev->id].buff = NULL;
+	free(fdrv_common.regs[strg->dev->ctx->id].buff);
+	fdrv_common.regs[strg->dev->ctx->id].buff = NULL;
 
-	resourceDestroy(fdrv_common.regs[strg->dev->id].lock);
+	resourceDestroy(fdrv_common.regs[strg->dev->ctx->id].lock);
 	free(strg->dev->mtd);
 	free(strg->dev->blk);
+	free(strg->dev->ctx);
 	free(strg->dev);
 
 	for (i = 0; i < fdrv_common.info.cfi.regsCount; ++i) {
@@ -680,6 +681,14 @@ int flashdrv_devInit(storage_t *strg)
 		return -ENOMEM;
 	}
 
+	strg->dev->ctx = malloc(sizeof(storage_devCtx_t));
+	if (strg->dev->ctx == NULL) {
+		resourceDestroy(reg->lock);
+		free(reg->buff);
+		free(strg->dev);
+		return -ENOMEM;
+	}
+
 	/* Initialize storage device properties */
 	strg->parent = NULL;
 	strg->start = flashdrv_regStart(id);
@@ -691,6 +700,7 @@ int flashdrv_devInit(storage_t *strg)
 		resourceDestroy(reg->lock);
 		free(reg->buff);
 		free(strg->dev);
+		free(strg->dev->ctx);
 		return -ENOMEM;
 	}
 
@@ -701,7 +711,7 @@ int flashdrv_devInit(storage_t *strg)
 	}
 #endif
 
-	strg->dev->id = id;
+	strg->dev->ctx->id = id;
 	strg->dev->mtd->ops = &mtdOps;
 	strg->dev->mtd->type = mtd_norFlash;
 	strg->dev->mtd->name = info->name;
