@@ -19,6 +19,12 @@
 #include <mtd/mtd.h>
 
 
+/* Storage device context definition */
+typedef struct _storage_devCtx_t {
+	unsigned int id; /* flash device memory id */
+} storage_devCtx_t;
+
+
 /* Clean up flash memory driver, returns 0 on success <0 on error */
 extern int flashdrv_done(storage_t *strg);
 
