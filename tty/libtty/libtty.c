@@ -176,7 +176,7 @@ unsigned char libtty_getchar(libtty_common_t *tty, int *wake_writer)
 		*wake_writer = 0;
 
 	unsigned char ret = fifo_pop_back(tty->tx_fifo);
-	if (fifo_freespace(tty->rx_fifo) >= TX_FIFO_NOTFULL_WATERMARK) {
+	if (fifo_freespace(tty->tx_fifo) >= TX_FIFO_NOTFULL_WATERMARK) {
 		if (wake_writer)
 			*wake_writer = 1;
 		condSignal(tty->tx_waitq);
@@ -191,7 +191,7 @@ int libtty_init(libtty_common_t* tty, libtty_callbacks_t* callbacks, unsigned in
 	tty->cb = *callbacks;
 
 	tty->tx_fifo = malloc(sizeof(fifo_t) + bufsize * sizeof(tty->tx_fifo->data[0]));
-	tty->rx_fifo = malloc(sizeof(fifo_t) + bufsize * sizeof(tty->tx_fifo->data[0]));
+	tty->rx_fifo = malloc(sizeof(fifo_t) + bufsize * sizeof(tty->rx_fifo->data[0]));
 	if (tty->tx_fifo == NULL || tty->rx_fifo == NULL) {
 		free(tty->tx_fifo);
 		free(tty->rx_fifo);
