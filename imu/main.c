@@ -31,8 +31,7 @@ struct data_context_t {
 	float imu_data[7];
 	float mag_data[3];
 
-	handle_t imu_data_lock;
-	handle_t mag_data_lock;
+	handle_t data_lock;
 };
 
 struct data_context_t data_context;
@@ -43,14 +42,14 @@ void daq(void *arg)
 	for (;;) {
 		/* TODO: add variable sampling frequency */
 		for (i = 0; i < 10; i++) {
-			mutexLock(data_context.imu_data_lock);
+			mutexLock(data_context.data_lock);
 			getAllData(data_context.imu, data_context.imu_data, sizeof(data_context.imu_data) / sizeof(float));
-			mutexUnlock(data_context.imu_data_lock);
+			mutexUnlock(data_context.data_lock);
 			usleep(1000 * 2);
 		}
-		mutexLock(data_context.mag_data_lock);
+		mutexLock(data_context.data_lock);
 		getAllData(data_context.mag, data_context.mag_data, sizeof(data_context.mag_data) / sizeof(float));
-		mutexUnlock(data_context.mag_data_lock);
+		mutexUnlock(data_context.data_lock);
 		usleep(1000);
 	}
 
@@ -79,17 +78,15 @@ static void server(void *arg)
 
 		switch (msg.type) {
 			case mtRead:
-				mutexLock(data_context.imu_data_lock);
-				mutexLock(data_context.mag_data_lock);
 				i = i_mag = 0;
+				mutexLock(data_context.data_lock);
 				for (; i < sizeof(data_context.imu_data) / sizeof(float); i++) {
 					val[i] = data_context.imu_data[i];
 				}
 				for (; i_mag < sizeof(data_context.mag_data); i++, i_mag++) {
 					val[i] = data_context.mag_data[i_mag];
 				}
-				mutexUnlock(data_context.mag_data_lock);
-				mutexUnlock(data_context.imu_data_lock);
+				mutexUnlock(data_context.data_lock);
 				break;
 			default:
 				msg.o.io.err = -EINVAL;
@@ -102,7 +99,8 @@ static void server(void *arg)
 
 int main(int argc, char **argv)
 {
-	int stacksz = 1024, bus_no = 2;
+	const size_t stacksz = 1024;
+	int bus_no = 2;
 	char devname[] = "imu_driver", *stack;
 	uint32_t port;
 	oid_t dev;
@@ -147,9 +145,8 @@ int main(int argc, char **argv)
 	}
 
 	/* prepare and start data acquisition thread */
-	mutexCreate(&data_context.imu_data_lock);
-	mutexCreate(&data_context.mag_data_lock);
-	if ((stack = (char *)malloc(stacksz)) == NULL) {
+	mutexCreate(&data_context.data_lock);
+	if ((stack = malloc(stacksz)) == NULL) {
 		printf("%s: cannot allocate memory for DAQ!\n", devname);
 		return 1;
 	}

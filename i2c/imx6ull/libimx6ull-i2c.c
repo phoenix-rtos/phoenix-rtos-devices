@@ -340,6 +340,7 @@ int i2c_regRead(uint8_t dev_addr, uint8_t reg_addr, uint8_t *data_out, uint32_t 
 int i2c_init(unsigned int dev_no)
 {
 	i2c.dev_no = dev_no;
+
 	if ((i2c.dev_no < 1) || (i2c.dev_no > (sizeof(i2c_addr) / sizeof(i2c_addr[0]))))
 		return -1;
 

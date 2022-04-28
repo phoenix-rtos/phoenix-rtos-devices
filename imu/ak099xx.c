@@ -62,18 +62,17 @@ static int ak099xx_readAllData(const imu_dev_t *dev, uint8_t *buf, uint32_t len)
 	int ret = 0;
 	uint8_t status = 0;
 
-	ret += i2c_regRead(dev->devAddr, REG_ST1, &status, 1);
+	if (i2c_regRead(dev->devAddr, REG_ST1, &status, 1) < 0) {
+		return -EIO;
+	}
 	if (!(status & MASK_ST1_DRDY)) {
 		return -EAGAIN;
 	}
-	if (ret < 0) {
-		return -EIO;
-	}
 
 	/* read data */
-	ret += i2c_regRead(dev->devAddr, REG_DATA_ALL, buf, AK0990XX_DATA_ALL_SIZE);
+	ret = (i2c_regRead(dev->devAddr, REG_DATA_ALL, buf, AK0990XX_DATA_ALL_SIZE) < 0);
 	/* read hall overflow */
-	ret += i2c_regRead(dev->devAddr, REG_ST2, &status, 1);
+	ret = ret || (i2c_regRead(dev->devAddr, REG_ST2, &status, 1) < 0);
 	/* TODO: implement buffer size big enough for hall sensor overflow (HOFL) data */
 
 	return (ret < 0) ? -EIO : EOK;
@@ -92,9 +91,9 @@ int ak099xx_getAllData(const imu_dev_t *dev, float *buffer, uint8_t buflen)
 		return -EIO;
 	}
 
-	buffer[0] = translateMag(databuf[1], databuf[0]);
-	buffer[1] = translateMag(databuf[3], databuf[2]);
-	buffer[2] = translateMag(databuf[5], databuf[4]);
+	for (int i = 0; i < 3; i++) {
+		buffer[i] = translateMag(databuf[i * 2 + 1], databuf[i * 2]);
+	}
 
 	return EOK;
 }

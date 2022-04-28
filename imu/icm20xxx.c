@@ -79,15 +79,15 @@
 enum pwr_modes { mode_sleep,
 	mode_full };
 /* accelerometer ranges for ixm20xxx family device */
-enum scales_acc { g2,
-	g4,
-	g8,
-	g16 };
+enum scales_acc { g2 = 2,
+	g4 = 4,
+	g8 = 8,
+	g16 = 16 };
 /* gyroscope ranges for ixm20xxx device */
-enum scales_gyr { dps250,
-	dps500,
-	dps1000,
-	dps2000 };
+enum scales_gyr { dps250 = 250,
+	dps500 = 500,
+	dps1000 = 1000,
+	dps2000 = 2000 };
 
 /* icm20xxx device config structure */
 typedef struct {
@@ -106,32 +106,32 @@ static immu_t imu_common = {
 
 static int icm20xxx_reset(const imu_dev_t *dev)
 {
-	int ret = 0;
+	int err;
 
-	ret += i2c_regWrite(dev->devAddr, REG_BANK, VAL_BANK_0);           /* switch to user bank 0 */
-	ret += i2c_regWrite(dev->devAddr, REG_PWR_MIGMT_1, VAL_PWR_RESET); /* reset device */
+	err = (i2c_regWrite(dev->devAddr, REG_BANK, VAL_BANK_0) < 0);                  /* switch to user bank 0 */
+	err = err || (i2c_regWrite(dev->devAddr, REG_PWR_MIGMT_1, VAL_PWR_RESET) < 0); /* reset device */
 	usleep(1000 * 10);
 
-	return (ret < 0) ? -EIO : EOK;
+	return (err) ? -EIO : EOK;
 }
 
 
 static int icm20xxx_run_mode(const imu_dev_t *dev)
 {
-	int ret = 0;
+	unsigned int err;
 
 	/* switch to user bank 0 and skip if it failed */
-	ret += i2c_regWrite(dev->devAddr, REG_BANK, VAL_BANK_0);
-	if (ret >= 0) {
-		ret += i2c_regWrite(dev->devAddr, REG_PWR_MIGMT_1, VAL_PWR_RUN); /* put it in run mode */
+	err = (i2c_regWrite(dev->devAddr, REG_BANK, VAL_BANK_0) < 0);
+	if (!err) {
+		err = (i2c_regWrite(dev->devAddr, REG_PWR_MIGMT_1, VAL_PWR_RUN) < 0); /* put it in run mode */
 		usleep(1000 * 10);
 
 		/* set bypass mode for auxiliary I2C bus */
-		ret += i2c_regWrite(dev->devAddr, REG_USER_CTRL, 0);
-		ret += i2c_regWrite(dev->devAddr, 0x0f, 0 | (1 << 1));
+		err = err || (i2c_regWrite(dev->devAddr, REG_USER_CTRL, 0) < 0);
+		err = err || (i2c_regWrite(dev->devAddr, 0x0f, 0 | (1 << 1)) < 0);
 	}
 
-	if (ret >= 0) {
+	if (!err) {
 		imu_common.pwr_mode = mode_full;
 		return EOK;
 	}
@@ -141,33 +141,13 @@ static int icm20xxx_run_mode(const imu_dev_t *dev)
 
 static float translateAccel(short val)
 {
-	float fval = val / 32767.F;
-	switch (imu_common.scale_acc) {
-		case g2:
-			return fval * 2.F;
-		case g4:
-			return fval * 4.F;
-		case g16:
-			return fval * 16.F;
-		default:
-			return fval * 8.F;
-	}
+	return (val / 32767.F) * imu_common.scale_acc;
 }
 
 
 static float translateGyr(short val)
 {
-	float fval = DEG2RAD * val / 32767.F;
-	switch (imu_common.scale_gyr) {
-		case dps250:
-			return fval * 250;
-		case dps500:
-			return fval * 500;
-		case dps2000:
-			return fval * 2000;
-		default:
-			return fval * 1000;
-	}
+	return (DEG2RAD * val / 32767.F) * imu_common.scale_gyr;
 }
 
 
@@ -179,32 +159,31 @@ static float translateTemp(short val)
 
 int icm20xxx_init(const imu_dev_t *dev)
 {
-	int ret = 0;
+	unsigned int err = 0;
 
-	ret += icm20xxx_reset(dev);
-	ret += icm20xxx_run_mode(dev);
-	if (ret < 0) {
+	err = (icm20xxx_reset(dev) != 0);
+	err = err || (icm20xxx_run_mode(dev) != 0);
+	if (err) {
 		printf("Cannot reset and put in run\n");
 		return -EIO;
 	}
-	ret = 0;
 
 	/* Accellerometer and Gyro configs are in USER_BANK_2 */
-	ret += i2c_regWrite(dev->devAddr, REG_BANK, VAL_BANK_2);
-	if (ret >= 0) {
+	err = (i2c_regWrite(dev->devAddr, REG_BANK, VAL_BANK_2) < 0);
+	if (!err) {
 		/* set accel sample rate divider */
-		ret += i2c_regWrite(dev->devAddr, REG_ACCEL_SMPLRT_DIV_2, VAL_ACCEL_SMPLRT_DIV_2);
+		err = err || (i2c_regWrite(dev->devAddr, REG_ACCEL_SMPLRT_DIV_2, VAL_ACCEL_SMPLRT_DIV_2) < 0);
 		/* set low pass filter, accel scale and enable low pass */
-		ret += i2c_regWrite(dev->devAddr, REG_ACCEL_CONFIG, 0 | VAL_ACCEL_FS_2G | VAL_ACCEL_DLPCFG_6 | VAL_ACCEL_DLPF);
+		err = err || (i2c_regWrite(dev->devAddr, REG_ACCEL_CONFIG, 0 | VAL_ACCEL_FS_2G | VAL_ACCEL_DLPCFG_6 | VAL_ACCEL_DLPF) < 0);
 
 		/* set gyro sample rate divider */
-		ret += i2c_regWrite(dev->devAddr, REG_GYR_SMPLRT_DIV_2, VAL_GYR_SMPLRT_DIV_2);
+		err = err || (i2c_regWrite(dev->devAddr, REG_GYR_SMPLRT_DIV_2, VAL_GYR_SMPLRT_DIV_2) < 0);
 		/* set low pass filter, gyro scale and enable low pass */
-		ret += i2c_regWrite(dev->devAddr, REG_GYR_CONFIG_1, 0 | VAL_GYRO_FS_DPS500 | VAL_GYRO_DLPCFG_6 | VAL_GYRO_DLPF);
+		err = err || (i2c_regWrite(dev->devAddr, REG_GYR_CONFIG_1, 0 | VAL_GYRO_FS_DPS500 | VAL_GYRO_DLPCFG_6 | VAL_GYRO_DLPF) < 0);
 	}
-	ret += i2c_regWrite(dev->devAddr, REG_BANK, VAL_BANK_0); /* switch to user bank 0 as default */
+	err = err || (i2c_regWrite(dev->devAddr, REG_BANK, VAL_BANK_0) < 0); /* switch to user bank 0 as default */
 
-	if (ret < 0) {
+	if (err) {
 		printf("Cannot setup accel/gyro config\n");
 		return -EIO;
 	}
@@ -216,6 +195,7 @@ int icm20xxx_init(const imu_dev_t *dev)
 int icm20xxx_getAllData(const imu_dev_t *dev, float *buffer, uint8_t buflen)
 {
 	uint8_t databuf[ICM20XXX_DATA_ALL_SIZE];
+	unsigned int i;
 
 	if (buflen < (ICM20XXX_DATA_ALL_SIZE / sizeof(uint16_t))) {
 		return -ENOMEM;
@@ -226,14 +206,14 @@ int icm20xxx_getAllData(const imu_dev_t *dev, float *buffer, uint8_t buflen)
 		return -EIO;
 	}
 
-	/* change accell values to floats */
-	buffer[0] = translateAccel((databuf[0] << 8) | (databuf[1] & 0xFF));  /* acc_x */
-	buffer[1] = translateAccel((databuf[2] << 8) | (databuf[3] & 0xFF));  /* acc_y */
-	buffer[2] = translateAccel((databuf[4] << 8) | (databuf[5] & 0xFF));  /* acc_z */
-	buffer[3] = translateGyr((databuf[6] << 8) | (databuf[7] & 0xFF));    /* gyr_x */
-	buffer[4] = translateGyr((databuf[8] << 8) | (databuf[9] & 0xFF));    /* gyr_y */
-	buffer[5] = translateGyr((databuf[10] << 8) | (databuf[11] & 0xFF));  /* gyr_z */
-	buffer[6] = translateTemp((databuf[12] << 8) | (databuf[13] & 0xFF)); /* temp */
+	/* write data to passed buffer */
+	for (i = 0; i < 3; i++) {
+		buffer[i] = translateAccel((databuf[i * 2] << 8) | databuf[i * 2 + 1]); /* change accell values to floats */
+	}
+	for (i = 3; i < 6; i++) {
+		buffer[i] = translateGyr((databuf[i * 2] << 8) | databuf[i * 2 + 1]); /* change gyr values to floats */
+	}
+	buffer[6] = translateTemp((databuf[12] << 8) | (databuf[13])); /* change temperature reading to float */
 
 	return EOK;
 }
