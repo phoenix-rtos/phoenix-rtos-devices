@@ -12,10 +12,12 @@
  */
 
 #include <errno.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
 #include <sys/stat.h>
+#include <sys/threads.h>
 #include <sys/types.h>
 #include <sys/msg.h>
 #include <posix/utils.h>
@@ -321,10 +323,48 @@ static int init(void)
 	return res;
 }
 
-int main(void)
+static int parse_args(int argc, char *argv[])
+{
+	int opt;
+	unsigned long prio;
+	char *endptr;
+
+	while ((opt = getopt(argc, argv, "p:")) != -1) {
+		switch (opt) {
+			case 'p':
+				prio = strtoul(optarg, &endptr, 0);
+				if (*endptr != '\0') {
+					printf("%s: incorrect priority value (%s)\n", argv[0], optarg);
+					return -1;
+				}
+
+				if (prio > 7) {
+					printf("%s: incorrect priority value (%lu). It must be in [0,7] range\n",
+						argv[0], prio);
+					return -1;
+				}
+
+				priority(prio);
+				break;
+
+			default:
+				printf("AD7779 driver. Usage:\n");
+				printf("%s [-p priority]\n", argv[0]);
+				printf("\t-p priority\t\tSelect priority for the AD7779 driver\n");
+				return -1;
+		}
+	}
+
+	return 0;
+}
+
+int main(int argc, char *argv[])
 {
 	int i;
 	oid_t root;
+
+	if (parse_args(argc, argv) < 0)
+		return 1;
 
 	/* Wait for the filesystem */
 	while (lookup("/", NULL, &root) < 0)
