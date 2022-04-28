@@ -19,8 +19,8 @@
 
 #include <i2c.h>
 
-#include <communication.h>
-#include <icm20xxx.h>
+#include "communication.h"
+#include "icm20xxx.h"
 
 /* USER BANK SELECTION */
 #define REG_BANK   0x7F
@@ -75,37 +75,61 @@
 /* data addresses */
 #define REG_DATA_ALL 0x2D /* actually ACEL_XOUT_H address */
 
+/* power modes of icm20xxx device */
+enum pwr_modes { mode_sleep,
+	mode_full };
+/* accelerometer ranges for ixm20xxx family device */
+enum scales_acc { g2,
+	g4,
+	g8,
+	g16 };
+/* gyroscope ranges for ixm20xxx device */
+enum scales_gyr { dps250,
+	dps500,
+	dps1000,
+	dps2000 };
+
+/* icm20xxx device config structure */
+typedef struct {
+	enum pwr_modes pwr_mode;
+	enum scales_acc scale_acc;
+	enum scales_gyr scale_gyr;
+} immu_t;
+
 
 static immu_t imu_common = {
 	.pwr_mode = mode_sleep,
-	.scale_acc = g8,
-	.scale_gyr = dps1000
+	.scale_acc = g2,
+	.scale_gyr = dps500
 };
 
 
-static int icm20xxx_reset(const i2c_dev_t *dev)
+static int icm20xxx_reset(const imu_dev_t *dev)
 {
 	int ret = 0;
 
-	ret += sendbyte(dev->addr, REG_BANK, VAL_BANK_0);           /* switch to user bank 0 */
-	ret += sendbyte(dev->addr, REG_PWR_MIGMT_1, VAL_PWR_RESET); /* reset device */
+	ret += i2c_regWrite(dev->devAddr, REG_BANK, VAL_BANK_0);           /* switch to user bank 0 */
+	ret += i2c_regWrite(dev->devAddr, REG_PWR_MIGMT_1, VAL_PWR_RESET); /* reset device */
 	usleep(1000 * 10);
 
 	return (ret < 0) ? -EIO : EOK;
 }
 
 
-static int icm20xxx_run_mode(const i2c_dev_t *dev)
+static int icm20xxx_run_mode(const imu_dev_t *dev)
 {
 	int ret = 0;
 
-	ret += sendbyte(dev->addr, REG_BANK, VAL_BANK_0);         /* switch to user bank 0 */
-	ret += sendbyte(dev->addr, REG_PWR_MIGMT_1, VAL_PWR_RUN); /* put it in run mode */
-	usleep(1000 * 10);
+	/* switch to user bank 0 and skip if it failed */
+	ret += i2c_regWrite(dev->devAddr, REG_BANK, VAL_BANK_0);
+	if (ret >= 0) {
+		ret += i2c_regWrite(dev->devAddr, REG_PWR_MIGMT_1, VAL_PWR_RUN); /* put it in run mode */
+		usleep(1000 * 10);
 
-	/* set bypass mode for auxiliary I2C bus */
-	ret += sendbyte(dev->addr, REG_USER_CTRL, 0);
-	ret += sendbyte(dev->addr, 0x0f, 0 | (1 << 1));
+		/* set bypass mode for auxiliary I2C bus */
+		ret += i2c_regWrite(dev->devAddr, REG_USER_CTRL, 0);
+		ret += i2c_regWrite(dev->devAddr, 0x0f, 0 | (1 << 1));
+	}
 
 	if (ret >= 0) {
 		imu_common.pwr_mode = mode_full;
@@ -133,8 +157,8 @@ static float translateAccel(short val)
 
 static float translateGyr(short val)
 {
-	float fval = DEG2RAD * val / 32767;
-	switch (imu_common.scale_acc) {
+	float fval = DEG2RAD * val / 32767.F;
+	switch (imu_common.scale_gyr) {
 		case dps250:
 			return fval * 250;
 		case dps500:
@@ -153,36 +177,35 @@ static float translateTemp(short val)
 }
 
 
-int icm20xxx_init(const i2c_dev_t *dev)
+int icm20xxx_init(const imu_dev_t *dev)
 {
 	int ret = 0;
 
 	ret += icm20xxx_reset(dev);
 	ret += icm20xxx_run_mode(dev);
 	if (ret < 0) {
-		fprintf(stderr, "Cannot reset and put in run\n");
+		printf("Cannot reset and put in run\n");
 		return -EIO;
 	}
 	ret = 0;
 
 	/* Accellerometer and Gyro configs are in USER_BANK_2 */
-	ret += sendbyte(dev->addr, REG_BANK, VAL_BANK_2);
-	{
+	ret += i2c_regWrite(dev->devAddr, REG_BANK, VAL_BANK_2);
+	if (ret >= 0) {
 		/* set accel sample rate divider */
-		ret += sendbyte(dev->addr, REG_ACCEL_SMPLRT_DIV_2, VAL_ACCEL_SMPLRT_DIV_2);
+		ret += i2c_regWrite(dev->devAddr, REG_ACCEL_SMPLRT_DIV_2, VAL_ACCEL_SMPLRT_DIV_2);
 		/* set low pass filter, accel scale and enable low pass */
-		ret += sendbyte(dev->addr, REG_ACCEL_CONFIG, 0 | VAL_ACCEL_FS_8G | VAL_ACCEL_DLPCFG_6 | VAL_ACCEL_DLPF);
+		ret += i2c_regWrite(dev->devAddr, REG_ACCEL_CONFIG, 0 | VAL_ACCEL_FS_2G | VAL_ACCEL_DLPCFG_6 | VAL_ACCEL_DLPF);
 
 		/* set gyro sample rate divider */
-		ret += sendbyte(dev->addr, REG_GYR_SMPLRT_DIV_2, VAL_GYR_SMPLRT_DIV_2);
+		ret += i2c_regWrite(dev->devAddr, REG_GYR_SMPLRT_DIV_2, VAL_GYR_SMPLRT_DIV_2);
 		/* set low pass filter, gyro scale and enable low pass */
-		ret += sendbyte(dev->addr, REG_GYR_CONFIG_1, 0 | VAL_GYRO_FS_DPS1000 | VAL_GYRO_DLPCFG_6 | VAL_GYRO_DLPF);
+		ret += i2c_regWrite(dev->devAddr, REG_GYR_CONFIG_1, 0 | VAL_GYRO_FS_DPS500 | VAL_GYRO_DLPCFG_6 | VAL_GYRO_DLPF);
 	}
-	ret += sendbyte(dev->addr, REG_BANK, VAL_BANK_0); /* switch to user bank 0 as default */
-
+	ret += i2c_regWrite(dev->devAddr, REG_BANK, VAL_BANK_0); /* switch to user bank 0 as default */
 
 	if (ret < 0) {
-		fprintf(stderr, "Cannot setup accel/gyro config\n");
+		printf("Cannot setup accel/gyro config\n");
 		return -EIO;
 	}
 
@@ -190,7 +213,7 @@ int icm20xxx_init(const i2c_dev_t *dev)
 }
 
 
-int icm20xxx_getAllData(const i2c_dev_t *dev, float *buffer, uint8_t buflen)
+int icm20xxx_getAllData(const imu_dev_t *dev, float *buffer, uint8_t buflen)
 {
 	uint8_t databuf[ICM20XXX_DATA_ALL_SIZE];
 
@@ -199,7 +222,7 @@ int icm20xxx_getAllData(const i2c_dev_t *dev, float *buffer, uint8_t buflen)
 	}
 
 	/* read data from device */
-	if (i2c_regRead(dev->addr, REG_DATA_ALL, databuf, ICM20XXX_DATA_ALL_SIZE)) {
+	if (i2c_regRead(dev->devAddr, REG_DATA_ALL, databuf, ICM20XXX_DATA_ALL_SIZE) != 0) {
 		return -EIO;
 	}
 

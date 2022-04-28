@@ -5,11 +5,13 @@
 #
 #
 
-# by default use i2c message implementation (can be overridden to use custom target i2c lib directly, eg. `make I2C_LIB=libimx6ull-i2c temp-nct75`)
+# by default uses imx6ull i2c implementation
 I2C_LIB ?= libimx6ull-i2c
 
-NAME := imu
-LOCAL_SRCS := main.c communication.c icm20xxx.c ak099xx.c
-LOCAL_HEADERS := communication.h icm20xxx.h ak099xx.h
+NAME := imx6ull-imu
+LOCAL_PATH := $(call my-dir)
+SRCS := $(wildcard $(LOCAL_PATH)*.c)
 DEP_LIBS := $(I2C_LIB)
 include $(binary.mk)
+
+# TODO: make an API header installed so the message structure is not unknown

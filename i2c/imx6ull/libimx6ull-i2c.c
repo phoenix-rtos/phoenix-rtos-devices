@@ -243,20 +243,11 @@ int i2c_busWrite(uint8_t dev_addr, const uint8_t *data, uint32_t len)
 	return ret;
 }
 
-/* Performs register write operation on specified address to the given slave device. */
-int i2c_regWrite(uint8_t dev_addr, uint8_t reg_addr, uint8_t *data, uint32_t len)
+/* Writes one byte into register 'reg_addr' of 'dev_addr' i2c device */
+int i2c_regWrite(uint8_t dev_addr, uint8_t reg_addr, uint8_t val)
 {
-	uint8_t d[2];
-
-	/* TODO: support more than 1 byte long writes */
-	if (len == 1) {
-		d[0] = reg_addr;
-		d[1] = data[0];
-		return i2c_busWrite(dev_addr, d, 2);
-	}
-	else {
-		return -E2BIG;
-	}
+	uint8_t d[2] = { reg_addr, val };
+	return i2c_busWrite(dev_addr, d, 2);
 }
 
 

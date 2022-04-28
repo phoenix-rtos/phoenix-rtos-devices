@@ -22,33 +22,34 @@
 #include <posix/utils.h>
 #include <sys/threads.h>
 
-#include <communication.h>
+#include "communication.h"
 
-typedef struct {
-	const i2c_dev_t *imu;
-	const i2c_dev_t *mag;
+struct data_context_t {
+	const imu_dev_t *imu;
+	const imu_dev_t *mag;
 
 	float imu_data[7];
 	float mag_data[3];
 
 	handle_t imu_data_lock;
 	handle_t mag_data_lock;
-} data_context_t;
+};
 
-data_context_t data_context;
+struct data_context_t data_context;
 
 void daq(void *arg)
 {
 	int i = 0;
 	for (;;) {
+		/* TODO: add variable sampling frequency */
 		for (i = 0; i < 10; i++) {
 			mutexLock(data_context.imu_data_lock);
-			getAllData(data_context.imu, data_context.imu_data, 7);
+			getAllData(data_context.imu, data_context.imu_data, sizeof(data_context.imu_data) / sizeof(float));
 			mutexUnlock(data_context.imu_data_lock);
 			usleep(1000 * 2);
 		}
 		mutexLock(data_context.mag_data_lock);
-		getAllData(data_context.mag, data_context.mag_data, 3);
+		getAllData(data_context.mag, data_context.mag_data, sizeof(data_context.mag_data) / sizeof(float));
 		mutexUnlock(data_context.mag_data_lock);
 		usleep(1000);
 	}
@@ -62,13 +63,14 @@ static void server(void *arg)
 	msg_t msg;
 	unsigned long int rid;
 	int err;
+	unsigned int i, i_mag;
 	float *val = (float *)msg.o.raw;
 
 	memset(&msg, 0, sizeof(msg));
 
 	for (;;) {
 		if ((err = msgRecv(port, &msg, &rid)) < 0) {
-			printf("i2c: msgRecv returned error: %s\n", strerror(-err));
+			printf("imu: msgRecv returned error: %s\n", strerror(-err));
 			if (err == -EINTR)
 				continue;
 			else
@@ -79,11 +81,12 @@ static void server(void *arg)
 			case mtRead:
 				mutexLock(data_context.imu_data_lock);
 				mutexLock(data_context.mag_data_lock);
-				for (int i = 0; i < 7; i++) {
+				i = i_mag = 0;
+				for (; i < sizeof(data_context.imu_data) / sizeof(float); i++) {
 					val[i] = data_context.imu_data[i];
 				}
-				for (int i = 0; i < 3; i++) {
-					val[7 + i] = data_context.mag_data[i];
+				for (; i_mag < sizeof(data_context.mag_data); i++, i_mag++) {
+					val[i] = data_context.mag_data[i_mag];
 				}
 				mutexUnlock(data_context.mag_data_lock);
 				mutexUnlock(data_context.imu_data_lock);
@@ -99,20 +102,24 @@ static void server(void *arg)
 
 int main(int argc, char **argv)
 {
-	int stacksz = 1024;
+	int stacksz = 1024, bus_no = 2;
 	char devname[] = "imu_driver", *stack;
 	uint32_t port;
 	oid_t dev;
 
+	/* by default init bus 2 */
+	if (argc >= 2) {
+		bus_no = atoi(argv[1]);
+	}
 	/* i2c init wrapper */
-	if (initialize_i2cbus() != 0) {
-		fprintf(stderr, "%s: cannot initialize I2C bus!\n", devname);
+	if (initialize_i2cbus(bus_no) != 0) {
+		printf("%s: cannot initialize I2C bus!\n", devname);
 		return 1;
 	}
 	/* Find and init IMU */
-	data_context.imu = checkDevices(type_imu);
+	data_context.imu = probeDevices(type_imu);
 	if (data_context.imu == NULL) {
-		fprintf(stderr, "%s: IMU not found!\n", devname);
+		printf("%s: IMU not found!\n", devname);
 		return 2;
 	}
 	if (initDevice(data_context.imu) < 0) {
@@ -120,9 +127,9 @@ int main(int argc, char **argv)
 	}
 
 	/* Find and init magnetometer */
-	data_context.mag = checkDevices(type_magmeter);
+	data_context.mag = probeDevices(type_magmeter);
 	if (data_context.mag == NULL) {
-		fprintf(stderr, "%s: magnetometer not found!\n", devname);
+		printf("%s: magnetometer not found!\n", devname);
 		return 2;
 	}
 	initDevice(data_context.mag);
@@ -139,11 +146,11 @@ int main(int argc, char **argv)
 		return 4;
 	}
 
-	/* prepare and start data acquisition thread thread */
+	/* prepare and start data acquisition thread */
 	mutexCreate(&data_context.imu_data_lock);
 	mutexCreate(&data_context.mag_data_lock);
 	if ((stack = (char *)malloc(stacksz)) == NULL) {
-		fprintf(stderr, "%s: cannot allocate memory for DAQ!\n", devname);
+		printf("%s: cannot allocate memory for DAQ!\n", devname);
 		return 1;
 	}
 	beginthread(daq, 4, stack, stacksz, (void *)&data_context);

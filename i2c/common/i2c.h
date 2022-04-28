@@ -27,8 +27,8 @@ extern int i2c_busRead(uint8_t dev_addr, uint8_t *data_out, uint32_t len);
 /* Performs i2c regiester read operation from the given slave device */
 extern int i2c_regRead(uint8_t dev_addr, uint8_t reg_addr, uint8_t *data_out, uint32_t len);
 
-/* Performs register write operation on specified address to the given slave device. */
-int i2c_regWrite(uint8_t dev_addr, uint8_t reg_addr, uint8_t *data, uint32_t len);
+/* Writes one byte into register 'reg_addr' of 'dev_addr' i2c device */
+extern int i2c_regWrite(uint8_t dev_addr, uint8_t reg_addr, uint8_t val);
 
 
 #endif /* _PHOENIX_I2C_H */

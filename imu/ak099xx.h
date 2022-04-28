@@ -14,7 +14,7 @@
 #define _PHOENIX_I2C_AK099XX_H
 
 #include <stdint.h>
-#include <communication.h>
+#include "communication.h"
 
 /* size in bytes of all data accessible from ak099xx device */
 #define AK0990XX_DATA_ALL_SIZE 6
@@ -23,9 +23,9 @@
 enum ak099xx_family { ak09916 };
 
 /* initialize device from ak099xx family */
-int ak099xx_init(const i2c_dev_t *dev);
+int ak099xx_init(const imu_dev_t *dev);
 
 /* read all data from magnetometer of ak099xx family */
-int ak099xx_getAllData(const i2c_dev_t *dev, float *buffer, uint8_t buflen);
+int ak099xx_getAllData(const imu_dev_t *dev, float *buffer, uint8_t buflen);
 
 #endif
