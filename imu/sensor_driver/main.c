@@ -27,9 +27,12 @@
 struct data_context_t {
 	const imu_dev_t *imu;
 	const imu_dev_t *mag;
+	const imu_dev_t *bar;
+	const imu_dev_t *temp;
 
 	float imu_data[7];
 	float mag_data[3];
+	float bar_data[2];
 
 	handle_t data_lock;
 };
@@ -38,19 +41,28 @@ struct data_context_t data_context;
 
 void daq(void *arg)
 {
-	int i = 0;
+	int i = 0, g = 0;
 	for (;;) {
 		/* TODO: add variable sampling frequency */
-		for (i = 0; i < 10; i++) {
+		for (g = 0; g < 10; g++) {
+			for (i = 0; i < 10; i++) {
+				/* high frequency reads, max 500 Hz */
+				mutexLock(data_context.data_lock);
+				getAllData(data_context.imu, data_context.imu_data, sizeof(data_context.imu_data) / sizeof(float));
+				mutexUnlock(data_context.data_lock);
+				usleep(1000 * 2);
+			}
+			/* medium frequency reads, max 50 Hz */
 			mutexLock(data_context.data_lock);
-			getAllData(data_context.imu, data_context.imu_data, sizeof(data_context.imu_data) / sizeof(float));
+			getAllData(data_context.mag, data_context.mag_data, sizeof(data_context.mag_data) / sizeof(float));
 			mutexUnlock(data_context.data_lock);
 			usleep(1000 * 2);
 		}
+		/* low frequency reads, max 5 Hz */
 		mutexLock(data_context.data_lock);
-		getAllData(data_context.mag, data_context.mag_data, sizeof(data_context.mag_data) / sizeof(float));
+		getAllData(data_context.bar, data_context.bar_data, sizeof(data_context.bar_data) / sizeof(float));
 		mutexUnlock(data_context.data_lock);
-		usleep(1000);
+		usleep(1000 * 2);
 	}
 
 	endthread();
@@ -61,8 +73,9 @@ static void server(void *arg)
 	uint32_t port = (uint32_t)arg;
 	msg_t msg;
 	unsigned long int rid;
+	unsigned char dev_type;
 	int err;
-	unsigned int i, i_mag;
+	unsigned int i;
 	float *val = (float *)msg.o.raw;
 
 	memset(&msg, 0, sizeof(msg));
@@ -76,26 +89,49 @@ static void server(void *arg)
 				break; /* EINVAL (invalid/closed port) or ENOMEM - fatal error */
 		}
 
+		/* input data deparametrization */
+		dev_type = msg.i.raw[field_devtype];
+
 		switch (msg.type) {
 			case mtRead:
-				i = i_mag = 0;
-				mutexLock(data_context.data_lock);
-				for (; i < sizeof(data_context.imu_data) / sizeof(float); i++) {
-					val[i] = data_context.imu_data[i];
+				switch (dev_type) {
+					case type_imu:
+						mutexLock(data_context.data_lock);
+						for (i = 0; i < sizeof(data_context.imu_data) / sizeof(float); i++) {
+							val[i] = data_context.imu_data[i];
+						}
+						mutexUnlock(data_context.data_lock);
+						break;
+
+					case type_magmeter:
+						mutexLock(data_context.data_lock);
+						for (i = 0; i < sizeof(data_context.mag_data) / sizeof(float); i++) {
+							val[i] = data_context.mag_data[i];
+						}
+						mutexUnlock(data_context.data_lock);
+						break;
+
+					case type_baro:
+						mutexLock(data_context.data_lock);
+						for (i = 0; i < sizeof(data_context.bar_data) / sizeof(float); i++) {
+							val[i] = data_context.bar_data[i];
+						}
+						mutexUnlock(data_context.data_lock);
+						break;
+
+					default:
+						msg.o.io.err = -ENODEV;
+						break;
 				}
-				for (; i_mag < sizeof(data_context.mag_data); i++, i_mag++) {
-					val[i] = data_context.mag_data[i_mag];
-				}
-				mutexUnlock(data_context.data_lock);
 				break;
 			default:
 				msg.o.io.err = -EINVAL;
 				break;
 		}
-
 		msgRespond(port, &msg, rid);
 	}
 }
+
 
 int main(int argc, char **argv)
 {
@@ -130,7 +166,19 @@ int main(int argc, char **argv)
 		printf("%s: magnetometer not found!\n", devname);
 		return 2;
 	}
-	initDevice(data_context.mag);
+	if (initDevice(data_context.mag) < 0) {
+		return 2;
+	}
+
+	/* Find and init barometer */
+	data_context.bar = probeDevices(type_baro);
+	if (data_context.bar == NULL) {
+		printf("%s: barometer not found!\n", devname);
+		return 2;
+	}
+	if (initDevice(data_context.bar) < 0) {
+		return 2;
+	}
 
 	/* Prepare port */
 	if (portCreate(&port) != EOK) {

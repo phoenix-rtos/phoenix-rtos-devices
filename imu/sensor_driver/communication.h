@@ -15,16 +15,20 @@
 
 #include <stdint.h>
 
+#include <imx6ull-sensi2c.h>
+
 /* earth gravitational acceleration in m/s^2 */
 #define EARTH_G 9.80665F
 /* 1 deg = DEG2RAD radians */
 #define DEG2RAD 0.0174532925F
+/* 1 mililgauss = MGAUS2UTESLA microtesla */
+#define MGAUS2UTESLA 0.1
 
-enum dev_types { type_imu,
-	type_magmeter };
 
 enum dev_families { icm20xxx,
 	ak099xx,
+	lsm9dsxx,
+	lps25xx,
 	unknown };
 
 typedef struct {
