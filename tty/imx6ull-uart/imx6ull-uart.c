@@ -91,6 +91,31 @@ uart_t uart = { 0 };
 
 #define BUFSIZE 4096
 
+/* register flags */
+#define USR1_RRDY      (1 << 9)
+#define USR1_TRDY      (1 << 13)
+#define USR1_FRAMERR   (1 << 10)
+#define USR1_PARITYERR (1 << 15)
+#define USR2_RDR       (1 << 0)
+#define USR2_ORE       (1 << 1)
+#define UTS_TXFULL     (1 << 4)
+#define UTS_SOFTRST    (1 << 0)
+#define UCR1_UARTEN    (1 << 0)
+#define UCR1_RRDYEN    (1 << 9)
+#define UCR1_TRDYEN    (1 << 13)
+#define UCR2_SRST      (1 << 0)
+#define UCR2_RXEN      (1 << 1)
+#define UCR2_TXEN      (1 << 2)
+#define UCR2_WS        (1 << 5)
+#define UCR2_IRTS      (1 << 14)
+#define UCR3_RXDMUXSEL (1 << 2)
+#define UCR3_RI        (1 << 8)
+#define UCR3_DCD       (1 << 9)
+#define UCR3_DSR       (1 << 10)
+#define UCR3_FRAERREN  (1 << 11)
+#define UCR3_PARERREN  (1 << 12)
+#define UCR4_OREN      (1 << 1)
+
 void uart_thr(void *arg)
 {
 	uint32_t port = (uint32_t)arg;
@@ -409,12 +434,14 @@ int main(int argc, char **argv)
 		return 2;
 
 	set_clk(uart.dev_no);
-	*(uart.base + ucr2) &= ~0;
+
+	/* software reset */
+	*(uart.base + ucr2) = 0;
+	while ((*(uart.base + uts) & UTS_SOFTRST))
+		;
 
 	/* set correct daisy for rx input */
 	set_mux(uart.dev_no, use_rts_cts);
-
-	while (!(*(uart.base + ucr2) & 1));
 
 	if (mutexCreate(&uart.lock) != EOK)
 		return 2;
@@ -424,7 +451,6 @@ int main(int argc, char **argv)
 
 	interrupt(uart_intr_number[uart.dev_no - 1], uart_intr, NULL, uart.cond, &uart.inth);
 
-
 	/* set TX & RX FIFO watermark, DCE mode */
 	*(uart.base + ufcr) = (0x04 << 10) | (0 << 6) | (0x1);
 
@@ -432,16 +458,17 @@ int main(int argc, char **argv)
 	*(uart.base + ufcr) &= ~(0b111 << 7);
 	*(uart.base + ufcr) |= 0b010 << 7;
 
-	/* enable uart and rx ready interrupt */
-	*(uart.base + ucr1) |= 0x0201;
-
-	/* soft reset, tx&rx enable, 8bit transmit */
-	*(uart.base + ucr2) = 0x4027;
+	/* ignore RTS pin, 8-bit transmit, RX enable, TX enable, soft reset */
+	*(uart.base + ucr2) = UCR2_IRTS | UCR2_WS | UCR2_RXEN | UCR2_TXEN | UCR2_SRST;
 
 	set_cflag(&uart, &uart.tty_common.term.c_cflag);
 	set_baudrate(&uart, baud);
 
-	*(uart.base + ucr3) = 0x704;
+	/* set muxed mode */
+	*(uart.base + ucr3) |= UCR3_RXDMUXSEL;
+
+	/* enable UART and receiver ready interrupt */
+	*(uart.base + ucr1) |= UCR1_UARTEN | UCR1_RRDYEN;
 
 	beginthread(uart_intrthr, 3, &stack0, 2048, NULL);
 	beginthread(uart_thr, 3, &stack, 2048, (void *)port);
