@@ -29,6 +29,7 @@
 #include <sys/stat.h>
 #include <sys/debug.h>
 #include <posix/utils.h>
+#include <fcntl.h>
 
 #include <libtty.h>
 #include <libklog.h>
@@ -77,15 +78,20 @@ typedef struct {
 	volatile uint32_t *base;
 	uint32_t mode;
 	uint16_t dev_no;
+	uint8_t busy;
 
 	handle_t cond;
 	handle_t inth;
 	handle_t lock;
+	handle_t openclose_lock;
 
 	libtty_common_t tty_common;
 } uart_t;
 
 uart_t uart = { 0 };
+
+#define READER 1
+#define WRITER 2
 
 #define MODULE_CLK 20000000
 
@@ -116,7 +122,78 @@ uart_t uart = { 0 };
 #define UCR3_PARERREN  (1 << 12)
 #define UCR4_OREN      (1 << 1)
 
-void uart_thr(void *arg)
+
+static int flags_to_id(int flags)
+{
+	switch (flags & (O_RDONLY | O_WRONLY | O_RDWR)) {
+		case O_RDONLY:
+			return READER;
+		case O_WRONLY:
+			return WRITER;
+		case O_RDWR:
+			return (READER | WRITER);
+		default:
+			return 0;
+	}
+}
+
+
+static int uart_open(int flags)
+{
+	/* TODO: set PGID? */
+	int id = flags_to_id(flags);
+
+	if (id <= 0)
+		return -EACCES;
+
+	mutexLock(uart.openclose_lock);
+
+	if (uart.busy & id) {
+		mutexUnlock(uart.openclose_lock);
+		return -EACCES;
+	}
+
+	if (id & READER) {
+		/* start RX */
+		*(uart.base + ucr2) |= UCR2_RXEN;
+		*(uart.base + ucr1) |= UCR1_RRDYEN;
+	}
+
+	uart.busy |= id;
+
+	mutexUnlock(uart.openclose_lock);
+
+	return id;
+}
+
+
+static int uart_close(id_t id)
+{
+	if (id <= 0)
+		return -EBADF;
+
+	mutexLock(uart.openclose_lock);
+
+	if ((uart.busy & id) != id) {
+		mutexUnlock(uart.openclose_lock);
+		return -EBADF;
+	}
+
+	if (id & READER) {
+		/* stop RX */
+		*(uart.base + ucr1) |= UCR1_RRDYEN;
+		*(uart.base + ucr2) |= UCR2_RXEN;
+	}
+
+	uart.busy &= ~id;
+
+	mutexUnlock(uart.openclose_lock);
+
+	return 0;
+}
+
+
+static void uart_thr(void *arg)
 {
 	uint32_t port = (uint32_t)arg;
 	msg_t msg;
@@ -132,15 +209,16 @@ void uart_thr(void *arg)
 
 		switch (msg.type) {
 		case mtOpen:
-			// TODO: set PGID?
+			msg.o.io.err = uart_open(msg.i.openclose.flags);
+			break;
+		case mtClose:
+			msg.o.io.err = uart_close(msg.i.openclose.oid.id);
 			break;
 		case mtWrite:
 			msg.o.io.err = libtty_write(&uart.tty_common, msg.i.data, msg.i.size, msg.i.io.mode);
 			break;
 		case mtRead:
 			msg.o.io.err = libtty_read(&uart.tty_common, msg.o.data, msg.o.size, msg.i.io.mode);
-			break;
-		case mtClose:
 			break;
 		case mtGetAttr:
 			if (msg.i.attr.type != atPollStatus) {
@@ -211,7 +289,7 @@ static void uart_intrthr(void *arg)
 }
 
 
-void set_clk(int dev_no)
+static void set_clk(int dev_no)
 {
 	platformctl_t uart_clk;
 
@@ -223,7 +301,8 @@ void set_clk(int dev_no)
 	platformctl(&uart_clk);
 }
 
-void set_mux(int dev_no, int use_rts_cts)
+
+static void set_mux(int dev_no, int use_rts_cts)
 {
 	platformctl_t uart_ctl;
 	int i, first_mux = 0;
@@ -251,7 +330,8 @@ void set_mux(int dev_no, int use_rts_cts)
 	}
 }
 
-void set_baudrate(void* _uart, speed_t baud)
+
+static void set_baudrate(void *_uart, speed_t baud)
 {
 	int md, in, div, res;
 
@@ -301,7 +381,8 @@ void set_baudrate(void* _uart, speed_t baud)
 	*(uartptr->base + ubmr) = (MODULE_CLK / res) - 1;
 }
 
-void set_cflag(void* _uart, tcflag_t* cflag)
+
+static void set_cflag(void *_uart, tcflag_t *cflag)
 {
 	uart_t* uartptr = (uart_t*) _uart;
 
@@ -326,7 +407,8 @@ void set_cflag(void* _uart, tcflag_t* cflag)
 		*(uartptr->base + ucr2) &= ~(1 << 6);
 }
 
-static void signal_txready(void* _uart)
+
+static void signal_txready(void *_uart)
 {
 	uart_t* uartptr = (uart_t*) _uart;
 
@@ -339,7 +421,8 @@ static void signal_txready(void* _uart)
 char __attribute__((aligned(8))) stack[2048];
 char __attribute__((aligned(8))) stack0[2048];
 
-static void print_usage(const char* progname) {
+static void print_usage(const char *progname)
+{
 	printf("Usage: %s [mode] [device] [speed] [parity] [use_rts_cts] [option] or no args for default settings (cooked, uart1, B115200, 8N1)\n", progname);
 	printf("\tmode: 0 - raw, 1 - cooked\n\tdevice: 1 to 8\n");
 	printf("\tspeed: baud_rate\n\tparity: 0 - none, 1 - odd, 2 - even\n");
@@ -446,6 +529,9 @@ int main(int argc, char **argv)
 	if (mutexCreate(&uart.lock) != EOK)
 		return 2;
 
+	if (mutexCreate(&uart.openclose_lock) != EOK)
+		return 2;
+
 	if (condCreate(&uart.cond) != EOK)
 		return 2;
 
@@ -458,8 +544,8 @@ int main(int argc, char **argv)
 	*(uart.base + ufcr) &= ~(0b111 << 7);
 	*(uart.base + ufcr) |= 0b010 << 7;
 
-	/* ignore RTS pin, 8-bit transmit, RX enable, TX enable, soft reset */
-	*(uart.base + ucr2) = UCR2_IRTS | UCR2_WS | UCR2_RXEN | UCR2_TXEN | UCR2_SRST;
+	/* ignore RTS pin, 8-bit transmit, TX enable, soft reset */
+	*(uart.base + ucr2) = UCR2_IRTS | UCR2_WS | UCR2_TXEN | UCR2_SRST;
 
 	set_cflag(&uart, &uart.tty_common.term.c_cflag);
 	set_baudrate(&uart, baud);
@@ -467,8 +553,8 @@ int main(int argc, char **argv)
 	/* set muxed mode */
 	*(uart.base + ucr3) |= UCR3_RXDMUXSEL;
 
-	/* enable UART and receiver ready interrupt */
-	*(uart.base + ucr1) |= UCR1_UARTEN | UCR1_RRDYEN;
+	/* enable UART */
+	*(uart.base + ucr1) |= UCR1_UARTEN;
 
 	beginthread(uart_intrthr, 3, &stack0, 2048, NULL);
 	beginthread(uart_thr, 3, &stack, 2048, (void *)port);
