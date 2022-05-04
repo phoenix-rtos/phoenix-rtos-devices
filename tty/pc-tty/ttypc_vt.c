@@ -664,7 +664,9 @@ static void _ttypc_vt_signaltxready(void *arg)
 	ttypc_vt_t *vt = (ttypc_vt_t *)arg;
 
 	while (libtty_txready(&vt->tty))
-		_ttypc_vt_sput(vt, (char)libtty_getchar(&vt->tty, NULL));
+		_ttypc_vt_sput(vt, (char)libtty_popchar(&vt->tty));
+
+	libtty_wake_writer(&vt->tty);
 }
 
 

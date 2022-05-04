@@ -105,7 +105,9 @@ static void uart_intThread(void *arg)
 
 		/* Transmit data until TX TTY buffer is empty or TX FIFO is full */
 		while (libtty_txready(&uart->tty) && !(*(uart->base + sr) & (0x1 << 4)))
-			*(uart->base + fifo) = libtty_getchar(&uart->tty, NULL);
+			*(uart->base + fifo) = libtty_popchar(&uart->tty);
+
+		libtty_wake_writer(&uart->tty);
 
 		/* RX Trigger IRQ occurred */
 		if (*(uart->base + isr) & 0x1) {
