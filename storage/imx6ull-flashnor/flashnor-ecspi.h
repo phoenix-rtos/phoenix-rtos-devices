@@ -22,7 +22,7 @@
 extern ssize_t flashnor_ecspiRead(unsigned int addr, void *buff, size_t bufflen);
 
 
-extern ssize_t flashnor_ecspiWrite(unsigned int addr, void *buff, size_t bufflen);
+extern ssize_t flashnor_ecspiWrite(unsigned int addr, const void *buff, size_t bufflen);
 
 
 extern int flashnor_ecspiEraseSector(unsigned int addr);

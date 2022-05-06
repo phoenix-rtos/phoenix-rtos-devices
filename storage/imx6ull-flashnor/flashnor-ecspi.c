@@ -55,6 +55,7 @@ enum {
 
 
 typedef struct {
+	const char *name;       /* Chip name */
 	unsigned char jedec[3]; /* Chip JEDEC ID */
 	unsigned int sectorsz;  /* Chip sector size in bytes */
 	unsigned int flashsz;   /* Chip storage size in bytes */
@@ -63,9 +64,9 @@ typedef struct {
 
 /* Supported NOR flash chips */
 static const chip_t chips[] = {
-	{ .jedec = { 0xef, 0x40, 0x15 }, .sectorsz = 4 * 1024, .flashsz = 2 * 1024 * 1024 }, /* Winbond 25Q16JV */
-	{ .jedec = { 0x1f, 0x47, 0x08 }, .sectorsz = 4 * 1024, .flashsz = 4 * 1024 * 1024 }, /* Adesto AT25FF321A */
-	{ .jedec = { 0x1f, 0x87, 0x01 }, .sectorsz = 4 * 1024, .flashsz = 4 * 1024 * 1024 }, /* Adesto AT25SF321A */
+	{ "Winbond 25Q16JV", { 0xef, 0x40, 0x15 }, 4 * 1024, 2 * 1024 * 1024 },
+	{ "Adesto AT25FF321A", { 0x1f, 0x47, 0x08 }, 4 * 1024, 4 * 1024 * 1024 },
+	{ "Adesto AT25SF321A", { 0x1f, 0x87, 0x01 }, 4 * 1024, 4 * 1024 * 1024 },
 };
 
 
@@ -147,7 +148,7 @@ ssize_t flashnor_ecspiRead(unsigned int addr, void *buff, size_t bufflen)
 }
 
 
-ssize_t flashnor_ecspiWrite(unsigned int addr, void *buff, size_t bufflen)
+ssize_t flashnor_ecspiWrite(unsigned int addr, const void *buff, size_t bufflen)
 {
 	unsigned char cmd[256];
 	size_t size, len = 0;
@@ -252,9 +253,12 @@ int flashnor_ecspiInit(unsigned int ndev, storage_t *dev)
 	if ((err = ecspi_exchangeBusy(ndev, data, data, sizeof(data))) < 0)
 		return err;
 	jedec = data + 1;
+	printf("imx6ull-flashnor: JEDEC ID: %#02x %#02x %#02x\n", jedec[0], jedec[1], jedec[2]);
 
 	for (i = 0; i < sizeof(chips) / sizeof(chips[0]); i++) {
 		if (!memcmp(jedec, chips[i].jedec, sizeof(chips[i].jedec))) {
+			printf("imx6ull-flashnor: %s %uMbit NOR\n", chips[i].name, 8 * chips[i].flashsz >> 20);
+
 			if ((err = mutexCreate(&flashnor_common.lock)) < 0)
 				return err;
 
