@@ -716,7 +716,8 @@ int flashdrv_devInit(storage_t *strg)
 	strg->dev->mtd->type = mtd_norFlash;
 	strg->dev->mtd->name = info->name;
 	strg->dev->mtd->metaSize = 0;
-	strg->dev->mtd->metaAvail = 0;
+	strg->dev->mtd->oobAvail = 0;
+	strg->dev->mtd->oobSize = 0;
 	strg->dev->mtd->writesz = 0x1;
 	strg->dev->mtd->writeBuffsz = CFI_SIZE_PAGE(info->cfi.pageSize);
 	strg->dev->mtd->erasesz = secSz < MTD_DEFAULT_ERASESZ ? MTD_DEFAULT_ERASESZ : secSz;
