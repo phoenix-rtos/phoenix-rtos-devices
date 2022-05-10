@@ -52,10 +52,12 @@ typedef struct {
 /* information about NAND flash configuration */
 typedef struct {
 	const char *name;
-	uint64_t size;    /* total NAND size in bytes */
-	uint32_t writesz; /* write page DATA size in bytes */
-	uint32_t metasz;  /* write page METADATA size in bytes */
-	uint32_t erasesz; /* erase block size in bytes (multiply of writesize) */
+	uint64_t size;     /* total NAND size in bytes */
+	uint32_t writesz;  /* write page DATA size in bytes */
+	uint32_t metasz;   /* write page METADATA size in bytes */
+	uint32_t erasesz;  /* erase block size in bytes (multiply of writesize) */
+	uint32_t oobsz;    /* out-of-bound (oob) data size */
+	uint32_t oobavail; /* available out-of-bound (oob) data size */
 } flashdrv_info_t;
 
 /* paddr: page address, so NAND address / writesz */
