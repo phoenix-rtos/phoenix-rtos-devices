@@ -144,7 +144,7 @@ static int flash_devCtl(oid_t *oid)
 }
 
 
-static void flash_msgLoop(void *arg, msg_t *msg)
+static void flash_msgHandler(void *arg, msg_t *msg)
 {
 	storage_t *strg;
 	mount_msg_t *mnt;
@@ -174,7 +174,7 @@ static void flash_msgLoop(void *arg, msg_t *msg)
 
 		case mtMount:
 			mnt = (mount_msg_t *)msg->i.raw;
-			msg->o.attr.err = storage_mountfs(storage_get(GET_STORAGE_ID(mnt->id)), mnt->fstype, NULL, 0, (oid_t *)msg->o.raw);
+			storage_mountfs(storage_get(GET_STORAGE_ID(mnt->id)), mnt->fstype, NULL, 0, (oid_t *)msg->o.raw);
 			break;
 
 		case mtDevCtl:
@@ -247,7 +247,7 @@ static int flash_createMtdDev(const storage_t *strg, oid_t *oid)
 		oid->id &= ~MTD_MASK;
 		oid->id |= MTD_CHAR;
 
-		res = snprintf(path, sizeof(path), "/dev/mtd%u", strg->dev->id);
+		res = snprintf(path, sizeof(path), "/dev/mtd%u", strg->dev->ctx->id);
 		if (res >= sizeof(path)) {
 			res = -ENAMETOOLONG;
 			fprintf(stderr, "zynq7000-flash: failed to build file path, err: %d\n", res);
@@ -275,7 +275,7 @@ static int flash_createMtdDev(const storage_t *strg, oid_t *oid)
 		oid->id &= ~MTD_MASK;
 		oid->id |= MTD_BLOCK;
 
-		res = snprintf(path, sizeof(path), "/dev/mtdblock%u", strg->dev->id);
+		res = snprintf(path, sizeof(path), "/dev/mtdblock%u", strg->dev->ctx->id);
 		if (res >= sizeof(path)) {
 			res = -ENAMETOOLONG;
 			fprintf(stderr, "zynq7000-flash: failed to build file path, err: %d\n", res);
@@ -516,7 +516,7 @@ int main(int argc, char **argv)
 	}
 
 	/* Initialize storage library */
-	res = storage_init(flash_msgLoop, 16);
+	res = storage_init(flash_msgHandler, 16);
 	if (res < 0) {
 		fprintf(stderr, "zynq7000-flash: failed to initialize storage library, err: %d\n", res);
 		return EXIT_FAILURE;
