@@ -72,7 +72,7 @@ struct {
 	int rootfs_partid;
 	const char *rootfs_fsname;
 
-	flashdrv_dmaBuff_t *dma;
+	flashdrv_dma_t *dma;
 	flashsrv_info_t info;
 
 	void *databuf; /* at least writesz + metasz */
@@ -227,7 +227,7 @@ static flashsrv_filesystem_t *flashsrv_mountFs(flashsrv_partition_t *partition, 
 
 static int flashsrv_erase(size_t start, size_t end)
 {
-	flashdrv_dmaBuff_t *dma;
+	flashdrv_dma_t *dma;
 	int err, erased = 0;
 	const unsigned int pages_per_block = flashsrv_common.info.erasesz / flashsrv_common.info.writesz;
 	unsigned int blockno;
@@ -299,7 +299,7 @@ static int flashsrv_partoff(id_t id, int raw, size_t start, size_t size, size_t 
 
 static int flashsrv_write(id_t id, size_t start, char *data, size_t size)
 {
-	flashdrv_dmaBuff_t *dma;
+	flashdrv_dma_t *dma;
 	int i, err;
 	char *databuf;
 	size_t partoff = 0;
@@ -344,7 +344,7 @@ static int flashsrv_write(id_t id, size_t start, char *data, size_t size)
 
 static int flashsrv_read(id_t id, size_t offset, char *data, size_t size)
 {
-	flashdrv_dmaBuff_t *dma;
+	flashdrv_dma_t *dma;
 	char *databuf;
 	size_t rp, totalBytes = 0;
 	size_t partoff = 0;
@@ -456,7 +456,7 @@ static int flashsrv_devErase(const flash_i_devctl_t *idevctl)
 
 static int flashsrv_devWriteRaw(flash_i_devctl_t *idevctl, char *data)
 {
-	flashdrv_dmaBuff_t *dma;
+	flashdrv_dma_t *dma;
 	int i, err;
 	char *databuf;
 	const unsigned int raw_page_size = flashsrv_common.info.writesz + flashsrv_common.info.metasz;
@@ -500,7 +500,7 @@ static int flashsrv_devWriteRaw(flash_i_devctl_t *idevctl, char *data)
 
 static int flashsrv_devWriteMeta(flash_i_devctl_t *idevctl, char* data)
 {
-	flashdrv_dmaBuff_t *dma;
+	flashdrv_dma_t *dma;
 	int i, err;
 	char *databuf;
 	size_t partoff;
@@ -543,7 +543,7 @@ static int flashsrv_devWriteMeta(flash_i_devctl_t *idevctl, char* data)
 
 static int flashsrv_devReadRaw(flash_i_devctl_t *idevctl, char *data)
 {
-	flashdrv_dmaBuff_t *dma;
+	flashdrv_dma_t *dma;
 	char *databuf;
 	size_t rp, partoff, totalBytes = 0;
 	const unsigned int raw_page_size = flashsrv_common.info.writesz + flashsrv_common.info.metasz;

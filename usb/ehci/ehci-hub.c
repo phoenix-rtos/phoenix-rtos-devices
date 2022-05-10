@@ -336,9 +336,8 @@ uint32_t ehci_getHubStatus(usb_dev_t *hub)
 }
 
 
-int ehci_roothubReq(usb_transfer_t *t)
+int ehci_roothubReq(usb_dev_t *hub, usb_transfer_t *t)
 {
-	usb_dev_t *hub = t->pipe->dev;
 	usb_setup_packet_t *setup = t->setup;
 	int ret;
 

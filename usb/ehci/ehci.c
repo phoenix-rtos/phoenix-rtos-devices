@@ -147,6 +147,7 @@ static void ehci_qtdsPut(ehci_t *ehci, ehci_qtd_t **head)
 			ehci->nqtds--;
 		}
 		LIST_ADD(&ehci->qtdPool, q);
+		q->qh = NULL;
 		ehci->nqtds++;
 	}
 	mutexUnlock(ehci->asyncLock);
@@ -546,8 +547,8 @@ static void ehci_transUpdate(hcd_t *hcd)
 		return;
 
 	do {
-		qh = (ehci_qh_t *)t->pipe->hcdpriv;
 		qtd = (ehci_qtd_t *)t->hcdpriv;
+		qh = qtd->qh;
 		cont = 0;
 		n = t->next;
 
@@ -616,15 +617,25 @@ static int ehci_qtdAdd(ehci_t *ehci, ehci_qtd_t **list, int token, size_t maxpac
 }
 
 
-static int ehci_transferEnqueue(hcd_t *hcd, usb_transfer_t *t)
+static void ehci_transferDequeue(hcd_t *hcd, usb_transfer_t *t)
 {
-	usb_pipe_t *pipe = t->pipe;
+	mutexLock(hcd->transLock);
+	/* note: not tested for interrupt transfers */
+	if (t->hcdpriv != NULL)
+		ehci_qtdsDeactivate((ehci_qtd_t *)t->hcdpriv);
+	ehci_transUpdate(hcd);
+	mutexUnlock(hcd->transLock);
+}
+
+
+static int ehci_transferEnqueue(hcd_t *hcd, usb_transfer_t *t, usb_pipe_t *pipe)
+{
 	ehci_qh_t *qh;
 	ehci_qtd_t *qtds = NULL;
 	int token = t->direction == usb_dir_in ? in_token : out_token;
 
-	if (usb_isRoothub(t->pipe->dev))
-		return ehci_roothubReq(t);
+	if (usb_isRoothub(pipe->dev))
+		return ehci_roothubReq(pipe->dev, t);
 
 	if (pipe->hcdpriv == NULL) {
 		if ((qh = ehci_qhAlloc(hcd->priv)) == NULL)
@@ -685,6 +696,7 @@ static int ehci_transferEnqueue(hcd_t *hcd, usb_transfer_t *t)
 	t->hcdpriv = qtds;
 	do {
 		ehci_qtdLink(qtds, qtds->next);
+		qtds->qh = qh;
 		qtds = qtds->next;
 	} while (qtds != t->hcdpriv);
 
@@ -703,6 +715,7 @@ static void ehci_pipeDestroy(hcd_t *hcd, usb_pipe_t *pipe)
 {
 	usb_transfer_t *t;
 	ehci_qh_t *qh;
+	ehci_qtd_t *qtds;
 
 	if (pipe->hcdpriv == NULL)
 		return;
@@ -719,8 +732,9 @@ static void ehci_pipeDestroy(hcd_t *hcd, usb_pipe_t *pipe)
 	/* Deactivate device's qtds */
 	if (t != NULL) {
 		do {
-			if (t->pipe == pipe)
-				ehci_qtdsDeactivate((ehci_qtd_t *)t->hcdpriv);
+			qtds = (ehci_qtd_t *)t->hcdpriv;
+			if (qtds->qh == pipe->hcdpriv)
+				ehci_qtdsDeactivate(qtds);
 			t = t->next;
 		} while (t != hcd->transfers);
 		ehci_transUpdate(hcd);
@@ -856,6 +870,7 @@ static const hcd_ops_t ehci_ops = {
 	.type = "ehci",
 	.init = ehci_init,
 	.transferEnqueue = ehci_transferEnqueue,
+	.transferDequeue = ehci_transferDequeue,
 	.pipeDestroy = ehci_pipeDestroy,
 	.getRoothubStatus = ehci_getHubStatus
 };
