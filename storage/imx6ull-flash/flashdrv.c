@@ -1006,6 +1006,8 @@ static void setup_flash_info(void)
 		flashdrv_common.info.writesz = 4096u;
 		flashdrv_common.info.metasz = 256u;
 		flashdrv_common.info.erasesz = 4096u * 64;
+		flashdrv_common.info.oobsz = 16;
+		flashdrv_common.info.oobavail = 16;
 	}
 	else if (flash_id->manufacturerid == 0x2c && flash_id->deviceid == 0xd3) {
 		flashdrv_common.info.name = "Micron MT29F8G 8Gbit NAND";
@@ -1013,6 +1015,8 @@ static void setup_flash_info(void)
 		flashdrv_common.info.writesz = 4096u;
 		flashdrv_common.info.metasz = 224u;
 		flashdrv_common.info.erasesz = 4096u * 64;
+		flashdrv_common.info.oobsz = 16;
+		flashdrv_common.info.oobavail = 16;
 	}
 	else {
 		/* use sane defaults */
@@ -1021,6 +1025,8 @@ static void setup_flash_info(void)
 		flashdrv_common.info.writesz = 4096u;
 		flashdrv_common.info.metasz = 224u;
 		flashdrv_common.info.erasesz = 4096u * 64;
+		flashdrv_common.info.oobsz = 16;
+		flashdrv_common.info.oobavail = 16;
 	}
 
 	flashdrv_dmadestroy(dma);
