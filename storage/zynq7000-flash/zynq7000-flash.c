@@ -328,7 +328,7 @@ static int flash_partAdd(const char *parentPath, off_t start, size_t size)
 		return err;
 	}
 
-	strg->start = start;
+	strg->start = parent->start + start;
 	strg->size = size;
 	strg->parent = parent;
 	strg->dev = parent->dev;
