@@ -58,7 +58,7 @@ static int trng_read(char *data, size_t size)
 {
 	uint32_t val;
 	uint32_t mctlVal;
-	size_t offs = 0;
+	size_t offs = 0, chunk;
 	int index = 0;
 
 	while (offs < size) {
@@ -71,9 +71,10 @@ static int trng_read(char *data, size_t size)
 			return offs;
 
 		val = trng_readEnt(index);
-		memcpy(data + offs, &val, sizeof(val));
+		chunk = (size - offs < sizeof(val)) ? size - offs : sizeof(val);
+		memcpy(data + offs, &val, chunk);
 
-		offs += sizeof(val);
+		offs += chunk;
 		index = (index + 1) % TRNG_ENT_COUNT;
 	}
 
