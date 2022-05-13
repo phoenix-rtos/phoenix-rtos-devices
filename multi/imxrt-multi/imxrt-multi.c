@@ -314,6 +314,10 @@ static int createDevFiles(void)
 #endif
 
 #if TRNG
+	if (mkFile(&dir, id_trng, "random", multi_port) < 0)
+		return -1;
+
+	/* TODO remove trng file - deprecated */
 	if (mkFile(&dir, id_trng, "trng", multi_port) < 0)
 		return -1;
 #endif
