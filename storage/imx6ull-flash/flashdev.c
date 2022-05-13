@@ -110,13 +110,13 @@ static int flashmtd_erase(struct _storage_t *strg, off_t offs, size_t size)
 
 		res = flashdrv_isbad(strg->dev->ctx->dma, pageID);
 		if (res != 0) {
-			printf("flashmtd_erase: skipping bad block: %lld\n", eb);
+			printf("flashmtd_erase: skipping bad block: %u\n", eb);
 			continue;
 		}
 
 		res = flashdrv_erase(strg->dev->ctx->dma, pageID);
 		if (res < 0) {
-			printf("flashmtd_erase: error while erasing block: %lld - marking as badblock", eb);
+			printf("flashmtd_erase: error while erasing block: %u - marking as badblock", eb);
 			res = flashdrv_markbad(strg->dev->ctx->dma, pageID);
 			if (res < 0) {
 				mutexUnlock(strg->dev->ctx->lock);
@@ -227,9 +227,7 @@ static ssize_t flashmtd_metaRead(struct _storage_t *strg, off_t offs, void *data
 		/* TODO: should we skip badblocks ? */
 		res = flashdrv_read(strg->dev->ctx->dma, offs / strg->dev->mtd->writesz, NULL, strg->dev->ctx->metabuf);
 		err = _flashmtd_errRead(res, strg->dev->ctx->metabuf, err, strg->dev->ctx->databuf);
-		if (err < 0) {
-			break;
-		}
+		/* TODO: handle error from _flashmtd_errRead */
 
 		chunksz = len > strg->dev->mtd->oobSize ? strg->dev->mtd->oobSize : len;
 		memcpy((unsigned char *)data + tempsz, strg->dev->ctx->metabuf, chunksz);
