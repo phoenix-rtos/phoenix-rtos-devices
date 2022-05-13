@@ -39,6 +39,7 @@ typedef struct {
 	uint8_t cmdTx[MAX_SIZE_CMD];
 
 	handle_t lock;
+	off_t start;
 } flash_reg_t;
 
 
@@ -359,7 +360,7 @@ static ssize_t _flashdrv_read(unsigned int id, addr_t offs, void *buff, size_t l
 
 /* Block device interface */
 
-static int _flashdrv_sync(unsigned int id, size_t regStart)
+static int _flashdrv_sync(unsigned int id)
 {
 	uint8_t *src;
 	addr_t dst;
@@ -378,7 +379,7 @@ static int _flashdrv_sync(unsigned int id, size_t regStart)
 	pgNb = sectSz / pageSz;
 
 	for (i = 0; i < pgNb; ++i) {
-		dst = regStart + fdrv_common.regs[id].sectID * sectSz + i * pageSz;
+		dst = fdrv_common.regs[id].start + fdrv_common.regs[id].sectID * sectSz + i * pageSz;
 		src = fdrv_common.regs[id].buff + i * pageSz;
 
 		res = _flashdrv_pageProgram(id, dst, src, pageSz);
@@ -398,12 +399,8 @@ static ssize_t flashdrv_blkRead(struct _storage_t *strg, off_t start, void *data
 {
 	ssize_t res;
 
-	if ((start + size) > strg->size) {
-		return -EINVAL;
-	}
-
 	mutexLock(fdrv_common.regs[strg->dev->ctx->id].lock);
-	res = _flashdrv_read(strg->dev->ctx->id, start + strg->start, data, size);
+	res = _flashdrv_read(strg->dev->ctx->id, start, data, size);
 	mutexUnlock(fdrv_common.regs[strg->dev->ctx->id].lock);
 
 	return res;
@@ -414,47 +411,46 @@ static ssize_t flashdrv_blkWrite(struct _storage_t *strg, off_t start, const voi
 {
 	ssize_t res;
 	size_t sectSz;
+	off_t regOffs;
 	unsigned int sectID, regID;
 
 	size_t chunkSz = 0, freeSz = 0, saveSz = 0;
-
-	if (strg == NULL || strg->dev == NULL || (start + size) > strg->size || data == NULL) {
-		return -EINVAL;
-	}
 
 	if (size == 0) {
 		return 0;
 	}
 
 	regID = strg->dev->ctx->id;
+
+	regOffs = start - fdrv_common.regs[regID].start;
 	sectSz = CFI_SIZE_SECTION(fdrv_common.info.cfi.regs[regID].size);
 
 	mutexLock(fdrv_common.regs[regID].lock);
 	while (saveSz < size) {
-		start += chunkSz;
-		sectID = start / sectSz;
+		regOffs += chunkSz;
+		sectID = regOffs / sectSz;
 
 		if (sectID != fdrv_common.regs[regID].sectID) {
-			res = _flashdrv_sync(regID, strg->start);
+			res = _flashdrv_sync(regID);
 			if (res < 0) {
 				mutexUnlock(fdrv_common.regs[regID].lock);
 				return res;
 			}
 
-			res = _flashdrv_read(regID, strg->start + (sectSz * sectID), fdrv_common.regs[regID].buff, sectSz);
+			res = _flashdrv_read(regID, fdrv_common.regs[regID].start + (sectSz * sectID), fdrv_common.regs[regID].buff, sectSz);
 			if (res < 0) {
 				mutexUnlock(fdrv_common.regs[regID].lock);
 				return res;
 			}
 
-			res = _flashdrv_sectorErase(regID, strg->start + (sectSz * sectID));
+			res = _flashdrv_sectorErase(regID, fdrv_common.regs[regID].start + (sectSz * sectID));
 			if (res < 0) {
 				mutexUnlock(fdrv_common.regs[regID].lock);
 				return res;
 			}
 
 			fdrv_common.regs[regID].sectID = sectID;
-			fdrv_common.regs[regID].buffPos = start - (sectID * sectSz);
+			fdrv_common.regs[regID].buffPos = regOffs - (sectID * sectSz);
 		}
 
 		freeSz = sectSz - fdrv_common.regs[regID].buffPos;
@@ -468,7 +464,7 @@ static ssize_t flashdrv_blkWrite(struct _storage_t *strg, off_t start, const voi
 			continue;
 		}
 
-		res = _flashdrv_sync(regID, strg->start);
+		res = _flashdrv_sync(regID);
 		if (res < 0) {
 			mutexUnlock(fdrv_common.regs[regID].lock);
 			return res;
@@ -489,7 +485,7 @@ static int flashdrv_blkSync(struct _storage_t *strg)
 	}
 
 	mutexLock(fdrv_common.regs[strg->dev->ctx->id].lock);
-	res = _flashdrv_sync(strg->dev->ctx->id, strg->start);
+	res = _flashdrv_sync(strg->dev->ctx->id);
 	mutexUnlock(fdrv_common.regs[strg->dev->ctx->id].lock);
 
 	return res;
@@ -679,6 +675,7 @@ int flashdrv_devInit(storage_t *strg)
 	reg->buffPos = 0;
 	reg->sectID = (uint32_t)-1;
 	reg->buff = malloc(secSz);
+	reg->start = flashdrv_regStart(id);
 	if (reg->buff == NULL) {
 		resourceDestroy(reg->lock);
 		return -ENOMEM;
@@ -702,7 +699,7 @@ int flashdrv_devInit(storage_t *strg)
 
 	/* Initialize storage device properties */
 	strg->parent = NULL;
-	strg->start = flashdrv_regStart(id);
+	strg->start = reg->start;
 	strg->size = CFI_SIZE_REGION(info->cfi.regs[id].size, info->cfi.regs[id].count);
 
 	/* NOR flash driver supports MTD interface */
