@@ -477,6 +477,10 @@ static void flashsrv_rawThread(void *arg)
 				flashsrv_rawCtl(memory, &msg);
 				mutexUnlock(memory->lock);
 				break;
+			case mtOpen:
+			case mtClose:
+				msg.o.io.err = EOK;
+				break;
 
 			default:
 				msg.o.io.err = -ENOSYS;
@@ -516,7 +520,10 @@ static void flashsrv_devThread(void *arg)
 				flashsrv_devCtl(memory, &msg);
 				mutexUnlock(memory->lock);
 				break;
-
+			case mtOpen:
+			case mtClose:
+				msg.o.io.err = EOK;
+				break;
 			default:
 				msg.o.io.err = -ENOSYS;
 				break;
