@@ -194,14 +194,6 @@ static ssize_t _flashdrv_pageProgram(unsigned int id, addr_t offs, const void *b
 	const flash_cfi_t *cfi = &fdrv_common.info.cfi;
 	const flash_cmd_t *cmd = &fdrv_common.info.cmds[flash_cmd_pp];
 
-	if (len == 0) {
-		return 0;
-	}
-
-	if (buff == NULL) {
-		return -EINVAL;
-	}
-
 	res = _flashdrv_welSet(id, flash_cmd_wren);
 	if (res < 0) {
 		return res;
@@ -243,10 +235,6 @@ static int _flashdrv_sectorErase(unsigned int id, addr_t offs)
 	time_t timeout;
 	const flash_cmd_t *cmd;
 	const flash_cfi_t *cfi = &fdrv_common.info.cfi;
-
-	if (offs >= CFI_SIZE_FLASH(cfi->chipSize)) {
-		return -EINVAL;
-	}
 
 	/* Check offset alligment */
 	sectorSz = CFI_SIZE_SECTION(cfi->regs[id].size);
@@ -325,14 +313,6 @@ static ssize_t _flashdrv_read(unsigned int id, addr_t offs, void *buff, size_t l
 	size_t cmdSz, dataSz, transferSz;
 	const flash_cmd_t *cmd = &fdrv_common.info.cmds[flash_cmd_qior];
 
-	if (len == 0) {
-		return 0;
-	}
-
-	if (buff == NULL || (offs + len) > CFI_SIZE_FLASH(fdrv_common.info.cfi.chipSize)) {
-		return -EINVAL;
-	}
-
 	_flashdrv_initCmdBuff(id, cmd, offs);
 
 	/* Cmd size is rounded to 4 bytes, it includes dummy cycles [b]. */
@@ -378,6 +358,13 @@ static int _flashdrv_sync(unsigned int id)
 	pageSz = CFI_SIZE_PAGE(cfi->pageSize);
 	pgNb = sectSz / pageSz;
 
+	res = _flashdrv_sectorErase(id, fdrv_common.regs[id].start + (sectSz * fdrv_common.regs[id].sectID));
+	if (res < 0) {
+		mutexUnlock(fdrv_common.regs[id].lock);
+		return res;
+	}
+
+
 	for (i = 0; i < pgNb; ++i) {
 		dst = fdrv_common.regs[id].start + fdrv_common.regs[id].sectID * sectSz + i * pageSz;
 		src = fdrv_common.regs[id].buff + i * pageSz;
@@ -395,6 +382,7 @@ static int _flashdrv_sync(unsigned int id)
 }
 
 
+/* TODO: check whether data range coincides with cache buffer and read data from cache */
 static ssize_t flashdrv_blkRead(struct _storage_t *strg, off_t start, void *data, size_t size)
 {
 	ssize_t res;
@@ -416,10 +404,6 @@ static ssize_t flashdrv_blkWrite(struct _storage_t *strg, off_t start, const voi
 
 	size_t chunkSz = 0, freeSz = 0, saveSz = 0;
 
-	if (size == 0) {
-		return 0;
-	}
-
 	regID = strg->dev->ctx->id;
 
 	regOffs = start - fdrv_common.regs[regID].start;
@@ -438,12 +422,6 @@ static ssize_t flashdrv_blkWrite(struct _storage_t *strg, off_t start, const voi
 			}
 
 			res = _flashdrv_read(regID, fdrv_common.regs[regID].start + (sectSz * sectID), fdrv_common.regs[regID].buff, sectSz);
-			if (res < 0) {
-				mutexUnlock(fdrv_common.regs[regID].lock);
-				return res;
-			}
-
-			res = _flashdrv_sectorErase(regID, fdrv_common.regs[regID].start + (sectSz * sectID));
 			if (res < 0) {
 				mutexUnlock(fdrv_common.regs[regID].lock);
 				return res;
@@ -479,10 +457,6 @@ static ssize_t flashdrv_blkWrite(struct _storage_t *strg, off_t start, const voi
 static int flashdrv_blkSync(struct _storage_t *strg)
 {
 	int res;
-
-	if (strg == NULL || strg->dev == NULL) {
-		return -EINVAL;
-	}
 
 	mutexLock(fdrv_common.regs[strg->dev->ctx->id].lock);
 	res = _flashdrv_sync(strg->dev->ctx->id);
