@@ -534,7 +534,7 @@ static int flashdrv_mtdErase(struct _storage_t *strg, off_t offs, size_t size)
 }
 
 
-static ssize_t flashdrv_mtdRead(struct _storage_t *strg, off_t offs, void *data, size_t len)
+static int flashdrv_mtdRead(struct _storage_t *strg, off_t offs, void *data, size_t len, size_t *retlen)
 {
 	int res;
 
@@ -542,11 +542,15 @@ static ssize_t flashdrv_mtdRead(struct _storage_t *strg, off_t offs, void *data,
 	res = _flashdrv_read(strg->dev->ctx->id, offs + strg->start, data, len);
 	mutexUnlock(fdrv_common.regs[strg->dev->ctx->id].lock);
 
-	return res;
+	if (res >= 0) {
+		*retlen = res;
+	}
+
+	return res < 0 ? res : EOK;
 }
 
 
-static ssize_t flashdrv_mtdWrite(struct _storage_t *strg, off_t offs, const void *data, size_t len)
+static int flashdrv_mtdWrite(struct _storage_t *strg, off_t offs, const void *data, size_t len, size_t *retlen)
 {
 	ssize_t res = 0;
 	size_t tempSz = 0, chunkSz = 0;
@@ -557,6 +561,7 @@ static ssize_t flashdrv_mtdWrite(struct _storage_t *strg, off_t offs, const void
 		chunkSz = len < (strg->dev->mtd->writeBuffsz - chunkSz) ? len : (strg->dev->mtd->writeBuffsz - chunkSz);
 		res = _flashdrv_pageProgram(strg->dev->ctx->id, strg->start + offs, data, chunkSz);
 		if (res < 0) {
+			*retlen = tempSz;
 			mutexUnlock(fdrv_common.regs[strg->dev->ctx->id].lock);
 			return res;
 		}
@@ -568,15 +573,18 @@ static ssize_t flashdrv_mtdWrite(struct _storage_t *strg, off_t offs, const void
 		chunkSz = ((len - tempSz) > strg->dev->mtd->writeBuffsz) ? strg->dev->mtd->writeBuffsz : (len - tempSz);
 		res = _flashdrv_pageProgram(strg->dev->ctx->id, strg->start + offs + tempSz, (const char *)data + tempSz, chunkSz);
 		if (res < 0) {
+			*retlen = tempSz;
 			mutexUnlock(fdrv_common.regs[strg->dev->ctx->id].lock);
 			return res;
 		}
 
 		tempSz += res;
 	}
+
+	*retlen = tempSz;
 	mutexUnlock(fdrv_common.regs[strg->dev->ctx->id].lock);
 
-	return tempSz;
+	return EOK;
 }
 
 
