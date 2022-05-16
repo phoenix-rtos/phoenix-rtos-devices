@@ -144,60 +144,7 @@ TEST(test_flashblk, info_blk)
 }
 
 
-/* Test read operation */
-
-TEST(test_flashblk, read_toInvalBuff)
-{
-	rbnode_t *node;
-	storage_t *strg;
-
-	for (node = lib_rbMinimum(common.strgs.root); node != NULL; node = lib_rbNext(node)) {
-		strg = lib_treeof(storage_t, node, node);
-
-		TEST_ASSERT_EQUAL(-EINVAL, strg->dev->blk->ops->read(strg, 0, NULL, 0x1000));
-	}
-}
-
-
-TEST(test_flashblk, read_fromInvalOffs)
-{
-	rbnode_t *node;
-	storage_t *strg;
-
-	for (node = lib_rbMinimum(common.strgs.root); node != NULL; node = lib_rbNext(node)) {
-		strg = lib_treeof(storage_t, node, node);
-
-		TEST_ASSERT_EQUAL(-EINVAL, strg->dev->blk->ops->read(strg, strg->size, common.txBuff, 0x1));
-	}
-}
-
-
 /* Test write & read operations */
-
-TEST(test_flashblk, write_outOfRange)
-{
-	rbnode_t *node;
-	storage_t *strg;
-
-	for (node = lib_rbMinimum(common.strgs.root); node != NULL; node = lib_rbNext(node)) {
-		strg = lib_treeof(storage_t, node, node);
-
-		TEST_ASSERT_EQUAL(-EINVAL, strg->dev->blk->ops->write(strg, strg->size, common.txBuff, 0x1));
-	}
-}
-
-
-TEST(test_flashblk, write_fromInvalBuff)
-{
-	rbnode_t *node;
-	storage_t *strg;
-
-	for (node = lib_rbMinimum(common.strgs.root); node != NULL; node = lib_rbNext(node)) {
-		strg = lib_treeof(storage_t, node, node);
-
-		TEST_ASSERT_EQUAL(-EINVAL, strg->dev->blk->ops->write(strg, 0, NULL, 0x1000));
-	}
-}
 
 
 TEST(test_flashblk, write_flashSync)
@@ -365,11 +312,6 @@ TEST_GROUP_RUNNER(test_flashblk)
 {
 	RUN_TEST_CASE(test_flashblk, info_blk);
 
-	RUN_TEST_CASE(test_flashblk, read_toInvalBuff);
-	RUN_TEST_CASE(test_flashblk, read_fromInvalOffs);
-
-	RUN_TEST_CASE(test_flashblk, write_outOfRange);
-	RUN_TEST_CASE(test_flashblk, write_fromInvalBuff);
 	RUN_TEST_CASE(test_flashblk, write_flashSync);
 	RUN_TEST_CASE(test_flashblk, write_flashNonSync);
 	RUN_TEST_CASE(test_flashblk, write_smallSectorSz);
