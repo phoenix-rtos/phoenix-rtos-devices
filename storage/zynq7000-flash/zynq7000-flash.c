@@ -40,6 +40,7 @@
 
 static ssize_t flash_read(oid_t *oid, offs_t offs, void *buff, size_t len)
 {
+	size_t retlen;
 	ssize_t res = -ENOSYS;
 	storage_t *strg = storage_get(GET_STORAGE_ID(oid->id));
 
@@ -50,7 +51,11 @@ static ssize_t flash_read(oid_t *oid, offs_t offs, void *buff, size_t len)
 		res = 0;
 	}
 	else if (strg->dev->mtd != NULL && strg->dev->mtd->ops != NULL && strg->dev->mtd->ops->read != NULL && GET_MTD_TYPE(oid->id) == MTD_CHAR) {
-		res = strg->dev->mtd->ops->read(strg, strg->start + offs, buff, len);
+		res = strg->dev->mtd->ops->read(strg, strg->start + offs, buff, len, &retlen);
+
+		if (retlen > 0) {
+			res = retlen;
+		}
 	}
 	else if (strg->dev->blk != NULL && strg->dev->blk->ops != NULL && strg->dev->blk->ops->read != NULL && GET_MTD_TYPE(oid->id) == MTD_BLOCK) {
 		res = strg->dev->blk->ops->read(strg, strg->start + offs, buff, len);
@@ -65,6 +70,7 @@ static ssize_t flash_read(oid_t *oid, offs_t offs, void *buff, size_t len)
 
 static ssize_t flash_write(oid_t *oid, offs_t offs, const void *buff, size_t len)
 {
+	size_t retlen;
 	ssize_t res = -ENOSYS;
 	storage_t *strg = storage_get(GET_STORAGE_ID(oid->id));
 
@@ -75,7 +81,11 @@ static ssize_t flash_write(oid_t *oid, offs_t offs, const void *buff, size_t len
 		res = 0;
 	}
 	else if (strg->dev->mtd != NULL && strg->dev->mtd->ops != NULL && strg->dev->mtd->ops->write != NULL && GET_MTD_TYPE(oid->id) == MTD_CHAR && buff != NULL) {
-		res = strg->dev->mtd->ops->write(strg, strg->start + offs, buff, len);
+		res = strg->dev->mtd->ops->write(strg, strg->start + offs, buff, len, &retlen);
+
+		if (retlen > 0) {
+			res = retlen;
+		}
 	}
 	else if (strg->dev->blk != NULL && strg->dev->blk->ops != NULL && strg->dev->blk->ops->write != NULL && GET_MTD_TYPE(oid->id) == MTD_BLOCK && buff != NULL) {
 		res = strg->dev->blk->ops->write(strg, strg->start + offs, buff, len);
