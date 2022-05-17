@@ -22,68 +22,31 @@
 #include "imx6ull-flashdrv.h"
 
 #define ECC_BITFLIP_THRESHOLD 10
-#define ECCN_BITFLIP_STRENGHT 14
-#define ECC0_BITFLIP_STRENGHT 16
 
 
 /* Auxiliary functions */
 
-/* Function derived from the previous code phoenix-rtos-filesystems/jffs/phoenix-rtos/mtd.c */
-static int _flashmtd_errRead(int ret, flashdrv_meta_t *meta, int status, void *data)
+static int _flashmtd_checkECC(flashdrv_meta_t *meta, unsigned int chunks)
 {
-	int max_bitflip = 0;
-	unsigned *blk;
-	int i, j, err = 0;
-	/* check current read status. if it is EBADMSG we have nothing to do here since
-	 * read is marked as uncorrectable */
-	if (status == -EBADMSG) {
-		return status;
-	}
+	unsigned int i;
 
-	/* check status for every block */
-	for (i = 0; i < sizeof(meta->errors) / sizeof(meta->errors[0]); i++) {
-		/* no error or all ones */
-		if (meta->errors[i] == 0x0 || meta->errors[i] == 0xff) {
-			continue;
-		}
-		/* uncorrectable errors but maybe block is erased and we can still use it */
-		/* TODO: check if this actually works */
-		else if (meta->errors[i] == 0xfe) {
-			err = 0;
-			if (i == 0) {
-				blk = (unsigned *)meta->metadata;
-				for (j = 0; j < sizeof(meta->metadata) / sizeof(unsigned); ++j) {
-					err += (sizeof(unsigned) * 8) - __builtin_popcount(*blk + j);
+	for (i = 0; i < chunks; i++) {
+		switch (meta->errors[i]) {
+			case flash_no_errors:
+			case flash_erased:
+				break;
+
+			case flash_uncorrectable:
+				return -EBADMSG;
+
+			default:
+				if (meta->errors[i] >= ECC_BITFLIP_THRESHOLD) {
+					return -EUCLEAN;
 				}
-
-				if (err > ECC0_BITFLIP_STRENGHT) {
-					return -EBADMSG;
-				}
-
-				memset(blk, 0xff, sizeof(meta->metadata));
-				max_bitflip = max(max_bitflip, err);
-			}
-			else {
-				blk = data + ((i - 1) * 512);
-				for (j = 0; j < 128; j++) {
-					err += (sizeof(unsigned) * 8) - __builtin_popcount(*(blk + j));
-				}
-
-				if (err > ECCN_BITFLIP_STRENGHT) {
-					return -EBADMSG;
-				}
-
-				memset(blk, 0xff, 512);
-				max_bitflip = max(max_bitflip, err);
-			}
-		}
-		/* correctable errors */
-		else {
-			max_bitflip = max(max_bitflip, (int)meta->errors[i]);
 		}
 	}
 
-	return max_bitflip >= ECC_BITFLIP_THRESHOLD ? -EUCLEAN : status;
+	return EOK;
 }
 
 
@@ -116,7 +79,7 @@ static int flashmtd_erase(struct _storage_t *strg, off_t offs, size_t size)
 
 		res = flashdrv_erase(strg->dev->ctx->dma, pageID);
 		if (res < 0) {
-			printf("flashmtd_erase: error while erasing block: %u - marking as badblock", eb);
+			printf("flashmtd_erase: error while erasing block: %u - marking as badblock\n", eb);
 			res = flashdrv_markbad(strg->dev->ctx->dma, pageID);
 			if (res < 0) {
 				mutexUnlock(strg->dev->ctx->lock);
@@ -135,51 +98,38 @@ static int flashmtd_erase(struct _storage_t *strg, off_t offs, size_t size)
 
 static int flashmtd_read(struct _storage_t *strg, off_t offs, void *data, size_t len, size_t *retlen)
 {
-	int res, err = 0;
+	uint32_t paddr;
+	int err = EOK;
 	size_t tempsz = 0, chunksz;
+	flashdrv_meta_t *meta = strg->dev->ctx->metabuf;
+
+	paddr = offs / strg->dev->mtd->writesz;
+	offs %= strg->dev->mtd->writesz;
 
 	mutexLock(strg->dev->ctx->lock);
-	if (offs % strg->dev->mtd->writesz) {
-		res = flashdrv_read(strg->dev->ctx->dma, offs / strg->dev->mtd->writesz, strg->dev->ctx->databuf, strg->dev->ctx->metabuf);
-		if (res == flash_uncorrectable) {
-			*retlen = tempsz;
-			mutexUnlock(strg->dev->ctx->lock);
-			return res;
-		}
-
-		err = _flashmtd_errRead(res, strg->dev->ctx->metabuf, err, strg->dev->ctx->databuf);
-		/* TODO: handle error from _flashmtd_errRead */
-
-		chunksz = (strg->dev->mtd->writesz - (offs % strg->dev->mtd->writesz));
-		if (chunksz > len) {
-			chunksz = len;
-		}
-
-		memcpy(data, (unsigned char *)strg->dev->ctx->databuf + (offs % strg->dev->mtd->writesz), chunksz);
-		tempsz += chunksz;
-		offs += chunksz;
-	}
-
 	while (tempsz < len) {
-		res = flashdrv_read(strg->dev->ctx->dma, offs / strg->dev->mtd->writesz, strg->dev->ctx->databuf, strg->dev->ctx->metabuf);
-		if (res == flash_uncorrectable) {
-			*retlen = tempsz;
-			mutexUnlock(strg->dev->ctx->lock);
+		/* TODO: should we skip badblocks ? */
+		err = flashdrv_read(strg->dev->ctx->dma, paddr, strg->dev->ctx->databuf, meta);
+		if (err < 0) {
+			err = -EIO;
 			break;
 		}
 
-		err = _flashmtd_errRead(res, strg->dev->ctx->metabuf, err, strg->dev->ctx->databuf);
-		/* TODO: handle error from _flashmtd_errRead */
+		err = _flashmtd_checkECC(meta, sizeof(meta->errors) / sizeof(meta->errors[0]));
+		if (err < 0) {
+			break;
+		}
 
-		chunksz = ((len - tempsz) > strg->dev->mtd->writesz) ? strg->dev->mtd->writesz : (len - tempsz);
-		memcpy((unsigned char *)data + tempsz, strg->dev->ctx->databuf, chunksz);
+		chunksz = min(len - tempsz, strg->dev->mtd->writesz - offs);
+		memcpy((unsigned char *)data + tempsz, (unsigned char *)strg->dev->ctx->databuf + offs, chunksz);
+		offs = 0;
 		tempsz += chunksz;
-		offs += chunksz;
+		paddr++;
 	}
 	*retlen = tempsz;
 	mutexUnlock(strg->dev->ctx->lock);
 
-	return err < 0 ? err : EOK;
+	return err;
 }
 
 
@@ -201,6 +151,7 @@ static int flashmtd_write(struct _storage_t *strg, off_t offs, const void *data,
 		pageID = offs / strg->dev->mtd->writesz;
 		res = flashdrv_write(strg->dev->ctx->dma, pageID, strg->dev->ctx->databuf, NULL);
 		if (res < 0) {
+			res = -EIO;
 			break;
 		}
 
@@ -216,32 +167,40 @@ static int flashmtd_write(struct _storage_t *strg, off_t offs, const void *data,
 
 static int flashmtd_metaRead(struct _storage_t *strg, off_t offs, void *data, size_t len, size_t *retlen)
 {
-	int res = 0, err = 0;
+	uint32_t paddr;
+	int err = EOK;
 	size_t tempsz = 0, chunksz;
 	flashdrv_meta_t *meta = strg->dev->ctx->metabuf;
 
 	if ((offs % strg->dev->mtd->writesz) != 0) {
 		return -EINVAL;
 	}
+	paddr = offs / strg->dev->mtd->writesz;
 
 	mutexLock(strg->dev->ctx->lock);
 	while (tempsz < len) {
-		memset(meta->errors, 0, sizeof(meta->errors));
 		/* TODO: should we skip badblocks ? */
-		res = flashdrv_read(strg->dev->ctx->dma, offs / strg->dev->mtd->writesz, NULL, strg->dev->ctx->metabuf);
-		err = _flashmtd_errRead(res, strg->dev->ctx->metabuf, err, strg->dev->ctx->databuf);
-		/* TODO: handle error from _flashmtd_errRead */
+		err = flashdrv_read(strg->dev->ctx->dma, paddr, NULL, meta);
+		if (err < 0) {
+			err = -EIO;
+			break;
+		}
 
-		chunksz = len > strg->dev->mtd->oobSize ? strg->dev->mtd->oobSize : len;
-		memcpy((unsigned char *)data + tempsz, strg->dev->ctx->metabuf, chunksz);
+		/* Check only metadata chunk (DATA0) */
+		err = _flashmtd_checkECC(meta, 1);
+		if (err < 0) {
+			break;
+		}
 
+		chunksz = min(len - tempsz, strg->dev->mtd->oobSize);
+		memcpy((unsigned char *)data + tempsz, meta->metadata, chunksz);
 		tempsz += chunksz;
-		offs += strg->dev->mtd->writesz;
+		paddr++;
 	}
 	*retlen = tempsz;
 	mutexUnlock(strg->dev->ctx->lock);
 
-	return err < 0 ? err : EOK;
+	return err;
 }
 
 
@@ -262,6 +221,7 @@ static int flashmtd_metaWrite(struct _storage_t *strg, off_t offs, const void *d
 
 		res = flashdrv_write(strg->dev->ctx->dma, offs / strg->dev->mtd->writesz, NULL, strg->dev->ctx->metabuf);
 		if (res < 0) {
+			res = -EIO;
 			break;
 		}
 
