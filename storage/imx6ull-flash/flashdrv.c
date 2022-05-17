@@ -270,11 +270,22 @@ static void dma_run(dma_t *dma, int channel)
 
 static int dma_irqHandler(unsigned int n, void *data)
 {
-	/* TODO: report errors, etc? */
-	flashdrv_common.result = *(flashdrv_common.dma + apbh_ch0_bar);
+	int comp, err;
+
+	/* Check interrupt flags */
+	comp = *(flashdrv_common.dma + apbh_ctrl1) & (1 << 0);
+	err = *(flashdrv_common.dma + apbh_ctrl2) & ((1 << 16) | (1 << 0));
+
+	/* Transform error status: 0: no error, 1: DMA termination, 2: AHB bus error */
+	/* (DMA termination with completion flag is not treated as error) */
+	err = (err >> 16) + (err & 1);
+	err -= err & comp;
 
 	/* Clear interrupt flags */
 	*(flashdrv_common.dma + apbh_ctrl1_clr) = 1;
+	*(flashdrv_common.dma + apbh_ctrl2_clr) = 1;
+
+	flashdrv_common.result = -err;
 
 	return 1;
 }
