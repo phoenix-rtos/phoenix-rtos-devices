@@ -133,7 +133,7 @@ static int flashmtd_erase(struct _storage_t *strg, off_t offs, size_t size)
 }
 
 
-static ssize_t flashmtd_read(struct _storage_t *strg, off_t offs, void *data, size_t len)
+static int flashmtd_read(struct _storage_t *strg, off_t offs, void *data, size_t len, size_t *retlen)
 {
 	int res, err = 0;
 	size_t tempsz = 0, chunksz;
@@ -142,6 +142,7 @@ static ssize_t flashmtd_read(struct _storage_t *strg, off_t offs, void *data, si
 	if (offs % strg->dev->mtd->writesz) {
 		res = flashdrv_read(strg->dev->ctx->dma, offs / strg->dev->mtd->writesz, strg->dev->ctx->databuf, strg->dev->ctx->metabuf);
 		if (res == flash_uncorrectable) {
+			*retlen = tempsz;
 			mutexUnlock(strg->dev->ctx->lock);
 			return res;
 		}
@@ -162,6 +163,7 @@ static ssize_t flashmtd_read(struct _storage_t *strg, off_t offs, void *data, si
 	while (tempsz < len) {
 		res = flashdrv_read(strg->dev->ctx->dma, offs / strg->dev->mtd->writesz, strg->dev->ctx->databuf, strg->dev->ctx->metabuf);
 		if (res == flash_uncorrectable) {
+			*retlen = tempsz;
 			mutexUnlock(strg->dev->ctx->lock);
 			break;
 		}
@@ -174,14 +176,14 @@ static ssize_t flashmtd_read(struct _storage_t *strg, off_t offs, void *data, si
 		tempsz += chunksz;
 		offs += chunksz;
 	}
-
+	*retlen = tempsz;
 	mutexUnlock(strg->dev->ctx->lock);
 
-	return tempsz > 0 ? tempsz : err;
+	return err < 0 ? err : EOK;
 }
 
 
-static ssize_t flashmtd_write(struct _storage_t *strg, off_t offs, const void *data, size_t len)
+static int flashmtd_write(struct _storage_t *strg, off_t offs, const void *data, size_t len, size_t *retlen)
 {
 	ssize_t res = 0;
 	blkcnt_t pageID;
@@ -205,13 +207,14 @@ static ssize_t flashmtd_write(struct _storage_t *strg, off_t offs, const void *d
 		tempsz += strg->dev->mtd->writesz;
 		offs += strg->dev->mtd->writesz;
 	}
+	*retlen = tempsz;
 	mutexUnlock(strg->dev->ctx->lock);
 
-	return tempsz > 0 ? tempsz : res;
+	return res < 0 ? res : EOK;
 }
 
 
-static ssize_t flashmtd_metaRead(struct _storage_t *strg, off_t offs, void *data, size_t len)
+static int flashmtd_metaRead(struct _storage_t *strg, off_t offs, void *data, size_t len, size_t *retlen)
 {
 	int res = 0, err = 0;
 	size_t tempsz = 0, chunksz;
@@ -235,13 +238,14 @@ static ssize_t flashmtd_metaRead(struct _storage_t *strg, off_t offs, void *data
 		tempsz += chunksz;
 		offs += strg->dev->mtd->writesz;
 	}
+	*retlen = tempsz;
 	mutexUnlock(strg->dev->ctx->lock);
 
-	return tempsz > 0 ? tempsz : err;
+	return err < 0 ? err : EOK;
 }
 
 
-static ssize_t flashmtd_metaWrite(struct _storage_t *strg, off_t offs, const void *data, size_t len)
+static int flashmtd_metaWrite(struct _storage_t *strg, off_t offs, const void *data, size_t len, size_t *retlen)
 {
 	int res = EOK;
 	size_t tempsz = 0, chunksz;
@@ -264,9 +268,10 @@ static ssize_t flashmtd_metaWrite(struct _storage_t *strg, off_t offs, const voi
 		tempsz += chunksz;
 		offs += strg->dev->mtd->writesz;
 	}
+	*retlen = tempsz;
 	mutexUnlock(strg->dev->ctx->lock);
 
-	return tempsz > 0 ? tempsz : res;
+	return res < 0 ? res : EOK;
 }
 
 

@@ -161,6 +161,8 @@ static int flashsrv_devErase(const flash_i_devctl_t *idevctl)
 
 static int flashsrv_devWriteMeta(flash_i_devctl_t *idevctl, char *data)
 {
+	int res;
+	size_t retlen;
 	off_t offs = idevctl->write.address;
 	size_t size = idevctl->write.size;
 	storage_t *strg = storage_get(idevctl->write.oid.id);
@@ -172,7 +174,12 @@ static int flashsrv_devWriteMeta(flash_i_devctl_t *idevctl, char *data)
 		return -EINVAL;
 	}
 
-	return strg->dev->mtd->ops->meta_write(strg, strg->start + offs, data, size);
+	res = strg->dev->mtd->ops->meta_write(strg, strg->start + offs, data, size, &retlen);
+	if (res >= 0) {
+		res = retlen;
+	}
+
+	return res;
 }
 
 
@@ -297,6 +304,8 @@ static int flashsrv_devMarkbad(const flash_i_devctl_t *idevctl)
 
 static ssize_t flashsrv_read(oid_t *oid, size_t offs, char *data, size_t size)
 {
+	int res;
+	size_t retlen;
 	storage_t *strg = storage_get(oid->id);
 
 	TRACE("Read off: %d, size: %d.", offs, size);
@@ -306,12 +315,19 @@ static ssize_t flashsrv_read(oid_t *oid, size_t offs, char *data, size_t size)
 		return -EINVAL;
 	}
 
-	return strg->dev->mtd->ops->read(strg, strg->start + offs, data, size);
+	res = strg->dev->mtd->ops->read(strg, strg->start + offs, data, size, &retlen);
+	if (res >= 0) {
+		res = retlen;
+	}
+
+	return res;
 }
 
 
 static ssize_t flashsrv_write(oid_t *oid, size_t offs, char *data, size_t size)
 {
+	int res;
+	size_t retlen;
 	storage_t *strg = storage_get(oid->id);
 
 	TRACE("Write off: %d, size: %d, ptr: %p", offs, size, data);
@@ -321,7 +337,12 @@ static ssize_t flashsrv_write(oid_t *oid, size_t offs, char *data, size_t size)
 		return -EINVAL;
 	}
 
-	return strg->dev->mtd->ops->write(strg, strg->start + offs, data, size);
+	res = strg->dev->mtd->ops->write(strg, strg->start + offs, data, size, &retlen);
+	if (res >= 0) {
+		res = retlen;
+	}
+
+	return res;
 }
 
 
