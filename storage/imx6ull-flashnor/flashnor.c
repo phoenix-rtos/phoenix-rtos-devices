@@ -291,6 +291,8 @@ int main(int argc, char *argv[])
 	}
 
 	kill(getppid(), SIGUSR1);
+	printf("imx6ull-flashnor: initialized\n");
+
 	storage_run(1, 4 * 4096);
 
 	return EOK;

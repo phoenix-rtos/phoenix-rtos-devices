@@ -99,7 +99,10 @@ ssize_t libtty_read_nonblock(libtty_common_t *tty, char *data, size_t size, unsi
 
 /* internal (HW) interface */
 int libtty_putchar(libtty_common_t *tty, unsigned char c, int *wake_reader);
+/* writer wake up is done outside of libtty if wake_writer is not NULL */
 unsigned char libtty_getchar(libtty_common_t *tty, int *wake_writer);
+unsigned char libtty_popchar(libtty_common_t *tty);
+void libtty_wake_writer(libtty_common_t *tty);
 void libtty_signal_pgrp(libtty_common_t* tty, int signal);
 
 int libtty_txready(libtty_common_t *tty);	// at least 1 character ready to be sent

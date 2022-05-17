@@ -170,20 +170,36 @@ ssize_t libtty_read_nonblock(libtty_common_t *tty, char *data, size_t size, unsi
 	return ret;
 }
 
+
+/* writer wake up is done outside of libtty if wake_writer is not NULL */
 unsigned char libtty_getchar(libtty_common_t *tty, int *wake_writer)
 {
-	if (wake_writer)
-		*wake_writer = 0;
+	unsigned char c = fifo_pop_back(tty->tx_fifo);
 
-	unsigned char ret = fifo_pop_back(tty->tx_fifo);
-	if (fifo_freespace(tty->tx_fifo) >= TX_FIFO_NOTFULL_WATERMARK) {
-		if (wake_writer)
-			*wake_writer = 1;
-		condSignal(tty->tx_waitq);
+	if (wake_writer != NULL) {
+		*wake_writer = fifo_freespace(tty->tx_fifo) >= TX_FIFO_NOTFULL_WATERMARK;
+	}
+	else {
+		libtty_wake_writer(tty);
 	}
 
-	return ret;
+	return c;
 }
+
+
+unsigned char libtty_popchar(libtty_common_t *tty)
+{
+	return fifo_pop_back(tty->tx_fifo);
+}
+
+
+void libtty_wake_writer(libtty_common_t *tty)
+{
+	if (fifo_freespace(tty->tx_fifo) >= TX_FIFO_NOTFULL_WATERMARK) {
+		condSignal(tty->tx_waitq);
+	}
+}
+
 
 int libtty_init(libtty_common_t* tty, libtty_callbacks_t* callbacks, unsigned int bufsize)
 {

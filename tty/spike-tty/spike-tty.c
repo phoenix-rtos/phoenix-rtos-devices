@@ -70,7 +70,9 @@ static void signal_txready(void *arg)
 	spiketty_t *spiketty = (spiketty_t *)arg;
 
 	while (libtty_txready(&spiketty->tty))
-		sbi_putchar(libtty_getchar(&spiketty->tty, NULL));
+		sbi_putchar(libtty_popchar(&spiketty->tty));
+
+	libtty_wake_writer(&spiketty->tty);
 }
 
 
