@@ -16,8 +16,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <sys/time.h>
 
+#include <sys/time.h>
 #include <sys/msg.h>
 #include <posix/utils.h>
 #include <sys/threads.h>
@@ -34,6 +34,10 @@ struct data_context_t {
 	float mag_data[3];
 	float bar_data[2];
 
+	struct timeval imu_timestamp;
+	struct timeval mag_timestamp;
+	struct timeval bar_timestamp;
+
 	handle_t data_lock;
 };
 
@@ -44,25 +48,29 @@ void daq(void *arg)
 	int i = 0, g = 0;
 	for (;;) {
 		/* TODO: add variable sampling frequency */
-		for (g = 0; g < 10; g++) {
+		for (g = 0; g < 4; g++) {
 			for (i = 0; i < 10; i++) {
-				/* high frequency reads, max 500 Hz */
+				/* high frequency reads, max 1000 Hz */
 				mutexLock(data_context.data_lock);
-				getAllData(data_context.imu, data_context.imu_data, sizeof(data_context.imu_data) / sizeof(float));
+				if (getAllData(data_context.imu, data_context.imu_data, sizeof(data_context.imu_data) / sizeof(float)) == 0) {
+					gettimeofday(&data_context.imu_timestamp, NULL);
+				}
 				mutexUnlock(data_context.data_lock);
-				usleep(1000 * 2);
+				usleep(1000 * 1);
 			}
-			/* medium frequency reads, max 50 Hz */
+			/* medium frequency reads, max 100 Hz */
 			mutexLock(data_context.data_lock);
 			getAllData(data_context.mag, data_context.mag_data, sizeof(data_context.mag_data) / sizeof(float));
+			gettimeofday(&data_context.mag_timestamp, NULL);
 			mutexUnlock(data_context.data_lock);
-			usleep(1000 * 2);
+			usleep(1000 * 1);
 		}
-		/* low frequency reads, max 5 Hz */
+		/* low frequency reads, max 10 Hz */
 		mutexLock(data_context.data_lock);
 		getAllData(data_context.bar, data_context.bar_data, sizeof(data_context.bar_data) / sizeof(float));
+		gettimeofday(&data_context.bar_timestamp, NULL);
 		mutexUnlock(data_context.data_lock);
-		usleep(1000 * 2);
+		usleep(1000 * 1);
 	}
 
 	endthread();
@@ -100,6 +108,7 @@ static void server(void *arg)
 						for (i = 0; i < sizeof(data_context.imu_data) / sizeof(float); i++) {
 							val[i] = data_context.imu_data[i];
 						}
+						*(struct timeval *)(&val[sizeof(data_context.imu_data) / sizeof(float)]) = data_context.imu_timestamp; /* write timestamp into msg after stored data */
 						mutexUnlock(data_context.data_lock);
 						break;
 
@@ -108,6 +117,7 @@ static void server(void *arg)
 						for (i = 0; i < sizeof(data_context.mag_data) / sizeof(float); i++) {
 							val[i] = data_context.mag_data[i];
 						}
+						*(struct timeval *)(&val[sizeof(data_context.mag_data) / sizeof(float)]) = data_context.mag_timestamp; /* write timestamp into msg after stored data */
 						mutexUnlock(data_context.data_lock);
 						break;
 
@@ -116,6 +126,7 @@ static void server(void *arg)
 						for (i = 0; i < sizeof(data_context.bar_data) / sizeof(float); i++) {
 							val[i] = data_context.bar_data[i];
 						}
+						*(struct timeval *)(&val[sizeof(data_context.bar_data) / sizeof(float)]) = data_context.bar_timestamp; /* write timestamp into msg after stored data */
 						mutexUnlock(data_context.data_lock);
 						break;
 

@@ -42,7 +42,7 @@ const imu_dev_t devicelist[] = {
 	{ .type = type_magmeter, .family = ak099xx, .model = ak09916, .name = "AK09916", .devAddr = 0x0C, .whoamiAddr = 0x01, .whoamiVal = 0x09 },
 
 	{ .type = type_baro, .family = lps25xx, .model = lps25hb_baro, .name = "LPS25HB_BARO", .devAddr = 0x5C, .whoamiAddr = 0x0F, .whoamiVal = 0xBD },
-	{ .type = type_baro, .family = lps25xx, .model = lps25hb_baro, .name = "LPS25HB_BARO1", .devAddr = 0x5D, .whoamiAddr = 0x0F, .whoamiVal = 0xBD },
+	{ .type = type_baro, .family = lps25xx, .model = lps25hb_baro, .name = "LPS25HB_BARO1", .devAddr = 0x5D, .whoamiAddr = 0x0F, .whoamiVal = 0xBD }
 };
 
 

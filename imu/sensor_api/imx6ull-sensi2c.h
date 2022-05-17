@@ -13,6 +13,8 @@
 #ifndef _PHOENIX_ULL_SENSI2C_H
 #define _PHOENIX_ULL_SENSI2C_H
 
+#include <sys/time.h>
+
 /* available device types */
 enum dev_types { type_imu, /* 7DoF (accel + gyro + temp) inertial measurement device */
 	type_magmeter,         /* 3DoF magnetometer device */
@@ -31,6 +33,8 @@ struct sens_imu_t {
 	float gyr_y;   /* angular rate y-axis in rad/s */
 	float gyr_z;   /* angular rate z-axis in rad/s */
 	float temp;    /* temperature in C */
+
+	struct timeval timestamp;
 };
 
 /* 3DoF magnetometer readings in uT */
@@ -38,12 +42,16 @@ struct sens_mag_t {
 	float mag_x; /* x-axis magnetic flux in uT */
 	float mag_y; /* y-axis magnetic flux in uT */
 	float mag_z; /* z-axis magnetic flux in uT */
+
+	struct timeval timestamp;
 };
 
 /* 2DoF barometer readings: pressure, barometer-joined temperature */
 struct sens_baro_t {
 	float press;     /* pressure in hPa */
 	float baro_temp; /* temperature in C */
+
+	struct timeval timestamp;
 };
 
 /* Returns latest measurements of 7DoF IMU. Unavailable data is set to NaN */

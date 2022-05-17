@@ -51,8 +51,8 @@ int lps25xx_init(const imu_dev_t *dev)
 	int err;
 
 	/* all subdevices have common init, thus initing them here */
-	err = (i2c_regWrite(dev->devAddr, REG_RES_CONF, (0 | VAL_AVGT_8 | VAL_AVGP_8)) < 0);
-	err = err || (i2c_regWrite(dev->devAddr, REG_CTRL_REG1, (0 | VAL_PD_ACTIVE_MODE | VAL_ODR_7HZ)) < 0);
+	err = (i2c_regWrite(dev->devAddr, REG_RES_CONF, (0 | VAL_AVGT_8 | VAL_AVGP_128)) < 0);
+	err = err || (i2c_regWrite(dev->devAddr, REG_CTRL_REG1, (0 | VAL_PD_ACTIVE_MODE | VAL_ODR_25HZ)) < 0);
 	usleep(1000 * 10);
 
 	if (err) {
