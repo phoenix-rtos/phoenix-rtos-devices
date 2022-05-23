@@ -13,9 +13,6 @@
  * %LICENSE%
  */
 
-#include "lf_fifo.h"
-#include "../libtty/fifo.h"
-
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,6 +33,7 @@
 #include <syslog.h>
 
 #include <libtty.h>
+#include <libtty-lf-fifo.h>
 #include <libklog.h>
 
 #include <phoenix/arch/imx6ull.h>
