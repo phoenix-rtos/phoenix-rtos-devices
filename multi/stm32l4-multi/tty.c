@@ -23,6 +23,7 @@
 #include <sys/file.h>
 #include <sys/threads.h>
 #include <libtty.h>
+#include <libtty-lf-fifo.h>
 
 #include "stm32l4-multi.h"
 #include "config.h"
@@ -30,6 +31,7 @@
 #include "gpio.h"
 #include "tty.h"
 #include "rcc.h"
+
 
 #define TTY1_POS 0
 #define TTY2_POS (TTY1_POS + TTY1)
@@ -60,7 +62,8 @@ typedef struct {
 
 	libtty_common_t tty_common;
 
-	volatile unsigned char rxbuff;
+	uint8_t rx_fifo_buffer[16];
+	lf_fifo_t rx_fifo;
 	volatile int rxready;
 } tty_ctx_t;
 
@@ -99,7 +102,7 @@ static int tty_irqHandler(unsigned int n, void *arg)
 		/* Clear overrun error bit */
 		*(ctx->base + icr) |= (1 << 3);
 
-		ctx->rxbuff = *(ctx->base + rdr);
+		lf_fifo_push(&ctx->rx_fifo, *(ctx->base + rdr));
 		ctx->rxready = 1;
 	}
 
@@ -115,19 +118,29 @@ static void tty_irqthread(void *arg)
 	tty_ctx_t *ctx = (tty_ctx_t *)arg;
 	int keptidle = 0;
 
-	/* TODO add small TX and RX buffers that can be directly read / written in irq handlers */
 
 	while (1) {
+		uint8_t rxbyte;
+		unsigned rxcount;
+
 		mutexLock(ctx->irqlock);
 		while ((!ctx->rxready && !(tty_txready(ctx) && (libtty_txready(&ctx->tty_common) || keptidle))) || !(*(ctx->base + cr1) & 1))
 			condWait(ctx->cond, ctx->irqlock, 0);
 		mutexUnlock(ctx->irqlock);
 
-		if (ctx->rxready) {
-			libtty_putchar(&ctx->tty_common, ctx->rxbuff, NULL);
-			ctx->rxready = 0;
+		ctx->rxready = 0;
+		dataBarier();
+
+		/* limiting byte count to 8 to avoid starving tx */
+		for (rxcount = 8; rxcount && lf_fifo_pop(&ctx->rx_fifo, &rxbyte); rxcount--) {
+			libtty_putchar(&ctx->tty_common, rxbyte, NULL);
+		}
+		if (!rxcount) {
+			/* aborted due rxcount limit - setting rxready to skip next condWait */
+			ctx->rxready = 1;
 		}
 
+		/* TODO add small TX fifo that can be read directly from IRQ */
 		if (libtty_txready(&ctx->tty_common)) {
 			if (tty_txready(ctx)) {
 				if (!keptidle) {
@@ -416,6 +429,7 @@ int tty_init(unsigned int *port)
 		condCreate(&ctx->cond);
 
 		ctx->base = info[uart - usart1].base;
+		lf_fifo_init(&ctx->rx_fifo, ctx->rx_fifo_buffer, sizeof(ctx->rx_fifo_buffer));
 		ctx->rxready = 0;
 		ctx->bits = -1;
 		ctx->parity = -1;

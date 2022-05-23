@@ -13,10 +13,13 @@
  * %LICENSE%
  */
 
-#ifndef _LF_FIFO_H
-#define _LF_FIFO_H
+#ifndef LIBTTY_LF_FIFO_H
+#define LIBTTY_LF_FIFO_H
 
 #include <stdint.h>
+
+/* TODO: consider merging with libtty/fifo.h */
+/* TODO: move into corelibs */
 
 typedef struct lf_fifo_s lf_fifo_t;
 
