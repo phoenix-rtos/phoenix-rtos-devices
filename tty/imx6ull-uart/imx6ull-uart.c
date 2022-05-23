@@ -80,9 +80,6 @@
 #define UCR3_RI        (1 << 8)
 #define UCR3_DCD       (1 << 9)
 #define UCR3_DSR       (1 << 10)
-#define UCR3_FRAERREN  (1 << 11)
-#define UCR3_PARERREN  (1 << 12)
-#define UCR4_OREN      (1 << 1)
 
 enum { urxd = 0, utxd = 16, ucr1 = 32, ucr2, ucr3, ucr4, ufcr, usr1, usr2,
 	uesc, utim, ubir, ubmr, ubrc, onems, uts, umcr };
@@ -142,6 +139,10 @@ typedef struct {
 		uint32_t frame;
 		uint32_t hw_overrun;
 		uint32_t sw_overrun;
+		uint32_t last_parity;
+		uint32_t last_frame;
+		uint32_t last_hw_overrun;
+		uint32_t last_sw_overrun;
 	} counters;
 
 	/* unprocessed characters read from HW FIFO */
@@ -295,58 +296,59 @@ static void uart_thr(void *arg)
 
 static int uart_intr(unsigned int intr, void *data)
 {
-	uint8_t flags = 0;
-	uint32_t ctrl1 = *(uart.base + ucr1);
+	/* TX */
+	*(uart.base + ucr1) &= ~UCR1_TRDYEN;
+
+	/* RX */
+	if (*(uart.base + ucr1) & UCR1_RRDYEN) {
+		while ((*(uart.base + usr2) & USR2_RDR)) {
+			/* NOTE: lock-free push */
+			if (!lf_fifo_push(&uart.rx_sw_fifo, *(uart.base + urxd))) {
+				uart.counters.sw_overrun++;
+			}
+		}
+	}
+
+	return 0;
+}
+
+
+static void check_errors(void)
+{
 	uint32_t stat1 = *(uart.base + usr1);
 	uint32_t stat2 = *(uart.base + usr2);
 
-	/* check for errors */
 	if (stat1 & USR1_PARITYERR) {
 		*(uart.base + usr1) = USR1_PARITYERR;
 		uart.counters.parity++;
-		flags |= PARITY_ERR;
 	}
 	if (stat1 & USR1_FRAMERR) {
 		*(uart.base + usr1) = USR1_FRAMERR;
 		uart.counters.frame++;
-		flags |= FRAME_ERR;
 	}
 	if (stat2 & USR2_ORE) {
 		*(uart.base + usr2) = USR2_ORE;
 		uart.counters.hw_overrun++;
-		flags |= HW_OVERRUN_ERR;
 	}
 
-	/* RX */
-	if ((ctrl1 & UCR1_RRDYEN) && (stat1 & USR1_RRDY)) {
-		while ((*(uart.base + usr2) & USR2_RDR)) {
-			/* NOTE: lock-free push */
-			if (lf_fifo_push(&uart.rx_sw_fifo, *(uart.base + urxd))) {
-				flags |= RX_DONE;
-			}
-			else {
-				uart.counters.sw_overrun++;
-				flags |= SW_OVERRUN_ERR;
-			}
+	if (uart.print_errors) {
+		if (uart.counters.last_parity != uart.counters.parity) {
+			log_printf(LOG_WARNING, "parity error (%u)\n", uart.counters.parity);
+			uart.counters.last_parity = uart.counters.parity;
+		}
+		if (uart.counters.last_frame != uart.counters.frame) {
+			log_printf(LOG_WARNING, "frame error (%u)\n", uart.counters.frame);
+			uart.counters.last_frame = uart.counters.frame;
+		}
+		if (uart.counters.last_hw_overrun != uart.counters.hw_overrun) {
+			log_printf(LOG_WARNING, "hw_overrun (%u)\n", uart.counters.hw_overrun);
+			uart.counters.last_hw_overrun = uart.counters.hw_overrun;
+		}
+		if (uart.counters.last_sw_overrun != uart.counters.sw_overrun) {
+			log_printf(LOG_WARNING, "sw_overrun (%u)\n", uart.counters.sw_overrun);
+			uart.counters.last_sw_overrun = uart.counters.sw_overrun;
 		}
 	}
-
-	/* TX */
-	if ((ctrl1 & UCR1_TRDYEN) && (stat1 & USR1_TRDY)) {
-		while (libtty_txready(&uart.tty_common) && !(*(uart.base + uts) & UTS_TXFULL)) {
-			/* FIXME: potential data race on tx_fifo (lock-free access) */
-			*(uart.base + utxd) = libtty_popchar(&uart.tty_common);
-			flags |= TX_DONE;
-		}
-
-		if (!libtty_txready(&uart.tty_common)) {
-			*(uart.base + ucr1) &= ~UCR1_TRDYEN;
-		}
-	}
-
-	__atomic_or_fetch(&uart.int_flags, flags, __ATOMIC_RELAXED);
-
-	return (flags ? 0 : -1);
 }
 
 
@@ -361,41 +363,47 @@ static void uart_process_rx(void)
 }
 
 
+static void uart_process_tx(void)
+{
+	int wake = 0;
+
+	while (libtty_txready(&uart.tty_common)) {
+		if ((*(uart.base + uts) & UTS_TXFULL)) {
+			*(uart.base + ucr1) |= UCR1_TRDYEN;
+			break;
+		}
+
+		/* FIXME: potential data race on tx_fifo (lock-free access) */
+		*(uart.base + utxd) = libtty_popchar(&uart.tty_common);
+
+		wake = 1;
+	}
+
+	if (wake) {
+		libtty_wake_writer(&uart.tty_common);
+	}
+}
+
+
 static void uart_intrthr(void *arg)
 {
-	uint8_t flags;
-
 	mutexLock(uart.lock);
 
 	for (;;) {
-		do {
-			flags = __atomic_exchange_n(&uart.int_flags, 0, __ATOMIC_RELAXED);
-
-			if (uart.print_errors) {
-				if (flags & PARITY_ERR) {
-					log_printf(LOG_WARNING, "parity error (%u)\n", uart.counters.parity);
-				}
-				if (flags & FRAME_ERR) {
-					log_printf(LOG_WARNING, "frame error (%u)\n", uart.counters.frame);
-				}
-				if (flags & HW_OVERRUN_ERR) {
-					log_printf(LOG_WARNING, "hw_overrun (%u)\n", uart.counters.hw_overrun);
-				}
-				if (flags & SW_OVERRUN_ERR) {
-					log_printf(LOG_WARNING, "sw_overrun (%u)\n", uart.counters.sw_overrun);
-				}
-			}
-
-			if (flags & TX_DONE) {
-				libtty_wake_writer(&uart.tty_common);
-			}
-
-			if (flags & RX_DONE) {
-				uart_process_rx();
-			}
-		} while (flags);
+		check_errors();
+		uart_process_rx();
+		uart_process_tx();
 
 		condWait(uart.cond, uart.lock, 0);
+
+		/* NOTE: make sure TX interrupt is disabled (sticky cond) */
+		*(uart.base + ucr1) &= ~UCR1_TRDYEN;
+
+		if ((*(uart.base + ucr1) & UCR1_RRDYEN) && (*(uart.base + usr1) & USR1_RRDY)) {
+			/* NOTE: disable & enable RX interrupt to avoid interrupt blocking (edge triggered) */
+			*(uart.base + ucr1) &= ~UCR1_RRDYEN;
+			*(uart.base + ucr1) |= UCR1_RRDYEN;
+		}
 	}
 
 	mutexUnlock(uart.lock);
@@ -523,23 +531,7 @@ static void set_cflag(void *_uart, tcflag_t *cflag)
 
 static void signal_txready(void *_uart)
 {
-	/* disable TX interrupt to ensure that interrupt handler doesn't touch TX buffer */
-	*(uart.base + ucr1) &= ~UCR1_TRDYEN;
-
-	/* push as many characters as possible to HW FIFO at once */
-	while (libtty_txready(&uart.tty_common)) {
-		if ((*(uart.base + uts) & UTS_TXFULL)) {
-			/* interrupt handler will take care of remaining characters */
-			*(uart.base + ucr1) |= UCR1_TRDYEN;
-			return;
-		}
-
-		/* FIXME: potential data race on tx_fifo (lock-free access) */
-		*(uart.base + utxd) = libtty_popchar(&uart.tty_common);
-	}
-
-	/* all characters have been pushed directly */
-	libtty_wake_writer(&uart.tty_common);
+	condSignal(uart.cond);
 }
 
 
@@ -692,11 +684,8 @@ int main(int argc, char **argv)
 	set_cflag(&uart, &uart.tty_common.term.c_cflag);
 	set_baudrate(&uart, baud);
 
-	/* enable parity error and frame error interrupts, set muxed mode */
-	*(uart.base + ucr3) |= UCR3_PARERREN | UCR3_FRAERREN | UCR3_RXDMUXSEL;
-
-	/* enable overrun interrupt */
-	*(uart.base + ucr4) |= UCR4_OREN;
+	/* set muxed mode */
+	*(uart.base + ucr3) |= UCR3_RXDMUXSEL;
 
 	/* enable UART */
 	*(uart.base + ucr1) |= UCR1_UARTEN;
