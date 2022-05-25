@@ -560,7 +560,7 @@ int main(int argc, char **argv)
 {
 	uint32_t port;
 	char uartn[sizeof("uartx") + 1];
-	oid_t dev;
+	oid_t dev, dir;
 	int err;
 	speed_t baud = B115200;
 	int parity = 0;
@@ -695,6 +695,10 @@ int main(int argc, char **argv)
 
 	dev.port = port;
 	dev.id = 0;
+
+	while (lookup("/", NULL, &dir) < 0) {
+		usleep(10000);
+	}
 
 	if ((err = create_dev(&dev, uartn)))
 		debug("imx6ull-uart: Could not create device file\n");
