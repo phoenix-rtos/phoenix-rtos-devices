@@ -6,5 +6,5 @@
 # Copyright 2021 Phoenix Systems
 #
 
-DEFAULT_COMPONENTS := zynq7000-uart
+DEFAULT_COMPONENTS := zynq7000-uart zynq7000-pwm
 DEFAULT_COMPONENTS += libflashdrv-zynq test_flashdrv
