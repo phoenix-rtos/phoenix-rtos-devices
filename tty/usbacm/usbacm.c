@@ -31,7 +31,6 @@
 #include "../libtty/fifo.h"
 
 #define USBACM_N_MSG_THREADS 2
-#define USBACM_N_UMSG_THREADS 2
 
 #define RX_FIFO_SIZE  8192
 #define RX_STACK_SIZE 2048
@@ -41,6 +40,11 @@
 #ifndef USBACM_N_URBS
 #define USBACM_N_URBS 2
 #endif
+
+#ifndef USBACM_UMSG_PRIO
+#define USBACM_UMSG_PRIO 3
+#endif
+
 
 typedef struct _usbacm_dev {
 	struct _usbacm_dev *prev, *next;
@@ -54,21 +58,24 @@ typedef struct _usbacm_dev {
 	int id;
 	int fileId;
 	int flags;
-	volatile int rxRunning;
+	pid_t clientpid;
 	volatile int rfcnt;
 	volatile int thrFinished;
 	unsigned port;
 	fifo_t *fifo;
+	char *rxptr;
+	int rxrunning;
+	size_t rxbuflen;
 	oid_t oid;
-	handle_t fifoLock;
-	handle_t fifoEmpty;
+	handle_t rxLock;
+	handle_t rxCond;
 	int urbs[USBACM_N_URBS];
+	int urbctrl;
 } usbacm_dev_t;
 
 
 static struct {
 	char stack[USBACM_N_MSG_THREADS][1024] __attribute__((aligned(8)));
-	char ustack[USBACM_N_UMSG_THREADS][4096] __attribute__((aligned(8)));
 	usbacm_dev_t *devices;
 	unsigned drvport;
 	unsigned msgport;
@@ -106,26 +113,7 @@ static const usb_modeswitch_t modeswitch[] = {
 };
 
 
-static int usbacm_init(usbacm_dev_t *dev)
-{
-	usb_setup_packet_t setup;
-
-	setup.bmRequestType = REQUEST_DIR_HOST2DEV | REQUEST_TYPE_CLASS | REQUEST_RECIPIENT_INTERFACE;
-	setup.bRequest = USB_CDC_REQ_SET_CONTROL_LINE_STATE;
-	setup.wIndex = dev->instance.interface;
-	setup.wValue = 3;
-	setup.wLength = 0;
-
-	if (usb_transferControl(dev->pipeCtrl, &setup, NULL, 0, usb_dir_out) < 0) {
-		fprintf(stderr, "usbacm: Control transfer failed\n");
-		return -EIO;
-	}
-
-	return EOK;
-}
-
-
-static int usbacm_deinit(usbacm_dev_t *dev)
+static int usbacm_rxStop(usbacm_dev_t *dev)
 {
 	usb_setup_packet_t setup;
 
@@ -135,30 +123,18 @@ static int usbacm_deinit(usbacm_dev_t *dev)
 	setup.wValue = 0;
 	setup.wLength = 0;
 
-	if (usb_transferControl(dev->pipeCtrl, &setup, NULL, 0, usb_dir_out) < 0) {
-		fprintf(stderr, "usbacm: Control transfer failed\n");
-		return -EIO;
-	}
-
-	return EOK;
+	return usb_transferAsync(dev->pipeCtrl, dev->urbctrl, 0, &setup);
 }
 
 
 static void usbacm_fifoPush(usbacm_dev_t *dev, char *data, size_t size)
 {
 	unsigned i;
-	int empty;
 
-	mutexLock(dev->fifoLock);
-	empty = fifo_is_empty(dev->fifo);
-
+	mutexLock(dev->rxLock);
 	for (i = 0; i < size; i++)
 		fifo_push(dev->fifo, data[i]);
-
-	mutexUnlock(dev->fifoLock);
-
-	if (empty)
-		condSignal(dev->fifoEmpty);
+	mutexUnlock(dev->rxLock);
 }
 
 
@@ -182,8 +158,6 @@ static usbacm_dev_t *usbacm_getByPipe(int pipe)
 
 	return dev;
 }
-
-
 
 
 static usbacm_dev_t *usbacm_get(int id)
@@ -214,8 +188,8 @@ static void _usbacm_put(usbacm_dev_t *dev)
 		if (dev->fifo != NULL) {
 			free(dev->fifo);
 			dev->fifo = NULL;
-			resourceDestroy(dev->fifoLock);
-			resourceDestroy(dev->fifoEmpty);
+			resourceDestroy(dev->rxLock);
+			resourceDestroy(dev->rxCond);
 		}
 		LIST_REMOVE(&usbacm_common.devices, dev);
 		free(dev);
@@ -234,35 +208,136 @@ static void usbacm_put(usbacm_dev_t *dev)
 static void usbacm_handleCompletion(usb_completion_t *c, char *data, size_t len)
 {
 	usbacm_dev_t *dev;
+	size_t bytes;
+	int retransfer = 0;
+	int sig = 0;
 
 	dev = usbacm_getByPipe(c->pipeid);
-	if (dev == NULL)
+	if (dev == NULL) {
 		return;
+	}
 
-	if (dev->flags != 0 && c->pipeid == dev->pipeBulkIN && c->err == 0) {
+	if (c->err != 0) {
+		/* Error, stop receiving */
+		mutexLock(dev->rxLock);
+		dev->rxrunning = 0;
+		if ((dev->flags & O_NONBLOCK) == 0) {
+			/* Stop the blocking read in progress */
+			sig = 1;
+		}
+		mutexUnlock(dev->rxLock);
+		if (sig == 1) {
+			condSignal(dev->rxCond);
+		}
+		usbacm_put(dev);
+		return;
+	}
+
+	if (c->pipeid != dev->pipeBulkIN) {
+		usbacm_put(dev);
+		return;
+	}
+
+	if (dev->flags & O_NONBLOCK) {
 		usbacm_fifoPush(dev, data, len);
-		usb_transferAsync(dev->pipeBulkIN, c->urbid, USBACM_BULK_SZ);
+		retransfer = 1;
+	}
+	else if (dev->rxptr != NULL) {
+		mutexLock(dev->rxLock);
+		if (c->err == 0) {
+			bytes = min(len, dev->rxbuflen);
+			memcpy(dev->rxptr, data, bytes);
+			dev->rxptr += bytes;
+			dev->rxbuflen -= bytes;
+
+			if (dev->rxbuflen > 0) {
+				retransfer = 1;
+			}
+			else {
+				dev->rxrunning = 0;
+				sig = 1;
+			}
+		}
+		else {
+			dev->rxrunning = 0;
+			sig = 1;
+		}
+		mutexUnlock(dev->rxLock);
+	}
+
+	if (retransfer != 0) {
+		usb_transferAsync(dev->pipeBulkIN, c->urbid, USBACM_BULK_SZ, NULL);
+	}
+	else if (sig == 1) {
+		condSignal(dev->rxCond);
 	}
 
 	usbacm_put(dev);
 }
 
 
-static int usbacm_read(usbacm_dev_t *dev, char *data, size_t len)
+static int usbacm_rxStart(usbacm_dev_t *dev)
 {
+	usb_setup_packet_t setup;
 	int i;
 
-	mutexLock(dev->fifoLock);
+	setup.bmRequestType = REQUEST_DIR_HOST2DEV | REQUEST_TYPE_CLASS | REQUEST_RECIPIENT_INTERFACE;
+	setup.bRequest = USB_CDC_REQ_SET_CONTROL_LINE_STATE;
+	setup.wIndex = dev->instance.interface;
+	setup.wValue = 3;
+	setup.wLength = 0;
 
-	while (!(dev->flags & O_NONBLOCK) && fifo_is_empty(dev->fifo))
-		condWait(dev->fifoEmpty, dev->fifoLock, 0);
+	if (usb_transferAsync(dev->pipeCtrl, dev->urbctrl, 0, &setup) < 0) {
+		return -EIO;
+	}
 
-	for (i = 0; i < len && !fifo_is_empty(dev->fifo); i++)
-		data[i] = fifo_pop_back(dev->fifo);
+	for (i = 0; i < USBACM_N_URBS; i++) {
+		if (usb_transferAsync(dev->pipeBulkIN, dev->urbs[i], USBACM_BULK_SZ, NULL) < 0) {
+			return -EIO;
+		}
+	}
 
-	mutexUnlock(dev->fifoLock);
+	return 0;
+}
 
-	return i;
+
+static int usbacm_read(usbacm_dev_t *dev, char *data, size_t len)
+{
+	int ret;
+
+	if ((dev->flags & (O_RDONLY | O_RDWR)) == 0) {
+		return -EPERM;
+	}
+
+	mutexLock(dev->rxLock);
+	if ((dev->flags & O_NONBLOCK) && dev->rxrunning) {
+		for (ret = 0; ret < len && !fifo_is_empty(dev->fifo); ret++) {
+			data[ret] = fifo_pop_back(dev->fifo);
+		}
+	}
+	else if ((dev->flags & O_NONBLOCK) == 0 && !dev->rxrunning) {
+		dev->rxptr = data;
+		dev->rxbuflen = len;
+		dev->rxrunning = 1;
+
+		usbacm_rxStart(dev);
+		/* Block until len bytes is received or an error occurs */
+		while (dev->rxbuflen > 0 && dev->rxrunning) {
+			condWait(dev->rxCond, dev->rxLock, 0);
+		}
+		usbacm_rxStop(dev);
+
+		ret = len - dev->rxbuflen;
+		dev->rxbuflen = 0;
+		dev->rxptr = NULL;
+	}
+	else {
+		ret = -EIO;
+	}
+
+	mutexUnlock(dev->rxLock);
+
+	return ret;
 }
 
 
@@ -302,51 +377,56 @@ static usbacm_dev_t *usbacm_devAlloc(void)
 }
 
 
-static int _usbacm_open(usbacm_dev_t *dev, int flags)
+static int _usbacm_urbsAlloc(usbacm_dev_t *dev)
 {
-	int i;
-	fifo_t *fifo;
+	int i, j;
 
-	if (dev->flags != 0)
-		return -EIO;
-
-	if (dev->fifo == NULL) {
-		if ((fifo = malloc(sizeof(fifo_t) + RX_FIFO_SIZE)) == NULL)
-			return -ENOMEM;
-
-		fifo_init(fifo, RX_FIFO_SIZE);
-
-		if (mutexCreate(&dev->fifoLock) != 0) {
-			free(fifo);
-			return -ENOMEM;
-		}
-
-		if (condCreate(&dev->fifoEmpty) != 0) {
-			resourceDestroy(dev->fifoLock);
-			free(fifo);
-			return -ENOMEM;
-		}
-		dev->fifo = fifo;
+	dev->urbctrl = usb_urbAlloc(dev->pipeCtrl, NULL, usb_dir_out, 0, usb_transfer_control);
+	if (dev->urbctrl < 0) {
+		return -1;
 	}
 
-	dev->flags = flags;
-	for (i = 0; i < USBACM_N_URBS; i++)
+	for (i = 0; i < USBACM_N_URBS; i++) {
 		dev->urbs[i] = usb_urbAlloc(dev->pipeBulkIN, NULL, usb_dir_in, USBACM_BULK_SZ, usb_transfer_bulk);
+		if (dev->urbs[i] < 0) {
+			for (j = i - 1; j >= 0; j--) {
+				usb_urbFree(dev->pipeBulkIN, dev->urbs[j]);
+				dev->urbs[j] = 0;
+			}
 
-	for (i = 0; i < USBACM_N_URBS; i++)
-		usb_transferAsync(dev->pipeBulkIN, dev->urbs[i], USBACM_BULK_SZ);
-
-	mutexUnlock(usbacm_common.lock);
-
-	if (usbacm_init(dev) != EOK) {
-		fprintf(stderr, "usbacm: Init failed\n");
-		resourceDestroy(dev->fifoLock);
-		resourceDestroy(dev->fifoEmpty);
-		free(dev->fifo);
-		return -EINVAL;
+			usb_urbFree(dev->pipeCtrl, dev->urbctrl);
+			return -1;
+		}
 	}
 
-	return EOK;
+	return 0;
+}
+
+
+static int _usbacm_openNonblock(usbacm_dev_t *dev)
+{
+	fifo_t *fifo;
+	int ret = 0;
+
+	if ((fifo = malloc(sizeof(fifo_t) + RX_FIFO_SIZE)) == NULL) {
+		return -ENOMEM;
+	}
+
+	fifo_init(fifo, RX_FIFO_SIZE);
+
+	mutexLock(dev->rxLock);
+	dev->fifo = fifo;
+	dev->rxrunning = 1;
+
+	if (usbacm_rxStart(dev) != 0) {
+		free(fifo);
+		dev->fifo = 0;
+		dev->rxrunning = 0;
+		ret = -EIO;
+	}
+	mutexUnlock(dev->rxLock);
+
+	return ret;
 }
 
 
@@ -354,10 +434,59 @@ static void _usbacm_close(usbacm_dev_t *dev)
 {
 	int i;
 
-	dev->flags = 0;
-
-	for (i = 0; i < USBACM_N_URBS; i++)
+	for (i = 0; i < USBACM_N_URBS; i++) {
 		usb_urbFree(dev->pipeBulkIN, dev->urbs[i]);
+	}
+
+	if (dev->flags & O_NONBLOCK) {
+		usbacm_rxStop(dev);
+	}
+
+	usb_urbFree(dev->pipeCtrl, dev->urbctrl);
+
+	dev->flags = 0;
+	dev->clientpid = 0;
+}
+
+
+static int _usbacm_open(usbacm_dev_t *dev, int flags, pid_t pid)
+{
+	/* Already opened */
+	if (dev->flags != 0) {
+		return -EBUSY;
+	}
+
+	if ((flags & O_RDONLY) || (flags & O_RDWR)) {
+		if (mutexCreate(&dev->rxLock) != 0) {
+			return -ENOMEM;
+		}
+
+		if (condCreate(&dev->rxCond) != 0) {
+			resourceDestroy(dev->rxLock);
+			return -ENOMEM;
+		}
+
+		if (_usbacm_urbsAlloc(dev) < 0) {
+			resourceDestroy(dev->rxCond);
+			resourceDestroy(dev->rxLock);
+			return -EPERM;
+		}
+
+		if (flags & O_NONBLOCK) {
+			/* Start receiving data */
+			if (_usbacm_openNonblock(dev) < 0) {
+				resourceDestroy(dev->rxCond);
+				resourceDestroy(dev->rxLock);
+				_usbacm_close(dev);
+				return -EPERM;
+			}
+		}
+	}
+
+	dev->clientpid = pid;
+	dev->flags = flags;
+
+	return EOK;
 }
 
 
@@ -394,10 +523,17 @@ static void usbacm_msgthr(void *arg)
 			continue;
 		}
 
+		/* A device can be opened only by one process */
+		if ((msg.type != mtOpen) && (msg.pid != dev->clientpid)) {
+			msg.o.io.err = -EBUSY;
+			msgRespond(usbacm_common.msgport, &msg, rid);
+			continue;
+		}
+
 		switch (msg.type) {
 			case mtOpen:
 				mutexLock(usbacm_common.lock);
-				msg.o.io.err = _usbacm_open(dev, msg.i.openclose.flags);
+				msg.o.io.err = _usbacm_open(dev, msg.i.openclose.flags, msg.pid);
 				mutexUnlock(usbacm_common.lock);
 				break;
 
@@ -405,7 +541,6 @@ static void usbacm_msgthr(void *arg)
 				mutexLock(usbacm_common.lock);
 				_usbacm_close(dev);
 				mutexUnlock(usbacm_common.lock);
-				usbacm_deinit(dev);
 				msg.o.io.err = EOK;
 				break;
 
@@ -590,19 +725,14 @@ int main(int argc, char *argv[])
 	usbacm_common.lastId = 1;
 
 	for (i = 0; i < USBACM_N_MSG_THREADS; i++) {
-		if ((ret = beginthread(usbacm_msgthr, 4, usbacm_common.stack[i], sizeof(usbacm_common.stack[i]), NULL)) != 0) {
+		ret = beginthread(usbacm_msgthr, 3, usbacm_common.stack[i], sizeof(usbacm_common.stack[i]), NULL);
+		if (ret < 0) {
 			fprintf(stderr, "usbacm: fail to beginthread ret: %d\n", ret);
 			return 1;
 		}
 	}
 
-	for (i = 0; i < USBACM_N_UMSG_THREADS; i++) {
-		if ((ret = beginthread(usbthr, 3, usbacm_common.ustack[i], sizeof(usbacm_common.ustack[i]), NULL)) != 0) {
-			fprintf(stderr, "usbacm: fail to beginthread ret: %d\n", ret);
-			return 1;
-		}
-	}
-
+	priority(USBACM_UMSG_PRIO);
 	usbthr(NULL);
 
 	return 0;
