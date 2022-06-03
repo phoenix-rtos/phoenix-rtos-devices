@@ -8,7 +8,9 @@
 
 include ../phoenix-rtos-build/Makefile.common
 
+# TODO: replace BOARD_CONFIG usage with board_config.h
 CFLAGS += $(BOARD_CONFIG)
+CFLAGS += -I$(PROJECT_PATH)/
 
 .DEFAULT_GOAL := all
 

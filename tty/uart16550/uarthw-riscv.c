@@ -3,7 +3,7 @@
  *
  * UART 16550 device driver
  *
- * Hardware abstracion layer (riscv64-virt)
+ * Hardware abstraction layer (riscv64-generic)
  *
  * Copyright 2020 Phoenix Systems
  * Author: Julia Kosowska, Pawel Pisarczyk

@@ -1,9 +1,0 @@
-#
-# Makefile for Phoenix-RTOS 3 device drivers
-#
-# ia32/QEMU drivers
-#
-# Copyright 2019 Phoenix Systems
-#
-
-DEFAULT_COMPONENTS := spike-tty uart16550

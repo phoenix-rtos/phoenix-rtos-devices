@@ -6,7 +6,6 @@
 # Copyright 2021 Phoenix Systems
 #
 
-TARGET ?= armv7m4-imxrt117x
 CROSS ?= arm-none-eabi-
 CC = $(CROSS)gcc
 LD = $(CROSS)ld
