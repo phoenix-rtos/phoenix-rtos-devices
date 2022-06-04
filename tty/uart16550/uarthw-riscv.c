@@ -64,7 +64,7 @@ int uarthw_init(unsigned int uartn, void *hwctx, size_t hwctxsz)
 	if (uartn >= 1)
 		return -ENODEV;
 
-	if ((((uarthw_ctx_t *)hwctx)->base = (uintptr_t)mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, (offs_t)0x10000000)) == (uintptr_t)NULL)
+	if ((((uarthw_ctx_t *)hwctx)->base = (uintptr_t)mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, (offs_t)0x10000000)) == (uintptr_t)MAP_FAILED)
 		return -ENOMEM;
 
 	((uarthw_ctx_t *)hwctx)->irq = 0xa;

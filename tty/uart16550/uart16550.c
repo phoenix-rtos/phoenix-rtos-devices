@@ -13,6 +13,7 @@
 #include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include <sys/file.h>
 #include <sys/interrupt.h>
@@ -21,6 +22,7 @@
 #include <sys/types.h>
 
 #include <libtty.h>
+#include <posix/utils.h>
 
 #include "uarthw.h"
 #include "uart16550.h"
@@ -186,13 +188,13 @@ static void poolthr(void *arg)
 }
 
 
-static int _uart_init(uart_t *uart, unsigned int port, unsigned int id, unsigned int speed)
+static int _uart_init(uart_t *uart, unsigned int uartn, unsigned int speed)
 {
 	unsigned int divisor = 115200 / speed;
 	libtty_callbacks_t callbacks;
 	int err;
 
-	if ((err = uarthw_init(id, uart->hwctx, sizeof(uart->hwctx))) < 0)
+	if ((err = uarthw_init(uartn, uart->hwctx, sizeof(uart->hwctx))) < 0)
 		return err;
 
 	callbacks.arg = uart;
@@ -232,29 +234,35 @@ static int _uart_init(uart_t *uart, unsigned int port, unsigned int id, unsigned
 
 int main(void)
 {
-	unsigned int i, port;
+	unsigned int i;
 	char path[12];
 	int err;
 
-	portCreate(&port);
+	oid_t oid = { 0 };
+
+	portCreate(&oid.port);
 
 	for (i = 0; i < sizeof(uart_common.uarts) / sizeof(uart_common.uarts[0]); i++) {
+
+		uart_common.uarts[i].oid = oid;
 		snprintf(path, sizeof(path), "/dev/ttyS%u", i);
 
-		if ((err = _uart_init(&uart_common.uarts[i], port, i, 115200)) < 0) {
+		if ((err = _uart_init(&uart_common.uarts[i], i, 115200)) < 0) {
 			if (err != -ENODEV)
 				fprintf(stderr, "uart16550: failed to init %s, err: %d\n", path, err);
 			continue;
 		}
 
-		if ((err = portRegister(port, path, &uart_common.uarts[i].oid)) < 0) {
-			fprintf(stderr, "uart16550: failed to register %s, err: %d\n", path, err);
-			return err;
+		if (create_dev(&uart_common.uarts[i].oid, path) < 0) {
+			fprintf(stderr, "uart16550: failed to register %s\n", path);
+			return EXIT_FAILURE;
 		}
+
+		oid.id++;
 	}
 
-	beginthread(poolthr, 4, uart_common.stack, sizeof(uart_common.stack), (void *)(uintptr_t)port);
-	poolthr((void *)(uintptr_t)port);
+	beginthread(poolthr, 4, uart_common.stack, sizeof(uart_common.stack), (void *)(uintptr_t)oid.port);
+	poolthr((void *)(uintptr_t)oid.port);
 
-	return EOK;
+	return EXIT_SUCCESS;
 }
