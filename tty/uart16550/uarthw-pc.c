@@ -5,7 +5,7 @@
  *
  * Hardware abstracion layer (ia32-generic)
  *
- * Copyright 2020 Phoenix Systems
+ * Copyright 2020-2022 Phoenix Systems
  * Author: Julia Kosowska, Pawel Pisarczyk
  *
  * This file is part of Phoenix-RTOS.
@@ -58,18 +58,21 @@ int uarthw_init(unsigned int uartn, void *hwctx, size_t hwctxsz)
 		unsigned int irq;
 	} uarts[] = { { (void *)0x3f8, 4 }, { (void *)0x2f8, 3 }, { (void *)0x3e8, 4 }, { (void *)0x2e8, 3 } };
 
-	if (hwctxsz < sizeof(uarthw_ctx_t))
+	if (hwctxsz < sizeof(uarthw_ctx_t)) {
 		return -EINVAL;
+	}
 
-	if (uartn >= 4)
+	if (uartn >= 4) {
 		return -ENODEV;
+	}
 
 	((uarthw_ctx_t *)hwctx)->base = uarts[uartn].base;
 	((uarthw_ctx_t *)hwctx)->irq = uarts[uartn].irq;
 
 	/* Detect device presence */
-	if (uarthw_read(hwctx, REG_IIR) == 0xff)
+	if (uarthw_read(hwctx, REG_IIR) == 0xff) {
 		return -ENODEV;
+	}
 
 	return EOK;
 }

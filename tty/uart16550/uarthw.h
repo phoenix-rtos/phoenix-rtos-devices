@@ -5,7 +5,7 @@
  *
  * Hardware abstracion layer interface
  *
- * Copyright 2020 Phoenix Systems
+ * Copyright 2020-2022 Phoenix Systems
  * Author: Pawel Pisarczyk
  *
  * This file is part of Phoenix-RTOS.
