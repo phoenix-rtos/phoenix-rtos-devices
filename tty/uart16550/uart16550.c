@@ -3,7 +3,7 @@
  *
  * UART 16550 device driver
  *
- * Copyright 2012-2015, 2020, 2021 Phoenix Systems
+ * Copyright 2012-2015, 2020-2022 Phoenix Systems
  * Copyright 2001, 2008 Pawel Pisarczyk
  * Author: Pawel Pisarczyk, Pawel Kolodziej, Julia Kosowska, Lukasz Kosinski
  *
@@ -53,8 +53,9 @@ static uart_t *uart_get(oid_t *oid)
 	unsigned int i;
 
 	for (i = 0; i < sizeof(uart_common.uarts) / sizeof(uart_common.uarts[0]); i++) {
-		if ((uart_common.uarts[i].oid.port == oid->port) && (uart_common.uarts[i].oid.id == oid->id))
+		if ((uart_common.uarts[i].oid.port == oid->port) && (uart_common.uarts[i].oid.id == oid->id)) {
 			return uart_common.uarts + i;
+		}
 	}
 
 	return NULL;
@@ -95,21 +96,25 @@ static void uart_intthr(void *arg)
 
 	mutexLock(uart->mutex);
 	for (;;) {
-		while ((iir = uarthw_read(uart->hwctx, REG_IIR)) & IIR_IRQPEND)
+		while ((iir = uarthw_read(uart->hwctx, REG_IIR)) & IIR_IRQPEND) {
 			condWait(uart->intcond, uart->mutex, 0);
+		}
 
 		/* Receive */
 		if (iir & IIR_DR) {
-			while (uarthw_read(uart->hwctx, REG_LSR) & 0x1)
+			while (uarthw_read(uart->hwctx, REG_LSR) & 0x1) {
 				libtty_putchar(&uart->tty, uarthw_read(uart->hwctx, REG_RBR), NULL);
+			}
 		}
 
 		/* Transmit */
 		if (iir & IIR_THRE) {
-			if (libtty_txready(&uart->tty))
+			if (libtty_txready(&uart->tty)) {
 				uarthw_write(uart->hwctx, REG_THR, libtty_getchar(&uart->tty, NULL));
-			else
+			}
+			else {
 				uarthw_write(uart->hwctx, REG_IMR, IMR_DR);
+			}
 		}
 	}
 }
@@ -125,10 +130,13 @@ static void uart_ioctl(unsigned int port, msg_t *msg)
 
 	idata = ioctl_unpack(msg, &req, &oid.id);
 
-	if ((uart = uart_get(&oid)) == NULL)
+	uart = uart_get(&oid);
+	if (uart == NULL) {
 		err = -EINVAL;
-	else
+	}
+	else {
 		err = libtty_ioctl(&uart->tty, ioctl_getSenderPid(msg), req, idata, &odata);
+	}
 
 	ioctl_setResponse(msg, req, err, odata);
 }
@@ -142,8 +150,9 @@ static void poolthr(void *arg)
 	msg_t msg;
 
 	for (;;) {
-		if (msgRecv(port, &msg, &rid) < 0)
+		if (msgRecv(port, &msg, &rid) < 0) {
 			continue;
+		}
 
 		switch (msg.type) {
 			case mtOpen:
@@ -156,17 +165,21 @@ static void poolthr(void *arg)
 				break;
 
 			case mtRead:
-				if ((uart = uart_get(&msg.i.io.oid)) == NULL)
+				if ((uart = uart_get(&msg.i.io.oid)) == NULL) {
 					msg.o.io.err = -EINVAL;
-				else
+				}
+				else {
 					msg.o.io.err = libtty_read(&uart->tty, msg.o.data, msg.o.size, msg.i.io.mode);
+				}
 				break;
 
 			case mtWrite:
-				if ((uart = uart_get(&msg.i.io.oid)) == NULL)
+				if ((uart = uart_get(&msg.i.io.oid)) == NULL) {
 					msg.o.io.err = -EINVAL;
-				else
+				}
+				else {
 					msg.o.io.err = libtty_write(&uart->tty, msg.i.data, msg.i.size, msg.i.io.mode);
+				}
 				break;
 
 			case mtGetAttr:
@@ -192,18 +205,21 @@ static int _uart_init(uart_t *uart, unsigned int uartn, unsigned int speed)
 {
 	unsigned int divisor = 115200 / speed;
 	libtty_callbacks_t callbacks;
-	int err;
 
-	if ((err = uarthw_init(uartn, uart->hwctx, sizeof(uart->hwctx))) < 0)
+	int err = uarthw_init(uartn, uart->hwctx, sizeof(uart->hwctx));
+	if (err < 0) {
 		return err;
+	}
 
 	callbacks.arg = uart;
 	callbacks.set_baudrate = set_baudrate;
 	callbacks.set_cflag = set_cflag;
 	callbacks.signal_txready = signal_txready;
 
-	if ((err = libtty_init(&uart->tty, &callbacks, _PAGE_SIZE)) < 0)
+	err = libtty_init(&uart->tty, &callbacks, _PAGE_SIZE);
+	if (err < 0) {
 		return err;
+	}
 
 	condCreate(&uart->intcond);
 	mutexCreate(&uart->mutex);
@@ -247,9 +263,11 @@ int main(void)
 		uart_common.uarts[i].oid = oid;
 		snprintf(path, sizeof(path), "/dev/ttyS%u", i);
 
-		if ((err = _uart_init(&uart_common.uarts[i], i, 115200)) < 0) {
-			if (err != -ENODEV)
+		err = _uart_init(&uart_common.uarts[i], i, 115200);
+		if (err < 0) {
+			if (err != -ENODEV) {
 				fprintf(stderr, "uart16550: failed to init %s, err: %d\n", path, err);
+			}
 			continue;
 		}
 
