@@ -5,7 +5,9 @@
  *
  * Copyright 2012-2015, 2020-2022 Phoenix Systems
  * Copyright 2001, 2008 Pawel Pisarczyk
- * Author: Pawel Pisarczyk, Pawel Kolodziej, Julia Kosowska, Lukasz Kosinski
+ * Authors: Pawel Pisarczyk, Pawel Kolodziej,
+ *          Julia Kosowska, Lukasz Kosinski,
+ *          Gerard Swiderski et al.
  *
  * %LICENSE%
  */
@@ -64,13 +66,50 @@ static uart_t *uart_get(oid_t *oid)
 
 static void set_baudrate(void *_uart, speed_t baud)
 {
-	/* TODO */
+	uint8_t reg;
+	uart_t *uart = (uart_t *)_uart;
+	int baud_rate = libtty_baudrate_to_int(baud);
+
+	if (baud_rate <= 0 || baud_rate > 115200) {
+		return;
+	}
+
+	/* Baud divisor */
+	baud_rate = 115200 / baud_rate;
+
+	reg = uarthw_read(uart->hwctx, REG_LCR);
+
+	/* Set baud rate */
+	uarthw_write(uart->hwctx, REG_LCR, reg | LCR_DLAB);
+	uarthw_write(uart->hwctx, REG_LSB, (uint8_t)((unsigned)baud_rate));
+	uarthw_write(uart->hwctx, REG_MSB, (uint8_t)((unsigned)baud_rate >> 8));
+	uarthw_write(uart->hwctx, REG_LCR, reg & ~LCR_DLAB);
 }
 
 
 static void set_cflag(void *_uart, tcflag_t *cflag)
 {
-	/* TODO */
+	uart_t *uart = (uart_t *)_uart;
+	uint8_t lcr = uarthw_read(uart->hwctx, REG_LCR);
+
+	lcr &= ~((3 << 0) | (1 << 2) | (1 << 3) | (1 << 4));
+
+	/* Character length */
+	switch (*cflag & CSIZE) {
+		case CS5: lcr |= 0; break;
+		case CS6: lcr |= 1; break;
+		case CS7: lcr |= 2; break;
+		case CS8: /* fallthrough */
+		default: lcr |= 3; break;
+	}
+
+	/* Parity */
+	lcr |= (((*cflag & PARENB) != 0) << 3) | (((*cflag & PARODD) == 0) << 4);
+
+	/* Stop bits */
+	lcr |= ((*cflag & CSTOPB) != 0) << 2;
+
+	uarthw_write(uart->hwctx, REG_LCR, lcr);
 }
 
 
