@@ -548,7 +548,7 @@ int main(int argc, char **argv)
 	/* Initialize all flash devices and add them to the storage */
 	res = flash_drvInit();
 	if (res < 0) {
-		fprintf(stderr, "zynq7000-flash: failed to initialize NOR flash memory dirver, err: %d\n", res);
+		fprintf(stderr, "zynq7000-flash: failed to initialize NOR flash memory driver, err: %d\n", res);
 		return EXIT_FAILURE;
 	}
 
