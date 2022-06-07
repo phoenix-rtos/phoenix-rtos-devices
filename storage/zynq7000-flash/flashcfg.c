@@ -99,6 +99,28 @@ int flashcfg_infoResolve(flash_info_t *info)
 		info->cmds[flash_cmd_dior].dummyCyc = 16;
 		info->cmds[flash_cmd_qior].dummyCyc = 32;
 	}
+	/* Winbond W25Q128JV - IM/JM */
+	else if (info->cfi.vendorData[0] == 0xef && info->cfi.vendorData[1] == 0x40 && info->cfi.vendorData[2] == 0x18) {
+		info->name = "Winbond W25Q128JV";
+
+		/* Lack of CFI support, filled based on specification */
+		info->cfi.timeoutTypical.byteWrite = 0x6;
+		info->cfi.timeoutTypical.pageWrite = 0x9;
+		info->cfi.timeoutTypical.sectorErase = 0x8;
+		info->cfi.timeoutTypical.chipErase = 0xf;
+		info->cfi.timeoutMax.byteWrite = 0x2;
+		info->cfi.timeoutMax.pageWrite = 0x2;
+		info->cfi.timeoutMax.sectorErase = 0x3;
+		info->cfi.timeoutMax.chipErase = 0x3;
+		info->cfi.chipSize = 0x18;
+		info->cfi.fdiDesc = 0x0102;
+		info->cfi.pageSize = 0x08;
+		info->cfi.regsCount = 1;
+		info->cfi.regs[0].count = 0xff;
+		info->cfi.regs[0].size = 0x100;
+
+		memcpy(info->cmds, defCmds, sizeof(defCmds));
+	}
 	else {
 		info->name = "Unknown";
 		res = -EINVAL;
