@@ -66,7 +66,7 @@ static const struct {
 
 
 struct {
-	uart_t uarts[UARTS_MAX_CNT];
+	uart_t uart;
 	uint8_t stack[_PAGE_SIZE];
 } uart_common;
 
@@ -198,41 +198,17 @@ static void uart_signalTXReady(void *data)
 }
 
 
-static uart_t *uart_get(oid_t *oid)
-{
-	int i;
-
-	for (i = 0; i < UARTS_MAX_CNT; i++) {
-		if ((uart_common.uarts[i].base != NULL) && (uart_common.uarts[i].oid.id == oid->id) && (uart_common.uarts[i].oid.port == oid->port))
-			return &uart_common.uarts[i];
-	}
-
-	return NULL;
-}
-
-
 static void uart_ioctl(unsigned port, msg_t *msg)
 {
 	int err;
 	pid_t pid;
-	oid_t oid;
-	uart_t *uart;
 	unsigned long req;
-	ioctl_in_t *ioctl;
 	const void *inData, *outData = NULL;
-
-	ioctl = (ioctl_in_t *)msg->i.raw;
-
-	oid.port = port;
-	oid.id = ioctl->id;
 
 	inData = ioctl_unpack(msg, &req, NULL);
 	pid = ioctl_getSenderPid(msg);
 
-	if ((uart = uart_get(&oid)) != NULL)
-		err = libtty_ioctl(&uart->tty, pid, req, inData, &outData);
-	else
-		err = -EINVAL;
+	err = libtty_ioctl(&uart_common.uart.tty, pid, req, inData, &outData);
 
 	ioctl_setResponse(msg, req, err, outData);
 }
@@ -241,7 +217,6 @@ static void uart_ioctl(unsigned port, msg_t *msg)
 static void uart_dispatchMsg(void *arg)
 {
 	msg_t msg;
-	uart_t *uart;
 	unsigned long int rid;
 	uint32_t port = (uint32_t)arg;
 
@@ -257,26 +232,16 @@ static void uart_dispatchMsg(void *arg)
 				break;
 
 			case mtWrite:
-				if ((uart = uart_get(&msg.i.io.oid)) == NULL) {
-					msg.o.io.err = -ENOENT;
-					break;
-				}
-
-				msg.o.io.err = libtty_write(&uart->tty, msg.i.data, msg.i.size, msg.i.io.mode);
+				msg.o.io.err = libtty_write(&uart_common.uart.tty, msg.i.data, msg.i.size, msg.i.io.mode);
 				break;
 
 			case mtRead:
-				if ((uart = uart_get(&msg.i.io.oid)) == NULL) {
-					msg.o.io.err = -ENOENT;
-					break;
-				}
-
-				msg.o.io.err = libtty_read(&uart->tty, msg.o.data, msg.o.size, msg.i.io.mode);
+				msg.o.io.err = libtty_read(&uart_common.uart.tty, msg.o.data, msg.o.size, msg.i.io.mode);
 				break;
 
 			case mtGetAttr:
-				if (msg.i.attr.type == atPollStatus && (uart = uart_get(&msg.i.attr.oid)) != NULL) {
-					msg.o.attr.val = libtty_poll_status(&uart->tty);
+				if (msg.i.attr.type == atPollStatus) {
+					msg.o.attr.val = libtty_poll_status(&uart_common.uart.tty);
 					msg.o.attr.err = EOK;
 					break;
 				}
@@ -294,22 +259,18 @@ static void uart_dispatchMsg(void *arg)
 }
 
 
-static void uart_mkDevFiles(void)
+static void uart_mkDev(unsigned int id)
 {
-	int i;
 	oid_t dir;
 	char path[12];
 
-	while (lookup("/", NULL, &dir) < 0)
+	while (lookup("/", NULL, &dir) < 0) {
 		usleep(10000);
+	}
 
-	for (i = 0; i < UARTS_MAX_CNT; ++i) {
-		if (uart_common.uarts[i].base == NULL)
-			continue;
-
-		snprintf(path, sizeof(path), "/dev/uart%d", i);
-		if (create_dev(&uart_common.uarts[i].oid, path) < 0)
-			debug("uart: Cannot create device file.\n");
+	snprintf(path, sizeof(path), "/dev/uart%u", id);
+	if (create_dev(&uart_common.uart.oid, path) < 0) {
+		debug("uart: Cannot create device file.\n");
 	}
 }
 
@@ -387,7 +348,7 @@ static int uart_initClk(void)
 static int uart_init(unsigned int n, speed_t baud)
 {
 	libtty_callbacks_t callbacks;
-	uart_t *uart = &uart_common.uarts[n];
+	uart_t *uart = &uart_common.uart;
 
 	if (uart_setPin(info[n].rxPin) < 0 || uart_setPin(info[n].txPin) < 0 || uart_initAmbaClk(info[n].clk) < 0)
 		return -EINVAL;
@@ -450,50 +411,72 @@ static int uart_init(unsigned int n, speed_t baud)
 }
 
 
+static void uart_help(const char *progname)
+{
+	printf("Usage: %s [OPTIONS]\n", progname);
+	printf("Options:\n");
+	printf("\t-b <baudrate>   - baudrate\n");
+	printf("\t-n <id>         - uart controller ID\n");
+	printf("\t-h              - print this message\n");
+}
+
+
 int main(int argc, char **argv)
 {
-	uart_t *uart;
 	speed_t baud = B115200;
 	uint32_t port;
-	int n, c, console = 1;
+	int c;
+	unsigned int uartn = 1;
 
-	/* Get console ID and baudrate */
-	while ((c = getopt(argc, argv, "b:c:")) != -1) {
-		switch (c) {
-			case 'b':
-				if ((baud = libtty_int_to_baudrate(atoi(optarg))) == (speed_t)-1) {
-					debug("uart: wrong baudrate value\n");
+	if (argc != 1) {
+		/* Get uart ID and baudrate */
+		while ((c = getopt(argc, argv, "n:b:h")) != -1) {
+			switch (c) {
+				case 'b':
+					if ((baud = libtty_int_to_baudrate(atoi(optarg))) == (speed_t)-1) {
+						debug("uart: wrong baudrate value\n");
+						return EXIT_FAILURE;
+					}
+					break;
+
+				case 'n':
+					uartn = atoi(optarg);
+					if (uartn >= UARTS_MAX_CNT) {
+						debug("uart: wrong uart ID\n");
+						return EXIT_FAILURE;
+					}
+					break;
+
+				case 'h':
+					uart_help(argv[0]);
 					return EXIT_FAILURE;
-				}
-				break;
-			case 'c':
-				console = atoi(optarg);
-				if (console < 0 || console >= UARTS_MAX_CNT) {
-					debug("uart: wrong console ID\n");
+
+				default:
+					debug("uart: invalid option \n");
+					uart_help(argv[0]);
 					return EXIT_FAILURE;
-				}
-				break;
-			default:
-				break;
+			}
 		}
 	}
 
-	uart_initClk();
-	portCreate(&port);
-
-	for (n = 0; n < UARTS_MAX_CNT; ++n) {
-		if (uart_init(n, baud) < 0)
-			continue;
-
-		uart = &uart_common.uarts[n];
-		uart->oid.port = port;
-
-		/* port = 0 & id = 0 are reserved for CONSOLE */
-		uart->oid.id = (n == console) ? 0 : n + 1;
+	if (uart_initClk() < 0) {
+		debug("uart: cannot initialize clocks\n");
+		return EXIT_FAILURE;
 	}
 
+	portCreate(&port);
+
+	if (uart_init(uartn, baud) < 0) {
+		debug("uart: cannot initialize uart\n");
+		return EXIT_FAILURE;
+	}
+
+	/* port = 0 & id = 0 are reserved for CONSOLE */
+	uart_common.uart.oid.port = port;
+	uart_common.uart.oid.id = 0;
+
 	beginthread(uart_dispatchMsg, 4, uart_common.stack, sizeof(uart_common.stack), (void *)port);
-	uart_mkDevFiles();
+	uart_mkDev(uartn);
 	uart_dispatchMsg((void *)port);
 
 	return 0;
