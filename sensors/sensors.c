@@ -405,7 +405,7 @@ static int sensors_initEvts(int devsz)
 	   in sensors_common.events tables */
 	for (i = 0; i < devsz; ++i) {
 		sensors_common.devEvents[i] = calloc(1, NB_SENSOR_TYPES);
-		if (sensors_common.devEvents == NULL) {
+		if (sensors_common.devEvents[i] == NULL) {
 			fprintf(stderr, "sensors: cannot allocate memory\n");
 			return -ENOMEM;
 		}
