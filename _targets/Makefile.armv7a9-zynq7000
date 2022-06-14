@@ -7,5 +7,5 @@
 #
 
 DEFAULT_COMPONENTS := zynq7000-uart zynq7000-pwm zynq7000-xgpio zynq7000-spi
-DEFAULT_COMPONENTS += libflashdrv-zynq zynq7000-flash test_flashdrv
+DEFAULT_COMPONENTS += libflashdrv-zynq zynq7000-flash test_flashdrv libspi-msg
 DEFAULT_COMPONENTS += libsensors sensors
