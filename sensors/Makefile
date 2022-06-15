@@ -15,5 +15,5 @@ LOCAL_HEADERS_DIR := nothing
 LOCAL_SRCS := sensors.c
 LOCAL_SRCS += imu/lsm9dsxx.c
 LOCAL_SRCS += baro/lps25xx.c
-DEP_LIBS := libsensors
+DEP_LIBS := libsensors libspi-msg
 include $(binary.mk)
