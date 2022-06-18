@@ -16,5 +16,6 @@ LOCAL_SRCS := sensors.c
 LOCAL_SRCS += imu/lsm9dsxx.c
 LOCAL_SRCS += baro/lps25xx.c
 LOCAL_SRCS += gps/pa6h.c gps/nmea.c
+LOCAL_SRCS += mag/lsm9dsxx.c
 DEP_LIBS := libsensors libspi-msg
 include $(binary.mk)
