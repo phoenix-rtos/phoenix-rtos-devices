@@ -27,6 +27,10 @@
 
 #include "../sensors.h"
 
+/* self-identification register of magnetometer */
+#define REG_WHOAMI     0x0f
+#define REG_VAL_WHOAMI 0x68
+
 /* control register 1 */
 #define REG_CTRL_REG1_G             0x10
 #define VAL_CTRL_REG1_G_ODR_G_952HZ 0xc0
@@ -117,8 +121,28 @@ static int spiWriteReg(spimsg_ctx_t *spiCtx, uint8_t regAddr, uint8_t regVal)
 }
 
 
+static int lsm9dsxx_whoamiCheck(spimsg_ctx_t *spiCtx)
+{
+	uint8_t cmd, val, err;
+
+	cmd = REG_WHOAMI | SPI_READ_BIT;
+	val = 0;
+	err = spimsg_xfer(spiCtx, &cmd, 1, &val, 1, 1);
+	if ((err < 0) | (val != REG_VAL_WHOAMI)) {
+		return -1;
+	}
+
+	return 0;
+}
+
+
 static int lsm9dsxx_hwSetup(spimsg_ctx_t *spiCtx)
 {
+	if (lsm9dsxx_whoamiCheck(spiCtx) != 0) {
+		printf("lsm9dsxx: cannot read/wrong WHOAMI returned!\n");
+		return -1;
+	}
+
 	/* auto increment + SW reset */
 	if (spiWriteReg(spiCtx, REG_CTRL_REG8, 0x05) < 0) {
 		return -1;
@@ -126,7 +150,7 @@ static int lsm9dsxx_hwSetup(spimsg_ctx_t *spiCtx)
 	usleep(1000 * 100);
 
 	/* ranges and sampling of accelerometer and gyro */
-	if (spiWriteReg(&spiCtx, REG_CTRL_REG1_G, (VAL_CTRL_REG1_G_ODR_G_952HZ | VAL_CTRL_REG1_G_FS_G_2000)) < 0) {
+	if (spiWriteReg(spiCtx, REG_CTRL_REG1_G, (VAL_CTRL_REG1_G_ODR_G_952HZ | VAL_CTRL_REG1_G_FS_G_2000)) < 0) {
 		return -1;
 	}
 	if (spiWriteReg(spiCtx, REG_CTRL_REG6_XL, (VAL_CTRL_REG6_XL_ODR_XL_952 | VAL_CTRL_REG6_XL_FS_8G)) < 0) {
@@ -153,7 +177,7 @@ static void lsm9dsxx_threadPublish(void *data)
 	time_t tstamp_gyro, tstamp_accl;
 	sensor_info_t *info = (sensor_info_t *)data;
 	lsm9dsxx_ctx_t *ctx = info->ctx;
-	spimsg_ctx_t *spiCtx = &ctx->stack;
+	spimsg_ctx_t *spiCtx = &ctx->spiCtx;
 	uint8_t ibuf[SENSOR_OUTPUT_SIZE] = { 0 };
 	uint8_t obuf;
 
@@ -209,7 +233,7 @@ static int lsm9dsxx_start(sensor_info_t *info)
 static int lsm9dsxx_alloc(sensor_info_t *info, const char *args)
 {
 	lsm9dsxx_ctx_t *ctx;
-	int err = 0, ntries = 10;
+	int ntries = 10;
 
 	/* sensor context allocation */
 	ctx = malloc(sizeof(lsm9dsxx_ctx_t));
