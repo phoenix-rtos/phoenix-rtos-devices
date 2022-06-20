@@ -14,3 +14,4 @@ DEFAULT_COMPONENTS += imx6ull-uart imx6ull-otp
 DEFAULT_COMPONENTS += imx6ull-wdg imx6ull-i2c
 
 DEFAULT_COMPONENTS += libusbehci umass usbacm
+DEFAULT_COMPONENTS += libsensors sensors
