@@ -67,24 +67,29 @@ typedef struct {
 
 static uint32_t translatePress(uint8_t lbyte, uint8_t mbyte, uint8_t hbyte)
 {
-	uint32_t val = 0;
-	val |= ((uint32_t)lbyte) | ((uint32_t)mbyte << 8) | ((uint32_t)hbyte << 16);
-	val &= 0x7FFFFF;                  /* dismiss highest bit as it is unusable */
-	return val * SENSOR_CONV_PASCALS; /* sensor -> Pa */
+	uint32_t val;
+
+	val = lbyte | (mbyte << 8) | (hbyte << 16);
+	/* dismiss highest bit as it is unusable */
+	val &= 0x7FFFFF;
+
+	return val * SENSOR_CONV_PASCALS;
 }
 
 
 static uint32_t translateTemp(uint8_t hbyte, uint8_t lbyte)
 {
-	uint32_t val = 0;
-	val |= (uint32_t)lbyte | ((uint32_t)hbyte << 8);
-	return val * SENSOR_CONV_KELV + SENSOR_KELV_OFFS;
+	int16_t val;
+
+	val = lbyte | (hbyte << 8);
+
+	return (uint32_t)((float)val * SENSOR_CONV_KELV + SENSOR_KELV_OFFS);
 }
 
 
 static int spiWriteReg(spimsg_ctx_t *spiCtx, uint8_t regAddr, uint8_t regVal)
 {
-	unsigned char cmd[2] = { (regAddr & 0x7F), regVal }; /* write bit set to regAddr */
+	unsigned char cmd[2] = { regAddr, regVal };
 
 	return spimsg_xfer(spiCtx, cmd, sizeof(cmd), NULL, 0, sizeof(cmd));
 }
@@ -137,17 +142,17 @@ static void lps25xx_publishthr(void *data)
 
 	while (1) {
 		/* ODR set to 25Hz */
-		usleep(40 * 000);
+		usleep(40 * 1000);
 
 		obuf = REG_DATA_OUT | SPI_READ_BIT | SPI_AUTOADDRINCR_BIT;
 		err = spimsg_xfer(spiCtx, &obuf, 1, ibuf, SENSOR_OUTPUT_SIZE, 1);
-		gettime(&tstamp, NULL);
 
 		if (err >= 0) {
 			/* minus accounts for non right-handness of lsm9dsxx accelerometer frame of reference */
+			gettime(&(ctx->evtBaro.timestamp), NULL);
 			ctx->evtBaro.baro.pressure = translatePress(ibuf[0], ibuf[1], ibuf[2]);
 			ctx->evtBaro.baro.temp = translateTemp(ibuf[4], ibuf[3]);
-			ctx->evtBaro.timestamp = tstamp;
+
 			sensors_publish(info->id, &ctx->evtBaro);
 		}
 	}
