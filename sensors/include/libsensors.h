@@ -66,7 +66,7 @@ typedef struct {
 	int16_t headingOffs;   /* value in [mrad] */
 	uint16_t headingAccur; /* value in [mrad] */
 	uint8_t satsNb;        /* number of used satellites */
-	uint8_t reserved;
+	uint8_t fix;           /* fix quality */
 } gps_data_t;
 
 
@@ -99,7 +99,7 @@ typedef struct {
 /* Event data gets from sensor manager */
 typedef struct {
 	sensor_type_t type;
-	uint64_t timestamp;
+	time_t timestamp;
 
 	union {
 		accel_data_t accels;
