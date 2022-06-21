@@ -88,7 +88,6 @@ typedef struct {
 		nmea_vtg_t vtg;
 		nmea_gga_t gga;
 	} msg;
-
 } nmea_t;
 
 
