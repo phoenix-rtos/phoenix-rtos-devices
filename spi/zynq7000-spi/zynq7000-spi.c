@@ -111,37 +111,46 @@ static void spisrv_help(const char *progname)
 
 int main(int argc, char *argv[])
 {
-	unsigned int i, dev, port;
+	unsigned int i, dev;
 	char devName[16];
 	oid_t oid;
 	int err;
 
 	if (argc != 2) {
 		spisrv_help(argv[0]);
-		return 1;
+		return EXIT_FAILURE;
 	}
 
 	dev = strtoul(argv[1], NULL, 0);
 	if (dev >= SPI_COUNT) {
 		spisrv_help(argv[0]);
-		return 1;
+		return EXIT_FAILURE;
 	}
 
 	err = spi_init(dev);
 	if (err < 0) {
 		printf("zynq7000-spi: failed to initialize SPI%u controller, err: %s\n", dev, strerror(err));
-		return 1;
-	}
-
-	err = portCreate(&port);
-	if (err < 0) {
-		printf("zynq7000-spi: failed to create port for SPI%u controller, err: %s\n", dev, strerror(err));
-		return 1;
+		return EXIT_FAILURE;
 	}
 
 	/* Wait for rootfs before creating device files */
 	while (lookup("/", NULL, &oid) < 0) {
 		usleep(10000);
+	}
+
+	err = portCreate(&oid.port);
+	if (err < 0) {
+		printf("zynq7000-spi: failed to create port for SPI%u controller, err: %s\n", dev, strerror(err));
+		return EXIT_FAILURE;
+	}
+
+	/* Create device for use with external SS lines */
+	sprintf(devName, "spi%u", dev);
+	oid.id = SPI_SS_EXTERNAL;
+	err = create_dev(&oid, devName);
+	if (err < 0) {
+		printf("zynq7000-spi: failed to create device file %s, err: %s\n", devName, strerror(err));
+		return EXIT_FAILURE;
 	}
 
 	for (i = 0; i < sizeof(devs) / sizeof(devs[0]); i++) {
@@ -150,19 +159,17 @@ int main(int argc, char *argv[])
 			continue;
 		}
 
-		sprintf(devName, "/dev/spi%u.%u", dev, i);
-		oid.port = port;
+		sprintf(devName, "spi%u.%u", dev, i);
 		oid.id = i;
-
 		err = create_dev(&oid, devName);
 		if (err < 0) {
 			printf("zynq7000-spi: failed to create device file %s, err: %s\n", devName, strerror(err));
-			continue;
+			return EXIT_FAILURE;
 		}
 	}
 
 	spisrv_common.dev = dev;
-	spisrv_msgthr((void *)port);
+	spisrv_msgthr((void *)oid.port);
 
-	return EOK;
+	return EXIT_SUCCESS;
 }

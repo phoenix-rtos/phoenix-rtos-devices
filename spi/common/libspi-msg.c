@@ -12,6 +12,7 @@
  */
 
 #include <errno.h>
+#include <spi.h>
 #include <spi-msg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -67,7 +68,13 @@ int spimsg_open(unsigned int dev, unsigned int ss, spimsg_ctx_t *ctx)
 		return -EINVAL;
 	}
 
-	err = snprintf(devName, sizeof(devName), "/dev/spi%u.%u", dev, ss);
+	if (ss == SPI_SS_EXTERNAL) {
+		err = snprintf(devName, sizeof(devName), "/dev/spi%u", dev);
+	}
+	else {
+		err = snprintf(devName, sizeof(devName), "/dev/spi%u.%u", dev, ss);
+	}
+
 	if (err >= sizeof(devName)) {
 		return -EINVAL;
 	}

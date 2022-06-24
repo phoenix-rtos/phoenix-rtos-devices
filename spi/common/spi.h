@@ -25,6 +25,9 @@
 #define SPI_MODE2 (SPI_CPOL | 0)
 #define SPI_MODE3 (SPI_CPOL | SPI_CPHA)
 
+/* SPI external slave select line. Passed to spi_xfer() for manual SS control */
+#define SPI_SS_EXTERNAL ((unsigned int)-1)
+
 
 /* Performs SPI transaction with SPI slave given by ss */
 extern int spi_xfer(unsigned int dev, unsigned int ss, const void *out, size_t olen, void *in, size_t ilen, size_t iskip);

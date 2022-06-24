@@ -27,7 +27,18 @@
 
 
 /* SPI registers */
-enum { cr = 0, sr, ier, idr, imr, er, dr, txd, rxd, sic, txt, rxt };
+#define SPI_CR  0  /* Configuration register */
+#define SPI_SR  1  /* Interrupt status register */
+#define SPI_IER 2  /* Interrupt enable register */
+#define SPI_IDR 3  /* Interrupt disable register */
+#define SPI_IMR 4  /* Interrupt mask register */
+#define SPI_ER  5  /* Enable controller register */
+#define SPI_DR  6  /* Delay control register */
+#define SPI_TXD 7  /* Transmit data register */
+#define SPI_RXD 8  /* Receive data register */
+#define SPI_SIC 9  /* Slave idle count register */
+#define SPI_TXT 10 /* TX threshold register */
+#define SPI_RXT 11 /* RX threshold register */
 
 
 /* SPI definitions */
@@ -110,14 +121,14 @@ static int spi_isr(unsigned int n, void *arg)
 	spi_t *spi = arg;
 	unsigned int status;
 
-	status = *(spi->base + sr);
+	status = *(spi->base + SPI_SR);
 
 	/* Clear all interrupts */
-	*(spi->base + sr) = status;
+	*(spi->base + SPI_SR) = status;
 
 	/* TX FIFO empty */
 	if (status & (1 << 2)) {
-		*(spi->base + idr) = (1 << 2);
+		*(spi->base + SPI_IDR) = (1 << 2);
 		return spi->cond;
 	}
 
@@ -130,7 +141,7 @@ static unsigned char spi_getClkMode(spi_t *spi)
 	unsigned char mode = 0;
 	unsigned int cfg;
 
-	cfg = *(spi->base + cr);
+	cfg = *(spi->base + SPI_CR);
 
 	if (cfg & (1 << 2)) {
 		mode |= SPI_CPHA;
@@ -167,7 +178,7 @@ static void spi_setClkMode(spi_t *spi, unsigned char mode)
 {
 	unsigned int cfg;
 
-	cfg = *(spi->base + cr);
+	cfg = *(spi->base + SPI_CR);
 	cfg &= ~((1 << 2) | (1 << 1));
 
 	if (mode & SPI_CPHA) {
@@ -178,7 +189,7 @@ static void spi_setClkMode(spi_t *spi, unsigned char mode)
 		cfg |= (1 << 1);
 	}
 
-	*(spi->base + cr) = cfg;
+	*(spi->base + SPI_CR) = cfg;
 }
 
 
@@ -202,7 +213,7 @@ static unsigned int spi_getClkSpeed(spi_t *spi)
 	unsigned char divisor;
 	unsigned int cfg;
 
-	cfg = *(spi->base + cr);
+	cfg = *(spi->base + SPI_CR);
 	divisor = (cfg >> 3) & 7;
 
 	return SPI_SCLK(divisor);
@@ -232,11 +243,11 @@ static void spi_setClkSpeed(spi_t *spi, unsigned char divisor)
 {
 	unsigned int cfg;
 
-	cfg = *(spi->base + cr);
+	cfg = *(spi->base + SPI_CR);
 	cfg &= ~(7 << 3);
 	cfg |= (divisor & 7) << 3;
 
-	*(spi->base + cr) = cfg;
+	*(spi->base + SPI_CR) = cfg;
 }
 
 
@@ -259,15 +270,23 @@ int spi_setSpeed(unsigned int dev, unsigned int speed)
 }
 
 
-static void spi_select(spi_t *spi, int ss)
+static void spi_select(spi_t *spi, unsigned int ss, unsigned int state)
 {
 	unsigned int cfg;
 
-	if (ss < 0) {
+	/* Check for external SS control */
+	if (ss == SPI_SS_EXTERNAL) {
+		return;
+	}
+
+	/* Raise SS line high */
+	if (state > 0) {
 		/* Deselect all */
 		ss = 15;
 	}
+	/* Set SS line low */
 	else {
+		ss = (spi->pins[ss].pin - spi->id) % SPI_SS_COUNT;
 		/* SS0 -> 0 */
 		/* SS1 -> 1 */
 		/* SS2 -> 3 */
@@ -276,11 +295,11 @@ static void spi_select(spi_t *spi, int ss)
 		}
 	}
 
-	cfg = *(spi->base + cr);
+	cfg = *(spi->base + SPI_CR);
 	cfg &= ~(15 << 10);
 	cfg |= (ss << 10);
 
-	*(spi->base + cr) = cfg;
+	*(spi->base + SPI_CR) = cfg;
 }
 
 
@@ -296,7 +315,7 @@ int spi_xfer(unsigned int dev, unsigned int ss, const void *out, size_t olen, vo
 		return -ENODEV;
 	}
 
-	if ((ss >= SPI_SS_COUNT) || (spi->pins[ss].pin < 0)) {
+	if ((ss != SPI_SS_EXTERNAL) && ((ss >= SPI_SS_COUNT) || (spi->pins[ss].pin < 0))) {
 		return -EINVAL;
 	}
 
@@ -305,8 +324,8 @@ int spi_xfer(unsigned int dev, unsigned int ss, const void *out, size_t olen, vo
 	}
 
 	/* Select slave and enable controller */
-	spi_select(spi, ss);
-	*(spi->base + er) = 1;
+	spi_select(spi, ss, 0);
+	*(spi->base + SPI_ER) = 1;
 
 	while (len > 0) {
 		/* Write to TX FIFO */
@@ -318,23 +337,23 @@ int spi_xfer(unsigned int dev, unsigned int ss, const void *out, size_t olen, vo
 			else {
 				data = 0;
 			}
-			*(spi->base + txd) = data;
+			*(spi->base + SPI_TXD) = data;
 		}
 
 		/* Enable TX FIFO empty interrupt */
-		*(spi->base + ier) = (1 << 2);
+		*(spi->base + SPI_IER) = (1 << 2);
 
 		/* Wait until TX FIFO is empty */
 		/* spi->lock mutex is locked in spi_init() */
-		while (!(*(spi->base + sr) & (1 << 2))) {
+		while (!(*(spi->base + SPI_SR) & (1 << 2))) {
 			condWait(spi->cond, spi->lock, 0);
 		}
 
 		/* Read from RX FIFO */
 		while (n > 0) {
 			/* RX FIFO not empty */
-			if (*(spi->base + sr) & (1 << 4)) {
-				data = *(spi->base + rxd) & 0xff;
+			if (*(spi->base + SPI_SR) & (1 << 4)) {
+				data = *(spi->base + SPI_RXD) & 0xff;
 				if (iskip > 0) {
 					iskip--;
 				}
@@ -348,8 +367,8 @@ int spi_xfer(unsigned int dev, unsigned int ss, const void *out, size_t olen, vo
 	}
 
 	/* Disable controller and deselect slave */
-	*(spi->base + er) = 0;
-	spi_select(spi, -1);
+	*(spi->base + SPI_ER) = 0;
+	spi_select(spi, ss, 1);
 
 	return EOK;
 }
@@ -358,10 +377,6 @@ int spi_xfer(unsigned int dev, unsigned int ss, const void *out, size_t olen, vo
 static int spi_setPin(int pin, unsigned int cfg)
 {
 	platformctl_t pctl;
-
-	if (pin < 0) {
-		return EOK;
-	}
 
 	pctl.action = pctl_set;
 	pctl.type = pctl_mio;
@@ -386,13 +401,18 @@ static int spi_initPins(spi_t *spi)
 	int err;
 
 	for (i = 0; i < sizeof(spi->pins) / sizeof(spi->pins[0]); i++) {
+		/* Skip not configured pins */
+		if (spi->pins[i].pin < 0) {
+			continue;
+		}
+
 		err = spi_setPin(spi->pins[i].pin, spi->pins[i].cfg);
 		if (err < 0) {
-			break;
+			return err;
 		}
 	}
 
-	return err;
+	return EOK;
 }
 
 
@@ -515,18 +535,17 @@ int spi_init(unsigned int dev)
 		return -ENOMEM;
 	}
 
-	/* Manual SS, SPI master mode */
-	*(spi->base + cr) = (1 << 14) | (1 << 0);
+	/* Manual SS, deselect all slaves, SPI master mode */
+	*(spi->base + SPI_CR) = (1 << 14) | (15 << 10) | (1 << 0);
 
-	/* SPI clock mode 0, SCLK 50 MHz, deselect all slaves */
+	/* SPI clock mode 0, SCLK 50 MHz */
 	spi_setClkMode(spi, SPI_MODE0);
 	spi_setClkSpeed(spi, SPI_CLK_DIV_MIN);
-	spi_select(spi, -1);
 
 	/* Enable TX FIFO underflow and RX FIFO overflow interrupts */
-	*(spi->base + ier) = (1 << 6) | (1 << 0);
+	*(spi->base + SPI_IER) = (1 << 6) | (1 << 0);
 	/* Disable other interrupts */
-	*(spi->base + idr) = (1 << 5) | (1 << 4) | (1 << 3) | (1 << 2) | (1 << 1);
+	*(spi->base + SPI_IDR) = (1 << 5) | (1 << 4) | (1 << 3) | (1 << 2) | (1 << 1);
 
 	/* Lock IRQ mutex and attach IRQ handler */
 	mutexLock(spi->lock);
