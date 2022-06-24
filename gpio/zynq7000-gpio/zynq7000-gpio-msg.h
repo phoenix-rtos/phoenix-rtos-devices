@@ -53,11 +53,11 @@ extern int gpiomsg_readPin(oid_t *pin, uint32_t *val);
 extern int gpiomsg_writePin(oid_t *pin, uint32_t val);
 
 
-/* Returns GPIO pins state (0 - low, 1 -high) */
+/* Returns GPIO pins state (0 - low, 1 - high) */
 extern int gpiomsg_readPort(oid_t *port, uint32_t *val);
 
 
-/* Sets GPIO pins state (0 -low, 1 - high) */
+/* Sets GPIO pins state (0 - low, 1 - high) */
 extern int gpiomsg_writePort(oid_t *port, uint32_t val, uint32_t mask);
 
 
