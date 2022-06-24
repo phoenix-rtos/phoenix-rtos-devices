@@ -11,7 +11,7 @@ Options:
 ## Interface
 Server creates a directory in /dev for each GPIO channel (i.e. `/dev/xgpio0`, `/dev/xgpio1`). Each directory contains 3 types of files:
 - port - provides read/write access to the whole 32 bit-wide GPIO port
-- dir  - allows GPIO port configuration (1: input, 0: output)
+- dir  - allows GPIO port configuration (0: input, 1: output)
 - pinx - access to the individual GPIO pins
 
 Example:
