@@ -113,10 +113,10 @@ static int gpio_writeDir(int channel, uint32_t dir)
 	int ret = 0;
 
 	if (channel == 0) {
-		*(gpio_common.base + GPIO1_DIR) = dir;
+		*(gpio_common.base + GPIO1_DIR) = ~dir;
 	}
 	else if (channel == 1) {
-		*(gpio_common.base + GPIO2_DIR) = dir;
+		*(gpio_common.base + GPIO2_DIR) = ~dir;
 	}
 	else {
 		ret = -EINVAL;
@@ -131,10 +131,10 @@ static int gpio_readDir(int channel, uint32_t *dir)
 	int ret = 0;
 
 	if (channel == 0) {
-		*dir = *(gpio_common.base + GPIO1_DIR);
+		*dir = ~(*(gpio_common.base + GPIO1_DIR));
 	}
 	else if (channel == 1) {
-		*dir = *(gpio_common.base + GPIO2_DIR);
+		*dir = ~(*(gpio_common.base + GPIO2_DIR));
 	}
 	else {
 		ret = -EINVAL;
