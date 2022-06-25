@@ -72,9 +72,7 @@
 #define SENSOR_OUTPUT_SIZE 6
 
 /* conversions */
-#define MAG4G_CONV_MGAUSS 0.14F        /* conversion from sensor (at +-4 gauss scale) value to milligauss */
-#define MGAUSS_2_UTSL     1.221730475F /* milligauss to microtesla conversion parameter */
-#define UTSL_2_MAGSHUB    10.F         /* microtesla to sensorhub magnetic flux storage scale of 10^-7 T */
+#define MAG4G_CONV_MGAUSS 0.14F /* conversion from sensor (at +-4 gauss scale) value to milligauss (equal to 10^-7 T) */
 
 
 typedef struct {
@@ -90,7 +88,8 @@ static int16_t translateMag(uint8_t hbyte, uint8_t lbyte)
 
 	val = (hbyte << 8) | lbyte;
 
-	return val * MAG4G_CONV_MGAUSS * MGAUSS_2_UTSL * UTSL_2_MAGSHUB;
+	/* conversion to milligaus (10^-7 T), as it is already sensor manager storage scale */
+	return val * MAG4G_CONV_MGAUSS;
 }
 
 
