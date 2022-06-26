@@ -97,12 +97,13 @@ static int spiWriteReg(spimsg_ctx_t *spiCtx, uint8_t regAddr, uint8_t regVal)
 
 static int lps25xx_whoamiCheck(spimsg_ctx_t *spiCtx)
 {
-	uint8_t cmd, val, err;
+	uint8_t cmd, val;
+	int err;
 
 	cmd = REG_WHOAMI | SPI_READ_BIT;
 	val = 0;
 	err = spimsg_xfer(spiCtx, &cmd, 1, &val, 1, 1);
-	if ((err < 0) | (val != REG_VAL_WHOAMI)) {
+	if ((err < 0) || (val != REG_VAL_WHOAMI)) {
 		return -1;
 	}
 
