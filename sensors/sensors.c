@@ -21,6 +21,8 @@
 #include <sys/threads.h>
 #include <posix/utils.h>
 
+#include <sensors-spi.h>
+
 #include "sensors.h"
 
 #define CLIENT_SET_ID(id) (id + 1)
@@ -598,6 +600,12 @@ int main(int argc, char **argv)
 	int devsz, res;
 
 	res = mutexCreate(&sensors_common.cLock);
+	if (res < 0) {
+		sensors_cleanup(0);
+		return EXIT_FAILURE;
+	}
+
+	res = sensorsspi_init();
 	if (res < 0) {
 		sensors_cleanup(0);
 		return EXIT_FAILURE;

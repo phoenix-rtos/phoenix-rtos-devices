@@ -22,7 +22,7 @@
 #include <sys/time.h>
 #include <sys/threads.h>
 #include <spi.h>
-#include <spi-msg.h>
+#include <sensors-spi.h>
 #include <string.h>
 
 #include "../sensors.h"
@@ -77,6 +77,7 @@
 
 typedef struct {
 	spimsg_ctx_t spiCtx;
+	oid_t spiSS;
 	sensor_event_t evt;
 	char stack[512] __attribute__((aligned(8)));
 } lsm9dsxx_ctx_t;
@@ -93,22 +94,22 @@ static int16_t translateMag(uint8_t hbyte, uint8_t lbyte)
 }
 
 
-static int spiWriteReg(spimsg_ctx_t *spiCtx, uint8_t regAddr, uint8_t regVal)
+static int spiWriteReg(lsm9dsxx_ctx_t *ctx, uint8_t regAddr, uint8_t regVal)
 {
 	unsigned char cmd[2] = { regAddr, regVal };
 
-	return spimsg_xfer(spiCtx, cmd, sizeof(cmd), NULL, 0, sizeof(cmd));
+	return sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, cmd, sizeof(cmd), NULL, 0, sizeof(cmd));
 }
 
 
-static int lsm9dsxx_whoamiCheck(spimsg_ctx_t *spiCtx)
+static int lsm9dsxx_whoamiCheck(lsm9dsxx_ctx_t *ctx)
 {
 	uint8_t cmd, val;
 	int err;
 
 	cmd = REG_WHOAMI | SPI_READ_BIT;
 	val = 0;
-	err = spimsg_xfer(spiCtx, &cmd, 1, &val, 1, 1);
+	err = sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, &cmd, sizeof(cmd), &val, sizeof(val), sizeof(cmd));
 	if ((err < 0) || (val != REG_VAL_WHOAMI)) {
 		return -1;
 	}
@@ -117,29 +118,29 @@ static int lsm9dsxx_whoamiCheck(spimsg_ctx_t *spiCtx)
 }
 
 
-static int lsm9dsxx_hwSetup(spimsg_ctx_t *spiCtx)
+static int lsm9dsxx_hwSetup(lsm9dsxx_ctx_t *ctx)
 {
-	if (lsm9dsxx_whoamiCheck(spiCtx) != 0) {
+	if (lsm9dsxx_whoamiCheck(ctx) != 0) {
 		printf("lsm9dsxx_mag: cannot read/wrong WHOAMI returned!\n");
 		return -1;
 	}
 
 	/* output data rate to 80Hz + high performance mode to X and Y axis */
-	if (spiWriteReg(spiCtx, REG_CTRL_REG1_M, (VAL_CTRL_REG1_M_XYHIGH_PERF_MODE | VAL_CTRL_REG1_M_ODR_80)) < 0) {
+	if (spiWriteReg(ctx, REG_CTRL_REG1_M, (VAL_CTRL_REG1_M_XYHIGH_PERF_MODE | VAL_CTRL_REG1_M_ODR_80)) < 0) {
 		return -1;
 	}
 	/* scale +-4 gauss (same as default, written just for clarity) */
-	if (spiWriteReg(spiCtx, REG_CTRL_REG2_M, VAL_CTRL_REG2_M_FS_4) < 0) {
+	if (spiWriteReg(ctx, REG_CTRL_REG2_M, VAL_CTRL_REG2_M_FS_4) < 0) {
 		return -1;
 	}
 	/* high performance mode for Z axis */
-	if (spiWriteReg(spiCtx, REG_CTRL_REG4_M, VAL_CTRL_REG4_M_ZHIGH_PERF_MODE) < 0) {
+	if (spiWriteReg(ctx, REG_CTRL_REG4_M, VAL_CTRL_REG4_M_ZHIGH_PERF_MODE) < 0) {
 		return -1;
 	}
 	usleep(10 * 1000);
 
 	/* continuous measurement mode */
-	if (spiWriteReg(spiCtx, REG_CTRL_REG3_M, (VAL_CTRL_REG3_M_MD_CONTINUOUS)) < 0) {
+	if (spiWriteReg(ctx, REG_CTRL_REG3_M, (VAL_CTRL_REG3_M_MD_CONTINUOUS)) < 0) {
 		return -1;
 	}
 	usleep(100 * 1000);
@@ -153,7 +154,6 @@ static void lsm9dsxx_threadPublish(void *data)
 	int err;
 	sensor_info_t *info = (sensor_info_t *)data;
 	lsm9dsxx_ctx_t *ctx = info->ctx;
-	spimsg_ctx_t *spiCtx = &ctx->spiCtx;
 	uint8_t ibuf[SENSOR_OUTPUT_SIZE] = { 0 };
 	uint8_t obuf;
 
@@ -161,7 +161,7 @@ static void lsm9dsxx_threadPublish(void *data)
 		usleep(12500); /* 80Hz sampling period */
 
 		obuf = REG_DATA_OUT | SPI_READ_BIT | SPI_AUTOADDRINCR_BIT;
-		err = spimsg_xfer(spiCtx, &obuf, 1, ibuf, SENSOR_OUTPUT_SIZE, 1);
+		err = sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, &obuf, sizeof(obuf), ibuf, sizeof(ibuf), sizeof(obuf));
 
 		if (err >= 0) {
 			gettime(&(ctx->evt.timestamp), NULL);
@@ -192,7 +192,8 @@ static int lsm9dsxx_start(sensor_info_t *info)
 static int lsm9dsxx_alloc(sensor_info_t *info, const char *args)
 {
 	lsm9dsxx_ctx_t *ctx;
-	int ntries = 10;
+	char *ss;
+	int err;
 
 	/* sensor context allocation */
 	ctx = malloc(sizeof(lsm9dsxx_ctx_t));
@@ -208,23 +209,24 @@ static int lsm9dsxx_alloc(sensor_info_t *info, const char *args)
 	info->types = SENSOR_TYPE_MAG;
 
 	ctx->spiCtx.mode = SPI_MODE3;
-	ctx->spiCtx.speed = 6250000;
+	ctx->spiCtx.speed = 10000000;
 
-	/* open SPI context */
-	while (lookup(args, NULL, &ctx->spiCtx.oid) < 0) {
-		ntries--;
-		if (ntries == 0) {
-			printf("lsm9dsxx_mag: Can`t open SPI device\n");
-			free(ctx);
-			return -ETIMEDOUT;
-		}
-		usleep(10 * 1000);
+	ss = strchr(args, ':');
+	if (ss != NULL) {
+		*(ss++) = '\0';
+	}
+
+	/* initialize SPI device communication */
+	err = sensorsspi_initDev(args, ss, &ctx->spiCtx.oid, &ctx->spiSS);
+	if (err < 0) {
+		printf("lps25xx: Can`t initialize SPI device\n");
+		free(ctx);
+		return err;
 	}
 
 	/* hardware setup of imu */
-	if (lsm9dsxx_hwSetup(&ctx->spiCtx) < 0) {
+	if (lsm9dsxx_hwSetup(ctx) < 0) {
 		printf("lsm9dsxx_mag: failed to setup device\n");
-		spimsg_close(&ctx->spiCtx);
 		free(ctx);
 		return -1;
 	}
