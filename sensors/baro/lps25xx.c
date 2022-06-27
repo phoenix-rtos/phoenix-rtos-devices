@@ -13,11 +13,12 @@
 
 #include <errno.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include <sys/time.h>
 #include <sys/threads.h>
 #include <spi.h>
-#include <spi-msg.h>
+#include <sensors-spi.h>
 
 #include "../sensors.h"
 
@@ -58,8 +59,10 @@
 #define SENSOR_CONV_KELV    0.002083333F /*conversion from sensor value to kelvin */
 #define SENSOR_KELV_OFFS    315.65F      /* temperature measurement offset + kelvin to celsius offset */
 
+
 typedef struct {
 	spimsg_ctx_t spiCtx;
+	oid_t spiSS;
 	sensor_event_t evtBaro;
 	char stack[512] __attribute__((aligned(8)));
 } lps25xx_ctx_t;
@@ -87,22 +90,22 @@ static uint32_t translateTemp(uint8_t hbyte, uint8_t lbyte)
 }
 
 
-static int spiWriteReg(spimsg_ctx_t *spiCtx, uint8_t regAddr, uint8_t regVal)
+static int spiWriteReg(lps25xx_ctx_t *ctx, uint8_t regAddr, uint8_t regVal)
 {
 	unsigned char cmd[2] = { regAddr, regVal };
 
-	return spimsg_xfer(spiCtx, cmd, sizeof(cmd), NULL, 0, sizeof(cmd));
+	return sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, cmd, sizeof(cmd), NULL, 0, sizeof(cmd));
 }
 
 
-static int lps25xx_whoamiCheck(spimsg_ctx_t *spiCtx)
+static int lps25xx_whoamiCheck(lps25xx_ctx_t *ctx)
 {
 	uint8_t cmd, val;
 	int err;
 
 	cmd = REG_WHOAMI | SPI_READ_BIT;
 	val = 0;
-	err = spimsg_xfer(spiCtx, &cmd, 1, &val, 1, 1);
+	err = sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, &cmd, sizeof(cmd), &val, sizeof(val), sizeof(cmd));
 	if ((err < 0) || (val != REG_VAL_WHOAMI)) {
 		return -1;
 	}
@@ -111,18 +114,18 @@ static int lps25xx_whoamiCheck(spimsg_ctx_t *spiCtx)
 }
 
 
-static int lps25xx_hwSetup(spimsg_ctx_t *spiCtx)
+static int lps25xx_hwSetup(lps25xx_ctx_t *ctx)
 {
-	if (lps25xx_whoamiCheck(spiCtx) != 0) {
+	if (lps25xx_whoamiCheck(ctx) != 0) {
 		printf("lps25xx: cannot read/wrong WHOAMI returned!\n");
 		return -1;
 	}
 
-	if (spiWriteReg(spiCtx, REG_RES_CONF, VAL_AVGT_8 | VAL_AVGP_128) < 0) {
+	if (spiWriteReg(ctx, REG_RES_CONF, VAL_AVGT_8 | VAL_AVGP_128) < 0) {
 		return -1;
 	}
 
-	if (spiWriteReg(spiCtx, REG_CTRL_REG1, (VAL_PD_ACTIVE_MODE | VAL_ODR_25HZ)) < 0) {
+	if (spiWriteReg(ctx, REG_CTRL_REG1, (VAL_PD_ACTIVE_MODE | VAL_ODR_25HZ)) < 0) {
 		return -1;
 	}
 	usleep(1000 * 100);
@@ -134,10 +137,8 @@ static int lps25xx_hwSetup(spimsg_ctx_t *spiCtx)
 static void lps25xx_publishthr(void *data)
 {
 	int err;
-	time_t tstamp;
 	sensor_info_t *info = (sensor_info_t *)data;
 	lps25xx_ctx_t *ctx = info->ctx;
-	spimsg_ctx_t *spiCtx = &ctx->spiCtx;
 	uint8_t ibuf[SENSOR_OUTPUT_SIZE] = { 0 };
 	uint8_t obuf;
 
@@ -146,7 +147,7 @@ static void lps25xx_publishthr(void *data)
 		usleep(40 * 1000);
 
 		obuf = REG_DATA_OUT | SPI_READ_BIT | SPI_AUTOADDRINCR_BIT;
-		err = spimsg_xfer(spiCtx, &obuf, 1, ibuf, SENSOR_OUTPUT_SIZE, 1);
+		err = sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, &obuf, sizeof(obuf), ibuf, sizeof(ibuf), sizeof(obuf));
 
 		if (err >= 0) {
 			/* minus accounts for non right-handness of lsm9dsxx accelerometer frame of reference */
@@ -177,7 +178,8 @@ static int lps25xx_start(sensor_info_t *info)
 static int lps25xx_alloc(sensor_info_t *info, const char *args)
 {
 	lps25xx_ctx_t *ctx;
-	int ntries = 10;
+	char *ss;
+	int err;
 
 	/* sensor context allocation */
 	ctx = malloc(sizeof(lps25xx_ctx_t));
@@ -193,23 +195,24 @@ static int lps25xx_alloc(sensor_info_t *info, const char *args)
 	info->types = SENSOR_TYPE_BARO;
 
 	ctx->spiCtx.mode = SPI_MODE3;
-	ctx->spiCtx.speed = 6250000;
+	ctx->spiCtx.speed = 10000000;
 
-	/* open SPI context */
-	while (lookup(args, NULL, &ctx->spiCtx.oid) < 0) {
-		ntries--;
-		if (ntries == 0) {
-			printf("lps25xx: Can`t open SPI device\n");
-			free(ctx);
-			return -ETIMEDOUT;
-		}
-		usleep(10 * 1000);
+	ss = strchr(args, ':');
+	if (ss != NULL) {
+		*(ss++) = '\0';
+	}
+
+	/* initialize SPI device communication */
+	err = sensorsspi_initDev(args, ss, &ctx->spiCtx.oid, &ctx->spiSS);
+	if (err < 0) {
+		printf("lps25xx: Can`t initialize SPI device\n");
+		free(ctx);
+		return err;
 	}
 
 	/* hardware setup of Barometer */
-	if (lps25xx_hwSetup(&ctx->spiCtx) < 0) {
+	if (lps25xx_hwSetup(ctx) < 0) {
 		printf("lps25xx: failed to setup device\n");
-		spimsg_close(&ctx->spiCtx);
 		free(ctx);
 		return -1;
 	}

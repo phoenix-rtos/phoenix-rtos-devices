@@ -22,7 +22,7 @@
 #include <sys/time.h>
 #include <sys/threads.h>
 #include <spi.h>
-#include <spi-msg.h>
+#include <sensors-spi.h>
 #include <string.h>
 
 #include "../sensors.h"
@@ -79,6 +79,7 @@
 
 typedef struct {
 	spimsg_ctx_t spiCtx;
+	oid_t spiSS;
 	sensor_event_t evtAccel;
 	sensor_event_t evtGyro;
 	char stack[512] __attribute__((aligned(8)));
@@ -113,22 +114,22 @@ static int16_t translateAcc(uint8_t hbyte, uint8_t lbyte)
 }
 
 
-static int spiWriteReg(spimsg_ctx_t *spiCtx, uint8_t regAddr, uint8_t regVal)
+static int spiWriteReg(lsm9dsxx_ctx_t *ctx, uint8_t regAddr, uint8_t regVal)
 {
 	unsigned char cmd[2] = { (regAddr & 0x7F), regVal }; /* write bit set to regAddr */
 
-	return spimsg_xfer(spiCtx, cmd, sizeof(cmd), NULL, 0, sizeof(cmd));
+	return sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, cmd, sizeof(cmd), NULL, 0, sizeof(cmd));
 }
 
 
-static int lsm9dsxx_whoamiCheck(spimsg_ctx_t *spiCtx)
+static int lsm9dsxx_whoamiCheck(lsm9dsxx_ctx_t *ctx)
 {
 	uint8_t cmd, val;
 	int err;
 
 	cmd = REG_WHOAMI | SPI_READ_BIT;
 	val = 0;
-	err = spimsg_xfer(spiCtx, &cmd, 1, &val, 1, 1);
+	err = sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, &cmd, sizeof(cmd), &val, sizeof(val), sizeof(cmd));
 	if ((err < 0) || (val != REG_VAL_WHOAMI)) {
 		return -1;
 	}
@@ -137,33 +138,33 @@ static int lsm9dsxx_whoamiCheck(spimsg_ctx_t *spiCtx)
 }
 
 
-static int lsm9dsxx_hwSetup(spimsg_ctx_t *spiCtx)
+static int lsm9dsxx_hwSetup(lsm9dsxx_ctx_t *ctx)
 {
-	if (lsm9dsxx_whoamiCheck(spiCtx) != 0) {
+	if (lsm9dsxx_whoamiCheck(ctx) != 0) {
 		printf("lsm9dsxx: cannot read/wrong WHOAMI returned!\n");
 		return -1;
 	}
 
 	/* auto increment + SW reset */
-	if (spiWriteReg(spiCtx, REG_CTRL_REG8, 0x05) < 0) {
+	if (spiWriteReg(ctx, REG_CTRL_REG8, 0x05) < 0) {
 		return -1;
 	}
 	usleep(1000 * 100);
 
 	/* ranges and sampling of accelerometer and gyro */
-	if (spiWriteReg(spiCtx, REG_CTRL_REG1_G, (VAL_CTRL_REG1_G_ODR_G_952HZ | VAL_CTRL_REG1_G_FS_G_2000)) < 0) {
+	if (spiWriteReg(ctx, REG_CTRL_REG1_G, (VAL_CTRL_REG1_G_ODR_G_952HZ | VAL_CTRL_REG1_G_FS_G_2000)) < 0) {
 		return -1;
 	}
-	if (spiWriteReg(spiCtx, REG_CTRL_REG6_XL, (VAL_CTRL_REG6_XL_ODR_XL_952 | VAL_CTRL_REG6_XL_FS_8G)) < 0) {
+	if (spiWriteReg(ctx, REG_CTRL_REG6_XL, (VAL_CTRL_REG6_XL_ODR_XL_952 | VAL_CTRL_REG6_XL_FS_8G)) < 0) {
 		return -1;
 	}
 	usleep(1000 * 100);
 
 	/* enabling sensors */
-	if (spiWriteReg(spiCtx, REG_CTRL_REG5_XL, (VAL_CTRL_REG5_XL_ENABLE)) < 0) {
+	if (spiWriteReg(ctx, REG_CTRL_REG5_XL, (VAL_CTRL_REG5_XL_ENABLE)) < 0) {
 		return -1;
 	}
-	if (spiWriteReg(spiCtx, CTRL_REG4, (CTRL_REG4_G_ENABLE)) < 0) {
+	if (spiWriteReg(ctx, CTRL_REG4, (CTRL_REG4_G_ENABLE)) < 0) {
 		return -1;
 	}
 	usleep(1000 * 100);
@@ -178,7 +179,6 @@ static void lsm9dsxx_threadPublish(void *data)
 	time_t tstamp_gyro, tstamp_accl;
 	sensor_info_t *info = (sensor_info_t *)data;
 	lsm9dsxx_ctx_t *ctx = info->ctx;
-	spimsg_ctx_t *spiCtx = &ctx->spiCtx;
 	uint8_t ibuf[SENSOR_OUTPUT_SIZE] = { 0 };
 	uint8_t obuf;
 
@@ -188,7 +188,7 @@ static void lsm9dsxx_threadPublish(void *data)
 
 		/* accel read */
 		obuf = REG_DATA_OUT_ACCL | SPI_READ_BIT;
-		err = spimsg_xfer(spiCtx, &obuf, 1, ibuf, SENSOR_OUTPUT_SIZE, 1);
+		err = sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, &obuf, sizeof(obuf), ibuf, sizeof(ibuf), sizeof(obuf));
 		gettime(&tstamp_accl, NULL);
 
 		if (err >= 0) {
@@ -202,7 +202,7 @@ static void lsm9dsxx_threadPublish(void *data)
 
 		/* gyroscope read */
 		obuf = REG_DATA_OUT_GYRO | SPI_READ_BIT;
-		err = spimsg_xfer(spiCtx, &obuf, 1, ibuf, SENSOR_OUTPUT_SIZE, 1);
+		err = sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, &obuf, sizeof(obuf), ibuf, sizeof(ibuf), sizeof(obuf));
 		gettime(&tstamp_gyro, NULL);
 
 		if (err >= 0) {
@@ -234,7 +234,8 @@ static int lsm9dsxx_start(sensor_info_t *info)
 static int lsm9dsxx_alloc(sensor_info_t *info, const char *args)
 {
 	lsm9dsxx_ctx_t *ctx;
-	int ntries = 10;
+	char *ss;
+	int err;
 
 	/* sensor context allocation */
 	ctx = malloc(sizeof(lsm9dsxx_ctx_t));
@@ -252,23 +253,24 @@ static int lsm9dsxx_alloc(sensor_info_t *info, const char *args)
 	info->types = SENSOR_TYPE_ACCEL | SENSOR_TYPE_GYRO;
 
 	ctx->spiCtx.mode = SPI_MODE3;
-	ctx->spiCtx.speed = 6250000;
+	ctx->spiCtx.speed = 10000000;
 
-	/* open SPI context */
-	while (lookup(args, NULL, &ctx->spiCtx.oid) < 0) {
-		ntries--;
-		if (ntries == 0) {
-			printf("lsm9dsxx: Can`t open SPI device\n");
-			free(ctx);
-			return -ETIMEDOUT;
-		}
-		usleep(10 * 1000);
+	ss = strchr(args, ':');
+	if (ss != NULL) {
+		*(ss++) = '\0';
+	}
+
+	/* initialize SPI device communication */
+	err = sensorsspi_initDev(args, ss, &ctx->spiCtx.oid, &ctx->spiSS);
+	if (err < 0) {
+		printf("lsm9dsxx: Can`t initialize SPI device\n");
+		free(ctx);
+		return err;
 	}
 
 	/* hardware setup of imu */
-	if (lsm9dsxx_hwSetup(&ctx->spiCtx) < 0) {
+	if (lsm9dsxx_hwSetup(ctx) < 0) {
 		printf("lsm9dsxx: failed to setup device\n");
-		spimsg_close(&ctx->spiCtx);
 		free(ctx);
 		return -1;
 	}
