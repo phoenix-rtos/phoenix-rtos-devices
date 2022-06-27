@@ -174,19 +174,14 @@ static void gpiosrv_msgthr(void *arg)
 					else {
 						err = gpio_writePin(bank, pin, val);
 					}
-
-					if (err < 0) {
-						msg.o.io.err = err;
-					}
-					else {
-						msg.o.io.err = msg.i.size;
-					}
+					msg.o.io.err = (err < 0) ? err : msg.i.size;
 				}
 				break;
 
 			case mtGetAttr:
 			case mtSetAttr:
 				msg.o.attr.err = -ENOSYS;
+				break;
 
 			default:
 				msg.o.io.err = -ENOSYS;
