@@ -23,7 +23,7 @@ extern int sensorsspi_xfer(const spimsg_ctx_t *ctx, oid_t *ss, const void *out, 
 
 
 /* Initializes SPI sensor device communication */
-extern int sensorsspi_initDev(const char *devSPI, const char *devSS, oid_t *spi, oid_t *ss);
+extern int sensorsspi_open(const char *devSPI, const char *devSS, oid_t *spi, oid_t *ss);
 
 
 /* Initializes SPI sensors communication */

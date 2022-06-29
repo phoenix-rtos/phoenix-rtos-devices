@@ -261,7 +261,7 @@ static int lsm9dsxx_alloc(sensor_info_t *info, const char *args)
 	}
 
 	/* initialize SPI device communication */
-	err = sensorsspi_initDev(args, ss, &ctx->spiCtx.oid, &ctx->spiSS);
+	err = sensorsspi_open(args, ss, &ctx->spiCtx.oid, &ctx->spiSS);
 	if (err < 0) {
 		printf("lsm9dsxx: Can`t initialize SPI device\n");
 		free(ctx);
