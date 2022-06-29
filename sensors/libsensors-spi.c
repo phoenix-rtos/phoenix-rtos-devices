@@ -53,7 +53,7 @@ int sensorsspi_xfer(const spimsg_ctx_t *ctx, oid_t *ss, const void *out, size_t 
 }
 
 
-int sensorsspi_initDev(const char *devSPI, const char *devSS, oid_t *spi, oid_t *ss)
+int sensorsspi_open(const char *devSPI, const char *devSS, oid_t *spi, oid_t *ss)
 {
 	char *path, *dir, *base;
 	unsigned int pin;
@@ -105,6 +105,26 @@ int sensorsspi_initDev(const char *devSPI, const char *devSS, oid_t *spi, oid_t 
 	}
 	pin = strtoul(base + 3, NULL, 0);
 
+	/* Configure pin as output */
+	dir = dirname(path);
+	sprintf(dir, "%s/dir", dir);
+
+	ntries = 10;
+	while (lookup(dir, NULL, &oid) < 0) {
+		ntries--;
+		if (ntries == 0) {
+			free(path);
+			return -ETIMEDOUT;
+		}
+		usleep(10 * 1000);
+	}
+
+	err = gpiomsg_writeDir(&oid, 1 << pin, 1 << pin);
+	if (err < 0) {
+		free(path);
+		return err;
+	}
+
 	/* Raise SS pin high */
 	dir = dirname(path);
 	sprintf(dir, "%s/port", dir);
@@ -125,25 +145,6 @@ int sensorsspi_initDev(const char *devSPI, const char *devSS, oid_t *spi, oid_t 
 		return err;
 	}
 
-	/* Configure pin as output */
-	dir = dirname(path);
-	sprintf(dir, "%s/dir", dir);
-
-	ntries = 10;
-	while (lookup(dir, NULL, &oid) < 0) {
-		ntries--;
-		if (ntries == 0) {
-			free(path);
-			return -ETIMEDOUT;
-		}
-		usleep(10 * 1000);
-	}
-
-	err = gpiomsg_writeDir(&oid, 1 << pin, 1 << pin);
-	if (err < 0) {
-		free(path);
-		return err;
-	}
 	free(path);
 
 	return EOK;
