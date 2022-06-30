@@ -49,7 +49,7 @@ typedef struct {
 	handle_t lock;
 	libtty_common_t tty;
 
-	uint8_t stack[_PAGE_SIZE];
+	uint8_t stack[_PAGE_SIZE] __attribute__((aligned(8)));
 } uart_t;
 
 
@@ -65,9 +65,9 @@ static const struct {
 };
 
 
-struct {
+static struct {
 	uart_t uart;
-	uint8_t stack[_PAGE_SIZE];
+	uint8_t stack[_PAGE_SIZE] __attribute__((aligned(8)));
 } uart_common;
 
 
@@ -82,8 +82,9 @@ static int uart_interrupt(unsigned int n, void *arg)
 	uart_t *uart = (uart_t *)arg;
 
 	/* RX Trigger IRQ occurred */
-	if (*(uart->base + isr) & 0x1)
-		*(uart->base + idr) = 0x1; /* Disable IRQ to not receive more interrupts */
+	if (*(uart->base + isr) & (1 << 0)) {
+		*(uart->base + idr) = (1 << 0); /* Disable IRQ to not receive more interrupts */
+	}
 
 	return 1;
 }
@@ -92,29 +93,39 @@ static int uart_interrupt(unsigned int n, void *arg)
 static void uart_intThread(void *arg)
 {
 	uart_t *uart = (uart_t *)arg;
+	int wake;
+
+	mutexLock(uart->lock);
 
 	for (;;) {
-		mutexLock(uart->lock);
-		while (!libtty_txready(&uart->tty) && (*(uart->base + sr) & 0x2))
+		while (!libtty_txready(&uart->tty) && (*(uart->base + sr) & (1 << 1))) {
 			condWait(uart->cond, uart->lock, 0);
-		mutexUnlock(uart->lock);
+		}
 
 		/* Receive data until RX FIFO is not empty */
-		while (!(*(uart->base + sr) & 0x2))
+		while (!(*(uart->base + sr) & (1 << 1))) {
 			libtty_putchar(&uart->tty, *(uart->base + fifo), NULL);
+		}
 
 		/* Transmit data until TX TTY buffer is empty or TX FIFO is full */
-		while (libtty_txready(&uart->tty) && !(*(uart->base + sr) & (0x1 << 4)))
+		wake = 0;
+		while (libtty_txready(&uart->tty) && !(*(uart->base + sr) & (1 << 4))) {
 			*(uart->base + fifo) = libtty_popchar(&uart->tty);
+			wake = 1;
+		}
 
-		libtty_wake_writer(&uart->tty);
+		if (wake) {
+			libtty_wake_writer(&uart->tty);
+		}
 
 		/* RX Trigger IRQ occurred */
-		if (*(uart->base + isr) & 0x1) {
-			*(uart->base + isr) = 0x1; /* RX Trigger status can be cleared after getting data from RX FIFO */
-			*(uart->base + ier) = 0x1; /* Enable RX Trigger irq which has been disabled in uart irq handler */
+		if (*(uart->base + isr) & (1 << 0)) {
+			*(uart->base + isr) = (1 << 0); /* RX Trigger status can be cleared after getting data from RX FIFO */
+			*(uart->base + ier) = (1 << 0); /* Enable RX Trigger irq which has been disabled in uart irq handler */
 		}
 	}
+
+	mutexUnlock(uart->lock);
 }
 
 
@@ -136,15 +147,18 @@ static void uart_setBaudrate(void *data, speed_t speed)
 	for (bdiv = 4; bdiv < 255; bdiv++) {
 		bgen = UART_REF_CLK / (baudrate * (bdiv + 1));
 
-		if (bgen < 2 || bgen > 65535)
+		if (bgen < 2 || bgen > 65535) {
 			continue;
+		}
 
 		calcBaudrate = UART_REF_CLK / (bgen * (bdiv + 1));
 
-		if (calcBaudrate > baudrate)
+		if (calcBaudrate > baudrate) {
 			diff = calcBaudrate - baudrate;
-		else
+		}
+		else {
 			diff = baudrate - calcBaudrate;
+		}
 
 		if (diff < bestDiff) {
 			bestDiff = diff;
@@ -153,8 +167,18 @@ static void uart_setBaudrate(void *data, speed_t speed)
 		}
 	}
 
+	/* Disable TX and RX */
+	*(uart->base + cr) = (1 << 5) | (1 << 3);
+
+	/* Configure baudrate */
 	*(uart->base + baudgen) = bestBgen;
 	*(uart->base + baud_rate_divider_reg0) = bestBdiv;
+
+	/* Reset TX and RX */
+	*(uart->base + cr) |= (1 << 1) | (1 << 0);
+
+	/* Enable TX and RX */
+	*(uart->base + cr) = (1 << 4) | (1 << 2);
 }
 
 
@@ -176,17 +200,23 @@ static void uart_setCFlag(void *data, tcflag_t *cflag)
 	}
 
 	/* Parity */
-	if (*cflag & PARENB)
+	if (*cflag & PARENB) {
 		*(uart->base + mr) &= ~(7 << 3);
-	else if (*cflag & PARODD)
+	}
+	else if (*cflag & PARODD) {
 		*(uart->base + mr) = (*(uart->base + mr) & ~0x00000038) | (1 << 3);
-
+	}
+	else {
+		*(uart->base + mr) = (*(uart->base + mr) & ~0x00000038) | (4 << 3);
+	}
 
 	/* Stop bits */
-	if (*cflag & CSTOPB)
+	if (*cflag & CSTOPB) {
 		*(uart->base + mr) = (*(uart->base + mr) & ~0x000000c0) | (2 << 6);
-	else
+	}
+	else {
 		*(uart->base + mr) &= ~0x000000c0;
+	}
 }
 
 
@@ -218,11 +248,12 @@ static void uart_dispatchMsg(void *arg)
 {
 	msg_t msg;
 	unsigned long int rid;
-	uint32_t port = (uint32_t)arg;
+	uint32_t port = uart_common.uart.oid.port;
 
 	for (;;) {
-		if (msgRecv(port, &msg, &rid) < 0)
+		if (msgRecv(port, &msg, &rid) < 0) {
 			continue;
+		}
 
 		switch (msg.type) {
 			case mtOpen:
@@ -270,7 +301,7 @@ static void uart_mkDev(unsigned int id)
 
 	snprintf(path, sizeof(path), "/dev/uart%u", id);
 	if (create_dev(&uart_common.uart.oid, path) < 0) {
-		debug("uart: Cannot create device file.\n");
+		debug("zynq7000-uart: cannot create device file\n");
 	}
 }
 
@@ -288,8 +319,8 @@ static int uart_setPin(uint32_t pin)
 	ctl.mio.l3 = 0x7;
 	ctl.mio.speed = 0;
 	ctl.mio.ioType = 1;
-	ctl.mio.pullup = 0;
-	ctl.mio.disableRcvr = 0;
+	ctl.mio.pullup = 1;
+	ctl.mio.disableRcvr = 1;
 
 	switch (pin) {
 		/* Uart Rx */
@@ -345,17 +376,19 @@ static int uart_initClk(void)
 }
 
 
-static int uart_init(unsigned int n, speed_t baud)
+static int uart_init(unsigned int n, speed_t baud, int raw)
 {
 	libtty_callbacks_t callbacks;
 	uart_t *uart = &uart_common.uart;
 
-	if (uart_setPin(info[n].rxPin) < 0 || uart_setPin(info[n].txPin) < 0 || uart_initAmbaClk(info[n].clk) < 0)
+	if (uart_setPin(info[n].rxPin) < 0 || uart_setPin(info[n].txPin) < 0 || uart_initAmbaClk(info[n].clk) < 0) {
 		return -EINVAL;
+	}
 
 	uart->base = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, info[n].base);
-	if (uart->base == MAP_FAILED)
+	if (uart->base == MAP_FAILED) {
 		return -ENOMEM;
+	}
 
 	callbacks.arg = uart;
 	callbacks.set_cflag = uart_setCFlag;
@@ -382,27 +415,22 @@ static int uart_init(unsigned int n, speed_t baud)
 		return -ENOENT;
 	}
 
-	/* Reset RX & TX */
-	*(uart->base + cr) = 0x3;
-
-	/* Disable TX and RX */
-	*(uart->base + cr) = (*(uart->base + cr) & ~0x000001ff) | 0x00000028;
-
-	uart_setBaudrate(uart, baud);
-	uart->tty.term.c_ispeed = uart->tty.term.c_ospeed = baud;
+	/* Set raw mode */
+	if (raw) {
+		libtty_set_mode_raw(&uart->tty);
+	}
 
 	/* normal mode, 1 stop bit, no parity, 8 bits */
 	uart_setCFlag(uart, &uart->tty.term.c_cflag);
 
 	/* Set trigger level, range: 1-63 */
 	*(uart->base + rxwm) = 1;
+
 	/* Enable RX FIFO trigger */
-	*(uart->base + ier) |= 0x1;
+	*(uart->base + ier) = (1 << 0);
 
-	/* Uart Control Register
-	 * TXEN = 0x1; RXEN = 0x1; TXRES = 0x1; RXRES = 0x1 */
-	*(uart->base + cr) = (*(uart->base + cr) & ~0x000001ff) | 0x00000017;
-
+	uart->tty.term.c_ispeed = uart->tty.term.c_ospeed = baud;
+	uart_setBaudrate(uart, baud);
 
 	beginthread(uart_intThread, 4, &uart->stack, sizeof(uart->stack), (void *)uart);
 	interrupt(info[n].irq, uart_interrupt, uart, uart->cond, &uart->inth);
@@ -417,24 +445,25 @@ static void uart_help(const char *progname)
 	printf("Options:\n");
 	printf("\t-b <baudrate>   - baudrate\n");
 	printf("\t-n <id>         - uart controller ID\n");
+	printf("\t-r              - set raw mode (default cooked)\n");
 	printf("\t-h              - print this message\n");
 }
 
 
 int main(int argc, char **argv)
 {
-	speed_t baud = B115200;
-	uint32_t port;
-	int c;
+	/* Default console configuration */
 	unsigned int uartn = 1;
+	speed_t baud = B115200;
+	int c, raw = 0;
 
-	if (argc != 1) {
-		/* Get uart ID and baudrate */
-		while ((c = getopt(argc, argv, "n:b:h")) != -1) {
+	if (argc > 1) {
+		while ((c = getopt(argc, argv, "n:b:rh")) != -1) {
 			switch (c) {
 				case 'b':
-					if ((baud = libtty_int_to_baudrate(atoi(optarg))) == (speed_t)-1) {
-						debug("uart: wrong baudrate value\n");
+					baud = libtty_int_to_baudrate(atoi(optarg));
+					if (baud == (speed_t)-1) {
+						debug("zynq7000-uart: wrong baudrate value\n");
 						return EXIT_FAILURE;
 					}
 					break;
@@ -442,17 +471,20 @@ int main(int argc, char **argv)
 				case 'n':
 					uartn = atoi(optarg);
 					if (uartn >= UARTS_MAX_CNT) {
-						debug("uart: wrong uart ID\n");
+						debug("zynq7000-uart: wrong uart ID\n");
 						return EXIT_FAILURE;
 					}
 					break;
 
+				case 'r':
+					raw = 1;
+					break;
+
 				case 'h':
 					uart_help(argv[0]);
-					return EXIT_FAILURE;
+					return EXIT_SUCCESS;
 
 				default:
-					debug("uart: invalid option \n");
 					uart_help(argv[0]);
 					return EXIT_FAILURE;
 			}
@@ -460,24 +492,20 @@ int main(int argc, char **argv)
 	}
 
 	if (uart_initClk() < 0) {
-		debug("uart: cannot initialize clocks\n");
+		debug("zynq7000-uart: cannot initialize clocks\n");
 		return EXIT_FAILURE;
 	}
 
-	portCreate(&port);
+	portCreate(&uart_common.uart.oid.port);
 
-	if (uart_init(uartn, baud) < 0) {
-		debug("uart: cannot initialize uart\n");
+	if (uart_init(uartn, baud, raw) < 0) {
+		debug("zynq7000-uart: cannot initialize uart\n");
 		return EXIT_FAILURE;
 	}
 
-	/* port = 0 & id = 0 are reserved for CONSOLE */
-	uart_common.uart.oid.port = port;
-	uart_common.uart.oid.id = 0;
-
-	beginthread(uart_dispatchMsg, 4, uart_common.stack, sizeof(uart_common.stack), (void *)port);
+	beginthread(uart_dispatchMsg, 4, uart_common.stack, sizeof(uart_common.stack), NULL);
 	uart_mkDev(uartn);
-	uart_dispatchMsg((void *)port);
+	uart_dispatchMsg(NULL);
 
-	return 0;
+	return EXIT_SUCCESS;
 }
