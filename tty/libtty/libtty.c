@@ -97,6 +97,7 @@ static void termios_init(struct termios* term)
 	term->c_iflag = TTYDEF_IFLAG & TTYSUP_IFLAG;
 	term->c_oflag = TTYDEF_OFLAG & TTYSUP_OFLAG;
 	term->c_lflag = TTYDEF_LFLAG & TTYSUP_LFLAG;
+	term->c_cflag = TTYDEF_CFLAG;
 
 	term->c_ispeed = TTYDEF_SPEED;
 	term->c_ospeed = TTYDEF_SPEED;
