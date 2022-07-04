@@ -29,6 +29,7 @@
 #include <sys/platform.h>
 #include <sys/interrupt.h>
 
+#include <board_config.h>
 #include <libtty.h>
 #include <posix/utils.h>
 
@@ -60,8 +61,8 @@ static const struct {
 	uint16_t rxPin;
 	uint16_t txPin;
 } info[UARTS_MAX_CNT] = {
-	{ 0xe0000000, 59, pctl_amba_uart0_clk, pctl_mio_pin_10, pctl_mio_pin_11 },
-	{ 0xe0001000, 82, pctl_amba_uart1_clk, pctl_mio_pin_49, pctl_mio_pin_48 }
+	{ 0xe0000000, 59, pctl_amba_uart0_clk, UART0_RX, UART0_TX },
+	{ 0xe0001000, 82, pctl_amba_uart1_clk, UART1_RX, UART1_TX }
 };
 
 
@@ -323,15 +324,13 @@ static int uart_setPin(uint32_t pin)
 	ctl.mio.disableRcvr = 1;
 
 	switch (pin) {
-		/* Uart Rx */
-		case pctl_mio_pin_10:
-		case pctl_mio_pin_49:
+		case UART0_RX:
+		case UART1_RX:
 			ctl.mio.triEnable = 1;
 			break;
 
-		/* Uart Tx */
-		case pctl_mio_pin_11:
-		case pctl_mio_pin_48:
+		case UART0_TX:
+		case UART1_TX:
 			ctl.mio.triEnable = 0;
 			break;
 
@@ -453,7 +452,7 @@ static void uart_help(const char *progname)
 int main(int argc, char **argv)
 {
 	/* Default console configuration */
-	unsigned int uartn = 1;
+	unsigned int uartn = UART_CONSOLE;
 	speed_t baud = B115200;
 	int c, raw = 0;
 
