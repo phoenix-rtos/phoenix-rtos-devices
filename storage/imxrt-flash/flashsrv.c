@@ -3,7 +3,7 @@
  *
  * i.MX RT Flash server
  *
- * Copyright 2019, 2020 Phoenix Systems
+ * Copyright 2019-2022 Phoenix Systems
  * Author: Hubert Buczynski
  *
  * This file is part of Phoenix-RTOS.
@@ -22,7 +22,9 @@
 
 #include <meterfs.h>
 #include <ptable.h>
+#include <board_config.h>
 
+#include "fspi.h"
 #include "flashdrv.h"
 #include "imxrt-flashsrv.h"
 
@@ -30,11 +32,17 @@
 #define LOG_ERROR(str, ...) do { fprintf(stderr, __FILE__  ":%d error: " str "\n", __LINE__, ##__VA_ARGS__); } while (0)
 #define TRACE(str, ...) do { if (0) fprintf(stderr, __FILE__  ":%d trace: " str "\n", __LINE__, ##__VA_ARGS__); } while (0)
 
-#define METERFS_STACKSZ              1024
-#define THREAD_STACKSZ               512
-#define THREAD_PRIORITY              4
+#define METERFS_STACKSZ   1024
+#define THREAD_STACKSZ    512
+#define FLASH_MEMORIES_NO (FLEXSPI_COUNT)
 
-#define FLASH_MEMORIES_NO            2
+#ifndef IMXRT_FLASH_PRIO
+/*
+ * Threads/processes including and below this priority must be run only from RAM to avoid preempting imxrt-flash
+ * during write to flash, threads/processes above that priority shall be run either from XIP or RAM.
+ */
+#define IMXRT_FLASH_PRIO 3
+#endif
 
 
 enum { flash_memory_unactive = 0, flash_memory_active = 0xff };
@@ -80,13 +88,15 @@ static ssize_t flashsrv_bufferedPagesWrite(uint8_t fID, size_t offset, const cha
 {
 	flash_memory_t *flash_memory;
 
-	if (FLASH_MEMORIES_NO <= fID)
+	if (FLASH_MEMORIES_NO <= fID) {
 		return -EINVAL;
+	}
 
 	flash_memory = flashsrv_common.flash_memories + fID;
 
-	if (flash_memory->fStatus == flash_memory_unactive)
-		return -EINVAL;
+	if (flash_memory->fStatus == flash_memory_unactive) {
+		return -ENODEV;
+	}
 
 	return flash_bufferedPagesWrite(&flash_memory->ctx, offset, data, size);
 }
@@ -96,13 +106,15 @@ static ssize_t flashsrv_read(uint8_t fID, size_t offset, char *data, size_t size
 {
 	flash_memory_t *flash_memory;
 
-	if (FLASH_MEMORIES_NO <= fID)
+	if (FLASH_MEMORIES_NO <= fID) {
 		return -EINVAL;
+	}
 
 	flash_memory = flashsrv_common.flash_memories + fID;
 
-	if (flash_memory->fStatus == flash_memory_unactive)
-		return -EINVAL;
+	if (flash_memory->fStatus == flash_memory_unactive) {
+		return -ENODEV;
+	}
 
 	return flash_readData(&flash_memory->ctx, offset, data, size);
 }
@@ -112,13 +124,15 @@ static int flashsrv_eraseSector(unsigned char fID, unsigned int offs)
 {
 	flash_memory_t *flash_memory;
 
-	if (FLASH_MEMORIES_NO <= fID)
+	if (FLASH_MEMORIES_NO <= fID) {
 		return -EINVAL;
+	}
 
 	flash_memory = flashsrv_common.flash_memories + fID;
 
-	if (flash_memory->fStatus == flash_memory_unactive)
-		return -EINVAL;
+	if (flash_memory->fStatus == flash_memory_unactive) {
+		return -ENODEV;
+	}
 
 	return flash_sectorErase(&flash_memory->ctx, offs);
 }
@@ -128,13 +142,15 @@ static int flashsrv_chipErase(unsigned char fID)
 {
 	flash_memory_t *flash_memory;
 
-	if (FLASH_MEMORIES_NO <= fID)
+	if (FLASH_MEMORIES_NO <= fID) {
 		return -EINVAL;
+	}
 
 	flash_memory = flashsrv_common.flash_memories + fID;
 
-	if (flash_memory->fStatus == flash_memory_unactive)
-		return -EINVAL;
+	if (flash_memory->fStatus == flash_memory_unactive) {
+		return -ENODEV;
+	}
 
 	return flash_chipErase(&flash_memory->ctx);
 }
@@ -146,8 +162,9 @@ static ssize_t flashsrv_fsWritef0(unsigned int addr, const void *buff, size_t bu
 {
 	flash_memory_t *flash_memory = flashsrv_common.flash_memories + 0;
 
-	if (flash_memory->fStatus == flash_memory_unactive)
-		return -EINVAL;
+	if (flash_memory->fStatus == flash_memory_unactive) {
+		return -ENODEV;
+	}
 
 	return flash_directBytesWrite(&flash_memory->ctx, addr, buff, bufflen);
 }
@@ -157,8 +174,9 @@ static ssize_t flashsrv_fsWritef1(unsigned int addr, const void *buff, size_t bu
 {
 	flash_memory_t *flash_memory = flashsrv_common.flash_memories + 1;
 
-	if (flash_memory->fStatus == flash_memory_unactive)
-		return -EINVAL;
+	if (flash_memory->fStatus == flash_memory_unactive) {
+		return -ENODEV;
+	}
 
 	return flash_directBytesWrite(&flash_memory->ctx, addr, buff, bufflen);
 }
@@ -194,18 +212,21 @@ static int flashsrv_fsPartitionErase(uint8_t fID)
 	uint32_t sectorsNb;
 	flash_memory_t *flash_memory;
 
-	if (FLASH_MEMORIES_NO <= fID)
+	if (FLASH_MEMORIES_NO <= fID) {
 		return -EINVAL;
+	}
 
 	flash_memory = flashsrv_common.flash_memories + fID;
 	sectorsNb = flash_memory->parts[flash_memory->currPart].pHeader->size / flash_memory->ctx.properties.sector_size;
 
 	for (i = 0; i < sectorsNb; ++i) {
-		if ((err = flashsrv_eraseSector(fID, flash_memory->parts[flash_memory->currPart].pHeader->offset + flash_memory->ctx.properties.sector_size * i)) < 0)
+		err = flashsrv_eraseSector(fID, flash_memory->parts[flash_memory->currPart].pHeader->offset + flash_memory->ctx.properties.sector_size * i);
+		if (err < 0) {
 			return err;
+		}
 	}
 
-	return 0;
+	return EOK;
 }
 
 
@@ -232,7 +253,8 @@ static void flashsrv_devCtl(flash_memory_t *memory, msg_t *msg)
 		return;
 	}
 
-	if ((fID = idevctl->oid.id) >= FLASH_MEMORIES_NO) {
+	fID = idevctl->oid.id;
+	if (fID >= FLASH_MEMORIES_NO) {
 		odevctl->err = -EINVAL;
 		return;
 	}
@@ -289,13 +311,14 @@ static void flashsrv_rawCtl(flash_memory_t *memory, msg_t *msg)
 		return;
 	}
 
-	if ((partID = idevctl->oid.id) >= memory->pCnt) {
+	partID = idevctl->oid.id;
+	if (partID >= memory->pCnt) {
 		odevctl->err = -EINVAL;
 		return;
 	}
 
 	if (memory->parts[partID].pStatus == flash_memory_unactive) {
-		odevctl->err = -EINVAL;
+		odevctl->err = -ENODEV;
 		return;
 	}
 
@@ -316,8 +339,8 @@ static void flashsrv_rawCtl(flash_memory_t *memory, msg_t *msg)
 			break;
 
 		case flashsrv_devctl_eraseSector:
-			TRACE("imxrt-flashsrv: flashsrv_devctl_eraseSector - adrr: %u, id: %u, port: %u.", idevctl->erase.addr + memory->parts[partID].pHeader->offset,
-					partID, idevctl->oid.port);
+			TRACE("imxrt-flashsrv: flashsrv_devctl_eraseSector - adrr: %u, id: %u, port: %u.",
+				idevctl->erase.addr + memory->parts[partID].pHeader->offset, partID, idevctl->oid.port);
 
 			if (idevctl->erase.addr	> memory->parts[idevctl->oid.id].pHeader->size) {
 				odevctl->err = -EINVAL;
@@ -332,8 +355,9 @@ static void flashsrv_rawCtl(flash_memory_t *memory, msg_t *msg)
 			TRACE("imxrt-flashsrv: flashsrv_devctl_erasePartition, id: %u, port: %u.", idevctl->oid.id, idevctl->oid.port);
 			sNb = memory->parts[partID].pHeader->size / memory->ctx.properties.sector_size;
 
-			for (i = 0; i < sNb; ++i)
+			for (i = 0; i < sNb; ++i) {
 				flashsrv_eraseSector(memory->fOid.id, memory->parts[partID].pHeader->offset + i * memory->ctx.properties.sector_size);
+			}
 
 			odevctl->err = EOK;
 			break;
@@ -423,8 +447,8 @@ static int flashsrv_verifyRawIO(const flash_memory_t *memory, msg_t *msg, size_t
 	}
 
 	if (memory->parts[msg->i.io.oid.id].pStatus == flash_memory_unactive) {
-		msg->o.io.err = -EINVAL;
-		return -EINVAL;
+		msg->o.io.err = -ENODEV;
+		return -ENODEV;
 	}
 
 	if (memory->parts[msg->i.io.oid.id].pHeader->size <= msg->i.io.offs) {
@@ -453,8 +477,9 @@ static void flashsrv_rawThread(void *arg)
 
 		switch (msg.type) {
 			case mtRead:
-				if (flashsrv_verifyRawIO(memory, &msg, &msg.o.size) < 0)
+				if (flashsrv_verifyRawIO(memory, &msg, &msg.o.size) < 0) {
 					break;
+				}
 
 				beginAddr = memory->parts[msg.i.io.oid.id].pHeader->offset;
 				mutexLock(memory->lock);
@@ -463,8 +488,9 @@ static void flashsrv_rawThread(void *arg)
 				break;
 
 			case mtWrite:
-				if (flashsrv_verifyRawIO(memory, &msg, &msg.i.size) < 0)
+				if (flashsrv_verifyRawIO(memory, &msg, &msg.i.size) < 0) {
 					break;
+				}
 
 				beginAddr = memory->parts[msg.i.io.oid.id].pHeader->offset;
 				mutexLock(memory->lock);
@@ -477,6 +503,7 @@ static void flashsrv_rawThread(void *arg)
 				flashsrv_rawCtl(memory, &msg);
 				mutexUnlock(memory->lock);
 				break;
+
 			case mtOpen:
 			case mtClose:
 				msg.o.io.err = EOK;
@@ -520,10 +547,12 @@ static void flashsrv_devThread(void *arg)
 				flashsrv_devCtl(memory, &msg);
 				mutexUnlock(memory->lock);
 				break;
+
 			case mtOpen:
 			case mtClose:
 				msg.o.io.err = EOK;
 				break;
+
 			default:
 				msg.o.io.err = -ENOSYS;
 				break;
@@ -539,7 +568,8 @@ static int flashsrv_initMeterfs(flashsrv_partition_t *part)
 {
 	meterfs_ctx_t *ctx;
 
-	if ((part->fsCtx = calloc(1, sizeof(meterfs_ctx_t))) == NULL) {
+	part->fsCtx = calloc(1, sizeof(meterfs_ctx_t));
+	if (part->fsCtx == NULL) {
 		LOG_ERROR("imxrt-flashsrv: cannot allocate memory.");
 		return -ENOMEM;
 	}
@@ -568,7 +598,7 @@ static int flashsrv_initMeterfs(flashsrv_partition_t *part)
 		return -1;
 	}
 
-	return 0;
+	return EOK;
 }
 
 
@@ -576,10 +606,9 @@ static int flashsrv_mountPart(flashsrv_partition_t *part)
 {
 	void *mem;
 	int res = EOK;
-	const uint8_t MAX_PATH_SIZE = 32;
-	char path[MAX_PATH_SIZE];
+	char path[32];
 
-	snprintf(path, MAX_PATH_SIZE, "/dev/flash%u.%s", part->fID, part->pHeader->name);
+	snprintf(path, sizeof(path), "/dev/flash%u.%s", part->fID, part->pHeader->name);
 
 	switch (part->pHeader->type) {
 		/* Raw partitions locate within single flash chip are handled by one thread */
@@ -587,41 +616,49 @@ static int flashsrv_mountPart(flashsrv_partition_t *part)
 			part->fsCtx = NULL;
 			part->oid.port = flashsrv_common.flash_memories[part->fID].rawPort;
 
-			if ((res = create_dev(&part->oid, path)) < 0) {
+			res = create_dev(&part->oid, path);
+			if (res < 0) {
 				LOG_ERROR("imxrt-flashsrv: create %s - err: %d", path, res);
 				return res;
 			}
 
 			if (!flashsrv_common.flash_memories[part->fID].rawActive) {
 				flashsrv_common.flash_memories[part->fID].rawActive = 1;
-				if ((mem = malloc(THREAD_STACKSZ)) == NULL) {
+
+				mem = malloc(THREAD_STACKSZ);
+				if (mem == NULL) {
 					LOG_ERROR("imxrt-flashsrv: cannot alloc memory.");
 					return -ENOMEM;
 				}
 
-				beginthread(flashsrv_rawThread, THREAD_PRIORITY, mem, THREAD_STACKSZ, (void *)&flashsrv_common.flash_memories[part->fID]);
+				beginthread(flashsrv_rawThread, IMXRT_FLASH_PRIO, mem, THREAD_STACKSZ, (void *)&flashsrv_common.flash_memories[part->fID]);
 			}
 			part->pStatus = flash_memory_active;
 			break;
 
 		/* Each meterfs partiton is handled by separete thread */
 		case ptable_meterfs:
-			if ((res = flashsrv_initMeterfs(part)) < 0)
+			res = flashsrv_initMeterfs(part);
+			if (res < 0) {
 				return res;
+			}
 
 			portCreate(&part->oid.port);
 			portRegister(part->oid.port, path, NULL);
-			if ((res = create_dev(&part->oid, path)) < 0) {
+
+			res = create_dev(&part->oid, path);
+			if (res < 0) {
 				LOG_ERROR("imxrt-flashsrv: create %s - err: %d", path, res);
 				return res;
 			}
 
-			if ((mem = malloc(METERFS_STACKSZ)) == NULL) {
+			mem = malloc(METERFS_STACKSZ);
+			if (mem == NULL) {
 				LOG_ERROR("imxrt-flashsrv: cannot alloc memory.");
 				return -ENOMEM;
 			}
 
-			beginthread(flashsrv_meterfsThread, THREAD_PRIORITY, mem, METERFS_STACKSZ, (void *)part);
+			beginthread(flashsrv_meterfsThread, IMXRT_FLASH_PRIO, mem, METERFS_STACKSZ, (void *)part);
 			part->pStatus = flash_memory_active;
 			break;
 
@@ -644,20 +681,23 @@ static int flashsrv_partsInit(void)
 
 	for (i = 0; i < FLASH_MEMORIES_NO; ++i) {
 		memory = flashsrv_common.flash_memories + i;
-		if (memory->fStatus != flash_memory_active)
+		if (memory->fStatus != flash_memory_active) {
 			continue;
+		}
 
 		/* Read partition table */
 		memProp.memSize = memory->ctx.properties.size;
 		memProp.sectorSize = memory->ctx.properties.sector_size;
 		memProp.read = i ? flashsrv_fsReadf1 : flashsrv_fsReadf0 ;
 
-		if ((pHeaders = ptable_readPartitions(&memory->pCnt, &memProp)) == NULL) {
+		pHeaders = ptable_readPartitions(&memory->pCnt, &memProp);
+		if (pHeaders == NULL) {
 			LOG_ERROR("imxrt-flashsrv: cannot initialize partition table on flash %d, wrong attributes", i);
 			continue;
 		}
 
-		if ((memory->parts = calloc(memory->pCnt, sizeof(flashsrv_partition_t))) == NULL) {
+		memory->parts = calloc(memory->pCnt, sizeof(flashsrv_partition_t));
+		if (memory->parts == NULL) {
 			LOG_ERROR("imxrt-flashsrv: cannot allocate memory.");
 			free(pHeaders);
 			return -ENOMEM;
@@ -692,18 +732,22 @@ static int flashsrv_flashMemoriesInit(void)
 	flash_memory_t *memory;
 
 	flashsrv_common.flexspi_addresses[0] = FLASH_EXT_DATA_ADDRESS;
-	flashsrv_common.flexspi_addresses[1] = FLASH_INTERNAL_DATA_ADDRESS;
+	if (FLASH_MEMORIES_NO > 1) {
+		flashsrv_common.flexspi_addresses[1] = FLASH_INTERNAL_DATA_ADDRESS;
+	}
 
 	/* Wait on root */
-	while (lookup("/", NULL, &odir) < 0)
+	while (lookup("/", NULL, &odir) < 0) {
 		usleep(100000);
+	}
 
 	/* Initialize flash memories */
 	for (i = 0; i < FLASH_MEMORIES_NO; ++i) {
 		memory = flashsrv_common.flash_memories + i;
 
-		if (mutexCreate(&memory->lock) != EOK)
+		if (mutexCreate(&memory->lock) != EOK) {
 			return -ENOENT;
+		}
 
 		portCreate(&memory->fOid.port);
 		portCreate(&memory->rawPort);
@@ -712,16 +756,18 @@ static int flashsrv_flashMemoriesInit(void)
 		memory->rawActive = 0;
 		memory->pCnt = 0;
 
-		sprintf(path, "/dev/flash%d", memory->fOid.id);
+		snprintf(path, sizeof(path), "/dev/flash%d", memory->fOid.id);
 
-		if ((err = create_dev(&memory->fOid, path)) < 0) {
+		err = create_dev(&memory->fOid, path);
+		if (err < 0) {
 			LOG_ERROR("imxrt-flashsrv: create %s - err: %d", path, err);
 			return err;
 		}
 
 		memory->ctx.address = flashsrv_common.flexspi_addresses[i];
 
-		if ((err = flash_init(&memory->ctx)) == EOK) {
+		err = flash_init(&memory->ctx);
+		if (err == EOK) {
 			memory->fStatus = flash_memory_active;
 		}
 		else {
@@ -734,29 +780,46 @@ static int flashsrv_flashMemoriesInit(void)
 }
 
 
+static inline int isXIP(void *addr)
+{
+	uint32_t pc;
+	__asm__ volatile("mov %0, pc"
+					 : "=r"(pc));
+	return pc >= (uint32_t)addr && pc < (uint32_t)addr + 0x10000000;
+}
+
+
 int main(void)
 {
 	void *mem;
 
+	if (isXIP((void *)FLEXSPI1_AHB_ADDR) || (FLASH_MEMORIES_NO > 1 && isXIP((void *)FLEXSPI2_AHB_ADDR))) {
+		LOG_ERROR("imxrt-flashsrv: require to run driver from ram.\n");
+		return EXIT_FAILURE;
+	}
+
 	if (flashsrv_flashMemoriesInit() != EOK) {
 		LOG_ERROR("imxrt-flashsrv: flash memories were not initialized correctly.\n");
-		return -1;
+		return EXIT_FAILURE;
 	}
 
 	if (flashsrv_partsInit() != EOK) {
 		LOG_ERROR("imxrt-flashsrv: partitions were not initialized correctly.\n");
-		return -1;
+		return EXIT_FAILURE;
 	}
+
+	priority(IMXRT_FLASH_PRIO);
 
 	printf("imxrt-flashsrv: initialized.\n");
 
 	/* flashsrv_devThread handles requests associated with the whole single flash chip */
-	if (flashsrv_common.flash_memories[1].fStatus == flash_memory_active) {
-		if ((mem = malloc(THREAD_STACKSZ)) == NULL) {
+	if (FLASH_MEMORIES_NO > 1 && flashsrv_common.flash_memories[1].fStatus == flash_memory_active) {
+		mem = malloc(THREAD_STACKSZ);
+		if (mem == NULL) {
 			LOG_ERROR("imxrt-flashsrv: cannot alloc memory.");
-			return 0;
+			return EXIT_FAILURE;
 		}
-		beginthread(flashsrv_devThread, THREAD_PRIORITY, mem, THREAD_STACKSZ, (void *)&flashsrv_common.flash_memories[0]);
+		beginthread(flashsrv_devThread, IMXRT_FLASH_PRIO, mem, THREAD_STACKSZ, (void *)&flashsrv_common.flash_memories[0]);
 		flashsrv_devThread(&flashsrv_common.flash_memories[1]);
 	}
 	else if (flashsrv_common.flash_memories[0].fStatus == flash_memory_active) {
@@ -767,5 +830,5 @@ int main(void)
 	}
 
 
-	return EOK;
+	return EXIT_SUCCESS;
 }
