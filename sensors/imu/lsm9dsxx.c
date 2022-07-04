@@ -73,8 +73,9 @@
 #define GYR_OVERFLOW       26820 /* if gyro returns more than this, the sensorhub result will overflow */
 
 /* conversions */
-#define GYR2000DPS_CONV_MRAD 1.221730475F /* convert gyroscope value (at scale 2000DPS) to mrad/s */
-#define ACC8G_CONV_MS2       0.244F       /* convert accelerations (at 8G scale) [m/s^2] */
+#define GYR2000DPS_CONV_MRAD 1.221730475f /* convert gyroscope value (at scale 2000DPS) to mrad/s */
+#define ACC8G_CONV_MG        0.244F       /* convert accelerations (at 8G scale) [m/s^2] */
+#define MG_CONV_MMS2         9.80665f     /* convert milli G to [mm/s^2] */
 
 
 typedef struct {
@@ -110,7 +111,7 @@ static int16_t translateAcc(uint8_t hbyte, uint8_t lbyte)
 	val |= hbyte;
 	val <<= 8;
 	val |= lbyte;
-	return ACC8G_CONV_MS2 * val; /* sensor value to [mm/s^2] */
+	return ACC8G_CONV_MG * MG_CONV_MMS2 * val; /* sensor value to [mm/s^2] */
 }
 
 
