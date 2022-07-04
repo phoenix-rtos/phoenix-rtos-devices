@@ -17,23 +17,22 @@
 
 #include <stdio.h>
 
-#include "rom_api.h"
-
-#define FLASH_EXT_DATA_ADDRESS 0x60000000
-#define FLASH_INTERNAL_DATA_ADDRESS 0x70000000
+#define FLASH_EXT_DATA_ADDRESS      (FLEXSPI1_AHB_ADDR)
+#define FLASH_INTERNAL_DATA_ADDRESS (FLEXSPI2_AHB_ADDR)
 
 
 typedef struct {
 	uint32_t size;
 	uint32_t page_size;
 	uint32_t sector_size;
+	const char *pVendor;
 } flash_properties_t;
 
 
 typedef struct {
 	flash_properties_t properties;
-	serial_norConfigOption_t option;
-	flexspi_norConfig_t config;
+	flexspi_t fspi;
+	uint8_t port;
 
 	uint32_t address;
 	uint32_t instance;
@@ -46,13 +45,13 @@ typedef struct {
 } flash_context_t;
 
 
-ssize_t flash_readData(flash_context_t *ctx, uint32_t offset, char *buff, size_t size);
+ssize_t flash_readData(flash_context_t *ctx, uint32_t offset, void *buff, size_t size);
 
 
-ssize_t flash_directBytesWrite(flash_context_t *ctx, uint32_t offset, const char *buff, size_t size);
+ssize_t flash_directBytesWrite(flash_context_t *ctx, uint32_t offset, const void *buff, size_t size);
 
 
-ssize_t flash_bufferedPagesWrite(flash_context_t *ctx, uint32_t offset, const char *buff, size_t size);
+ssize_t flash_bufferedPagesWrite(flash_context_t *ctx, uint32_t offset, const void *buff, size_t size);
 
 
 void flash_sync(flash_context_t *ctx);
