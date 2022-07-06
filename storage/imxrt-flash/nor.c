@@ -279,16 +279,3 @@ int nor_probe(flexspi_t *fspi, uint8_t port, const struct nor_info **pInfo, cons
 
 	return res;
 }
-
-
-void nor_deviceInit(struct nor_device *dev, int port, int active, time_t timeout)
-{
-	dev->nor = NULL;
-	dev->port = port;
-	dev->active = active;
-	dev->timeout = timeout;
-	dev->sectorPrevAddr = (addr_t)-1;
-	dev->sectorSyncAddr = (addr_t)-1;
-
-	memset(dev->sectorBuf, NOR_ERASED_STATE, sizeof(dev->sectorBuf));
-}

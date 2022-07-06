@@ -37,9 +37,10 @@ typedef struct {
 	uint32_t address;
 	uint32_t instance;
 	uint32_t flashID;
+	time_t timeout;
 
-	int sectorID;
-	int counter;
+	uint32_t prevAddr;
+	uint32_t syncAddr;
 
 	char *buff;
 } flash_context_t;
@@ -54,7 +55,7 @@ ssize_t flash_directBytesWrite(flash_context_t *ctx, uint32_t offset, const void
 ssize_t flash_bufferedPagesWrite(flash_context_t *ctx, uint32_t offset, const void *buff, size_t size);
 
 
-void flash_sync(flash_context_t *ctx);
+int flash_sync(flash_context_t *ctx);
 
 
 int flash_chipErase(flash_context_t *ctx);

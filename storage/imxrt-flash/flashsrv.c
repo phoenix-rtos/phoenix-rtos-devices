@@ -271,8 +271,7 @@ static void flashsrv_devCtl(flash_memory_t *memory, msg_t *msg)
 
 		case flashsrv_devctl_sync:
 			TRACE("imxrt-flashsrv: flashsrv_devctl_sync, id: %u, port: %u.", idevctl->oid.id, idevctl->oid.port);
-			flash_sync(&memory->ctx);
-			odevctl->err = EOK;
+			odevctl->err = flash_sync(&memory->ctx);
 			break;
 
 		case flashsrv_devctl_eraseSector:
@@ -334,8 +333,7 @@ static void flashsrv_rawCtl(flash_memory_t *memory, msg_t *msg)
 
 		case flashsrv_devctl_sync:
 			TRACE("imxrt-flashsrv: flashsrv_devctl_sync, id: %u, port: %u.", idevctl->oid.id, idevctl->oid.port);
-			flash_sync(&memory->ctx);
-			odevctl->err = EOK;
+			odevctl->err = flash_sync(&memory->ctx);
 			break;
 
 		case flashsrv_devctl_eraseSector:
@@ -673,7 +671,7 @@ static int flashsrv_mountPart(flashsrv_partition_t *part)
 
 static int flashsrv_partsInit(void)
 {
-	int i, j;
+	int res, i, j;
 
 	flash_memory_t *memory;
 	memory_properties_t memProp;
@@ -716,7 +714,10 @@ static int flashsrv_partsInit(void)
 			}
 		}
 
-		flash_sync(&memory->ctx);
+		res = flash_sync(&memory->ctx);
+		if (res < 0) {
+			return res;
+		}
 	}
 
 	return EOK;

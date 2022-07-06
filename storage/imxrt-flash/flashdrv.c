@@ -24,6 +24,18 @@
 #define LOG_INFO(fmt, ...) printf("imxrt-flash: " fmt "\n", ##__VA_ARGS__);
 
 
+static inline int get_sectorIdFromAddress(flash_context_t *ctx, uint32_t addr)
+{
+	return addr / ctx->properties.sector_size;
+}
+
+
+static inline addr_t get_sectorAddress(flash_context_t *ctx, uint32_t addr)
+{
+	return addr & ~(ctx->properties.sector_size - 1);
+}
+
+
 static int flash_isValidAddress(flash_context_t *context, addr_t addr, size_t size)
 {
 	if ((addr + size) <= context->properties.size) {
@@ -40,7 +52,7 @@ ssize_t flash_readData(flash_context_t *ctx, uint32_t offset, void *buff, size_t
 		return -1;
 	}
 
-	return nor_readData(&ctx->fspi, ctx->port, offset, buff, size, 0);
+	return nor_readData(&ctx->fspi, ctx->port, offset, buff, size, ctx->timeout);
 }
 
 
@@ -55,7 +67,7 @@ ssize_t flash_directBytesWrite(flash_context_t *ctx, uint32_t offset, const void
 			chunk = len;
 		}
 
-		err = nor_pageProgram(&ctx->fspi, ctx->port, offset, buff, chunk, 0);
+		err = nor_pageProgram(&ctx->fspi, ctx->port, offset, buff, chunk, ctx->timeout);
 		if (err < 0) {
 			return err;
 		}
@@ -69,90 +81,143 @@ ssize_t flash_directBytesWrite(flash_context_t *ctx, uint32_t offset, const void
 }
 
 
-ssize_t flash_bufferedPagesWrite(flash_context_t *ctx, uint32_t offset, const void *buff, size_t size)
+static ssize_t bufferSync(flash_context_t *ctx, uint32_t dstAddr)
 {
-	uint32_t pageAddr;
-	uint16_t sector_id;
-	size_t savedBytes = 0;
+	ssize_t res = 0;
 
-	if (size % ctx->properties.page_size) {
+	const int sectorLast = get_sectorIdFromAddress(ctx, ctx->prevAddr);
+	const int sectorCurr = get_sectorIdFromAddress(ctx, dstAddr);
+
+	if (sectorCurr != sectorLast) {
+		res = flash_sync(ctx);
+		if (res < 0) {
+			return res;
+		}
+
+		res = nor_readData(&ctx->fspi, ctx->port, get_sectorAddress(ctx, dstAddr), ctx->buff, ctx->properties.sector_size, ctx->timeout);
+		if (res < 0) {
+			return res;
+		}
+
+		ctx->prevAddr = dstAddr;
+	}
+
+	return res;
+}
+
+
+ssize_t flash_bufferedPagesWrite(flash_context_t *ctx, uint32_t dstAddr, const void *srcPtr, size_t size)
+{
+	int res;
+	uint32_t ofs;
+	size_t chunkSz, doneBytes;
+
+	if (flash_isValidAddress(ctx, dstAddr, size)) {
 		return -1;
 	}
 
-	if (flash_isValidAddress(ctx, offset, size)) {
-		return -1;
-	}
-
-	while (savedBytes < size) {
-		pageAddr = offset + savedBytes;
-		sector_id = pageAddr / ctx->properties.sector_size;
-
-		/* If sector_id has changed, data from previous sector have to be saved and new sector is read. */
-		if (sector_id != ctx->sectorID) {
-			flash_sync(ctx);
-
-			if (flash_readData(ctx, ctx->properties.sector_size * sector_id, ctx->buff, ctx->properties.sector_size) <= 0) {
-				return savedBytes;
-			}
-
-			if (nor_eraseSector(&ctx->fspi, ctx->port, ctx->properties.sector_size * sector_id, 0) < 0) {
-				return savedBytes;
-			}
-
-			ctx->sectorID = sector_id;
-			ctx->counter = offset - ctx->properties.sector_size * ctx->sectorID;
+	doneBytes = 0;
+	while (doneBytes < size) {
+		res = bufferSync(ctx, dstAddr);
+		if (res < 0) {
+			return res;
 		}
 
-		memcpy(ctx->buff + ctx->counter, (char *)buff + savedBytes, ctx->properties.page_size);
+		chunkSz = size - doneBytes;
+		ofs = dstAddr & (ctx->properties.sector_size - 1);
 
-		savedBytes += ctx->properties.page_size;
-		ctx->counter += ctx->properties.page_size;
+		if (chunkSz > ctx->properties.sector_size - ofs) {
+			chunkSz = ctx->properties.sector_size - ofs;
+		}
 
-		/* Save filled buffer */
-		if (ctx->counter >= ctx->properties.sector_size) {
-			flash_sync(ctx);
+		memcpy((char *)ctx->buff + ofs, srcPtr, chunkSz);
+
+		dstAddr += chunkSz;
+		srcPtr = (const char *)srcPtr + chunkSz;
+		doneBytes += chunkSz;
+	}
+
+	if (doneBytes > 0) {
+		res = bufferSync(ctx, dstAddr);
+		if (res < 0) {
+			return res;
 		}
 	}
 
-	return size;
+	return doneBytes;
 }
 
 
 int flash_chipErase(flash_context_t *ctx)
 {
-	return nor_eraseChip(&ctx->fspi, ctx->port, 0);
+	return nor_eraseChip(&ctx->fspi, ctx->port, ctx->timeout);
 }
 
 
 int flash_sectorErase(flash_context_t *ctx, uint32_t offset)
 {
-
 	offset &= ~(ctx->properties.sector_size - 1);
 
-	return nor_eraseSector(&ctx->fspi, ctx->port, offset, 0);
+	return nor_eraseSector(&ctx->fspi, ctx->port, offset, ctx->timeout);
 }
 
 
-void flash_sync(flash_context_t *ctx)
+int flash_sync(flash_context_t *ctx)
 {
-	int i;
-	uint32_t dstAddr;
-	const uint32_t *src;
-	const uint32_t pagesNumber = ctx->properties.sector_size / ctx->properties.page_size;
+	ssize_t res;
+	uint32_t ofs, pos, sectorAddr = get_sectorAddress(ctx, ctx->prevAddr);
 
-	if (ctx->counter == 0) {
-		return;
+	/* Initial sector value check, nothing to do */
+	if (ctx->prevAddr == (uint32_t)-1) {
+		return EOK;
 	}
 
-	for (i = 0; i < pagesNumber; ++i) {
-		dstAddr = ctx->sectorID * ctx->properties.sector_size + i * ctx->properties.page_size;
-		src = (const uint32_t *)(ctx->buff + i * ctx->properties.page_size);
-
-		nor_pageProgram(&ctx->fspi, ctx->port, dstAddr, src, ctx->properties.page_size, 0);
+	if (ctx->prevAddr == ctx->syncAddr) {
+		return EOK;
 	}
 
-	ctx->counter = 0;
-	ctx->sectorID = -1;
+	/* all 'ones' in buffer means sector is erased ... */
+	for (pos = 0; pos < ctx->properties.page_size; ++pos) {
+		if (*(ctx->buff + pos) != NOR_ERASED_STATE) {
+			break;
+		}
+	}
+
+	/* ... then erase may be skipped */
+	if (pos != ctx->properties.sector_size) {
+		res = nor_eraseSector(&ctx->fspi, ctx->port, sectorAddr, ctx->timeout);
+		if (res < 0) {
+			return res;
+		}
+	}
+
+	for (ofs = 0; ofs < ctx->properties.sector_size; ofs += ctx->properties.page_size) {
+		/* Just erased NOR page contains all 'ones' */
+		for (pos = 0; pos < ctx->properties.page_size; ++pos) {
+			if (*(ctx->buff + ofs + pos) != NOR_ERASED_STATE) {
+				break;
+			}
+		}
+
+		/* then if buffer is the same skip single page program */
+		if (pos == ctx->properties.page_size) {
+			continue;
+		}
+
+		res = nor_pageProgram(&ctx->fspi, ctx->port, sectorAddr + ofs, ctx->buff + ofs, ctx->properties.page_size, ctx->timeout);
+		if (res < 0) {
+			return res;
+		}
+	}
+
+	/* FIXME: unable to call e.g.: hal_cpuInvCache(hal_cpuDCache, sectorAddr, ctx->properties.sector_size); from userspace,
+	 * but FlexSPI driver use IP bus for read and write operations, so it's not necessary to invalidate cache, until it comes
+	 * to AHB reads during XIP which is cached, and the cache should be invalidated.
+	 */
+
+	ctx->syncAddr = ctx->prevAddr;
+
+	return EOK;
 }
 
 
@@ -166,6 +231,7 @@ static int flash_defineFlexSPI(flash_context_t *ctx)
 			ctx->fspi.base = (void *)FLEXSPI1_BASE;
 			ctx->fspi.ahbAddr = (void *)FLEXSPI1_AHB_ADDR;
 			ctx->fspi.slPortMask = 1;
+			ctx->timeout = 10000;
 			ctx->port = 0;
 			break;
 
@@ -174,6 +240,7 @@ static int flash_defineFlexSPI(flash_context_t *ctx)
 			ctx->fspi.base = (void *)FLEXSPI2_BASE;
 			ctx->fspi.ahbAddr = (void *)FLEXSPI2_AHB_ADDR;
 			ctx->fspi.slPortMask = 1;
+			ctx->timeout = 10000;
 			ctx->port = 0;
 			break;
 
@@ -187,11 +254,12 @@ static int flash_defineFlexSPI(flash_context_t *ctx)
 
 int flash_init(flash_context_t *ctx)
 {
+	void *buff;
 	const struct nor_info *pInfo;
 	int res = EOK;
 
-	ctx->sectorID = -1;
-	ctx->counter = 0;
+	ctx->prevAddr = (uint32_t)-1;
+	ctx->syncAddr = (uint32_t)-1;
 	ctx->buff = NULL;
 
 	res = flash_defineFlexSPI(ctx);
@@ -204,12 +272,20 @@ int flash_init(flash_context_t *ctx)
 		return res;
 	}
 
+	LOG_INFO("imxrt-flash: detected %s %s (0x%x)", ctx->properties.pVendor, pInfo->name, pInfo->jedecId);
+
+	buff = malloc(pInfo->sectorSz);
+	if (buff == NULL) {
+		return -ENOMEM;
+	}
+
+	memset(buff, NOR_ERASED_STATE, pInfo->sectorSz);
+
 	ctx->properties.size = pInfo->totalSz;
 	ctx->properties.page_size = pInfo->pageSz;
 	ctx->properties.sector_size = pInfo->sectorSz;
 	ctx->fspi.slFlashSz[ctx->port] = pInfo->totalSz;
-
-	LOG_INFO("imxrt-flash: detected %s %s (0x%x)", ctx->properties.pVendor, pInfo->name, pInfo->jedecId);
+	ctx->buff = buff;
 
 	return res;
 }
@@ -217,6 +293,6 @@ int flash_init(flash_context_t *ctx)
 
 void flash_contextDestroy(flash_context_t *ctx)
 {
-	flash_sync(ctx);
+	(int)flash_sync(ctx);
 	free(ctx->buff);
 }
