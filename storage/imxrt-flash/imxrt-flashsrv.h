@@ -19,7 +19,7 @@
 #include <sys/msg.h>
 
 
-enum { flashsrv_devctl_properties = 0, flashsrv_devctl_sync, flashsrv_devctl_eraseSector, flashsrv_devctl_erasePartition };
+enum { flashsrv_devctl_properties = 0, flashsrv_devctl_sync, flashsrv_devctl_eraseSector, flashsrv_devctl_erasePartition, flashsrv_devctl_directWrite };
 
 
 typedef struct {
@@ -29,6 +29,12 @@ typedef struct {
 	struct {
 		uint32_t addr;
 	} erase;
+
+	struct {
+		uint32_t addr;
+		const void *buff;
+		size_t size;
+	} write;
 
 } __attribute__((packed)) flash_i_devctl_t;
 
