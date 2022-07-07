@@ -38,6 +38,10 @@
 #define VAL_CTRL_REG1_G_FS_G_500    0x08
 #define VAL_CTRL_REG1_G_FS_G_2000   0x18
 
+/* control register 2 */
+#define REG_CTRL_REG2_G                     0x11
+#define VAL_CTRL_REG2_G_OUT_SEL_LPF2_ENABLE 0x03
+
 /* control register 4 */
 #define CTRL_REG4          0x1e
 #define CTRL_REG4_G_ENABLE 0x38
@@ -47,13 +51,25 @@
 #define VAL_CTRL_REG5_XL_ENABLE 0x38
 
 /* control register 6 */
-#define REG_CTRL_REG6_XL            0x20
-#define VAL_CTRL_REG6_XL_ODR_XL_952 0xc0
-#define MASK_CTRL_REG6_XL_FS        0x18
-#define VAL_CTRL_REG6_XL_FS_2G      0x00 /* strange order, not a mistake! */
-#define VAL_CTRL_REG6_XL_FS_4G      0x10 /* strange order, not a mistake! */
-#define VAL_CTRL_REG6_XL_FS_8G      0x18 /* strange order, not a mistake! */
-#define VAL_CTRL_REG6_XL_FS_16G     0x08 /* strange order, not a mistake! */
+#define REG_CTRL_REG6_XL             0x20
+#define VAL_CTRL_REG6_XL_ODR_XL_952  0xc0
+#define MASK_CTRL_REG6_XL_FS         0x18
+#define VAL_CTRL_REG6_XL_FS_2G       0x00 /* strange order, not a mistake! */
+#define VAL_CTRL_REG6_XL_FS_4G       0x10 /* strange order, not a mistake! */
+#define VAL_CTRL_REG6_XL_FS_8G       0x18 /* strange order, not a mistake! */
+#define VAL_CTRL_REG6_XL_FS_16G      0x08 /* strange order, not a mistake! */
+#define VAL_CTRL_REG6_XL_BW_SCAL_ODR 0x04
+#define VAL_CTRL_REG6_XL_BW_XL_105HZ 0x02
+#define VAL_CTRL_REG6_XL_BW_XL_50HZ  0x03
+
+/* control register 7 */
+#define REG_CTRL_REG7_XL           0x21
+#define VAL_CTRL_REG7_XL_HR_ENABLE 0x80
+#define VAL_CTRL_REG7_XL_DCF_50    0x00
+#define VAL_CTRL_REG7_XL_DCF_100   0x20
+#define VAL_CTRL_REG7_XL_DCF_9     0x40
+#define VAL_CTRL_REG7_XL_DCF_400   0x60
+#define VAL_CTRL_REG7_XL_FDS       0x04
 
 /* control register 8 */
 #define REG_CTRL_REG8 0x22
@@ -152,11 +168,14 @@ static int lsm9dsxx_hwSetup(lsm9dsxx_ctx_t *ctx)
 	}
 	usleep(1000 * 100);
 
-	/* ranges and sampling of accelerometer and gyro */
+	/* ranges and sampling of accelerometer and gyro, accelerometer LPF */
 	if (spiWriteReg(ctx, REG_CTRL_REG1_G, (VAL_CTRL_REG1_G_ODR_G_952HZ | VAL_CTRL_REG1_G_FS_G_2000)) < 0) {
 		return -1;
 	}
-	if (spiWriteReg(ctx, REG_CTRL_REG6_XL, (VAL_CTRL_REG6_XL_ODR_XL_952 | VAL_CTRL_REG6_XL_FS_8G)) < 0) {
+	if (spiWriteReg(ctx, REG_CTRL_REG6_XL, (VAL_CTRL_REG6_XL_ODR_XL_952 | VAL_CTRL_REG6_XL_FS_8G | VAL_CTRL_REG6_XL_BW_SCAL_ODR | VAL_CTRL_REG6_XL_BW_XL_50HZ)) < 0) {
+		return -1;
+	}
+	if (spiWriteReg(ctx, REG_CTRL_REG2_G, VAL_CTRL_REG2_G_OUT_SEL_LPF2_ENABLE) < 0) {
 		return -1;
 	}
 	usleep(1000 * 100);
