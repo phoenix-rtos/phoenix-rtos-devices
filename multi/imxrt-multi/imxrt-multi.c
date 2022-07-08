@@ -26,6 +26,7 @@
 #include <sys/debug.h>
 
 #include <phoenix/ioctl.h>
+#include <board_config.h>
 
 #include "common.h"
 
@@ -38,7 +39,11 @@
 #define MULTI_THREADS_NO 2
 #define UART_THREADS_NO 2
 
-#define THREADS_PRIORITY 2
+#ifndef IMXRT_MULTI_PRIO
+#define IMXRT_MULTI_PRIO 2
+#endif
+
+
 #define STACKSZ 512
 
 
@@ -430,16 +435,17 @@ int main(void)
 #endif
 
 	for (i = 0; i < UART_THREADS_NO; ++i)
-		beginthread(uart_thread, THREADS_PRIORITY, common.stack[i], STACKSZ, (void *)i);
+		beginthread(uart_thread, IMXRT_MULTI_PRIO, common.stack[i], STACKSZ, (void *)i);
 
 	for (; i < (MULTI_THREADS_NO + UART_THREADS_NO - 1); ++i)
-		beginthread(multi_thread, THREADS_PRIORITY, common.stack[i], STACKSZ, (void *)i);
+		beginthread(multi_thread, IMXRT_MULTI_PRIO, common.stack[i], STACKSZ, (void *)i);
 
 	if (createDevFiles() < 0) {
 		printf("imxrt-multi: createSpecialFiles failed\n");
 		return -1;
 	}
 
+	priority(IMXRT_MULTI_PRIO);
 	multi_thread((void *)i);
 
 	return 0;
