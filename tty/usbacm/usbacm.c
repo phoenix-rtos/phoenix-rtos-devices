@@ -27,23 +27,32 @@
 #include <usb.h>
 #include <usbdriver.h>
 #include <cdc.h>
+#include <board_config.h>
 
 #include "../libtty/fifo.h"
 
+
+#ifndef USBACM_N_MSG_THREADS
 #define USBACM_N_MSG_THREADS 2
+#endif
 
+#ifndef RX_FIFO_SIZE
 #define RX_FIFO_SIZE  8192
-#define RX_STACK_SIZE 2048
-
-#define USBACM_BULK_SZ 2048
+#endif
 
 #ifndef USBACM_N_URBS
 #define USBACM_N_URBS 2
 #endif
 
+#ifndef USBACM_MSG_PRIO
+#define USBACM_MSG_PRIO 3
+#endif
+
 #ifndef USBACM_UMSG_PRIO
 #define USBACM_UMSG_PRIO 3
 #endif
+
+#define USBACM_BULK_SZ 2048
 
 
 typedef struct _usbacm_dev {
@@ -725,7 +734,7 @@ int main(int argc, char *argv[])
 	usbacm_common.lastId = 1;
 
 	for (i = 0; i < USBACM_N_MSG_THREADS; i++) {
-		ret = beginthread(usbacm_msgthr, 3, usbacm_common.stack[i], sizeof(usbacm_common.stack[i]), NULL);
+		ret = beginthread(usbacm_msgthr, USBACM_MSG_PRIO, usbacm_common.stack[i], sizeof(usbacm_common.stack[i]), NULL);
 		if (ret < 0) {
 			fprintf(stderr, "usbacm: fail to beginthread ret: %d\n", ret);
 			return 1;
