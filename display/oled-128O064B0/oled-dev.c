@@ -20,11 +20,18 @@
 #include <sys/stat.h>
 #include <sys/file.h>
 #include <sys/msg.h>
+#include <sys/threads.h>
+
+#include <board_config.h>
 
 #include "oled-phy.h"
 #include "oled-graphic.h"
 #include "fonts/font.h"
 #include "oled-api.h"
+
+#ifndef OLED128O064B0_PRIO
+#define OLED128O064B0_PRIO 4
+#endif
 
 
 struct {
@@ -160,6 +167,7 @@ int main(void)
 
 	oledgraph_reset(0, 0, 128, 64);
 
+	priority(OLED128O064B0_PRIO);
 	msg_loop();
 
 	return 0;
