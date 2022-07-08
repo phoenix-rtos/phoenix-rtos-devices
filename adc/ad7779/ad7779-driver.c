@@ -21,6 +21,7 @@
 #include <sys/types.h>
 #include <sys/msg.h>
 #include <posix/utils.h>
+#include <board_config.h>
 
 #include <phoenix/arch/imxrt.h>
 
@@ -28,6 +29,11 @@
 #include "adc-api.h"
 
 #define MAX_INIT_TRIES              (4)
+
+#ifndef AD7779_PRIO
+#define AD7779_PRIO 4
+#endif
+
 
 static struct {
 	uint32_t port;
@@ -384,6 +390,7 @@ int main(int argc, char *argv[])
 
 	log_info("initialized");
 
+	priority(AD7779_PRIO);
 	msg_loop();
 
 	/* Should never be reached */
