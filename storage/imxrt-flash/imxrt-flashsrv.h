@@ -32,8 +32,6 @@ typedef struct {
 
 	struct {
 		uint32_t addr;
-		const void *buff;
-		size_t size;
 	} write;
 
 } __attribute__((packed)) flash_i_devctl_t;
