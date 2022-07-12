@@ -280,7 +280,7 @@ int flash_init(flash_context_t *ctx)
 		return res;
 	}
 
-	LOG_INFO("imxrt-flash: detected %s %s (0x%x)", ctx->properties.pVendor, pInfo->name, pInfo->jedecId);
+	LOG_INFO("detected %s %s (0x%x)", ctx->properties.pVendor, pInfo->name, pInfo->jedecId);
 
 	buff = malloc(pInfo->sectorSz);
 	if (buff == NULL) {
