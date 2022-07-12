@@ -118,7 +118,7 @@ static int eraseSector(oid_t oid, uint32_t addr)
 	idevctl = (flash_i_devctl_t *)msg.i.raw;
 	idevctl->type = flashsrv_devctl_eraseSector;
 	idevctl->oid = oid;
-	idevctl->erase.addr = addr;
+	idevctl->addr = addr;
 
 	odevctl = (flash_o_devctl_t *)msg.o.raw;
 
