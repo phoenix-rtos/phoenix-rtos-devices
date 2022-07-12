@@ -293,12 +293,12 @@ static void flashsrv_devCtl(flash_memory_t *memory, msg_t *msg)
 			break;
 
 		case flashsrv_devctl_eraseSector:
-			TRACE("imxrt-flashsrv: flashsrv_devctl_eraseSector - addr: %u, id: %u, port: %u.", idevctl->erase.addr, idevctl->oid.id, idevctl->oid.port);
-			if (idevctl->erase.addr >= memory->ctx.properties.size) {
+			TRACE("imxrt-flashsrv: flashsrv_devctl_eraseSector - addr: %u, id: %u, port: %u.", idevctl->addr, idevctl->oid.id, idevctl->oid.port);
+			if (idevctl->addr >= memory->ctx.properties.size) {
 				odevctl->err = -EINVAL;
 				break;
 			}
-			flashsrv_eraseSector(memory->fOid.id, idevctl->erase.addr);
+			flashsrv_eraseSector(memory->fOid.id, idevctl->addr);
 			odevctl->err = EOK;
 			break;
 
@@ -310,14 +310,14 @@ static void flashsrv_devCtl(flash_memory_t *memory, msg_t *msg)
 
 		case flashsrv_devctl_directWrite:
 			TRACE("imxrt-flashsrv: flashsrv_devctl_directWrite, addr: %u, size: %u, id: %u, port: %u.",
-				idevctl->write.addr, msg->i.size, idevctl->oid.id, idevctl->oid.port);
+				idevctl->addr, msg->i.size, idevctl->oid.id, idevctl->oid.port);
 
-			if (idevctl->write.addr >= memory->ctx.properties.size) {
+			if (idevctl->addr >= memory->ctx.properties.size) {
 				odevctl->err = -EINVAL;
 				break;
 			}
 
-			odevctl->err = flashsrv_directWrite(memory->fOid.id, idevctl->write.addr, msg->i.data, msg->i.size);
+			odevctl->err = flashsrv_directWrite(memory->fOid.id, idevctl->addr, msg->i.data, msg->i.size);
 			break;
 
 		default:
@@ -368,14 +368,14 @@ static void flashsrv_rawCtl(flash_memory_t *memory, msg_t *msg)
 
 		case flashsrv_devctl_eraseSector:
 			TRACE("imxrt-flashsrv: flashsrv_devctl_eraseSector - addr: %u, id: %u, port: %u.",
-				idevctl->erase.addr + memory->parts[partID].pHeader->offset, partID, idevctl->oid.port);
+				idevctl->addr + memory->parts[partID].pHeader->offset, partID, idevctl->oid.port);
 
-			if (idevctl->erase.addr > memory->parts[idevctl->oid.id].pHeader->size) {
+			if (idevctl->addr > memory->parts[idevctl->oid.id].pHeader->size) {
 				odevctl->err = -EINVAL;
 				break;
 			}
 
-			flashsrv_eraseSector(memory->fOid.id, memory->parts[partID].pHeader->offset + idevctl->erase.addr);
+			flashsrv_eraseSector(memory->fOid.id, memory->parts[partID].pHeader->offset + idevctl->addr);
 			odevctl->err = EOK;
 			break;
 
@@ -392,14 +392,14 @@ static void flashsrv_rawCtl(flash_memory_t *memory, msg_t *msg)
 
 		case flashsrv_devctl_directWrite:
 			TRACE("imxrt-flashsrv: flashsrv_devctl_directWrite, addr: %u, size: %u, id: %u, port: %u.",
-				idevctl->write.addr + memory->parts[partID].pHeader->offset, msg->i.size, idevctl->oid.id, idevctl->oid.port);
+				idevctl->addr + memory->parts[partID].pHeader->offset, msg->i.size, idevctl->oid.id, idevctl->oid.port);
 
-			if (idevctl->write.addr > memory->parts[idevctl->oid.id].pHeader->size) {
+			if (idevctl->addr > memory->parts[idevctl->oid.id].pHeader->size) {
 				odevctl->err = -EINVAL;
 				break;
 			}
 
-			odevctl->err = flashsrv_directWrite(memory->fOid.id, memory->parts[partID].pHeader->offset + idevctl->write.addr, msg->i.data, msg->i.size);
+			odevctl->err = flashsrv_directWrite(memory->fOid.id, memory->parts[partID].pHeader->offset + idevctl->addr, msg->i.data, msg->i.size);
 			break;
 
 		default:
