@@ -81,7 +81,7 @@ ssize_t flash_directBytesWrite(flash_context_t *ctx, uint32_t offset, const void
 }
 
 
-static ssize_t bufferSync(flash_context_t *ctx, uint32_t dstAddr)
+static ssize_t bufferSync(flash_context_t *ctx, uint32_t dstAddr, int isLast)
 {
 	ssize_t res = 0;
 
@@ -92,6 +92,14 @@ static ssize_t bufferSync(flash_context_t *ctx, uint32_t dstAddr)
 		res = flash_sync(ctx);
 		if (res < 0) {
 			return res;
+		}
+
+		if (isLast != 0) {
+			return res;
+		}
+
+		if (ctx->properties.size < dstAddr + ctx->properties.sector_size) {
+			return -EIO;
 		}
 
 		res = nor_readData(&ctx->fspi, ctx->port, get_sectorAddress(ctx, dstAddr), ctx->buff, ctx->properties.sector_size, ctx->timeout);
@@ -118,7 +126,7 @@ ssize_t flash_bufferedPagesWrite(flash_context_t *ctx, uint32_t dstAddr, const v
 
 	doneBytes = 0;
 	while (doneBytes < size) {
-		res = bufferSync(ctx, dstAddr);
+		res = bufferSync(ctx, dstAddr, 0);
 		if (res < 0) {
 			return res;
 		}
@@ -138,7 +146,7 @@ ssize_t flash_bufferedPagesWrite(flash_context_t *ctx, uint32_t dstAddr, const v
 	}
 
 	if (doneBytes > 0) {
-		res = bufferSync(ctx, dstAddr);
+		res = bufferSync(ctx, dstAddr, 1);
 		if (res < 0) {
 			return res;
 		}
