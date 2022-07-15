@@ -12,8 +12,11 @@
  */
 
 #include <errno.h>
+#include <limits.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+
 #include <sys/mman.h>
 #include <sys/threads.h>
 #include <sys/minmax.h>
@@ -21,14 +24,92 @@
 #include "imx6ull-flashdev.h"
 #include "imx6ull-flashdrv.h"
 
-#define ECC_BITFLIP_THRESHOLD 10
+#define ECC_GF                13  /* Galois field */
+#define ECC_BITFLIP_THRESHOLD 10  /* Min number of bitflips for page rewrite */
+#define ECC0_BITFLIP_STRENGHT 16  /* ECC strength for metadata chunk */
+#define ECCN_BITFLIP_STRENGHT 14  /* ECC strength for data chunk */
+#define ECCN_DATA_SIZE        512 /* Data chunk size */
 
 
 /* Auxiliary functions */
 
-static int _flashmtd_checkECC(flashdrv_meta_t *meta, unsigned int chunks)
+static unsigned int _flashmtd_checkErased(const void *buff, size_t boffs, size_t blen)
 {
-	unsigned int i;
+	const uint8_t *buff8 = buff;
+	const uint32_t *buff32 = buff;
+	unsigned int ret = 0;
+	uint32_t data32;
+	uint8_t data8;
+
+	buff8 += boffs / CHAR_BIT;
+	boffs %= CHAR_BIT;
+
+	/* Check first byte */
+	if (boffs > 0) {
+		data8 = *buff8++;
+		data8 |= (uint8_t)(0xff << (CHAR_BIT - boffs));
+
+		/* Is it also last byte? */
+		if (boffs + blen < CHAR_BIT) {
+			data8 |= (uint8_t)(0xff >> (boffs + blen));
+			blen = 0;
+		}
+		else {
+			blen -= CHAR_BIT - boffs;
+		}
+
+		ret += CHAR_BIT - __builtin_popcount(data8);
+	}
+
+	/* Check bytes until 32-bit aligned address */
+	while ((blen > CHAR_BIT) && (((uintptr_t)buff8) % sizeof(data32))) {
+		data8 = *buff8++;
+		blen -= CHAR_BIT;
+		ret += CHAR_BIT - __builtin_popcount(data8);
+	}
+
+	/* Check 32-bit words */
+	buff32 = (const uint32_t *)buff8;
+	while (blen > CHAR_BIT * sizeof(data32)) {
+		data32 = *buff32++;
+		blen -= CHAR_BIT * sizeof(data32);
+
+		if (data32 == 0xffffffff) {
+			continue;
+		}
+		ret += CHAR_BIT * sizeof(data32) - __builtin_popcount(data32);
+	}
+
+	/* Check rest of the bytes */
+	buff8 = (const uint8_t *)buff32;
+	while (blen > CHAR_BIT) {
+		data8 = *buff8++;
+		blen -= CHAR_BIT;
+		ret += CHAR_BIT - __builtin_popcount(data8);
+	}
+
+	/* Check last byte */
+	if (blen > 0) {
+		data8 = *buff8;
+		data8 |= (uint8_t)(0xff >> blen);
+		ret += CHAR_BIT - __builtin_popcount(data8);
+	}
+
+	return ret;
+}
+
+
+static int _flashmtd_checkECC(struct _storage_t *strg, uint32_t paddr, unsigned int chunks)
+{
+	/* Metadata and data (with their ECC) chunk sizes in bits */
+	const size_t mlen = strg->dev->mtd->oobSize * CHAR_BIT + ECC_GF * ECC0_BITFLIP_STRENGHT;
+	const size_t dlen = ECCN_DATA_SIZE * CHAR_BIT + ECC_GF * ECCN_BITFLIP_STRENGHT;
+	flashdrv_meta_t *meta = strg->dev->ctx->metabuf;
+	unsigned char *data = strg->dev->ctx->databuf;
+	unsigned int i, flips, maxflips = 0;
+	size_t boffs, blen, rawsz;
+	void *raw = NULL;
+	int err;
 
 	for (i = 0; i < chunks; i++) {
 		switch (meta->errors[i]) {
@@ -37,16 +118,84 @@ static int _flashmtd_checkECC(flashdrv_meta_t *meta, unsigned int chunks)
 				break;
 
 			case flash_uncorrectable:
-				return -EBADMSG;
+				/* BCH reports chunk as uncorrectable in case of an erased page with bitflips within that chunk area */
+				/* Check if that's the case by counting the bitflips with an assumption that the page is fully erased */
+
+				/* Read raw page in order to check full chunk - both data and its ECC area */
+				if (raw == NULL) {
+					/* Map raw page buffer */
+					rawsz = (strg->dev->mtd->writesz + strg->dev->mtd->metaSize + _PAGE_SIZE - 1) & ~(_PAGE_SIZE - 1);
+					raw = mmap(NULL, rawsz, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
+					if (raw == MAP_FAILED) {
+						return -ENOMEM;
+					}
+
+					/* Read raw page */
+					err = flashdrv_readraw(strg->dev->ctx->dma, paddr, raw, strg->dev->mtd->writesz + strg->dev->mtd->metaSize);
+					if (err < 0) {
+						munmap(raw, rawsz);
+						return err;
+					}
+				}
+
+				/* Metadata chunk */
+				if (i == 0) {
+					boffs = 0;
+					blen = mlen;
+				}
+				/* Data chunk */
+				else {
+					boffs = mlen + (i - 1) * dlen;
+					blen = dlen;
+				}
+
+				flips = _flashmtd_checkErased(raw, boffs, blen);
+
+				/* Nothing to do if there're no bitflips */
+				if (flips == 0) {
+					break;
+				}
+
+				/* Handle metadata chunk bitflips */
+				if (i == 0) {
+					/* Too many metadata bitflips, return error */
+					if (flips > ECC0_BITFLIP_STRENGHT) {
+						munmap(raw, rawsz);
+						return -EBADMSG;
+					}
+
+					/* Correct metadata chunk */
+					memset(meta, 0xff, strg->dev->mtd->oobSize);
+				}
+				/* Handle data chunk bitflips */
+				else {
+					/* Too many data bitflips, return error */
+					if (flips > ECCN_BITFLIP_STRENGHT) {
+						munmap(raw, rawsz);
+						return -EBADMSG;
+					}
+
+					/* Correct data chunk */
+					memset(data + (i - 1) * ECCN_DATA_SIZE, 0xff, ECCN_DATA_SIZE);
+				}
+
+				/* Chunk corrected, update max number of bitflips */
+				maxflips = max(flips, maxflips);
+				break;
 
 			default:
-				if (meta->errors[i] >= ECC_BITFLIP_THRESHOLD) {
-					return -EUCLEAN;
-				}
+				/* Chunk corrected by BCH, update max number of bitflips */
+				maxflips = max(meta->errors[i], maxflips);
+				break;
 		}
 	}
 
-	return EOK;
+	if (raw != NULL) {
+		munmap(raw, rawsz);
+	}
+
+	/* Return -EUCLEAN if the page has to be rewritten */
+	return (maxflips >= ECC_BITFLIP_THRESHOLD) ? -EUCLEAN : EOK;
 }
 
 
@@ -99,7 +248,7 @@ static int flashmtd_erase(struct _storage_t *strg, off_t offs, size_t size)
 static int flashmtd_read(struct _storage_t *strg, off_t offs, void *data, size_t len, size_t *retlen)
 {
 	uint32_t paddr;
-	int err = EOK;
+	int err, ret = EOK;
 	size_t tempsz = 0, chunksz;
 	flashdrv_meta_t *meta = strg->dev->ctx->metabuf;
 
@@ -111,13 +260,17 @@ static int flashmtd_read(struct _storage_t *strg, off_t offs, void *data, size_t
 		/* TODO: should we skip badblocks ? */
 		err = flashdrv_read(strg->dev->ctx->dma, paddr, strg->dev->ctx->databuf, meta);
 		if (err < 0) {
-			err = -EIO;
+			ret = -EIO;
 			break;
 		}
 
-		err = _flashmtd_checkECC(meta, sizeof(meta->errors) / sizeof(meta->errors[0]));
+		err = _flashmtd_checkECC(strg, paddr, sizeof(meta->errors) / sizeof(meta->errors[0]));
 		if (err < 0) {
-			break;
+			ret = err;
+			/* -EUCLEAN isn't a fatal error (indicates dangerous page degradation but all bitflips were successfully corrected) */
+			if (err != -EUCLEAN) {
+				break;
+			}
 		}
 
 		chunksz = min(len - tempsz, strg->dev->mtd->writesz - offs);
@@ -129,7 +282,7 @@ static int flashmtd_read(struct _storage_t *strg, off_t offs, void *data, size_t
 	*retlen = tempsz;
 	mutexUnlock(strg->dev->ctx->lock);
 
-	return err;
+	return ret;
 }
 
 
@@ -168,7 +321,7 @@ static int flashmtd_write(struct _storage_t *strg, off_t offs, const void *data,
 static int flashmtd_metaRead(struct _storage_t *strg, off_t offs, void *data, size_t len, size_t *retlen)
 {
 	uint32_t paddr;
-	int err = EOK;
+	int err, ret = EOK;
 	size_t tempsz = 0, chunksz;
 	flashdrv_meta_t *meta = strg->dev->ctx->metabuf;
 
@@ -182,14 +335,18 @@ static int flashmtd_metaRead(struct _storage_t *strg, off_t offs, void *data, si
 		/* TODO: should we skip badblocks ? */
 		err = flashdrv_read(strg->dev->ctx->dma, paddr, NULL, meta);
 		if (err < 0) {
-			err = -EIO;
+			ret = -EIO;
 			break;
 		}
 
 		/* Check only metadata chunk (DATA0) */
-		err = _flashmtd_checkECC(meta, 1);
+		err = _flashmtd_checkECC(strg, paddr, 1);
 		if (err < 0) {
-			break;
+			ret = err;
+			/* -EUCLEAN isn't a fatal error (indicates dangerous page degradation but all bitflips were successfully corrected) */
+			if (err != -EUCLEAN) {
+				break;
+			}
 		}
 
 		chunksz = min(len - tempsz, strg->dev->mtd->oobSize);
@@ -200,7 +357,7 @@ static int flashmtd_metaRead(struct _storage_t *strg, off_t offs, void *data, si
 	*retlen = tempsz;
 	mutexUnlock(strg->dev->ctx->lock);
 
-	return err;
+	return ret;
 }
 
 
