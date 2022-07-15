@@ -316,11 +316,12 @@ static ssize_t flashsrv_read(oid_t *oid, size_t offs, char *data, size_t size)
 	}
 
 	res = strg->dev->mtd->ops->read(strg, strg->start + offs, data, size, &retlen);
-	if (res >= 0) {
-		res = retlen;
+	/* -EUCLEAN isn't a fatal error (indicates dangerous page degradation but all bitflips were successfully corrected) */
+	if ((res < 0) && (res != -EUCLEAN)) {
+		return res;
 	}
 
-	return res;
+	return retlen;
 }
 
 
