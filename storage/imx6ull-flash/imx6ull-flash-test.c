@@ -14,7 +14,9 @@
 #include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <unistd.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -22,6 +24,7 @@
 #include <time.h>
 
 #include <sys/file.h>
+#include <sys/minmax.h>
 #include <sys/mman.h>
 #include <sys/msg.h>
 #include <sys/reboot.h>
@@ -318,6 +321,72 @@ void test_bootrom(void)
 }
 
 
+static unsigned int flashdrv_checkErased(const void *buff, size_t boffs, size_t blen)
+{
+	const uint8_t *buff8 = buff;
+	const uint32_t *buff32 = buff;
+	unsigned int ret = 0;
+	uint32_t data32;
+	uint8_t data8;
+
+	buff8 += boffs / CHAR_BIT;
+	boffs %= CHAR_BIT;
+
+	/* Check first byte */
+	if (boffs > 0) {
+		data8 = *buff8++;
+		data8 |= (uint8_t)(0xff << (CHAR_BIT - boffs));
+
+		/* Is it also last byte? */
+		if (boffs + blen < CHAR_BIT) {
+			data8 |= (uint8_t)(0xff >> (boffs + blen));
+			blen = 0;
+		}
+		else {
+			blen -= CHAR_BIT - boffs;
+		}
+
+		ret += CHAR_BIT - __builtin_popcount(data8);
+	}
+
+	/* Check bytes until 32-bit aligned address */
+	while ((blen > CHAR_BIT) && (((uintptr_t)buff8) % sizeof(data32))) {
+		data8 = *buff8++;
+		blen -= CHAR_BIT;
+		ret += CHAR_BIT - __builtin_popcount(data8);
+	}
+
+	/* Check 32-bit words */
+	buff32 = (const uint32_t *)buff8;
+	while (blen > CHAR_BIT * sizeof(data32)) {
+		data32 = *buff32++;
+		blen -= CHAR_BIT * sizeof(data32);
+
+		if (data32 == 0xffffffff) {
+			continue;
+		}
+		ret += CHAR_BIT * sizeof(data32) - __builtin_popcount(data32);
+	}
+
+	/* Check rest of the bytes */
+	buff8 = (const uint8_t *)buff32;
+	while (blen > CHAR_BIT) {
+		data8 = *buff8++;
+		blen -= CHAR_BIT;
+		ret += CHAR_BIT - __builtin_popcount(data8);
+	}
+
+	/* Check last byte */
+	if (blen > 0) {
+		data8 = *buff8;
+		data8 |= (uint8_t)(0xff >> blen);
+		ret += CHAR_BIT - __builtin_popcount(data8);
+	}
+
+	return ret;
+}
+
+
 /* Checks ECC corrections reported by the BCH module */
 void test_ecc(void)
 {
@@ -326,12 +395,16 @@ void test_ecc(void)
 	const unsigned int rawdatasz = 512 + 23;                                  /* 512B DATA + 22.75B ECC14 (adding 2 bits for byte alignment) */
 	const unsigned int maxmetaecc = 16;                                       /* Max number of bits per meta chunk ECC can correct */
 	const unsigned int maxdataecc = 14;                                       /* Max number of bits per data chunk ECC can correct */
+	const unsigned int thresecc = 10;                                         /* Min number of bitflips for page rewrite */
+	const size_t mlen = rawmetasz * CHAR_BIT;                                 /* Raw metadata chunk size in bits */
+	const size_t dlen = rawdatasz * CHAR_BIT - 2;                             /* Raw data chunk size in bits */
 	const unsigned int nblock = paddr / BLOCK_PAGES_CNT;
 	const unsigned int start = (paddr % BLOCK_PAGES_CNT) * FLASHDRV_PAGESZ;
+	unsigned int offs, flips, maxflips = 0;
+	uint8_t *data, *raw = NULL;
 	flashdrv_meta_t *aux;
 	flashdrv_dma_t *dma;
-	unsigned int offs;
-	uint8_t *data;
+	size_t boffs, blen;
 	int i, err;
 
 	if ((dma = flashdrv_dmanew()) == MAP_FAILED) {
@@ -347,6 +420,8 @@ void test_ecc(void)
 	aux = (flashdrv_meta_t *)(data + _PAGE_SIZE);
 
 	do {
+		printf("Checking programmed page bitflips handling\n");
+
 		/* Erase the block */
 		if ((err = flashdrv_erase(dma, paddr)) < 0) {
 			printf("erase() failed: %d\n", err);
@@ -444,13 +519,163 @@ void test_ecc(void)
 				break;
 			}
 		}
+
+		/* Test assumes no pre-existing bitflips in the page */
+		printf("Checking erased page bitflips handling\n");
+
+		/* Erase the block */
+		err = flashdrv_erase(dma, paddr);
+		if (err < 0) {
+			printf("erase() failed: %d\n", err);
+			break;
+		}
+
+		/* Flip metadata bits (we should correct up to 16 bit flips) */
+		printf("[%4u]: adding bit flips to metadata\n", paddr);
+		err = flip_bits(maxmetaecc, nblock, start, start + rawmetasz, 0);
+		if (err < 0) {
+			break;
+		}
+
+		/* Flip data bits (we should correct up to 14 bit flips) */
+		offs = start + rawmetasz;
+		for (i = 1; i < sizeof(aux->errors); i++) {
+			printf("[%4u]: adding bit flips to data chunk %u\n", paddr, i);
+			err = flip_bits(maxdataecc, nblock, offs, offs + rawdatasz, 0);
+			if (err < 0) {
+				break;
+			}
+			offs += rawdatasz;
+		}
+
+		/* Read the page */
+		err = flashdrv_read(dma, paddr, data, aux);
+		if (err < 0) {
+			printf("read() failed: %d\n", err);
+			break;
+		}
+
+		/* Check and correct bitflips (adapted _flashmtd_checkECC() implementation) */
+		for (i = 0; i < sizeof(aux->errors); i++) {
+			switch (aux->errors[i]) {
+				case flash_no_errors:
+				case flash_erased:
+					break;
+
+				case flash_uncorrectable:
+					/* BCH reports chunk as uncorrectable in case of an erased page with bitflips within that chunk area */
+					/* Check if that's the case by counting the bitflips with an assumption that the page is fully erased */
+
+					/* Read raw page in order to check full chunk - both data and its ECC area */
+					if (raw == NULL) {
+						/* Map raw page buffer */
+						raw = mmap(NULL, pagemapsz, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
+						if (raw == MAP_FAILED) {
+							raw = NULL;
+							err = -ENOMEM;
+							printf("mmap() failed: %d\n", err);
+							break;
+						}
+
+						/* Read raw page */
+						err = flashdrv_readraw(dma, paddr, raw, FLASHDRV_PAGESZ);
+						if (err < 0) {
+							printf("readraw() failed: %d\n", err);
+							break;
+						}
+					}
+
+					/* Metadata chunk */
+					if (i == 0) {
+						boffs = 0;
+						blen = mlen;
+					}
+					/* Data chunk */
+					else {
+						boffs = mlen + (i - 1) * dlen;
+						blen = dlen;
+					}
+
+					flips = flashdrv_checkErased(raw, boffs, blen);
+
+					/* Nothing to do if there're no bitflips */
+					if (flips == 0) {
+						break;
+					}
+
+					/* Handle metadata chunk bitflips */
+					if (i == 0) {
+						/* Too many metadata bitflips, return error */
+						if (flips > maxmetaecc) {
+							err = -EBADMSG;
+							printf("too many bitflips in metadata chunk: %d\n", err);
+							break;
+						}
+
+						/* Correct metadata chunk */
+						memset(aux, 0xff, flashinfo.oobsz);
+					}
+					/* Handle data chunk bitflips */
+					else {
+						/* Too many data bitflips, return error */
+						if (flips > maxdataecc) {
+							err = -EBADMSG;
+							printf("too many bitflips in data chunk %d: %d\n", i, err);
+							break;
+						}
+
+						/* Correct data chunk */
+						memset(data + (i - 1) * 512, 0xff, 512);
+					}
+
+					/* Chunk corrected, update max number of bitflips */
+					maxflips = max(flips, maxflips);
+					break;
+
+				default:
+					/* Chunk corrected by BCH, update max number of bitflips */
+					maxflips = max(aux->errors[i], maxflips);
+					break;
+			}
+
+			if (err < 0) {
+				break;
+			}
+		}
+
+		if (err < 0) {
+			break;
+		}
+
+		/* Verify metadata */
+		for (i = 0; i < flashinfo.oobsz; i++) {
+			if (aux->metadata[i] != 0xff) {
+				err = -EBADMSG;
+				printf("failed to correct metadata, %d\n", err);
+				break;
+			}
+		}
+
+		/* Verify data */
+		for (i = 0; i < flashinfo.writesz; i++) {
+			if (data[i] != 0xff) {
+				err = -EBADMSG;
+				printf("failed to correct data, %d\n", err);
+				break;
+			}
+		}
 	} while (0);
 
-	if (err < 0)
+	if (err < 0) {
 		printf("[%4u]: ECC test failed\n", paddr);
-	else
-		printf("[%4u]: ECC successfully corrected page data\n", paddr);
+	}
+	else {
+		printf("[%4u]: ECC successfully corrected page data%s\n", paddr, (maxflips >= thresecc) ? ", page needs rewrite (dangerous number of bitflips)" : "");
+	}
 
+	if (raw != NULL) {
+		munmap(raw, pagemapsz);
+	}
 	munmap(data, pagemapsz);
 	flashdrv_dmadestroy(dma);
 }
