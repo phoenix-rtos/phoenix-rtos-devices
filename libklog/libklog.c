@@ -87,7 +87,7 @@ static void pumpthr(void *arg)
 }
 
 
-int libklog_init(libklog_write_t clbk, void *ctx)
+int libklog_init(libklog_write_t clbk)
 {
 	oid_t dev;
 	int err;

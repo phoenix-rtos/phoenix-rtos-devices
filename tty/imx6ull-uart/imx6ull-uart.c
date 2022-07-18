@@ -703,7 +703,7 @@ int main(int argc, char **argv)
 	if (is_console)
 		create_dev(&dev, _PATH_CONSOLE);
 
-	libklog_init(libklog_clbk, &uart.tty_common);
+	libklog_init(libklog_clbk);
 #endif /* KLOG_ENABLE */
 
 	uart_thr((void *)port);
