@@ -16,6 +16,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <paths.h>
 #include <posix/utils.h>
 #include <sys/pwman.h>
 #include <sys/interrupt.h>
@@ -369,15 +370,29 @@ static void tty_thread(void *arg)
 #endif
 
 
-void tty_log(const char *str)
+ssize_t tty_log(const char *str, size_t len)
 {
 #if CONSOLE_IS_TTY
-	libtty_write(&tty_getCtx(0)->tty_common, str, strlen(str), 0);
+	return libtty_write(&tty_getCtx(0)->tty_common, str, len, 0);
+#endif
+	return 0;
+}
+
+
+void tty_createDev(void)
+{
+#if CONSOLE_IS_TTY
+	oid_t oid;
+
+	oid.port = uart_common.port;
+	oid.id = 0;
+	create_dev(&oid, _PATH_TTY);
+	create_dev(&oid, _PATH_CONSOLE);
 #endif
 }
 
 
-int tty_init(unsigned int *port)
+int tty_init(void)
 {
 #if TTY_CNT != 0
 	unsigned int uart, i;
@@ -397,17 +412,7 @@ int tty_init(unsigned int *port)
 		{ (void *)0x40005000, pctl_uart5, uart5_irq },
 	};
 
-	if (port == NULL)
-		portCreate(&uart_common.port);
-	else
-		uart_common.port = *port;
-
-	oid.port = uart_common.port;
-
-#if CONSOLE_IS_TTY
-	oid.id = 0;
-	create_dev(&oid, "tty");
-#endif
+	portCreate(&uart_common.port);
 
 	for (uart = usart1; uart <= uart5; ++uart) {
 		if (!uartConfig[uart])

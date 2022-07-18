@@ -14,11 +14,16 @@
 #ifndef UART_H_
 #define UART_H_
 
+#include <stddef.h>
+#include <stdlib.h> /* FIXME - should be types.h */
 
-void tty_log(const char *str);
+ssize_t tty_log(const char *str, size_t len);
 
 
-int tty_init(unsigned int *port);
+void tty_createDev(void);
+
+
+int tty_init(void);
 
 
 #endif

@@ -21,6 +21,8 @@
 #include <sys/msg.h>
 #include <sys/pwman.h>
 
+#include <libklog.h>
+
 #include "common.h"
 
 #include "adc.h"
@@ -174,8 +176,7 @@ static void handleMsg(msg_t *msg)
 static ssize_t console_write(const char *str, size_t len, int mode)
 {
 #if CONSOLE_IS_TTY
-	tty_log(str);
-	return (ssize_t)len;
+	return tty_log(str, len);
 #else
 	return uart_write(UART_CONSOLE - 1, str, len);
 #endif
@@ -241,20 +242,18 @@ static void thread(void *arg)
 }
 
 
+static void log_write(const char *buff, size_t len)
+{
+	(void)console_write(buff, len, 0);
+}
+
+
 int main(void)
 {
 	int i;
 	oid_t oid;
-	static const char welcome[] = "multidrv: Started\n";
-#if CONSOLE_IS_TTY
-	unsigned int ttyConsolePort;
-#endif
-
 	priority(THREADS_PRIORITY);
 
-#if CONSOLE_IS_TTY
-	portCreate(&ttyConsolePort);
-#endif
 	portCreate(&common.port);
 
 #if BUILTIN_DUMMYFS
@@ -267,11 +266,7 @@ int main(void)
 
 	rcc_init();
 	exti_init();
-#if CONSOLE_IS_TTY
-	tty_init(&ttyConsolePort);
-#else
-	tty_init(NULL);
-#endif
+	tty_init();
 	gpio_init();
 	spi_init();
 	adc_init();
@@ -279,10 +274,14 @@ int main(void)
 	flash_init();
 	i2c_init();
 	uart_init();
+	libklog_init(log_write);
+
+	/* Do this after klog init to keep shell from overtaking klog */
+	tty_createDev();
 
 	portRegister(common.port, "/multi", &oid);
 
-	console_write(welcome, sizeof(welcome) - 1, 0);
+	printf("multidrv: Started\n");
 
 	for (i = 0; i < THREADS_NO - 1; ++i)
 		beginthread(thread, THREADS_PRIORITY, common.stack[i], STACKSZ, (void *)i);
