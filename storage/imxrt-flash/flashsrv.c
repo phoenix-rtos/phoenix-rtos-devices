@@ -4,7 +4,7 @@
  * i.MX RT Flash server
  *
  * Copyright 2019-2022 Phoenix Systems
- * Author: Hubert Buczynski
+ * Author: Hubert Buczynski, Gerard Swiderski
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -841,6 +841,8 @@ int main(void)
 		return EXIT_FAILURE;
 	}
 
+	priority(IMXRT_FLASH_PRIO);
+
 	if (flashsrv_flashMemoriesInit() != EOK) {
 		LOG_ERROR("imxrt-flashsrv: flash memories were not initialized correctly.\n");
 		return EXIT_FAILURE;
@@ -850,8 +852,6 @@ int main(void)
 		LOG_ERROR("imxrt-flashsrv: partitions were not initialized correctly.\n");
 		return EXIT_FAILURE;
 	}
-
-	priority(IMXRT_FLASH_PRIO);
 
 	printf("imxrt-flashsrv: initialized.\n");
 
