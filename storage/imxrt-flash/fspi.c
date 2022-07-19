@@ -19,6 +19,15 @@
 #include <unistd.h>
 #include "fspi.h"
 
+
+/*
+ * NOTICE: FlexSPI driver in user space depends on phoenix-rtos-loader (plo) configuration set during
+ * flash probing, all settings (clocks, bus setup, command lookup-table, etc) are done in plo not in
+ * user space (as imxrt-flash/flashsrv), this driver when used without `plo/devices/flash-flexspi`
+ * will not work properly.
+ */
+
+
 /* clang-format off */
 
 enum { mcr0 = 0, mcr1, mcr2, ahbcr, inten, intr, lutkey, lutcr, ahbrxbuf0cr0, ahbrxbuf1cr0, ahbrxbuf2cr0, ahbrxbuf3cr0,
@@ -29,7 +38,6 @@ enum { mcr0 = 0, mcr1, mcr2, ahbcr, inten, intr, lutkey, lutcr, ahbrxbuf0cr0, ah
     hmstr3cr, hmstr4cr, hmstr5cr, hmstr6cr, hmstr7cr, haddrstart, haddrend, haddroffset };
 
 /* clang-format on */
-
 
 void flexspi_swreset(flexspi_t *fspi)
 {
