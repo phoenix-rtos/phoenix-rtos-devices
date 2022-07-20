@@ -62,7 +62,7 @@ static int flash_oidResolve(const char *devPath, oid_t *oid)
 		res = snprintf(temp, sizeof(temp), "devfs/%s", devPath + 5);
 		if (res >= sizeof(temp)) {
 			res = -ENAMETOOLONG;
-			LOG_ERROR("failed to build file path, err: %d\n", res);
+			LOG_ERROR("failed to build file path, err: %d", res);
 			return res;
 		}
 	}
@@ -520,7 +520,7 @@ static int flashsrv_mountRoot(int rootFirst, int rootSecond, const char *fs)
 	/* mount / symlink rootfs partition */
 	err = storage_mountfs(storage_get(rootfsID), fs, NULL, 0, &oid);
 	if (err < 0) {
-		LOG_ERROR("failed to mount a filesystem - %s: %d\n", fs, err);
+		LOG_ERROR("failed to mount a filesystem - %s: %d", fs, err);
 		return err;
 	}
 
@@ -533,7 +533,7 @@ static int flashsrv_mountRoot(int rootFirst, int rootSecond, const char *fs)
 	err = sprintf(path, "%sp%d", PATH_ROOT_STRG, rootfsID);
 	if (err >= sizeof(path)) {
 		err = -ENAMETOOLONG;
-		LOG_ERROR("failed to build file path, err: %d\n", err);
+		LOG_ERROR("failed to build file path, err: %d", err);
 		return err;
 	}
 
@@ -559,14 +559,14 @@ static int flashsrv_partAdd(blkcnt_t start, blkcnt_t size, const char *name)
 
 	err = flash_oidResolve(PATH_ROOT_STRG, &poid);
 	if (err < 0) {
-		LOG_ERROR("cannot resolve %s\n", PATH_ROOT_STRG);
+		LOG_ERROR("cannot resolve %s", PATH_ROOT_STRG);
 		return err;
 	}
 
 	parent = storage_get(poid.id);
 	if (parent == NULL) {
 		err = -EINVAL;
-		LOG_ERROR("failed to find a parent %s, err: %d\n", PATH_ROOT_STRG, err);
+		LOG_ERROR("failed to find a parent %s, err: %d", PATH_ROOT_STRG, err);
 		return err;
 	}
 
@@ -583,7 +583,7 @@ static int flashsrv_partAdd(blkcnt_t start, blkcnt_t size, const char *name)
 	strg = calloc(1, sizeof(storage_t));
 	if (strg == NULL) {
 		err = -ENOMEM;
-		LOG_ERROR("failed to allocate a device, err: %d\n", err);
+		LOG_ERROR("failed to allocate a device, err: %d", err);
 		return err;
 	}
 
@@ -595,7 +595,7 @@ static int flashsrv_partAdd(blkcnt_t start, blkcnt_t size, const char *name)
 	err = flashdev_init(strg);
 	if (err < 0) {
 		free(strg);
-		LOG_ERROR("failed to initialize MTD interface, err: %d\n", err);
+		LOG_ERROR("failed to initialize MTD interface, err: %d", err);
 		return err;
 	}
 
@@ -603,7 +603,7 @@ static int flashsrv_partAdd(blkcnt_t start, blkcnt_t size, const char *name)
 	if (err < 0) {
 		flashdev_done(strg);
 		free(strg);
-		LOG_ERROR("failed to create a partition, err: %d\n", err);
+		LOG_ERROR("failed to create a partition, err: %d", err);
 		return err;
 	}
 
@@ -612,7 +612,7 @@ static int flashsrv_partAdd(blkcnt_t start, blkcnt_t size, const char *name)
 		flashdev_done(strg);
 		free(strg);
 		err = -ENAMETOOLONG;
-		LOG_ERROR("failed to build file path, err: %d\n", err);
+		LOG_ERROR("failed to build file path, err: %d", err);
 		return err;
 	}
 
@@ -620,7 +620,7 @@ static int flashsrv_partAdd(blkcnt_t start, blkcnt_t size, const char *name)
 	if (err < 0) {
 		flashdev_done(strg);
 		free(strg);
-		LOG_ERROR("failed to create a device file, err: %d\n", err);
+		LOG_ERROR("failed to create a device file, err: %d", err);
 		return err;
 	}
 
@@ -728,13 +728,13 @@ static int flashsrv_nandInit(void)
 
 	err = flashdev_init(strg);
 	if (err < 0) {
-		LOG_ERROR("failed to initialize libstorage interface, err: %d\n", err);
+		LOG_ERROR("failed to initialize libstorage interface, err: %d", err);
 		return err;
 	}
 
 	err = storage_add(strg, &oid);
 	if (err < 0) {
-		LOG_ERROR("failed to add new storage, err: %d\n", err);
+		LOG_ERROR("failed to add new storage, err: %d", err);
 		flashdev_done(strg);
 		free(strg);
 		return err;
@@ -742,7 +742,7 @@ static int flashsrv_nandInit(void)
 
 	err = create_dev(&oid, PATH_ROOT_STRG);
 	if (err < 0) {
-		LOG_ERROR("failed to create a device file, err: %d\n", err);
+		LOG_ERROR("failed to create a device file, err: %d", err);
 		flashdev_done(strg);
 		free(strg);
 		return err;
@@ -771,7 +771,7 @@ int main(int argc, char **argv)
 	/* Daemonize server */
 	pid = fork();
 	if (pid < 0) {
-		LOG_ERROR("failed to daemonize server\n");
+		LOG_ERROR("failed to daemonize server");
 		exit(EXIT_FAILURE);
 	}
 	/* Parent waits to be killed by the child after finished server initialization */
@@ -784,21 +784,21 @@ int main(int argc, char **argv)
 	signal(SIGUSR1, flashsrv_signalExit);
 
 	if (setsid() < 0) {
-		LOG_ERROR("failed to create new session\n");
+		LOG_ERROR("failed to create new session");
 		exit(EXIT_FAILURE);
 	}
 
 	/* Initialize storage library with the message handler for the NAND flash memory */
 	err = storage_init(flashsrv_msgHandler, 32);
 	if (err < 0) {
-		LOG_ERROR("failed to initialize storage library, err: %d\n", err);
+		LOG_ERROR("failed to initialize storage library, err: %d", err);
 		return EXIT_FAILURE;
 	}
 
 	/* Register file system related to NAND flash memory */
 	err = storage_registerfs("jffs2", libjffs2_mount, libjffs2_umount);
 	if (err < 0) {
-		LOG_ERROR("failed to register jffs2 filesystem, err: %d\n", err);
+		LOG_ERROR("failed to register jffs2 filesystem, err: %d", err);
 		return EXIT_FAILURE;
 	}
 
