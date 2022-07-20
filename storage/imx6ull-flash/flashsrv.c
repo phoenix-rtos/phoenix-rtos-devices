@@ -473,12 +473,31 @@ static void flashsrv_msgHandler(void *arg, msg_t *msg)
 
 /* Initialization functions */
 
+static int flashsrv_bootImage(void)
+{
+	uint32_t reason;
+	int err;
+
+	err = reboot_reason(&reason);
+	if (err < 0) {
+		return err;
+	}
+
+	/* Secondary boot image */
+	if (reason & (1 << 30)) {
+		return 1;
+	}
+
+	/* First boot image */
+	return 0;
+}
+
+
 static int flashsrv_mountRoot(int rootFirst, int rootSecond, const char *fs)
 {
 	int err, rootfsID;
 	oid_t oid;
 	char path[32];
-	uint32_t reason = 0;
 
 	if ((fs == NULL) || (rootFirst <= 0)) {
 		/* code path for psu/psd */
@@ -488,12 +507,11 @@ static int flashsrv_mountRoot(int rootFirst, int rootSecond, const char *fs)
 
 	rootfsID = rootFirst;
 	if (rootSecond > 0) {
-		/* imx6ull-specific reboot reason - check if we're booting from secondary boot image */
-		if (reboot_reason(&reason) < 0) {
-			LOG_ERROR("reboot_reason: failed");
+		err = flashsrv_bootImage();
+		if (err < 0) {
+			LOG_ERROR("failed to check boot image, mounting first rootfs");
 		}
-
-		if (reason & (1u << 30)) {
+		else if (err == 1) {
 			LOG("using secondary boot image");
 			rootfsID = rootSecond;
 		}
@@ -625,7 +643,7 @@ static int flashsrv_parseOpts(int argc, char **argv)
 	int err;
 	blkcnt_t partStart, partSize; /* start and size of the partition in erase blocks */
 	char *p, *partName, *fs = NULL;
-	int c, rootfsFirst = -1, rootfsSecond = -1;
+	int c, rootfsFirst = -1, rootfsSecond = -1, magic = PHOENIX_REBOOT_MAGIC;
 
 	while ((c = getopt(argc, argv, "r:p:")) != -1) {
 		switch (c) {
@@ -678,7 +696,15 @@ static int flashsrv_parseOpts(int argc, char **argv)
 	/* TODO: add partition table support */
 	err = flashsrv_mountRoot(rootfsFirst, rootfsSecond, fs);
 	if (err < 0) {
-		LOG_ERROR("failed to mount rootfs");
+		LOG_ERROR("failed to mount rootfs, rebooting to secondary image");
+
+		c = flashsrv_bootImage();
+		if (c != 1) {
+			magic = ~magic;
+		}
+		reboot(magic);
+
+		return err;
 	}
 
 	return EOK;
