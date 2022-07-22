@@ -36,6 +36,10 @@
 #define USBACM_N_MSG_THREADS 2
 #endif
 
+#ifndef USBACM_N_UMSG_THREADS
+#define USBACM_N_UMSG_THREADS 2
+#endif
+
 #ifndef RX_FIFO_SIZE
 #define RX_FIFO_SIZE  8192
 #endif
@@ -84,7 +88,8 @@ typedef struct _usbacm_dev {
 
 
 static struct {
-	char stack[USBACM_N_MSG_THREADS][1024] __attribute__((aligned(8)));
+	char msgstack[USBACM_N_MSG_THREADS][1024] __attribute__((aligned(8)));
+	char ustack[USBACM_N_UMSG_THREADS - 1][2048] __attribute__((aligned(8)));
 	usbacm_dev_t *devices;
 	unsigned drvport;
 	unsigned msgport;
@@ -635,7 +640,9 @@ static int _usbacm_handleInsertion(usb_devinfo_t *insertion)
 	}
 
 	dev->rfcnt = 1;
+	mutexLock(usbacm_common.lock);
 	LIST_ADD(&usbacm_common.devices, dev);
+	mutexUnlock(usbacm_common.lock);
 
 	fprintf(stdout, "usbacm: New device: %s\n", dev->path);
 
@@ -683,9 +690,7 @@ static void usbthr(void *arg)
 
 		switch (umsg->type) {
 			case usb_msg_insertion:
-				mutexLock(usbacm_common.lock);
 				_usbacm_handleInsertion(&umsg->insertion);
-				mutexUnlock(usbacm_common.lock);
 				break;
 			case usb_msg_deletion:
 				mutexLock(usbacm_common.lock);
@@ -734,7 +739,15 @@ int main(int argc, char *argv[])
 	usbacm_common.lastId = 1;
 
 	for (i = 0; i < USBACM_N_MSG_THREADS; i++) {
-		ret = beginthread(usbacm_msgthr, USBACM_MSG_PRIO, usbacm_common.stack[i], sizeof(usbacm_common.stack[i]), NULL);
+		ret = beginthread(usbacm_msgthr, USBACM_MSG_PRIO, usbacm_common.msgstack[i], sizeof(usbacm_common.msgstack[i]), NULL);
+		if (ret < 0) {
+			fprintf(stderr, "usbacm: fail to beginthread ret: %d\n", ret);
+			return 1;
+		}
+	}
+
+	for (i = 0; i < USBACM_N_UMSG_THREADS - 1; i++) {
+		ret = beginthread(usbthr, USBACM_UMSG_PRIO, usbacm_common.ustack[i], sizeof(usbacm_common.ustack[i]), NULL);
 		if (ret < 0) {
 			fprintf(stderr, "usbacm: fail to beginthread ret: %d\n", ret);
 			return 1;
