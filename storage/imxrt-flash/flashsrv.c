@@ -545,8 +545,16 @@ static void flashsrv_rawThread(void *arg)
 				break;
 
 			case mtOpen:
-			case mtClose:
 				msg.o.io.err = EOK;
+				break;
+
+			case mtClose:
+				(void)flash_sync(&memory->ctx);
+				msg.o.io.err = EOK;
+				break;
+
+			case mtSync:
+				msg.o.io.err = flash_sync(&memory->ctx);
 				break;
 
 			default:
