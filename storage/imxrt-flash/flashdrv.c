@@ -94,6 +94,11 @@ static ssize_t bufferSync(flash_context_t *ctx, uint32_t dstAddr, int isLast)
 			return res;
 		}
 
+		if (ctx->properties.sector_size <= dstAddr) {
+			ctx->prevAddr = (uint32_t)-1;
+			ctx->syncAddr = (uint32_t)-1;
+		}
+
 		if (isLast != 0) {
 			return res;
 		}
