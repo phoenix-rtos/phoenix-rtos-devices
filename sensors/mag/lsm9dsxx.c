@@ -158,7 +158,7 @@ static void lsm9dsxx_threadPublish(void *data)
 	uint8_t obuf;
 
 	while (1) {
-		usleep(12500); /* 80Hz sampling period */
+		usleep(1000 * 1000 / 64);
 
 		obuf = REG_DATA_OUT | SPI_READ_BIT | SPI_AUTOADDRINCR_BIT;
 		err = sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, &obuf, sizeof(obuf), ibuf, sizeof(ibuf), sizeof(obuf));
