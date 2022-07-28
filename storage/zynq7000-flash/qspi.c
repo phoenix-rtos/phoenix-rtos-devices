@@ -21,6 +21,7 @@
 #include <sys/platform.h>
 #include <sys/interrupt.h>
 
+#include <board_config.h>
 #include <phoenix/arch/zynq7000.h>
 
 
@@ -294,9 +295,16 @@ static void qspi_IOMode(void)
 
 	/* Configure controller */
 
-	/* Set baud rate to 100 MHz: 200 MHz / 2, master mode, not Legacy mode */
+	/* Set master mode, not Legacy mode */
+	*(qspi_common.base + cr) = 0x1 | (1 << 31);
+
+	/* Set baud rate to 100 MHz: 200 MHz / 2 */
 	*(qspi_common.base + cr) &= ~(0x7 << 3);
-	*(qspi_common.base + cr) |= 0x1 | (1 << 31);
+	if (QSPI_FCLK < 0) {
+		/* Set baud rate to 50 MHz: 200 MHz / 4 */
+		*(qspi_common.base + cr) |= (0x1 << 3);
+	}
+
 	/* Set little endian */
 	*(qspi_common.base + cr) &= ~(1 << 26);
 	/* Set FIFO width 32 bits */
@@ -309,8 +317,10 @@ static void qspi_IOMode(void)
 	*(qspi_common.base + cr) |= (0x3 << 14);
 
 	/* Loopback clock is used for high-speed read data capturing (>40MHz) */
-	*(qspi_common.base + lpbk) = *(qspi_common.base + lpbk) & ~0x3f;
-	*(qspi_common.base + lpbk) = (1 << 5);
+	if (QSPI_FCLK >= 0) {
+		*(qspi_common.base + lpbk) = *(qspi_common.base + lpbk) & ~0x3f;
+		*(qspi_common.base + lpbk) = (1 << 5);
+	}
 
 	/* Disable linear mode */
 	*(qspi_common.base + lqspi_cr) = 0;
@@ -382,16 +392,21 @@ static int qspi_initPins(void)
 {
 	int res, i;
 	static const int pins[] = {
-		pctl_mio_pin_01, /* Chip Select */
-		pctl_mio_pin_02, /* I/O */
-		pctl_mio_pin_03, /* I/O */
-		pctl_mio_pin_04, /* I/O */
-		pctl_mio_pin_05, /* I/O */
-		pctl_mio_pin_06, /* CLK */
-		pctl_mio_pin_08  /* Feedback CLK */
+		QSPI_CS,
+		QSPI_IO0,
+		QSPI_IO1,
+		QSPI_IO2,
+		QSPI_IO3,
+		QSPI_CLK,
+		QSPI_FCLK
 	};
 
 	for (i = 0; i < sizeof(pins) / sizeof(pins[0]); ++i) {
+		/* Pin should not be configured by the driver */
+		if (pins[i] < 0) {
+			continue;
+		}
+
 		res = qspi_setPin(pins[i]);
 		if (res < 0) {
 			break;
