@@ -28,8 +28,6 @@ enum { flash_acr = 0, flash_pdkeyr, flash_keyr, flash_optkeyr, flash_sr, flash_c
 	flash_optr = flash_eccr + 2, flash_pcrop1sr, flash_pcrop1er, flash_wrp1ar, flash_wrp1br,
 	flash_pcrop2sr = flash_wrp1br + 5, flash_pcrop2er, flash_wrp2ar, flash_wrp2br };
 
-enum { opt_bfb2 = 20, opt_dualbank = 21 };
-
 
 struct {
 	volatile unsigned int *flash;
@@ -95,15 +93,6 @@ static void _program_unlock(void)
 	*(flash_common.flash + flash_keyr) = 0x45670123;
 	dataBarier();
 	*(flash_common.flash + flash_keyr) = 0xcdef89ab;
-	dataBarier();
-}
-
-
-static void _flash_optunlock(void)
-{
-	*(flash_common.flash + flash_optkeyr) = 0x08192a3b;
-	dataBarier();
-	*(flash_common.flash + flash_optkeyr) = 0x4c5d6e7f;
 	dataBarier();
 }
 
@@ -250,66 +239,10 @@ static unsigned int _flash_getOptions(void)
 }
 
 
-static int _flash_setOptions(unsigned int mask, unsigned int val)
-{
-	int err;
-	unsigned int t;
-
-	if ((err = _flash_wait()) < 0)
-		return err;
-
-	_flash_clearFlags();
-
-	t = *(flash_common.flash + flash_optr) & ~mask;
-	*(flash_common.flash + flash_optr) = t | (mask & val);
-	dataBarier();
-	*(flash_common.flash + flash_cr) |= 1 << 17;
-
-	err = _flash_wait();
-	_flash_clearFlags();
-
-	return err;
-}
-
-
-int flash_switchBanks(void)
-{
-	int err = 0;
-	unsigned int bfb2;
-
-	mutexLock(flash_common.lock);
-	bfb2 = !!(_flash_getOptions() & (1 << opt_bfb2));
-	_program_unlock();
-	_flash_optunlock();
-
-	/* If BFB2==1 and Bank 1 is the active bank, then booting from Bank 2
-	must have failed so leave BFB2 as is and just retry booting via reset.
-	In the other case toggle BFB2, save it to flash, and also reset if saved
-	successfully. */
-	if (!bfb2 || flash_common.activebank != 0)
-		err = _flash_setOptions(1 << opt_bfb2, !bfb2 << opt_bfb2);
-
-	if (!err) {
-		/* Reset by flash option loader */
-		*(flash_common.flash + flash_cr) |= 1 << 27;
-		dataBarier();
-
-		/* Reset failed */
-		err = -1;
-	}
-
-	/* Also locks OPTLOCK */
-	_program_lock();
-	mutexUnlock(flash_common.lock);
-
-	return err;
-}
-
-
 void flash_getInfo(flashinfo_t *info)
 {
-	info->dualbank = !!(_flash_getOptions() & (1 << opt_dualbank));
-	info->dualboot = !!(_flash_getOptions() & (1 << opt_bfb2));
+	info->dualbank = !!(_flash_getOptions() & (1 << 21));
+	info->dualboot = !!(_flash_getOptions() & (1 << 20));
 	info->remap = flash_common.bankflip;
 	info->activebank = flash_common.activebank;
 }
@@ -323,7 +256,6 @@ int flash_init(void)
 
 	/* Check what flash bank is mapped at FLASH_PROGRAM_1_ADDR */
 	flash_common.bankflip = ((*syscfg & (1 << 8)) != 0) ? 1 : 0;
-
 	flash_common.activebank = flash_activeBank() ^ flash_common.bankflip;
 
 	mutexCreate(&flash_common.lock);
