@@ -34,15 +34,25 @@ enum {
 	flash_cmd_wrdi,
 	flash_cmd_wren,
 	flash_cmd_read,
+	flash_cmd_4read,
 	flash_cmd_fast_read,
+	flash_cmd_4fast_read,
 	flash_cmd_dor,
+	flash_cmd_4dor,
 	flash_cmd_qor,
+	flash_cmd_4qor,
 	flash_cmd_dior,
+	flash_cmd_4dior,
 	flash_cmd_qior,
+	flash_cmd_4qior,
 	flash_cmd_pp,
+	flash_cmd_4pp,
 	flash_cmd_qpp,
+	flash_cmd_4qpp,
 	flash_cmd_p4e,
+	flash_cmd_4p4e,
 	flash_cmd_p64e,
+	flash_cmd_4p64e,
 	flash_cmd_be,
 	flash_cmd_end
 };
@@ -93,7 +103,11 @@ typedef struct {
 	flash_cfi_t cfi;
 	flash_cmd_t cmds[flash_cmd_end];
 
+	int readCmd; /* Default read command define for specific flash memory */
+	int ppCmd;   /* Default page program command define for specific flash memory */
+
 	const char *name;
+	enum { flash_3byteAddr, flash_4byteAddr } addrMode;
 } flash_info_t;
 
 
