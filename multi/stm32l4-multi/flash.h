@@ -3,8 +3,8 @@
  *
  * STM32L4 flash driver.
  *
- * Copyright 2017, 2018 Phoenix Systems
- * Author: Jakub Sejdak, Aleksander Kaminski
+ * Copyright 2017, 2018, 2022 Phoenix Systems
+ * Author: Jakub Sejdak, Aleksander Kaminski, Tomasz Korniluk
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -35,6 +35,8 @@
 #define FLASH_PROGRAM_BANK_SIZE (512 * 1024)
 #endif
 
+#define OTP_ADDR 0x1fff7000
+#define OTP_SIZE (128 * 8)
 
 static inline uint32_t getPC(void)
 {
@@ -61,6 +63,12 @@ extern size_t flash_readData(uint32_t offset, char *buff, size_t size);
 
 
 extern size_t flash_writeData(uint32_t offset, const char *buff, size_t size);
+
+
+extern size_t flash_readOtp(uint32_t offset, char *buff, size_t size);
+
+
+extern size_t flash_writeOtp(uint32_t offset, const char *buff, size_t size);
 
 
 extern int flash_switchBanks(void);

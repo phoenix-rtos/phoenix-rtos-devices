@@ -3,8 +3,8 @@
  *
  * STM32L4 multi driver main
  *
- * Copyright 2018, 2020 Phoenix Systems
- * Author: Aleksander Kaminski
+ * Copyright 2018, 2020, 2022 Phoenix Systems
+ * Author: Aleksander Kaminski, Tomasz Korniluk
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -20,8 +20,6 @@
 #include <sys/threads.h>
 #include <sys/msg.h>
 #include <sys/pwman.h>
-
-#include <libklog.h>
 
 #include "common.h"
 
@@ -158,6 +156,19 @@ static void handleMsg(msg_t *msg)
 
 		case uart_set:
 			err = uart_write(imsg->uart_set.uart, msg->i.data, msg->i.size);
+			break;
+
+		case otp_get:
+			err = flash_readOtp(imsg->otp_rw.offset, msg->o.data, msg->o.size);
+			break;
+
+		case otp_set:
+			if (imsg->otp_rw.magic == OTP_WRITE_MAGIC && msg->i.data != NULL) {
+				err = flash_writeOtp(imsg->otp_rw.offset, msg->i.data, msg->i.size);
+			}
+			else {
+				err = -EINVAL;
+			}
 			break;
 
 		default:

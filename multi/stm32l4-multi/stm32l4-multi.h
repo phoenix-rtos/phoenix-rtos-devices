@@ -1,10 +1,10 @@
 /*
  * Phoenix-RTOS
  *
- * STM32L1 multidriver
+ * STM32L4 multidriver
  *
- * Copyright 2018 Phoenix Systems
- * Author: Aleksander Kaminski
+ * Copyright 2018, 2022 Phoenix Systems
+ * Author: Aleksander Kaminski, Tomasz Korniluk
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -21,12 +21,13 @@
 
 
 #define FLASH_REBOOT_MAGIC 0x88bb77aaUL
+#define OTP_WRITE_MAGIC    0x5d1a8712UL
 
 /* clang-format off */
 enum { adc_get = 0, rtc_setcal, rtc_get, rtc_set, rtc_setalarm, i2c_get, i2c_getwreg,
 	i2c_set, i2c_setwreg, gpio_def, gpio_get, gpio_set, uart_def, uart_get, uart_set,
-	flash_get, flash_set, flash_info, spi_get, spi_set, spi_rw, spi_def,
-	exti_def, exti_map };
+	flash_get, flash_set, flash_info, spi_get, spi_set, spi_rw, spi_def, exti_def,
+	exti_map, otp_get, otp_set };
 /* clang-format on */
 
 /* RTC */
@@ -171,6 +172,15 @@ typedef struct {
 } __attribute__((packed)) flashinfo_t;
 
 
+/* OTP */
+
+
+typedef struct {
+	unsigned int offset;
+	unsigned int magic;
+} otprw_t;
+
+
 /* MULTI */
 
 
@@ -192,6 +202,7 @@ typedef struct {
 		spidef_t spi_def;
 		extidef_t exti_def;
 		extimap_t exti_map;
+		otprw_t otp_rw;
 		unsigned int flash_addr;
 	};
 } __attribute__((packed)) multi_i_t;

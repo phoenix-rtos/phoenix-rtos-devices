@@ -3,8 +3,8 @@
  *
  * STM32L4 internal flash driver
  *
- * Copyright 2017, 2018 Phoenix Systems
- * Author: Aleksander Kaminski, Jakub Sejdak
+ * Copyright 2017, 2018, 2022 Phoenix Systems
+ * Author: Aleksander Kaminski, Jakub Sejdak, Tomasz Korniluk
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -109,6 +109,17 @@ static inline int program_isValidAddress(uint32_t addr, size_t size)
 }
 
 
+static inline int otp_isValidAddress(uint32_t addr, size_t size)
+{
+	if ((addr >= OTP_ADDR) && (addr + size < (OTP_ADDR + OTP_SIZE)) && (addr % (2 * sizeof(uint32_t)) == 0) &&
+			size % (2 * sizeof(uint32_t)) == 0) {
+		return 1;
+	}
+
+	return 0;
+}
+
+
 static size_t _program_readData(uint32_t offset, char *buff, size_t size)
 {
 	memcpy(buff, (void *)offset, size);
@@ -126,6 +137,23 @@ size_t flash_readData(uint32_t offset, char *buff, size_t size)
 
 	mutexLock(flash_common.lock);
 	ret = _program_readData(offset, buff, size);
+	mutexUnlock(flash_common.lock);
+
+	return ret;
+}
+
+
+size_t flash_readOtp(uint32_t offset, char *buff, size_t size)
+{
+	size_t ret;
+
+	ret = otp_isValidAddress(offset + OTP_ADDR, size);
+	if (!ret) {
+		return -1;
+	}
+
+	mutexLock(flash_common.lock);
+	ret = _program_readData(offset + OTP_ADDR, buff, size);
 	mutexUnlock(flash_common.lock);
 
 	return ret;
@@ -160,37 +188,52 @@ static int _program_erasePage(uint32_t addr)
 }
 
 
-static int _program_writePage(uint32_t offset)
+static int _program_dblWords(volatile uint32_t *addr, const char *buff, size_t size)
 {
 	int pos = 0;
-	volatile uint32_t *ptr = (void *)offset;
-	uint32_t t[2];
+	uint32_t value[2];
 
-	if (offset & (FLASH_PAGE_SIZE - 1))
-		return -1;
-
-	if (_flash_wait() != 0)
-		return -1;
-
-	_flash_clearFlags();
-
-	for (pos = 0; pos < FLASH_PAGE_SIZE; pos += 2 * sizeof(uint32_t)) {
+	for (pos = 0; pos < size; pos += 2 * sizeof(uint32_t)) {
 		*(flash_common.flash + flash_cr) |= 1;
-		memcpy(t, flash_common.page + pos, 2 * sizeof(uint32_t));
-		*(ptr++) = t[0];
+		memcpy(value, buff + pos, 2 * sizeof(uint32_t));
+		*(addr++) = value[0];
 		dataBarier();
-		*(ptr++) = t[1];
+		*(addr++) = value[1];
 		dataBarier();
 
 		if (_flash_wait() != 0) {
-			*(flash_common.flash + flash_cr) &= ~1;
-			return -1;
+			break;
 		}
 
 		_flash_clearFlags();
 	}
 
 	*(flash_common.flash + flash_cr) &= ~1;
+
+	_flash_clearFlags();
+
+	return pos >= size ? size : pos;
+}
+
+
+static int _program_writePage(uint32_t offset)
+{
+	int ret;
+
+	if (offset & (FLASH_PAGE_SIZE - 1)) {
+		return -1;
+	}
+
+	if (_flash_wait() != 0) {
+		return -1;
+	}
+
+	_flash_clearFlags();
+
+	ret = _program_dblWords((void *)offset, flash_common.page, FLASH_PAGE_SIZE);
+	if (ret < FLASH_PAGE_SIZE) {
+		return -1;
+	}
 
 	return 0;
 }
@@ -230,6 +273,32 @@ size_t flash_writeData(uint32_t offset, const char *buff, size_t size)
 	mutexUnlock(flash_common.lock);
 
 	return  size - towrite;
+}
+
+
+size_t flash_writeOtp(uint32_t offset, const char *buff, size_t size)
+{
+	int ret;
+	uint32_t *ptr = (void *)(offset + OTP_ADDR);
+
+	ret = otp_isValidAddress((uint32_t)ptr, size);
+	if (!ret) {
+		return -EINVAL;
+	}
+
+	mutexLock(flash_common.lock);
+	_program_unlock();
+	_flash_clearFlags();
+
+	ret = _flash_wait();
+	if (ret == 0) {
+		ret = _program_dblWords(ptr, buff, size);
+	}
+
+	_program_lock();
+	mutexUnlock(flash_common.lock);
+
+	return ret;
 }
 
 
