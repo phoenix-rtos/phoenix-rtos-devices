@@ -413,6 +413,7 @@ int tty_init(void)
 	};
 
 	portCreate(&uart_common.port);
+	oid.port = uart_common.port;
 
 	for (uart = usart1; uart <= uart5; ++uart) {
 		if (!uartConfig[uart])
