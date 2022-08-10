@@ -155,7 +155,7 @@ static void signal_txready(void *_uart)
 }
 
 
-static void set_cflag(void *_uart, tcflag_t* cflag)
+static void set_cflag(void *_uart, tcflag_t *cflag)
 {
 	uart_t *uartptr = (uart_t *)_uart;
 	uint32_t t;
@@ -163,16 +163,23 @@ static void set_cflag(void *_uart, tcflag_t* cflag)
 	/* disable TX and RX */
 	*(uartptr->base + ctrlr) &= ~((1 << 19) | (1 << 18));
 
-	/* CSIZE ony CS7 and CS8 (default) is supported */
-	if ((*cflag & CSIZE) == CS7) {
-		*(uartptr->base + ctrlr) |= 1 << 11;
-	}
-	else { /* CS8 */
+	/* CSIZE only CS7 and CS8 (default) is supported */
+	if ((*cflag & CSIZE) != CS7) { /* CS8 */
 		*cflag &= ~CSIZE;
 		*cflag |= CS8;
-
-		*(uartptr->base + ctrlr) &= ~(1 << 11);
 	}
+
+	/* If parity bit is enabled data character length must be incremented */
+	t = *(uartptr->base + ctrlr) & ~(1 << 4 | 1 << 11);
+	if ((*cflag & CSIZE) == CS7) {
+		if (!(*cflag & PARENB)) {
+			t |= 1 << 11;
+		}
+	}
+	else if (*cflag & PARENB) {
+		t |= 1 << 4;
+	}
+	*(uartptr->base + ctrlr) = t;
 
 	/* parity */
 	t = *(uartptr->base + ctrlr) & ~3;
