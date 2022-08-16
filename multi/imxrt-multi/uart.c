@@ -118,6 +118,7 @@ static inline int uart_getTXcount(uart_t *uart)
 static void uart_intrThread(void *arg)
 {
 	uart_t *uart = (uart_t *)arg;
+	uint8_t mask;
 
 	for (;;) {
 		/* wait for character or transmit data */
@@ -135,11 +136,18 @@ static void uart_intrThread(void *arg)
 			condWait(uart->cond, uart->lock, 0);
 		}
 
+		if ((uart->tty_common.term.c_cflag & CSIZE) == CS7) {
+			mask = 0x7f;
+		}
+		else {
+			mask = 0xff;
+		}
+
 		mutexUnlock(uart->lock);
 
 		/* RX */
 		while (uart_getRXcount(uart))
-			libtty_putchar(&uart->tty_common, *(uart->base + datar), NULL);
+			libtty_putchar(&uart->tty_common, *(uart->base + datar) & mask, NULL);
 
 		/* TX */
 		while (libtty_txready(&uart->tty_common) && uart_getTXcount(uart) < uart->txFifoSz)
