@@ -143,13 +143,12 @@ size_t flash_readData(uint32_t offset, char *buff, size_t size)
 }
 
 
-size_t flash_readOtp(uint32_t offset, char *buff, size_t size)
+ssize_t flash_readOtp(uint32_t offset, char *buff, size_t size)
 {
 	size_t ret;
 
-	ret = otp_isValidAddress(offset + OTP_ADDR, size);
-	if (!ret) {
-		return -1;
+	if (otp_isValidAddress(offset + OTP_ADDR, size) == 0) {
+		return -EINVAL;
 	}
 
 	mutexLock(flash_common.lock);
@@ -276,13 +275,12 @@ size_t flash_writeData(uint32_t offset, const char *buff, size_t size)
 }
 
 
-size_t flash_writeOtp(uint32_t offset, const char *buff, size_t size)
+ssize_t flash_writeOtp(uint32_t offset, const char *buff, size_t size)
 {
 	int ret;
 	uint32_t *ptr = (void *)(offset + OTP_ADDR);
 
-	ret = otp_isValidAddress((uint32_t)ptr, size);
-	if (!ret) {
+	if (otp_isValidAddress((uint32_t)ptr, size) == 0) {
 		return -EINVAL;
 	}
 
