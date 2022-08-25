@@ -31,7 +31,7 @@ extern char *uarthw_dump(void *hwctx, char *s, size_t sz);
 extern unsigned int uarthw_irq(void *hwctx);
 
 
-extern int uarthw_init(unsigned int uartn, void *hwctx, size_t hwctxsz);
+extern int uarthw_init(unsigned int uartn, void *hwctx, size_t hwctxsz, unsigned int *fclk);
 
 
 #endif

@@ -242,13 +242,15 @@ static void poolthr(void *arg)
 
 static int _uart_init(uart_t *uart, unsigned int uartn, unsigned int speed)
 {
-	unsigned int divisor = 115200 / speed;
+	unsigned int divisor;
 	libtty_callbacks_t callbacks;
 
-	int err = uarthw_init(uartn, uart->hwctx, sizeof(uart->hwctx));
+	int err = uarthw_init(uartn, uart->hwctx, sizeof(uart->hwctx), &divisor);
 	if (err < 0) {
 		return err;
 	}
+
+	divisor /= 16 * speed;
 
 	callbacks.arg = uart;
 	callbacks.set_baudrate = set_baudrate;

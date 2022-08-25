@@ -56,7 +56,7 @@ unsigned int uarthw_irq(void *hwctx)
 }
 
 
-int uarthw_init(unsigned int uartn, void *hwctx, size_t hwctxsz)
+int uarthw_init(unsigned int uartn, void *hwctx, size_t hwctxsz, unsigned int *fclk)
 {
 	void *base;
 
@@ -81,6 +81,8 @@ int uarthw_init(unsigned int uartn, void *hwctx, size_t hwctxsz)
 		munmap(base, _PAGE_SIZE);
 		return -ENODEV;
 	}
+
+	*fclk = 115200 * 16;
 
 	return EOK;
 }
