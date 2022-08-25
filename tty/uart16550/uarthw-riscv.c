@@ -39,13 +39,12 @@ void uarthw_write(void *hwctx, unsigned int reg, uint8_t val)
 	volatile uint64_t p = (uint64_t)(((uarthw_ctx_t *)hwctx)->base + reg);
 
 	*(volatile uint8_t *)p = val;
-	return;
 }
 
 
 char *uarthw_dump(void *hwctx, char *s, size_t sz)
 {
-	snprintf(s, sz, "base=%p irq=%d", ((uarthw_ctx_t *)hwctx)->base, ((uarthw_ctx_t *)hwctx)->irq);
+	snprintf(s, sz, "base=%p irq=%u", ((uarthw_ctx_t *)hwctx)->base, ((uarthw_ctx_t *)hwctx)->irq);
 	return s;
 }
 
