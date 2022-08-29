@@ -299,7 +299,7 @@ int usbclient_destroy(void)
 
 	ctrl_reset();
 
-	threadJoin(0);
+	threadJoin(-1, 0);
 
 	resourceDestroy(imx_common.dc.inth);
 	resourceDestroy(imx_common.dc.irqLock);
