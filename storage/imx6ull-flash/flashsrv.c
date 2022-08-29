@@ -186,39 +186,43 @@ static int flashsrv_devWriteMeta(flash_i_devctl_t *idevctl, char *data)
 static ssize_t flashsrv_devWriteRaw(flash_i_devctl_t *idevctl, char *data)
 {
 	int res = EOK;
-	size_t rawPagesz, rawEraseBlockSz, tempsz = 0;
+	size_t rawPagesz, rawEraseBlockSz, rawPartsz, tempsz = 0;
 
-	size_t size = idevctl->write.size;
-	size_t offs = idevctl->write.address;
+	size_t rawsz = idevctl->write.size;
+	size_t rawoffs = idevctl->write.address;
 	storage_t *strg = storage_get(idevctl->badblock.oid.id);
 
-	TRACE("RAW write off: %d, size: %d, ptr: %p", offs, size, data);
+	TRACE("RAW write off: %d, size: %d, ptr: %p", rawoffs, rawsz, data);
 
-	if (strg == NULL || strg->dev == NULL || strg->dev->ctx == NULL || strg->dev->mtd == NULL || (offs + size) >= strg->size || data == NULL) {
+	if (strg == NULL || strg->dev == NULL || strg->dev->ctx == NULL || strg->dev->mtd == NULL || data == NULL) {
+		return -EINVAL;
+	}
+
+	rawEraseBlockSz = (strg->dev->mtd->erasesz / strg->dev->mtd->writesz) * (strg->dev->mtd->writesz + strg->dev->mtd->metaSize);
+	rawPartsz = (strg->size / strg->dev->mtd->erasesz) * rawEraseBlockSz;
+
+	if ((rawoffs + rawsz) >= rawPartsz) {
 		return -EINVAL;
 	}
 
 	rawPagesz = strg->dev->mtd->writesz + strg->dev->mtd->metaSize;
-	if ((size % rawPagesz) != 0 || (offs % rawPagesz) != 0) {
+	if ((rawsz % rawPagesz) != 0 || (rawoffs % rawPagesz) != 0) {
 		return -EINVAL;
 	}
-
-	/* Calculate offset for raw data */
-	rawEraseBlockSz = (strg->dev->mtd->erasesz / strg->dev->mtd->writesz) * (strg->dev->mtd->writesz + strg->dev->mtd->metaSize);
-	offs += (strg->start / strg->dev->mtd->erasesz) * rawEraseBlockSz;
+	rawoffs += (strg->start / strg->dev->mtd->erasesz) * rawEraseBlockSz;
 
 	mutexLock(strg->dev->ctx->lock);
-	while (tempsz < size) {
+	while (tempsz < rawsz) {
 		memcpy(strg->dev->ctx->databuf, data + tempsz, rawPagesz);
 
-		res = flashdrv_writeraw(strg->dev->ctx->dma, offs / rawPagesz, strg->dev->ctx->databuf, rawPagesz);
+		res = flashdrv_writeraw(strg->dev->ctx->dma, rawoffs / rawPagesz, strg->dev->ctx->databuf, rawPagesz);
 		if (res < 0) {
 			LOG_ERROR("raw write error %d", res);
 			mutexUnlock(strg->dev->ctx->lock);
 			break;
 		}
 
-		offs += rawPagesz;
+		rawoffs += rawPagesz;
 		tempsz += rawPagesz;
 	}
 	mutexUnlock(strg->dev->ctx->lock);
@@ -230,28 +234,32 @@ static ssize_t flashsrv_devWriteRaw(flash_i_devctl_t *idevctl, char *data)
 static int flashsrv_devReadRaw(flash_i_devctl_t *idevctl, char *data)
 {
 	int res = EOK;
-	size_t rawPagesz, rawEraseBlockSz, tempsz = 0;
+	size_t rawPagesz, rawEraseBlockSz, rawPartsz, tempsz = 0;
 	storage_t *strg = storage_get(idevctl->badblock.oid.id);
 
-	size_t size = idevctl->readraw.size;
-	size_t offs = idevctl->readraw.address;
+	size_t rawsz = idevctl->readraw.size;
+	size_t rawoffs = idevctl->readraw.address;
 
-	if (strg == NULL || strg->dev == NULL || strg->dev->ctx == NULL || strg->dev->mtd == NULL || (offs + size) >= strg->size || data == NULL) {
+	if (strg == NULL || strg->dev == NULL || strg->dev->ctx == NULL || strg->dev->mtd == NULL || data == NULL) {
+		return -EINVAL;
+	}
+
+	rawEraseBlockSz = (strg->dev->mtd->erasesz / strg->dev->mtd->writesz) * (strg->dev->mtd->writesz + strg->dev->mtd->metaSize);
+	rawPartsz = (strg->size / strg->dev->mtd->erasesz) * rawEraseBlockSz;
+
+	if ((rawoffs + rawsz) >= rawPartsz) {
 		return -EINVAL;
 	}
 
 	rawPagesz = strg->dev->mtd->writesz + strg->dev->mtd->metaSize;
-	if ((size % rawPagesz) != 0 || (offs % rawPagesz) != 0) {
+	if ((rawsz % rawPagesz) != 0 || (rawoffs % rawPagesz) != 0) {
 		return -EINVAL;
 	}
-
-	/* Calculate offset for raw data */
-	rawEraseBlockSz = (strg->dev->mtd->erasesz / strg->dev->mtd->writesz) * (strg->dev->mtd->writesz + strg->dev->mtd->metaSize);
-	offs += (strg->start / strg->dev->mtd->erasesz) * rawEraseBlockSz;
+	rawoffs += (strg->start / strg->dev->mtd->erasesz) * rawEraseBlockSz;
 
 	mutexLock(strg->dev->ctx->lock);
-	while (tempsz < size) {
-		res = flashdrv_readraw(strg->dev->ctx->dma, offs / rawPagesz, strg->dev->ctx->databuf, rawPagesz);
+	while (tempsz < rawsz) {
+		res = flashdrv_readraw(strg->dev->ctx->dma, rawoffs / rawPagesz, strg->dev->ctx->databuf, rawPagesz);
 		if (res < 0) {
 			LOG_ERROR("error in readraw(): %d", res);
 			mutexUnlock(strg->dev->ctx->lock);
@@ -259,7 +267,7 @@ static int flashsrv_devReadRaw(flash_i_devctl_t *idevctl, char *data)
 		}
 
 		memcpy(data, strg->dev->ctx->databuf, rawPagesz);
-		offs += rawPagesz;
+		rawoffs += rawPagesz;
 		tempsz += rawPagesz;
 	}
 	mutexUnlock(strg->dev->ctx->lock);
