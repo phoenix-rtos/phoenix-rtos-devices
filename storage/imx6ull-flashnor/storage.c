@@ -289,7 +289,7 @@ static void requestctx_done(request_ctx_t *ctx)
 
 	do {
 		condBroadcast(storage_common.fcond);
-	} while (threadJoin(10000) < 0);
+	} while (threadJoin(-1, 10000) < 0);
 
 	resourceDestroy(ctx->scond);
 	resourceDestroy(ctx->lock);
@@ -517,7 +517,7 @@ int storage_run(unsigned int nthreads, unsigned int stacksz)
 			condBroadcast(storage_common.rcond);
 
 			for (j = 0; j < i; j++) {
-				while (threadJoin(10000) < 0)
+				while (threadJoin(-1, 10000) < 0)
 					condSignal(storage_common.rcond);
 			}
 			free(stacks);
