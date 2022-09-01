@@ -11,6 +11,7 @@ include $(static-lib.mk)
 # Sensors SPI interface
 NAME := libsensors-spi
 LOCAL_HEADERS := sensors-spi.h
+LOCAL_HEADERS_DIR := nothing  # do not reinstall libsensors.h
 LOCAL_SRCS := libsensors-spi.c
 DEPS := libzynq7000-gpio-msg libspi-msg
 include $(static-lib.mk)
