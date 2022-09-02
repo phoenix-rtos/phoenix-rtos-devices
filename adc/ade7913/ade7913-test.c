@@ -92,18 +92,18 @@ int main(int argc, char **argv)
 		devnum = (int)(order[i] - '0');
 
 		usleep(500000);
-		printf("Configuring ADE7913 device nr %d\n", devnum);
+		printf("Configuring ADE7913 device no. %d\n", devnum);
 
 		while (ade7913_init(&ade7913_spi, devnum,
 				   devnum == order[devcnt - 1] - '0' ? 0 : 1) < 0) {
-			printf("Failed to initialize ADE7913 nr %d\n", devnum);
+			printf("Failed to initialize ADE7913 no. %d\n", devnum);
 			usleep(500000);
 		}
 
 		if (ade7913_enable(&ade7913_spi, devnum) < 0)
-			printf("Could not enable ADE7913 nr %d\n", devnum);
+			printf("Could not enable ADE7913 no. %d\n", devnum);
 		if (ade7913_lock(&ade7913_spi, devnum) < 0)
-			printf("Could not lock ADE7913 nr %d\n", devnum);
+			printf("Could not lock ADE7913 no. %d\n", devnum);
 	}
 
 	printf("Reading ADE7913 registers in burst mode:\n");
