@@ -4,7 +4,7 @@
  * i.MX FlexPWM
  *
  * Copyright 2021-2022 Phoenix Systems
- * Author: Gerard Świderski
+ * Author: Gerard Swiderski
  *
  * This file is part of Phoenix-RTOS.
  *
