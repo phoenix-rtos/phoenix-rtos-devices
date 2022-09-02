@@ -1,10 +1,10 @@
 /*
  * Phoenix-RTOS
  *
- * i.MX RT1170 ADE7913 test application
+ * i.MX RT1170 ADE7913 polyphase ADC driver
  *
- * Copyright 2021 Phoenix Systems
- * Author: Marcin Baran
+ * Copyright 2021-2022 Phoenix Systems
+ * Author: Marcin Baran, Gerard Swiderski
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -12,29 +12,31 @@
  */
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
 
-#include <sys/file.h>
-#include <sys/mman.h>
 #include <sys/msg.h>
-#include <sys/interrupt.h>
-#include <sys/platform.h>
-#include <sys/stat.h>
+#include <sys/mman.h>
 #include <sys/threads.h>
+#include <sys/platform.h>
+#include <sys/interrupt.h>
+#include <posix/utils.h>
 
 #include <imxrt-multi.h>
-#ifdef TARGET_IMXRT1170
 #include <phoenix/arch/imxrt1170.h>
-#endif
 
 #include <edma.h>
+#include <board_config.h>
 
-#include "gpio.h"
 #include "ade7913.h"
 #include "adc-api.h"
+#include "flexpwm.h"
+
+
+#ifndef ADE7913_PRIO
+#define ADE7913_PRIO 4
+#endif
 
 #define COL_RED    "\033[1;31m"
 #define COL_CYAN   "\033[1;36m"
@@ -67,32 +69,57 @@
  * so that in each filled buffer there will be same amount
  * of samples for each device.
  */
-#define ADC_BUFFER_SIZE             (16 * _PAGE_SIZE)
-#define NUM_OF_BUFFERS              (4)
+#define NUM_OF_BUFFERS  4
+#define ADC_BUFFER_SIZE (4 * NUM_OF_BUFFERS * _PAGE_SIZE)
 
-#define ADE7913_NUM_OF_BITS         24
+#define ADE7913_NUM_OF_BITS 24
 
-#define MAX_INIT_TRIES              (4)
+#define DREADY_DMA_CHANNEL  5
+#define SPI_RCV_DMA_CHANNEL 6
+#define SPI_SND_DMA_CHANNEL 7
+#define SEQ_DMA_CHANNEL     8
+#define SPI_RCV_DMA_REQUEST 36
 
-#define DREADY_DMA_CHANNEL          5
-#define GPIO_PIN_INTERRUPT          105 + 16
-#define SPI_RCV_DMA_CHANNEL         6
-#define SPI_RCV_DMA_REQUEST         36
-#define TCD_CSR_INTMAJOR_BIT        (1 << 1)
-#define TCD_CSR_ESG_BIT             (1 << 4)
+#define PWM4SM3_READ_DMA_REQUEST 112
+#define PWM4_BASE_ADDR           ((void *)0x40198000)
 
-enum { gpio_dr = 0, gpio_gdir, gpio_psr, gpio_icr1, gpio_icr2, gpio_imr, gpio_isr, gpio_edge_sel };
+#define TCD_CSR_INTMAJOR_BIT     (1 << 1)
+#define TCD_CSR_INTHALF_BIT      (1 << 2)
+#define TCD_CSR_DREQ_BIT         (1 << 3)
+#define TCD_CSR_ESG_BIT          (1 << 4)
+#define TCD_CSR_MAJORELINK_BIT   (1 << 5)
+#define TCD_CSR_MAJORLINK_CH(ch) ((((ch)&0x1f) << 8) | TCD_CSR_MAJORELINK_BIT)
+#define E_LINK_BIT               (1 << 15)
+#define E_LINK_CH(ch)            ((((ch)&0x1f) << 9) | E_LINK_BIT)
 
+/* clang-format off */
+
+/* GPIO */
+enum { gpio_dr = 0, gpio_gdir, gpio_psr, gpio_icr1, gpio_icr2, gpio_imr, gpio_isr, gpio_edge_sel, gpio_dr_set,
+	gpio_dr_clear, gpio_dr_toggle };
+
+
+/* SPI */
 enum { spi_verid = 0, spi_param, spi_cr = 0x4, spi_sr, spi_ier, spi_der, spi_cfgr0, spi_cfgr1, spi_dmr0 = 0xc,
-	   spi_dmr1, spi_ccr = 0x10, spi_fcr = 0x16, spi_fsr, spi_tcr, spi_tdr, spi_rsr = 0x1c, spi_rdr };
+	spi_dmr1, spi_ccr = 0x10, spi_fcr = 0x16, spi_fsr, spi_tcr, spi_tdr, spi_rsr = 0x1c, spi_rdr };
+
+static const uint32_t spi_base[] = { 0x40114000, 0x40118000, 0x4011c000, 0x40120000, 0x40c2c000, 0x40c30000 };
+
+static const int spi_clk[] = { pctl_clk_lpspi1, pctl_clk_lpspi2, pctl_clk_lpspi3, pctl_clk_lpspi4,
+	pctl_clk_lpspi5, pctl_clk_lpspi6 };
+
+/* clang-format on */
 
 
-static const uint32_t adc_read_cmd_lookup[4] = { (0x4 << 24) | 0xFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF };
+/* ADE7913 commands LUT used by DMA */
+static const uint32_t adc_read_cmd_lookup[4] = { 0xFFFFFF04, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF };
 
-static uint32_t spi_write_cmd_lookup[4] = { (spi_mode_3 << 30) | (1 << 27) | (0 << 24) | (spi_msb << 23) | (16 * 8 - 1),
-	(spi_mode_3 << 30) | (1 << 27) | (1 << 24) | (spi_msb << 23) | (16 * 8 - 1),
-	(spi_mode_3 << 30) | (1 << 27) | (2 << 24) | (spi_msb << 23) | (16 * 8 - 1),
-	(spi_mode_3 << 30) | (1 << 27) | (3 << 24) | (spi_msb << 23) | (16 * 8 - 1) };
+static uint32_t spi_write_cmd_lookup[4] = {
+	((uint32_t)spi_mode_3 << 30) | (1 << 27) | (0 << 24) | (spi_msb << 23) | (1 << 22) | (16 * 8 - 1),
+	((uint32_t)spi_mode_3 << 30) | (1 << 27) | (1 << 24) | (spi_msb << 23) | (1 << 22) | (16 * 8 - 1),
+	((uint32_t)spi_mode_3 << 30) | (1 << 27) | (2 << 24) | (spi_msb << 23) | (1 << 22) | (16 * 8 - 1),
+	((uint32_t)spi_mode_3 << 30) | (1 << 27) | (3 << 24) | (spi_msb << 23) | (1 << 22) | (16 * 8 - 1)
+};
 
 
 struct {
@@ -102,54 +129,89 @@ struct {
 	const char *order;
 
 	uint32_t *buff;
+	volatile uint32_t *spi_ptr;
 	volatile uint32_t *gpio3_ptr;
-	volatile uint32_t *spi1_ptr;
-	uint32_t port;
+	volatile uint32_t *iomux_ptr[4];
+	volatile struct edma_tcd_s *tcd_ptr[4];
 
-
+	volatile struct edma_tcd_s tcds[5 + 4 * 4 + NUM_OF_BUFFERS];
 	volatile uint32_t edma_transfers;
 	addr_t buffer_paddr;
 
-	volatile struct edma_tcd_s tcds[8 + NUM_OF_BUFFERS];
-
-	handle_t gpio_irq_cond, gpio_irq_lock, gpio_irq_handle;
 	handle_t edma_spi_rcv_cond, edma_spi_rcv_lock, edma_spi_ch_handle;
-	handle_t dready_cond, dready_handle;
+	handle_t dready_cond;
+	oid_t oid;
 
 	int enabled;
 } common;
 
 
-static void gpio_clear_interrupt(int pin)
-{
-	if (pin > 31)
-		return;
-	*(common.gpio3_ptr + gpio_isr) |= (0b1 << pin);
-}
-
-
-static int gpio_irq_handler(unsigned int n, void *arg)
-{
-	gpio_clear_interrupt(20);
-	edma_software_request_start(DREADY_DMA_CHANNEL);
-
-	return 0;
-}
-
-static int edma_spi_tx_irq_handler(unsigned int n, void *arg)
-{
-	edma_clear_interrupt(DREADY_DMA_CHANNEL);
-	edma_software_request_start(DREADY_DMA_CHANNEL);
-
-	return 0;
-}
-
-
 static int edma_spi_rcv_irq_handler(unsigned int n, void *arg)
 {
-	++common.edma_transfers;
+	struct edma_tcd_s tcd;
+	uint32_t reg, mux_copy[4];
+	int i, notsync = 0;
+
+	/*
+	 * If there is still some data to be sent by the SPI module (while we should already
+	 * received the last frame) it is a sign that DMA TCD has been shifted by interference
+	 * (EFT/Burst testing) possibly due to /DREADY signal loss, DMA TCD needs to be
+	 * adjusted again. Before sending SYNC broadcast, wait until SPI module is idle.
+	 */
+	while (*(common.spi_ptr + spi_sr) & (1 << 24)) {
+		notsync = 1;
+	}
+
+	/* Get SPI muxes */
+	for (i = 0; i < common.devcnt; ++i) {
+		mux_copy[i] = *common.iomux_ptr[i];
+	}
+
+	/* Set CS GPIOs to inactive */
+	*(common.gpio3_ptr + gpio_gdir) |= (1 << 17) | (1 << 18) | (1 << 19) | (1 << 28);
+
+	/* Set CS GPIOs to active */
+	reg = *(common.gpio3_ptr + gpio_dr);
+	*(common.gpio3_ptr + gpio_dr) = reg & ~((1 << 17) | (1 << 18) | (1 << 19) | (1 << 28));
+
+	/* Set muxes alt. mode to gpio */
+	for (i = 0; i < common.devcnt; ++i) {
+		*common.iomux_ptr[i] = 5;
+	}
+
+	/* Send SYNC broadcast */
+	*(common.spi_ptr + spi_tcr) = ((uint32_t)spi_mode_3 << 30) | (1 << 27) | (1 << 26) | (spi_msb << 23) | (1 << 22) | (1 << 19) | (2 * 8 - 1);
+	*(common.spi_ptr + spi_tdr) = 0x0258ffff;
+
+	/* wait until broadcast is transmitted */
+	while ((*(common.spi_ptr + spi_fsr) & 0x1f) || (*(common.spi_ptr + spi_sr) & (1 << 24)))
+		;
+
+	/* Set muxes mode back to previous mode (SPI CS) */
+	for (i = 0; i < common.devcnt; ++i) {
+		*common.iomux_ptr[i] = mux_copy[i];
+	}
+
+	/* Re-enable /DREADY after SYNC broadcast */
+	edma_install_tcd(common.tcd_ptr[0], DREADY_DMA_CHANNEL);
+	edma_channel_enable(DREADY_DMA_CHANNEL);
+
+	if (notsync == 0) {
+		++common.edma_transfers;
+	}
+	else {
+		/* If not in-sync adjust DMA TCD (as described above) */
+		edma_install_tcd(common.tcd_ptr[3], SPI_RCV_DMA_CHANNEL);
+		edma_channel_enable(SPI_RCV_DMA_CHANNEL);
+		edma_read_tcd(&tcd, SPI_RCV_DMA_CHANNEL);
+
+		common.edma_transfers += NUM_OF_BUFFERS;
+		common.edma_transfers &= ~(NUM_OF_BUFFERS - 1);
+		common.edma_transfers += ((((tcd.daddr + tcd.doff) - (uint32_t)common.buff) & ~(ADC_BUFFER_SIZE / NUM_OF_BUFFERS - 1)) >> 11);
+	}
 
 	edma_clear_interrupt(SPI_RCV_DMA_CHANNEL);
+
 	return 0;
 }
 
@@ -158,55 +220,96 @@ static int edma_error_handler(unsigned int n, void *arg)
 {
 	edma_clear_error(DREADY_DMA_CHANNEL);
 
-	return 0;
+	return EOK;
 }
 
 
-static int gpio_init(void)
+static int pwm_init(void)
 {
 	int res;
-	platformctl_t pctl;
-
-	gpio_setDir(&common.ade7913_spi, id_gpio3, 20, 0);
+	platformctl_t pctl = { 0 };
 
 	pctl.action = pctl_set;
 	pctl.type = pctl_iomux;
 	pctl.iomux.mux = pctl_mux_gpio_ad_21;
 	pctl.iomux.sion = 0;
-	pctl.iomux.mode = 5;
-	platformctl(&pctl);
+	pctl.iomux.mode = 11; /* FLEXPWM4 (PWM3_X) */
 
-	if ((res = mutexCreate(&common.gpio_irq_lock)) != 0) {
-		log_error("Mutex resource creation failed");
+	res = platformctl(&pctl);
+	if (res < 0) {
+		log_error("Unable to set IOMUX");
 		return res;
 	}
 
-	if ((res = condCreate(&common.gpio_irq_cond)) != 0) {
-		log_error("Conditional resource creation failed");
-		resourceDestroy(common.gpio_irq_lock);
+	flexpwm_init(PWM4_BASE_ADDR);
+
+	/* Enable PWM in input capture mode to trigger on /DREADY signal */
+	res = flexpwm_input_capture(3, cap_edge_falling, cap_disabled);
+	if (res < 0) {
+		log_error("Unable to set input capture");
+	}
+
+	return res;
+}
+
+
+static int common_setClock(int clock, int div, int mux, int mfd, int mfn, int state)
+{
+	platformctl_t pctl = {
+		.action = pctl_get,
+		.type = pctl_devclock,
+		.devclock = { .dev = clock },
+	};
+
+	int res = platformctl(&pctl);
+	if (res < 0) {
 		return res;
 	}
 
-	/* Set dready GPIO interrupt */
-	*(common.gpio3_ptr + gpio_icr2) |= (0b11 << 8);
+	pctl.action = pctl_set;
 
-	interrupt(GPIO_PIN_INTERRUPT,
-		gpio_irq_handler, NULL, common.gpio_irq_cond, &common.gpio_irq_handle);
+	if (div >= 0) {
+		pctl.devclock.div = div;
+	}
 
-	return 0;
+	if (mux >= 0) {
+		pctl.devclock.mux = mux;
+	}
+
+	if (mfd >= 0) {
+		pctl.devclock.mfd = mfd;
+	}
+
+	if (mfn >= 0) {
+		pctl.devclock.mfn = mfn;
+	}
+
+	if (state >= 0) {
+		pctl.devclock.state = state;
+	}
+
+	return platformctl(&pctl);
 }
 
 
 static int spi_init(oid_t *device, int spi)
 {
+	int res;
 	msg_t msg;
-	multi_i_t *imsg = (multi_i_t *)msg.i.raw;
 	char name[10];
+	multi_i_t *imsg = (multi_i_t *)msg.i.raw;
+
+	if (spi < 1 || spi > sizeof(spi_clk) / sizeof(spi_clk[0])) {
+		return -ENXIO;
+	}
 
 	snprintf(name, sizeof(name), "/dev/spi%d", spi);
 
-	while (lookup(name, NULL, device) < 0)
-		usleep(5000);
+	while (lookup(name, NULL, device) < 0) {
+		usleep(100 * 1000);
+	}
+
+	spi--;
 
 	msg.type = mtDevCtl;
 	msg.i.data = NULL;
@@ -214,7 +317,7 @@ static int spi_init(oid_t *device, int spi)
 	msg.o.data = NULL;
 	msg.o.size = 0;
 
-	imsg->id = id_spi1 + spi - 1;
+	imsg->id = id_spi1 + spi;
 	imsg->spi.type = spi_config;
 	imsg->spi.config.cs = 0;
 	imsg->spi.config.mode = spi_mode_3;
@@ -222,163 +325,30 @@ static int spi_init(oid_t *device, int spi)
 	imsg->spi.config.sckDiv = 0;
 	imsg->spi.config.prescaler = 1;
 
-	return msgSend(device->port, &msg);
-}
-
-
-static int edma_configure(void)
-{
-	int devnum, res, i;
-	size_t size = ADC_BUFFER_SIZE;
-	oid_t *oid = OID_NULL;
-
-	if ((res = mutexCreate(&common.edma_spi_rcv_lock)) != 0) {
-		log_error("Mutex resource creation failed");
+	res = msgSend(device->port, &msg);
+	if (res < 0) {
 		return res;
 	}
 
-	if ((res = condCreate(&common.edma_spi_rcv_cond)) != 0) {
-		log_error("Conditional resource creation failed");
-		resourceDestroy(common.edma_spi_rcv_lock);
-		return res;
-	}
-
-	if ((res = condCreate(&common.dready_cond)) != 0) {
-		log_error("Conditional resource creation failed");
-		resourceDestroy(common.edma_spi_rcv_lock);
-		resourceDestroy(common.edma_spi_rcv_cond);
-		return res;
-	}
-
-	common.buff = mmap(NULL, (size + _PAGE_SIZE - 1) / _PAGE_SIZE * _PAGE_SIZE,
-		PROT_READ | PROT_WRITE, MAP_UNCACHED, oid, common.buffer_paddr);
-
-	if (common.buff == MAP_FAILED) {
-		log_error("Edma buffers allocation failed");
-		resourceDestroy(common.edma_spi_rcv_lock);
-		resourceDestroy(common.edma_spi_rcv_lock);
-		resourceDestroy(common.dready_cond);
-
-		return -1;
-	}
-
-	/* Set request commands order */
-	for (i = 0; i < common.devcnt; ++i) {
-		devnum = (int)(common.order[i] - '0');
-		spi_write_cmd_lookup[i] = (spi_write_cmd_lookup[i] & ~(0x3000000)) | (devnum << 24);
-	}
-
-	common.buffer_paddr = va2pa(common.buff);
-
-	memset(common.buff, 0, size);
-
-	uint8_t xfer_size = sizeof(uint32_t);
-
-	common.tcds[0].soff = 0;
-	common.tcds[0].attr = (edma_get_tcd_attr_xsize(xfer_size) << 8) |
-		edma_get_tcd_attr_xsize(xfer_size);
-
-	/* Number of bytes per minor loop iteration */
-	common.tcds[0].nbytes_mlnoffno = xfer_size;
-	common.tcds[0].slast = 0;
-	common.tcds[0].doff = 0;
-	common.tcds[0].dlast_sga = (uint32_t)&common.tcds[1];
-
-	/* Number of major loop iterations */
-	common.tcds[0].biter_elinkno = 1;
-	common.tcds[0].citer_elinkno = common.tcds[0].biter_elinkno;
-
-	/* Set addrs for the TCD. */
-	common.tcds[0].saddr = (uint32_t)&spi_write_cmd_lookup[0];
-	common.tcds[0].daddr = (uint32_t)(common.spi1_ptr + spi_tcr);
-
-	/* Enable major loop finish interrupt and scatter-gather */
-	common.tcds[0].csr = TCD_CSR_ESG_BIT | TCD_CSR_INTMAJOR_BIT;
-
-	common.tcds[1].soff = xfer_size;
-	common.tcds[1].attr = (edma_get_tcd_attr_xsize(sizeof(uint32_t)) << 8) |
-		edma_get_tcd_attr_xsize(sizeof(uint32_t));
-
-	/* Number of bytes per minor loop iteration */
-	common.tcds[1].nbytes_mlnoffno = 4 * xfer_size;
-	common.tcds[1].slast = -xfer_size;
-	common.tcds[1].doff = 0;
-	common.tcds[1].dlast_sga = (uint32_t)&common.tcds[2];
-
-	/* Number of major loop iterations */
-	common.tcds[1].biter_elinkno = 1;
-	common.tcds[1].citer_elinkno = common.tcds[1].biter_elinkno;
-
-	/* Set addrs for the TCD. */
-	common.tcds[1].saddr = (uint32_t)adc_read_cmd_lookup;
-	common.tcds[1].daddr = (uint32_t)(common.spi1_ptr + spi_tdr);
-
-	/* Enable major loop finish interrupt and scatter-gather */
-	common.tcds[1].csr = TCD_CSR_ESG_BIT | TCD_CSR_INTMAJOR_BIT;
-
-	for (i = 0; i < common.devcnt - 1; ++i) {
-		edma_copy_tcd(&common.tcds[0], &common.tcds[2 * i + 2]);
-		common.tcds[2 * i + 2].dlast_sga = (uint32_t)(&common.tcds[2 * i + 3]);
-		common.tcds[2 * i + 2].saddr = (uint32_t)&spi_write_cmd_lookup[i + 1];
-
-		edma_copy_tcd(&common.tcds[1], &common.tcds[2 * i + 3]);
-		common.tcds[2 * i + 3].dlast_sga = (uint32_t)(&common.tcds[2 * i + 4]);
-	}
-
-	common.tcds[2 * common.devcnt - 1].dlast_sga = (uint32_t)(&common.tcds[0]);
-	common.tcds[2 * common.devcnt - 1].csr = TCD_CSR_ESG_BIT;
-
-	common.tcds[8].soff = 0;
-	common.tcds[8].attr = (edma_get_tcd_attr_xsize(xfer_size) << 8) |
-		edma_get_tcd_attr_xsize(xfer_size);
-	common.tcds[8].saddr = (uint32_t)(common.spi1_ptr + spi_rdr);
-	common.tcds[8].soff = 0;
-	common.tcds[8].slast = 0;
-	common.tcds[8].nbytes_mlnoffno = xfer_size;
-	common.tcds[8].doff = xfer_size;
-	common.tcds[8].daddr = (uint32_t)common.buff;
-	common.tcds[8].dlast_sga = (uint32_t)&common.tcds[9];
-	common.tcds[8].biter_elinkno =
-		ADC_BUFFER_SIZE / common.tcds[8].nbytes_mlnoffno / NUM_OF_BUFFERS;
-	common.tcds[8].citer_elinkno = common.tcds[8].biter_elinkno;
-	common.tcds[8].csr = TCD_CSR_INTMAJOR_BIT | TCD_CSR_ESG_BIT;
-
-	for (i = 1; i < NUM_OF_BUFFERS; ++i) {
-		edma_copy_tcd(&common.tcds[8], &common.tcds[8 + i]);
-		common.tcds[8 + i].daddr = (uint32_t)common.buff + i * ADC_BUFFER_SIZE / NUM_OF_BUFFERS;
-		common.tcds[8 + i].dlast_sga = (uint32_t)&common.tcds[8 + ((i + 1) % NUM_OF_BUFFERS)];
-	}
-
-	if ((res = edma_install_tcd(&common.tcds[0], DREADY_DMA_CHANNEL)) != 0 ||
-		(res = edma_install_tcd(&common.tcds[8], SPI_RCV_DMA_CHANNEL)) != 0) {
-		log_error("Edma buffer installation failed");
-		munmap(common.buff, (size + _PAGE_SIZE - 1) / _PAGE_SIZE * _PAGE_SIZE);
-
-		resourceDestroy(common.edma_spi_rcv_lock);
-		resourceDestroy(common.edma_spi_rcv_lock);
-		resourceDestroy(common.dready_cond);
-
-		return res;
-	}
-
-	interrupt(EDMA_CHANNEL_IRQ(SPI_RCV_DMA_CHANNEL),
-		edma_spi_rcv_irq_handler, NULL, common.edma_spi_rcv_cond, &common.edma_spi_ch_handle);
-
-	interrupt(EDMA_CHANNEL_IRQ(DREADY_DMA_CHANNEL),
-		edma_spi_tx_irq_handler, NULL, common.dready_cond, &common.dready_handle);
-
-	dmamux_set_source(SPI_RCV_DMA_CHANNEL, SPI_RCV_DMA_REQUEST);
-	dmamux_channel_enable(SPI_RCV_DMA_CHANNEL);
-	edma_channel_enable(SPI_RCV_DMA_CHANNEL);
-	edma_channel_enable(DREADY_DMA_CHANNEL);
-
-	return 0;
+	/*
+	 * Set SCLK to 5.33 MHz (max allowed is 5.6MHz), assuming maximum of 4 ADC @ 8kHz sampling rate:
+	 * 4 x (128bit burst packet with 4us spacing) + (16bit broadcast packet with 4us spacing)= ~5.29MHz
+	 */
+	return common_setClock(spi_clk[spi], 26, 6, -1, -1, 1);
 }
 
 
 static int adc_init(int hard)
 {
 	int i, res, devnum;
+
+	for (i = 0; hard && i < common.devcnt; ++i) {
+		devnum = (int)(common.order[i] - '0');
+
+		if (ade7913_reset_hard(&common.ade7913_spi, devnum) < 0) {
+			log_error("Could reset ADE7913 no. %d", devnum);
+		}
+	}
 
 	/* Start init from device with xtal */
 	for (i = 0; i < common.devcnt; ++i) {
@@ -388,17 +358,28 @@ static int adc_init(int hard)
 		while (ade7913_init(&common.ade7913_spi, devnum,
 				   devnum == common.order[common.devcnt - 1] - '0' ? 0 : 1) < 0) {
 			log_error("Failed to initialize ADE7913 no. %d", devnum);
-			usleep(500000);
+			usleep(500 * 1000);
 		}
 
-		if (ade7913_enable(&common.ade7913_spi, devnum) < 0)
+		if (ade7913_enable(&common.ade7913_spi, devnum) < 0) {
 			log_error("Could not enable ADE7913 no. %d", devnum);
+		}
 
-		/* Wait for next adc to start */
-		usleep(50000);
+		/* V2 channel on neutral wire is used to measure ADE7913 temperature */
+		if ((devnum == 0) && (ade7913_temperature(&common.ade7913_spi, devnum) < 0)) {
+			log_error("Could not enable temperature channel no. %d", devnum);
+		}
+
+		if (ade7913_emi(&common.ade7913_spi, devnum, (devnum % 2 ? 0xaa : 0x55)) < 0) {
+			log_error("Could not set EMI reg of ADE7913 no. %d", devnum);
+		}
+
+		/* Wait for next ADC to start */
+		usleep(50 * 1000);
 	}
 
-	if ((res = ade7913_sync(&common.ade7913_spi, common.order, common.devcnt, 0)) < 0) {
+	res = ade7913_sync(&common.ade7913_spi, common.order, common.devcnt, 0);
+	if (res < 0) {
 		log_error("Could not synchronize ADE7913 devices: %s", strerror(res));
 		return -1;
 	}
@@ -406,143 +387,386 @@ static int adc_init(int hard)
 	for (i = 0; i < common.devcnt; ++i) {
 		devnum = (int)(common.order[i] - '0');
 
-		if (ade7913_lock(&common.ade7913_spi, devnum) < 0)
+		if (ade7913_lock(&common.ade7913_spi, devnum) < 0) {
 			log_error("Could not lock ADE7913 no. %d", devnum);
+		}
 	}
 
-	return 0;
+	return EOK;
 }
 
 
-static int dev_init(void)
+static void dma_stop(void)
+{
+	edma_channel_disable(SPI_RCV_DMA_CHANNEL);
+	edma_channel_disable(SPI_SND_DMA_CHANNEL);
+	edma_channel_disable(SEQ_DMA_CHANNEL);
+	edma_channel_disable(DREADY_DMA_CHANNEL);
+
+	dmamux_channel_disable(SPI_RCV_DMA_CHANNEL);
+	dmamux_channel_disable(SPI_SND_DMA_CHANNEL);
+	dmamux_channel_disable(SEQ_DMA_CHANNEL);
+	dmamux_channel_disable(DREADY_DMA_CHANNEL);
+}
+
+static void dma_start(void)
+{
+	dmamux_set_source(SPI_RCV_DMA_CHANNEL, SPI_RCV_DMA_REQUEST);
+	dmamux_set_source(DREADY_DMA_CHANNEL, PWM4SM3_READ_DMA_REQUEST);
+
+	dmamux_channel_enable(SPI_RCV_DMA_CHANNEL);
+	dmamux_channel_enable(SPI_SND_DMA_CHANNEL);
+	dmamux_channel_enable(SEQ_DMA_CHANNEL);
+	dmamux_channel_enable(DREADY_DMA_CHANNEL);
+
+	edma_channel_enable(SPI_RCV_DMA_CHANNEL);
+	edma_channel_enable(SPI_SND_DMA_CHANNEL);
+	edma_channel_enable(SEQ_DMA_CHANNEL);
+	edma_channel_enable(DREADY_DMA_CHANNEL);
+
+	/* Enable SPI eDMA receive request */
+	*(common.spi_ptr + spi_der) |= (1 << 1);
+}
+
+
+static int dma_setup_tcds(void)
+{
+	int cs_seq, res, i, tcd_count;
+
+	common.tcds[0].soff = 0;
+	common.tcds[0].attr = (edma_get_tcd_attr_xsize(sizeof(uint32_t)) << 8) |
+		edma_get_tcd_attr_xsize(sizeof(uint32_t));
+
+	/* Number of bytes per minor loop iteration */
+	common.tcds[0].nbytes_mlnoffno = sizeof(uint32_t);
+	common.tcds[0].slast = 0;
+	common.tcds[0].doff = 0;
+	common.tcds[0].dlast_sga = (uint32_t)&common.tcds[1];
+
+	/* Number of major loop iterations */
+	common.tcds[0].biter_elinkno = 1;
+	common.tcds[0].citer_elinkno = common.tcds[0].biter_elinkno;
+
+	/* Set TCD addresses of the LUT for SPI transmit commands */
+	common.tcds[0].saddr = (uint32_t)&spi_write_cmd_lookup[0];
+	common.tcds[0].daddr = (uint32_t)(common.spi_ptr + spi_tcr);
+
+	/* Enable scatter-gather and link with SPI send channel at major loop end */
+	common.tcds[0].csr = TCD_CSR_ESG_BIT | TCD_CSR_MAJORLINK_CH(SPI_SND_DMA_CHANNEL);
+
+	common.tcds[4].soff = sizeof(uint32_t);
+	common.tcds[4].attr = (edma_get_tcd_attr_xsize(sizeof(uint32_t)) << 8) |
+		edma_get_tcd_attr_xsize(sizeof(uint32_t));
+
+	/* Number of bytes per minor loop iteration */
+	common.tcds[4].nbytes_mlnoffno = 4 * sizeof(uint32_t);
+	common.tcds[4].slast = -sizeof(uint32_t);
+	common.tcds[4].doff = 0;
+	common.tcds[4].dlast_sga = (uint32_t)&common.tcds[4];
+
+	/* Number of major loop iterations */
+	common.tcds[4].biter_elinkno = 1;
+	common.tcds[4].citer_elinkno = common.tcds[4].biter_elinkno;
+
+	/* Set TCD addresses of the LUT for ADE7913 burst read command */
+	common.tcds[4].saddr = (uint32_t)adc_read_cmd_lookup;
+	common.tcds[4].daddr = (uint32_t)(common.spi_ptr + spi_tdr);
+
+	/* Enable scatter-gather */
+	common.tcds[4].csr = TCD_CSR_ESG_BIT;
+
+	/* Clone the above setup for each of the ADE7913 devices creating a ring */
+	for (i = 1; i < common.devcnt; ++i) {
+		edma_copy_tcd(&common.tcds[0], &common.tcds[i]);
+		common.tcds[i].dlast_sga = (uint32_t)(&common.tcds[i + 1]);
+		common.tcds[i].saddr = (uint32_t)&spi_write_cmd_lookup[i];
+	}
+
+	/* ... and close the ring */
+	common.tcds[common.devcnt - 1].dlast_sga = (uint32_t)(&common.tcds[0]);
+
+	/* Setup SPI receive buffers (for samples) */
+	common.tcds[5].soff = 0;
+	common.tcds[5].saddr = (uint32_t)(common.spi_ptr + spi_rdr);
+	common.tcds[5].slast = 0;
+	common.tcds[5].doff = sizeof(uint32_t);
+	common.tcds[5].daddr = (uint32_t)common.buff;
+	common.tcds[5].dlast_sga = (uint32_t)&common.tcds[6];
+
+	common.tcds[5].nbytes_mlnoffno = sizeof(uint32_t);
+	common.tcds[5].attr = (edma_get_tcd_attr_xsize(sizeof(uint32_t)) << 8) | edma_get_tcd_attr_xsize(sizeof(uint32_t));
+
+	common.tcds[5].biter_elinkyes = ADC_BUFFER_SIZE / common.tcds[5].nbytes_mlnoffno / NUM_OF_BUFFERS;
+	common.tcds[5].biter_elinkyes &= ~E_LINK_CH(0xff);
+	common.tcds[5].biter_elinkyes |= E_LINK_CH(SEQ_DMA_CHANNEL);
+	common.tcds[5].citer_elinkyes = common.tcds[5].biter_elinkyes;
+	common.tcds[5].csr = TCD_CSR_INTMAJOR_BIT | TCD_CSR_ESG_BIT | TCD_CSR_MAJORLINK_CH(SEQ_DMA_CHANNEL);
+
+	/* Clone SPI receive buffer setup and make it a ring buffer */
+	for (i = 1; i < NUM_OF_BUFFERS; ++i) {
+		edma_copy_tcd(&common.tcds[5], &common.tcds[5 + i]);
+		common.tcds[5 + i].daddr = (uint32_t)common.buff + i * ADC_BUFFER_SIZE / NUM_OF_BUFFERS;
+		common.tcds[5 + i].dlast_sga = (uint32_t)&common.tcds[5 + ((i + 1) % NUM_OF_BUFFERS)];
+	}
+
+	/* Create chip-select sequencer triggered by /DREADY signal
+	 *
+	 * /DREADY                                                                             /DREADY          - DREADY_DMA_CHANNEL
+	 * |                                                                                   |
+	 * CS1  .    .    .     CS2  .    .    .     CS3  .    .    .     CS4  .    .    .     CS1              - SEQ_DMA_CHANNEL
+	 * |                    |                    |                    |                    |
+	 * .CMD FFFFFFFFFFFFFFF .CMD FFFFFFFFFFFFFFF .CMD FFFFFFFFFFFFFFF .CMD FFFFFFFFFFFFFFF .CMD FFFFF .... <- SPI_SND (burst read command)
+	 * \.DAT .DAT .DAT .DAT \.DAT .DAT .DAT .DAT \.DAT .DAT .DAT .DAT \.DAT .DAT .DAT .DAT \.DAT .DAT .... -> SPI_RCV (to sample buffer)
+	 *                                                                                    |
+	 *                                                                                    !STOP            -! SEQ_DMA_CHANNEL
+	 * (devcnt=4, three-phase meter L1,L2,L3,N)
+	 *
+	 */
+
+	cs_seq = 5 + i;
+
+	common.tcds[cs_seq].soff = 0;
+	common.tcds[cs_seq].saddr = 0;
+	common.tcds[cs_seq].slast = 0;
+	common.tcds[cs_seq].doff = 0;
+	common.tcds[cs_seq].daddr = 1;
+	common.tcds[cs_seq].dlast_sga = (uint32_t)&common.tcds[cs_seq + 1];
+	common.tcds[cs_seq].nbytes_mlnoffno = 1;
+	common.tcds[cs_seq].attr = (edma_get_tcd_attr_xsize(1) << 8) | edma_get_tcd_attr_xsize(1);
+	common.tcds[cs_seq].biter_elinkno = 1;
+	common.tcds[cs_seq].citer_elinkno = common.tcds[cs_seq].biter_elinkno;
+	common.tcds[cs_seq].csr = TCD_CSR_ESG_BIT;
+
+	tcd_count = 4 * common.devcnt;
+	for (i = 1; i < tcd_count; ++i) {
+		edma_copy_tcd(&common.tcds[cs_seq], &common.tcds[cs_seq + i]);
+		common.tcds[cs_seq + i].daddr = 0;
+		common.tcds[cs_seq + i].dlast_sga = (uint32_t)&common.tcds[cs_seq + ((i + 1) % tcd_count)];
+
+		if ((i + 1) != tcd_count && (i + 1) % 4 == 0) {
+			common.tcds[cs_seq + i].biter_elinkyes = E_LINK_CH(DREADY_DMA_CHANNEL) | 1;
+			common.tcds[cs_seq + i].citer_elinkyes = common.tcds[cs_seq + i].biter_elinkyes;
+			common.tcds[cs_seq + i].csr = TCD_CSR_ESG_BIT | TCD_CSR_MAJORLINK_CH(DREADY_DMA_CHANNEL);
+		}
+	}
+	/* end of sequencer */
+
+	common.tcd_ptr[0] = &common.tcds[0];
+	common.tcd_ptr[1] = &common.tcds[4];
+	common.tcd_ptr[2] = &common.tcds[cs_seq];
+	common.tcd_ptr[3] = &common.tcds[5];
+
+	common.edma_transfers = 0;
+
+	res = edma_install_tcd(common.tcd_ptr[0], DREADY_DMA_CHANNEL);
+	if (res != 0) {
+		return res;
+	}
+
+	res = edma_install_tcd(common.tcd_ptr[1], SPI_SND_DMA_CHANNEL);
+	if (res != 0) {
+		return res;
+	}
+
+	res = edma_install_tcd(common.tcd_ptr[2], SEQ_DMA_CHANNEL);
+	if (res != 0) {
+		return res;
+	}
+
+	res = edma_install_tcd(common.tcd_ptr[3], SPI_RCV_DMA_CHANNEL);
+	if (res != 0) {
+		return res;
+	}
+
+	return EOK;
+}
+
+
+int restart_sampling(void)
 {
 	int res;
-	oid_t dir;
-	msg_t msg;
 
-	res = portCreate(&common.port);
+	dma_stop();
+
+	memset(common.buff, 0, ADC_BUFFER_SIZE);
+
+	res = spi_init(&common.ade7913_spi, common.spi);
+	if (res < 0) {
+		log_error("Failed to initialize SPI #%d", common.spi);
+		return res;
+	}
+
+	res = adc_init(1);
+	if (res < 0) {
+		log_error("Failed to re-initialize ADE7913");
+		return res;
+	}
+	res = pwm_init();
+	if (res < 0) {
+		log_error("Failed to init PWM input capture");
+		return res;
+	}
+	res = dma_setup_tcds();
+	if (res < 0) {
+		log_error("Failed to setup DMA TCDs");
+		return res;
+	}
+
+	dma_start();
+
+	return EOK;
+}
+
+
+static int edma_configure(void)
+{
+	int devnum, res, i;
+	oid_t *oid = OID_NULL;
+
+	res = mutexCreate(&common.edma_spi_rcv_lock);
+	if (res < 0) {
+		log_error("Mutex resource creation failed");
+		return res;
+	}
+
+	res = condCreate(&common.edma_spi_rcv_cond);
+	if (res < 0) {
+		log_error("Conditional resource creation failed");
+		return res;
+	}
+
+	res = condCreate(&common.dready_cond);
+	if (res < 0) {
+		log_error("Conditional resource creation failed");
+		return res;
+	}
+
+	common.buff = mmap(NULL, (ADC_BUFFER_SIZE + _PAGE_SIZE - 1) / _PAGE_SIZE * _PAGE_SIZE,
+		PROT_READ | PROT_WRITE, MAP_UNCACHED, oid, common.buffer_paddr);
+
+	if (common.buff == MAP_FAILED) {
+		log_error("eDMA buffer allocation failed");
+		return -ENOMEM;
+	}
+
+	memset(common.buff, 0, ADC_BUFFER_SIZE);
+	common.buffer_paddr = va2pa(common.buff);
+
+	/* Set request commands order */
+	for (i = 0; i < common.devcnt; ++i) {
+		devnum = (int)(common.order[i] - '0');
+		spi_write_cmd_lookup[i] = (spi_write_cmd_lookup[i] & ~(0x3000000)) | (devnum << 24);
+	}
+
+	res = dma_setup_tcds();
+	if (res < 0) {
+		log_error("Failed to init TCDs");
+		return res;
+	}
+
+	interrupt(EDMA_CHANNEL_IRQ(SPI_RCV_DMA_CHANNEL),
+		edma_spi_rcv_irq_handler, NULL, common.edma_spi_rcv_cond, &common.edma_spi_ch_handle);
+
+	dma_start();
+
+	return EOK;
+}
+
+
+static int dev_init(const char *devname)
+{
+	int res = portCreate(&common.oid.port);
 	if (res != EOK) {
-		log_error("could not create port: %d", res);
-		return -1;
+		log_error("Could not create port: %d", res);
+		return res;
 	}
 
-	res = mkdir(ADC_DEVICE_DIR, 0);
-	if (res < 0 && errno != EEXIST) {
-		log_error("mkdir /dev failed (%d)", -errno);
-		return -1;
+	res = create_dev(&common.oid, devname);
+	if (res < 0) {
+		log_error("Could not create %s (res=%d)", devname, res);
+		return res;
 	}
 
-	if ((res = lookup(ADC_DEVICE_DIR, NULL, &dir)) < 0) {
-		log_error("%s lookup failed (%d)", ADC_DEVICE_DIR, res);
-		return -1;
-	}
-
-	msg.type = mtCreate;
-	msg.i.create.type = otDev;
-	msg.i.create.mode = 0;
-	msg.i.create.dev.port = common.port;
-	msg.i.create.dev.id = 0;
-	msg.i.create.dir = dir;
-	msg.i.data = ADC_DEVICE_FILE_NAME;
-	msg.i.size = sizeof(ADC_DEVICE_FILE_NAME);
-	msg.o.data = NULL;
-	msg.o.size = 0;
-
-	if ((res = msgSend(dir.port, &msg)) < 0 || msg.o.create.err != EOK) {
-		log_error("could not create %s (res=%d, err=%d)",
-			ADC_DEVICE_FILE_NAME, res, msg.o.create.err);
-		return -1;
-	}
-
-	log_info("device initialized");
-
-	return 0;
-}
-
-
-static int dev_open(oid_t *oid, int flags)
-{
-	(void)oid;
-	(void)flags;
+	log_info("Device initialized");
 
 	return EOK;
 }
 
-static int dev_close(oid_t *oid, int flags)
-{
-	(void)oid;
-	(void)flags;
-
-	return EOK;
-}
 
 static int dev_read(void *data, size_t size)
 {
 	int res = 0;
 
-	if (data != NULL && size != sizeof(unsigned))
+	if (data == NULL || size != sizeof(unsigned)) {
 		return -EIO;
+	}
 
 	mutexLock(common.edma_spi_rcv_lock);
-	if ((res = condWait(common.edma_spi_rcv_cond, common.edma_spi_rcv_lock, 1000000)) == 0)
+	res = condWait(common.edma_spi_rcv_cond, common.edma_spi_rcv_lock, 1000000);
+	if (res == 0) {
 		*(uint32_t **)data = (uint32_t *)&common.edma_transfers;
+	}
 	mutexUnlock(common.edma_spi_rcv_lock);
 
 	return res;
 }
 
+
 static int dev_ctl(msg_t *msg)
 {
-	int devnum, res, i;
 	adc_dev_ctl_t dev_ctl;
+	int devnum, res, i;
 
-	memcpy(&dev_ctl, msg->o.raw, sizeof(adc_dev_ctl_t));
+	memcpy(&dev_ctl, msg->o.raw, sizeof(dev_ctl));
 
 	switch (dev_ctl.type) {
 		case adc_dev_ctl__enable:
 			common.enabled = 1;
-			edma_channel_enable(SPI_RCV_DMA_CHANNEL);
-			edma_channel_enable(DREADY_DMA_CHANNEL);
+			dma_start();
 			return EOK;
 
 		case adc_dev_ctl__disable:
 			common.enabled = 0;
-			edma_channel_disable(DREADY_DMA_CHANNEL);
-			edma_channel_disable(SPI_RCV_DMA_CHANNEL);
+			dma_stop();
 			return EOK;
 
 		case adc_dev_ctl__reset:
-			return adc_init(dev_ctl.reset_hard);
+			return restart_sampling();
 
 		case adc_dev_ctl__set_config:
-			if (common.enabled)
+			if (common.enabled) {
 				return -EBUSY;
+			}
 
 			for (i = 0; i < common.devcnt; ++i) {
 				devnum = (int)(common.order[i] - '0');
 
-				if (ade7913_unlock(&common.ade7913_spi, devnum) < 0)
+				if (ade7913_unlock(&common.ade7913_spi, devnum) < 0) {
 					return -EAGAIN;
+				}
 
-				res = ade7913_set_sampling_rate(&common.ade7913_spi, devnum, (int)dev_ctl.config.sampling_rate);
+				res = ade7913_set_sampling_rate(&common.ade7913_spi,
+					devnum, (int)dev_ctl.config.sampling_rate);
 
-				if (ade7913_lock(&common.ade7913_spi, devnum) < 0)
+				if (ade7913_lock(&common.ade7913_spi, devnum) < 0) {
 					return -EIO;
+				}
 
-				if (res < 0)
+				if (res < 0) {
 					return -EINVAL;
+				}
 			}
 
 			return EOK;
 
 		case adc_dev_ctl__get_config:
+			dev_ctl.config.bits = ADE7913_NUM_OF_BITS;
 			res = ade7913_get_sampling_rate(&common.ade7913_spi,
 				(int)(common.order[0] - '0'), (int *)&dev_ctl.config.sampling_rate);
 
-			dev_ctl.config.bits = ADE7913_NUM_OF_BITS;
-
-			if (res < 0)
+			if (res < 0) {
 				return -EIO;
+			}
 
 			memcpy(msg->o.raw, &dev_ctl, sizeof(adc_dev_ctl_t));
 
@@ -555,13 +779,16 @@ static int dev_ctl(msg_t *msg)
 			memcpy(msg->o.raw, &dev_ctl, sizeof(adc_dev_ctl_t));
 			return EOK;
 
+		case adc_dev_ctl__status:
+			return EOK;
+
+			/* The below are not supported, but needs to be compatible with AD7779 API. */
 		case adc_dev_ctl__set_channel_config:
 		case adc_dev_ctl__get_channel_config:
 		case adc_dev_ctl__set_channel_gain:
 		case adc_dev_ctl__get_channel_gain:
 		case adc_dev_ctl__set_channel_calib:
 		case adc_dev_ctl__get_channel_calib:
-		case adc_dev_ctl__status:
 		case adc_dev_ctl__set_adc_mux:
 			return EOK;
 
@@ -574,22 +801,28 @@ static int dev_ctl(msg_t *msg)
 }
 
 
-static void msg_loop(void)
+static int msg_loop(void)
 {
 	msg_t msg;
 	unsigned long rid;
+	int err = EOK;
 
-	while (1) {
-		if (msgRecv(common.port, &msg, &rid) < 0)
-			continue;
+	for (;;) {
+		err = msgRecv(common.oid.port, &msg, &rid);
+		if (err < 0) {
+			if (err == -EINTR) {
+				continue;
+			}
+			break;
+		}
 
 		switch (msg.type) {
 			case mtOpen:
-				msg.o.io.err = dev_open(&msg.i.openclose.oid, msg.i.openclose.flags);
+				msg.o.io.err = EOK;
 				break;
 
 			case mtClose:
-				msg.o.io.err = dev_close(&msg.i.openclose.oid, msg.i.openclose.flags);
+				msg.o.io.err = EOK;
 				break;
 
 			case mtRead:
@@ -605,8 +838,10 @@ static void msg_loop(void)
 				break;
 		}
 
-		msgRespond(common.port, &msg, rid);
+		msgRespond(common.oid.port, &msg, rid);
 	}
+
+	return err;
 }
 
 
@@ -614,61 +849,61 @@ static int init(void)
 {
 	int res;
 
-	common.enabled = 0;
-	common.edma_transfers = 0;
-
 	do {
-		if ((res = spi_init(&common.ade7913_spi, common.spi)) < 0) {
-			log_error("failed to initialize spi%d", 1);
+		res = dev_init(ADC_DEVICE_FILE_NAME);
+		if (res < 0) {
+			log_error("Device initialization failed");
 			break;
 		}
 
-		if ((res = adc_init(0)) < 0) {
-			log_error("failed to initialize ade7193: (%d)", res);
+		res = spi_init(&common.ade7913_spi, common.spi);
+		if (res < 0) {
+			log_error("Failed to initialize SPI #%d", common.spi);
 			break;
 		}
 
-		if ((res = gpio_init()) < 0) {
-			log_error("failed to initialize gpio");
-			resourceDestroy(common.gpio_irq_lock);
-			resourceDestroy(common.gpio_irq_cond);
-
+		res = adc_init(0);
+		if (res < 0) {
+			log_error("Failed to initialize ADE7193: (%d)", res);
 			break;
 		}
 
-		if ((res = edma_init(edma_error_handler)) != 0) {
-			log_error("failed to initialize edma");
-			resourceDestroy(common.gpio_irq_lock);
-			resourceDestroy(common.gpio_irq_cond);
-
+		res = pwm_init();
+		if (res < 0) {
+			log_error("Failed to initialize PWM");
 			break;
 		}
 
-		if ((res = edma_configure()) != 0) {
-			resourceDestroy(common.gpio_irq_lock);
-			resourceDestroy(common.gpio_irq_cond);
-
-			log_error("failed to configure edma");
+		res = edma_init(edma_error_handler);
+		if (res < 0) {
+			log_error("Failed to initialize eDMA");
 			break;
 		}
 
-		if ((res = dev_init()) < 0) {
-			log_error("device initialization failed");
-			resourceDestroy(common.gpio_irq_lock);
-			resourceDestroy(common.gpio_irq_cond);
-			resourceDestroy(common.edma_spi_rcv_lock);
-			resourceDestroy(common.edma_spi_rcv_lock);
-			resourceDestroy(common.dready_cond);
-			munmap(common.buff, (ADC_BUFFER_SIZE + _PAGE_SIZE - 1) / _PAGE_SIZE * _PAGE_SIZE);
-
+		res = edma_configure();
+		if (res < 0) {
+			log_error("Failed to configure eDMA");
 			break;
 		}
-
-		/* Enable SPI edma receive request */
-		*(common.spi1_ptr + spi_der) = (1 << 1);
-		/* Enable GPIO DREADY interrupt */
-		*(common.gpio3_ptr + gpio_imr) |= (0b1 << 20);
 	} while (0);
+
+	if (res < 0) {
+		if (common.oid.port != (uint32_t)-1) {
+			portDestroy(common.oid.port);
+		}
+		if (common.edma_spi_rcv_lock != (handle_t)-1) {
+			resourceDestroy(common.edma_spi_rcv_lock);
+		}
+		if (common.edma_spi_rcv_cond != (handle_t)-1) {
+			resourceDestroy(common.edma_spi_rcv_cond);
+		}
+		if (common.dready_cond != (handle_t)-1) {
+			resourceDestroy(common.dready_cond);
+		}
+		if (common.buff != MAP_FAILED) {
+			munmap(common.buff, (ADC_BUFFER_SIZE + _PAGE_SIZE - 1) / _PAGE_SIZE * _PAGE_SIZE);
+		}
+	}
 
 	return res;
 }
@@ -676,60 +911,72 @@ static int init(void)
 
 int main(int argc, char **argv)
 {
-	int i;
-	oid_t root;
+	oid_t tmp_oid;
+	int i, err, devnum;
 
-	common.gpio3_ptr = (void *)0x40134000;
-	common.spi1_ptr = (void *)0x40114000;
+	priority(ADE7913_PRIO);
+
+	memset(&common, 0, sizeof(common));
 
 	if (argc != 3) {
 		log_error("No device list or no SPI device given");
-		return -EINVAL;
+		return EXIT_FAILURE;
 	}
-	else {
-		common.order = argv[1];
-		common.devcnt = strlen(argv[1]);
-		common.spi = atoi(argv[2]);
 
-		for (i = 0; i < common.devcnt; ++i) {
-			if ((int)(common.order[i] - '0') >= common.devcnt || (int)(common.order[i] - '0') < 0) {
-				log_error("Wrong order format provided");
-				return -1;
-			}
+	common.spi = atoi(argv[2]);
+	if (common.spi < 1 || common.spi > sizeof(spi_base) / sizeof(spi_base[0])) {
+		log_error("Wrong spi number provided");
+		return EXIT_FAILURE;
+	}
+
+	common.oid.port = (uint32_t)-1;
+	common.edma_spi_rcv_lock = (handle_t)-1;
+	common.edma_spi_rcv_cond = (handle_t)-1;
+	common.dready_cond = (handle_t)-1;
+	common.buff = MAP_FAILED;
+
+	common.spi_ptr = (uint32_t *)spi_base[common.spi - 1];
+	common.gpio3_ptr = (uint32_t *)0x40134000;
+	common.iomux_ptr[0] = (uint32_t *)0x400e8000 + 4 + pctl_mux_gpio_ad_18;
+	common.iomux_ptr[1] = (uint32_t *)0x400e8000 + 4 + pctl_mux_gpio_ad_19;
+	common.iomux_ptr[2] = (uint32_t *)0x400e8000 + 4 + pctl_mux_gpio_ad_20;
+	common.iomux_ptr[3] = (uint32_t *)0x400e8000 + 4 + pctl_mux_gpio_ad_29;
+
+	common.order = argv[1];
+	common.devcnt = strlen(common.order);
+
+	if (common.devcnt < 1 || common.devcnt > 4) {
+		log_error("Incorrect ADE7913 device count (1 min, 4 max)");
+		return EXIT_FAILURE;
+	}
+
+	for (i = 0; i < common.devcnt; ++i) {
+		devnum = common.order[i] - '0';
+		if (devnum >= common.devcnt || devnum < 0) {
+			log_error("Wrong order format provided");
+			return EXIT_FAILURE;
 		}
-
-		if (common.spi < 0) {
-			log_error("Wrong spi number provided");
-			return -1;
-		}
-
-		log_info("Device order: %s", common.order);
 	}
 
-	if (common.devcnt > 4) {
-		log_error("Incorrect ADE7913 device count (4 max)");
-		return -EINVAL;
-	}
+	log_info("Device order: %s", common.order);
 
 	/* Wait for the filesystem */
-	while (lookup("/", NULL, &root) < 0)
-		usleep(10000);
-
-	for (i = 0; i < MAX_INIT_TRIES; ++i) {
-		if (!init())
-			break;
-
-		usleep(100000);
+	while (lookup("/", NULL, &tmp_oid) < 0) {
+		usleep(10 * 1000);
 	}
 
-	if (i == MAX_INIT_TRIES) {
-		log_error("could not init driver.");
-		return -EIO;
+	if (init() < 0) {
+		log_error("Could not init driver.");
+		return EXIT_FAILURE;
 	}
 
-	msg_loop();
+	err = msg_loop();
+	if (err < 0) {
+		/* FIXME: this is critical error (how to handle it: log than reboot?) */
+		log_error("Message loop failed (err=%d)", err);
+		return EXIT_FAILURE;
+	}
 
-	/* Should never be reached */
 	log_error("Exiting!");
-	return 0;
+	return EXIT_SUCCESS;
 }

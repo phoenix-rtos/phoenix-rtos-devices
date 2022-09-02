@@ -3,8 +3,8 @@
  *
  * i.MX RT1170 ADE7913 test application
  *
- * Copyright 2021 Phoenix Systems
- * Author: Marcin Baran
+ * Copyright 2021-2022 Phoenix Systems
+ * Author: Marcin Baran, Gerard Swiderski
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -65,8 +65,10 @@ int main(int argc, char **argv)
 		devcnt = strlen(argv[1]);
 
 		for (i = 0; i < devcnt; ++i) {
-			if ((int)(order[i] - '0') >= devcnt || (int)(order[i] - '0') < 0)
+			devnum = (int)(order[i] - '0');
+			if (devnum >= devcnt || devnum < 0) {
 				printf("Wrong order format provided\n");
+			}
 		}
 
 		printf("Device order: %s\n", order);
@@ -74,15 +76,16 @@ int main(int argc, char **argv)
 
 	if (devcnt > 4) {
 		printf("Incorrect ADE7913 device count (4 max)\n");
-		return -1;
+		return 1;
 	}
 
-	while (lookup("/dev/spi1", NULL, &ade7913_spi) < 0)
-		usleep(5000);
+	while (lookup("/dev/spi1", NULL, &ade7913_spi) < 0) {
+		usleep(100 * 1000);
+	}
 
 	if (lpspi_config(&ade7913_spi, 0) < 0) {
 		printf("Could not initialize SPI1\n");
-		return -1;
+		return 2;
 	}
 
 	printf("SPI1 initialized\n");
@@ -91,19 +94,27 @@ int main(int argc, char **argv)
 	for (i = 0; i < devcnt; ++i) {
 		devnum = (int)(order[i] - '0');
 
-		usleep(500000);
+		usleep(500 * 1000);
 		printf("Configuring ADE7913 device no. %d\n", devnum);
 
 		while (ade7913_init(&ade7913_spi, devnum,
 				   devnum == order[devcnt - 1] - '0' ? 0 : 1) < 0) {
 			printf("Failed to initialize ADE7913 no. %d\n", devnum);
-			usleep(500000);
+			usleep(500 * 1000);
 		}
 
-		if (ade7913_enable(&ade7913_spi, devnum) < 0)
+		if (ade7913_enable(&ade7913_spi, devnum) < 0) {
 			printf("Could not enable ADE7913 no. %d\n", devnum);
-		if (ade7913_lock(&ade7913_spi, devnum) < 0)
+			return 3;
+		}
+
+		if (ade7913_lock(&ade7913_spi, devnum) < 0) {
 			printf("Could not lock ADE7913 no. %d\n", devnum);
+			return 4;
+		}
+
+		/* Wait for next ADC to start */
+		usleep(50 * 1000);
 	}
 
 	printf("Reading ADE7913 registers in burst mode:\n");
@@ -114,7 +125,7 @@ int main(int argc, char **argv)
 
 			if (ade7913_sample_regs_read(&ade7913_spi, devnum, &sample) < 0) {
 				printf("Failed reading sample registers from device %d\n", devnum);
-				continue;
+				break;
 			}
 
 			printf("IWV[%d]: 0x%x\n", devnum, sample.iwv);
@@ -126,8 +137,8 @@ int main(int argc, char **argv)
 		}
 
 		printf("\n");
-		usleep(500000);
+		usleep(500 * 1000);
 	}
 
-	return 0;
+	return 5;
 }
