@@ -57,6 +57,8 @@ void edma_copy_tcd(const volatile struct edma_tcd_s* src,
 
 int edma_install_tcd(const volatile struct edma_tcd_s* tcd, uint8_t channel);
 
+int edma_read_tcd(volatile struct edma_tcd_s *tcd, uint8_t channel);
+
 int edma_initialize_tcd_ring(const struct edma_tcd_s* prototype,
 	volatile struct edma_tcd_s** tcds, unsigned cnt,
 	unsigned src_offset, unsigned dst_offset);

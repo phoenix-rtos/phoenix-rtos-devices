@@ -213,6 +213,17 @@ int edma_install_tcd(const volatile struct edma_tcd_s* tcd, uint8_t channel)
 	return 0;
 }
 
+int edma_read_tcd(volatile struct edma_tcd_s *tcd, uint8_t channel)
+{
+	if (channel >= EDMA_NUM_OF_CHANNELS) {
+		return -1;
+	}
+
+	edma_copy_tcd(&edma_regs->tcd[channel], tcd);
+
+	return 0;
+}
+
 /* Address must be 32-byte aligned */
 #define TCD_REQUIRED_ALIGNMENT_MASK (0x1f)
 
