@@ -384,15 +384,15 @@ static int adc_init(int hard)
 	for (i = 0; i < common.devcnt; ++i) {
 		devnum = (int)(common.order[i] - '0');
 
-		log_info("Configuring ADE7913 device nr %d", devnum);
+		log_info("Configuring ADE7913 device no. %d", devnum);
 		while (ade7913_init(&common.ade7913_spi, devnum,
 				   devnum == common.order[common.devcnt - 1] - '0' ? 0 : 1) < 0) {
-			log_error("Failed to initialize ADE7913 nr %d", devnum);
+			log_error("Failed to initialize ADE7913 no. %d", devnum);
 			usleep(500000);
 		}
 
 		if (ade7913_enable(&common.ade7913_spi, devnum) < 0)
-			log_error("Could not enable ADE7913 nr %d", devnum);
+			log_error("Could not enable ADE7913 no. %d", devnum);
 
 		/* Wait for next adc to start */
 		usleep(50000);
@@ -407,7 +407,7 @@ static int adc_init(int hard)
 		devnum = (int)(common.order[i] - '0');
 
 		if (ade7913_lock(&common.ade7913_spi, devnum) < 0)
-			log_error("Could not lock ADE7913 nr %d", devnum);
+			log_error("Could not lock ADE7913 no. %d", devnum);
 	}
 
 	return 0;
