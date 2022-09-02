@@ -3,8 +3,8 @@
  *
  * i.MX RT1176 ADE7913 API
  *
- * Copyright 2021 Phoenix Systems
- * Author: Marcin Baran
+ * Copyright 2021-2022 Phoenix Systems
+ * Author: Marcin Baran, Gerard Swiderski
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -399,6 +399,13 @@ int ade7913_unlock(oid_t *device, int cs)
 }
 
 
+int ade7913_emi(oid_t *device, int cs, uint8_t val)
+{
+	return ade7913_write_reg(device, cs,
+		ade7913_emi_ctrl, val);
+}
+
+
 int ade7913_enable(oid_t *device, int cs)
 {
 	return ade7913_set_clear_bits(device, cs,
@@ -410,6 +417,20 @@ int ade7913_disable(oid_t *device, int cs)
 {
 	return ade7913_set_clear_bits(device, cs,
 		ade7913_config, ADE7913_CONFIG_PWRDWN_EN, 0);
+}
+
+
+int ade7913_temperature(oid_t *device, int cs)
+{
+	return ade7913_set_clear_bits(device, cs,
+		ade7913_config, ADE7913_CONFIG_TEMP_EN, 0);
+}
+
+
+int ade7913_voltage(oid_t *device, int cs)
+{
+	return ade7913_set_clear_bits(device, cs,
+		ade7913_config, 0, ADE7913_CONFIG_TEMP_EN);
 }
 
 
