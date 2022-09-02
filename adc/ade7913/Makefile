@@ -14,7 +14,7 @@ DEPS := imxrt-multi
 include $(binary.mk)
 
 NAME := ade7913-driver
-LOCAL_SRCS := gpio.c ade7913.c ade7913-driver.c
+LOCAL_SRCS := gpio.c ade7913.c ade7913-driver.c flexpwm.c
 LOCAL_HEADERS := adc-api.h
 DEPS := imxrt-multi
 DEP_LIBS := libimxrt-edma

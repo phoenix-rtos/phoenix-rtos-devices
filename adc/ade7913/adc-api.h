@@ -19,9 +19,7 @@
 #include <arch.h>
 #include <sys/types.h>
 
-#define ADC_DEVICE_DIR       "/dev"
-#define ADC_DEVICE_FILE_NAME "ade7913"
-#define ADC_DRIVER           "/dev/ade7913"
+#define ADC_DEVICE_FILE_NAME "/dev/ade7913"
 
 typedef enum {
 	adc_dev_ctl__enable,
