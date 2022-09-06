@@ -46,6 +46,10 @@
 #define VAL_ODR_12HZ       0x30
 #define VAL_ODR_25HZ       0x40
 
+/* control register 2 */
+#define REG_CTRL_REG2 0x21
+#define VAL_BOOT      0x80
+
 /* data storage addresses */
 #define REG_DATA_OUT         0x28
 #define SPI_READ_BIT         0x80
@@ -121,14 +125,23 @@ static int lps25xx_hwSetup(lps25xx_ctx_t *ctx)
 		return -1;
 	}
 
-	if (spiWriteReg(ctx, REG_RES_CONF, VAL_AVGT_8 | VAL_AVGP_128) < 0) {
+	/* Boot process: refresh the content of the internal registers stored in the flash memory block */
+	if (spiWriteReg(ctx, REG_CTRL_REG2, VAL_BOOT) < 0) {
 		return -1;
 	}
+	usleep(1000 * 10); /* The boot process takes 2.2 msec. Waiting more for safety */
 
+	/* Activate the device (VAL_PD_ACTIVE_MODE), and set output data rate (ODR) to highest */
 	if (spiWriteReg(ctx, REG_CTRL_REG1, (VAL_PD_ACTIVE_MODE | VAL_ODR_25HZ)) < 0) {
 		return -1;
 	}
-	usleep(1000 * 100);
+	usleep(1000 * 100); /* Arbitrary wait */
+
+	/* Internal averaging configuration. Averages pressure over 32 samples and temperature over 8 samples. */
+	if (spiWriteReg(ctx, REG_RES_CONF, VAL_AVGT_8 | VAL_AVGP_32) < 0) {
+		return -1;
+	}
+	usleep(1000 * 100); /* Arbitrary wait */
 
 	return 0;
 }
@@ -150,7 +163,6 @@ static void lps25xx_publishthr(void *data)
 		err = sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, &obuf, sizeof(obuf), ibuf, sizeof(ibuf), sizeof(obuf));
 
 		if (err >= 0) {
-			/* minus accounts for non right-handness of lsm9dsxx accelerometer frame of reference */
 			gettime(&(ctx->evtBaro.timestamp), NULL);
 			ctx->evtBaro.baro.pressure = translatePress(ibuf[0], ibuf[1], ibuf[2]);
 			ctx->evtBaro.baro.temp = translateTemp(ibuf[4], ibuf[3]);
