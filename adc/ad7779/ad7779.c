@@ -570,12 +570,6 @@ int ad7779_init(int hard)
 {
 	int res;
 
-	if ((res = spi_init()) < 0)
-		return res;
-
-	if ((res = ad7779_gpio_init()) < 0)
-		return res;
-
 	if ((res = ad7779_reset(hard)) < 0)
 		return res;
 
