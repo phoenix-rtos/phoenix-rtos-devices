@@ -6,6 +6,6 @@
 # Copyright 2021 Phoenix Systems
 #
 
-DEFAULT_COMPONENTS := zynq7000-uart uart16550 zynq7000-pwm zynq7000-xgpio zynq7000-spi zynq7000-gpio
+DEFAULT_COMPONENTS := zynq7000-uart uart16550 zynq7000-pwm zynq7000-xgpio zynq7000-spi zynq7000-xspi zynq7000-gpio
 DEFAULT_COMPONENTS += libflashdrv-zynq zynq7000-flash test_flashdrv libspi-msg libzynq7000-gpio-msg
 DEFAULT_COMPONENTS += libsensors sensors
