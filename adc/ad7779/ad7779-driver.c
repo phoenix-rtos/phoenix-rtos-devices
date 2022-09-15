@@ -313,6 +313,20 @@ static int init(void)
 		return res;
 	}
 
+	if ((res = spi_init()) < 0) {
+		log_error("failed to initialize spi");
+		sai_free();
+		dma_free();
+		return res;
+	}
+
+	if ((res = ad7779_gpio_init()) < 0) {
+		log_error("failed to initialize gpio");
+		sai_free();
+		dma_free();
+		return res;
+	}
+
 	if ((res = ad7779_init(0)) < 0) {
 		log_error("failed to initialize ad7779 (%d)", res);
 		sai_free();
