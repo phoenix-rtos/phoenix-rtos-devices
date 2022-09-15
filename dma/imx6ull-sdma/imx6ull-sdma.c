@@ -71,6 +71,8 @@
 #define SDMA_CMD_C0_SETCTX(channel)             (0x07 | (channel << 3))
 #define SDMA_CMD_C0_GETCTX(channel)             (0x03 | (channel << 3))
 
+#define INTR_CHANNEL_TIMEOUT_US (35 * 1000 * 1000)
+
 /* Channel Control Block */
 struct __attribute__((packed)) sdma_channel_ctrl_s {
 	addr_t current_bd; /* Current buffer descriptor pointer */
@@ -641,9 +643,16 @@ static int dev_read(oid_t *oid, void *data, size_t size)
 {
 	int channel = oid_to_channel(oid);
 	unsigned intr_cnt;
+	int res;
 
 	mutexLock(common.lock);
-	condWait(common.channel[channel].intr_cond, common.lock, 0);
+
+	res = condWait(common.channel[channel].intr_cond, common.lock, INTR_CHANNEL_TIMEOUT_US);
+	if (res == -ETIME) {
+		mutexUnlock(common.lock);
+		log_error("dev_read: timeout");
+		return -EIO;
+	}
 
 	intr_cnt = common.channel[channel].intr_cnt;
 
