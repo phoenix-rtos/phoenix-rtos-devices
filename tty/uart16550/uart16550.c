@@ -24,11 +24,11 @@
 #include <sys/types.h>
 
 #include <libtty.h>
+#include <board_config.h>
 #include <posix/utils.h>
 
 #include "uarthw.h"
 #include "uart16550.h"
-
 
 typedef struct {
 	uint8_t hwctx[64];
@@ -293,18 +293,18 @@ int main(void)
 {
 	unsigned int i;
 	char path[12];
+	uint32_t port;
 	int err;
 
-	oid_t oid = { 0 };
-
-	portCreate(&oid.port);
+	portCreate(&port);
 
 	for (i = 0; i < sizeof(uart_common.uarts) / sizeof(uart_common.uarts[0]); i++) {
 
-		uart_common.uarts[i].oid = oid;
+		uart_common.uarts[i].oid.port = port;
+		uart_common.uarts[i].oid.id = (i == UART16550_CONSOLE) ? 0 : i + 1;
 		snprintf(path, sizeof(path), "/dev/ttyS%u", i);
 
-		err = _uart_init(&uart_common.uarts[i], i, 115200);
+		err = _uart_init(&uart_common.uarts[i], i, UART16550_BAUDRATE);
 		if (err < 0) {
 			if (err != -ENODEV) {
 				fprintf(stderr, "uart16550: failed to init %s, err: %d\n", path, err);
@@ -316,12 +316,10 @@ int main(void)
 			fprintf(stderr, "uart16550: failed to register %s\n", path);
 			return EXIT_FAILURE;
 		}
-
-		oid.id++;
 	}
 
-	beginthread(poolthr, 4, uart_common.stack, sizeof(uart_common.stack), (void *)(uintptr_t)oid.port);
-	poolthr((void *)(uintptr_t)oid.port);
+	beginthread(poolthr, 4, uart_common.stack, sizeof(uart_common.stack), (void *)(uintptr_t)port);
+	poolthr((void *)(uintptr_t)port);
 
 	return EXIT_SUCCESS;
 }
