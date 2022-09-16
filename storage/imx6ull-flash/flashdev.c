@@ -436,6 +436,49 @@ static int flashmtd_blockMarkBad(struct _storage_t *strg, off_t offs)
 }
 
 
+static int flashmtd_blockMaxBitflips(struct _storage_t *strg, off_t offs)
+{
+	storage_mtd_t *mtd = strg->dev->mtd;
+	struct _storage_devCtx_t *ctx = strg->dev->ctx;
+	flashdrv_meta_t *meta = (flashdrv_meta_t *)ctx->metabuf;
+	const int nchunks = sizeof(meta->errors) / sizeof(meta->errors[0]);
+	size_t tempsz = 0;
+	uint32_t paddr;
+	int err;
+	int maxBitFlips = 0;
+
+	if ((offs % mtd->erasesz) != 0) {
+		return -EINVAL;
+	}
+
+	paddr = offs / mtd->writesz;
+
+	mutexLock(ctx->lock);
+
+	/* Read one block, page by page */
+	while (tempsz < mtd->erasesz) {
+		err = flashdrv_read(ctx->dma, paddr, ctx->databuf, meta);
+		if (err < 0) {
+			break;
+		}
+
+		err = _flashmtd_getMaxflips(strg, paddr, nchunks);
+		if (err < 0) {
+			printf("flashmtd_checkECC: returned error: %d\n", err);
+			break;
+		}
+
+		maxBitFlips = max(maxBitFlips, err);
+		tempsz += mtd->writesz;
+		paddr++;
+	}
+
+	mutexUnlock(ctx->lock);
+
+	return (err < 0) ? -EIO : maxBitFlips;
+}
+
+
 static const storage_mtdops_t mtdOps = {
 	.erase = flashmtd_erase,
 	.unPoint = NULL,
@@ -455,6 +498,7 @@ static const storage_mtdops_t mtdOps = {
 	.block_isReserved = NULL,
 	.block_markBad = flashmtd_blockMarkBad,
 	.block_maxBadNb = NULL,
+	.block_maxBitflips = flashmtd_blockMaxBitflips,
 
 	.suspend = NULL,
 	.resume = NULL,

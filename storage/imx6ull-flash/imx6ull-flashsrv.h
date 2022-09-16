@@ -20,7 +20,7 @@
 
 
 enum { flashsrv_devctl_info = 0, flashsrv_devctl_erase, flashsrv_devctl_writeraw, flashsrv_devctl_writemeta,
-	 flashsrv_devctl_readraw, flashsrv_devctl_isbad, flashsrv_devctl_markbad };
+	 flashsrv_devctl_readraw, flashsrv_devctl_isbad, flashsrv_devctl_markbad, flashsrv_devctl_maxbitflips };
 
 /* information about NAND flash configuration */
 typedef struct {
@@ -64,6 +64,12 @@ typedef struct {
 			oid_t oid;
 			uint32_t address; /* multiply of erasesz */
 		} badblock;
+
+		/* maxbitflips */
+		struct {
+			oid_t oid;
+			uint32_t address; /* multiply of erasesz */
+		} maxbitflips;
 	};
 } __attribute__((packed)) flash_i_devctl_t;
 

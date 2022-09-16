@@ -308,6 +308,20 @@ static int flashsrv_devMarkbad(const flash_i_devctl_t *idevctl)
 }
 
 
+static int flashsrv_devMaxBitflips(const flash_i_devctl_t *idevctl)
+{
+	size_t addr = idevctl->maxbitflips.address;
+	storage_t *strg = storage_get(idevctl->maxbitflips.oid.id);
+
+	if (strg == NULL || strg->dev == NULL || strg->dev->ctx == NULL || strg->dev->mtd == NULL || strg->dev->mtd->ops == NULL ||
+			strg->dev->mtd->ops->block_maxBitflips == NULL || addr >= strg->size) {
+		return -EINVAL;
+	}
+
+	return strg->dev->mtd->ops->block_maxBitflips(strg, strg->start + addr);
+}
+
+
 /* Handling flash functions */
 
 static ssize_t flashsrv_read(oid_t *oid, size_t offs, char *data, size_t size)
@@ -419,6 +433,10 @@ static void flashsrv_devCtrl(msg_t *msg)
 
 		case flashsrv_devctl_markbad:
 			odevctl->err = flashsrv_devMarkbad(idevctl);
+			break;
+
+		case flashsrv_devctl_maxbitflips:
+			odevctl->err = flashsrv_devMaxBitflips(idevctl);
 			break;
 
 		default:
