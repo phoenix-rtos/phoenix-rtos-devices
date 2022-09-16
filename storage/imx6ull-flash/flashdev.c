@@ -99,7 +99,8 @@ static unsigned int _flashmtd_checkErased(const void *buff, size_t boffs, size_t
 }
 
 
-static int _flashmtd_checkECC(struct _storage_t *strg, uint32_t paddr, unsigned int chunks)
+/* Returns maximum number of bitlips or number smaller than 0 in case of error */
+static int _flashmtd_getMaxflips(struct _storage_t *strg, uint32_t paddr, int nchunks)
 {
 	/* Metadata and data (with their ECC) chunk sizes in bits */
 	const size_t mlen = strg->dev->mtd->oobSize * CHAR_BIT + ECC_GF * ECC0_BITFLIP_STRENGHT;
@@ -111,7 +112,7 @@ static int _flashmtd_checkECC(struct _storage_t *strg, uint32_t paddr, unsigned 
 	void *raw = NULL;
 	int err;
 
-	for (i = 0; i < chunks; i++) {
+	for (i = 0; i < nchunks; i++) {
 		switch (meta->errors[i]) {
 			case flash_no_errors:
 			case flash_erased:
@@ -156,25 +157,11 @@ static int _flashmtd_checkECC(struct _storage_t *strg, uint32_t paddr, unsigned 
 					break;
 				}
 
-				/* Handle metadata chunk bitflips */
 				if (i == 0) {
-					/* Too many metadata bitflips, return error */
-					if (flips > ECC0_BITFLIP_STRENGHT) {
-						munmap(raw, rawsz);
-						return -EBADMSG;
-					}
-
 					/* Correct metadata chunk */
 					memset(meta, 0xff, strg->dev->mtd->oobSize);
 				}
-				/* Handle data chunk bitflips */
 				else {
-					/* Too many data bitflips, return error */
-					if (flips > ECCN_BITFLIP_STRENGHT) {
-						munmap(raw, rawsz);
-						return -EBADMSG;
-					}
-
 					/* Correct data chunk */
 					memset(data + (i - 1) * ECCN_DATA_SIZE, 0xff, ECCN_DATA_SIZE);
 				}
@@ -194,8 +181,31 @@ static int _flashmtd_checkECC(struct _storage_t *strg, uint32_t paddr, unsigned 
 		munmap(raw, rawsz);
 	}
 
-	/* Return -EUCLEAN if the page has to be rewritten */
-	return (maxflips >= ECC_BITFLIP_THRESHOLD) ? -EUCLEAN : EOK;
+	return maxflips;
+}
+
+
+static int _flashmtd_checkECC(struct _storage_t *strg, uint32_t paddr, int nchunks)
+{
+	int err;
+
+	err = _flashmtd_getMaxflips(strg, paddr, nchunks);
+	if (err >= ECC0_BITFLIP_STRENGHT) {
+		/* Uncorrectable number of bitflips*/
+		return -EBADMSG;
+	}
+	else if (err >= ECC_BITFLIP_THRESHOLD) {
+		/* Correctable number of bitflips, page degradated, but not a critical error */
+		return -EUCLEAN;
+	}
+	else if (err < 0) {
+		/* Internal error */
+		return err;
+	}
+	else {
+		/* Correctable number of bitflips, not worth raising an error */
+		return 0;
+	}
 }
 
 
