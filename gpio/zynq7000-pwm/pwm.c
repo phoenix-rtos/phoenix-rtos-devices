@@ -129,8 +129,13 @@ static void pwm_thread(void *arg)
 				break;
 
 			case mtSetAttr:
-			case mtGetAttr:
 				msg.o.attr.err = -ENOSYS;
+				break;
+
+
+			case mtGetAttr:
+				msg.o.attr.val = sizeof(buff);
+				msg.o.attr.err = EOK;
 				break;
 
 			default:
