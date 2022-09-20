@@ -244,7 +244,7 @@ static int pwm_init(void)
 	flexpwm_init(PWM4_BASE_ADDR);
 
 	/* Enable PWM in input capture mode to trigger on /DREADY signal */
-	res = flexpwm_input_capture(3, cap_edge_falling, cap_disabled);
+	res = flexpwm_input_capture(3, FLEXPWM_CAP_EDGE_FALLING, FLEXPWM_CAP_DISABLED);
 	if (res < 0) {
 		log_error("Unable to set input capture");
 	}
