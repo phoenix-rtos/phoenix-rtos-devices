@@ -618,10 +618,42 @@ int restart_sampling(void)
 }
 
 
+static void edma_destroy(void)
+{
+	if (common.edma_spi_ch_handle != (handle_t)-1) {
+		resourceDestroy(common.edma_spi_ch_handle);
+	}
+	if (common.dready_cond != (handle_t)-1) {
+		resourceDestroy(common.dready_cond);
+	}
+	if (common.edma_spi_rcv_cond != (handle_t)-1) {
+		resourceDestroy(common.edma_spi_rcv_cond);
+	}
+	if (common.edma_spi_rcv_lock != (handle_t)-1) {
+		resourceDestroy(common.edma_spi_rcv_lock);
+	}
+	if (common.buff != MAP_FAILED) {
+		munmap(common.buff, (ADC_BUFFER_SIZE + _PAGE_SIZE - 1) / _PAGE_SIZE * _PAGE_SIZE);
+	}
+}
+
+
 static int edma_configure(void)
 {
 	int devnum, res, i;
 	oid_t *oid = OID_NULL;
+
+	common.edma_spi_ch_handle = (handle_t)-1;
+	common.edma_spi_rcv_lock = (handle_t)-1;
+	common.edma_spi_rcv_cond = (handle_t)-1;
+	common.dready_cond = (handle_t)-1;
+	common.buff = MAP_FAILED;
+
+	res = edma_init(edma_error_handler);
+	if (res < 0) {
+		log_error("Failed to initialize eDMA");
+		return res;
+	}
 
 	res = mutexCreate(&common.edma_spi_rcv_lock);
 	if (res < 0) {
@@ -675,7 +707,11 @@ static int edma_configure(void)
 
 static int dev_init(const char *devname)
 {
-	int res = portCreate(&common.oid.port);
+	int res;
+
+	common.oid.port = (uint32_t)-1;
+
+	res = portCreate(&common.oid.port);
 	if (res != EOK) {
 		log_error("Could not create port: %d", res);
 		return res;
@@ -690,6 +726,14 @@ static int dev_init(const char *devname)
 	log_info("Device initialized");
 
 	return EOK;
+}
+
+
+static void dev_destroy(void)
+{
+	if (common.oid.port != (uint32_t)-1) {
+		portDestroy(common.oid.port);
+	}
 }
 
 
@@ -874,12 +918,6 @@ static int init(void)
 			break;
 		}
 
-		res = edma_init(edma_error_handler);
-		if (res < 0) {
-			log_error("Failed to initialize eDMA");
-			break;
-		}
-
 		res = edma_configure();
 		if (res < 0) {
 			log_error("Failed to configure eDMA");
@@ -888,21 +926,8 @@ static int init(void)
 	} while (0);
 
 	if (res < 0) {
-		if (common.oid.port != (uint32_t)-1) {
-			portDestroy(common.oid.port);
-		}
-		if (common.edma_spi_rcv_lock != (handle_t)-1) {
-			resourceDestroy(common.edma_spi_rcv_lock);
-		}
-		if (common.edma_spi_rcv_cond != (handle_t)-1) {
-			resourceDestroy(common.edma_spi_rcv_cond);
-		}
-		if (common.dready_cond != (handle_t)-1) {
-			resourceDestroy(common.dready_cond);
-		}
-		if (common.buff != MAP_FAILED) {
-			munmap(common.buff, (ADC_BUFFER_SIZE + _PAGE_SIZE - 1) / _PAGE_SIZE * _PAGE_SIZE);
-		}
+		dev_destroy();
+		edma_destroy();
 	}
 
 	return res;
@@ -928,12 +953,6 @@ int main(int argc, char **argv)
 		log_error("Wrong spi number provided");
 		return EXIT_FAILURE;
 	}
-
-	common.oid.port = (uint32_t)-1;
-	common.edma_spi_rcv_lock = (handle_t)-1;
-	common.edma_spi_rcv_cond = (handle_t)-1;
-	common.dready_cond = (handle_t)-1;
-	common.buff = MAP_FAILED;
 
 	common.spi_ptr = (uint32_t *)spi_base[common.spi - 1];
 	common.gpio3_ptr = (uint32_t *)0x40134000;
