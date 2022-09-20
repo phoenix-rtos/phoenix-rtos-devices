@@ -17,12 +17,10 @@
 #include <stdint.h>
 
 
-enum cap_edge_e {
-	cap_disabled = 0,
-	cap_edge_falling,
-	cap_edge_rising,
-	cap_edge_any
-};
+#define FLEXPWM_CAP_DISABLED     0
+#define FLEXPWM_CAP_EDGE_FALLING 1
+#define FLEXPWM_CAP_EDGE_RISING  2
+#define FLEXPWM_CAP_EDGE_ANY     3
 
 
 /* Initialize base address */

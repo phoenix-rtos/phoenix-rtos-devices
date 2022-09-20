@@ -91,7 +91,7 @@ void flexpwm_init(void *base)
 
 int flexpwm_input_capture(unsigned int no, unsigned int cap0_edge, unsigned int cap1_edge)
 {
-	if (no > 3 || cap0_edge > 3 || cap1_edge > 3) {
+	if (no > 3 || cap0_edge > FLEXPWM_CAP_EDGE_ANY || cap1_edge > FLEXPWM_CAP_EDGE_ANY) {
 		return -EINVAL;
 	}
 
@@ -102,7 +102,8 @@ int flexpwm_input_capture(unsigned int no, unsigned int cap0_edge, unsigned int 
 	flexpwm_regs->sm[no].capctrlx = (cap1_edge << 4) | (cap0_edge << 2) | 1;
 
 	/* enable DMA on PWM_X */
-	flexpwm_regs->sm[no].dmaen = (1 << 6) | ((cap1_edge != 0) << 1) | (cap0_edge != 0);
+	flexpwm_regs->sm[no].dmaen =
+		(1 << 6) | ((cap1_edge != FLEXPWM_CAP_DISABLED) << 1) | (cap0_edge != FLEXPWM_CAP_DISABLED);
 
 	/* disable fault pin condition */
 	flexpwm_regs->sm[no].dismap0 = 0;
