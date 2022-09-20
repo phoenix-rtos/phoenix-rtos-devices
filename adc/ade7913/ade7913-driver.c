@@ -402,15 +402,18 @@ static int adc_init(int hard)
 
 static void dma_stop(void)
 {
-	edma_channel_disable(SPI_RCV_DMA_CHANNEL);
-	edma_channel_disable(SPI_SND_DMA_CHANNEL);
-	edma_channel_disable(SEQ_DMA_CHANNEL);
-	edma_channel_disable(DREADY_DMA_CHANNEL);
+	/* Disable SPI eDMA receive request */
+	*(common.spi_ptr + spi_der) &= ~(1 << 1);
 
-	dmamux_channel_disable(SPI_RCV_DMA_CHANNEL);
-	dmamux_channel_disable(SPI_SND_DMA_CHANNEL);
-	dmamux_channel_disable(SEQ_DMA_CHANNEL);
 	dmamux_channel_disable(DREADY_DMA_CHANNEL);
+	dmamux_channel_disable(SEQ_DMA_CHANNEL);
+	dmamux_channel_disable(SPI_SND_DMA_CHANNEL);
+	dmamux_channel_disable(SPI_RCV_DMA_CHANNEL);
+
+	edma_channel_disable(DREADY_DMA_CHANNEL);
+	edma_channel_disable(SEQ_DMA_CHANNEL);
+	edma_channel_disable(SPI_SND_DMA_CHANNEL);
+	edma_channel_disable(SPI_RCV_DMA_CHANNEL);
 }
 
 static void dma_start(void)
