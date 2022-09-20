@@ -363,15 +363,18 @@ static int adc_init(int hard)
 
 		if (ade7913_enable(&common.ade7913_spi, devnum) < 0) {
 			log_error("Could not enable ADE7913 no. %d", devnum);
+			return -1;
 		}
 
 		/* V2 channel on neutral wire is used to measure ADE7913 temperature */
 		if ((devnum == 0) && (ade7913_temperature(&common.ade7913_spi, devnum) < 0)) {
 			log_error("Could not enable temperature channel no. %d", devnum);
+			return -1;
 		}
 
 		if (ade7913_emi(&common.ade7913_spi, devnum, (devnum % 2 ? 0xaa : 0x55)) < 0) {
 			log_error("Could not set EMI reg of ADE7913 no. %d", devnum);
+			return -1;
 		}
 
 		/* Wait for next ADC to start */
@@ -389,6 +392,7 @@ static int adc_init(int hard)
 
 		if (ade7913_lock(&common.ade7913_spi, devnum) < 0) {
 			log_error("Could not lock ADE7913 no. %d", devnum);
+			return -1;
 		}
 	}
 
