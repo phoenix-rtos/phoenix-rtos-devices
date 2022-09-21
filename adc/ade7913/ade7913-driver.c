@@ -941,6 +941,17 @@ static int init(void)
 }
 
 
+static void usage(char *name)
+{
+	printf(
+		"Usage: %s <order> <nspi>\n"
+		"\torder - chip select order (device list)\n"
+		"\tnspi  - SPI device number\n"
+		"\tExample: %s 1230 1",
+		name, name);
+}
+
+
 int main(int argc, char **argv)
 {
 	oid_t tmp_oid;
@@ -952,12 +963,14 @@ int main(int argc, char **argv)
 
 	if (argc != 3) {
 		log_error("No device list or no SPI device given");
+		usage(argv[0]);
 		return EXIT_FAILURE;
 	}
 
 	common.spi = atoi(argv[2]);
 	if (common.spi < 1 || common.spi > sizeof(spi_base) / sizeof(spi_base[0])) {
 		log_error("Wrong spi number provided");
+		usage(argv[0]);
 		return EXIT_FAILURE;
 	}
 
@@ -973,6 +986,7 @@ int main(int argc, char **argv)
 
 	if (common.devcnt < 1 || common.devcnt > 4) {
 		log_error("Incorrect ADE7913 device count (1 min, 4 max)");
+		usage(argv[0]);
 		return EXIT_FAILURE;
 	}
 
@@ -980,6 +994,7 @@ int main(int argc, char **argv)
 		devnum = common.order[i] - '0';
 		if (devnum >= common.devcnt || devnum < 0) {
 			log_error("Wrong order format provided");
+			usage(argv[0]);
 			return EXIT_FAILURE;
 		}
 	}
