@@ -52,8 +52,8 @@ int dmamux_channel_is_enabled(uint8_t channel);
 
 int edma_init(int (*error_isr)(unsigned int n, void *arg));
 
-void edma_copy_tcd(const volatile struct edma_tcd_s* src,
-	volatile struct edma_tcd_s* dst);
+void edma_copy_tcd(volatile struct edma_tcd_s *dst,
+	const volatile struct edma_tcd_s *src);
 
 int edma_install_tcd(const volatile struct edma_tcd_s* tcd, uint8_t channel);
 

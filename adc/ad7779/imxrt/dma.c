@@ -132,7 +132,7 @@ static int edma_configure(size_t size, size_t count, addr_t *paddr)
 	edma_common.tcds[0].csr = TCD_CSR_INTMAJOR_BIT | TCD_CSR_ESG_BIT;
 
 	for (i = 1; i < count; ++i) {
-		edma_copy_tcd(&edma_common.tcds[0], &edma_common.tcds[i]);
+		edma_copy_tcd(&edma_common.tcds[i], &edma_common.tcds[0]);
 		edma_common.tcds[i].daddr = (uint32_t)buf + i * size;
 		edma_common.tcds[i].dlast_sga = (uint32_t)&edma_common.tcds[(i + 1) % count];
 	}

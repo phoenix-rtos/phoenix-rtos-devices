@@ -183,8 +183,8 @@ int edma_init(int (*error_isr)(unsigned int n, void *arg))
 	return 0;
 }
 
-void edma_copy_tcd(const volatile struct edma_tcd_s* src,
-	volatile struct edma_tcd_s* dst)
+void edma_copy_tcd(volatile struct edma_tcd_s *dst,
+	const volatile struct edma_tcd_s *src)
 {
 	/* Copy manually since memcpy can not be used for volatile memory */
 	dst->saddr         = src->saddr;
@@ -208,7 +208,7 @@ int edma_install_tcd(const volatile struct edma_tcd_s* tcd, uint8_t channel)
 	/* Clear DONE bit first, otherwise ESG cannot be set */
 	edma_regs->tcd[channel].csr = 0;
 
-	edma_copy_tcd(tcd, &edma_regs->tcd[channel]);
+	edma_copy_tcd(&edma_regs->tcd[channel], tcd);
 
 	return 0;
 }
@@ -219,7 +219,7 @@ int edma_read_tcd(volatile struct edma_tcd_s *tcd, uint8_t channel)
 		return -1;
 	}
 
-	edma_copy_tcd(&edma_regs->tcd[channel], tcd);
+	edma_copy_tcd(tcd, &edma_regs->tcd[channel]);
 
 	return 0;
 }
@@ -238,7 +238,7 @@ int edma_initialize_tcd_ring(const struct edma_tcd_s* prototype,
 			return -1;
 
 		/* Copy common part of TCD */
-		edma_copy_tcd(prototype, tcds[i]);
+		edma_copy_tcd(tcds[i], prototype);
 
 		/* Fill-in the rest */
 		tcds[i]->dlast_sga = (uint32_t)tcds[(i + 1) % cnt];

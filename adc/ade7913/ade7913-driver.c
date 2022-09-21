@@ -484,7 +484,7 @@ static int dma_setup_tcds(void)
 
 	/* Clone the above setup for each of the ADE7913 devices creating a ring */
 	for (i = 1; i < common.devcnt; ++i) {
-		edma_copy_tcd(&common.tcds[0], &common.tcds[i]);
+		edma_copy_tcd(&common.tcds[i], &common.tcds[0]);
 		common.tcds[i].dlast_sga = (uint32_t)(&common.tcds[i + 1]);
 		common.tcds[i].saddr = (uint32_t)&spi_write_cmd_lookup[i];
 	}
@@ -511,7 +511,7 @@ static int dma_setup_tcds(void)
 
 	/* Clone SPI receive buffer setup and make it a ring buffer */
 	for (i = 1; i < NUM_OF_BUFFERS; ++i) {
-		edma_copy_tcd(&common.tcds[5], &common.tcds[5 + i]);
+		edma_copy_tcd(&common.tcds[5 + i], &common.tcds[5]);
 		common.tcds[5 + i].daddr = (uint32_t)common.buff + i * ADC_BUFFER_SIZE / NUM_OF_BUFFERS;
 		common.tcds[5 + i].dlast_sga = (uint32_t)&common.tcds[5 + ((i + 1) % NUM_OF_BUFFERS)];
 	}
@@ -546,7 +546,7 @@ static int dma_setup_tcds(void)
 
 	tcd_count = 4 * common.devcnt;
 	for (i = 1; i < tcd_count; ++i) {
-		edma_copy_tcd(&common.tcds[cs_seq], &common.tcds[cs_seq + i]);
+		edma_copy_tcd(&common.tcds[cs_seq + i], &common.tcds[cs_seq]);
 		common.tcds[cs_seq + i].daddr = 0;
 		common.tcds[cs_seq + i].dlast_sga = (uint32_t)&common.tcds[cs_seq + ((i + 1) % tcd_count)];
 
