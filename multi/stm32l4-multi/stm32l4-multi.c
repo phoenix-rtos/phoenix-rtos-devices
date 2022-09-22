@@ -21,6 +21,8 @@
 #include <sys/msg.h>
 #include <sys/pwman.h>
 
+#include <libklog.h>
+
 #include "common.h"
 
 #include "adc.h"
