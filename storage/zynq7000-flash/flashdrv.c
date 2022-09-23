@@ -20,6 +20,7 @@
 #include <string.h>
 #include <sys/time.h>
 #include <sys/threads.h>
+#include <libcache/cache.h>
 
 /* Value determined empirically, contains time for communication via qspi and system calls invocations. */
 #define TIMEOUT_CMD_MS 1000
@@ -27,19 +28,24 @@
 
 #define MTD_DEFAULT_ERASESZ 0x10000
 
+#define BLK_CACHE_SECNUM 4 /* Maximum number of cached sectors in a region */
+
+
+/* Cached device context definition */
+struct cache_devCtx_s {
+	unsigned int id; /* flash device memory id */
+}
+
 
 typedef struct {
-	/* Data caching in sector's buffer */
-	uint8_t *buff;
-	uint32_t buffPos;
-	uint32_t sectID;
-
 	/* Buffers for command transactions */
 	uint8_t cmdRx[MAX_SIZE_CMD];
 	uint8_t cmdTx[MAX_SIZE_CMD];
 
 	handle_t lock;
 	off_t start;
+
+	cachectx_t *cache;
 } flash_reg_t;
 
 
@@ -347,58 +353,68 @@ static ssize_t _flashdrv_read(unsigned int id, addr_t offs, void *buff, size_t l
 }
 
 
+/* cache_readCb_t - wrapper for _flashdrv_read (*/
+static ssize_t _flashdrv_readCb(addr_t offs, void *buff, size_t len, cache_devCtx_t *ctx)
+{
+	unsigned int regID = ctx->id;
+
+	return _flashdrv_read(regID, offs, buff, len);
+}
+
 /* Block device interface */
 
-static int _flashdrv_sync(unsigned int id)
+/* cache_writeCb_t */
+static int _flashdrv_writeCb(addr_t offs, void *buff, size_t len, cache_devCtx_t *ctx)
 {
 	uint8_t *src;
 	addr_t dst;
 	ssize_t res;
-	unsigned int i, pgNb;
+	unsigned int i, regID = ctx->id, pgNb;
 
 	size_t pageSz, sectSz;
 	const flash_cfi_t *cfi = &fdrv_common.info.cfi;
 
-	if (fdrv_common.regs[id].buffPos == 0) {
-		return EOK;
-	}
-
-	sectSz = CFI_SIZE_SECTION(cfi->regs[id].size);
+	sectSz = CFI_SIZE_SECTION(cfi->regs[regID].size);
 	pageSz = CFI_SIZE_PAGE(cfi->pageSize);
 	pgNb = sectSz / pageSz;
 
-	res = _flashdrv_sectorErase(id, fdrv_common.regs[id].start + (sectSz * fdrv_common.regs[id].sectID));
-	if (res < 0) {
-		mutexUnlock(fdrv_common.regs[id].lock);
-		return res;
-	}
-
+	res = _flashdrv_sectorErase(regID, offs);
 
 	for (i = 0; i < pgNb; ++i) {
-		dst = fdrv_common.regs[id].start + fdrv_common.regs[id].sectID * sectSz + i * pageSz;
-		src = fdrv_common.regs[id].buff + i * pageSz;
+		dst = offs + i * pageSz;
+		src = (const uint8_t *)buff + i * pageSz;
 
-		res = _flashdrv_pageProgram(id, dst, src, pageSz);
+		res = _flashdrv_pageProgram(regID, dst, src, pageSz);
 		if (res < 0) {
 			return res;
 		}
 	}
 
-	fdrv_common.regs[id].sectID = (uint32_t)-1;
-	fdrv_common.regs[id].buffPos = 0;
-
 	return EOK;
 }
 
 
-/* TODO: check whether data range coincides with cache buffer and read data from cache */
-static ssize_t flashdrv_blkRead(struct _storage_t *strg, off_t start, void *data, size_t size)
+static cache_devCtx_t cacheCtx = {
+	.id = -1;
+}
+
+
+static cache_ops_t cacheOps = {
+	.readCb = _flashdrv_readCb,
+	.writeCb = _flashdrv_writeCb,
+	.ctx = cacheCtx
+}
+
+
+static ssize_t
+flashdrv_blkRead(struct _storage_t * strg, off_t start, void *data, size_t size)
 {
 	ssize_t res;
+	unsigned int regID = strg->dev->ctx->id;
 
-	mutexLock(fdrv_common.regs[strg->dev->ctx->id].lock);
-	res = _flashdrv_read(strg->dev->ctx->id, start, data, size);
-	mutexUnlock(fdrv_common.regs[strg->dev->ctx->id].lock);
+	mutexLock(fdrv_common.regs[regID].lock);
+	res = cache_read(flashdrv_common.regs[regID].cache, start, data, size);
+	mutexUnlock(fdrv_common.regs[regID].lock);
 
 	return res;
 }
@@ -407,69 +423,24 @@ static ssize_t flashdrv_blkRead(struct _storage_t *strg, off_t start, void *data
 static ssize_t flashdrv_blkWrite(struct _storage_t *strg, off_t start, const void *data, size_t size)
 {
 	ssize_t res;
-	size_t sectSz;
-	off_t regOffs;
-	unsigned int sectID, regID;
-
-	size_t chunkSz = 0, freeSz = 0, saveSz = 0;
-
-	regID = strg->dev->ctx->id;
-
-	regOffs = start - fdrv_common.regs[regID].start;
-	sectSz = CFI_SIZE_SECTION(fdrv_common.info.cfi.regs[regID].size);
+	unsigned int regID = strg->dev->ctx->id;
 
 	mutexLock(fdrv_common.regs[regID].lock);
-	while (saveSz < size) {
-		regOffs += chunkSz;
-		sectID = regOffs / sectSz;
+	res = cache_write(fdrv_common.regs[regID].cache, start, data, size);
+	mutexUnlock(fdrv_common.regs[regID].lock);
 
-		if (sectID != fdrv_common.regs[regID].sectID) {
-			res = _flashdrv_sync(regID);
-			if (res < 0) {
-				mutexUnlock(fdrv_common.regs[regID].lock);
-				return res;
-			}
-
-			res = _flashdrv_read(regID, fdrv_common.regs[regID].start + (sectSz * sectID), fdrv_common.regs[regID].buff, sectSz);
-			if (res < 0) {
-				mutexUnlock(fdrv_common.regs[regID].lock);
-				return res;
-			}
-
-			fdrv_common.regs[regID].sectID = sectID;
-			fdrv_common.regs[regID].buffPos = regOffs - (sectID * sectSz);
-		}
-
-		freeSz = sectSz - fdrv_common.regs[regID].buffPos;
-		chunkSz = (freeSz > (size - saveSz)) ? (size - saveSz) : freeSz;
-		memcpy(fdrv_common.regs[regID].buff + fdrv_common.regs[regID].buffPos, (const uint8_t *)data + saveSz, chunkSz);
-
-		saveSz += chunkSz;
-		fdrv_common.regs[regID].buffPos += chunkSz;
-
-		if (fdrv_common.regs[regID].buffPos < sectSz) {
-			continue;
-		}
-
-		res = _flashdrv_sync(regID);
-		if (res < 0) {
-			mutexUnlock(fdrv_common.regs[regID].lock);
-			return res;
-		}
-	}
-	mutexUnlock(fdrv_common.regs[strg->dev->ctx->id].lock);
-
-	return saveSz;
+	return res;
 }
 
 
 static int flashdrv_blkSync(struct _storage_t *strg)
 {
 	int res;
+	unsigned int regID = strg->dev->ctx->id;
 
-	mutexLock(fdrv_common.regs[strg->dev->ctx->id].lock);
-	res = _flashdrv_sync(strg->dev->ctx->id);
-	mutexUnlock(fdrv_common.regs[strg->dev->ctx->id].lock);
+	mutexLock(fdrv_common.regs[regID].lock);
+	res = cache_flush(fdrv_common.regs[regID].cache, strg->start, strg->start + strg->size);
+	mutexUnlock(fdrv_common.regs[regID].lock);
 
 	return res;
 }
@@ -599,12 +570,13 @@ int flashdrv_done(storage_t *strg)
 {
 	int i, res;
 
-	res = flashdrv_blkSync(strg);
-
 	/* Only root device has allocated resources */
 	if (strg->parent == NULL) {
-		free(fdrv_common.regs[strg->dev->ctx->id].buff);
-		fdrv_common.regs[strg->dev->ctx->id].buff = NULL;
+		res = cache_deinit(fdrv_common.regs[strg->dev->ctx->id].cache);
+		if (res < 0) {
+			return res;
+		}
+		fdrv_common.regs[strg->dev->ctx->id].cache = NULL;
 
 		resourceDestroy(fdrv_common.regs[strg->dev->ctx->id].lock);
 		free(strg->dev->mtd);
@@ -614,7 +586,7 @@ int flashdrv_done(storage_t *strg)
 	}
 
 	for (i = 0; i < fdrv_common.info.cfi.regsCount; ++i) {
-		if (fdrv_common.regs[i].buff != NULL) {
+		if (fdrv_common.regs[i].cache != NULL) {
 			return res;
 		}
 	}
@@ -655,27 +627,18 @@ int flashdrv_devInit(storage_t *strg)
 	}
 
 	secSz = CFI_SIZE_SECTION(info->cfi.regs[id].size);
-	reg->buffPos = 0;
-	reg->sectID = (uint32_t)-1;
-	reg->buff = malloc(secSz);
 	reg->start = flashdrv_regStart(id);
-	if (reg->buff == NULL) {
-		resourceDestroy(reg->lock);
-		return -ENOMEM;
-	}
 
 	/* Initialize dev structure for new region */
 	strg->dev = malloc(sizeof(storage_dev_t));
 	if (strg->dev == NULL) {
 		resourceDestroy(reg->lock);
-		free(reg->buff);
 		return -ENOMEM;
 	}
 
 	strg->dev->ctx = malloc(sizeof(storage_devCtx_t));
 	if (strg->dev->ctx == NULL) {
 		resourceDestroy(reg->lock);
-		free(reg->buff);
 		free(strg->dev);
 		return -ENOMEM;
 	}
@@ -689,7 +652,6 @@ int flashdrv_devInit(storage_t *strg)
 	strg->dev->mtd = malloc(sizeof(storage_mtd_t));
 	if (strg->dev->mtd == NULL) {
 		resourceDestroy(reg->lock);
-		free(reg->buff);
 		free(strg->dev);
 		free(strg->dev->ctx);
 		return -ENOMEM;
@@ -718,12 +680,23 @@ int flashdrv_devInit(storage_t *strg)
 	strg->dev->blk = malloc(sizeof(storage_blk_t));
 	if (strg->dev->blk == NULL) {
 		resourceDestroy(reg->lock);
-		free(reg->buff);
 		free(strg->dev);
+		free(strg->dev->ctx);
 		free(strg->dev->mtd);
 		return -ENOMEM;
 	}
 	strg->dev->blk->ops = &blkOps;
+
+	cacheOps->ctx->id = id;
+	reg->cache = cache_init(strg->start + strg->size, BLK_CACHE_SECNUM * secSz, secSz, &cacheOps);
+	if (reg->cache == NULL) {
+		resourceDestroy(reg->lock);
+		free(strg->dev);
+		free(strg->dev->ctx);
+		free(strg->dev->mtd);
+		free(strg->dev->blk);
+		return -ENOMEM;
+	}
 
 	fdrv_common.initRegs++;
 
