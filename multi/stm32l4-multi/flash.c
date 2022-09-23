@@ -273,7 +273,7 @@ size_t flash_writeData(uint32_t offset, const char *buff, size_t size)
 	_program_lock();
 	mutexUnlock(flash_common.lock);
 
-	return  size - towrite;
+	return size - towrite;
 }
 
 
@@ -314,6 +314,52 @@ void flash_getInfo(flashinfo_t *info)
 	info->dualboot = !!(_flash_getOptions() & (1 << 20));
 	info->remap = flash_common.bankflip;
 	info->activebank = flash_common.activebank;
+}
+
+
+ssize_t flash_writeRaw(uint32_t offset, const char *buff, size_t size)
+{
+	int ret;
+
+	if (program_isValidAddress(offset, size) == 0)
+		return 0;
+
+	mutexLock(flash_common.lock);
+	_program_unlock();
+
+	ret = _flash_wait();
+	if (ret == 0) {
+		_flash_clearFlags();
+		ret = _program_dblWords((void *)offset, buff, size);
+	}
+
+	_program_lock();
+	mutexUnlock(flash_common.lock);
+
+	return ret;
+}
+
+
+ssize_t flash_erasePage(uint32_t offset)
+{
+	int ret;
+
+	if (program_isValidAddress(offset, FLASH_PAGE_SIZE) == 0)
+		return 0;
+
+	mutexLock(flash_common.lock);
+	_program_unlock();
+
+	ret = _flash_wait();
+	if (ret == 0) {
+		_flash_clearFlags();
+		ret = _program_erasePage(offset);
+	}
+
+	_program_lock();
+	mutexUnlock(flash_common.lock);
+
+	return ret;
 }
 
 
