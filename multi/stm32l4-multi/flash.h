@@ -15,6 +15,7 @@
 #define FLASH_H_
 
 #include <stdint.h>
+#include <stdlib.h> /* For stddef.h */
 
 #include "stm32l4-multi.h"
 
@@ -75,6 +76,12 @@ extern int flash_switchBanks(void);
 
 
 extern void flash_getInfo(flashinfo_t *info);
+
+
+extern ssize_t flash_writeRaw(uint32_t offset, const char *buff, size_t size);
+
+
+extern ssize_t flash_erasePage(uint32_t offset);
 
 
 extern int flash_init(void);

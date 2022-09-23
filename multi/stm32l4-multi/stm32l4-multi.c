@@ -89,6 +89,14 @@ static void handleMsg(msg_t *msg)
 			err = flash_writeData(imsg->flash_addr, msg->i.data, msg->i.size);
 			break;
 
+		case flash_setRaw:
+			err = flash_writeRaw(imsg->flash_addr, msg->i.data, msg->i.size);
+			break;
+
+		case flash_erase:
+			err = flash_erasePage(imsg->flash_addr);
+			break;
+
 		case flash_info:
 			flash_getInfo(&omsg->flash_info);
 			break;
