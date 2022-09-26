@@ -33,6 +33,7 @@
 
 /* Cached device context definition */
 struct cache_devCtx_s {
+	off_t start; 	 /* storage start */
 	unsigned int id; /* flash device memory id */
 };
 
@@ -356,7 +357,7 @@ static ssize_t _flashdrv_read(unsigned int id, addr_t offs, void *buff, size_t l
 /* cache_readCb_t - wrapper for _flashdrv_read (*/
 static ssize_t _flashdrv_readCb(uint64_t offs, void *buff, size_t len, cache_devCtx_t *ctx)
 {
-	return _flashdrv_read(ctx->id, offs, buff, len);
+	return _flashdrv_read(ctx->id, offs + ctx->start, buff, len);
 }
 
 /* Block device interface */
@@ -376,6 +377,8 @@ static int _flashdrv_writeCb(uint64_t offs, const void *buff, size_t len, cache_
 	pageSz = CFI_SIZE_PAGE(cfi->pageSize);
 	pgNb = sectSz / pageSz;
 
+	offs += ctx->start;
+
 	res = _flashdrv_sectorErase(regID, offs);
 
 	for (i = 0; i < pgNb; ++i) {
@@ -393,6 +396,7 @@ static int _flashdrv_writeCb(uint64_t offs, const void *buff, size_t len, cache_
 
 
 static cache_devCtx_t cacheCtx = {
+	.start = -1,
 	.id = -1
 };
 
@@ -410,7 +414,7 @@ static ssize_t flashdrv_blkRead(struct _storage_t *strg, off_t start, void *data
 	unsigned int regID = strg->dev->ctx->id;
 
 	mutexLock(fdrv_common.regs[regID].lock);
-	res = cache_read(fdrv_common.regs[regID].cache, start, data, size);
+	res = cache_read(fdrv_common.regs[regID].cache, start - strg->start, data, size);
 	mutexUnlock(fdrv_common.regs[regID].lock);
 
 	return res;
@@ -423,7 +427,7 @@ static ssize_t flashdrv_blkWrite(struct _storage_t *strg, off_t start, const voi
 	unsigned int regID = strg->dev->ctx->id;
 
 	mutexLock(fdrv_common.regs[regID].lock);
-	res = cache_write(fdrv_common.regs[regID].cache, start, data, size, LIBCACHE_WRITE_BACK);
+	res = cache_write(fdrv_common.regs[regID].cache, start - strg->start, data, size, LIBCACHE_WRITE_BACK);
 	mutexUnlock(fdrv_common.regs[regID].lock);
 
 	return res;
@@ -436,7 +440,7 @@ static int flashdrv_blkSync(struct _storage_t *strg)
 	unsigned int regID = strg->dev->ctx->id;
 
 	mutexLock(fdrv_common.regs[regID].lock);
-	res = cache_flush(fdrv_common.regs[regID].cache, strg->start, strg->start + strg->size);
+	res = cache_flush(fdrv_common.regs[regID].cache, 0, strg->size);
 	mutexUnlock(fdrv_common.regs[regID].lock);
 
 	return res;
@@ -684,7 +688,9 @@ int flashdrv_devInit(storage_t *strg)
 	}
 	strg->dev->blk->ops = &blkOps;
 
+	cacheOps.ctx->start = strg->start;
 	cacheOps.ctx->id = id;
+	/* cache mapps from 0 strg->size */
 	reg->cache = cache_init(strg->size, BLK_CACHE_SECNUM * secSz, secSz, &cacheOps);
 	if (reg->cache == NULL) {
 		resourceDestroy(reg->lock);
