@@ -20,7 +20,7 @@
 #include <string.h>
 #include <sys/time.h>
 #include <sys/threads.h>
-#include <libcache/cache.h>
+#include <cache.h>
 
 /* Value determined empirically, contains time for communication via qspi and system calls invocations. */
 #define TIMEOUT_CMD_MS 1000
@@ -34,7 +34,7 @@
 /* Cached device context definition */
 struct cache_devCtx_s {
 	unsigned int id; /* flash device memory id */
-}
+};
 
 
 typedef struct {
@@ -354,17 +354,15 @@ static ssize_t _flashdrv_read(unsigned int id, addr_t offs, void *buff, size_t l
 
 
 /* cache_readCb_t - wrapper for _flashdrv_read (*/
-static ssize_t _flashdrv_readCb(addr_t offs, void *buff, size_t len, cache_devCtx_t *ctx)
+static ssize_t _flashdrv_readCb(uint64_t offs, void *buff, size_t len, cache_devCtx_t *ctx)
 {
-	unsigned int regID = ctx->id;
-
-	return _flashdrv_read(regID, offs, buff, len);
+	return _flashdrv_read(ctx->id, offs, buff, len);
 }
 
 /* Block device interface */
 
 /* cache_writeCb_t */
-static int _flashdrv_writeCb(addr_t offs, void *buff, size_t len, cache_devCtx_t *ctx)
+static int _flashdrv_writeCb(uint64_t offs, const void *buff, size_t len, cache_devCtx_t *ctx)
 {
 	uint8_t *src;
 	addr_t dst;
@@ -382,7 +380,7 @@ static int _flashdrv_writeCb(addr_t offs, void *buff, size_t len, cache_devCtx_t
 
 	for (i = 0; i < pgNb; ++i) {
 		dst = offs + i * pageSz;
-		src = (const uint8_t *)buff + i * pageSz;
+		src = (uint8_t *)buff + i * pageSz;
 
 		res = _flashdrv_pageProgram(regID, dst, src, pageSz);
 		if (res < 0) {
@@ -395,25 +393,24 @@ static int _flashdrv_writeCb(addr_t offs, void *buff, size_t len, cache_devCtx_t
 
 
 static cache_devCtx_t cacheCtx = {
-	.id = -1;
-}
+	.id = -1
+};
 
 
 static cache_ops_t cacheOps = {
 	.readCb = _flashdrv_readCb,
 	.writeCb = _flashdrv_writeCb,
-	.ctx = cacheCtx
-}
+	.ctx = &cacheCtx
+};
 
 
-static ssize_t
-flashdrv_blkRead(struct _storage_t * strg, off_t start, void *data, size_t size)
+static ssize_t flashdrv_blkRead(struct _storage_t *strg, off_t start, void *data, size_t size)
 {
 	ssize_t res;
 	unsigned int regID = strg->dev->ctx->id;
 
 	mutexLock(fdrv_common.regs[regID].lock);
-	res = cache_read(flashdrv_common.regs[regID].cache, start, data, size);
+	res = cache_read(fdrv_common.regs[regID].cache, start, data, size);
 	mutexUnlock(fdrv_common.regs[regID].lock);
 
 	return res;
@@ -426,7 +423,7 @@ static ssize_t flashdrv_blkWrite(struct _storage_t *strg, off_t start, const voi
 	unsigned int regID = strg->dev->ctx->id;
 
 	mutexLock(fdrv_common.regs[regID].lock);
-	res = cache_write(fdrv_common.regs[regID].cache, start, data, size);
+	res = cache_write(fdrv_common.regs[regID].cache, start, data, size, LIBCACHE_WRITE_BACK);
 	mutexUnlock(fdrv_common.regs[regID].lock);
 
 	return res;
@@ -568,7 +565,7 @@ const static storage_mtdops_t mtdOps = {
 
 int flashdrv_done(storage_t *strg)
 {
-	int i, res;
+	int i, res = -1;
 
 	/* Only root device has allocated resources */
 	if (strg->parent == NULL) {
@@ -652,8 +649,8 @@ int flashdrv_devInit(storage_t *strg)
 	strg->dev->mtd = malloc(sizeof(storage_mtd_t));
 	if (strg->dev->mtd == NULL) {
 		resourceDestroy(reg->lock);
-		free(strg->dev);
 		free(strg->dev->ctx);
+		free(strg->dev);
 		return -ENOMEM;
 	}
 
@@ -680,21 +677,21 @@ int flashdrv_devInit(storage_t *strg)
 	strg->dev->blk = malloc(sizeof(storage_blk_t));
 	if (strg->dev->blk == NULL) {
 		resourceDestroy(reg->lock);
-		free(strg->dev);
 		free(strg->dev->ctx);
 		free(strg->dev->mtd);
+		free(strg->dev);
 		return -ENOMEM;
 	}
 	strg->dev->blk->ops = &blkOps;
 
-	cacheOps->ctx->id = id;
-	reg->cache = cache_init(strg->start + strg->size, BLK_CACHE_SECNUM * secSz, secSz, &cacheOps);
+	cacheOps.ctx->id = id;
+	reg->cache = cache_init(strg->size, BLK_CACHE_SECNUM * secSz, secSz, &cacheOps);
 	if (reg->cache == NULL) {
 		resourceDestroy(reg->lock);
-		free(strg->dev);
 		free(strg->dev->ctx);
 		free(strg->dev->mtd);
 		free(strg->dev->blk);
+		free(strg->dev);
 		return -ENOMEM;
 	}
 
