@@ -14,6 +14,7 @@
 
 #include <errno.h>
 #include <stdint.h>
+#include <string.h>
 #include <sys/threads.h>
 #include <sys/platform.h>
 
@@ -21,14 +22,21 @@
 #include "rcc.h"
 #include "exti.h"
 #include "rtc.h"
+#include "stm32l4-multi.h"
 
-
+/* clang-format off */
 enum { pwr_cr = 0, pwr_csr };
 
 
 enum { tr = 0, dr, cr, isr, prer, wutr, alrmar = wutr + 2, alrmbr, wpr, ssr, shiftr, tstr, tsdr, tsssr, calr,
 	tampcr, alrmassr, alrmbssr, or, bkp0r};
 
+#define BACKUP1_ID_REG    bkp0r
+#define BACKUP_PAYLOAD_SZ RTC_BACKUP_SZ
+#define BACKUP2_ID_REG    (BACKUP1_ID_REG + (BACKUP_PAYLOAD_SZ / sizeof(uint32_t)) + 1)
+#define ID_VALUE(id)      ((id) & 0xffff)
+#define ID_IS_VALID(id)   ((((id) >> 16) ^ ((id) & 0xffff)) == 0xffff)
+/* clang-format on */
 
 struct {
 	volatile unsigned int *base;
@@ -229,6 +237,126 @@ int rtc_setAlarm(rtctimestamp_t *timestamp)
 	mutexUnlock(rtc_common.lock);
 
 	return EOK;
+}
+
+
+static int rtc_getLastStorage(uint32_t *lastID)
+{
+	uint32_t id[2], valid = 0, num;
+	int ret;
+
+	id[0] = *(rtc_common.base + BACKUP1_ID_REG);
+	id[1] = *(rtc_common.base + BACKUP2_ID_REG);
+
+	if (ID_IS_VALID(id[0])) {
+		valid |= 1;
+	}
+
+	if (ID_IS_VALID(id[1])) {
+		valid |= 2;
+	}
+
+	switch (valid) {
+		case 0: /* No valid records */
+			ret = -1;
+			num = 0;
+			break;
+
+		case 1: /* Only record #1 is valid */
+			ret = 0;
+			num = ID_VALUE(id[0]);
+			break;
+
+		case 2: /* Only record #2 is valid */
+			ret = 1;
+			num = ID_VALUE(id[1]);
+			break;
+
+		default: /* Both records are valid */
+			if (((ID_VALUE(id[0]) + 1) & 0xffff) == ID_VALUE(id[1])) {
+				ret = 1;
+				num = ID_VALUE(id[1]);
+			}
+			else {
+				ret = 0;
+				num = ID_VALUE(id[0]);
+			}
+			break;
+	}
+
+	if (lastID != NULL) {
+		*lastID = num;
+	}
+
+	return ret;
+}
+
+
+int rtc_storeBackup(const void *buff, size_t bufflen)
+{
+	uint32_t idno;
+	int index = (rtc_getLastStorage(&idno) == 0) ? 1 : 0;
+	int idreg = (index == 0) ? BACKUP1_ID_REG : BACKUP2_ID_REG;
+	int retval = -EINVAL;
+	size_t i;
+	uint32_t tmp[BACKUP_PAYLOAD_SZ / sizeof(uint32_t)] = { 0 };
+
+	if ((buff != NULL) && (bufflen != 0) && (bufflen <= BACKUP_PAYLOAD_SZ)) {
+		mutexLock(rtc_common.lock);
+		pwr_unlock();
+		dataBarier();
+
+		/* Invalidate region */
+		*(rtc_common.base + idreg) = 0;
+
+		memcpy(tmp, buff, bufflen);
+
+		for (i = 0; i < sizeof(tmp) / sizeof(tmp[0]); ++i) {
+			*(rtc_common.base + idreg + 1 + i) = tmp[i];
+		}
+
+		/* Validate and store ID */
+		idno = (idno + 1) & 0xffff;
+		idno |= (~idno) << 16;
+		*(rtc_common.base + idreg) = idno;
+
+		dataBarier();
+		pwr_lock();
+		mutexUnlock(rtc_common.lock);
+
+		retval = bufflen;
+	}
+
+	return retval;
+}
+
+
+int rtc_recallBackup(void *buff, size_t bufflen)
+{
+	int index = rtc_getLastStorage(NULL);
+	int idreg = (index == 0) ? BACKUP1_ID_REG : BACKUP2_ID_REG;
+	int retval;
+	size_t i;
+	uint32_t tmp[BACKUP_PAYLOAD_SZ / sizeof(uint32_t)] = { 0 };
+
+	if (index < 0) {
+		retval = -ENOENT;
+	}
+	else if ((buff == NULL) || (bufflen == 0) || (bufflen > BACKUP_PAYLOAD_SZ)) {
+		retval = -EINVAL;
+	}
+	else {
+		mutexLock(rtc_common.lock);
+		for (i = 0; i < sizeof(tmp) / sizeof(tmp[0]); ++i) {
+			tmp[i] = *(rtc_common.base + idreg + 1 + i);
+		}
+		mutexUnlock(rtc_common.lock);
+
+		memcpy(buff, tmp, bufflen);
+		retval = bufflen;
+	}
+
+	return retval;
 }
 
 

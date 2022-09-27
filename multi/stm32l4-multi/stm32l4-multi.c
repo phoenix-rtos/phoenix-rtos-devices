@@ -109,6 +109,14 @@ static void handleMsg(msg_t *msg)
 			rtc_setAlarm(&imsg->rtc_timestamp);
 			break;
 
+		case rtc_getBackup:
+			err = rtc_recallBackup(msg->o.data, msg->o.size);
+			break;
+
+		case rtc_setBackup:
+			err = rtc_storeBackup(msg->i.data, msg->i.size);
+			break;
+
 		case adc_get:
 			omsg->adc_valmv = adc_conversion(imsg->adc_get.adcno, imsg->adc_get.channel);
 			break;

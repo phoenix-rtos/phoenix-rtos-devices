@@ -22,12 +22,13 @@
 
 #define FLASH_REBOOT_MAGIC 0x88bb77aaUL
 #define OTP_WRITE_MAGIC    0x5d1a8712UL
+#define RTC_BACKUP_SZ      ((128 / 2) - 4)
 
 /* clang-format off */
 enum { adc_get = 0, rtc_setcal, rtc_get, rtc_set, rtc_setalarm, i2c_get, i2c_getwreg,
 	i2c_set, i2c_setwreg, gpio_def, gpio_get, gpio_set, uart_def, uart_get, uart_set,
 	flash_get, flash_set, flash_info, spi_get, spi_set, spi_rw, spi_def, exti_def,
-	exti_map, otp_get, otp_set };
+	exti_map, otp_get, otp_set, rtc_setBackup, rtc_getBackup };
 /* clang-format on */
 
 /* RTC */
