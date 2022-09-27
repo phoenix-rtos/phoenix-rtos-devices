@@ -21,7 +21,7 @@ include _targets/Makefile.$(TARGET_FAMILY)-$(TARGET_SUBFAMILY)
 DEFAULT_INSTALL_PATH := /sbin
 
 # read out all components
-ALL_MAKES := $(shell find . -mindepth 2 -name Makefile)
+ALL_MAKES := $(shell find . -mindepth 2 -name Makefile -not -path '*/.*')
 include $(ALL_MAKES)
 
 # create generic targets
