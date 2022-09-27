@@ -363,7 +363,7 @@ static ssize_t _flashdrv_readCb(uint64_t offs, void *buff, size_t len, cache_dev
 /* Block device interface */
 
 /* cache_writeCb_t */
-static int _flashdrv_writeCb(uint64_t offs, const void *buff, size_t len, cache_devCtx_t *ctx)
+static ssize_t _flashdrv_writeCb(uint64_t offs, const void *buff, size_t len, cache_devCtx_t *ctx)
 {
 	uint8_t *src;
 	addr_t dst;
@@ -372,6 +372,7 @@ static int _flashdrv_writeCb(uint64_t offs, const void *buff, size_t len, cache_
 
 	size_t pageSz, sectSz;
 	const flash_cfi_t *cfi = &fdrv_common.info.cfi;
+
 
 	sectSz = CFI_SIZE_SECTION(cfi->regs[regID].size);
 	pageSz = CFI_SIZE_PAGE(cfi->pageSize);
@@ -389,9 +390,11 @@ static int _flashdrv_writeCb(uint64_t offs, const void *buff, size_t len, cache_
 		if (res < 0) {
 			return res;
 		}
+
+		res = sectSz;
 	}
 
-	return EOK;
+	return res;
 }
 
 
