@@ -30,6 +30,12 @@ int rtc_setTime(rtctimestamp_t *timestamp);
 int rtc_setAlarm(rtctimestamp_t *timestamp);
 
 
+int rtc_storeBackup(const void *buff, size_t bufflen);
+
+
+int rtc_recallBackup(void *buff, size_t bufflen);
+
+
 int rtc_init(void);
 
 #endif
