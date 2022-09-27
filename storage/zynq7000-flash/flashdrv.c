@@ -464,6 +464,7 @@ static int flashdrv_mtdErase(struct _storage_t *strg, off_t offs, size_t size)
 	int res;
 	size_t len = 0;
 	size_t secSz = CFI_SIZE_SECTION(fdrv_common.info.cfi.regs[strg->dev->ctx->id].size);
+	off_t beg, end;
 
 	if ((offs == 0) && (size == CFI_SIZE_FLASH(fdrv_common.info.cfi.chipSize))) {
 		mutexLock(fdrv_common.regs[strg->dev->ctx->id].lock);
@@ -482,7 +483,37 @@ static int flashdrv_mtdErase(struct _storage_t *strg, off_t offs, size_t size)
 
 		len += secSz;
 	}
+
+	beg = offs - strg->start;
+	end = beg + size;
+
+	/* Invalidate block device cache for coherence */
+	res = cache_invalidate(fdrv_common.regs[strg->dev->ctx->id].cache, beg, end);
+	if (res < 0) {
+		mutexUnlock(fdrv_common.regs[strg->dev->ctx->id].lock);
+		return res;
+	}
+
 	mutexUnlock(fdrv_common.regs[strg->dev->ctx->id].lock);
+
+	return EOK;
+}
+
+
+/* Flushes and invalidates block device cache for coherence during MTD operations */
+static int _flashdrv_mtdFlushInv(struct _storage_t *strg, off_t beg, off_t end)
+{
+	int res;
+
+	res = cache_flush(fdrv_common.regs[strg->dev->ctx->id].cache, beg, end);
+	if (res < 0) {
+		return res;
+	}
+
+	res = cache_invalidate(fdrv_common.regs[strg->dev->ctx->id].cache, beg, end);
+	if (res < 0) {
+		return res;
+	}
 
 	return EOK;
 }
@@ -491,8 +522,19 @@ static int flashdrv_mtdErase(struct _storage_t *strg, off_t offs, size_t size)
 static int flashdrv_mtdRead(struct _storage_t *strg, off_t offs, void *data, size_t len, size_t *retlen)
 {
 	int res;
+	off_t beg, end;
+
+	beg = offs - strg->start;
+	end = beg + len;
 
 	mutexLock(fdrv_common.regs[strg->dev->ctx->id].lock);
+
+	res = _flashdrv_mtdFlushInv(strg, beg, end);
+	if (res < 0) {
+		mutexUnlock(fdrv_common.regs[strg->dev->ctx->id].lock);
+		return res;
+	}
+
 	res = _flashdrv_read(strg->dev->ctx->id, offs, data, len);
 	mutexUnlock(fdrv_common.regs[strg->dev->ctx->id].lock);
 
@@ -508,8 +550,19 @@ static int flashdrv_mtdWrite(struct _storage_t *strg, off_t offs, const void *da
 {
 	ssize_t res = 0;
 	size_t tempSz = 0, chunkSz = 0;
+	off_t beg, end;
+
+	beg = offs - strg->start;
+	end = beg + len;
 
 	mutexLock(fdrv_common.regs[strg->dev->ctx->id].lock);
+
+	res = _flashdrv_mtdFlushInv(strg, beg, end);
+	if (res < 0) {
+		mutexUnlock(fdrv_common.regs[strg->dev->ctx->id].lock);
+		return res;
+	}
+
 	chunkSz = offs % strg->dev->mtd->writeBuffsz;
 	if (chunkSz != 0) {
 		chunkSz = len < (strg->dev->mtd->writeBuffsz - chunkSz) ? len : (strg->dev->mtd->writeBuffsz - chunkSz);
@@ -693,7 +746,7 @@ int flashdrv_devInit(storage_t *strg)
 
 	cacheOps.ctx->start = strg->start;
 	cacheOps.ctx->id = id;
-	/* cache mapps from 0 strg->size */
+	/* cache maps from 0 strg->size */
 	reg->cache = cache_init(strg->size, BLK_CACHE_SECNUM * secSz, secSz, &cacheOps);
 	if (reg->cache == NULL) {
 		resourceDestroy(reg->lock);
