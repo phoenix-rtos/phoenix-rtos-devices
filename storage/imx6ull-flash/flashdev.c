@@ -30,8 +30,20 @@
 #define ECCN_BITFLIP_STRENGHT 14  /* ECC strength for data chunk */
 #define ECCN_DATA_SIZE        512 /* Data chunk size */
 
+#define CHUNK_IS_META(chunkidx) ((chunkidx) == 0)
+
 
 /* Auxiliary functions */
+static inline int chunk_is_uncorrectable(unsigned int chunkidx, unsigned int flips)
+{
+	if (CHUNK_IS_META(chunkidx)) {
+		return flips > ECC0_BITFLIP_STRENGHT;
+	}
+	else {
+		return flips > ECCN_BITFLIP_STRENGHT;
+	}
+}
+
 
 static unsigned int _flashmtd_checkErased(const void *buff, size_t boffs, size_t blen)
 {
@@ -99,113 +111,133 @@ static unsigned int _flashmtd_checkErased(const void *buff, size_t boffs, size_t
 }
 
 
-/* Returns maximum number of bitlips or number smaller than 0 in case of error */
-static int _flashmtd_getMaxflips(struct _storage_t *strg, uint32_t paddr, int nchunks)
+static void _flashmtd_chunkCorrect(struct _storage_t *strg, unsigned int chunkidx, unsigned int nflips)
 {
-	/* Metadata and data (with their ECC) chunk sizes in bits */
-	const size_t mlen = strg->dev->mtd->oobSize * CHAR_BIT + ECC_GF * ECC0_BITFLIP_STRENGHT;
-	const size_t dlen = ECCN_DATA_SIZE * CHAR_BIT + ECC_GF * ECCN_BITFLIP_STRENGHT;
 	flashdrv_meta_t *meta = strg->dev->ctx->metabuf;
 	unsigned char *data = strg->dev->ctx->databuf;
-	unsigned int i, flips, maxflips = 0;
-	size_t boffs, blen, rawsz;
+
+	if (CHUNK_IS_META(chunkidx)) {
+		memset(meta, 0xff, strg->dev->mtd->oobSize);
+	}
+	else {
+		memset(data + (chunkidx - 1) * ECCN_DATA_SIZE, 0xff, ECCN_DATA_SIZE);
+	}
+}
+
+
+static int _flashmtd_chunkFlips(struct _storage_t *strg, flashdrv_meta_t *meta, uint32_t pageaddr, unsigned int chunkidx)
+{
+	storage_mtd_t *mtd = strg->dev->mtd;
+	struct _storage_devCtx_t *ctx = strg->dev->ctx;
+	const size_t rawsz = (mtd->writesz + mtd->metaSize + _PAGE_SIZE - 1) & ~(_PAGE_SIZE - 1);
+	const size_t metalen = strg->dev->mtd->oobSize * CHAR_BIT + ECC_GF * ECC0_BITFLIP_STRENGHT;
+	const size_t datalen = ECCN_DATA_SIZE * CHAR_BIT + ECC_GF * ECCN_BITFLIP_STRENGHT;
 	void *raw = NULL;
-	int err;
+	size_t boffs, blen;
+	int ret;
 
-	for (i = 0; i < nchunks; i++) {
-		switch (meta->errors[i]) {
-			case flash_no_errors:
-			case flash_erased:
+	switch (meta->errors[chunkidx]) {
+		case flash_no_errors:
+		case flash_erased:
+			ret = 0;
+			break;
+
+		case flash_uncorrectable:
+			/* BCH reports chunk as uncorrectable in case of an erased page with bitflips within that chunk area */
+			/* Check if that's the case by counting the bitflips with an assumption that the page is fully erased */
+			/* Read raw page in order to check full chunk - both data and its ECC area */
+			raw = mmap(NULL, rawsz, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
+			if (raw == MAP_FAILED) {
+				ret = -ENOMEM;
+				raw = NULL;
 				break;
+			}
 
-			case flash_uncorrectable:
-				/* BCH reports chunk as uncorrectable in case of an erased page with bitflips within that chunk area */
-				/* Check if that's the case by counting the bitflips with an assumption that the page is fully erased */
-
-				/* Read raw page in order to check full chunk - both data and its ECC area */
-				if (raw == NULL) {
-					/* Map raw page buffer */
-					rawsz = (strg->dev->mtd->writesz + strg->dev->mtd->metaSize + _PAGE_SIZE - 1) & ~(_PAGE_SIZE - 1);
-					raw = mmap(NULL, rawsz, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
-					if (raw == MAP_FAILED) {
-						return -ENOMEM;
-					}
-
-					/* Read raw page */
-					err = flashdrv_readraw(strg->dev->ctx->dma, paddr, raw, strg->dev->mtd->writesz + strg->dev->mtd->metaSize);
-					if (err < 0) {
-						munmap(raw, rawsz);
-						return err;
-					}
-				}
-
-				/* Metadata chunk */
-				if (i == 0) {
-					boffs = 0;
-					blen = mlen;
-				}
-				/* Data chunk */
-				else {
-					boffs = mlen + (i - 1) * dlen;
-					blen = dlen;
-				}
-
-				flips = _flashmtd_checkErased(raw, boffs, blen);
-
-				/* Nothing to do if there're no bitflips */
-				if (flips == 0) {
-					break;
-				}
-
-				if (i == 0) {
-					/* Correct metadata chunk */
-					memset(meta, 0xff, strg->dev->mtd->oobSize);
-				}
-				else {
-					/* Correct data chunk */
-					memset(data + (i - 1) * ECCN_DATA_SIZE, 0xff, ECCN_DATA_SIZE);
-				}
-
-				/* Chunk corrected, update max number of bitflips */
-				maxflips = max(flips, maxflips);
+			/* Read raw page */
+			ret = flashdrv_readraw(ctx->dma, pageaddr, raw, mtd->writesz + mtd->metaSize);
+			if (ret < 0) {
 				break;
+			}
 
-			default:
-				/* Chunk corrected by BCH, update max number of bitflips */
-				maxflips = max(meta->errors[i], maxflips);
-				break;
-		}
+			if (CHUNK_IS_META(chunkidx)) {
+				boffs = 0;
+				blen = metalen;
+			}
+			else {
+				boffs = metalen + (chunkidx - 1) * datalen;
+				blen = datalen;
+			}
+
+			ret = _flashmtd_checkErased(raw, boffs, blen);
+
+			/* Let the user see this chunk as correctly erased */
+			if (!chunk_is_uncorrectable(chunkidx, ret)) {
+				_flashmtd_chunkCorrect(strg, chunkidx, ret);
+			}
+			break;
+
+		default:
+			/* On any other case metadata error field contains number of corrected bits */
+			ret = meta->errors[chunkidx];
+			break;
 	}
 
 	if (raw != NULL) {
 		munmap(raw, rawsz);
 	}
 
+	return ret;
+}
+
+
+/* Returns maximum number of bitlips or number smaller than 0 in case of error */
+static int _flashmtd_blockMaxflips(struct _storage_t *strg, uint32_t pageaddr)
+{
+	int ret, i;
+	unsigned int maxflips = 0;
+	struct _storage_devCtx_t *ctx = strg->dev->ctx;
+	flashdrv_meta_t *meta = ctx->metabuf;
+	const int nchunks = sizeof(meta->errors) / sizeof(meta->errors[0]);
+
+	for (i = 0; i < nchunks; i++) {
+		ret = _flashmtd_chunkFlips(strg, meta, pageaddr, i);
+		if (ret < 0) {
+			return ret;
+		}
+		maxflips = max(ret, maxflips);
+	}
+
 	return maxflips;
 }
 
 
-static int _flashmtd_checkECC(struct _storage_t *strg, uint32_t paddr, int nchunks)
+static int _flashmtd_checkECC(struct _storage_t *strg, uint32_t pageaddr, int nchunks)
 {
-	int err;
+	int ret, chunkidx;
+	unsigned int maxflips = 0;
+	struct _storage_devCtx_t *ctx = strg->dev->ctx;
+	flashdrv_meta_t *meta = ctx->metabuf;
 
-	err = _flashmtd_getMaxflips(strg, paddr, nchunks);
-	if (err >= ECC0_BITFLIP_STRENGHT) {
-		/* Uncorrectable number of bitflips*/
-		return -EBADMSG;
+	for (chunkidx = 0; chunkidx < nchunks; chunkidx++) {
+		ret = _flashmtd_chunkFlips(strg, meta, pageaddr, chunkidx);
+		if (ret < 0) {
+			return ret;
+		}
+
+		if (chunk_is_uncorrectable(chunkidx, ret)) {
+			return -EBADMSG;
+		}
+
+		maxflips = max(ret, maxflips);
 	}
-	else if (err >= ECC_BITFLIP_THRESHOLD) {
-		/* Correctable number of bitflips, page degradated, but not a critical error */
+
+	if (maxflips >= ECC_BITFLIP_THRESHOLD) {
+		/* Bitflips correctable, page degradated, but not a critical error */
 		return -EUCLEAN;
 	}
-	else if (err < 0) {
-		/* Internal error */
-		return err;
-	}
-	else {
-		/* Correctable number of bitflips, not worth raising an error */
-		return 0;
-	}
+
+	/* Bitflips correctable, not worth raising an error */
+	return 0;
 }
 
 
@@ -261,6 +293,7 @@ static int flashmtd_read(struct _storage_t *strg, off_t offs, void *data, size_t
 	int err, ret = EOK;
 	size_t tempsz = 0, chunksz;
 	flashdrv_meta_t *meta = strg->dev->ctx->metabuf;
+	const int nchunks = sizeof(meta->errors) / sizeof(meta->errors[0]);
 
 	paddr = offs / strg->dev->mtd->writesz;
 	offs %= strg->dev->mtd->writesz;
@@ -274,7 +307,7 @@ static int flashmtd_read(struct _storage_t *strg, off_t offs, void *data, size_t
 			break;
 		}
 
-		err = _flashmtd_checkECC(strg, paddr, sizeof(meta->errors) / sizeof(meta->errors[0]));
+		err = _flashmtd_checkECC(strg, paddr, nchunks);
 		if (err < 0) {
 			ret = err;
 			/* -EUCLEAN isn't a fatal error (indicates dangerous page degradation but all bitflips were successfully corrected) */
@@ -441,7 +474,6 @@ static int flashmtd_blockMaxBitflips(struct _storage_t *strg, off_t offs)
 	storage_mtd_t *mtd = strg->dev->mtd;
 	struct _storage_devCtx_t *ctx = strg->dev->ctx;
 	flashdrv_meta_t *meta = (flashdrv_meta_t *)ctx->metabuf;
-	const int nchunks = sizeof(meta->errors) / sizeof(meta->errors[0]);
 	size_t tempsz = 0;
 	uint32_t paddr;
 	int err;
@@ -462,7 +494,7 @@ static int flashmtd_blockMaxBitflips(struct _storage_t *strg, off_t offs)
 			break;
 		}
 
-		err = _flashmtd_getMaxflips(strg, paddr, nchunks);
+		err = _flashmtd_blockMaxflips(strg, paddr);
 		if (err < 0) {
 			printf("flashmtd_checkECC: returned error: %d\n", err);
 			break;
