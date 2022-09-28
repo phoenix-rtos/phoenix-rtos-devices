@@ -33,7 +33,7 @@
 
 /* Cached device context definition */
 struct cache_devCtx_s {
-	off_t start; 	 /* storage start */
+	off_t start;     /* storage start */
 	unsigned int id; /* flash device memory id */
 };
 
@@ -398,16 +398,10 @@ static ssize_t _flashdrv_writeCb(uint64_t offs, const void *buff, size_t len, ca
 }
 
 
-static cache_devCtx_t cacheCtx = {
-	.start = -1,
-	.id = -1
-};
-
-
 static cache_ops_t cacheOps = {
 	.readCb = _flashdrv_readCb,
 	.writeCb = _flashdrv_writeCb,
-	.ctx = &cacheCtx
+	.ctx = NULL
 };
 
 
@@ -619,6 +613,7 @@ int flashdrv_done(storage_t *strg)
 		fdrv_common.regs[strg->dev->ctx->id].cache = NULL;
 
 		resourceDestroy(fdrv_common.regs[strg->dev->ctx->id].lock);
+		free(strg->dev->ctx->cacheCtx);
 		free(strg->dev->mtd);
 		free(strg->dev->blk);
 		free(strg->dev->ctx);
@@ -727,12 +722,25 @@ int flashdrv_devInit(storage_t *strg)
 	}
 	strg->dev->blk->ops = &blkOps;
 
-	cacheOps.ctx->start = strg->start;
-	cacheOps.ctx->id = id;
+	strg->dev->ctx->cacheCtx = malloc(sizeof(cache_devCtx_t));
+	if (strg->dev->ctx->cacheCtx == NULL) {
+		free(strg->dev->ctx);
+		free(strg->dev->mtd);
+		free(strg->dev->blk);
+		free(strg->dev);
+		return -ENOMEM;
+	}
+
+	strg->dev->ctx->cacheCtx->start = strg->start;
+	strg->dev->ctx->cacheCtx->id = id;
+
+	cacheOps.ctx = strg->dev->ctx->cacheCtx;
+
 	/* cache maps from 0 strg->size */
 	reg->cache = cache_init(strg->size, BLK_CACHE_SECNUM * secSz, secSz, &cacheOps);
 	if (reg->cache == NULL) {
 		resourceDestroy(reg->lock);
+		free(strg->dev->ctx->cacheCtx);
 		free(strg->dev->ctx);
 		free(strg->dev->mtd);
 		free(strg->dev->blk);

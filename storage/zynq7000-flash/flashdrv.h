@@ -17,11 +17,13 @@
 #include <stdint.h>
 #include <storage/storage.h>
 #include <mtd/mtd.h>
+#include <cache.h>
 
 
 /* Storage device context definition */
 typedef struct _storage_devCtx_t {
 	unsigned int id; /* flash device memory id */
+	cache_devCtx_t *cacheCtx;
 } storage_devCtx_t;
 
 
@@ -30,9 +32,9 @@ extern int flashdrv_done(storage_t *strg);
 
 
 /* Initialize only a one physicall flash memory via qspi interface, returns:
-    - >0 - number of remaining logic devices for initialization (in case where there are multiple regions)
-    - <0 - on error
-    - 0  - all logic devices are initialized
+	- >0 - number of remaining logic devices for initialization (in case where there are multiple regions)
+	- <0 - on error
+	- 0  - all logic devices are initialized
 */
 extern int flashdrv_init(storage_t *strg);
 
