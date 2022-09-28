@@ -33,6 +33,8 @@
 typedef struct {
 	uint8_t hwctx[64];
 
+	unsigned int clk;
+
 	handle_t mutex;
 	handle_t intcond;
 	handle_t inth;
@@ -75,7 +77,7 @@ static void set_baudrate(void *_uart, speed_t baud)
 	}
 
 	/* Baud divisor */
-	baud_rate = 115200 / baud_rate;
+	baud_rate = uart->clk / (16 * baud_rate);
 
 	reg = uarthw_read(uart->hwctx, REG_LCR);
 
@@ -245,12 +247,12 @@ static int _uart_init(uart_t *uart, unsigned int uartn, unsigned int speed)
 	unsigned int divisor;
 	libtty_callbacks_t callbacks;
 
-	int err = uarthw_init(uartn, uart->hwctx, sizeof(uart->hwctx), &divisor);
+	int err = uarthw_init(uartn, uart->hwctx, sizeof(uart->hwctx), &uart->clk);
 	if (err < 0) {
 		return err;
 	}
 
-	divisor /= 16 * speed;
+	divisor = uart->clk / (16 * speed);
 
 	callbacks.arg = uart;
 	callbacks.set_baudrate = set_baudrate;
