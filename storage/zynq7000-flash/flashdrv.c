@@ -500,25 +500,6 @@ static int flashdrv_mtdErase(struct _storage_t *strg, off_t offs, size_t size)
 }
 
 
-/* Flushes and invalidates block device cache for coherence during MTD operations */
-static int _flashdrv_mtdFlushInv(struct _storage_t *strg, off_t beg, off_t end)
-{
-	int res;
-
-	res = cache_flush(fdrv_common.regs[strg->dev->ctx->id].cache, beg, end);
-	if (res < 0) {
-		return res;
-	}
-
-	res = cache_invalidate(fdrv_common.regs[strg->dev->ctx->id].cache, beg, end);
-	if (res < 0) {
-		return res;
-	}
-
-	return EOK;
-}
-
-
 static int flashdrv_mtdRead(struct _storage_t *strg, off_t offs, void *data, size_t len, size_t *retlen)
 {
 	int res;
@@ -529,7 +510,8 @@ static int flashdrv_mtdRead(struct _storage_t *strg, off_t offs, void *data, siz
 
 	mutexLock(fdrv_common.regs[strg->dev->ctx->id].lock);
 
-	res = _flashdrv_mtdFlushInv(strg, beg, end);
+	/* Flush block device cache for coherence */
+	res = cache_flush(fdrv_common.regs[strg->dev->ctx->id].cache, beg, end);
 	if (res < 0) {
 		mutexUnlock(fdrv_common.regs[strg->dev->ctx->id].lock);
 		return res;
@@ -557,7 +539,8 @@ static int flashdrv_mtdWrite(struct _storage_t *strg, off_t offs, const void *da
 
 	mutexLock(fdrv_common.regs[strg->dev->ctx->id].lock);
 
-	res = _flashdrv_mtdFlushInv(strg, beg, end);
+	/* Clean block device cache for coherence */
+	res = cache_clean(fdrv_common.regs[strg->dev->ctx->id].cache, beg, end);
 	if (res < 0) {
 		mutexUnlock(fdrv_common.regs[strg->dev->ctx->id].lock);
 		return res;
