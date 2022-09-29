@@ -4,7 +4,7 @@
  * Zynq-7000 nor flash driver
  *
  * Copyright 2021, 2022 Phoenix Systems
- * Author: Hubert Buczynski
+ * Author: Hubert Buczynski, Malgorzata Wrobel
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -28,7 +28,7 @@
 
 #define MTD_DEFAULT_ERASESZ 0x10000
 
-#define BLK_CACHE_SECNUM 4 /* Maximum number of cached sectors in a region */
+#define BLK_CACHE_SECNUM 16 /* Maximum number of cached sectors in a region */
 
 
 /* Cached device context definition */
@@ -47,6 +47,7 @@ typedef struct {
 	off_t start;
 
 	cachectx_t *cache;
+	cache_devCtx_t cacheCtx;
 } flash_reg_t;
 
 
@@ -390,19 +391,10 @@ static ssize_t _flashdrv_writeCb(uint64_t offs, const void *buff, size_t len, ca
 		if (res < 0) {
 			return res;
 		}
-
-		res = sectSz;
 	}
 
-	return res;
+	return sectSz;
 }
-
-
-static cache_ops_t cacheOps = {
-	.readCb = _flashdrv_readCb,
-	.writeCb = _flashdrv_writeCb,
-	.ctx = NULL
-};
 
 
 static ssize_t flashdrv_blkRead(struct _storage_t *strg, off_t start, void *data, size_t size)
@@ -483,14 +475,10 @@ static int flashdrv_mtdErase(struct _storage_t *strg, off_t offs, size_t size)
 
 	/* Invalidate block device cache for coherence */
 	res = cache_invalidate(fdrv_common.regs[strg->dev->ctx->id].cache, beg, end);
-	if (res < 0) {
-		mutexUnlock(fdrv_common.regs[strg->dev->ctx->id].lock);
-		return res;
-	}
 
 	mutexUnlock(fdrv_common.regs[strg->dev->ctx->id].lock);
 
-	return EOK;
+	return res < 0 ? res : EOK;
 }
 
 
@@ -613,7 +601,6 @@ int flashdrv_done(storage_t *strg)
 		fdrv_common.regs[strg->dev->ctx->id].cache = NULL;
 
 		resourceDestroy(fdrv_common.regs[strg->dev->ctx->id].lock);
-		free(strg->dev->ctx->cacheCtx);
 		free(strg->dev->mtd);
 		free(strg->dev->blk);
 		free(strg->dev->ctx);
@@ -650,6 +637,7 @@ int flashdrv_devInit(storage_t *strg)
 	int res;
 	flash_reg_t *reg;
 	size_t secSz;
+	cache_ops_t cacheOps;
 
 	int id = fdrv_common.initRegs;
 	flash_info_t *info = &fdrv_common.info;
@@ -722,26 +710,16 @@ int flashdrv_devInit(storage_t *strg)
 	}
 	strg->dev->blk->ops = &blkOps;
 
-	strg->dev->ctx->cacheCtx = malloc(sizeof(cache_devCtx_t));
-	if (strg->dev->ctx->cacheCtx == NULL) {
-		free(strg->dev->ctx);
-		free(strg->dev->mtd);
-		free(strg->dev->blk);
-		free(strg->dev);
-		return -ENOMEM;
-	}
-
-	strg->dev->ctx->cacheCtx->start = strg->start;
-	strg->dev->ctx->cacheCtx->id = id;
-
-	cacheOps.ctx = strg->dev->ctx->cacheCtx;
+	cacheOps.readCb = _flashdrv_readCb;
+	cacheOps.writeCb = _flashdrv_writeCb;
+	reg->cacheCtx.start = strg->start;
+	reg->cacheCtx.id = id;
+	cacheOps.ctx = &reg->cacheCtx;
 
 	/* cache maps from 0 strg->size */
-	reg->cache = cache_init(strg->size, BLK_CACHE_SECNUM * secSz, secSz, &cacheOps);
+	reg->cache = cache_init(strg->size, secSz, BLK_CACHE_SECNUM, &cacheOps);
 	if (reg->cache == NULL) {
 		resourceDestroy(reg->lock);
-		free(strg->dev->ctx->cacheCtx);
-		free(strg->dev->ctx);
 		free(strg->dev->mtd);
 		free(strg->dev->blk);
 		free(strg->dev);

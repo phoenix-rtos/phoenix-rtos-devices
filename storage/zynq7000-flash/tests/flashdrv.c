@@ -4,7 +4,7 @@
  * Nor Flash driver tests for zynq-7000
  *
  * Copyright 2022 Phoenix Systems
- * Author: Hubert Buczynski
+ * Author: Hubert Buczynski, Malgorzata Wrobel
  *
  * %LICENSE%
  */

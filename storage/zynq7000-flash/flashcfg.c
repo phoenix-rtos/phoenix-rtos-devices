@@ -4,7 +4,7 @@
  * Common Flash Interface for flash drive
  *
  * Copyright 2021-2022 Phoenix Systems
- * Author: Hubert Buczynski
+ * Author: Hubert Buczynski, Malgorzata Wrobel
  *
  * This file is part of Phoenix-RTOS.
  *

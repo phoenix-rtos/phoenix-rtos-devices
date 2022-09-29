@@ -4,7 +4,7 @@
 # nor flash driver
 #
 # Copyright 2021 Phoenix Systems
-# Author: Hubert Buczynski
+# Author: Hubert Buczynski, Malgorzata Wrobel
 #
 
 NAME := libflashdrv-zynq
