@@ -6,5 +6,5 @@
 
 NAME := libtty
 LOCAL_SRCS := libtty.c libtty_disc.c
-LOCAL_HEADERS := libtty.h libtty-lf-fifo.h
+LOCAL_HEADERS := libtty.h libtty-lf-fifo.h ttydefaults.h
 include $(static-lib.mk)

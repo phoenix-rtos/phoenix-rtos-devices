@@ -259,7 +259,7 @@ static int _uart_init(uart_t *uart, unsigned int uartn, unsigned int speed)
 	callbacks.set_cflag = set_cflag;
 	callbacks.signal_txready = signal_txready;
 
-	err = libtty_init(&uart->tty, &callbacks, _PAGE_SIZE);
+	err = libtty_init(&uart->tty, &callbacks, _PAGE_SIZE, libtty_int_to_baudrate(speed));
 	if (err < 0) {
 		return err;
 	}

@@ -394,7 +394,7 @@ static int uart_init(unsigned int n, speed_t baud, int raw)
 	callbacks.set_baudrate = uart_setBaudrate;
 	callbacks.signal_txready = uart_signalTXReady;
 
-	if (libtty_init(&uart->tty, &callbacks, _PAGE_SIZE) < 0) {
+	if (libtty_init(&uart->tty, &callbacks, _PAGE_SIZE, baud) < 0) {
 		munmap((void *)uart->base, _PAGE_SIZE);
 		return -ENOENT;
 	}

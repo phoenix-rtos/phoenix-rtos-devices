@@ -172,7 +172,7 @@ static int _spiketty_init(spiketty_t *spiketty, unsigned int port, unsigned int 
 	callbacks.set_cflag = set_cflag;
 	callbacks.signal_txready = signal_txready;
 
-	if ((err = libtty_init(&spiketty->tty, &callbacks, _PAGE_SIZE)) < 0)
+	if ((err = libtty_init(&spiketty->tty, &callbacks, _PAGE_SIZE, TTYDEF_SPEED)) < 0)
 		return err;
 
 	spiketty->active = 1;

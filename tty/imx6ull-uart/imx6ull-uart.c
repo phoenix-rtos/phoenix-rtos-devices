@@ -577,7 +577,7 @@ int main(int argc, char **argv)
 		.signal_txready = &signal_txready,
 	};
 
-	if (libtty_init(&uart.tty_common, &callbacks, BUFSIZE) < 0)
+	if (libtty_init(&uart.tty_common, &callbacks, BUFSIZE, baud) < 0)
 		return -1;
 
 	if (argc == 1) {
