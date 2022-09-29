@@ -9,6 +9,6 @@
 NAME := test_flashdrv
 LOCAL_SRCS := flashdrv.c
 DEP_LIBS := libflashdrv-zynq
-LIBS := unity libstorage
+LIBS := unity libstorage libcache
 
 include $(binary.mk)

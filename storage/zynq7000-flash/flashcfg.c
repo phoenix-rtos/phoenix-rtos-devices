@@ -4,7 +4,7 @@
  * Common Flash Interface for flash drive
  *
  * Copyright 2021-2022 Phoenix Systems
- * Author: Hubert Buczynski
+ * Author: Hubert Buczynski, Malgorzata Wrobel
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -81,7 +81,7 @@ static void flashcfg_spansion(flash_info_t *info)
 	memcpy(info->cmds, defCmds, sizeof(defCmds));
 
 	/* FIXME: s25fl256s1 should be able to operate in quad and dual mode for 4byte transactions.
-	          In the current implementation errors occur for the dual and the quad. */
+	 * In the current implementation errors occur for the dual and the quad. */
 	info->readCmd = flash_cmd_4fast_read;
 	info->ppCmd = flash_cmd_4pp;
 }

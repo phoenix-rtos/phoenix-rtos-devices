@@ -4,7 +4,7 @@
  * Nor Flash driver tests for zynq-7000
  *
  * Copyright 2022 Phoenix Systems
- * Author: Hubert Buczynski
+ * Author: Hubert Buczynski, Malgorzata Wrobel
  *
  * %LICENSE%
  */
@@ -177,8 +177,21 @@ TEST(test_flashblk, write_flashNonSync)
 
 		/* Data size is not equal sector size, without sync data should not be flashed */
 		TEST_ASSERT_EQUAL(sz, strg->dev->blk->ops->write(strg, offs, common.txBuff, sz));
+
+		/* Read data stored in cache */
 		TEST_ASSERT_EQUAL(sz, strg->dev->blk->ops->read(strg, offs, common.rxBuff, sz));
-		TEST_ASSERT_EQUAL(-EINVAL, memcmp(common.rxBuff, common.txBuff, sz) != 0 ? -EINVAL : 0);
+
+		/* Verify */
+		TEST_ASSERT_EQUAL(0, memcmp(common.rxBuff, common.txBuff, sz) != 0 ? -EINVAL : 0);
+
+		/* Synchronize */
+		TEST_ASSERT_EQUAL(EOK, strg->dev->blk->ops->sync(strg));
+
+		/* Read data from flash memory via cache */
+		TEST_ASSERT_EQUAL(sz, strg->dev->blk->ops->read(strg, offs, common.rxBuff, sz));
+
+		/* Verify */
+		TEST_ASSERT_EQUAL(0, memcmp(common.rxBuff, common.txBuff, sz) != 0 ? -EINVAL : 0);
 	}
 }
 
