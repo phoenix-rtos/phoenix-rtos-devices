@@ -50,7 +50,7 @@ static int lpspi_config(oid_t *device, int spi)
 
 int main(int argc, char **argv)
 {
-	int i, devnum, devcnt;
+	int i, devnum, devcnt, isclkout;
 	const char *order;
 	oid_t ade7913_spi;
 	ade7913_burst_reg_t sample;
@@ -93,12 +93,13 @@ int main(int argc, char **argv)
 	/* Start init from device with xtal */
 	for (i = 0; i < devcnt; ++i) {
 		devnum = (int)(order[i] - '0');
+		/* the last ADC is DREADY and the other CLOCK clock output (daisy chain) */
+		isclkout = (i != devcnt - 1);
 
 		usleep(500 * 1000);
 		printf("Configuring ADE7913 device no. %d\n", devnum);
 
-		while (ade7913_init(&ade7913_spi, devnum,
-				   devnum == order[devcnt - 1] - '0' ? 0 : 1) < 0) {
+		while (ade7913_init(&ade7913_spi, devnum, isclkout) < 0) {
 			printf("Failed to initialize ADE7913 no. %d\n", devnum);
 			usleep(500 * 1000);
 		}
