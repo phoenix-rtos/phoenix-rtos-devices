@@ -397,6 +397,7 @@ int tty_init(void)
 #if TTY_CNT != 0
 	unsigned int uart, i;
 	char fname[] = "uartx";
+	speed_t baudrate = B115200;
 	oid_t oid;
 	libtty_callbacks_t callbacks;
 	tty_ctx_t *ctx;
@@ -428,7 +429,7 @@ int tty_init(void)
 		callbacks.set_cflag = tty_setCflag;
 		callbacks.signal_txready = tty_signalTxReady;
 
-		if (libtty_init(&ctx->tty_common, &callbacks, 512) < 0)
+		if (libtty_init(&ctx->tty_common, &callbacks, 512, baudrate) < 0)
 			return -1;
 
 		mutexCreate(&ctx->irqlock);
@@ -443,7 +444,7 @@ int tty_init(void)
 
 		/* Set up UART to 9600,8,n,1 16-bit oversampling */
 		_tty_configure(ctx, 8, tty_parnone, 1);
-		tty_setBaudrate(ctx, B115200);
+		tty_setBaudrate(ctx, baudrate);
 
 		interrupt(info[uart - usart1].irq, tty_irqHandler, (void *)ctx, ctx->cond, NULL);
 

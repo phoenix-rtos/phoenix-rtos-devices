@@ -90,7 +90,7 @@ static void termios_optimize(libtty_common_t* tty)
 	}
 }
 
-static void termios_init(struct termios* term)
+static void termios_init(struct termios *term, speed_t speed)
 {
 	memset(term, 0, sizeof(*term));
 
@@ -99,8 +99,8 @@ static void termios_init(struct termios* term)
 	term->c_lflag = TTYDEF_LFLAG & TTYSUP_LFLAG;
 	term->c_cflag = TTYDEF_CFLAG;
 
-	term->c_ispeed = TTYDEF_SPEED;
-	term->c_ospeed = TTYDEF_SPEED;
+	term->c_ispeed = speed;
+	term->c_ospeed = speed;
 
 	memcpy(term->c_cc, ttydefchars, sizeof(ttydefchars));
 }
@@ -202,7 +202,7 @@ void libtty_wake_writer(libtty_common_t *tty)
 }
 
 
-int libtty_init(libtty_common_t* tty, libtty_callbacks_t* callbacks, unsigned int bufsize)
+int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned int bufsize, speed_t speed)
 {
 	memset(tty, 0, sizeof(*tty));
 	tty->cb = *callbacks;
@@ -230,7 +230,7 @@ int libtty_init(libtty_common_t* tty, libtty_callbacks_t* callbacks, unsigned in
 	fifo_init(tty->tx_fifo, bufsize);
 	fifo_init(tty->rx_fifo, bufsize);
 
-	termios_init(&tty->term);
+	termios_init(&tty->term, speed);
 	termios_optimize(tty);
 
 	tty->ws.ws_row = 25;

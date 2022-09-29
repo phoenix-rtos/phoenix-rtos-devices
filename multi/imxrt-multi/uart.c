@@ -719,7 +719,7 @@ int uart_init(void)
 		callbacks.set_cflag = set_cflag;
 		callbacks.signal_txready = signal_txready;
 
-		if (libtty_init(&uart->tty_common, &callbacks, BUFSIZE) < 0)
+		if (libtty_init(&uart->tty_common, &callbacks, BUFSIZE, libtty_int_to_baudrate(default_baud[dev])) < 0)
 			return -1;
 
 		/* Wait for kernel to stop sending data over uart */

@@ -703,7 +703,7 @@ int ttypc_vt_init(ttypc_t *ttypc, unsigned int ttybuffsz, ttypc_vt_t *vt)
 		}
 	}
 
-	if ((err = libtty_init(&vt->tty, &cb, ttybuffsz)) < 0) {
+	if ((err = libtty_init(&vt->tty, &cb, ttybuffsz, TTYDEF_SPEED)) < 0) {
 		resourceDestroy(vt->lock);
 		munmap(vt->mem, _PAGE_SIZE);
 		if (SCRB_PAGES) {

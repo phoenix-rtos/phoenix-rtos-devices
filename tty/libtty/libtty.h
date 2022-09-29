@@ -19,6 +19,8 @@
 #include <stdint.h>
 #include <termios.h>
 
+#include "ttydefaults.h"
+
 typedef struct libtty_common_s libtty_common_t;
 typedef struct libtty_callbacks_s libtty_callbacks_t;
 typedef struct fifo_s fifo_t;
@@ -77,7 +79,7 @@ static inline void libtty_read_state_init(libtty_read_state_t *st) {
 
 
 /* bufsize: TX/RX buffer size - has to be power of 2 ! */
-int libtty_init(libtty_common_t* tty, libtty_callbacks_t* callbacks, unsigned int bufsize);
+int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned int bufsize, speed_t speed);
 int libtty_destroy(libtty_common_t* tty);
 int libtty_close(libtty_common_t* tty);
 
