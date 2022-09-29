@@ -132,7 +132,10 @@ struct {
 	volatile uint32_t *spi_ptr;
 	volatile uint32_t *gpio3_ptr;
 	volatile uint32_t *iomux_ptr[4];
-	volatile struct edma_tcd_s *tcd_ptr[4];
+	volatile struct edma_tcd_s *tcd_dready_ptr;
+	volatile struct edma_tcd_s *tcd_spisnd_ptr;
+	volatile struct edma_tcd_s *tcd_spircv_ptr;
+	volatile struct edma_tcd_s *tcd_seq_ptr;
 
 	volatile struct edma_tcd_s tcds[5 + 4 * 4 + NUM_OF_BUFFERS];
 	volatile uint32_t edma_transfers;
@@ -193,7 +196,7 @@ static int edma_spi_rcv_irq_handler(unsigned int n, void *arg)
 	}
 
 	/* Re-enable /DREADY after SYNC broadcast */
-	edma_install_tcd(common.tcd_ptr[0], DREADY_DMA_CHANNEL);
+	edma_install_tcd(common.tcd_dready_ptr, DREADY_DMA_CHANNEL);
 	edma_channel_enable(DREADY_DMA_CHANNEL);
 
 	if (notsync == 0) {
@@ -201,7 +204,7 @@ static int edma_spi_rcv_irq_handler(unsigned int n, void *arg)
 	}
 	else {
 		/* If not in-sync adjust DMA TCD (as described above) */
-		edma_install_tcd(common.tcd_ptr[3], SPI_RCV_DMA_CHANNEL);
+		edma_install_tcd(common.tcd_spircv_ptr, SPI_RCV_DMA_CHANNEL);
 		edma_channel_enable(SPI_RCV_DMA_CHANNEL);
 		edma_read_tcd(&tcd, SPI_RCV_DMA_CHANNEL);
 
@@ -558,29 +561,29 @@ static int dma_setup_tcds(void)
 	}
 	/* end of sequencer */
 
-	common.tcd_ptr[0] = &common.tcds[0];
-	common.tcd_ptr[1] = &common.tcds[4];
-	common.tcd_ptr[2] = &common.tcds[cs_seq];
-	common.tcd_ptr[3] = &common.tcds[5];
+	common.tcd_dready_ptr = &common.tcds[0];
+	common.tcd_spisnd_ptr = &common.tcds[4];
+	common.tcd_spircv_ptr = &common.tcds[5];
+	common.tcd_seq_ptr = &common.tcds[cs_seq];
 
 	common.edma_transfers = 0;
 
-	res = edma_install_tcd(common.tcd_ptr[0], DREADY_DMA_CHANNEL);
+	res = edma_install_tcd(common.tcd_dready_ptr, DREADY_DMA_CHANNEL);
 	if (res != 0) {
 		return res;
 	}
 
-	res = edma_install_tcd(common.tcd_ptr[1], SPI_SND_DMA_CHANNEL);
+	res = edma_install_tcd(common.tcd_spisnd_ptr, SPI_SND_DMA_CHANNEL);
 	if (res != 0) {
 		return res;
 	}
 
-	res = edma_install_tcd(common.tcd_ptr[2], SEQ_DMA_CHANNEL);
+	res = edma_install_tcd(common.tcd_spircv_ptr, SPI_RCV_DMA_CHANNEL);
 	if (res != 0) {
 		return res;
 	}
 
-	res = edma_install_tcd(common.tcd_ptr[3], SPI_RCV_DMA_CHANNEL);
+	res = edma_install_tcd(common.tcd_seq_ptr, SEQ_DMA_CHANNEL);
 	if (res != 0) {
 		return res;
 	}
