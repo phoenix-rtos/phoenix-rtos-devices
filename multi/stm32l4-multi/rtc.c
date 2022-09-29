@@ -139,6 +139,64 @@ void rtc_setCalib(int value)
 }
 
 
+inline static void setSubseconds(rtctimestamp_t *timestamp, unsigned int ssec)
+{
+	unsigned int prev_month_days, prev_month, carry = 0;
+	const unsigned int month_days[12] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+
+	timestamp->usecs = ((uint64_t)(rtc_common.prediv_s - (ssec & 0xffff)) * 1000 * 1000) / (rtc_common.prediv_s + 1);
+
+	if (ssec > rtc_common.prediv_s) {
+		timestamp->usecs = ((uint64_t)(2 * rtc_common.prediv_s - (ssec & 0xffff)) * 1000 * 1000) / (rtc_common.prediv_s + 1);
+		carry = 1;
+	}
+	if (carry <= timestamp->seconds) {
+		timestamp->seconds = (60 + timestamp->seconds - carry) % 60;
+		carry = 0;
+	}
+	else {
+		timestamp->seconds = (60 + timestamp->seconds - carry) % 60;
+	}
+
+	if (carry <= timestamp->minutes) {
+		timestamp->minutes = (60 + timestamp->minutes - carry) % 60;
+		carry = 0;
+	}
+	else {
+		timestamp->minutes = (60 + timestamp->minutes - carry) % 60;
+	}
+	if (carry <= timestamp->hours) {
+		timestamp->hours = (24 + timestamp->hours - carry) % 24;
+		carry = 0;
+	}
+	else {
+		timestamp->hours = (24 + timestamp->hours - carry) % 24;
+	}
+
+	prev_month = (11 + timestamp->month) % 12;
+	prev_month_days = month_days[prev_month];
+	if (prev_month == 2 && ((timestamp->year % 4 == 0 && timestamp->year % 100 != 0) || timestamp->year % 400 == 0)) {
+		prev_month_days++;
+	}
+
+	timestamp->wday = (7 + timestamp->wday - carry) % 7;
+	if (carry <= timestamp->day) {
+		timestamp->day = (prev_month_days + timestamp->day - carry) % prev_month_days;
+		carry = 0;
+	}
+	else {
+		timestamp->day = (prev_month_days + timestamp->day - carry) % prev_month_days;
+	}
+	if (carry <= timestamp->month) {
+		carry = 0;
+	}
+	else {
+		timestamp->month = (12 + timestamp->month - carry) % 12;
+	}
+	timestamp->year = timestamp->year - carry;
+}
+
+
 int rtc_getTime(rtctimestamp_t *timestamp)
 {
 	unsigned int ssec, time, date, ssec2, time2, date2;
@@ -161,15 +219,15 @@ int rtc_getTime(rtctimestamp_t *timestamp)
 		date = date2;
 	}
 
-	timestamp->usecs = ((uint64_t) (rtc_common.prediv_s - (ssec & 0xffff)) * 1000 * 1000) / (rtc_common.prediv_s + 1);
+	timestamp->wday = (date >> 13) & 0x7;
+	timestamp->year = rtc_bcdToBin((date >> 16) & 0xff);
+	timestamp->month = rtc_bcdToBin((date >> 8) & 0x1f);
+	timestamp->day = rtc_bcdToBin(date & 0x3f);
 	timestamp->hours = rtc_bcdToBin((time >> 16) & 0x3f);
 	timestamp->minutes = rtc_bcdToBin((time >> 8) & 0x7f);
 	timestamp->seconds = rtc_bcdToBin(time & 0x7f);
 
-	timestamp->day = rtc_bcdToBin(date & 0x3f);
-	timestamp->month = rtc_bcdToBin((date >> 8) & 0x1f);
-	timestamp->year = rtc_bcdToBin((date >> 16) & 0xff);
-	timestamp->wday = (date >> 13) & 0x7;
+	setSubseconds(timestamp, ssec);
 
 	return EOK;
 }
@@ -177,7 +235,7 @@ int rtc_getTime(rtctimestamp_t *timestamp)
 
 int rtc_setTime(rtctimestamp_t *timestamp)
 {
-	unsigned int time, date;
+	unsigned int time, date, ssec;
 
 	time = timestampToTime(timestamp);
 	date = timestampToDate(timestamp);
@@ -188,13 +246,20 @@ int rtc_setTime(rtctimestamp_t *timestamp)
 	if (!(*(rtc_common.base + isr) & (1 << 6))) {
 		*(rtc_common.base + isr) |= (1 << 7);
 		dataBarier();
-		while (!(*(rtc_common.base + isr) & (1 << 6)));
+		while (!(*(rtc_common.base + isr) & (1 << 6)))
+			;
 	}
-
+	ssec = *(rtc_common.base + ssr) & 0xffff;
+	ssec = ((uint64_t)(rtc_common.prediv_s - ssec) * 1000 * 1000) / (rtc_common.prediv_s + 1);
+	/*Setting TR has a side effect of changing SSR value to prediv_s*/
 	*(rtc_common.base + tr) = time;
 	*(rtc_common.base + dr) = date;
-
 	*(rtc_common.base + isr) &= ~(1 << 7);
+	while ((*(rtc_common.base + isr) & (1 << 3)))
+		;
+	*(rtc_common.base + shiftr) = ((1000 * 1000 - timestamp->usecs) * (rtc_common.prediv_s + 1) / (1000 * 1000)) | (1 << 31);
+	while ((*(rtc_common.base + isr) & (1 << 3)))
+		;
 
 	_rtc_lock();
 	mutexUnlock(rtc_common.lock);
