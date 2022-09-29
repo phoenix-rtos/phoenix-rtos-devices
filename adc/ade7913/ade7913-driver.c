@@ -343,7 +343,7 @@ static int spi_init(oid_t *device, int spi)
 
 static int adc_init(int hard)
 {
-	int i, res, devnum;
+	int i, res, devnum, isclkout;
 
 	for (i = 0; hard && i < common.devcnt; ++i) {
 		devnum = (int)(common.order[i] - '0');
@@ -356,10 +356,11 @@ static int adc_init(int hard)
 	/* Start init from device with xtal */
 	for (i = 0; i < common.devcnt; ++i) {
 		devnum = (int)(common.order[i] - '0');
+		/* the last ADC is DREADY and the other CLOCK clock output (daisy chain) */
+		isclkout = (i != common.devcnt - 1);
 
 		log_info("Configuring ADE7913 device no. %d", devnum);
-		while (ade7913_init(&common.ade7913_spi, devnum,
-				   devnum == common.order[common.devcnt - 1] - '0' ? 0 : 1) < 0) {
+		while (ade7913_init(&common.ade7913_spi, devnum, isclkout) < 0) {
 			log_error("Failed to initialize ADE7913 no. %d", devnum);
 			usleep(500 * 1000);
 		}
