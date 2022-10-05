@@ -138,6 +138,12 @@ static int dev_ctl(msg_t *msg)
 				return -EINVAL;
 			if (res != AD7779_OK)
 				return -EIO;
+			/* NOTE: Here SYNC_IN is not required by the docs, but sometimes after
+			 * turning on/off channels we encounter unexpected ADC hang-ups (SPI
+			 * works but we don't get DRDY). Applying SYNC solves the issue. */
+			res = ad7779_pulse_sync();
+			if (res != AD7779_OK)
+				return -EIO;
 			return EOK;
 
 		case adc_dev_ctl__get_config:
@@ -175,6 +181,9 @@ static int dev_ctl(msg_t *msg)
 			res = ad7779_set_channel_mode(dev_ctl.ch_config.channel, mode);
 			if (res == AD7779_ARG_ERROR)
 				return -EINVAL;
+			if (res != AD7779_OK)
+				return -EIO;
+			res = ad7779_pulse_sync();
 			if (res != AD7779_OK)
 				return -EIO;
 			return EOK;
@@ -215,6 +224,9 @@ static int dev_ctl(msg_t *msg)
 				return -EINVAL;
 			if (res != AD7779_OK)
 				return -EIO;
+			res = ad7779_pulse_sync();
+			if (res != AD7779_OK)
+				return -EIO;
 			return EOK;
 
 		case adc_dev_ctl__get_channel_gain:
@@ -235,6 +247,9 @@ static int dev_ctl(msg_t *msg)
 			res = ad7779_set_channel_gain_correction(dev_ctl.calib.channel, dev_ctl.calib.gain);
 			if (res == AD7779_ARG_ERROR)
 				return -EINVAL;
+			if (res != AD7779_OK)
+				return -EIO;
+			res = ad7779_pulse_sync();
 			if (res != AD7779_OK)
 				return -EIO;
 			return EOK;
