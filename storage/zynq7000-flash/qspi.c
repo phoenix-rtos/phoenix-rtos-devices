@@ -166,7 +166,7 @@ static unsigned int qspi_txData(const uint8_t *txBuff, size_t size)
 
 ssize_t qspi_transfer(const uint8_t *txBuff, uint8_t *rxBuff, size_t size, time_t timeout)
 {
-	int err;
+	int err = 0;
 	size_t tempSz, txSz = size, rxSz = 0;
 	time_t interval = 0, start = 0;
 
