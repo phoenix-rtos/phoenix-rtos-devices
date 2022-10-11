@@ -63,6 +63,7 @@ static int setClock(int dev, unsigned int state)
 
 	pctl.action = pctl_set;
 	pctl.type = pctl_lpcg;
+	pctl.lpcg.op = pctl_lpcg_op_direct;
 	pctl.lpcg.dev = dev;
 	pctl.lpcg.state = (state != 0);
 
