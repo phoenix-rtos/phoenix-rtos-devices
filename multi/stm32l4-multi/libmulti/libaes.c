@@ -3,7 +3,7 @@
  *
  * Multidrv-lib: STM32L4 AES driver
  *
- * Copyright 2020 Phoenix Systems
+ * Copyright 2020, 2022 Phoenix Systems
  * Author: Daniel Sawka
  *
  * %LICENSE%
@@ -18,7 +18,6 @@ enum { cr = 0, sr, dinr, doutr, keyr0, ivr0 = keyr0 + 4, keyr4 = ivr0 + 4, susp0
 
 static struct {
 	volatile unsigned int *base;
-	unsigned int is_key_scheduled;
 } common;
 
 
@@ -55,6 +54,23 @@ static void storeVector4(int reg, const unsigned char *vector)
 }
 
 
+static void retrieveVector4(int reg, unsigned char *vector)
+{
+	int i;
+	unsigned int tmp;
+	volatile unsigned int *addr = common.base + reg + 3;
+
+	for (i = 0; i < 4; i++) {
+		tmp = *addr;
+		addr -= 1;
+		*vector++ = tmp >> 24;
+		*vector++ = tmp >> 16;
+		*vector++ = tmp >> 8;
+		*vector++ = tmp;
+	}
+}
+
+
 void libaes_setKey(const unsigned char *key, int keylen)
 {
 	if (keylen == aes_128) {
@@ -66,8 +82,18 @@ void libaes_setKey(const unsigned char *key, int keylen)
 		storeVector4(keyr0, key + 16);
 		*(common.base + cr) |= (1 << 18);
 	}
+}
 
-	common.is_key_scheduled = 0;
+
+void libaes_getKey(unsigned char *key, int keylen)
+{
+	if (keylen == aes_128) {
+		retrieveVector4(keyr0, key);
+	}
+	else {
+		retrieveVector4(keyr4, key);
+		retrieveVector4(keyr0, key + 16);
+	}
 }
 
 
@@ -77,7 +103,13 @@ void libaes_setIv(const unsigned char *iv)
 }
 
 
-static void deriveDecryptionKey(void)
+void libaes_getIv(unsigned char *iv)
+{
+	retrieveVector4(ivr0, iv);
+}
+
+
+void libaes_deriveDecryptionKey(void)
 {
 	unsigned int t;
 
@@ -96,11 +128,6 @@ static void deriveDecryptionKey(void)
 void libaes_prepare(int mode, int dir)
 {
 	unsigned int t;
-
-	if (dir == aes_decrypt && mode != aes_ctr && !common.is_key_scheduled) {
-		deriveDecryptionKey();
-		common.is_key_scheduled = 1;
-	}
 
 	t = *(common.base + cr) & ~0x1007E;
 	/* byte swap */
@@ -147,7 +174,6 @@ void libaes_processBlock(const unsigned char *in, unsigned char *out)
 int libaes_init(void)
 {
 	common.base = (void *)0x50060000;
-	common.is_key_scheduled = 0;
 
 	devClk(pctl_aes, 1);
 

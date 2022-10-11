@@ -26,7 +26,16 @@ enum { aes_encrypt = 0, aes_decrypt = 2 };
 void libaes_setKey(const unsigned char *key, int keylen);
 
 
+void libaes_getKey(unsigned char *key, int keylen);
+
+
 void libaes_setIv(const unsigned char *iv);
+
+
+void libaes_getIv(unsigned char *iv);
+
+
+void libaes_deriveDecryptionKey(void);
 
 
 void libaes_prepare(int mode, int dir);
