@@ -83,6 +83,7 @@ static inline void _program_lock(void)
 {
 	*(flash_common.flash + flash_cr) |= 1ul << 31;
 	dataBarier();
+	keepidle(0);
 }
 
 
@@ -90,6 +91,7 @@ static void _program_unlock(void)
 {
 	/* We'll get hardfault if we do this wrong... */
 
+	keepidle(1);
 	*(flash_common.flash + flash_keyr) = 0x45670123;
 	dataBarier();
 	*(flash_common.flash + flash_keyr) = 0xcdef89ab;
