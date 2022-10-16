@@ -303,6 +303,7 @@ ssize_t libtty_write(libtty_common_t *tty, const char *data, size_t size, unsign
 		if (CMP_FLAG(o, OPOST) && (CTL_VALID(*data))) { // we need to process this char
 			libttydisc_write_oproc(tty, *data);
 		} else {
+			//here it restarts
 			fifo_push(tty->tx_fifo, *data);
 		}
 

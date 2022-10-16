@@ -17,6 +17,12 @@ static inline void fifo_init(fifo_t *f, unsigned int size)
 	f->head = 0;
 	f->tail = 0;
 	f->size_mask = size - 1;
+	// 	volatile unsigned int *dirset = 0x50842518;
+	// volatile unsigned int *outset = 0x50842508;
+	// *dirset = 1u << 2;
+	// *outset = 1u << 2;
+	// while (1) {;}
+
 }
 
 static inline void fifo_remove_all(fifo_t *f)
@@ -52,9 +58,12 @@ static inline unsigned int fifo_freespace(fifo_t *f)
 }
 
 
+//tx fifo was initialized, don't know why it crashes here, maybe it's the matter of inline ?
 static inline void fifo_push(fifo_t *f, uint8_t byte)
 {
 	f->data[f->head] = byte;
+	//here it restarts!!!!!!
+	//its the matter of f-> head, it seems like f0>head +1 does not exists
 	f->head = (f->head + 1) & f->size_mask;
 }
 
