@@ -76,7 +76,7 @@ typedef struct {
 typedef struct umass_dev {
 	char buffer[8 * UMASS_SECTOR_SIZE];
 	struct umass_dev *prev, *next;
-	usb_devinfo_t instance;
+	usbdrv_devinfo_t instance;
 	char path[32];
 	int pipeCtrl;
 	int pipeIn;
@@ -101,7 +101,7 @@ static struct {
 } umass_common;
 
 
-static const usb_device_id_t filters[] = {
+static const usbdrv_devid_t filters[] = {
 	/* USB Mass Storage class */
 	{ USBDRV_ANY, USBDRV_ANY, USB_CLASS_MASS_STORAGE, USBDRV_ANY, USBDRV_ANY },
 };
@@ -126,22 +126,22 @@ static int umass_transmit(umass_dev_t *dev, void *cmd, size_t clen, char *data, 
 	cbw.clen = clen;
 	memcpy(cbw.cmd, cmd, clen);
 
-	if ((ret = usb_transferBulk(dev->pipeOut, &cbw, sizeof(cbw), usb_dir_out)) != sizeof(cbw)) {
-		fprintf(stderr, "umass_transmit: usb_transferBulk OUT failed\n");
+	if ((ret = usbdrv_transferBulk(dev->pipeOut, &cbw, sizeof(cbw), usb_dir_out)) != sizeof(cbw)) {
+		fprintf(stderr, "umass_transmit: usbdrv_transferBulk OUT failed\n");
 		return -EIO;
 	}
 
 	/* Optional data transfer */
 	if (dlen > 0) {
-		if ((ret = usb_transferBulk(dataPipe, data, dlen, dir)) < 0) {
+		if ((ret = usbdrv_transferBulk(dataPipe, data, dlen, dir)) < 0) {
 			fprintf(stderr, "umass_transmit: umass_transmit data transfer failed\n");
 			return ret;
 		}
 		bytes = ret;
 	}
 
-	if ((ret = usb_transferBulk(dev->pipeIn, &csw, sizeof(csw), usb_dir_in)) != sizeof(csw)) {
-		fprintf(stderr, "umass_transmit: usb_transferBulk IN transfer failed\n");
+	if ((ret = usbdrv_transferBulk(dev->pipeIn, &csw, sizeof(csw), usb_dir_in)) != sizeof(csw)) {
+		fprintf(stderr, "umass_transmit: usbdrv_transferBulk IN transfer failed\n");
 		return -EIO;
 	}
 
@@ -354,7 +354,7 @@ static umass_dev_t *umass_devAlloc(void)
 }
 
 
-static int umass_handleInsertion(usb_devinfo_t *insertion)
+static int umass_handleInsertion(usbdrv_devinfo_t *insertion)
 {
 	umass_dev_t *dev;
 	oid_t oid;
@@ -365,25 +365,25 @@ static int umass_handleInsertion(usb_devinfo_t *insertion)
 	}
 
 	dev->instance = *insertion;
-	if ((dev->pipeCtrl = usb_open(insertion, usb_transfer_control, 0)) < 0) {
+	if ((dev->pipeCtrl = usbdrv_open(insertion, usb_transfer_control, 0)) < 0) {
 		free(dev);
-		fprintf(stderr, "umass: usb_open failed\n");
+		fprintf(stderr, "umass: usbdrv_open failed\n");
 		return -EINVAL;
 	}
 
-	if (usb_setConfiguration(dev->pipeCtrl, 1) != 0) {
+	if (usbdrv_setConfiguration(dev->pipeCtrl, 1) != 0) {
 		free(dev);
 		fprintf(stderr, "umass: setConfiguration failed\n");
 		return -EINVAL;
 	}
 
-	if ((dev->pipeIn = usb_open(insertion, usb_transfer_bulk, usb_dir_in)) < 0) {
+	if ((dev->pipeIn = usbdrv_open(insertion, usb_transfer_bulk, usb_dir_in)) < 0) {
 		fprintf(stderr, "umass: pipe open failed \n");
 		free(dev);
 		return -EINVAL;
 	}
 
-	if ((dev->pipeOut = usb_open(insertion, usb_transfer_bulk, usb_dir_out)) < 0) {
+	if ((dev->pipeOut = usbdrv_open(insertion, usb_transfer_bulk, usb_dir_out)) < 0) {
 		fprintf(stderr, "umass: pipe open failed\n");
 		free(dev);
 		return -EINVAL;
@@ -411,7 +411,7 @@ static int umass_handleInsertion(usb_devinfo_t *insertion)
 }
 
 
-static int umass_handleDeletion(usb_deletion_t *del)
+static int umass_handleDeletion(usbdrv_deletion_t *del)
 {
 	umass_dev_t *next, *dev = umass_common.devices;
 	int cont = 1;
@@ -444,7 +444,7 @@ int main(int argc, char *argv[])
 {
 	int ret, i;
 	msg_t msg;
-	usb_msg_t *umsg = (usb_msg_t *)msg.i.raw;
+	usbdrv_msg_t *umsg = (usbdrv_msg_t *)msg.i.raw;
 
 	/* Port for communication with the USB stack */
 	if (portCreate(&umass_common.drvport) != 0) {
@@ -458,7 +458,7 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	if ((usb_connect(filters, sizeof(filters) / sizeof(filters[0]), umass_common.drvport)) < 0) {
+	if ((usbdrv_connect(filters, sizeof(filters) / sizeof(filters[0]), umass_common.drvport)) < 0) {
 		fprintf(stderr, "umass: Fail to connect to usb host!\n");
 		return 1;
 	}
@@ -478,16 +478,16 @@ int main(int argc, char *argv[])
 	}
 
 	for (;;) {
-		ret = usb_eventsWait(umass_common.drvport, &msg);
+		ret = usbdrv_eventsWait(umass_common.drvport, &msg);
 		if (ret != 0)
 			return 1;
 		mutexLock(umass_common.lock);
 		switch (umsg->type) {
-			case usb_msg_insertion:
+			case usbdrv_msg_insertion:
 				if (umass_handleInsertion(&umsg->insertion) != 0)
 					fprintf(stderr, "umass: Failed to initialize device!\n");
 				break;
-			case usb_msg_deletion:
+			case usbdrv_msg_deletion:
 				umass_handleDeletion(&umsg->deletion);
 				break;
 			default:

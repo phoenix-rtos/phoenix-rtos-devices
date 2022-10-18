@@ -63,7 +63,7 @@ typedef struct _usbacm_dev {
 	struct _usbacm_dev *prev, *next;
 	int rxtid;
 	char path[32];
-	usb_devinfo_t instance;
+	usbdrv_devinfo_t instance;
 	int pipeCtrl;
 	int pipeIntIN;
 	int pipeBulkIN;
@@ -98,7 +98,7 @@ static struct {
 } usbacm_common;
 
 
-static const usb_device_id_t filters[] = {
+static const usbdrv_devid_t filters[] = {
 	/* Huawei E3372 - Mass Storage mode for modeswitch */
 	{ 0x12d1, 0x1f01, USBDRV_ANY, USBDRV_ANY, USBDRV_ANY },
 	/* Huawei E3372 - PPP mode */
@@ -110,7 +110,7 @@ static const usb_device_id_t filters[] = {
 };
 
 
-static const usb_modeswitch_t modeswitch[] = {
+static const usbdrv_modeswitch_t modeswitch[] = {
 	/* Huawei E3372 ACM mode */
 	{
 		.vid = 0x12d1,
@@ -137,7 +137,7 @@ static int usbacm_rxStop(usbacm_dev_t *dev)
 	setup.wValue = 0;
 	setup.wLength = 0;
 
-	return usb_transferAsync(dev->pipeCtrl, dev->urbctrl, 0, &setup);
+	return usbdrv_transferAsync(dev->pipeCtrl, dev->urbctrl, 0, &setup);
 }
 
 
@@ -219,7 +219,7 @@ static void usbacm_put(usbacm_dev_t *dev)
 }
 
 
-static void usbacm_handleCompletion(usb_completion_t *c, char *data, size_t len)
+static void usbacm_handleCompletion(usbdrv_completion_t *c, char *data, size_t len)
 {
 	usbacm_dev_t *dev;
 	size_t bytes;
@@ -280,7 +280,7 @@ static void usbacm_handleCompletion(usb_completion_t *c, char *data, size_t len)
 	}
 
 	if (retransfer != 0) {
-		usb_transferAsync(dev->pipeBulkIN, c->urbid, USBACM_BULK_SZ, NULL);
+		usbdrv_transferAsync(dev->pipeBulkIN, c->urbid, USBACM_BULK_SZ, NULL);
 	}
 	else if (sig == 1) {
 		condSignal(dev->rxCond);
@@ -301,12 +301,12 @@ static int usbacm_rxStart(usbacm_dev_t *dev)
 	setup.wValue = 3;
 	setup.wLength = 0;
 
-	if (usb_transferAsync(dev->pipeCtrl, dev->urbctrl, 0, &setup) < 0) {
+	if (usbdrv_transferAsync(dev->pipeCtrl, dev->urbctrl, 0, &setup) < 0) {
 		return -EIO;
 	}
 
 	for (i = 0; i < USBACM_N_URBS; i++) {
-		if (usb_transferAsync(dev->pipeBulkIN, dev->urbs[i], USBACM_BULK_SZ, NULL) < 0) {
+		if (usbdrv_transferAsync(dev->pipeBulkIN, dev->urbs[i], USBACM_BULK_SZ, NULL) < 0) {
 			return -EIO;
 		}
 	}
@@ -359,7 +359,7 @@ static int usbacm_write(usbacm_dev_t *dev, char *data, size_t len)
 {
 	int ret = 0;
 
-	if ((ret = usb_transferBulk(dev->pipeBulkOUT, data, len, usb_dir_out)) <= 0) {
+	if ((ret = usbdrv_transferBulk(dev->pipeBulkOUT, data, len, usb_dir_out)) <= 0) {
 		fprintf(stderr, "usbacm: write failed\n");
 		ret = -EIO;
 	}
@@ -395,20 +395,20 @@ static int _usbacm_urbsAlloc(usbacm_dev_t *dev)
 {
 	int i, j;
 
-	dev->urbctrl = usb_urbAlloc(dev->pipeCtrl, NULL, usb_dir_out, 0, usb_transfer_control);
+	dev->urbctrl = usbdrv_urbAlloc(dev->pipeCtrl, NULL, usb_dir_out, 0, usb_transfer_control);
 	if (dev->urbctrl < 0) {
 		return -1;
 	}
 
 	for (i = 0; i < USBACM_N_URBS; i++) {
-		dev->urbs[i] = usb_urbAlloc(dev->pipeBulkIN, NULL, usb_dir_in, USBACM_BULK_SZ, usb_transfer_bulk);
+		dev->urbs[i] = usbdrv_urbAlloc(dev->pipeBulkIN, NULL, usb_dir_in, USBACM_BULK_SZ, usb_transfer_bulk);
 		if (dev->urbs[i] < 0) {
 			for (j = i - 1; j >= 0; j--) {
-				usb_urbFree(dev->pipeBulkIN, dev->urbs[j]);
+				usbdrv_urbFree(dev->pipeBulkIN, dev->urbs[j]);
 				dev->urbs[j] = 0;
 			}
 
-			usb_urbFree(dev->pipeCtrl, dev->urbctrl);
+			usbdrv_urbFree(dev->pipeCtrl, dev->urbctrl);
 			return -1;
 		}
 	}
@@ -449,14 +449,14 @@ static void _usbacm_close(usbacm_dev_t *dev)
 	int i;
 
 	for (i = 0; i < USBACM_N_URBS; i++) {
-		usb_urbFree(dev->pipeBulkIN, dev->urbs[i]);
+		usbdrv_urbFree(dev->pipeBulkIN, dev->urbs[i]);
 	}
 
 	if (dev->flags & O_NONBLOCK) {
 		usbacm_rxStop(dev);
 	}
 
-	usb_urbFree(dev->pipeCtrl, dev->urbctrl);
+	usbdrv_urbFree(dev->pipeCtrl, dev->urbctrl);
 
 	dev->flags = 0;
 	dev->clientpid = 0;
@@ -589,16 +589,16 @@ static void usbacm_msgthr(void *arg)
 }
 
 
-static int _usbacm_handleInsertion(usb_devinfo_t *insertion)
+static int _usbacm_handleInsertion(usbdrv_devinfo_t *insertion)
 {
 	usbacm_dev_t *dev;
-	const usb_modeswitch_t *mode;
+	const usbdrv_modeswitch_t *mode;
 	oid_t oid;
 
-	if ((mode = usb_modeswitchFind(insertion->descriptor.idVendor,
+	if ((mode = usbdrv_modeswitchFind(insertion->descriptor.idVendor,
 			insertion->descriptor.idProduct,
 			modeswitch, sizeof(modeswitch) / sizeof(modeswitch[0]))) != NULL) {
-		return usb_modeswitchHandle(insertion, mode);
+		return usbdrv_modeswitchHandle(insertion, mode);
 	}
 
 	if ((dev = usbacm_devAlloc()) == NULL)
@@ -606,30 +606,30 @@ static int _usbacm_handleInsertion(usb_devinfo_t *insertion)
 
 	dev->instance = *insertion;
 
-	if ((dev->pipeCtrl = usb_open(insertion, usb_transfer_control, 0)) < 0) {
+	if ((dev->pipeCtrl = usbdrv_open(insertion, usb_transfer_control, 0)) < 0) {
 		fprintf(stderr, "usbacm: Fail to open control pipe\n");
 		free(dev);
 		return -EINVAL;
 	}
 
-	if (usb_setConfiguration(dev->pipeCtrl, 1) != 0) {
+	if (usbdrv_setConfiguration(dev->pipeCtrl, 1) != 0) {
 		fprintf(stderr, "usbacm: Fail to set configuration\n");
 		free(dev);
 		return -EINVAL;
 	}
 
-	if ((dev->pipeBulkIN = usb_open(insertion, usb_transfer_bulk, usb_dir_in)) < 0) {
+	if ((dev->pipeBulkIN = usbdrv_open(insertion, usb_transfer_bulk, usb_dir_in)) < 0) {
 		free(dev);
 		return -EINVAL;
 	}
 
-	if ((dev->pipeBulkOUT = usb_open(insertion, usb_transfer_bulk, usb_dir_out)) < 0) {
+	if ((dev->pipeBulkOUT = usbdrv_open(insertion, usb_transfer_bulk, usb_dir_out)) < 0) {
 		free(dev);
 		return -EINVAL;
 	}
 
 	/* Interrupt pipe is optional */
-	dev->pipeIntIN = usb_open(insertion, usb_transfer_interrupt, usb_dir_in);
+	dev->pipeIntIN = usbdrv_open(insertion, usb_transfer_interrupt, usb_dir_in);
 
 	oid.port = usbacm_common.msgport;
 	oid.id = dev->fileId;
@@ -650,7 +650,7 @@ static int _usbacm_handleInsertion(usb_devinfo_t *insertion)
 }
 
 
-static int _usbacm_handleDeletion(usb_deletion_t *del)
+static int _usbacm_handleDeletion(usbdrv_deletion_t *del)
 {
 	usbacm_dev_t *next, *dev = usbacm_common.devices;
 	int cont = 1;
@@ -681,7 +681,7 @@ static int _usbacm_handleDeletion(usb_deletion_t *del)
 static void usbthr(void *arg)
 {
 	msg_t msg;
-	usb_msg_t *umsg = (usb_msg_t *)msg.i.raw;
+	usbdrv_msg_t *umsg = (usbdrv_msg_t *)msg.i.raw;
 	unsigned long rid;
 
 	for (;;) {
@@ -689,15 +689,15 @@ static void usbthr(void *arg)
 			continue;
 
 		switch (umsg->type) {
-			case usb_msg_insertion:
+			case usbdrv_msg_insertion:
 				_usbacm_handleInsertion(&umsg->insertion);
 				break;
-			case usb_msg_deletion:
+			case usbdrv_msg_deletion:
 				mutexLock(usbacm_common.lock);
 				_usbacm_handleDeletion(&umsg->deletion);
 				mutexUnlock(usbacm_common.lock);
 				break;
-			case usb_msg_completion:
+			case usbdrv_msg_completion:
 				usbacm_handleCompletion(&umsg->completion, msg.i.data, msg.i.size);
 				break;
 			default:
@@ -731,7 +731,7 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	if ((usb_connect(filters, sizeof(filters) / sizeof(filters[0]), usbacm_common.drvport)) < 0) {
+	if ((usbdrv_connect(filters, sizeof(filters) / sizeof(filters[0]), usbacm_common.drvport)) < 0) {
 		fprintf(stderr, "usbacm: Fail to connect to usb host!\n");
 		return 1;
 	}
