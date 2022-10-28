@@ -69,17 +69,6 @@ static void libspi_readwriteDma(libspi_ctx_t *ctx, unsigned char *ibuff, const u
 	*(ctx->base + cr2) |= dmach;
 	libdma_transferSpi(libspi_spino(ctx), ibuff, obuff, bufflen);
 	*(ctx->base + cr2) &= ~dmach;
-
-	if (ibuff != NULL)
-		return;
-
-	/* Wait until RXNE=1 and TXE=1, i.e. the whole transfer is complete */
-	while ((*(ctx->base + sr) & 0x3) != 0x3)
-		;
-
-	/* Empty out the RX FIFO completely - leaving anything in the FIFO will corrupt subsequent transfers */
-	while (*(ctx->base + sr) & 0x1)
-		(void) *((volatile uint8_t *)(ctx->base + dr));
 }
 
 
@@ -90,6 +79,10 @@ int libspi_transaction(libspi_ctx_t *ctx, int dir, unsigned char cmd, unsigned i
 	addrsz = (flags >> SPI_ADDRSHIFT) & SPI_ADDRMASK;
 
 	keepidle(1);
+
+	/* Enable SPI */
+	*(ctx->base + cr1) |= 1 << 6;
+	dataBarier();
 
 	if (flags & spi_cmd)
 		libspi_readwrite(ctx, cmd);
@@ -130,9 +123,26 @@ int libspi_transaction(libspi_ctx_t *ctx, int dir, unsigned char cmd, unsigned i
 		}
 	}
 
-	/* Wait until BSY=0 */
-	while ((*(ctx->base + sr) & (1 << 7)) != 0x0)
+	/* Wait until FTLVL=0 (TXFIFO empty) */
+	while (((*(ctx->base + sr) >> 11) & 0x3) != 0) {
 		;
+	}
+
+	/* Wait until BSY=0 */
+	while ((*(ctx->base + sr) & (1 << 7)) != 0x0) {
+		;
+	}
+
+	/* Disable SPI */
+	dataBarier();
+	*(ctx->base + cr1) &= ~(1 << 6);
+	dataBarier();
+
+	/* Wait until FRLVL=0 (empty out RXFIFO completely).
+	Leaving anything in the FIFO will corrupt subsequent transfers */
+	while (((*(ctx->base + sr) >> 9) & 0x3) != 0) {
+		(void)*((volatile uint8_t *)(ctx->base + dr));
+	}
 
 	keepidle(0);
 
@@ -146,6 +156,7 @@ int libspi_configure(libspi_ctx_t *ctx, char mode, char bdiv, int enable)
 
 	devClk(spiinfo[libspi_spino(ctx) - spi1].pctl, 1);
 	*(ctx->base + cr1) &= ~(1 << 6);
+	dataBarier();
 
 	/* Set mode and baud div */
 	t = *(ctx->base + cr1) & ~((0x7 << 3) | 0x3);
@@ -153,11 +164,11 @@ int libspi_configure(libspi_ctx_t *ctx, char mode, char bdiv, int enable)
 
 	/* 8-bit RXNE threshold, 8 bits, motorola frame format, SS output enable */
 	*(ctx->base + cr2) |= (1 << 12) | (0x7 << 8) | (1 << 2);
+	dataBarier();
 
-	if (enable)
-		*(ctx->base + cr1) |= 1 << 6;
-	else
+	if (!enable) {
 		devClk(spiinfo[libspi_spino(ctx) - spi1].pctl, 0);
+	}
 
 	return EOK;
 }
