@@ -107,6 +107,7 @@ static void _prepare_transfer(volatile unsigned int *channel_base, void *maddr, 
 {
 	*(channel_base + cmar) = (unsigned int) maddr;
 	*(channel_base + cndtr) = len;
+	dataBarier();
 
 	if (tcie)
 		/* Enable Transfer Complete interrupt, enable channel */
@@ -114,13 +115,17 @@ static void _prepare_transfer(volatile unsigned int *channel_base, void *maddr, 
 	else
 		/* Enable channel */
 		*(channel_base + ccr) |= 0x1;
+
+	dataBarier();
 }
 
 
 static void _unprepare_transfer(volatile unsigned int *channel_base)
 {
+	dataBarier();
 	/* Disable Transfer Complete interrupt, disable channel */
 	*(channel_base + ccr) &= ~((1 << 1) | 0x1);
+	dataBarier();
 }
 
 
