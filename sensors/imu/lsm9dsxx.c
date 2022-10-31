@@ -37,10 +37,15 @@
 #define VAL_CTRL_REG1_G_FS_G_245    0x00
 #define VAL_CTRL_REG1_G_FS_G_500    0x08
 #define VAL_CTRL_REG1_G_FS_G_2000   0x18
+#define VAL_CTRL_REG1_G_BW_MIN      0x00
+#define VAL_CTRL_REG1_G_BW_LOW      0x01
+#define VAL_CTRL_REG1_G_BW_HIGH     0x02
+#define VAL_CTRL_REG1_G_BW_MAX      0x03
 
 /* control register 2 */
-#define REG_CTRL_REG2_G                     0x11
-#define VAL_CTRL_REG2_G_OUT_SEL_LPF2_ENABLE 0x03
+#define REG_CTRL_REG2_G                      0x11
+#define VAL_CTRL_REG2_G_OUT_SEL_LPF2_ENABLE  0x03
+#define VAL_CTRL_REG2_G_OUT_SEL_LPF2_DISABLE 0x00
 
 /* control register 4 */
 #define CTRL_REG4          0x1e
@@ -169,13 +174,13 @@ static int lsm9dsxx_hwSetup(lsm9dsxx_ctx_t *ctx)
 	usleep(1000 * 100);
 
 	/* ranges and sampling of accelerometer and gyro, accelerometer LPF */
-	if (spiWriteReg(ctx, REG_CTRL_REG1_G, (VAL_CTRL_REG1_G_ODR_G_952HZ | VAL_CTRL_REG1_G_FS_G_2000)) < 0) {
+	if (spiWriteReg(ctx, REG_CTRL_REG1_G, (VAL_CTRL_REG1_G_ODR_G_952HZ | VAL_CTRL_REG1_G_FS_G_2000 | VAL_CTRL_REG1_G_BW_MAX)) < 0) {
 		return -1;
 	}
 	if (spiWriteReg(ctx, REG_CTRL_REG6_XL, (VAL_CTRL_REG6_XL_ODR_XL_952 | VAL_CTRL_REG6_XL_FS_8G | VAL_CTRL_REG6_XL_BW_SCAL_ODR | VAL_CTRL_REG6_XL_BW_XL_50HZ)) < 0) {
 		return -1;
 	}
-	if (spiWriteReg(ctx, REG_CTRL_REG2_G, VAL_CTRL_REG2_G_OUT_SEL_LPF2_ENABLE) < 0) {
+	if (spiWriteReg(ctx, REG_CTRL_REG2_G, VAL_CTRL_REG2_G_OUT_SEL_LPF2_DISABLE) < 0) {
 		return -1;
 	}
 	usleep(1000 * 100);
