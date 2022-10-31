@@ -67,7 +67,7 @@ static void gpio_handleDevCtl(msg_t *msg, int port)
 
 		case gpio_set_dir :
 			set = imsg->gpio.dir.val & imsg->gpio.dir.mask;
-			clr = ~imsg->gpio.port.val & imsg->gpio.port.mask;
+			clr = ~imsg->gpio.dir.val & imsg->gpio.dir.mask;
 
 			mutexLock(gpio_common.lock);
 			t = *(gpio_common.base[port] + gpio_gdir) & ~clr;
