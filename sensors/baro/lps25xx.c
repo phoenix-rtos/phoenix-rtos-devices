@@ -137,8 +137,8 @@ static int lps25xx_hwSetup(lps25xx_ctx_t *ctx)
 	}
 	usleep(1000 * 100); /* Arbitrary wait */
 
-	/* Internal averaging configuration. Averages pressure over 32 samples and temperature over 8 samples. */
-	if (spiWriteReg(ctx, REG_RES_CONF, VAL_AVGT_8 | VAL_AVGP_32) < 0) {
+	/* Internal averaging configuration. Averages pressure over 8 samples and temperature over 8 samples. */
+	if (spiWriteReg(ctx, REG_RES_CONF, VAL_AVGT_8 | VAL_AVGP_8) < 0) {
 		return -1;
 	}
 	usleep(1000 * 100); /* Arbitrary wait */
