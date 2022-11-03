@@ -76,11 +76,11 @@ typedef struct {
 typedef struct umass_dev {
 	char buffer[8 * UMASS_SECTOR_SIZE];
 	struct umass_dev *prev, *next;
-	usbdrv_devinfo_t instance;
+	usbdrv_dev_t instance;
 	char path[32];
-	int pipeCtrl;
-	int pipeIn;
-	int pipeOut;
+	usbdrv_pipe_t *pipeCtrl;
+	usbdrv_pipe_t *pipeIn;
+	usbdrv_pipe_t *pipeOut;
 	int id;
 	int fileId;
 	int tag;
@@ -112,7 +112,7 @@ static int umass_transmit(umass_dev_t *dev, void *cmd, size_t clen, char *data, 
 	umass_cbw_t cbw = { 0 };
 	umass_csw_t csw = { 0 };
 	int ret = 0, bytes = 0;
-	int dataPipe;
+	usbdrv_pipe_t *dataPipe;
 
 	if (clen > 16)
 		return -1;
@@ -354,7 +354,7 @@ static umass_dev_t *umass_devAlloc(void)
 }
 
 
-static int umass_handleInsertion(usbdrv_devinfo_t *insertion)
+static int umass_handleInsertion(usbdrv_dev_t *insertion)
 {
 	umass_dev_t *dev;
 	oid_t oid;
@@ -365,9 +365,9 @@ static int umass_handleInsertion(usbdrv_devinfo_t *insertion)
 	}
 
 	dev->instance = *insertion;
-	if ((dev->pipeCtrl = usbdrv_open(insertion, usb_transfer_control, 0)) < 0) {
+	if ((dev->pipeCtrl = usbdrv_pipeOpen(insertion, usb_transfer_control, 0)) < 0) {
 		free(dev);
-		fprintf(stderr, "umass: usbdrv_open failed\n");
+		fprintf(stderr, "umass: usbdrv_pipeOpen failed\n");
 		return -EINVAL;
 	}
 
@@ -377,13 +377,13 @@ static int umass_handleInsertion(usbdrv_devinfo_t *insertion)
 		return -EINVAL;
 	}
 
-	if ((dev->pipeIn = usbdrv_open(insertion, usb_transfer_bulk, usb_dir_in)) < 0) {
+	if ((dev->pipeIn = usbdrv_pipeOpen(insertion, usb_transfer_bulk, usb_dir_in)) < 0) {
 		fprintf(stderr, "umass: pipe open failed \n");
 		free(dev);
 		return -EINVAL;
 	}
 
-	if ((dev->pipeOut = usbdrv_open(insertion, usb_transfer_bulk, usb_dir_out)) < 0) {
+	if ((dev->pipeOut = usbdrv_pipeOpen(insertion, usb_transfer_bulk, usb_dir_out)) < 0) {
 		fprintf(stderr, "umass: pipe open failed\n");
 		free(dev);
 		return -EINVAL;
@@ -444,7 +444,7 @@ int main(int argc, char *argv[])
 {
 	int ret, i;
 	msg_t msg;
-	usbdrv_msg_t *umsg = (usbdrv_msg_t *)msg.i.raw;
+	usbdrv_in_msg_t *umsg = (usbdrv_in_msg_t *)msg.i.raw;
 
 	/* Port for communication with the USB stack */
 	if (portCreate(&umass_common.drvport) != 0) {

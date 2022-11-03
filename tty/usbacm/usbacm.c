@@ -63,11 +63,11 @@ typedef struct _usbacm_dev {
 	struct _usbacm_dev *prev, *next;
 	int rxtid;
 	char path[32];
-	usbdrv_devinfo_t instance;
-	int pipeCtrl;
-	int pipeIntIN;
-	int pipeBulkIN;
-	int pipeBulkOUT;
+	usbdrv_dev_t instance;
+	usbdrv_pipe_t *pipeCtrl;
+	usbdrv_pipe_t *pipeIntIN;
+	usbdrv_pipe_t *pipeBulkIN;
+	usbdrv_pipe_t *pipeBulkOUT;
 	int id;
 	int fileId;
 	int flags;
@@ -152,7 +152,7 @@ static void usbacm_fifoPush(usbacm_dev_t *dev, char *data, size_t size)
 }
 
 
-static usbacm_dev_t *usbacm_getByPipe(int pipe)
+static usbacm_dev_t *usbacm_getByPipe(int pipeid)
 {
 	usbacm_dev_t *tmp, *dev = NULL;
 
@@ -160,7 +160,7 @@ static usbacm_dev_t *usbacm_getByPipe(int pipe)
 	tmp = usbacm_common.devices;
 	if (tmp != NULL) {
 		do {
-			if (tmp->pipeBulkIN == pipe || tmp->pipeBulkOUT == pipe || tmp->pipeIntIN == pipe) {
+			if (tmp->pipeBulkIN->id == pipeid || tmp->pipeBulkOUT->id == pipeid || tmp->pipeIntIN->id == pipeid) {
 				dev = tmp;
 				dev->rfcnt++;
 				break;
@@ -247,7 +247,7 @@ static void usbacm_handleCompletion(usbdrv_completion_t *c, char *data, size_t l
 		return;
 	}
 
-	if (c->pipeid != dev->pipeBulkIN) {
+	if (c->pipeid != dev->pipeBulkIN->id) {
 		usbacm_put(dev);
 		return;
 	}
@@ -589,7 +589,7 @@ static void usbacm_msgthr(void *arg)
 }
 
 
-static int _usbacm_handleInsertion(usbdrv_devinfo_t *insertion)
+static int _usbacm_handleInsertion(usbdrv_dev_t *insertion)
 {
 	usbacm_dev_t *dev;
 	const usbdrv_modeswitch_t *mode;
@@ -606,7 +606,8 @@ static int _usbacm_handleInsertion(usbdrv_devinfo_t *insertion)
 
 	dev->instance = *insertion;
 
-	if ((dev->pipeCtrl = usbdrv_open(insertion, usb_transfer_control, 0)) < 0) {
+	dev->pipeCtrl = usbdrv_pipeOpen(insertion, usb_transfer_control, 0);
+	if (dev->pipeCtrl == NULL) {
 		fprintf(stderr, "usbacm: Fail to open control pipe\n");
 		free(dev);
 		return -EINVAL;
@@ -618,24 +619,26 @@ static int _usbacm_handleInsertion(usbdrv_devinfo_t *insertion)
 		return -EINVAL;
 	}
 
-	if ((dev->pipeBulkIN = usbdrv_open(insertion, usb_transfer_bulk, usb_dir_in)) < 0) {
+	dev->pipeBulkIN = usbdrv_pipeOpen(insertion, usb_transfer_bulk, usb_dir_in);
+	if (dev->pipeBulkIN == NULL) {
 		free(dev);
 		return -EINVAL;
 	}
 
-	if ((dev->pipeBulkOUT = usbdrv_open(insertion, usb_transfer_bulk, usb_dir_out)) < 0) {
+	dev->pipeBulkOUT = usbdrv_pipeOpen(insertion, usb_transfer_bulk, usb_dir_out);
+	if (dev->pipeBulkOUT == NULL) {
 		free(dev);
 		return -EINVAL;
 	}
 
 	/* Interrupt pipe is optional */
-	dev->pipeIntIN = usbdrv_open(insertion, usb_transfer_interrupt, usb_dir_in);
+	dev->pipeIntIN = usbdrv_pipeOpen(insertion, usb_transfer_interrupt, usb_dir_in);
 
 	oid.port = usbacm_common.msgport;
 	oid.id = dev->fileId;
 	if (create_dev(&oid, dev->path) != 0) {
-		free(dev);
 		fprintf(stderr, "usbacm: Can't create dev!\n");
+		free(dev);
 		return -EINVAL;
 	}
 
@@ -681,7 +684,7 @@ static int _usbacm_handleDeletion(usbdrv_deletion_t *del)
 static void usbthr(void *arg)
 {
 	msg_t msg;
-	usbdrv_msg_t *umsg = (usbdrv_msg_t *)msg.i.raw;
+	usbdrv_in_msg_t *umsg = (usbdrv_in_msg_t *)msg.i.raw;
 	unsigned long rid;
 
 	for (;;) {
