@@ -213,22 +213,28 @@ static int _flashmtd_blockMaxflips(struct _storage_t *strg, uint32_t pageaddr)
 
 static int _flashmtd_checkECC(struct _storage_t *strg, uint32_t pageaddr, int nchunks)
 {
-	int ret, chunkidx;
+	int ret = 0, chunkidx, nflips;
 	unsigned int maxflips = 0;
 	struct _storage_devCtx_t *ctx = strg->dev->ctx;
 	flashdrv_meta_t *meta = ctx->metabuf;
 
 	for (chunkidx = 0; chunkidx < nchunks; chunkidx++) {
-		ret = _flashmtd_chunkFlips(strg, meta, pageaddr, chunkidx);
-		if (ret < 0) {
-			return ret;
+		nflips = _flashmtd_chunkFlips(strg, meta, pageaddr, chunkidx);
+		if (nflips < 0) {
+			return nflips;
 		}
 
-		if (chunk_is_uncorrectable(chunkidx, ret)) {
-			return -EBADMSG;
+		if (chunk_is_uncorrectable(chunkidx, nflips)) {
+			/* Continue reading, later return -EBADMSG */
+			ret = -EBADMSG;
 		}
 
-		maxflips = max(ret, maxflips);
+		maxflips = max(nflips, maxflips);
+	}
+
+	if (ret < 0) {
+		/* flash_uncorrectable has been detected on some chunks, return -EBADMSG */
+		return ret;
 	}
 
 	if (maxflips >= ECC_BITFLIP_THRESHOLD) {
@@ -308,12 +314,17 @@ static int flashmtd_read(struct _storage_t *strg, off_t offs, void *data, size_t
 		}
 
 		err = _flashmtd_checkECC(strg, paddr, nchunks);
-		if (err < 0) {
+		if (err == -EBADMSG) {
+			/* Continue reading, let the client handle -EBADMSG */
+			ret = -EBADMSG;
+		}
+		else if (err == -EUCLEAN && ret != -EBADMSG) {
+			/* Not a critical error, continue reading, return -EUCLEAN, but don't overwrite -EBADMSG */
+			ret = -EUCLEAN;
+		}
+		else if (err < 0) {
 			ret = err;
-			/* -EUCLEAN isn't a fatal error (indicates dangerous page degradation but all bitflips were successfully corrected) */
-			if (err != -EUCLEAN) {
-				break;
-			}
+			break;
 		}
 
 		chunksz = min(len - tempsz, strg->dev->mtd->writesz - offs);
@@ -384,12 +395,17 @@ static int flashmtd_metaRead(struct _storage_t *strg, off_t offs, void *data, si
 
 		/* Check only metadata chunk (DATA0) */
 		err = _flashmtd_checkECC(strg, paddr, 1);
-		if (err < 0) {
+		if (err == -EBADMSG) {
+			/* Continue reading, let the client handle -EBADMSG */
+			ret = -EBADMSG;
+		}
+		else if (err == -EUCLEAN && ret != -EBADMSG) {
+			/* Not a critical error, continue reading, return -EUCLEAN, but don't overwrite -EBADMSG */
+			ret = -EUCLEAN;
+		}
+		else if (err < 0) {
 			ret = err;
-			/* -EUCLEAN isn't a fatal error (indicates dangerous page degradation but all bitflips were successfully corrected) */
-			if (err != -EUCLEAN) {
-				break;
-			}
+			break;
 		}
 
 		chunksz = min(len - tempsz, strg->dev->mtd->oobSize);
