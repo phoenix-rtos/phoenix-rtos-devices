@@ -1000,16 +1000,6 @@ int flashdrv_markbad(flashdrv_dma_t *dma, uint32_t paddr)
 }
 
 
-void flashdrv_rundma(flashdrv_dma_t *dma)
-{
-	int channel = 0;
-
-	mutexLock(flashdrv_common.mutex);
-	dma_run((dma_t *)dma->first, channel);
-	mutexUnlock(flashdrv_common.mutex);
-}
-
-
 static void setup_flash_info(void)
 {
 	flash_id_t *flash_id = (flash_id_t *)flashdrv_common.uncached_buf;
