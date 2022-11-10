@@ -445,7 +445,13 @@ static void flashdrv_setDevClock(int dev, int state)
 
 flashdrv_dma_t *flashdrv_dmanew(void)
 {
-	flashdrv_dma_t *dma = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0);
+	flashdrv_dma_t *dma;
+
+	dma = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
+	if (dma == MAP_FAILED) {
+		return NULL;
+	}
+
 	dma->last = NULL;
 	dma->first = NULL;
 
