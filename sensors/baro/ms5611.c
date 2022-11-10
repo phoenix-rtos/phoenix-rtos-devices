@@ -65,6 +65,7 @@ typedef struct {
 	spimsg_ctx_t spiCtx;
 	oid_t spiSS;
 	sensor_event_t evtBaro;
+	uint16_t promC[7]; /* Prom memory. Assigning one too many indexes to use 1-6 indexing as in datasheet */
 	char stack[512] __attribute__((aligned(8)));
 } ms5611_ctx_t;
 
@@ -79,9 +80,31 @@ static void ms5611_publishthr(void *data)
 
 static int ms5611_hwSetup(ms5611_ctx_t *ctx)
 {
-	/* TODO: reset the device, read PROM data into ctx */
+	static const uint8_t promAddr[6] = { PROM_ADDR_C1, PROM_ADDR_C2, PROM_ADDR_C3, PROM_ADDR_C4, PROM_ADDR_C5, PROM_ADDR_C6 };
 
-	return -1;
+	unsigned int i;
+	uint8_t cmd;
+
+	/* Reset ms5611 sequence */
+	cmd = CMD_RESET;
+	if (sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, &cmd, sizeof(cmd), NULL, 0, 0) < 0) {
+		fprintf(stderr, "ms5611: failed to reset device\n");
+		return -1;
+	}
+	usleep(RESET_SLEEP);
+
+	/* PROM reading */
+	for (i = 0; i < sizeof(promAddr); i++) {
+		cmd = CMD_READ_PROM | promAddr[i];
+		/* data received from MS5611 is written to incremented index in ctx to match datasheet (so that C1 corresponds to promC[1] and so on) */
+		if (sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, &cmd, sizeof(cmd), &ctx->promC[i + 1], sizeof(ctx->promC[i + 1]), sizeof(cmd)) < 0) {
+			fprintf(stderr, "ms5611: failed read PROM C%i\n", i + 1);
+			return -1;
+		}
+		ctx->promC[i + 1] = (ctx->promC[i + 1] << 8) | (ctx->promC[i + 1] >> 8); /* swap higher and lower bytes */
+	}
+
+	return 0;
 }
 
 
