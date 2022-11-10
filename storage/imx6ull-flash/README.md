@@ -76,7 +76,7 @@ Analogue to flashdrv_write, but ignores metadata.
 Analogue to flashdrv_read, but ignores metadata.
 
 
-    extern void flashdrv_init(void);
+    extern int flashdrv_init(void);
 
 Library and NAND controler initialization.
 

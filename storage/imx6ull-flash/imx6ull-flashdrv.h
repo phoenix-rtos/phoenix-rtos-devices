@@ -92,7 +92,7 @@ extern int flashdrv_isbad(flashdrv_dma_t *dma, uint32_t paddr);
 extern int flashdrv_markbad(flashdrv_dma_t *dma, uint32_t paddr);
 
 
-extern void flashdrv_init(void);
+extern int flashdrv_init(void);
 
 
 extern const flashdrv_info_t *flashdrv_info(void);

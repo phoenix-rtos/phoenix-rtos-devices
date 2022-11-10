@@ -1043,13 +1043,42 @@ static void setup_flash_info(void)
 }
 
 
-void flashdrv_init(void)
+int flashdrv_init(void)
 {
-	flashdrv_common.dma  = mmap(NULL, 2 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x1804000);
-	flashdrv_common.gpmi = mmap(NULL, 2 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x1806000);
-	flashdrv_common.bch  = mmap(NULL, 4 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x1808000);
-	flashdrv_common.mux  = mmap(NULL, 4 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x20e0000);
-	flashdrv_common.uncached_buf = mmap(NULL, 2 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
+	flashdrv_common.dma = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x1804000);
+	if (flashdrv_common.dma == MAP_FAILED) {
+		return -ENOMEM;
+	}
+
+	flashdrv_common.gpmi = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x1806000);
+	if (flashdrv_common.gpmi == MAP_FAILED) {
+		munmap((void *)flashdrv_common.dma, _PAGE_SIZE);
+		return -ENOMEM;
+	}
+
+	flashdrv_common.bch = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x1808000);
+	if (flashdrv_common.bch == MAP_FAILED) {
+		munmap((void *)flashdrv_common.gpmi, _PAGE_SIZE);
+		munmap((void *)flashdrv_common.dma, _PAGE_SIZE);
+		return -ENOMEM;
+	}
+
+	flashdrv_common.mux = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x20e0000);
+	if (flashdrv_common.mux == MAP_FAILED) {
+		munmap((void *)flashdrv_common.bch, _PAGE_SIZE);
+		munmap((void *)flashdrv_common.gpmi, _PAGE_SIZE);
+		munmap((void *)flashdrv_common.dma, _PAGE_SIZE);
+		return -ENOMEM;
+	}
+
+	flashdrv_common.uncached_buf = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
+	if (flashdrv_common.uncached_buf == MAP_FAILED) {
+		munmap((void *)flashdrv_common.mux, _PAGE_SIZE);
+		munmap((void *)flashdrv_common.bch, _PAGE_SIZE);
+		munmap((void *)flashdrv_common.gpmi, _PAGE_SIZE);
+		munmap((void *)flashdrv_common.dma, _PAGE_SIZE);
+		return -ENOMEM;
+	}
 
 	/* 16 bytes of user metadada + ECC16 * bits per parity level (13) / 8 = 26 bytes for ECC  */
 	flashdrv_common.rawmetasz = 16 + 26;
@@ -1121,6 +1150,8 @@ void flashdrv_init(void)
 	*(flashdrv_common.bch + bch_flash0layout1) = (flashdrv_common.info.writesz + flashdrv_common.info.metasz) << 16 | 7 << 11 | 0 << 10 | 128;
 
 	interrupt(32 + 15, bch_irqHandler, NULL, flashdrv_common.bch_cond, &flashdrv_common.intbch);
+
+	return EOK;
 }
 
 
