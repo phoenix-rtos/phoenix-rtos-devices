@@ -22,6 +22,45 @@
 
 #include "../sensors.h"
 
+/* MS5611 COMMANDS */
+
+/* Reset command */
+#define CMD_RESET 0x1e
+
+/* Conversion request command and oversampling (OSR) rate flags */
+#define CMD_CVRT_PRESS 0x40
+#define CMD_CVRT_TEMP  0x50
+#define CVRT_OSR_256   0x00
+#define CVRT_OSR_512   0x02
+#define CVRT_OSR_1024  0x04
+#define CVRT_OSR_2048  0x06
+#define CVRT_OSR_4096  0x08
+
+/* Read ADC conversion result command */
+#define CMD_READ_ADC 0x00
+
+/* Read PROM command and PROM address specifiers */
+#define CMD_READ_PROM 0xa0
+#define PROM_ADDR_C1  0x02 /* C1: Pressure sensitivity */
+#define PROM_ADDR_C2  0x04 /* C2: Pressure offset */
+#define PROM_ADDR_C3  0x06 /* C3: Temperature coefficient of pressure sensitivity */
+#define PROM_ADDR_C4  0x08 /* C4: Temperature coefficient of pressure offset */
+#define PROM_ADDR_C5  0x0A /* C5: Reference temperature */
+#define PROM_ADDR_C6  0x0C /* C6: Temperature coefficient of the temperature */
+
+/* MS5611 DELAYS */
+
+/* OSR dependent minimum wait (microseconds) for conversion. Datasheet values ceil-ed to full milliseconds */
+#define OSR_256_SLEEP  1000
+#define OSR_512_SLEEP  2000
+#define OSR_1024_SLEEP 3000
+#define OSR_2048_SLEEP 5000
+#define OSR_4096_SLEEP 10000
+
+/* Device reset duration */
+#define RESET_SLEEP 3000 /* Datasheet says 2800. It seems some data may be lost with such sleep */
+
+
 typedef struct {
 	spimsg_ctx_t spiCtx;
 	oid_t spiSS;
