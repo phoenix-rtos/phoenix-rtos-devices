@@ -60,8 +60,9 @@ typedef struct {
 	int32_t velNorth;      /* GPS North velocity, [mm/s] */
 	int32_t velEast;       /* GPS East velocity, [mm/s] */
 	int32_t velDown;       /* GPS Down velocity, [mm/s] */
-	uint32_t eph;          /* GPS horizontal position accuracy 1E-3 [m] (millimetres)*/
-	uint32_t epv;          /* GPS vertical position accuracy 1E-3 [m] (millimetres)*/
+	uint32_t eph;          /* GPS horizontal position accuracy 1E-3 [m] (millimetres) */
+	uint32_t epv;          /* GPS vertical position accuracy 1E-3 [m] (millimetres) */
+	uint32_t evel;         /* GPS velocity accuracy 1E-3 [m] (millimetres) */
 	uint16_t heading;      /* value in [mrad] */
 	int16_t headingOffs;   /* value in [mrad] */
 	uint16_t headingAccur; /* value in [mrad] */

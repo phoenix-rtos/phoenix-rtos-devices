@@ -35,6 +35,10 @@
 #define DEG2MILIRAD 17.4532925 /* 1 degree -> 1 milliradian conversion parameter */
 #define KMH2MMS     277.7778   /* 1 km/h -> mm/s conversion parameter */
 
+/* PA6H has: pos_CEP = 3m, vel_CEP = 0.1m/s. We use RMS values which are 0.849 * CEP (https://en.wikipedia.org/wiki/Circular_error_probable) */
+#define PA6H_POS_ACCURACY 2.547f
+#define PA6H_VEL_ACCURACY 0.0849f
+
 
 #define REC_BUF_SZ 2048
 #define INBOX_SIZE 32
@@ -315,6 +319,7 @@ int pa6h_update(nmea_t *message, pa6h_ctx_t *ctx)
 			ctx->evtGps.gps.alt = message->msg.gga.h_asl * 1e3;
 			ctx->evtGps.gps.altEllipsoid = message->msg.gga.h_wgs * 1e3;
 			ctx->evtGps.gps.satsNb = message->msg.gga.sats;
+			ctx->evtGps.gps.eph = ctx->evtGps.gps.hdop * PA6H_POS_ACCURACY;
 
 			gettime(&(ctx->evtGps.timestamp), NULL);
 			break;
@@ -322,6 +327,9 @@ int pa6h_update(nmea_t *message, pa6h_ctx_t *ctx)
 		case nmea_gsa:
 			ctx->evtGps.gps.hdop = (unsigned int)(message->msg.gsa.hdop * 1e2);
 			ctx->evtGps.gps.vdop = (unsigned int)(message->msg.gsa.vdop * 1e2);
+
+			ctx->evtGps.gps.eph = ctx->evtGps.gps.hdop * PA6H_POS_ACCURACY;
+			ctx->evtGps.gps.epv = ctx->evtGps.gps.vdop * PA6H_POS_ACCURACY;
 			break;
 
 		case nmea_rmc:
@@ -332,6 +340,9 @@ int pa6h_update(nmea_t *message, pa6h_ctx_t *ctx)
 			ctx->evtGps.gps.groundSpeed = message->msg.vtg.speed_kmh * KMH2MMS; /* kmh->mm/s */
 			ctx->evtGps.gps.velNorth = cos(message->msg.vtg.track * DEG2RAD) * ctx->evtGps.gps.groundSpeed;
 			ctx->evtGps.gps.velEast = sin(message->msg.vtg.track * DEG2RAD) * ctx->evtGps.gps.groundSpeed;
+
+			/* This is not 100% correct error estimation but the only we have */
+			ctx->evtGps.gps.evel = ctx->evtGps.gps.hdop * PA6H_VEL_ACCURACY;
 			break;
 
 		default:
