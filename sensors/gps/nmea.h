@@ -91,7 +91,7 @@ typedef struct {
 } nmea_t;
 
 
-/* interpret one line of gps output into nmea message, if known */
-extern int nmea_interpreter(char *str, nmea_t *out);
+/* interpret one line of gps output into nmea message */
+extern void nmea_interpreter(char *str, nmea_t *out);
 
 #endif
