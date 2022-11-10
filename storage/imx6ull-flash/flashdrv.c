@@ -714,6 +714,7 @@ int flashdrv_write(flashdrv_dma_t *dma, uint32_t paddr, void *data, char *aux)
 	int chip = 0, channel = 0, sz;
 	char addr[5] = { 0 };
 	int skipMeta = 0, err;
+	uint32_t tmp;
 	memcpy(addr + 2, &paddr, 3);
 
 	if (data == NULL) {
@@ -741,18 +742,24 @@ int flashdrv_write(flashdrv_dma_t *dma, uint32_t paddr, void *data, char *aux)
 
 	if (data == NULL) {
 		/* Trick BCH controller into thinking that the whole page consists of just the metadata block */
-		*(flashdrv_common.bch + bch_flash0layout0) &= ~(0xff << 24);
+		tmp = *(flashdrv_common.bch + bch_flash0layout0);
+		tmp &= ~(0xffu << 24);
+		*(flashdrv_common.bch + bch_flash0layout0) = tmp;
 
-		*(flashdrv_common.bch + bch_flash0layout1) &= ~(0xffff << 16);
-		*(flashdrv_common.bch + bch_flash0layout1) |= flashdrv_common.rawmetasz << 16;
+		tmp = *(flashdrv_common.bch + bch_flash0layout1);
+		tmp &= ~(0xffffu << 16);
+		tmp |= flashdrv_common.rawmetasz << 16;
+		*(flashdrv_common.bch + bch_flash0layout1) = tmp;
 	}
 	else if (skipMeta) {
 		/* Perform partial page programming (don't change metadata and its ECC) */
 		memset(aux, 0xff, flashdrv_common.rawmetasz);
 
 		/* Treat metadata and its ECC as raw byte area without ECC */
-		*(flashdrv_common.bch + bch_flash0layout0) &= ~(0x1fff << 11);
-		*(flashdrv_common.bch + bch_flash0layout0) |= flashdrv_common.rawmetasz << 16;
+		tmp = *(flashdrv_common.bch + bch_flash0layout0);
+		tmp &= ~(0x1fff << 11);
+		tmp |= flashdrv_common.rawmetasz << 16;
+		*(flashdrv_common.bch + bch_flash0layout0) = tmp;
 	}
 
 	flashdrv_common.result = 1;
@@ -766,14 +773,20 @@ int flashdrv_write(flashdrv_dma_t *dma, uint32_t paddr, void *data, char *aux)
 	err = flashdrv_common.result;
 
 	if (data == NULL) {
-		*(flashdrv_common.bch + bch_flash0layout0) |= 8 << 24;
+		tmp = *(flashdrv_common.bch + bch_flash0layout0);
+		tmp |= (8 << 24);
+		*(flashdrv_common.bch + bch_flash0layout0) = tmp;
 
-		*(flashdrv_common.bch + bch_flash0layout1) &= ~(0xffff << 16);
-		*(flashdrv_common.bch + bch_flash0layout1) |= (flashdrv_common.info.writesz + flashdrv_common.info.metasz) << 16;
+		tmp = *(flashdrv_common.bch + bch_flash0layout1);
+		tmp &= ~(0xffffu << 16);
+		tmp |= (flashdrv_common.info.writesz + flashdrv_common.info.metasz) << 16;
+		*(flashdrv_common.bch + bch_flash0layout1) = tmp;
 	}
 	else if (skipMeta) {
-		*(flashdrv_common.bch + bch_flash0layout0) &= ~(0x1fff << 11);
-		*(flashdrv_common.bch + bch_flash0layout0) |= 16 << 16 | 8 << 11;
+		tmp = *(flashdrv_common.bch + bch_flash0layout0);
+		tmp &= ~(0x1fff << 11);
+		tmp |= (16 << 16) | (8 << 11);
+		*(flashdrv_common.bch + bch_flash0layout0) = tmp;
 	}
 
 	mutexUnlock(flashdrv_common.mutex);
