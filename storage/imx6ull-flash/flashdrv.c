@@ -211,7 +211,7 @@ struct {
 	handle_t intbch, intdma, intgpmi;
 	unsigned rawmetasz; /* user metadata + ECC16 metadata bytes */
 
-	int result, bch_status, bch_done;
+	volatile int result, bch_status, bch_done;
 
 	uint8_t *uncached_buf;
 	flashdrv_info_t info;
@@ -263,6 +263,9 @@ static void dma_sequence(dma_t *prev, dma_t *next)
 
 static void dma_run(dma_t *dma, int channel)
 {
+	/* Synchronize memory before running DMA */
+	__asm__ volatile("dsb");
+
 	*(flashdrv_common.dma + apbh_ch0_nxtcmdar + channel * apbh_next_channel) = (uint32_t)va2pa(dma);
 	*(flashdrv_common.dma + apbh_ch0_sema + channel * apbh_next_channel) = 1;
 }
