@@ -11,6 +11,7 @@
  * %LICENSE%
  */
 
+#include <assert.h>
 #include <errno.h>
 #include <unistd.h>
 #include <stdint.h>
@@ -459,6 +460,32 @@ void flashdrv_dmadestroy(flashdrv_dma_t *dma)
 }
 
 
+static dma_t *dma_verify(dma_t *desc)
+{
+	/* DMA transfer/sense, check the buffer */
+	if ((desc->flags & 3) && (desc->buffer == 0)) {
+		printf("imx6ull-flash: detected NULL buffer for DMA transfer!\n");
+	}
+
+	/* Return next descriptor */
+	return (desc->flags & dma_chain) ? (dma_t *)((uintptr_t)desc + (desc->next - (uint32_t)va2pa(desc))) : NULL;
+}
+
+
+static int flashdrv_dmaverify(flashdrv_dma_t *dma)
+{
+	dma_t *desc = dma->first;
+	int n = 0;
+
+	while (desc != NULL) {
+		desc = dma_verify(desc);
+		n++;
+	}
+
+	return n;
+}
+
+
 int flashdrv_wait4ready(flashdrv_dma_t *dma, int chip, int err)
 {
 	void *next = dma->last, *prev = dma->last;
@@ -652,6 +679,8 @@ int flashdrv_reset(flashdrv_dma_t *dma)
 	flashdrv_issue(dma, flash_reset, chip, NULL, 0, NULL, NULL);
 	flashdrv_finish(dma);
 
+	assert(flashdrv_dmaverify(dma) == 2);
+
 	mutexLock(flashdrv_common.mutex);
 	flashdrv_common.result = 1;
 	dma_run((dma_t *)dma->first, channel);
@@ -683,6 +712,8 @@ int flashdrv_readid(flashdrv_dma_t *dma, flash_id_t *flash_id)
 	flashdrv_disablebch(dma, chip);
 	flashdrv_wait4ready(dma, chip, EOK);
 	flashdrv_finish(dma);
+
+	assert(flashdrv_dmaverify(dma) == 10);
 
 	mutexLock(flashdrv_common.mutex);
 	flashdrv_common.result = 1;
@@ -727,6 +758,8 @@ int flashdrv_write(flashdrv_dma_t *dma, uint32_t paddr, void *data, char *aux)
 	flashdrv_issue(dma, flash_read_status, 0, NULL, 0, NULL, NULL);
 	flashdrv_readcompare(dma, chip, 0x3, 0, -1);
 	flashdrv_finish(dma);
+
+	assert(flashdrv_dmaverify(dma) == 11);
 
 	mutexLock(flashdrv_common.mutex);
 
@@ -794,6 +827,8 @@ int flashdrv_read(flashdrv_dma_t *dma, uint32_t paddr, void *data, flashdrv_meta
 	flashdrv_disablebch(dma, chip);
 	flashdrv_finish(dma);
 
+	assert(flashdrv_dmaverify(dma) == 9);
+
 	mutexLock(flashdrv_common.mutex);
 	flashdrv_common.result = 1;
 	flashdrv_common.bch_done = 0;
@@ -827,6 +862,8 @@ int flashdrv_erase(flashdrv_dma_t *dma, uint32_t paddr)
 	flashdrv_readcompare(dma, chip, 0x1, 0, -1);
 	flashdrv_finish(dma);
 
+	assert(flashdrv_dmaverify(dma) == 10);
+
 	mutexLock(flashdrv_common.mutex);
 	flashdrv_common.result = 1;
 	dma_run((dma_t *)dma->first, channel);
@@ -858,6 +895,8 @@ int flashdrv_writeraw(flashdrv_dma_t *dma, uint32_t paddr, void *data, int sz)
 	flashdrv_issue(dma, flash_read_status, 0, NULL, 0, NULL, NULL);
 	flashdrv_readcompare(dma, 0, 0x3, 0, -1);
 	flashdrv_finish(dma);
+
+	assert(flashdrv_dmaverify(dma) == 11);
 
 	mutexLock(flashdrv_common.mutex);
 	flashdrv_common.result = 1;
@@ -891,6 +930,8 @@ int flashdrv_readraw(flashdrv_dma_t *dma, uint32_t paddr, void *data, int sz)
 	flashdrv_disablebch(dma, chip);
 	flashdrv_wait4ready(dma, chip, EOK);
 	flashdrv_finish(dma);
+
+	assert(flashdrv_dmaverify(dma) == 11);
 
 	mutexLock(flashdrv_common.mutex);
 	flashdrv_common.result = 1;
@@ -929,6 +970,8 @@ int flashdrv_isbad(flashdrv_dma_t *dma, uint32_t paddr)
 	flashdrv_disablebch(dma, chip);
 	flashdrv_wait4ready(dma, chip, EOK);
 	flashdrv_finish(dma);
+
+	assert(flashdrv_dmaverify(dma) == 11);
 
 	mutexLock(flashdrv_common.mutex);
 	flashdrv_common.result = 1;
@@ -970,6 +1013,8 @@ int flashdrv_markbad(flashdrv_dma_t *dma, uint32_t paddr)
 	flashdrv_issue(dma, flash_read_status, 0, NULL, 0, NULL, NULL);
 	flashdrv_readcompare(dma, 0, 0x3, 0, -1);
 	flashdrv_finish(dma);
+
+	assert(flashdrv_dmaverify(dma) == 11);
 
 	mutexLock(flashdrv_common.mutex);
 
