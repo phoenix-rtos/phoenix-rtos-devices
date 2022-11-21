@@ -29,9 +29,9 @@
 /* resolution configuration register */
 #define REG_RES_CONF 0x10
 #define VAL_AVGT_8   0x00
-#define VAL_AVGT_32  0x04
-#define VAL_AVGT_128 0x08
-#define VAL_AVGT_512 0x0c
+#define VAL_AVGT_16  0x04
+#define VAL_AVGT_32  0x08
+#define VAL_AVGT_64  0x0c
 #define VAL_AVGP_8   0x00
 #define VAL_AVGP_32  0x01
 #define VAL_AVGP_128 0x02
@@ -137,8 +137,8 @@ static int lps25xx_hwSetup(lps25xx_ctx_t *ctx)
 	}
 	usleep(1000 * 100); /* Arbitrary wait */
 
-	/* Internal averaging configuration. Averages pressure over 8 samples and temperature over 8 samples. */
-	if (spiWriteReg(ctx, REG_RES_CONF, VAL_AVGT_8 | VAL_AVGP_8) < 0) {
+	/* Internal averaging configuration. Lowest noise settings */
+	if (spiWriteReg(ctx, REG_RES_CONF, VAL_AVGT_64 | VAL_AVGP_512) < 0) {
 		return -1;
 	}
 	usleep(1000 * 100); /* Arbitrary wait */
