@@ -58,7 +58,8 @@
 #define OSR_4096_SLEEP 10000
 
 /* Device reset duration */
-#define RESET_SLEEP 3000 /* Datasheet says 2800. It seems some data may be lost with such sleep */
+#define RESET_SLEEP  3000 /* Datasheet says 2800. It seems some data may be lost with such sleep */
+#define HW_ERROR_REP 10
 
 
 typedef struct {
@@ -70,9 +71,98 @@ typedef struct {
 } ms5611_ctx_t;
 
 
+/* Sends conversion request `convCmd`, waits `usDelat` for conversion and reads ADC to `res` */
+static int ms5611_measure(ms5611_ctx_t *ctx, uint8_t convCmd, time_t usDelay, uint32_t *res)
+{
+	static const uint8_t readCmd = CMD_READ_ADC;
+	uint32_t tmp;
+	uint8_t val[3];
+
+	if (sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, &convCmd, sizeof(convCmd), NULL, 0, 0) < 0) {
+		fprintf(stderr, "ms5611: failed conv. request\n");
+		return -1;
+	}
+
+	usleep(usDelay);
+
+	if (sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, &readCmd, sizeof(readCmd), val, sizeof(val), sizeof(readCmd)) < 0) {
+		fprintf(stderr, "ms5611: adc read failed\n");
+		return -1;
+	}
+
+	tmp = ((uint32_t)val[0] << 16) | ((uint32_t)val[1] << 8) | ((uint32_t)val[2]);
+
+	/* If ADC is read too early then it returns 0 */
+	if (tmp == 0) {
+		return -1;
+	}
+
+	*res = tmp;
+
+	return 0;
+}
+
+
 static void ms5611_publishthr(void *data)
 {
-	/* TODO: data acquisition thread and calculations based on PROM coefficients */
+	sensor_info_t *info = (sensor_info_t *)data;
+	ms5611_ctx_t *ctx = info->ctx;
+	int32_t temp, press, cnt = 0;
+	time_t now;
+
+	/* breaking naming convention on purpose to match datasheet notation 1:1 */
+	uint32_t D1 = 0, D2 = 0;
+	int64_t dT;
+	int64_t off, sens;
+
+	/* Initialize temperature with too big delay for certain response */
+	while (ms5611_measure(ctx, (CMD_CVRT_TEMP | CVRT_OSR_4096), OSR_4096_SLEEP * 2, &D2) < 0) {
+		usleep(10000);
+		if (++cnt >= HW_ERROR_REP) {
+			cnt = 0;
+			fprintf(stderr, "ms5611: temp. init error\n");
+		}
+	}
+	cnt = 0;
+
+	/* Translate temperature */
+	dT = (int32_t)D2 - (((int32_t)ctx->promC[5]) << 8);           /* dT = D2 - C5 * 2^8 */
+	temp = 2000 + ((dT * (int64_t)ctx->promC[6]) >> 23); /* TEMP = 2000 + dT * C6 / 2^23 */
+
+	while (1) {
+		/* Read pressure */
+		if (ms5611_measure(ctx, (CMD_CVRT_PRESS | CVRT_OSR_4096), OSR_4096_SLEEP, &D1) < 0) {
+			usleep(1000);
+			if (++cnt >= HW_ERROR_REP) {
+				cnt = 0;
+				fprintf(stderr, "ms5611: pressure read errors\n");
+			}
+			continue;
+		}
+
+		gettime(&now, NULL);
+
+		/* Read temperature. Does not repeat failed read - fall back to old temperature */
+		if (ms5611_measure(ctx, (CMD_CVRT_TEMP | CVRT_OSR_1024), OSR_1024_SLEEP, &D2) == 0) {
+			/* Translate temperature */
+			dT = (int32_t)D2 - (((int32_t)ctx->promC[5]) << 8);           /* dT = D2 - C5 * 2^8 */
+			temp = 2000 + ((dT * (int64_t)ctx->promC[6]) >> 23); /* TEMP = 2000 + dT * C6 / 2^23 */
+		}
+
+		/* Translate press */
+		off = ((int64_t)ctx->promC[2] << 16) + ((dT * (int64_t)ctx->promC[4]) >> 7);  /* OFF = C2 * 2^16 + (C4 * dT) / 2^7 */
+		sens = ((int64_t)ctx->promC[1] << 15) + ((dT * (int64_t)ctx->promC[3]) >> 8); /* SENS = C1 * 2^15 + (C4 * dT) / 2^8 */
+		press = ((((int64_t)D1 * sens) >> 21) - off) >> 15;                                    /* P = ((D1 * SENS) / 2^21 - OFF) / 2^15 */
+
+		/* MS5611 operating ranges: temperature from -40C to +80C, and pressure: 45000Pa, 110000 Pa */
+		if (press > 45000 && press < 120000 && temp > -4000 && temp < 8500) {
+			ctx->evtBaro.timestamp = now;
+			ctx->evtBaro.baro.pressure = press;
+			ctx->evtBaro.baro.temp = (temp + 27315 + 50) / 100;
+
+			sensors_publish(info->id, &ctx->evtBaro);
+		}
+	}
 
 	return;
 }
