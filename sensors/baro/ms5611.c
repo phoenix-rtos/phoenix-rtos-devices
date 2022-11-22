@@ -66,6 +66,39 @@ typedef struct {
 } ms5611_ctx_t;
 
 
+/* Based on sample code in AN520 application note for MS56xx/MS57xx/MS58xx pressure sensor by Measurement Specialties */
+uint8_t ms5611_crc4(const uint16_t *prom)
+{
+	uint16_t cnt, bit, word;
+	uint32_t rem = 0; /* crc reminder */
+
+	/* Operation is performed on bytes */
+	for (cnt = 0; cnt < (PROM_SIZE * sizeof(prom[0])); cnt++) {
+		/* The CRC code is calculated and written in factory with the LSB byte in the prom (prom[7]) set to 0x00 */
+		if (cnt != (PROM_SIZE * 2 - 1)) {
+			word = prom[cnt >> 1];
+
+			/* High/low byte selection */
+			if ((cnt & 1) == 1) {
+				rem ^= word & 0x00ff;
+			}
+			else {
+				rem ^= word >> 8;
+			}
+		}
+
+		for (bit = 0; bit < 8; ++bit) {
+			rem <<= 1;
+			if ((rem & 0x10000) != 0) {
+				rem ^= 0x3000;
+			}
+		}
+	}
+
+	return ((rem >> 12) & 0xf); /* final 4-bit reminder is CRC code */
+}
+
+
 /* Sends conversion request `convCmd`, waits `usDelat` for conversion and reads ADC to `res` */
 static int ms5611_measure(ms5611_ctx_t *ctx, uint8_t convCmd, time_t usDelay, uint32_t *res)
 {
@@ -183,6 +216,12 @@ static int ms5611_hwSetup(ms5611_ctx_t *ctx)
 			return -1;
 		}
 		ctx->prom[i] = (ctx->prom[i] << 8) | (ctx->prom[i] >> 8); /* swap higher and lower bytes */
+	}
+
+	/* Check CRC of PROM (lower nibble of last prom byte) with calculated CRC */
+	if (ms5611_crc4(ctx->prom) != (ctx->prom[PROM_SIZE - 1] & 0x000f)) {
+		fprintf(stderr, "ms5611: wrong PROM crc\n");
+		return -1;
 	}
 
 	return 0;
