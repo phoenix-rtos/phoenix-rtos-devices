@@ -41,12 +41,7 @@
 
 /* Read PROM command and PROM address specifiers */
 #define CMD_READ_PROM 0xa0
-#define PROM_ADDR_C1  0x02 /* C1: Pressure sensitivity */
-#define PROM_ADDR_C2  0x04 /* C2: Pressure offset */
-#define PROM_ADDR_C3  0x06 /* C3: Temperature coefficient of pressure sensitivity */
-#define PROM_ADDR_C4  0x08 /* C4: Temperature coefficient of pressure offset */
-#define PROM_ADDR_C5  0x0A /* C5: Reference temperature */
-#define PROM_ADDR_C6  0x0C /* C6: Temperature coefficient of the temperature */
+#define PROM_SIZE     8
 
 /* MS5611 DELAYS */
 
@@ -66,7 +61,7 @@ typedef struct {
 	spimsg_ctx_t spiCtx;
 	oid_t spiSS;
 	sensor_event_t evtBaro;
-	uint16_t promC[7]; /* Prom memory. Assigning one too many indexes to use 1-6 indexing as in datasheet */
+	uint16_t prom[PROM_SIZE]; /* Prom memory: [ reserved, C1, C2, C3, C4, C5, C6, CRC ] */
 	char stack[512] __attribute__((aligned(8)));
 } ms5611_ctx_t;
 
@@ -126,8 +121,8 @@ static void ms5611_publishthr(void *data)
 	cnt = 0;
 
 	/* Translate temperature */
-	dT = (int32_t)D2 - (((int32_t)ctx->promC[5]) << 8);           /* dT = D2 - C5 * 2^8 */
-	temp = 2000 + ((dT * (int64_t)ctx->promC[6]) >> 23); /* TEMP = 2000 + dT * C6 / 2^23 */
+	dT = (int32_t)D2 - (((int32_t)ctx->prom[5]) << 8);  /* dT = D2 - C5 * 2^8 */
+	temp = 2000 + ((dT * (int64_t)ctx->prom[6]) >> 23); /* TEMP = 2000 + dT * C6 / 2^23 */
 
 	while (1) {
 		/* Read pressure */
@@ -145,14 +140,14 @@ static void ms5611_publishthr(void *data)
 		/* Read temperature. Does not repeat failed read - fall back to old temperature */
 		if (ms5611_measure(ctx, (CMD_CVRT_TEMP | CVRT_OSR_1024), OSR_1024_SLEEP, &D2) == 0) {
 			/* Translate temperature */
-			dT = (int32_t)D2 - (((int32_t)ctx->promC[5]) << 8);           /* dT = D2 - C5 * 2^8 */
-			temp = 2000 + ((dT * (int64_t)ctx->promC[6]) >> 23); /* TEMP = 2000 + dT * C6 / 2^23 */
+			dT = (int32_t)D2 - (((int32_t)ctx->prom[5]) << 8);  /* dT = D2 - C5 * 2^8 */
+			temp = 2000 + ((dT * (int64_t)ctx->prom[6]) >> 23); /* TEMP = 2000 + dT * C6 / 2^23 */
 		}
 
 		/* Translate press */
-		off = ((int64_t)ctx->promC[2] << 16) + ((dT * (int64_t)ctx->promC[4]) >> 7);  /* OFF = C2 * 2^16 + (C4 * dT) / 2^7 */
-		sens = ((int64_t)ctx->promC[1] << 15) + ((dT * (int64_t)ctx->promC[3]) >> 8); /* SENS = C1 * 2^15 + (C4 * dT) / 2^8 */
-		press = ((((int64_t)D1 * sens) >> 21) - off) >> 15;                                    /* P = ((D1 * SENS) / 2^21 - OFF) / 2^15 */
+		off = ((int64_t)ctx->prom[2] << 16) + ((dT * (int64_t)ctx->prom[4]) >> 7);  /* OFF = C2 * 2^16 + (C4 * dT) / 2^7 */
+		sens = ((int64_t)ctx->prom[1] << 15) + ((dT * (int64_t)ctx->prom[3]) >> 8); /* SENS = C1 * 2^15 + (C4 * dT) / 2^8 */
+		press = ((((int64_t)D1 * sens) >> 21) - off) >> 15;                         /* P = ((D1 * SENS) / 2^21 - OFF) / 2^15 */
 
 		/* MS5611 operating ranges: temperature from -40C to +80C, and pressure: 45000Pa, 110000 Pa */
 		if (press > 45000 && press < 120000 && temp > -4000 && temp < 8500) {
@@ -170,10 +165,7 @@ static void ms5611_publishthr(void *data)
 
 static int ms5611_hwSetup(ms5611_ctx_t *ctx)
 {
-	static const uint8_t promAddr[6] = { PROM_ADDR_C1, PROM_ADDR_C2, PROM_ADDR_C3, PROM_ADDR_C4, PROM_ADDR_C5, PROM_ADDR_C6 };
-
-	unsigned int i;
-	uint8_t cmd;
+	uint8_t cmd, i;
 
 	/* Reset ms5611 sequence */
 	cmd = CMD_RESET;
@@ -184,14 +176,13 @@ static int ms5611_hwSetup(ms5611_ctx_t *ctx)
 	usleep(RESET_SLEEP);
 
 	/* PROM reading */
-	for (i = 0; i < sizeof(promAddr); i++) {
-		cmd = CMD_READ_PROM | promAddr[i];
-		/* data received from MS5611 is written to incremented index in ctx to match datasheet (so that C1 corresponds to promC[1] and so on) */
-		if (sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, &cmd, sizeof(cmd), &ctx->promC[i + 1], sizeof(ctx->promC[i + 1]), sizeof(cmd)) < 0) {
+	for (i = 0; i < PROM_SIZE; i++) {
+		cmd = CMD_READ_PROM | (i << 1); /* LSB of prom address is always 0 */
+		if (sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, &cmd, sizeof(cmd), &ctx->prom[i], sizeof(ctx->prom[i]), sizeof(cmd)) < 0) {
 			fprintf(stderr, "ms5611: failed read PROM C%i\n", i + 1);
 			return -1;
 		}
-		ctx->promC[i + 1] = (ctx->promC[i + 1] << 8) | (ctx->promC[i + 1] >> 8); /* swap higher and lower bytes */
+		ctx->prom[i] = (ctx->prom[i] << 8) | (ctx->prom[i] >> 8); /* swap higher and lower bytes */
 	}
 
 	return 0;
