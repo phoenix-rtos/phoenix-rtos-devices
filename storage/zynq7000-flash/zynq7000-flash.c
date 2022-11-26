@@ -163,7 +163,8 @@ static int flash_devCtl(oid_t *oid)
 static void flash_msgHandler(void *arg, msg_t *msg)
 {
 	storage_t *strg;
-	mount_msg_t *mnt;
+	mount_i_msg_t *imnt;
+	mount_o_msg_t *omnt;
 
 	switch (msg->type) {
 		case mtOpen:
@@ -189,8 +190,9 @@ static void flash_msgHandler(void *arg, msg_t *msg)
 			break;
 
 		case mtMount:
-			mnt = (mount_msg_t *)msg->i.raw;
-			storage_mountfs(storage_get(GET_STORAGE_ID(mnt->id)), mnt->fstype, NULL, 0, (oid_t *)msg->o.raw);
+			imnt = (mount_i_msg_t *)msg->i.raw;
+			omnt = (mount_o_msg_t *)msg->o.raw;
+			omnt->err = storage_mountfs(storage_get(GET_STORAGE_ID(imnt->dev.id)), imnt->fstype, msg->i.data, imnt->mode, &omnt->oid);
 			break;
 
 		case mtDevCtl:
