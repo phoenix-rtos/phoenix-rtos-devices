@@ -448,7 +448,8 @@ static void atasrv_msgloop(void *arg)
 {
 	unsigned long rid;
 	unsigned port = *(unsigned int *)arg;
-	mount_msg_t *mnt;
+	mount_i_msg_t *imnt;
+	mount_o_msg_t *omnt;
 	msg_t msg;
 
 	for (;;) {
@@ -457,8 +458,9 @@ static void atasrv_msgloop(void *arg)
 
 		switch (msg.type) {
 		case mtMount:
-			mnt = (mount_msg_t *)msg.i.raw;
-			atasrv_mount(mnt->id, mnt->fstype, (oid_t *)msg.o.raw);
+			imnt = (mount_i_msg_t *)msg.i.raw;
+			omnt = (mount_o_msg_t *)msg.o.raw;
+			omnt->err = atasrv_mount(imnt->dev.id, imnt->fstype, &omnt->oid);
 			break;
 
 		case mtOpen:
