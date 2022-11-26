@@ -89,12 +89,14 @@ static void meterfs_handler(void *arg, msg_t *msg)
 
 static void flashnor_msgloop(void *arg, msg_t *msg)
 {
-	mount_msg_t *mnt;
+	mount_i_msg_t *imnt;
+	mount_o_msg_t *omnt;
 
 	switch (msg->type) {
 		case mtMount:
-			mnt = (mount_msg_t *)msg->i.raw;
-			storage_mountfs(storage_get(mnt->id), mnt->fstype, NULL, 0, (oid_t *)msg->o.raw);
+			imnt = (mount_i_msg_t *)msg->i.raw;
+			omnt = (mount_o_msg_t *)msg->o.raw;
+			omnt->err = storage_mountfs(storage_get(imnt->id), imnt->fstype, msg->i.data, imnt->mode, &omnt->root);
 			break;
 
 		default:
