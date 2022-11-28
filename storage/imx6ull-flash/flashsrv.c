@@ -449,6 +449,7 @@ static void flashsrv_devCtrl(msg_t *msg)
 static void flashsrv_msgHandler(void *arg, msg_t *msg)
 {
 	mount_msg_t *mnt;
+	mount_mnt_t *mntmsg;
 
 	switch (msg->type) {
 		case mtOpen:
@@ -471,7 +472,12 @@ static void flashsrv_msgHandler(void *arg, msg_t *msg)
 		case mtMount:
 			mnt = (mount_msg_t *)msg->i.raw;
 			TRACE("DEV mount - fs: %s", mnt->fstype);
-			storage_mountfs(storage_get(mnt->id), mnt->fstype, NULL, 0, (oid_t *)msg->o.raw);
+			storage_mountfs(storage_get(mnt->dev.id), mnt->fstype, NULL, 0, (oid_t *)msg->o.raw);
+			break;
+
+		case mtMnt:
+			mntmsg = (mount_mnt_t *)msg->o.raw;
+			mntmsg->err = storage_mountpoint(storage_get(((oid_t *)msg->i.data)->id), &mntmsg->mnt);
 			break;
 
 		case mtGetAttr:

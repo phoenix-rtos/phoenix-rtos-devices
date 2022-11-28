@@ -458,7 +458,11 @@ static void atasrv_msgloop(void *arg)
 		switch (msg.type) {
 		case mtMount:
 			mnt = (mount_msg_t *)msg.i.raw;
-			atasrv_mount(mnt->id, mnt->fstype, (oid_t *)msg.o.raw);
+			atasrv_mount(mnt->dev.id, mnt->fstype, (oid_t *)msg.o.raw);
+			break;
+
+		case mtMnt:
+			/* TODO: get mountpoint */
 			break;
 
 		case mtOpen:

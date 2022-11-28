@@ -97,6 +97,10 @@ static void flashnor_msgloop(void *arg, msg_t *msg)
 			storage_mountfs(storage_get(mnt->id), mnt->fstype, NULL, 0, (oid_t *)msg->o.raw);
 			break;
 
+		case mtMnt:
+			/* TODO: get mountpoint */
+			break;
+
 		default:
 			msg->o.io.err = -EINVAL;
 			break;
