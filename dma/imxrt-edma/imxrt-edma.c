@@ -12,6 +12,7 @@
  */
 
 #include <stdlib.h>
+#include <unistd.h>
 #include <sys/interrupt.h>
 #include <sys/platform.h>
 
@@ -132,6 +133,7 @@ int dmamux_channel_is_enabled(uint8_t channel)
 
 int edma_init(int (*error_isr)(unsigned int n, void *arg))
 {
+	int init = 1;
 	int res;
 	platformctl_t pctl;
 
@@ -139,46 +141,64 @@ int edma_init(int (*error_isr)(unsigned int n, void *arg))
 	pctl.type = pctl_devclock;
 	pctl.devclock.dev = EDMA_CLK;
 
-	if ((res = platformctl(&pctl)) != 0)
+	if ((res = platformctl(&pctl)) != 0) {
 		return res;
-
-	pctl.action = pctl_set;
+	}
 
 #if defined(TARGET_IMXRT1060)
-	pctl.devclock.state = clk_state_run;
+	if (pctl.devclock.state == clk_state_run) {
 #elif defined(TARGET_IMXRT1170)
-	pctl.devclock.state = 1;
+	if (pctl.devclock.state == 1) {
+#endif
+		/* someone else already started initialization - sleep 1 ms make sure it has finished */
+		usleep(1000);
+		init = 0;
+	}
+
+	if (init) {
+		pctl.action = pctl_set;
+
+#if defined(TARGET_IMXRT1060)
+		pctl.devclock.state = clk_state_run;
+#elif defined(TARGET_IMXRT1170)
+		pctl.devclock.state = 1;
 #endif
 
-	if ((res = platformctl(&pctl)) != 0)
-		return res;
+		if ((res = platformctl(&pctl)) != 0) {
+			return res;
+		}
+	}
 
 	edma_regs = EDMA_BASE_ADDR;
 	dmamux_regs = DMA_MUX_BASE_ADDR;
 
-	/* Disable all channels, clear interrupt and error flags */
-	edma_regs->erq = 0;
-	edma_regs->_int = 0xffffffff;
-	edma_regs->err = 0xffffffff;
+	if (init) {
+		/* Disable all channels, clear interrupt and error flags */
+		edma_regs->erq = 0;
+		edma_regs->_int = 0xffffffff;
+		edma_regs->err = 0xffffffff;
 
-	/*
-	 * Use round robin for group and channel arbitration,
-	 * enable minor loop mapping
-	 */
-	edma_regs->cr = (1 << 2) | (1 << 3) | (1 << 7);
+		/*
+		 * Use round robin for group and channel arbitration,
+		 * enable minor loop mapping
+		 */
+		edma_regs->cr = (1 << 2) | (1 << 3) | (1 << 7);
 
-	/* Set halt on error bit */
-	edma_regs->cr |= (1 << 4);
+		/* Set halt on error bit */
+		edma_regs->cr |= (1 << 4);
 
-	/* Stall channel activation in debug mode */
-	edma_regs->cr |= 1 << 1;
+		/* Stall channel activation in debug mode */
+		edma_regs->cr |= 1 << 1;
+	}
 
-	/* Enable error interrupts */
+	/* Install error interrupts handler */
 	unsigned handle;
 	interrupt(EDMA_ERROR_IRQ, error_isr, NULL, 0, &handle);
 
-	/* Enable all error interrupts */
-	edma_regs->eei = 0xffffffff;
+	if (init) {
+		/* Enable all error interrupts */
+		edma_regs->eei = 0xffffffff;
+	}
 
 	return 0;
 }

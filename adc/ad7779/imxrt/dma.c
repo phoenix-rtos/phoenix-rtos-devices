@@ -41,8 +41,12 @@ static struct {
 static int edma_error_handler(unsigned int n, void *arg)
 {
 	/* TODO: Store some info for debugging? Notify about it somehow? */
-	sai_rx_disable();
-	edma_clear_error(SAI1_RX_DMA_CHANNEL);
+	const uint32_t mask = 1U << SAI1_RX_DMA_CHANNEL;
+
+	if (edma_error_channel() & mask) {
+		sai_rx_disable();
+		edma_clear_error(SAI1_RX_DMA_CHANNEL);
+	}
 
 	return 0;
 }
