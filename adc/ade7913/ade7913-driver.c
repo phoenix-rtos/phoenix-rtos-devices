@@ -221,7 +221,11 @@ static int edma_spi_rcv_irq_handler(unsigned int n, void *arg)
 
 static int edma_error_handler(unsigned int n, void *arg)
 {
-	edma_clear_error(DREADY_DMA_CHANNEL);
+	const uint32_t mask = 1U << DREADY_DMA_CHANNEL;
+
+	if (edma_error_channel() & mask) {
+		edma_clear_error(DREADY_DMA_CHANNEL);
+	}
 
 	return EOK;
 }
