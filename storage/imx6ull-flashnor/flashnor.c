@@ -99,6 +99,12 @@ static void flashnor_msgloop(void *arg, msg_t *msg)
 			omnt->err = storage_mountfs(storage_get(imnt->dev.id), imnt->fstype, msg->i.data, imnt->mode, &omnt->oid);
 			break;
 
+		case mtMountPoint:
+			omnt = (mount_o_msg_t *)msg->o.raw;
+			/* TODO: get mountpoint using libstorage, return -ENOTSUP for now */
+			omnt->err = -ENOTSUP;
+			break;
+
 		default:
 			msg->o.io.err = -EINVAL;
 			break;

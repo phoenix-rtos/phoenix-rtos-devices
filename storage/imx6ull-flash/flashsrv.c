@@ -473,7 +473,12 @@ static void flashsrv_msgHandler(void *arg, msg_t *msg)
 			imnt = (mount_i_msg_t *)msg->i.raw;
 			omnt = (mount_o_msg_t *)msg->o.raw;
 			TRACE("DEV mount - fs: %s", imnt->fstype);
-			omnt->err = storage_mountfs(storage_get(imnt->dev.id), imnt->fstype, msg->i.data, imnt->mode, &omnt->oid);
+			omnt->err = storage_mountfs(storage_get(imnt->dev.id), imnt->fstype, msg->i.data, imnt->mode, &imnt->mnt, &omnt->oid);
+			break;
+
+		case mtMountPoint:
+			omnt = (mount_o_msg_t *)msg->o.raw;
+			omnt->err = storage_mountpoint(storage_get(((oid_t *)msg->i.data)->id), &omnt->oid);
 			break;
 
 		case mtGetAttr:
@@ -546,7 +551,7 @@ static int flashsrv_mountRoot(int rootFirst, int rootSecond, const char *fs)
 	}
 
 	/* mount / symlink rootfs partition */
-	err = storage_mountfs(storage_get(rootfsID), fs, NULL, 0, &oid);
+	err = storage_mountfs(storage_get(rootfsID), fs, NULL, 0, NULL, &oid);
 	if (err < 0) {
 		LOG_ERROR("failed to mount a filesystem - %s: %d", fs, err);
 		return err;
