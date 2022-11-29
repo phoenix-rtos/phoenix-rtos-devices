@@ -192,7 +192,12 @@ static void flash_msgHandler(void *arg, msg_t *msg)
 		case mtMount:
 			imnt = (mount_i_msg_t *)msg->i.raw;
 			omnt = (mount_o_msg_t *)msg->o.raw;
-			omnt->err = storage_mountfs(storage_get(GET_STORAGE_ID(imnt->dev.id)), imnt->fstype, msg->i.data, imnt->mode, &omnt->oid);
+			omnt->err = storage_mountfs(storage_get(GET_STORAGE_ID(imnt->dev.id)), imnt->fstype, msg->i.data, imnt->mode, &imnt->mnt, &omnt->oid);
+			break;
+
+		case mtMountPoint:
+			omnt = (mount_o_msg_t *)msg->o.raw;
+			omnt->err = storage_mountpoint(storage_get(GET_STORAGE_ID(((oid_t *)msg->i.data)->id)), &omnt->oid);
 			break;
 
 		case mtDevCtl:
@@ -441,7 +446,7 @@ static int flash_optsParse(int argc, char **argv)
 				}
 
 				id = err;
-				err = storage_mountfs(storage_get(id), fs, NULL, 0, &oid);
+				err = storage_mountfs(storage_get(id), fs, NULL, 0, NULL, &oid);
 				if (err < 0) {
 					fprintf(stderr, "zynq7000-flash: failed to mount a filesystem - %s: %d\n", fs, err);
 					return err;
