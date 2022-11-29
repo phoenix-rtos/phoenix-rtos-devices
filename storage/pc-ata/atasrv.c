@@ -463,6 +463,11 @@ static void atasrv_msgloop(void *arg)
 			omnt->err = atasrv_mount(imnt->dev.id, imnt->fstype, &omnt->oid);
 			break;
 
+		case mtUmount:
+			/* TODO: add umount() support, return -ENOTSUP for now */
+			msg.o.io.err = -ENOTSUP;
+			break;
+
 		case mtMountPoint:
 			omnt = (mount_o_msg_t *)msg.o.raw;
 			/* TODO: get mountpoint, return -ENOTSUP for now */

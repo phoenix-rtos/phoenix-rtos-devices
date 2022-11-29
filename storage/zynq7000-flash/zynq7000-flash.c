@@ -195,6 +195,10 @@ static void flash_msgHandler(void *arg, msg_t *msg)
 			omnt->err = storage_mountfs(storage_get(GET_STORAGE_ID(imnt->dev.id)), imnt->fstype, msg->i.data, imnt->mode, &imnt->mnt, &omnt->oid);
 			break;
 
+		case mtUmount:
+			msg->o.io.err = storage_umountfs(storage_get(GET_STORAGE_ID(((oid_t *)msg->i.data)->id)));
+			break;
+
 		case mtMountPoint:
 			omnt = (mount_o_msg_t *)msg->o.raw;
 			omnt->err = storage_mountpoint(storage_get(GET_STORAGE_ID(((oid_t *)msg->i.data)->id)), &omnt->oid);
