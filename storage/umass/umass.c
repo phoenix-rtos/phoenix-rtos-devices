@@ -477,25 +477,5 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	for (;;) {
-		ret = usbdrv_eventsWait(umass_common.drvport, &msg);
-		if (ret != 0)
-			return 1;
-		mutexLock(umass_common.lock);
-		switch (umsg->type) {
-			case usbdrv_msg_insertion:
-				if (umass_handleInsertion(&umsg->insertion) != 0)
-					fprintf(stderr, "umass: Failed to initialize device!\n");
-				break;
-			case usbdrv_msg_deletion:
-				umass_handleDeletion(&umsg->deletion);
-				break;
-			default:
-				fprintf(stderr, "umass: Error when receiving event from host\n");
-				break;
-		}
-		mutexUnlock(umass_common.lock);
-	}
-
 	return 0;
 }

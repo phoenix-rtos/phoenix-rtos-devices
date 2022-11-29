@@ -63,16 +63,12 @@ typedef struct _usbacm_dev {
 	struct _usbacm_dev *prev, *next;
 	int rxtid;
 	char path[32];
-	usbdrv_dev_t instance;
 	usbdrv_pipe_t *pipeCtrl;
 	usbdrv_pipe_t *pipeIntIN;
 	usbdrv_pipe_t *pipeBulkIN;
 	usbdrv_pipe_t *pipeBulkOUT;
-	int id;
-	int fileId;
 	int flags;
 	pid_t clientpid;
-	volatile int rfcnt;
 	volatile int thrFinished;
 	unsigned port;
 	fifo_t *fifo;
@@ -82,19 +78,16 @@ typedef struct _usbacm_dev {
 	oid_t oid;
 	handle_t rxLock;
 	handle_t rxCond;
-	int urbs[USBACM_N_URBS];
-	int urbctrl;
+	usbdrv_urb_t *urbs[USBACM_N_URBS];
+	char *bufs[USBACM_N_URBS];
+	usbdrv_urb_t *urbctrl;
 } usbacm_dev_t;
 
 
 static struct {
 	char msgstack[USBACM_N_MSG_THREADS][1024] __attribute__((aligned(8)));
-	char ustack[USBACM_N_UMSG_THREADS - 1][2048] __attribute__((aligned(8)));
-	usbacm_dev_t *devices;
-	unsigned drvport;
 	unsigned msgport;
 	handle_t lock;
-	int lastId;
 } usbacm_common;
 
 
@@ -137,7 +130,7 @@ static int usbacm_rxStop(usbacm_dev_t *dev)
 	setup.wValue = 0;
 	setup.wLength = 0;
 
-	return usbdrv_transferAsync(dev->pipeCtrl, dev->urbctrl, 0, &setup);
+	return usbdrv_transferControlAsync(dev->urbctrl, &setup, NULL, 0, 1000);
 }
 
 
@@ -152,141 +145,74 @@ static void usbacm_fifoPush(usbacm_dev_t *dev, char *data, size_t size)
 }
 
 
-static usbacm_dev_t *usbacm_getByPipe(int pipeid)
-{
-	usbacm_dev_t *tmp, *dev = NULL;
-
-	mutexLock(usbacm_common.lock);
-	tmp = usbacm_common.devices;
-	if (tmp != NULL) {
-		do {
-			if (tmp->pipeBulkIN->id == pipeid || tmp->pipeBulkOUT->id == pipeid || tmp->pipeIntIN->id == pipeid) {
-				dev = tmp;
-				dev->rfcnt++;
-				break;
-			}
-			tmp = tmp->next;
-		} while (tmp != usbacm_common.devices);
-	}
-	mutexUnlock(usbacm_common.lock);
-
-	return dev;
-}
-
-
-static usbacm_dev_t *usbacm_get(int id)
-{
-	usbacm_dev_t *tmp, *dev = NULL;
-
-	mutexLock(usbacm_common.lock);
-	tmp = usbacm_common.devices;
-	if (tmp != NULL) {
-		do {
-			if (tmp->fileId == id) {
-				dev = tmp;
-				dev->rfcnt++;
-				break;
-			}
-			tmp = tmp->next;
-		} while (tmp != usbacm_common.devices);
-	}
-	mutexUnlock(usbacm_common.lock);
-
-	return dev;
-}
-
-
-static void _usbacm_put(usbacm_dev_t *dev)
-{
-	if (--dev->rfcnt == 0) {
-		if (dev->fifo != NULL) {
-			free(dev->fifo);
-			dev->fifo = NULL;
-			resourceDestroy(dev->rxLock);
-			resourceDestroy(dev->rxCond);
-		}
-		LIST_REMOVE(&usbacm_common.devices, dev);
-		free(dev);
-	}
-}
-
-
-static void usbacm_put(usbacm_dev_t *dev)
-{
-	mutexLock(usbacm_common.lock);
-	_usbacm_put(dev);
-	mutexUnlock(usbacm_common.lock);
-}
-
-
-static void usbacm_handleCompletion(usbdrv_completion_t *c, char *data, size_t len)
+static void usbacm_handleCompletion(usbdrv_dev_t *dev, usbdrv_urb_t *urb, char *data, size_t transferred, int status)
 {
 	usbacm_dev_t *dev;
 	size_t bytes;
 	int retransfer = 0;
 	int sig = 0;
 
-	dev = usbacm_getByPipe(c->pipeid);
-	if (dev == NULL) {
-		return;
-	}
+	// dev = usbacm_getByPipe(c->pipeid);
+	// if (dev == NULL) {
+	// 	return;
+	// }
 
-	if (c->err != 0) {
-		/* Error, stop receiving */
-		mutexLock(dev->rxLock);
-		dev->rxrunning = 0;
-		if ((dev->flags & O_NONBLOCK) == 0) {
-			/* Stop the blocking read in progress */
-			sig = 1;
-		}
-		mutexUnlock(dev->rxLock);
-		if (sig == 1) {
-			condSignal(dev->rxCond);
-		}
-		usbacm_put(dev);
-		return;
-	}
+	// if (c->err != 0) {
+	// 	/* Error, stop receiving */
+	// 	mutexLock(dev->rxLock);
+	// 	dev->rxrunning = 0;
+	// 	if ((dev->flags & O_NONBLOCK) == 0) {
+	// 		/* Stop the blocking read in progress */
+	// 		sig = 1;
+	// 	}
+	// 	mutexUnlock(dev->rxLock);
+	// 	if (sig == 1) {
+	// 		condSignal(dev->rxCond);
+	// 	}
+	// 	usbacm_put(dev);
+	// 	return;
+	// }
 
-	if (c->pipeid != dev->pipeBulkIN->id) {
-		usbacm_put(dev);
-		return;
-	}
+	// if (c->pipeid != dev->pipeBulkIN->id) {
+	// 	usbacm_put(dev);
+	// 	return;
+	// }
 
-	if (dev->flags & O_NONBLOCK) {
-		usbacm_fifoPush(dev, data, len);
-		retransfer = 1;
-	}
-	else if (dev->rxptr != NULL) {
-		mutexLock(dev->rxLock);
-		if (c->err == 0) {
-			bytes = min(len, dev->rxbuflen);
-			memcpy(dev->rxptr, data, bytes);
-			dev->rxptr += bytes;
-			dev->rxbuflen -= bytes;
+	// if (dev->flags & O_NONBLOCK) {
+	// 	usbacm_fifoPush(dev, data, len);
+	// 	retransfer = 1;
+	// }
+	// else if (dev->rxptr != NULL) {
+	// 	mutexLock(dev->rxLock);
+	// 	if (c->err == 0) {
+	// 		bytes = min(len, dev->rxbuflen);
+	// 		memcpy(dev->rxptr, data, bytes);
+	// 		dev->rxptr += bytes;
+	// 		dev->rxbuflen -= bytes;
 
-			if (dev->rxbuflen > 0) {
-				retransfer = 1;
-			}
-			else {
-				dev->rxrunning = 0;
-				sig = 1;
-			}
-		}
-		else {
-			dev->rxrunning = 0;
-			sig = 1;
-		}
-		mutexUnlock(dev->rxLock);
-	}
+	// 		if (dev->rxbuflen > 0) {
+	// 			retransfer = 1;
+	// 		}
+	// 		else {
+	// 			dev->rxrunning = 0;
+	// 			sig = 1;
+	// 		}
+	// 	}
+	// 	else {
+	// 		dev->rxrunning = 0;
+	// 		sig = 1;
+	// 	}
+	// 	mutexUnlock(dev->rxLock);
+	// }
 
-	if (retransfer != 0) {
-		usbdrv_transferAsync(dev->pipeBulkIN, c->urbid, USBACM_BULK_SZ, NULL);
-	}
-	else if (sig == 1) {
-		condSignal(dev->rxCond);
-	}
+	// if (retransfer != 0) {
+	// 	usbdrv_transferBulkAsync(c, USBACM_BULK_SZ, NULL);
+	// }
+	// else if (sig == 1) {
+	// 	condSignal(dev->rxCond);
+	// }
 
-	usbacm_put(dev);
+	// usbacm_put(dev);
 }
 
 
@@ -301,12 +227,12 @@ static int usbacm_rxStart(usbacm_dev_t *dev)
 	setup.wValue = 3;
 	setup.wLength = 0;
 
-	if (usbdrv_transferAsync(dev->pipeCtrl, dev->urbctrl, 0, &setup) < 0) {
+	if (usbdrv_transferControlAsync(dev->urbctrl, &setup, NULL, 1000) < 0) {
 		return -EIO;
 	}
 
 	for (i = 0; i < USBACM_N_URBS; i++) {
-		if (usbdrv_transferAsync(dev->pipeBulkIN, dev->urbs[i], USBACM_BULK_SZ, NULL) < 0) {
+		if (usbdrv_transferBulkAsync(dev->urbs[i], dev->bufs[i], USBACM_BULK_SZ, 1000) < 0) {
 			return -EIO;
 		}
 	}
@@ -359,7 +285,7 @@ static int usbacm_write(usbacm_dev_t *dev, char *data, size_t len)
 {
 	int ret = 0;
 
-	if ((ret = usbdrv_transferBulk(dev->pipeBulkOUT, data, len, usb_dir_out)) <= 0) {
+	if ((ret = usbdrv_transferBulk(dev->pipeBulkOUT, data, len, 1000)) <= 0) {
 		fprintf(stderr, "usbacm: write failed\n");
 		ret = -EIO;
 	}
@@ -368,26 +294,18 @@ static int usbacm_write(usbacm_dev_t *dev, char *data, size_t len)
 }
 
 
-static usbacm_dev_t *usbacm_devAlloc(void)
+static usbacm_dev_t *usbacm_devAlloc(usbdrv_dev_t *dev)
 {
-	usbacm_dev_t *dev;
+	usbacm_dev_t *acm;
 
-	if ((dev = calloc(1, sizeof(usbacm_dev_t))) == NULL) {
+	if ((acm = calloc(1, sizeof(usbacm_dev_t))) == NULL) {
 		fprintf(stderr, "usbacm: Not enough memory\n");
 		return NULL;
 	}
 
-	/* Get next device number */
-	if (usbacm_common.devices == NULL)
-		dev->id = 0;
-	else
-		dev->id = usbacm_common.devices->prev->id + 1;
+	snprintf(acm->path, sizeof(acm->path), "/dev/usbacm%d", usbdrv_devID(dev));
 
-	dev->fileId = usbacm_common.lastId++;
-
-	snprintf(dev->path, sizeof(dev->path), "/dev/usbacm%d", dev->id);
-
-	return dev;
+	return acm;
 }
 
 
@@ -395,13 +313,13 @@ static int _usbacm_urbsAlloc(usbacm_dev_t *dev)
 {
 	int i, j;
 
-	dev->urbctrl = usbdrv_urbAlloc(dev->pipeCtrl, NULL, usb_dir_out, 0, usb_transfer_control);
+	dev->urbctrl = usbdrv_urbAlloc(dev->pipeCtrl);
 	if (dev->urbctrl < 0) {
 		return -1;
 	}
 
 	for (i = 0; i < USBACM_N_URBS; i++) {
-		dev->urbs[i] = usbdrv_urbAlloc(dev->pipeBulkIN, NULL, usb_dir_in, USBACM_BULK_SZ, usb_transfer_bulk);
+		dev->urbs[i] = usbdrv_urbAlloc(dev->pipeBulkIN);
 		if (dev->urbs[i] < 0) {
 			for (j = i - 1; j >= 0; j--) {
 				usbdrv_urbFree(dev->pipeBulkIN, dev->urbs[j]);
@@ -506,7 +424,8 @@ static int _usbacm_open(usbacm_dev_t *dev, int flags, pid_t pid)
 
 static void usbacm_msgthr(void *arg)
 {
-	usbacm_dev_t *dev;
+	usbdrv_dev_t *dev;
+	usbacm_dev_t *acm;
 	unsigned long rid;
 	msg_t msg;
 	int id;
@@ -531,14 +450,17 @@ static void usbacm_msgthr(void *arg)
 		else
 			id = msg.i.io.oid.id;
 
-		if ((dev = usbacm_get(id)) == NULL) {
+		dev = usbdrv_devGet(id);
+		if (dev == NULL) {
 			msg.o.io.err = -ENOENT;
 			msgRespond(usbacm_common.msgport, &msg, rid);
 			continue;
 		}
 
+		acm = (usbacm_dev_t *)dev->ctx;
+
 		/* A device can be opened only by one process */
-		if ((msg.type != mtOpen) && (msg.pid != dev->clientpid)) {
+		if ((msg.type != mtOpen) && (msg.pid != acm->clientpid)) {
 			msg.o.io.err = -EBUSY;
 			msgRespond(usbacm_common.msgport, &msg, rid);
 			continue;
@@ -547,31 +469,31 @@ static void usbacm_msgthr(void *arg)
 		switch (msg.type) {
 			case mtOpen:
 				mutexLock(usbacm_common.lock);
-				msg.o.io.err = _usbacm_open(dev, msg.i.openclose.flags, msg.pid);
+				msg.o.io.err = _usbacm_open(acm, msg.i.openclose.flags, msg.pid);
 				mutexUnlock(usbacm_common.lock);
 				break;
 
 			case mtClose:
 				mutexLock(usbacm_common.lock);
-				_usbacm_close(dev);
+				_usbacm_close(acm);
 				mutexUnlock(usbacm_common.lock);
 				msg.o.io.err = EOK;
 				break;
 
 			case mtRead:
-				if ((msg.o.io.err = usbacm_read(dev, msg.o.data, msg.o.size)) == 0) {
+				if ((msg.o.io.err = usbacm_read(acm, msg.o.data, msg.o.size)) == 0) {
 					if (msg.i.io.mode & O_NONBLOCK)
 						msg.o.io.err = -EWOULDBLOCK;
 				}
 				break;
 
 			case mtWrite:
-				msg.o.io.err = usbacm_write(dev, msg.i.data, msg.i.size);
+				msg.o.io.err = usbacm_write(acm, msg.i.data, msg.i.size);
 				break;
 
 			case mtGetAttr:
 				if ((msg.i.attr.type == atPollStatus)) {
-					msg.o.attr.val = fifo_is_empty(dev->fifo) ? POLLOUT : POLLOUT | POLLIN;
+					msg.o.attr.val = fifo_is_empty(acm->fifo) ? POLLOUT : POLLOUT | POLLIN;
 					msg.o.attr.err = EOK;
 					break;
 				}
@@ -581,7 +503,7 @@ static void usbacm_msgthr(void *arg)
 			default:
 				msg.o.io.err = -EINVAL;
 		}
-		usbacm_put(dev);
+		usbacm_put(acm);
 		msgRespond(usbacm_common.msgport, &msg, rid);
 	}
 
@@ -589,139 +511,90 @@ static void usbacm_msgthr(void *arg)
 }
 
 
-static int _usbacm_handleInsertion(usbdrv_dev_t *insertion)
+static int usbacm_handleInsertion(usbdrv_dev_t *dev)
 {
-	usbacm_dev_t *dev;
+	usbacm_dev_t *acmdev;
 	const usbdrv_modeswitch_t *mode;
 	oid_t oid;
 
-	if ((mode = usbdrv_modeswitchFind(insertion->descriptor.idVendor,
-			insertion->descriptor.idProduct,
-			modeswitch, sizeof(modeswitch) / sizeof(modeswitch[0]))) != NULL) {
-		return usbdrv_modeswitchHandle(insertion, mode);
-	}
+	/* TODO: modeswitch handle by quering server for a descriptor */
+	// if ((mode = usbdrv_modeswitchFind(dev->descriptor.idVendor,
+	// 		dev->descriptor.idProduct,
+	// 		modeswitch, sizeof(modeswitch) / sizeof(modeswitch[0]))) != NULL) {
+	// 	return usbdrv_modeswitchHandle(dev, mode);
+	// }
 
-	if ((dev = usbacm_devAlloc()) == NULL)
+	if ((acmdev = usbacm_devAlloc(dev)) == NULL)
 		return -ENOMEM;
 
-	dev->instance = *insertion;
+	dev->ctx = acmdev;
 
-	dev->pipeCtrl = usbdrv_pipeOpen(insertion, usb_transfer_control, 0);
-	if (dev->pipeCtrl == NULL) {
+	acmdev->pipeCtrl = usbdrv_pipeOpen(dev, usb_transfer_control, 0);
+	if (acmdev->pipeCtrl == NULL) {
 		fprintf(stderr, "usbacm: Fail to open control pipe\n");
-		free(dev);
+		free(acmdev);
 		return -EINVAL;
 	}
 
-	if (usbdrv_setConfiguration(dev->pipeCtrl, 1) != 0) {
+	if (usbdrv_setConfiguration(acmdev->pipeCtrl, 1) != 0) {
 		fprintf(stderr, "usbacm: Fail to set configuration\n");
-		free(dev);
+		free(acmdev);
 		return -EINVAL;
 	}
 
-	dev->pipeBulkIN = usbdrv_pipeOpen(insertion, usb_transfer_bulk, usb_dir_in);
-	if (dev->pipeBulkIN == NULL) {
-		free(dev);
+	acmdev->pipeBulkIN = usbdrv_pipeOpen(dev, usb_transfer_bulk, usb_dir_in);
+	if (acmdev->pipeBulkIN == NULL) {
+		free(acmdev);
 		return -EINVAL;
 	}
 
-	dev->pipeBulkOUT = usbdrv_pipeOpen(insertion, usb_transfer_bulk, usb_dir_out);
-	if (dev->pipeBulkOUT == NULL) {
-		free(dev);
+	acmdev->pipeBulkOUT = usbdrv_pipeOpen(dev, usb_transfer_bulk, usb_dir_out);
+	if (acmdev->pipeBulkOUT == NULL) {
+		free(acmdev);
 		return -EINVAL;
 	}
 
 	/* Interrupt pipe is optional */
-	dev->pipeIntIN = usbdrv_pipeOpen(insertion, usb_transfer_interrupt, usb_dir_in);
+	acmdev->pipeIntIN = usbdrv_pipeOpen(dev, usb_transfer_interrupt, usb_dir_in);
 
 	oid.port = usbacm_common.msgport;
-	oid.id = dev->fileId;
-	if (create_dev(&oid, dev->path) != 0) {
+	oid.id = usbdrv_devID(dev);
+	if (create_dev(&oid, acmdev->path) != 0) {
 		fprintf(stderr, "usbacm: Can't create dev!\n");
-		free(dev);
+		free(acmdev);
 		return -EINVAL;
 	}
 
-	dev->rfcnt = 1;
+	fprintf(stdout, "usbacm: New device: %s\n", acmdev->path);
+
+	return 0;
+}
+
+
+static int usbacm_handleDeletion(usbdrv_dev_t *dev)
+{
+	usbacm_dev_t *acm = dev->ctx;
+
 	mutexLock(usbacm_common.lock);
-	LIST_ADD(&usbacm_common.devices, dev);
+
+	remove(acm->path);
+	fprintf(stdout, "usbacm: Device removed: %s\n", acm->path);
+	free(acm);
+
 	mutexUnlock(usbacm_common.lock);
 
-	fprintf(stdout, "usbacm: New device: %s\n", dev->path);
-
 	return 0;
 }
 
-
-static int _usbacm_handleDeletion(usbdrv_deletion_t *del)
-{
-	usbacm_dev_t *next, *dev = usbacm_common.devices;
-	int cont = 1;
-
-	if (dev == NULL)
-		return 0;
-
-	do {
-		next = dev->next;
-		if (dev->instance.bus == del->bus && dev->instance.dev == del->dev &&
-				dev->instance.interface == del->interface) {
-			fprintf(stdout, "usbacm: Device removed: %s\n", dev->path);
-			if (dev == next)
-				cont = 0;
-
-			remove(dev->path);
-			_usbacm_put(dev);
-			if (!cont)
-				break;
-		}
-		dev = next;
-	} while (dev != usbacm_common.devices);
-
-	return 0;
-}
-
-
-static void usbthr(void *arg)
-{
-	msg_t msg;
-	usbdrv_in_msg_t *umsg = (usbdrv_in_msg_t *)msg.i.raw;
-	unsigned long rid;
-
-	for (;;) {
-		if (msgRecv(usbacm_common.drvport, &msg, &rid) < 0)
-			continue;
-
-		switch (umsg->type) {
-			case usbdrv_msg_insertion:
-				_usbacm_handleInsertion(&umsg->insertion);
-				break;
-			case usbdrv_msg_deletion:
-				mutexLock(usbacm_common.lock);
-				_usbacm_handleDeletion(&umsg->deletion);
-				mutexUnlock(usbacm_common.lock);
-				break;
-			case usbdrv_msg_completion:
-				usbacm_handleCompletion(&umsg->completion, msg.i.data, msg.i.size);
-				break;
-			default:
-				fprintf(stderr, "usbacm: Error when receiving event from host\n");
-				break;
-		}
-
-		msgRespond(usbacm_common.drvport, &msg, rid);
-	}
-}
 
 int main(int argc, char *argv[])
 {
-	int ret;
-	int i;
-
-	/* Port for communication with the USB stack */
-	if (portCreate(&usbacm_common.drvport) != 0) {
-		fprintf(stderr, "usbacm: Can't create port!\n");
-		return 1;
-	}
+	static const usbdrv_handlers_t handlers[] = {
+		usbacm_handleInsertion,
+		usbacm_handleDeletion,
+		usbacm_handleCompletion
+	};
+	int ret, i;
 
 	/* Port for communication with driver clients */
 	if (portCreate(&usbacm_common.msgport) != 0) {
@@ -734,14 +607,12 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	if ((usbdrv_connect(filters, sizeof(filters) / sizeof(filters[0]), usbacm_common.drvport)) < 0) {
+	if (usbdrv_connect(handlers, filters, sizeof(filters) / sizeof(filters[0])) < 0) {
 		fprintf(stderr, "usbacm: Fail to connect to usb host!\n");
 		return 1;
 	}
 
-	usbacm_common.lastId = 1;
-
-	for (i = 0; i < USBACM_N_MSG_THREADS; i++) {
+	for (i = 0; i < USBACM_N_MSG_THREADS - 1; i++) {
 		ret = beginthread(usbacm_msgthr, USBACM_MSG_PRIO, usbacm_common.msgstack[i], sizeof(usbacm_common.msgstack[i]), NULL);
 		if (ret < 0) {
 			fprintf(stderr, "usbacm: fail to beginthread ret: %d\n", ret);
@@ -749,16 +620,8 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	for (i = 0; i < USBACM_N_UMSG_THREADS - 1; i++) {
-		ret = beginthread(usbthr, USBACM_UMSG_PRIO, usbacm_common.ustack[i], sizeof(usbacm_common.ustack[i]), NULL);
-		if (ret < 0) {
-			fprintf(stderr, "usbacm: fail to beginthread ret: %d\n", ret);
-			return 1;
-		}
-	}
-
-	priority(USBACM_UMSG_PRIO);
-	usbthr(NULL);
+	priority(USBACM_MSG_PRIO);
+	usbacm_msgthr(NULL);
 
 	return 0;
 }
