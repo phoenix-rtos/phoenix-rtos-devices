@@ -13,7 +13,10 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <paths.h>
 
+#include <board_config.h>
+#include <posix/utils.h>
 #include <sys/file.h>
 #include <sys/io.h>
 #include <sys/msg.h>
@@ -21,6 +24,7 @@
 #include <sys/types.h>
 
 #include <libtty.h>
+#include <libklog.h>
 
 
 typedef struct {
@@ -162,6 +166,12 @@ static void spiketty_thr(void *arg)
 }
 
 
+static void spiketty_klogClbk(const char *data, size_t size)
+{
+	libtty_write(&spiketty_common.spikettys[SPIKETTY_CONSOLE_USER].tty, data, size, 0);
+}
+
+
 static int _spiketty_init(spiketty_t *spiketty, unsigned int port, unsigned int id)
 {
 	libtty_callbacks_t callbacks;
@@ -204,6 +214,15 @@ int main(void)
 		if ((err = portRegister(port, path, &spiketty_common.spikettys[i].oid)) < 0) {
 			fprintf(stderr, "spike-tty: failed to register %s, err: %d\n", path, err);
 			return err;
+		}
+
+		if (i == SPIKETTY_CONSOLE_USER) {
+
+			if (create_dev(&spiketty_common.spikettys[i].oid, _PATH_CONSOLE) < 0) {
+				fprintf(stderr, "spike-tty: failed to register %s\n", path);
+			}
+
+			libklog_init(spiketty_klogClbk);
 		}
 	}
 

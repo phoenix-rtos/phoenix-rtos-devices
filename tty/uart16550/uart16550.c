@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <paths.h>
 
 #include <sys/file.h>
 #include <sys/interrupt.h>
@@ -25,6 +26,7 @@
 #include <sys/types.h>
 
 #include <libtty.h>
+#include <libklog.h>
 #include <board_config.h>
 #include <posix/utils.h>
 
@@ -244,6 +246,12 @@ static void poolthr(void *arg)
 }
 
 
+static void uart_klogClbk(const char *data, size_t size)
+{
+	libtty_write(&uart_common.uarts[UART16550_CONSOLE_USER].tty, data, size, 0);
+}
+
+
 static void _uart_mkDev(uint32_t port)
 {
 	char path[12];
@@ -252,12 +260,21 @@ static void _uart_mkDev(uint32_t port)
 	for (i = 0; i < sizeof(uart_common.uarts) / sizeof(uart_common.uarts[0]); i++) {
 		if (uart_common.uarts[i].init == 1) {
 			uart_common.uarts[i].oid.port = port;
-			uart_common.uarts[i].oid.id = (i == UART16550_CONSOLE) ? 0 : i + 1;
+			uart_common.uarts[i].oid.id = (i == UART16550_CONSOLE_USER) ? 0 : i + 1;
 			snprintf(path, sizeof(path), "/dev/ttyS%u", i);
 
 			if (create_dev(&uart_common.uarts[i].oid, path) < 0) {
 				fprintf(stderr, "uart16550: failed to register %s\n", path);
 				return;
+			}
+
+			if (i == UART16550_CONSOLE_USER) {
+				libklog_init(uart_klogClbk);
+
+				if (create_dev(&uart_common.uarts[i].oid, _PATH_CONSOLE) < 0) {
+					fprintf(stderr, "uart16550: failed to register %s\n", _PATH_CONSOLE);
+					return;
+				}
 			}
 		}
 	}

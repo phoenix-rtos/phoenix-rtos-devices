@@ -13,6 +13,7 @@
  */
 
 #include <errno.h>
+#include <paths.h>
 #include <poll.h>
 #include <stdio.h>
 #include <string.h>
@@ -24,6 +25,7 @@
 #include <sys/msg.h>
 #include <sys/threads.h>
 
+#include <libklog.h>
 #include <posix/utils.h>
 
 #include "ttypc.h"
@@ -97,6 +99,12 @@ static void ttypc_poolthr(void *arg)
 }
 
 
+static void ttypc_klogClbk(const char *data, size_t size)
+{
+	libtty_write(&ttypc_common.vts[0].tty, data, size, 0);
+}
+
+
 int main(void)
 {
 	unsigned int i;
@@ -153,14 +161,24 @@ int main(void)
 	while (lookup("/", NULL, &oid) < 0)
 		usleep(10000);
 
+	oid.port = ttypc_common.port;
+	oid.id = 0;
+	if (create_dev(&oid, _PATH_CONSOLE) < 0) {
+		fprintf(stderr, "pc-tty: failed to register device %s\n", _PATH_CONSOLE);
+	}
+
+	libklog_init(ttypc_klogClbk);
+
 	/* Register devices */
 	for (i = 0; i < NVTS; i++) {
 		snprintf(path, sizeof(path), "/dev/tty%u", i);
 		oid.port = ttypc_common.port;
 		oid.id = i;
 
-		if (create_dev(&oid, path) < 0)
+		if (create_dev(&oid, path) < 0) {
 			fprintf(stderr, "pc-tty: failed to register device %s\n", path);
+		}
+
 	}
 
 	ttypc_poolthr(&ttypc_common);

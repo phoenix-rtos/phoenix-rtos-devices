@@ -7,5 +7,5 @@
 
 NAME := pc-tty
 SRCS := $(wildcard tty/pc-tty/*.c)
-DEP_LIBS := libtty
+DEP_LIBS := libtty libklog
 include $(binary.mk)

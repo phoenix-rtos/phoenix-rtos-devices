@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <paths.h>
 
 #include <sys/msg.h>
 #include <sys/stat.h>
@@ -31,6 +32,7 @@
 
 #include <board_config.h>
 #include <libtty.h>
+#include <libklog.h>
 #include <posix/utils.h>
 
 #include <phoenix/ioctl.h>
@@ -291,18 +293,27 @@ static void uart_dispatchMsg(void *arg)
 }
 
 
+static void uart_klogClbk(const char *data, size_t size)
+{
+	libtty_write(&uart_common.uart.tty, data, size, 0);
+}
+
+
 static void uart_mkDev(unsigned int id)
 {
-	oid_t dir;
 	char path[12];
-
-	while (lookup("/", NULL, &dir) < 0) {
-		usleep(10000);
-	}
 
 	snprintf(path, sizeof(path), "/dev/uart%u", id);
 	if (create_dev(&uart_common.uart.oid, path) < 0) {
 		debug("zynq7000-uart: cannot create device file\n");
+	}
+
+	if (id == UART_CONSOLE_USER) {
+		libklog_init(uart_klogClbk);
+
+		if (create_dev(&uart_common.uart.oid, _PATH_CONSOLE) < 0) {
+			debug("zynq7000-uart: cannot create device file\n");
+		}
 	}
 }
 
@@ -452,7 +463,7 @@ static void uart_help(const char *progname)
 int main(int argc, char **argv)
 {
 	/* Default console configuration */
-	unsigned int uartn = UART_CONSOLE;
+	int uartn = UART_CONSOLE_USER;
 	speed_t baud = B115200;
 	int c, raw = 0;
 
@@ -488,6 +499,11 @@ int main(int argc, char **argv)
 					return EXIT_FAILURE;
 			}
 		}
+	}
+
+	if (uartn < 0) {
+		debug("zynq7000-uart: wrong uart ID, this uart cannot be a console\n");
+		return EXIT_FAILURE;
 	}
 
 	if (uart_initClk() < 0) {

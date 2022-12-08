@@ -6,5 +6,5 @@
 
 NAME := zynq7000-uart
 LOCAL_SRCS := zynq7000-uart.c
-DEP_LIBS := libtty
+DEP_LIBS := libtty libklog
 include $(binary.mk)

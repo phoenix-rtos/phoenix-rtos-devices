@@ -13,6 +13,8 @@
 
 
 #include <errno.h>
+#include <libklog.h>
+#include <paths.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,6 +28,7 @@
 #include <sys/debug.h>
 
 #include <phoenix/ioctl.h>
+#include <posix/utils.h>
 #include <board_config.h>
 
 #include "common.h"
@@ -422,13 +425,21 @@ static void uart_thread(void *arg)
 int main(void)
 {
 	int i;
+	oid_t oid;
 
 	portCreate(&common.uart_port);
 	portCreate(&multi_port);
 
+
 	uart_init();
 	gpio_init();
 	spi_init();
+
+	oid.port = common.uart_port;
+	oid.id = id_console;
+	create_dev(&oid, _PATH_CONSOLE);
+
+	libklog_init(uart_klogCblk);
 
 #if TRNG
 	trng_init();
