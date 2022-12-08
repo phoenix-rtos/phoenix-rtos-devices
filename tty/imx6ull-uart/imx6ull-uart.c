@@ -550,12 +550,10 @@ static void print_usage(const char *progname)
 }
 
 
-#if KLOG_ENABLE
 static void libklog_clbk(const char *data, size_t size)
 {
 	libtty_write(&uart.tty_common, data, size, 0);
 }
-#endif /* KLOG_ENABLE */
 
 
 int main(int argc, char **argv)
@@ -701,14 +699,10 @@ int main(int argc, char **argv)
 	if ((err = create_dev(&dev, uartn)))
 		debug("imx6ull-uart: Could not create device file\n");
 
-#if KLOG_ENABLE
 	if (is_console)
 		create_dev(&dev, _PATH_CONSOLE);
 
 	libklog_init(libklog_clbk);
-#else
-	(void)is_console;
-#endif /* KLOG_ENABLE */
 
 	uart_thr((void *)port);
 

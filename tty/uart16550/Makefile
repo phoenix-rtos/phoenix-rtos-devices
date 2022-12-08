@@ -16,5 +16,5 @@ else ifeq ($(TARGET_SUBFAMILY),zynq7000)
   LOCAL_SRCS += uarthw-zynq7000.c
 endif
 
-DEP_LIBS := libtty
+DEP_LIBS := libtty libklog
 include $(binary.mk)
