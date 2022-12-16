@@ -33,7 +33,7 @@
 #define TRACE(str, ...) do { if (0) fprintf(stderr, __FILE__  ":%d trace: " str "\n", __LINE__, ##__VA_ARGS__); } while (0)
 
 #define METERFS_STACKSZ   1024
-#define THREAD_STACKSZ    512
+#define THREAD_STACKSZ    1024
 #define FLASH_MEMORIES_NO (FLEXSPI_COUNT)
 
 #ifndef IMXRT_FLASH_PRIO
