@@ -15,6 +15,7 @@
 #include <sys/threads.h>
 #include <sys/pwman.h>
 #include <errno.h>
+#include <unistd.h>
 #include "libmulti/libi2c.h"
 #include "../common.h"
 
@@ -42,7 +43,7 @@ enum { dir_read, dir_write };
 
 static int libi2c_irqHandler(unsigned int n, void *arg)
 {
-	*(((libi2c_ctx_t *)arg)->base + cr1) &= ~((1 << 6) | (1 << 2) | (1 << 1));
+	*(((libi2c_ctx_t *)arg)->base + cr1) &= ~((1 << 6) | (1 << 4) | (1 << 2) | (1 << 1));
 
 	return 1;
 }
@@ -62,11 +63,16 @@ static int libi2c_waitForIrq(libi2c_ctx_t *ctx)
 {
 	int err = EOK;
 
-	*(ctx->base + cr1) |= (1 << 7) | (1 << 6) | (1 << 2) | (1 << 1);
+	*(ctx->base + cr1) |= (1 << 7) | (1 << 6) | (1 << 4) | (1 << 2) | (1 << 1);
 
 	mutexLock(ctx->irqlock);
-	while (!(*(ctx->base + isr) & ((1 << 6) | (0x3 << 1))) && !ctx->err && err == EOK)
+	while (((*(ctx->base + isr) & ((1 << 6) | (1 << 4) | (0x3 << 1))) == 0) && (ctx->err == 0) && (err == EOK)) {
 		err = condWait(ctx->irqcond, ctx->irqlock, TIMEOUT);
+	}
+
+	if ((*(ctx->base + isr) & (1 << 4)) != 0) {
+		err = -EIO;
+	}
 	mutexUnlock(ctx->irqlock);
 
 	return err;
@@ -84,7 +90,20 @@ static void libi2c_start(libi2c_ctx_t *ctx)
 
 static void libi2c_stop(libi2c_ctx_t *ctx)
 {
+	int retry = 0;
+
+	/* Generate STOP */
+	*(ctx->base + cr2) |= 1 << 14;
 	dataBarier();
+
+	while ((*(ctx->base + isr) & (1 << 5)) == 0) {
+		if (++retry > 100) {
+			/* we tried, nothing else to do in this case */
+			break;
+		}
+		usleep(1000);
+	}
+
 	*(ctx->base + cr1) &= ~1;
 	dataBarier();
 	devClk(ctx->clk, 0);
@@ -108,54 +127,51 @@ static ssize_t _libi2c_read(libi2c_ctx_t *ctx, unsigned char addr, void *buff, s
 {
 	ssize_t i;
 
-	if (len > 255)
+	if (len > 255) {
 		len = 255;
+	}
 
 	libi2c_transactionStart(ctx, addr, dir_read, len);
 
 	for (i = 0; i < len && !ctx->err; ++i) {
-		if (libi2c_waitForIrq(ctx) < 0)
+		if (libi2c_waitForIrq(ctx) < 0) {
 			return -1;
+		}
 		((unsigned char *)buff)[i] = (unsigned char)(*(ctx->base + rxdr) & 0xff);
 	}
 
-	if (!ctx->err) {
-		*(ctx->base + cr2) |= 1 << 14;
-		while (*(ctx->base + isr) & (1 << 6))
-			;
-	}
-	else {
-		i = -1;
-	}
-
-	libi2c_stop(ctx);
-
-	return i;
+	return (ctx->err == 0) ? i : -1;
 }
 
 
 ssize_t libi2c_read(libi2c_ctx_t *ctx, unsigned char addr, void *buff, size_t len)
 {
+	ssize_t ret;
+
 	ctx->err = 0;
 	libi2c_start(ctx);
-	return _libi2c_read(ctx, addr, buff, len);
+	ret = _libi2c_read(ctx, addr, buff, len);
+	libi2c_stop(ctx);
+
+	return ret;
 }
 
 
 ssize_t libi2c_readReg(libi2c_ctx_t *ctx, unsigned char addr, unsigned char reg, void *buff, size_t len)
 {
+	ssize_t ret = -1;
+
 	ctx->err = 0;
 	libi2c_start(ctx);
 	libi2c_transactionStart(ctx, addr, dir_write, 1);
 
 	*(ctx->base + txdr) = reg;
-	if (libi2c_waitForIrq(ctx) < 0)
-		return -1;
+	if ((libi2c_waitForIrq(ctx) >= 0) && (ctx->err == 0)) {
+		ret = _libi2c_read(ctx, addr, buff, len);
+	}
+	libi2c_stop(ctx);
 
-	if (ctx->err)
-		return -1;
-
-	return _libi2c_read(ctx, addr, buff, len);
+	return ret;
 }
 
 
@@ -163,16 +179,16 @@ static ssize_t _libi2c_write(libi2c_ctx_t *ctx, unsigned char addr, unsigned cha
 {
 	ssize_t i = 0;
 
-	if (len > 255)
+	if (len > 255) {
 		len = 255;
+	}
 
-	libi2c_start(ctx);
-
-	if (withreg) {
+	if (withreg != 0) {
 		libi2c_transactionStart(ctx, addr, dir_write, len + 1);
 		*(ctx->base + txdr) = reg;
-		if (libi2c_waitForIrq(ctx) < 0)
+		if (libi2c_waitForIrq(ctx) < 0) {
 			return -1;
+		}
 	}
 	else {
 		libi2c_transactionStart(ctx, addr, dir_write, len);
@@ -180,36 +196,38 @@ static ssize_t _libi2c_write(libi2c_ctx_t *ctx, unsigned char addr, unsigned cha
 
 	for (i = 0; i < (ssize_t)len && !ctx->err; ++i) {
 		*(ctx->base + txdr) = ((const unsigned char *)buff)[i];
-		if (libi2c_waitForIrq(ctx) < 0)
+		if (libi2c_waitForIrq(ctx) < 0) {
 			return -1;
+		}
 	}
 
-	if (!ctx->err) {
-		*(ctx->base + cr2) |= 1 << 14;
-		while (*(ctx->base + isr) & (1 << 6))
-			;
-	}
-	else {
-		i = -1;
-	}
-
-	libi2c_stop(ctx);
-
-	return i;
+	return (ctx->err == 0) ? i : -1;
 }
 
 
 ssize_t libi2c_write(libi2c_ctx_t *ctx, unsigned char addr, const void *buff, size_t len)
 {
+	ssize_t ret;
+
 	ctx->err = 0;
-	return _libi2c_write(ctx, addr, 0, 0, buff, len);
+	libi2c_start(ctx);
+	ret = _libi2c_write(ctx, addr, 0, 0, buff, len);
+	libi2c_stop(ctx);
+
+	return ret;
 }
 
 
 ssize_t libi2c_writeReg(libi2c_ctx_t *ctx, unsigned char addr, unsigned char reg, const void *buff, size_t len)
 {
+	ssize_t ret;
+
 	ctx->err = 0;
-	return _libi2c_write(ctx, addr, reg, 1, buff, len);
+	libi2c_start(ctx);
+	ret = _libi2c_write(ctx, addr, reg, 1, buff, len);
+	libi2c_stop(ctx);
+
+	return ret;
 }
 
 
@@ -218,8 +236,9 @@ int libi2c_init(libi2c_ctx_t *ctx, int i2c)
 	int cpuclk = getCpufreq(), presc;
 	unsigned int t;
 
-	if (i2c < i2c1 || i2c > i2c4 || ctx == NULL)
+	if (i2c < i2c1 || i2c > i2c4 || ctx == NULL) {
 		return -1;
+	}
 
 	i2c -= i2c1;
 
@@ -238,7 +257,7 @@ int libi2c_init(libi2c_ctx_t *ctx, int i2c)
 	dataBarier();
 
 	t = *(ctx->base + cr1) & ~0xfffdff;
-	*(ctx->base + cr1) = t | (1 << 12) | (0x7 << 8) | (1 << 7) | (1 << 6) | (1 << 2) | (1 << 1);
+	*(ctx->base + cr1) = t | (1 << 12) | (0x7 << 8) | (1 << 7) | (1 << 6) | (1 << 4) | (1 << 2) | (1 << 1);
 
 	presc = ((cpuclk + 500 * 1000) / (1000 * 1000)) / 4;
 	t = *(ctx->base + timingr) & ~((0xf << 18) | 0xffffff);
