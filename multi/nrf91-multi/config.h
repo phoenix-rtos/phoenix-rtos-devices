@@ -34,7 +34,7 @@
 #endif
 
 #ifndef TTY1
-#define TTY1 0
+#define TTY1 1
 #endif
 
 #ifndef TTY2

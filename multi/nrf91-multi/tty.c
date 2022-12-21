@@ -317,7 +317,7 @@ static tty_ctx_t *tty_getCtx(id_t id)
 	}
 
 	if (id >= uart0 && id <= uart3) {
-		ctx = &uart_common.ctx[uartPos[0]];
+		ctx = &uart_common.ctx[uartPos[id]];
 	}
 
 	return ctx;
@@ -430,10 +430,10 @@ int tty_init(unsigned int *port)
 		volatile char *tx_dma;
 		volatile char *rx_dma;
 	} info[] = {
-		{ (void *)0x50008000, uarte0 + 16, (volatile char *)0x2003C000, (volatile char *)0x20038000 },
-		{ (void *)0x50009000, uarte1 + 16, (volatile char *)0x20038000, (volatile char *)0x2003A000 },
-		{ (void *)0x5000A000, uarte2 + 16, (volatile char *)0x2003C000, (volatile char *)0x20038000 },
-		{ (void *)0x5000B000, uarte3 + 16, (volatile char *)0x20038000, (volatile char *)0x2003A000 }
+		{ (void *)0x50008000, uarte0_irq + 16, (volatile char *)0x2003C000, (volatile char *)0x20038000 },
+		{ (void *)0x50009000, uarte1_irq + 16, (volatile char *)0x20038000, (volatile char *)0x2003A000 },
+		{ (void *)0x5000A000, uarte2_irq + 16, (volatile char *)0x2003C000, (volatile char *)0x20038000 },
+		{ (void *)0x5000B000, uarte3_irq + 16, (volatile char *)0x20038000, (volatile char *)0x2003A000 }
 	};
 
 	if (port == NULL)
@@ -446,6 +446,7 @@ int tty_init(unsigned int *port)
 #if CONSOLE_IS_TTY
 	oid.id = 0;
 	create_dev(&oid, "tty");
+	// create_dev(&oid, "/dev/console");
 #endif
 
 	for (uart = uart0; uart <= uart3; uart++) {
@@ -489,7 +490,7 @@ int tty_init(unsigned int *port)
 		ctx->enabled = 1;
 
 		fname[sizeof(fname) - 2] = '0' + uart - uart0;
-		oid.id = uart - uart0 + 1;
+		oid.id = uart - uart0; //+1
 		create_dev(&oid, fname);
 	}
 

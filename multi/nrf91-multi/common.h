@@ -3,8 +3,8 @@
  *
  * nRF91 multidriver common
  *
- * Copyright 2017, 2018 Phoenix Systems
- * Author: Aleksander Kaminski
+ * Copyright 2017, 2018, 2023 Phoenix Systems
+ * Author: Aleksander Kaminski, Damian Loewnau
  *
  * This file is part of Phoenix-RTOS.
  *
