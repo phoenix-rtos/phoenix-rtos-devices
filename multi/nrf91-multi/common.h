@@ -19,7 +19,7 @@
 #include <phoenix/arch/nrf9160.h>
 #include <sys/platform.h>
 
-#include "config.h"
+#include <board_config.h>
 
 #ifdef NDEBUG
 #define DEBUG(format, ...)

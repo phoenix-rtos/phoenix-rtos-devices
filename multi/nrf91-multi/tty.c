@@ -25,7 +25,8 @@
 #include <libtty.h>
 
 #include "nrf91-multi.h"
-#include "config.h"
+#include <board_config.h>
+// #include "config.h"
 #include "common.h"
 #include "tty.h"
 
