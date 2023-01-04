@@ -1,7 +1,7 @@
 #
 # Makefile for Phoenix-RTOS stm32-multi
 #
-# Copyright 2018, 2020 Phoenix Systems
+# Copyright 2018, 2020, 2023 Phoenix Systems
 #
 
 LOCAL_PATH := $(call my-dir)

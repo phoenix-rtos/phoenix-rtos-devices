@@ -41,7 +41,6 @@
 #define THREAD_STACKSZ 768
 #define THREAD_PRIO 1
 
-#if TTY_CNT != 0
 typedef struct {
 	char stack[512] __attribute__ ((aligned(8)));
 
@@ -396,20 +395,16 @@ static void tty_thread(void *arg)
 		priority(THREAD_PRIO);
 	}
 }
-#endif
 
 
-void tty_log(const char *str)
+void tty_consoleLog(const char *str)
 {
-#if CONSOLE_IS_TTY
 	libtty_write(&tty_getCtx(0)->tty_common, str, strlen(str), 0);
-#endif
 }
 
 
 int tty_init(unsigned int *port)
 {
-#if TTY_CNT != 0
 	unsigned int uart, i;
 	char fname[] = "uartx";
 	speed_t baudrate = B115200;
@@ -499,8 +494,5 @@ int tty_init(unsigned int *port)
 	for (i = 0; i < THREAD_POOL; ++i)
 		beginthread(tty_thread, THREAD_PRIO, uart_common.poolstack[i], sizeof(uart_common.poolstack[i]), (void *)i);
 
-	return EOK;
-#else
 	return 0;
-#endif
 }

@@ -3,8 +3,8 @@
  *
  * STM32L4/nRF9160 Filesystem driver
  *
- * Copyright 2021 Phoenix Systems
- * Author: Maciej Purski
+ * Copyright 2021, 2023 Phoenix Systems
+ * Author: Maciej Purski, Damian Loewnau
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -37,20 +37,23 @@ static int syspage_create(void *ctx, oid_t *root)
 	syspageprog_t prog;
 	int i, progsz;
 
-	if ((progsz = syspageprog(NULL, -1)) < 0)
+	if ((progsz = syspageprog(NULL, -1)) < 0) {
 		return -1;
+	}
 
-	if (dummyfs_create(ctx, root, "syspage", &sysoid, 0666, otDir, NULL) != 0)
+	if (dummyfs_create(ctx, root, "syspage", &sysoid, 0666, otDir, NULL) != 0) {
 		return -ENOMEM;
+	}
 
 	for (i = 0; i < progsz; i++) {
-		if (syspageprog(&prog, i) != 0)
+		if (syspageprog(&prog, i) != 0) {
 			continue;
+		}
 
 		dummyfs_createMapped(ctx, &sysoid, prog.name, (void *)prog.addr, prog.size, &toid);
 	}
 
-	return EOK;
+	return 0;
 }
 
 
@@ -60,8 +63,9 @@ static void msgthr(void *ctx)
 	unsigned long rid;
 
 	for (;;) {
-		if (msgRecv(fs_common.port, &msg, &rid) < 0)
+		if (msgRecv(fs_common.port, &msg, &rid) < 0) {
 			continue;
+		}
 
 		switch (msg.type) {
 
@@ -132,32 +136,33 @@ int fs_init(void)
 	void *ctx;
 	oid_t root = { 0 };
 
-	if (portCreate(&fs_common.port) != 0)
+	if (portCreate(&fs_common.port) != 0) {
 		return -1;
+	}
 
-	if (portRegister(fs_common.port, "/", &root)) {
+	if (portRegister(fs_common.port, "/", &root) != 0) {
 		portDestroy(fs_common.port);
 		return -1;
 	}
 
 	root.port = fs_common.port;
-	if (dummyfs_mount(&ctx, NULL, 0, &root) != EOK) {
+	if (dummyfs_mount(&ctx, NULL, 0, &root) != 0) {
 		printf("dummyfs mount failed\n");
 		portDestroy(fs_common.port);
 		return -1;
 	}
 
-	if (syspage_create(ctx, &root) != EOK) {
+	if (syspage_create(ctx, &root) != 0) {
 		dummyfs_unmount(ctx);
 		portDestroy(fs_common.port);
 		return -1;
 	}
 
-	if (beginthread(msgthr, 4, fs_common.stack, MSGTHR_STACKSZ, ctx) != EOK) {
+	if (beginthread(msgthr, 4, fs_common.stack, MSGTHR_STACKSZ, ctx) != 0) {
 		dummyfs_unmount(ctx);
 		portDestroy(fs_common.port);
 		return -1;
 	}
 
-	return EOK;
+	return 0;
 }

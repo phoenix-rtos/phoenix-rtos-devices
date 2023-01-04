@@ -3,8 +3,8 @@
  *
  * STM32L4/nRF91 Filesystem driver header
  *
- * Copyright 2021 Phoenix Systems
- * Author: Maciej Purski
+ * Copyright 2021, 2023 Phoenix Systems
+ * Author: Maciej Purski, Damian Loewnau
  *
  * This file is part of Phoenix-RTOS.
  *

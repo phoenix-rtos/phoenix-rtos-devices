@@ -3,7 +3,7 @@
  *
  * NRF91 multi driver main
  *
- * Copyright 2018, 2020, 2022 Phoenix Systems
+ * Copyright 2023 Phoenix Systems
  * Author: Aleksander Kaminski, Damian Loewnau
  *
  * This file is part of Phoenix-RTOS.
@@ -41,12 +41,8 @@ struct {
 
 static ssize_t console_write(const char *str, size_t len, int mode)
 {
-#if CONSOLE_IS_TTY
-	tty_log(str);
+	tty_consoleLog(str);
 	return (ssize_t)len;
-#else
-	return uart_write(UART_CONSOLE - 1, str, len);
-#endif
 }
 
 
@@ -62,15 +58,15 @@ static void thread(void *arg)
 	unsigned long int rid;
 
 	while (1) {
-		while (msgRecv(common.port, &msg, &rid) < 0)
-			;
+		while (msgRecv(common.port, &msg, &rid) < 0) {
+		}
 
 		priority(msg.priority);
 
 		switch (msg.type) {
 			case mtOpen:
 			case mtClose:
-				msg.o.io.err = EOK;
+				msg.o.io.err = 0;
 				break;
 
 			case mtRead:
@@ -111,31 +107,19 @@ int main(void)
 	int i;
 	oid_t oid;
 	static const char welcome[] = "multidrv: Started\n";
-#if CONSOLE_IS_TTY
 	unsigned int ttyConsolePort;
-#endif
 
 	priority(THREADS_PRIORITY);
 
-#if CONSOLE_IS_TTY
 	portCreate(&ttyConsolePort);
-#endif
 	portCreate(&common.port);
 
-/*not sure if dummy fs won't be needed */
-#if BUILTIN_DUMMYFS
 	fs_init();
-#else
 	/* Wait for the filesystem */
 	while (lookup("/", NULL, &oid) < 0)
 		usleep(10000);
-#endif
 
-#if CONSOLE_IS_TTY
 	tty_init(&ttyConsolePort);
-#else
-	tty_init(NULL);
-#endif
 
 	/* it doesn't work! it crashes here, probably because of no dummyfs */
 	portRegister(common.port, "/multi", &oid);
