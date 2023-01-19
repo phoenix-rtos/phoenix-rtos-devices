@@ -5,7 +5,7 @@
  *
  * i.MX RT NOR flash device driver
  *
- * Copyright 2021-2022 Phoenix Systems
+ * Copyright 2021-2023 Phoenix Systems
  * Author: Gerard Swiderski
  *
  * This file is part of Phoenix-RTOS.
@@ -42,6 +42,7 @@ static const struct nor_info flashInfo[] = {
 	{ FLASH_ID(0xef, 0x4016), "W25Q32", 4 * 1024 * 1024, 0x100, 0x1000 },
 	{ FLASH_ID(0xef, 0x4017), "W25Q64", 8 * 1024 * 1024, 0x100, 0x1000 },
 	{ FLASH_ID(0xef, 0x4018), "W25Q128", 16 * 1024 * 1024, 0x100, 0x1000 },
+	{ FLASH_ID(0xef, 0x4019), "W25Q256JVEIQ", 32 * 1024 * 1024, 0x100, 0x1000 },
 	{ FLASH_ID(0xef, 0x6019), "W25Q256JW-Q", 32 * 1024 * 1024, 0x100, 0x1000 },
 	{ FLASH_ID(0xef, 0x8019), "W25Q256JW-M", 32 * 1024 * 1024, 0x100, 0x1000 },
 
