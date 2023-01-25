@@ -507,7 +507,7 @@ static int qspi_run_tests(qspi_dev_t dev, size_t flashsz, size_t sectorsz)
 
 int main(int argc, char *argv[])
 {
-	return qspi_run_tests(qspi_flash_a, 256 * 1024 * 1024, 4 * 1024);
+	return qspi_run_tests(qspi_flash_a, 16 * 1024 * 1024, 4 * 1024);
 	return qspi_test(qspi_flash_a);
 	int err, c;
 	storage_t dev = { 0 };
