@@ -82,12 +82,21 @@ static int _flashnor_qspiWaitBusy(qspi_dev_t dev)
 {
 	uint8_t status;
 	int err;
-	do {
-		/* TODO add backoff */
+	unsigned int sleep = 1000;
+
+	if ((err = _qspi_read(dev, lut_seq_read_status, 0, &status, 1)) < 0) {
+		return err;
+	}
+
+	while (status & 1) {
+		usleep(sleep);
+		if (sleep < 100000)
+			sleep <<= 1;
 		if ((err = _qspi_read(dev, lut_seq_read_status, 0, &status, 1)) < 0) {
 			return err;
 		}
-	} while (status & 1);
+	}
+
 	return EOK;
 }
 
