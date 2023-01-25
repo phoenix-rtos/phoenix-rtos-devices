@@ -215,35 +215,25 @@ int _qspi_read(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, void *buf, s
 
 	*QSPI_RBCT_ADDR = (*QSPI_RBCT_ADDR & ~(0x1F) | WATERMARK);
 
-	printf("RBCT: %#x\n", *QSPI_RBCT_ADDR);
-
 	*QSPI_SFAR_ADDR = qspi_common.flash_base_addr[dev] + addr;
 
 	*QSPI_MCR_ADDR |= QSPI_MCR_CLR_RXF;
 
-	printf("RXWE: %#x\n", *QSPI_SR_ADDR & QSPI_SR_RXWE);
-	reg = *QSPI_RBDRn_ADRR(0);
-	printf("PRE DR: %#x\n", reg);
 	set_IPCR(lut_seq, size);
 
-	printf("RXWE: %#x\n", *QSPI_SR_ADDR & QSPI_SR_RXWE);
 	while (len < size) {
-		printf("RXWE: %#x\n", *QSPI_SR_ADDR & QSPI_SR_RXWE);
-		while (((*QSPI_SR_ADDR & QSPI_SR_RXWE) ^ QSPI_SR_BUSY) == 0) /* Wait for data ready */
-			;
-
-		printf("RXWE: %#x\n", *QSPI_SR_ADDR & QSPI_SR_RXWE);
+		do {
+			reg = *QSPI_SR_ADDR;
+		} while ((reg & QSPI_SR_RXWE) == 0 && reg & QSPI_SR_BUSY);
 
 		for (i = 0; i < WATERMARK + 1 && len < size; i++) {
 			reg = *QSPI_RBDRn_ADRR(i);
-			printf("DR: %#x\n", reg);
 			for (byte = 0; byte < 4 && len + byte < size; byte++) {
 				((uint8_t *)buf)[len + byte] = reg & 0xFF;
 				reg >>= 8;
 			}
 			len += byte;
 		}
-		printf("POP\n");
 		*QSPI_FR_ADDR |= QSPI_FR_RBDF; /* Buffer pop. */
 	}
 
@@ -288,18 +278,13 @@ int _qspi_write(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, const void 
 	*QSPI_SFAR_ADDR = qspi_common.flash_base_addr[dev] + addr;
 
 	sent += write_tx(data, size);
-	printf("SENT: %d, BUSY: %#x \n", sent, *QSPI_SR_ADDR & QSPI_SR_BUSY);
-	printf("SIZE: %d\n", size);
 
 	set_IPCR(lut_seq, size);
-	printf("SENT: %d, BUSY: %#x \n", sent, *QSPI_SR_ADDR & QSPI_SR_BUSY);
 
 	while (sent < size) {
 		sent += write_tx(data + sent, size - sent);
-		printf("SENT: %d, BUSY: %#x \n", sent, *QSPI_SR_ADDR & QSPI_SR_BUSY);
 	}
 
-	printf("WAITING\n");
 	while (*QSPI_SR_ADDR & QSPI_SR_BUSY)
 		;
 
