@@ -61,6 +61,7 @@ int qspi_setLutSeq(const lut_seq_t *lut, unsigned int lut_seq);
 void qspi_setTCSH(uint8_t cycles);
 void qspi_setTCSS(uint8_t cycles);
 
+/* TODO non busy read. */
 int _qspi_read(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, void *buf, size_t size);
 int _qspi_write(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, const void *data, size_t size);
 
