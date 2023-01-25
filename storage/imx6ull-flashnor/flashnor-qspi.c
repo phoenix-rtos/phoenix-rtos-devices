@@ -45,12 +45,11 @@ typedef struct {
 	unsigned char jedec[3]; /* Chip JEDEC ID */
 	unsigned int sectorsz;  /* Chip sector size in bytes */
 	unsigned int flashsz;   /* Chip storage size in bytes */
-	size_t pagesz;          /* Chip page size in bytes */
 } chip_t;
 
 /* Supported NOR flash chips */
 static const chip_t chips[] = {
-	{ "Micron MT25QL256ABA(256Mb, 3V)", { 0x20, 0xBA, 0x19 }, 4 * 1024, 32 * 1024 * 1024, 256 },
+	{ "Micron MT25QL256ABA(256Mb, 3V)", { 0x20, 0xBA, 0x19 }, 4 * 1024, 32 * 1024 * 1024 },
 	/* Not tested.
 
 	{ "Micron MT25QL256ABA(1Gb, 3V)", { 0x20, 0xBA, 0x21 }, 64 * 1024, 1024 * 1024 * 1024 },
@@ -68,7 +67,6 @@ static const chip_t chips[] = {
 struct {
 	handle_t lock;
 	bool init;
-	size_t pagesz[2];
 } flashnor_common;
 
 
@@ -147,8 +145,8 @@ ssize_t flashnor_qspiWrite(qspi_dev_t dev, unsigned int addr, const void *buff, 
 			size = MAX_WRITE_LEN;
 
 		/* Limit write size to the page aligned address (don't wrap around at the page boundary) */
-		if (size > flashnor_common.pagesz[dev] - ((addr + len) % flashnor_common.pagesz[dev]))
-			size = flashnor_common.pagesz[dev] - ((addr + len) % flashnor_common.pagesz[dev]);
+		if (size > 0x100 - ((addr + len) & 0xFF))
+			size = 0x100 - ((addr + len) & 0xFF);
 		/* TODO XIP */
 		if ((err = _qspi_write(dev, lut_seq_write, addr + len, ((const char *)buff) + len, size)) < 0) {
 			mutexUnlock(flashnor_common.lock);
@@ -253,7 +251,6 @@ int _flashnor_qspiInit(qspi_dev_t dev, storage_t *storage_dev)
 	for (i = 0; i < sizeof(chips) / sizeof(chips[0]); i++) {
 		if (!memcmp(jedec, chips[i].jedec, sizeof(chips[i].jedec))) {
 			printf("imx6ull-flashnor: %s %uMbit NOR\n", chips[i].name, 8 * chips[i].flashsz >> 20);
-			flashnor_common.pagesz[dev] = chips[i].pagesz;
 			if (!flashnor_common.init) {
 				if ((err = mutexCreate(&flashnor_common.lock)) < 0) {
 					return err;
