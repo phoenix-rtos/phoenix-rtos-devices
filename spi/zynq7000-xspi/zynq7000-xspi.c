@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/threads.h>
 
 #include <posix/utils.h>
 #include <board_config.h>
@@ -27,6 +28,8 @@
 
 /* Number of SPI controllers */
 #define SPI_COUNT 1
+
+#define PRIORITY 2
 
 static struct {
 	unsigned int dev;
@@ -123,6 +126,8 @@ int main(int argc, char *argv[])
 			return EXIT_FAILURE;
 		}
 	}
+
+	priority(PRIORITY);
 
 	err = spi_init(dev);
 	if (err < 0) {
