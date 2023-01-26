@@ -247,7 +247,7 @@ static int lsm9dsxx_start(sensor_info_t *info)
 	int err;
 	lsm9dsxx_ctx_t *ctx = (lsm9dsxx_ctx_t *)info->ctx;
 
-	err = beginthread(lsm9dsxx_threadPublish, 4, ctx->stack, sizeof(ctx->stack), info);
+	err = beginthread(lsm9dsxx_threadPublish, THREAD_PRIORITY_SENSOR, ctx->stack, sizeof(ctx->stack), info);
 	if (err >= 0) {
 		printf("lsm9dsxx: launched sensor\n");
 	}

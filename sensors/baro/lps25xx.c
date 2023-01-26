@@ -178,7 +178,7 @@ static int lps25xx_start(sensor_info_t *info)
 	int err;
 	lps25xx_ctx_t *ctx = (lps25xx_ctx_t *)info->ctx;
 
-	err = beginthread(lps25xx_publishthr, 4, ctx->stack, sizeof(ctx->stack), info);
+	err = beginthread(lps25xx_publishthr, THREAD_PRIORITY_SENSOR, ctx->stack, sizeof(ctx->stack), info);
 	if (err >= 0) {
 		printf("lps25xx: launched sensor\n");
 	}

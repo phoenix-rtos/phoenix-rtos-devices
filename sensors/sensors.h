@@ -20,6 +20,10 @@
 #include <posix/idtree.h>
 
 
+#define THREAD_PRIORITY_MSGSRV 3 /* priority of messaging server of sensorhub */
+#define THREAD_PRIORITY_SENSOR 3 /* priority of sensor driver threads */
+
+
 /* Info structure is filled by a sensor driver */
 typedef struct {
 	unsigned int id;     /* device identifier */
