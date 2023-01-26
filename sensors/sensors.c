@@ -20,6 +20,7 @@
 #include <sys/list.h>
 #include <sys/threads.h>
 #include <posix/utils.h>
+#include <sys/threads.h>
 
 #include <sensors-spi.h>
 
@@ -624,6 +625,8 @@ int main(int argc, char **argv)
 		sensors_cleanup(devsz);
 		return EXIT_FAILURE;
 	}
+
+	priority(THREAD_PRIORITY_MSGSRV);
 
 	sensors_run();
 	sensors_msgThread();

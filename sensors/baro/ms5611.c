@@ -233,7 +233,7 @@ static int ms5611_start(sensor_info_t *info)
 	int err;
 	ms5611_ctx_t *ctx = (ms5611_ctx_t *)info->ctx;
 
-	err = beginthread(ms5611_publishthr, 4, ctx->stack, sizeof(ctx->stack), info);
+	err = beginthread(ms5611_publishthr, THREAD_PRIORITY_SENSOR, ctx->stack, sizeof(ctx->stack), info);
 	if (err >= 0) {
 		printf("ms5611: launched sensor\n");
 	}

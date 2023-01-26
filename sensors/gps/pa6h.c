@@ -128,7 +128,7 @@ static int pa6h_start(sensor_info_t *info)
 	ctx->evtGps.type = SENSOR_TYPE_GPS;
 	ctx->evtGps.gps.devId = info->id;
 
-	err = beginthread(pa6h_threadPublish, 4, ctx->stack, sizeof(ctx->stack), info);
+	err = beginthread(pa6h_threadPublish, THREAD_PRIORITY_SENSOR, ctx->stack, sizeof(ctx->stack), info);
 	if (err < 0) {
 		free(ctx);
 	}
