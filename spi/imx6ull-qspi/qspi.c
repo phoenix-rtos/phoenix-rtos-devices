@@ -183,7 +183,7 @@ int qspi_setLutSeq(const lut_seq_t *lut, unsigned int lut_seq)
 	int i;
 
 	if (lut_seq >= NUM_LUT_SEQ) {
-		return -1;
+		return -EINVAL;
 	}
 	if (*(qspi_common.base + QSPI_LCKCR) & QSPI_LCKCR_LOCK) {
 		*(qspi_common.base + QSPI_LUTKEY) = QSPI_LUTKEY_KEY;
@@ -224,10 +224,10 @@ int _qspi_readBusy(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, void *bu
 	uint32_t reg;
 	int max_iter;
 
-	if (dev != qspi_flash_a && dev != qspi_flash_b) {
+	if ((dev != qspi_flash_a) && (dev != qspi_flash_b)) {
 		return -ENODEV;
 	}
-	if (lut_seq >= NUM_LUT_SEQ || size > MAX_READ_LEN) {
+	if ((lut_seq >= NUM_LUT_SEQ) || (size > MAX_READ_LEN)) {
 		return -EINVAL;
 	}
 
@@ -250,9 +250,9 @@ int _qspi_readBusy(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, void *bu
 			return -ETIME;
 		}
 
-		for (i = 0; i < WATERMARK + 1 && len < size; i++) {
+		for (i = 0; (i < WATERMARK + 1) && (len < size); i++) {
 			reg = *(qspi_common.base + QSPI_RBDRn(i));
-			for (byte = 0; byte < 4 && len + byte < size; byte++) {
+			for (byte = 0; (byte < 4) && (len + byte < size); byte++) {
 				((uint8_t *)buf)[len + byte] = reg & 0xff;
 				reg >>= 8;
 			}
@@ -270,9 +270,9 @@ static size_t write_tx(const void *data, size_t size)
 	size_t byte, sent = 0;
 	uint32_t reg;
 
-	while ((*(qspi_common.base + QSPI_SR) & QSPI_SR_TXFULL) == 0 && sent < size) {
+	while (((*(qspi_common.base + QSPI_SR) & QSPI_SR_TXFULL) == 0) && (sent < size)) {
 		reg = 0;
-		for (byte = 0; byte < 4 && sent + byte < size; byte++) {
+		for (byte = 0; (byte < 4) && (sent + byte < size); byte++) {
 			reg |= ((uint8_t *)data)[sent + byte] << (8 * byte);
 		}
 		*(qspi_common.base + QSPI_TBDR) = reg;
@@ -288,10 +288,10 @@ int _qspi_write(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, const void 
 	size_t sent = 0;
 	int err, max_iter;
 
-	if (dev != qspi_flash_a && dev != qspi_flash_b) {
+	if ((dev != qspi_flash_a) && (dev != qspi_flash_b)) {
 		return -ENODEV;
 	}
-	if (lut_seq >= NUM_LUT_SEQ || size > MAX_READ_LEN) {
+	if ((lut_seq >= NUM_LUT_SEQ) || (size > MAX_READ_LEN)) {
 		return -EINVAL;
 	}
 
@@ -325,13 +325,14 @@ int _qspi_init(qspi_dev_t dev)
 {
 	int err;
 
-	if (dev != qspi_flash_a && dev != qspi_flash_b) {
+	if ((dev != qspi_flash_a) && (dev != qspi_flash_b)) {
 		printf("qspi: invalid device %d.\n", dev);
 		return -ENODEV;
 	}
 
 	if (qspi_common.init == 0) {
-		if ((qspi_common.base = mmap(NULL, 4 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, QSPI_BASE)) == MAP_FAILED) {
+		qspi_common.base = mmap(NULL, 4 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, QSPI_BASE);
+		if (qspi_common.base == MAP_FAILED) {
 			printf("qspi: could not map qspi paddr %p.\n", QSPI_BASE);
 			return -ENOMEM;
 		}
