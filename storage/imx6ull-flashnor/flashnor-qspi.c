@@ -14,7 +14,6 @@
 #include <errno.h>
 #include <string.h>
 #include <unistd.h>
-#include <stdbool.h>
 #include <sys/threads.h>
 #include <sys/types.h>
 #include <qspi.h>
@@ -66,7 +65,7 @@ static const chip_t chips[] = {
 
 struct {
 	handle_t lock;
-	bool init;
+	int init;
 } flashnor_common;
 
 
@@ -82,15 +81,18 @@ static int _flashnor_qspiWaitBusy(qspi_dev_t dev)
 	int err;
 	unsigned int sleep = 1000;
 
-	if ((err = _qspi_readBusy(dev, lut_seq_read_status, 0, &status, 1)) < 0) {
+	err = _qspi_readBusy(dev, lut_seq_read_status, 0, &status, 1);
+	if (err < 0) {
 		return err;
 	}
 
 	while (status & 1) {
 		usleep(sleep);
-		if (sleep < 100000)
+		if (sleep < 100000) {
 			sleep <<= 1;
-		if ((err = _qspi_readBusy(dev, lut_seq_read_status, 0, &status, 1)) < 0) {
+		}
+		err = _qspi_readBusy(dev, lut_seq_read_status, 0, &status, 1);
+		if (err < 0) {
 			return err;
 		}
 	}
@@ -104,7 +106,8 @@ ssize_t flashnor_qspiRead(qspi_dev_t dev, unsigned int addr, void *buff, size_t 
 	size_t size, len;
 	int err;
 
-	if ((err = mutexLock(flashnor_common.lock)) < 0) {
+	err = mutexLock(flashnor_common.lock);
+	if (err < 0) {
 		return err;
 	}
 
@@ -113,13 +116,15 @@ ssize_t flashnor_qspiRead(qspi_dev_t dev, unsigned int addr, void *buff, size_t 
 			size = MAX_READ_LEN;
 
 		/* TODO XIP */
-		if ((err = _qspi_readBusy(dev, lut_seq_read, addr + len, ((char *)buff) + len, size)) < 0) {
+		err = _qspi_readBusy(dev, lut_seq_read, addr + len, ((char *)buff) + len, size);
+		if (err < 0) {
 			mutexUnlock(flashnor_common.lock);
 			return err;
 		}
 	}
 
-	if ((err = mutexUnlock(flashnor_common.lock)) < 0) {
+	err = mutexUnlock(flashnor_common.lock);
+	if (err < 0) {
 		return err;
 	}
 
@@ -132,12 +137,14 @@ ssize_t flashnor_qspiWrite(qspi_dev_t dev, unsigned int addr, const void *buff, 
 	size_t size, len;
 	int err;
 
-	if ((err = mutexLock(flashnor_common.lock)) < 0) {
+	err = mutexLock(flashnor_common.lock);
+	if (err < 0) {
 		return err;
 	}
 
 	for (len = 0; len < bufflen; len += size) {
-		if ((err = _flashnor_qspiWriteEnable(dev)) < 0) {
+		err = _flashnor_qspiWriteEnable(dev);
+		if (err < 0) {
 			mutexUnlock(flashnor_common.lock);
 			return err;
 		}
@@ -148,18 +155,20 @@ ssize_t flashnor_qspiWrite(qspi_dev_t dev, unsigned int addr, const void *buff, 
 		if (size > 0x100 - ((addr + len) & 0xff))
 			size = 0x100 - ((addr + len) & 0xff);
 		/* TODO XIP */
-		if ((err = _qspi_write(dev, lut_seq_write, addr + len, ((const char *)buff) + len, size)) < 0) {
+		err = _qspi_write(dev, lut_seq_write, addr + len, ((const char *)buff) + len, size);
+		if (err < 0) {
 			mutexUnlock(flashnor_common.lock);
 			return err;
 		}
-
-		if ((err = _flashnor_qspiWaitBusy(dev)) < 0) {
+		err = _flashnor_qspiWaitBusy(dev);
+		if (err < 0) {
 			mutexUnlock(flashnor_common.lock);
 			return err;
 		}
 	}
 
-	if ((err = mutexUnlock(flashnor_common.lock)) < 0) {
+	err = mutexUnlock(flashnor_common.lock);
+	if (err < 0) {
 		return err;
 	}
 
@@ -170,16 +179,24 @@ ssize_t flashnor_qspiWrite(qspi_dev_t dev, unsigned int addr, const void *buff, 
 int flashnor_qspiEraseSector(qspi_dev_t dev, unsigned int addr)
 {
 	int err;
-	if ((err = mutexLock(flashnor_common.lock)) < 0) {
+
+	err = mutexLock(flashnor_common.lock);
+	if (err < 0) {
 		return err;
 	}
-	if ((err = _flashnor_qspiWriteEnable(dev)) < 0) {
+	err = _flashnor_qspiWriteEnable(dev);
+	if (err < 0) {
+		mutexUnlock(flashnor_common.lock);
 		return err;
 	}
-	if ((err = _qspi_write(dev, lut_seq_erase, addr, NULL, 0)) < 0) {
+	err = _qspi_write(dev, lut_seq_erase, addr, NULL, 0);
+	if (err < 0) {
+		mutexUnlock(flashnor_common.lock);
 		return err;
 	}
-	if ((err = _flashnor_qspiWaitBusy(dev)) < 0) {
+	err = _flashnor_qspiWaitBusy(dev);
+	if (err < 0) {
+		mutexUnlock(flashnor_common.lock);
 		return err;
 	}
 	return mutexUnlock(flashnor_common.lock);
@@ -190,7 +207,9 @@ static int get_jedec_id(qspi_dev_t dev, uint8_t data[3])
 {
 	int err;
 	lut_seq_t seq = { .instrs = { LUT_INSTR(lut_cmd, lut_pad1, cmd_jedec), LUT_INSTR(lut_read, lut_pad1, 3), 0 } };
-	if ((err = qspi_setLutSeq(&seq, lut_seq_jedec)) < 0) {
+
+	err = qspi_setLutSeq(&seq, lut_seq_jedec);
+	if (err < 0) {
 		return err;
 	}
 	return _qspi_readBusy(dev, lut_seq_jedec, 0, data, 3);
@@ -200,14 +219,15 @@ static int enable_quad_io(qspi_dev_t dev)
 {
 	int err;
 	lut_seq_t seq = { .instrs = { LUT_INSTR(lut_cmd, lut_pad1, cmd_qenable), 0 } };
-	if ((err = qspi_setLutSeq(&seq, lut_seq_quad_io) < 0)) {
+	err = qspi_setLutSeq(&seq, lut_seq_quad_io);
+	if (err < 0) {
 		return err;
 	}
 	return _qspi_readBusy(dev, lut_seq_quad_io, 0, NULL, 0);
 }
 
 
-static int populate_lut()
+static int populate_lut(void)
 {
 	int err, i;
 	/* clang-format off */
@@ -222,8 +242,9 @@ static int populate_lut()
 		{ lut_seq_read_status,  { { LUT_INSTR(lut_cmd, lut_pad4, cmd_rdsr), LUT_INSTR(lut_read, lut_pad4, 1), 0 } }  },
 	};
 	/* clang-format on */
-	for (i = 0; i < 5; i++) {
-		if ((err = qspi_setLutSeq(&seqs[i].lut_seq, seqs[i].num)) < 0) {
+	for (i = 0; i < sizeof(seqs) / sizeof(*seqs); i++) {
+		err = qspi_setLutSeq(&seqs[i].lut_seq, seqs[i].num);
+		if (err < 0) {
 			return err;
 		}
 	}
@@ -236,13 +257,15 @@ int _flashnor_qspiInit(qspi_dev_t dev, storage_t *storage_dev)
 	int i, err;
 	uint8_t jedec[3];
 
-	if ((err = _qspi_init(dev)) < 0) {
+	err = _qspi_init(dev);
+	if (err < 0) {
 		return err;
 	}
 	qspi_setTCSH(0);
 	qspi_setTCSS(0);
 
-	if ((err = get_jedec_id(dev, jedec)) < 0) {
+	err = get_jedec_id(dev, jedec);
+	if (err < 0) {
 		return err;
 	}
 
@@ -252,17 +275,20 @@ int _flashnor_qspiInit(qspi_dev_t dev, storage_t *storage_dev)
 		if (!memcmp(jedec, chips[i].jedec, sizeof(chips[i].jedec))) {
 			printf("imx6ull-flashnor: %s %uMbit NOR\n", chips[i].name, 8 * chips[i].flashsz >> 20);
 			if (!flashnor_common.init) {
-				if ((err = mutexCreate(&flashnor_common.lock)) < 0) {
+				err = mutexCreate(&flashnor_common.lock);
+				if (err < 0) {
 					return err;
 				}
-				if ((err = populate_lut()) < 0) {
+				err = populate_lut();
+				if (err < 0) {
 					return err;
 				}
-				if ((err = enable_quad_io(dev))) {
+				(err = enable_quad_io(dev));
+				if (err < 0) {
 					return err;
 				}
 			}
-			flashnor_common.init = true;
+			flashnor_common.init = 1;
 			/* TODO init storage device */
 			return EOK;
 		}

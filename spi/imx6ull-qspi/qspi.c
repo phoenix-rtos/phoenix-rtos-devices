@@ -16,7 +16,6 @@
 #include <errno.h>
 #include <sys/platform.h>
 #include <sys/threads.h>
-#include <stdbool.h>
 #include <string.h>
 #include <phoenix/arch/imx6ull.h>
 #include <board_config.h>
@@ -117,8 +116,8 @@ struct {
 struct {
 	volatile uint32_t *base;
 	uint32_t flash_base_addr[2];
-	bool init;
-} qspi_common = { .base = NULL, .init = false, .flash_base_addr = { QSPI_MMAP_BASE, QSPI_MMAP_BASE + QSPI_FLASH_A1_SIZE + QSPI_FLASH_A2_SIZE } };
+	int init;
+} qspi_common = { .base = NULL, .init = 0, .flash_base_addr = { QSPI_MMAP_BASE, QSPI_MMAP_BASE + QSPI_FLASH_A1_SIZE + QSPI_FLASH_A2_SIZE } };
 
 /* TODO set ohm value in the flash register */
 /* TODO find clock frequency - ~50Mhz */
@@ -316,7 +315,7 @@ int _qspi_init(qspi_dev_t dev)
 		*(qspi_common.base + QSPI_SFB1AD) = (*(qspi_common.base + QSPI_SFB1AD) & (0x3ff)) | ((QSPI_MMAP_BASE + QSPI_FLASH_B1_SIZE) & ~(0x3ff));
 		*(qspi_common.base + QSPI_SFB2AD) = (*(qspi_common.base + QSPI_SFB2AD) & (0x3ff)) | ((QSPI_MMAP_BASE + QSPI_FLASH_B2_SIZE) & ~(0x3ff));
 	}
-	qspi_common.init = true;
+	qspi_common.init = 1;
 
 	return EOK;
 }
