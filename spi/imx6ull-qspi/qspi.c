@@ -117,10 +117,26 @@ struct {
 	volatile uint32_t *base;
 	uint32_t flash_base_addr[2];
 	int init;
-} qspi_common = { .base = NULL, .init = 0, .flash_base_addr = { QSPI_MMAP_BASE, QSPI_MMAP_BASE + QSPI_FLASH_A1_SIZE + QSPI_FLASH_A2_SIZE } };
+} qspi_common;
 
 /* TODO set ohm value in the flash register */
 /* TODO find clock frequency - ~50Mhz */
+
+
+static int wait_cmd_done_busy()
+{
+	int max_iter;
+
+	for (max_iter = 1000; max_iter > 0; max_iter--) {
+		if ((*(qspi_common.base + QSPI_SR) & QSPI_SR_BUSY) == 0) {
+			return EOK;
+		}
+		usleep(100);
+	}
+	printf("WAIT BUSY TIMEOUT\n");
+	return -ETIME;
+}
+
 
 static void set_mux(qspi_dev_t dev_no)
 {
@@ -161,6 +177,7 @@ static void set_clk(void)
 	platformctl(&ctl);
 }
 
+
 int qspi_setLutSeq(const lut_seq_t *lut, unsigned int lut_seq)
 {
 	int i;
@@ -181,27 +198,31 @@ int qspi_setLutSeq(const lut_seq_t *lut, unsigned int lut_seq)
 	*(qspi_common.base + QSPI_LCKCR) = (*(qspi_common.base + QSPI_LCKCR) & ~(QSPI_LCKCR_UNLOCK | QSPI_LCKCR_LOCK)) | QSPI_LCKCR_LOCK;
 }
 
+
 static void set_IPCR(int seq_num, size_t idatsz)
 {
 	*(qspi_common.base + QSPI_IPCR) = QSPI_IPCR_SET_IDATSZ(QSPI_IPCR_SET_SEQID(*(qspi_common.base + QSPI_IPCR), seq_num), idatsz & 0xffff);
 }
+
 
 void qspi_setTCSH(uint8_t cycles)
 {
 	*(qspi_common.base + QSPI_FLSHCR) = (*(qspi_common.base + QSPI_FLSHCR) & ~(0x0f << 8)) | (cycles << 8);
 }
 
+
 void qspi_setTCSS(uint8_t cycles)
 {
 	*(qspi_common.base + QSPI_FLSHCR) = (*(qspi_common.base + QSPI_FLSHCR) & ~(0x0f)) | cycles;
 }
+
 
 int _qspi_readBusy(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, void *buf, size_t size)
 {
 	uint8_t to_read, byte, i;
 	uint16_t len = 0;
 	uint32_t reg;
-
+	int max_iter;
 
 	if (dev != qspi_flash_a && dev != qspi_flash_b) {
 		return -ENODEV;
@@ -217,9 +238,17 @@ int _qspi_readBusy(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, void *bu
 	set_IPCR(lut_seq, size);
 
 	while (len < size) {
-		do {
+		for (max_iter = 1000; max_iter > 0; max_iter--) {
 			reg = *(qspi_common.base + QSPI_SR);
-		} while (((reg & QSPI_SR_RXWE) == 0) && (reg & QSPI_SR_BUSY != 0));
+			if (((reg & QSPI_SR_RXWE) != 0) || ((reg & QSPI_SR_BUSY) == 0)) {
+				break;
+			}
+			usleep(100);
+		}
+		if (max_iter == 0) {
+			printf("READ TIMEOUT\n");
+			return -ETIME;
+		}
 
 		for (i = 0; i < WATERMARK + 1 && len < size; i++) {
 			reg = *(qspi_common.base + QSPI_RBDRn(i));
@@ -232,12 +261,9 @@ int _qspi_readBusy(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, void *bu
 		*(qspi_common.base + QSPI_FR) |= QSPI_FR_RBDF; /* Buffer pop. */
 	}
 
-	while (*(qspi_common.base + QSPI_SR) & QSPI_SR_BUSY)
-		;
-	*(qspi_common.base + QSPI_MCR) |= QSPI_MCR_CLR_RXF;
-
-	return EOK;
+	return wait_cmd_done_busy();
 }
+
 
 static size_t write_tx(const void *data, size_t size)
 {
@@ -256,10 +282,12 @@ static size_t write_tx(const void *data, size_t size)
 	return sent;
 }
 
+
 int _qspi_write(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, const void *data, size_t size)
 {
 	size_t sent = 0;
-	int err;
+	int err, max_iter;
+
 	if (dev != qspi_flash_a && dev != qspi_flash_b) {
 		return -ENODEV;
 	}
@@ -276,26 +304,34 @@ int _qspi_write(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, const void 
 
 	set_IPCR(lut_seq, size);
 
-	while (sent < size) {
-		sent += write_tx(data + sent, size - sent);
+	if (sent < size) {
+		for (max_iter = 1000; max_iter > 0; max_iter--) {
+			sent += write_tx(data + sent, size - sent);
+			if (sent >= size) {
+				break;
+			}
+			usleep(100);
+		}
+		if (max_iter == 0) {
+			printf("WRITE TIMEOUT\n");
+			return -ETIME;
+		}
 	}
-
-	while (*(qspi_common.base + QSPI_SR) & QSPI_SR_BUSY)
-		;
-
-	return EOK;
+	return wait_cmd_done_busy();
 }
+
 
 int _qspi_init(qspi_dev_t dev)
 {
 	int err;
+
 	if (dev != qspi_flash_a && dev != qspi_flash_b) {
 		printf("qspi: invalid device %d.\n", dev);
 		return -ENODEV;
 	}
 
 	if (qspi_common.init == 0) {
-		if ((qspi_common.base = mmap(NULL, 0x4000, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, QSPI_BASE)) == MAP_FAILED) {
+		if ((qspi_common.base = mmap(NULL, 4 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, QSPI_BASE)) == MAP_FAILED) {
 			printf("qspi: could not map qspi paddr %p.\n", QSPI_BASE);
 			return -ENOMEM;
 		}
@@ -314,6 +350,9 @@ int _qspi_init(qspi_dev_t dev)
 		*(qspi_common.base + QSPI_SFA2AD) = (*(qspi_common.base + QSPI_SFA2AD) & (0x3ff)) | ((QSPI_MMAP_BASE + QSPI_FLASH_A2_SIZE) & ~(0x3ff));
 		*(qspi_common.base + QSPI_SFB1AD) = (*(qspi_common.base + QSPI_SFB1AD) & (0x3ff)) | ((QSPI_MMAP_BASE + QSPI_FLASH_B1_SIZE) & ~(0x3ff));
 		*(qspi_common.base + QSPI_SFB2AD) = (*(qspi_common.base + QSPI_SFB2AD) & (0x3ff)) | ((QSPI_MMAP_BASE + QSPI_FLASH_B2_SIZE) & ~(0x3ff));
+
+		qspi_common.flash_base_addr[0] = QSPI_MMAP_BASE;
+		qspi_common.flash_base_addr[1] = QSPI_MMAP_BASE + QSPI_FLASH_A1_SIZE + QSPI_FLASH_A2_SIZE;
 	}
 	qspi_common.init = 1;
 

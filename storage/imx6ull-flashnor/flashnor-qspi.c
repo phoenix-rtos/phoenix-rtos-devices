@@ -78,26 +78,28 @@ static int _flashnor_qspiWriteEnable(qspi_dev_t dev)
 static int _flashnor_qspiWaitBusy(qspi_dev_t dev)
 {
 	uint8_t status;
-	int err;
-	unsigned int sleep = 1000;
+	int err, max_iter;
+	unsigned int sleep = 100;
 
 	err = _qspi_readBusy(dev, lut_seq_read_status, 0, &status, 1);
 	if (err < 0) {
 		return err;
 	}
 
-	while (status & 1) {
-		usleep(sleep);
-		if (sleep < 100000) {
-			sleep <<= 1;
+	for (max_iter = 1000; max_iter > 0; max_iter--) {
+		if ((status & 1) == 0) {
+			return EOK;
 		}
+		usleep(sleep);
 		err = _qspi_readBusy(dev, lut_seq_read_status, 0, &status, 1);
 		if (err < 0) {
 			return err;
 		}
+		if (sleep < 100000) {
+			sleep <<= 1;
+		}
 	}
-
-	return EOK;
+	return -ETIME;
 }
 
 
@@ -214,6 +216,7 @@ static int get_jedec_id(qspi_dev_t dev, uint8_t data[3])
 	}
 	return _qspi_readBusy(dev, lut_seq_jedec, 0, data, 3);
 }
+
 
 static int enable_quad_io(qspi_dev_t dev)
 {
