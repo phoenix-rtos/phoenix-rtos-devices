@@ -44,6 +44,12 @@ typedef enum {
 
 #define LUT_INSTR(code, pad, operand) ((((code)&0x3F) << 10) | (((pad)&0x03) << 8) | ((operand)&0xFF))
 
+enum {
+	lut_pad1,
+	lut_pad2,
+	lut_pad4,
+};
+
 typedef struct {
 	uint16_t instrs[8];
 } lut_seq_t;
@@ -62,7 +68,8 @@ void qspi_setTCSH(uint8_t cycles);
 void qspi_setTCSS(uint8_t cycles);
 
 /* TODO non busy read. */
-int _qspi_read(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, void *buf, size_t size);
+int _qspi_readBusy(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, void *buf, size_t size);
+/* int _qspi_read(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, void *buf, size_t size); */
 int _qspi_write(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, const void *data, size_t size);
 
 

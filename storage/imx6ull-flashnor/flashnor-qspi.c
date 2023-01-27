@@ -72,7 +72,7 @@ struct {
 
 static int _flashnor_qspiWriteEnable(qspi_dev_t dev)
 {
-	return _qspi_read(dev, lut_seq_write_enable, 0, NULL, 0);
+	return _qspi_readBusy(dev, lut_seq_write_enable, 0, NULL, 0);
 }
 
 
@@ -82,7 +82,7 @@ static int _flashnor_qspiWaitBusy(qspi_dev_t dev)
 	int err;
 	unsigned int sleep = 1000;
 
-	if ((err = _qspi_read(dev, lut_seq_read_status, 0, &status, 1)) < 0) {
+	if ((err = _qspi_readBusy(dev, lut_seq_read_status, 0, &status, 1)) < 0) {
 		return err;
 	}
 
@@ -90,7 +90,7 @@ static int _flashnor_qspiWaitBusy(qspi_dev_t dev)
 		usleep(sleep);
 		if (sleep < 100000)
 			sleep <<= 1;
-		if ((err = _qspi_read(dev, lut_seq_read_status, 0, &status, 1)) < 0) {
+		if ((err = _qspi_readBusy(dev, lut_seq_read_status, 0, &status, 1)) < 0) {
 			return err;
 		}
 	}
@@ -113,7 +113,7 @@ ssize_t flashnor_qspiRead(qspi_dev_t dev, unsigned int addr, void *buff, size_t 
 			size = MAX_READ_LEN;
 
 		/* TODO XIP */
-		if ((err = _qspi_read(dev, lut_seq_read, addr + len, ((char *)buff) + len, size)) < 0) {
+		if ((err = _qspi_readBusy(dev, lut_seq_read, addr + len, ((char *)buff) + len, size)) < 0) {
 			mutexUnlock(flashnor_common.lock);
 			return err;
 		}
@@ -189,21 +189,21 @@ int flashnor_qspiEraseSector(qspi_dev_t dev, unsigned int addr)
 static int get_jedec_id(qspi_dev_t dev, uint8_t data[3])
 {
 	int err;
-	lut_seq_t seq = { .instrs = { LUT_INSTR(lut_cmd, 0, cmd_jedec), LUT_INSTR(lut_read, 0, 3), 0 } };
+	lut_seq_t seq = { .instrs = { LUT_INSTR(lut_cmd, lut_pad1, cmd_jedec), LUT_INSTR(lut_read, lut_pad1, 3), 0 } };
 	if ((err = qspi_setLutSeq(&seq, lut_seq_jedec)) < 0) {
 		return err;
 	}
-	return _qspi_read(dev, lut_seq_jedec, 0, data, 3);
+	return _qspi_readBusy(dev, lut_seq_jedec, 0, data, 3);
 }
 
 static int enable_quad_io(qspi_dev_t dev)
 {
 	int err;
-	lut_seq_t seq = { .instrs = { LUT_INSTR(lut_cmd, 0, cmd_qenable), 0 } };
+	lut_seq_t seq = { .instrs = { LUT_INSTR(lut_cmd, lut_pad1, cmd_qenable), 0 } };
 	if ((err = qspi_setLutSeq(&seq, lut_seq_quad_io) < 0)) {
 		return err;
 	}
-	return _qspi_read(dev, lut_seq_quad_io, 0, NULL, 0);
+	return _qspi_readBusy(dev, lut_seq_quad_io, 0, NULL, 0);
 }
 
 
@@ -215,11 +215,11 @@ static int populate_lut()
 		unsigned int num;
 		lut_seq_t lut_seq;
 	} seqs[5] = {
-		{ lut_seq_write_enable, { { LUT_INSTR(lut_cmd, 2, cmd_wren), 0} } },
-		{ lut_seq_read,         { { LUT_INSTR(lut_cmd, 2, cmd_4qfread_io), LUT_INSTR(lut_addr, 2, 32), LUT_INSTR(lut_dummy, 2, 10), LUT_INSTR(lut_read, 2, 0), 0} } },
-		{ lut_seq_write,        { { LUT_INSTR(lut_cmd, 2, cmd_4qwrite), LUT_INSTR(lut_addr, 2, 32), LUT_INSTR(lut_write, 2, 0), 0} } },
-		{ lut_seq_erase,        { { LUT_INSTR(lut_cmd, 2, cmd_4erase4), LUT_INSTR(lut_addr, 2, 32), 0 } } },
-		{ lut_seq_read_status,  { { LUT_INSTR(lut_cmd, 2, cmd_rdsr), LUT_INSTR(lut_read, 2, 1), 0 } }  },
+		{ lut_seq_write_enable, { { LUT_INSTR(lut_cmd, lut_pad4, cmd_wren), 0} } },
+		{ lut_seq_read,         { { LUT_INSTR(lut_cmd, lut_pad4, cmd_4qfread_io), LUT_INSTR(lut_addr, lut_pad4, 32), LUT_INSTR(lut_dummy, lut_pad4, 10), LUT_INSTR(lut_read, lut_pad4, 0), 0} } },
+		{ lut_seq_write,        { { LUT_INSTR(lut_cmd, lut_pad4, cmd_4qwrite), LUT_INSTR(lut_addr, lut_pad4, 32), LUT_INSTR(lut_write, lut_pad4, 0), 0} } },
+		{ lut_seq_erase,        { { LUT_INSTR(lut_cmd, lut_pad4, cmd_4erase4), LUT_INSTR(lut_addr, lut_pad4, 32), 0 } } },
+		{ lut_seq_read_status,  { { LUT_INSTR(lut_cmd, lut_pad4, cmd_rdsr), LUT_INSTR(lut_read, lut_pad4, 1), 0 } }  },
 	};
 	/* clang-format on */
 	for (i = 0; i < 5; i++) {

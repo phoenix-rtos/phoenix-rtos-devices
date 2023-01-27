@@ -198,7 +198,7 @@ void qspi_setTCSS(uint8_t cycles)
 	*QSPI_FLSHCR_ADDR = (*QSPI_FLSHCR_ADDR & ~(0x0F)) | cycles;
 }
 
-int _qspi_read(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, void *buf, size_t size)
+int _qspi_readBusy(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, void *buf, size_t size)
 {
 	uint8_t to_read, byte, i;
 	uint16_t len = 0;
