@@ -204,6 +204,11 @@ void libtty_wake_writer(libtty_common_t *tty)
 
 int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned int bufsize, speed_t speed)
 {
+	/* bufsize must be a power of 2 */
+	if (bufsize == 0 || (bufsize & (bufsize - 1)) != 0) {
+		return -1;
+	}
+
 	memset(tty, 0, sizeof(*tty));
 	tty->cb = *callbacks;
 
