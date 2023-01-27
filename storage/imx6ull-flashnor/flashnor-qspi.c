@@ -19,15 +19,15 @@
 #include <qspi.h>
 #include "flashnor-qspi.h"
 
-enum {
-	cmd_wren = 0x06,      /* Write Enable */
-	cmd_rdsr = 0x05,      /* Read Status Register */
-	cmd_4qwrite = 0x34,   /* 4-byte Quad I/O Write */
-	cmd_qenable = 0x35,   /* Enable Quad I/O */
-	cmd_4erase4 = 0x21,   /*  4-byte  Sector Erase (4 KB) */
-	cmd_jedec = 0x9f,     /* JEDEC ID */
-	cmd_4qfread_io = 0xec /*  4-byte Quad Fast Read I/O */
-};
+
+#define CMD_WREN       0x06 /* Write Enable */
+#define CMD_RDSR       0x05 /* Read Status Register */
+#define CMD_4QWRITE    0x34 /* 4-byte Quad I/O Write */
+#define CMD_QENABLE    0x35 /* Enable Quad I/O */
+#define CMD_4ERASE4KB  0x21 /*  4-byte  Sector Erase (4 KB) */
+#define CMD_JEDEC      0x9f /* JEDEC ID */
+#define CMD_4QFREAD_IO 0xec /*  4-byte Quad Fast Read I/O */
+
 
 enum {
 	lut_seq_jedec,
@@ -206,7 +206,7 @@ int flashnor_qspiEraseSector(qspi_dev_t dev, unsigned int addr)
 static int get_jedec_id(qspi_dev_t dev, uint8_t data[3])
 {
 	int err;
-	lut_seq_t seq = { .instrs = { LUT_INSTR(lut_cmd, lut_pad1, cmd_jedec), LUT_INSTR(lut_read, lut_pad1, 3), 0 } };
+	lut_seq_t seq = { .instrs = { LUT_INSTR(lut_cmd, lut_pad1, CMD_JEDEC), LUT_INSTR(lut_read, lut_pad1, 3), 0 } };
 
 	err = qspi_setLutSeq(&seq, lut_seq_jedec);
 	if (err < 0) {
@@ -218,7 +218,7 @@ static int get_jedec_id(qspi_dev_t dev, uint8_t data[3])
 static int enable_quad_io(qspi_dev_t dev)
 {
 	int err;
-	lut_seq_t seq = { .instrs = { LUT_INSTR(lut_cmd, lut_pad1, cmd_qenable), 0 } };
+	lut_seq_t seq = { .instrs = { LUT_INSTR(lut_cmd, lut_pad1, CMD_QENABLE), 0 } };
 	err = qspi_setLutSeq(&seq, lut_seq_quad_io);
 	if (err < 0) {
 		return err;
@@ -235,11 +235,11 @@ static int populate_lut(void)
 		unsigned int num;
 		lut_seq_t lut_seq;
 	} seqs[5] = {
-		{ lut_seq_write_enable, { { LUT_INSTR(lut_cmd, lut_pad4, cmd_wren), 0} } },
-		{ lut_seq_read,         { { LUT_INSTR(lut_cmd, lut_pad4, cmd_4qfread_io), LUT_INSTR(lut_addr, lut_pad4, 32), LUT_INSTR(lut_dummy, lut_pad4, 10), LUT_INSTR(lut_read, lut_pad4, 0), 0} } },
-		{ lut_seq_write,        { { LUT_INSTR(lut_cmd, lut_pad4, cmd_4qwrite), LUT_INSTR(lut_addr, lut_pad4, 32), LUT_INSTR(lut_write, lut_pad4, 0), 0} } },
-		{ lut_seq_erase,        { { LUT_INSTR(lut_cmd, lut_pad4, cmd_4erase4), LUT_INSTR(lut_addr, lut_pad4, 32), 0 } } },
-		{ lut_seq_read_status,  { { LUT_INSTR(lut_cmd, lut_pad4, cmd_rdsr), LUT_INSTR(lut_read, lut_pad4, 1), 0 } }  },
+		{ lut_seq_write_enable, { { LUT_INSTR(lut_cmd, lut_pad4, CMD_WREN), 0} } },
+		{ lut_seq_read,         { { LUT_INSTR(lut_cmd, lut_pad4, CMD_4QFREAD_IO), LUT_INSTR(lut_addr, lut_pad4, 32), LUT_INSTR(lut_dummy, lut_pad4, 10), LUT_INSTR(lut_read, lut_pad4, 0), 0} } },
+		{ lut_seq_write,        { { LUT_INSTR(lut_cmd, lut_pad4, CMD_4QWRITE), LUT_INSTR(lut_addr, lut_pad4, 32), LUT_INSTR(lut_write, lut_pad4, 0), 0} } },
+		{ lut_seq_erase,        { { LUT_INSTR(lut_cmd, lut_pad4, CMD_4ERASE4KB), LUT_INSTR(lut_addr, lut_pad4, 32), 0 } } },
+		{ lut_seq_read_status,  { { LUT_INSTR(lut_cmd, lut_pad4, CMD_RDSR), LUT_INSTR(lut_read, lut_pad4, 1), 0 } }  },
 	};
 	/* clang-format on */
 	for (i = 0; i < sizeof(seqs) / sizeof(*seqs); i++) {
