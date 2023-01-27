@@ -49,18 +49,18 @@ typedef struct {
 
 /* Supported NOR flash chips */
 static const chip_t chips[] = {
-	{ "Micron MT25QL256ABA(256Mb, 3V)", { 0x20, 0xBA, 0x19 }, 4 * 1024, 32 * 1024 * 1024 },
+	{ "Micron MT25QL256ABA(256Mb, 3V)", { 0x20, 0xba, 0x19 }, 4 * 1024, 32 * 1024 * 1024 },
 	/* Not tested.
 
-	{ "Micron MT25QL256ABA(1Gb, 3V)", { 0x20, 0xBA, 0x21 }, 64 * 1024, 1024 * 1024 * 1024 },
-	{ "Micron MT25QL256ABA(512Mb, 3V)", { 0x20, 0xBA, 0x20 }, 64 * 1024, 512 * 1024 * 1024 },
-	{ "Micron MT25QL256ABA(128Mb, 3V)", { 0x20, 0xBA, 0x18 }, 64 * 1024, 128 * 1024 * 1024 },
-	{ "Micron MT25QL256ABA(16Mb, 3V)", { 0x20, 0xBA, 0x17 }, 64 * 1024, 16 * 1024 * 1024 },
-	{ "Micron MT25QL256ABA(1Gb, 1.8V)", { 0x20, 0xBB, 0x21 }, 64 * 1024, 1024 * 1024 * 1024 },
-	{ "Micron MT25QL256ABA(512Mb, 1.8V)", { 0x20, 0xBB, 0x20 }, 64 * 1024, 512 * 1024 * 1024 },
-	{ "Micron MT25QL256ABA(256Mb, 1.8V)", { 0x20, 0xBB, 0x19 }, 64 * 1024, 256 * 1024 * 1024 },
-	{ "Micron MT25QL256ABA(128Mb, 1.8V)", { 0x20, 0xBB, 0x18 }, 64 * 1024, 128 * 1024 * 1024 },
-	{ "Micron MT25QL256ABA(16Mb, 1.8V)", { 0x20, 0xBB, 0x17 }, 64 * 1024, 16 * 1024 * 1024 },
+	{ "Micron MT25QL256ABA(1Gb, 3V)", { 0x20, 0xba, 0x21 }, 64 * 1024, 1024 * 1024 * 1024 },
+	{ "Micron MT25QL256ABA(512Mb, 3V)", { 0x20, 0xba, 0x20 }, 64 * 1024, 512 * 1024 * 1024 },
+	{ "Micron MT25QL256ABA(128Mb, 3V)", { 0x20, 0xba, 0x18 }, 64 * 1024, 128 * 1024 * 1024 },
+	{ "Micron MT25QL256ABA(16Mb, 3V)", { 0x20, 0xba, 0x17 }, 64 * 1024, 16 * 1024 * 1024 },
+	{ "Micron MT25QL256ABA(1Gb, 1.8V)", { 0x20, 0xbb, 0x21 }, 64 * 1024, 1024 * 1024 * 1024 },
+	{ "Micron MT25QL256ABA(512Mb, 1.8V)", { 0x20, 0xbb, 0x20 }, 64 * 1024, 512 * 1024 * 1024 },
+	{ "Micron MT25QL256ABA(256Mb, 1.8V)", { 0x20, 0xbb, 0x19 }, 64 * 1024, 256 * 1024 * 1024 },
+	{ "Micron MT25QL256ABA(128Mb, 1.8V)", { 0x20, 0xbb, 0x18 }, 64 * 1024, 128 * 1024 * 1024 },
+	{ "Micron MT25QL256ABA(16Mb, 1.8V)", { 0x20, 0xbb, 0x17 }, 64 * 1024, 16 * 1024 * 1024 },
 	*/
 };
 
@@ -145,8 +145,8 @@ ssize_t flashnor_qspiWrite(qspi_dev_t dev, unsigned int addr, const void *buff, 
 			size = MAX_WRITE_LEN;
 
 		/* Limit write size to the page aligned address (don't wrap around at the page boundary) */
-		if (size > 0x100 - ((addr + len) & 0xFF))
-			size = 0x100 - ((addr + len) & 0xFF);
+		if (size > 0x100 - ((addr + len) & 0xff))
+			size = 0x100 - ((addr + len) & 0xff);
 		/* TODO XIP */
 		if ((err = _qspi_write(dev, lut_seq_write, addr + len, ((const char *)buff) + len, size)) < 0) {
 			mutexUnlock(flashnor_common.lock);

@@ -19,8 +19,9 @@
 #include <stdbool.h>
 #include <string.h>
 #include <phoenix/arch/imx6ull.h>
-#include "qspi.h"
 #include <board_config.h>
+
+#include "qspi.h"
 
 /* Default values for not configured boards */
 #ifndef QSPI_FLASH_A1_SIZE
@@ -38,21 +39,21 @@
 
 #define QSPI_MMAP_BASE 0x60000000
 
-#define QSPI_BASE ((uint32_t *)0x21E0000)
+#define QSPI_BASE ((void *)0x21e0000)
 
 #define QSPI_LCKCR_ADDR   (qspi_common.base + 0x304 / sizeof(uint32_t))
 #define QSPI_LCKCR_LOCK   0x01
 #define QSPI_LCKCR_UNLOCK 0x02
 
 #define QSPI_LUT_KEY_ADDR (qspi_common.base + 0x300 / sizeof(uint32_t))
-#define QSPI_LUT_KEY      0x5AF05AF0
+#define QSPI_LUT_KEY      0x5af05af0
 
 #define QSPI_LUTn_ADDR(n)      (qspi_common.base + (0x310 + 4 * (n)) / sizeof(uint32_t))
 #define QSPI_SEQ_START_REGN(n) (4 * (n))
 
 #define QSPI_IPCR_ADDR                    (qspi_common.base + 0x08 / sizeof(uint32_t))
-#define QSPI_IPCR_SET_SEQID(reg, seqid)   ((reg) & ~(0x0F << 24)) | ((seqid & 0x0F) << 24)
-#define QSPI_IPCR_SET_IDATSZ(reg, idatsz) ((reg) & ~(0xFFFF)) | (idatsz)
+#define QSPI_IPCR_SET_SEQID(reg, seqid)   ((reg) & ~(0x0f << 24)) | ((seqid & 0x0f) << 24)
+#define QSPI_IPCR_SET_IDATSZ(reg, idatsz) ((reg) & ~(0xffff)) | (idatsz)
 
 #define QSPI_FLSHCR_ADDR (qspi_common.base + 0x0C / sizeof(uint32_t))
 
@@ -63,7 +64,7 @@
 
 #define QSPI_BFGENCR_ADDR (qspi_common.base + 0x20 / sizeof(uint32_t))
 
-#define QSPI_SR_ADDR   (qspi_common.base + 0x15C / sizeof(uint32_t))
+#define QSPI_SR_ADDR   (qspi_common.base + 0x15c / sizeof(uint32_t))
 #define QSPI_SR_BUSY   (0x01)
 #define QSPI_SR_RXWE   (0x01 << 16)
 #define QSPI_SR_TXEDA  (0x01 << 24)
@@ -71,8 +72,8 @@
 
 #define QSPI_RBDRn_ADRR(n) (qspi_common.base + (0x200 + 4 * (n)) / sizeof(uint32_t))
 
-#define QSPI_RBSR_ADRR    (qspi_common.base + 0x10C / sizeof(uint32_t))
-#define QSPI_RBSR_TO_READ (((*QSPI_RBSR_ADRR) >> 8) & 0x3F)
+#define QSPI_RBSR_ADRR    (qspi_common.base + 0x10c / sizeof(uint32_t))
+#define QSPI_RBSR_TO_READ (((*QSPI_RBSR_ADRR) >> 8) & 0x3f)
 
 #define QSPI_SFAR_ADDR (qspi_common.base + 0x100 / sizeof(uint32_t))
 
@@ -87,7 +88,7 @@
 #define QSPI_SFA1AD (qspi_common.base + 0x180 / sizeof(uint32_t))
 #define QSPI_SFA2AD (qspi_common.base + 0x184 / sizeof(uint32_t))
 #define QSPI_SFB1AD (qspi_common.base + 0x188 / sizeof(uint32_t))
-#define QSPI_SFB2AD (qspi_common.base + 0x18C / sizeof(uint32_t))
+#define QSPI_SFB2AD (qspi_common.base + 0x18c / sizeof(uint32_t))
 
 #define WATERMARK 16
 
@@ -185,17 +186,17 @@ int qspi_setLutSeq(const lut_seq_t *lut, unsigned int lut_seq)
 
 static void set_IPCR(int seq_num, size_t idatsz)
 {
-	*QSPI_IPCR_ADDR = QSPI_IPCR_SET_IDATSZ(QSPI_IPCR_SET_SEQID(*QSPI_IPCR_ADDR, seq_num), idatsz & 0xFFFF);
+	*QSPI_IPCR_ADDR = QSPI_IPCR_SET_IDATSZ(QSPI_IPCR_SET_SEQID(*QSPI_IPCR_ADDR, seq_num), idatsz & 0xffff);
 }
 
 void qspi_setTCSH(uint8_t cycles)
 {
-	*QSPI_FLSHCR_ADDR = (*QSPI_FLSHCR_ADDR & ~(0x0F << 8)) | (cycles << 8);
+	*QSPI_FLSHCR_ADDR = (*QSPI_FLSHCR_ADDR & ~(0x0f << 8)) | (cycles << 8);
 }
 
 void qspi_setTCSS(uint8_t cycles)
 {
-	*QSPI_FLSHCR_ADDR = (*QSPI_FLSHCR_ADDR & ~(0x0F)) | cycles;
+	*QSPI_FLSHCR_ADDR = (*QSPI_FLSHCR_ADDR & ~(0x0f)) | cycles;
 }
 
 int _qspi_readBusy(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, void *buf, size_t size)
@@ -213,7 +214,7 @@ int _qspi_readBusy(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, void *bu
 		return -1;
 	}
 
-	*QSPI_RBCT_ADDR = (*QSPI_RBCT_ADDR & ~(0x1F) | WATERMARK);
+	*QSPI_RBCT_ADDR = (*QSPI_RBCT_ADDR & ~(0x1f) | WATERMARK);
 
 	*QSPI_SFAR_ADDR = qspi_common.flash_base_addr[dev] + addr;
 
@@ -229,7 +230,7 @@ int _qspi_readBusy(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, void *bu
 		for (i = 0; i < WATERMARK + 1 && len < size; i++) {
 			reg = *QSPI_RBDRn_ADRR(i);
 			for (byte = 0; byte < 4 && len + byte < size; byte++) {
-				((uint8_t *)buf)[len + byte] = reg & 0xFF;
+				((uint8_t *)buf)[len + byte] = reg & 0xff;
 				reg >>= 8;
 			}
 			len += byte;

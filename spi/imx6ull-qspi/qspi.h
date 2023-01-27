@@ -19,8 +19,8 @@
 #include <phoenix/arch/imx6ull.h>
 
 
-#define MAX_READ_LEN  0xFFFF
-#define MAX_WRITE_LEN 0xFFFF
+#define MAX_READ_LEN  0xffff
+#define MAX_WRITE_LEN 0xffff
 
 typedef enum {
 	lut_stop,
@@ -42,7 +42,7 @@ typedef enum {
 	lut_data_learn
 } lut_code_t;
 
-#define LUT_INSTR(code, pad, operand) ((((code)&0x3F) << 10) | (((pad)&0x03) << 8) | ((operand)&0xFF))
+#define LUT_INSTR(code, pad, operand) ((((code)&0x3f) << 10) | (((pad)&0x03) << 8) | ((operand)&0xff))
 
 enum {
 	lut_pad1,
