@@ -28,6 +28,7 @@
 #define CMD_JEDEC      0x9f /* JEDEC ID */
 #define CMD_4QFREAD_IO 0xec /*  4-byte Quad Fast Read I/O */
 
+#define FLASH_PAGE_SIZE 256
 
 enum {
 	lut_seq_jedec,
@@ -154,8 +155,8 @@ ssize_t flashnor_qspiWrite(qspi_dev_t dev, unsigned int addr, const void *buff, 
 			size = MAX_WRITE_LEN;
 
 		/* Limit write size to the page aligned address (don't wrap around at the page boundary) */
-		if (size > 0x100 - ((addr + len) & 0xff))
-			size = 0x100 - ((addr + len) & 0xff);
+		if (size > FLASH_PAGE_SIZE - ((addr + len) & (FLASH_PAGE_SIZE - 1)))
+			size = FLASH_PAGE_SIZE - ((addr + len) & (FLASH_PAGE_SIZE - 1));
 		/* TODO XIP */
 		err = _qspi_write(dev, lut_seq_write, addr + len, ((const char *)buff) + len, size);
 		if (err < 0) {

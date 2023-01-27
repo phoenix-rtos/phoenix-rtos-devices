@@ -50,9 +50,7 @@
 #define QSPI_LUTn(n)           ((0x310 + 4 * (n)) / sizeof(uint32_t))
 #define QSPI_SEQ_START_REGN(n) (4 * (n))
 
-#define QSPI_IPCR                         (0x08 / sizeof(uint32_t))
-#define QSPI_IPCR_SET_SEQID(reg, seqid)   ((reg) & ~(0x0f << 24)) | ((seqid & 0x0f) << 24)
-#define QSPI_IPCR_SET_IDATSZ(reg, idatsz) ((reg) & ~(0xffff)) | (idatsz)
+#define QSPI_IPCR (0x08 / sizeof(uint32_t))
 
 #define QSPI_FLSHCR (0x0C / sizeof(uint32_t))
 
@@ -71,8 +69,7 @@
 
 #define QSPI_RBDRn(n) ((0x200 + 4 * (n)) / sizeof(uint32_t))
 
-#define QSPI_RBSR         (0x10c / sizeof(uint32_t))
-#define QSPI_RBSR_TO_READ (((*QSPI_RBSR_ADRR) >> 8) & 0x3f)
+#define QSPI_RBSR (0x10c / sizeof(uint32_t))
 
 #define QSPI_SFAR (0x100 / sizeof(uint32_t))
 
@@ -201,7 +198,11 @@ int qspi_setLutSeq(const lut_seq_t *lut, unsigned int lut_seq)
 
 static void set_IPCR(int seq_num, size_t idatsz)
 {
-	*(qspi_common.base + QSPI_IPCR) = QSPI_IPCR_SET_IDATSZ(QSPI_IPCR_SET_SEQID(*(qspi_common.base + QSPI_IPCR), seq_num), idatsz & 0xffff);
+	uint32_t reg = *(qspi_common.base + QSPI_IPCR);
+
+	reg = (reg & ~(0x0f << 24)) | ((seq_num & 0x0f) << 24);
+	reg = (reg & ~(0xffff)) | (idatsz & 0xffff);
+	*(qspi_common.base + QSPI_IPCR) = reg;
 }
 
 
