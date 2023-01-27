@@ -200,12 +200,17 @@ static int lsm9dsxx_hwSetup(lsm9dsxx_ctx_t *ctx)
 
 static void lsm9dsxx_threadPublish(void *data)
 {
+	static uint32_t dAngleX = 0, dAngleY = 0, dAngleZ = 0;
+	static time_t lastGyroTime;
+
 	int err;
-	time_t tstamp_gyro, tstamp_accl;
+	time_t tstamp_gyro, tstamp_accl, step;
 	sensor_info_t *info = (sensor_info_t *)data;
 	lsm9dsxx_ctx_t *ctx = info->ctx;
 	uint8_t ibuf[SENSOR_OUTPUT_SIZE] = { 0 };
 	uint8_t obuf;
+
+	gettime(&lastGyroTime, NULL);
 
 	while (1) {
 		/* odr is set to 952, thus 1ms wait is satisfactory */
@@ -236,6 +241,16 @@ static void lsm9dsxx_threadPublish(void *data)
 			ctx->evtGyro.gyro.gyroY = translateGyr(ibuf[3], ibuf[2]);
 			ctx->evtGyro.gyro.gyroZ = translateGyr(ibuf[5], ibuf[4]);
 			ctx->evtGyro.timestamp = tstamp_gyro;
+
+			/* Integration of current measurement */
+			step = (tstamp_gyro - lastGyroTime) / 1000;
+			dAngleX += ctx->evtGyro.gyro.gyroX * step;
+			dAngleY += ctx->evtGyro.gyro.gyroY * step;
+			dAngleZ += ctx->evtGyro.gyro.gyroZ * step;
+			ctx->evtGyro.gyro.dAngleX = dAngleX;
+			ctx->evtGyro.gyro.dAngleY = dAngleY;
+			ctx->evtGyro.gyro.dAngleZ = dAngleZ;
+
 			sensors_publish(info->id, &ctx->evtGyro);
 		}
 	}
