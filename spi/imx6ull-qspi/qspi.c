@@ -341,7 +341,7 @@ int _qspi_init(qspi_dev_t dev)
 
 	set_mux(dev);
 
-	if (!qspi_common.init) {
+	if (qspi_common.init == 0) {
 		/* Enable module */
 		*(qspi_common.base + QSPI_MCR) &= ~QSPI_MCR_CLR_MDIS;
 		/* Set write to RXBR buffer */

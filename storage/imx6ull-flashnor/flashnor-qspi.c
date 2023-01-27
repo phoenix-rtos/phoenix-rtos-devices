@@ -275,9 +275,9 @@ int _flashnor_qspiInit(qspi_dev_t dev, storage_t *storage_dev)
 	printf("imx6ull-flashnor: JEDEC ID: %#02x %#02x %#02x\n", jedec[0], jedec[1], jedec[2]);
 
 	for (i = 0; i < sizeof(chips) / sizeof(chips[0]); i++) {
-		if (!memcmp(jedec, chips[i].jedec, sizeof(chips[i].jedec))) {
+		if (memcmp(jedec, chips[i].jedec, sizeof(chips[i].jedec)) == 0) {
 			printf("imx6ull-flashnor: %s %uMbit NOR\n", chips[i].name, 8 * chips[i].flashsz >> 20);
-			if (!flashnor_common.init) {
+			if (flashnor_common.init == 0) {
 				err = mutexCreate(&flashnor_common.lock);
 				if (err < 0) {
 					return err;
