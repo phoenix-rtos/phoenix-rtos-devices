@@ -26,6 +26,7 @@
 #include <sys/platform.h>
 
 #include <libtty.h>
+#include <board_config.h>
 
 #include "common.h"
 #include "uart.h"
@@ -46,7 +47,9 @@
 
 #define UART_CNT (UART1 + UART2 + UART3 + UART4 + UART5 + UART6 + UART7 + UART8 + UART9 + UART10 + UART11 + UART12)
 
-#define BUFSIZE 512
+#ifndef UART_BUFSIZE
+#define UART_BUFSIZE 512
+#endif
 
 
 typedef struct uart_s {
@@ -725,7 +728,7 @@ int uart_init(void)
 		callbacks.set_cflag = set_cflag;
 		callbacks.signal_txready = signal_txready;
 
-		if (libtty_init(&uart->tty_common, &callbacks, BUFSIZE, libtty_int_to_baudrate(default_baud[dev])) < 0)
+		if (libtty_init(&uart->tty_common, &callbacks, UART_BUFSIZE, libtty_int_to_baudrate(default_baud[dev])) < 0)
 			return -1;
 
 		/* Wait for kernel to stop sending data over uart */
