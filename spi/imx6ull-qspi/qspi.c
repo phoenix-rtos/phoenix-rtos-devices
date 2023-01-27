@@ -19,6 +19,7 @@
 #include <string.h>
 #include <phoenix/arch/imx6ull.h>
 #include <board_config.h>
+#include <unistd.h>
 
 #include "qspi.h"
 
@@ -120,7 +121,7 @@ struct {
 /* TODO find clock frequency - ~50Mhz */
 
 
-static int wait_cmd_done_busy()
+static int wait_cmd_done_busy(void)
 {
 	int max_iter;
 
@@ -220,7 +221,7 @@ void qspi_setTCSS(uint8_t cycles)
 
 int _qspi_readBusy(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, void *buf, size_t size)
 {
-	uint8_t to_read, byte, i;
+	uint8_t byte, i;
 	uint16_t len = 0;
 	uint32_t reg;
 	int max_iter;
