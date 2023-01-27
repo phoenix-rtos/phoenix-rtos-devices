@@ -45,7 +45,7 @@
 #define QSPI_LCKCR_LOCK   0x01
 #define QSPI_LCKCR_UNLOCK 0x02
 
-#define QSPI_LUTKEY (0x300 / sizeof(uint32_t))
+#define QSPI_LUTKEY     (0x300 / sizeof(uint32_t))
 #define QSPI_LUTKEY_KEY 0x5af05af0
 
 #define QSPI_LUTn(n)           ((0x310 + 4 * (n)) / sizeof(uint32_t))
@@ -94,25 +94,21 @@
 
 #define NUM_LUT_SEQ 16
 
-typedef struct {
+struct {
 	int mux;
 	char val;
 	char sion;
-} qspi_pctl_mux_t;
-
-typedef struct {
-	int pad;
-	char speed;
-	char dse;
-	char sre;
-} qspi_pctl_pad_t;
-
-qspi_pctl_mux_t qspi_pctl_mux[2][8] = {
+} qspi_pctl_mux[2][8] = {
 	{ { pctl_mux_nand_d7, 2, 0 }, { pctl_mux_nand_ale, 2, 0 }, { pctl_mux_nand_wp, 2, 0 }, { pctl_mux_nand_rdy, 2, 0 }, { pctl_mux_nand_ce0, 2, 0 }, { pctl_mux_nand_ce1, 2, 0 }, { pctl_mux_nand_cle, 2, 0 }, { pctl_mux_nand_dqs, 2, 0 } },
 	{ { pctl_mux_nand_re, 2, 0 }, { pctl_mux_nand_we, 2, 0 }, { pctl_mux_nand_d0, 2, 0 }, { pctl_mux_nand_d1, 2, 0 }, { pctl_mux_nand_d2, 2, 0 }, { pctl_mux_nand_d3, 2, 0 }, { pctl_mux_nand_d4, 2, 0 }, { pctl_mux_nand_d5, 2, 0 } },
 };
 
-qspi_pctl_pad_t qspi_pctl_pad[2][8] = {
+struct {
+	int pad;
+	char speed;
+	char dse;
+	char sre;
+} qspi_pctl_pad[2][8] = {
 	{ { pctl_pad_nand_d7, 1, 4, 0 }, { pctl_pad_nand_ale, 1, 4, 0 }, { pctl_pad_nand_wp, 1, 4, 0 }, { pctl_pad_nand_rdy, 1, 4, 0 }, { pctl_pad_nand_ce0, 1, 4, 0 }, { pctl_pad_nand_ce1, 1, 4, 0 }, { pctl_pad_nand_cle, 1, 4, 0 }, { pctl_pad_nand_dqs, 1, 4, 0 } },
 	{ { pctl_pad_nand_re, 1, 4, 0 }, { pctl_pad_nand_we, 1, 4, 0 }, { pctl_pad_nand_d0, 1, 4, 0 }, { pctl_pad_nand_d1, 1, 4, 0 }, { pctl_pad_nand_d2, 1, 4, 0 }, { pctl_pad_nand_d3, 1, 4, 0 }, { pctl_pad_nand_d4, 1, 4, 0 }, { pctl_pad_nand_d5, 1, 4, 0 } },
 };
@@ -124,8 +120,8 @@ struct {
 	bool init;
 } qspi_common = { .base = NULL, .init = false, .flash_base_addr = { QSPI_MMAP_BASE, QSPI_MMAP_BASE + QSPI_FLASH_A1_SIZE + QSPI_FLASH_A2_SIZE } };
 
-// TODO ustawić ile ohmów w rejestrze na flashu.
-// TODO find clock frequency - ~50Mhz
+/* TODO set ohm value in the flash register */
+/* TODO find clock frequency - ~50Mhz */
 
 static void set_mux(qspi_dev_t dev_no)
 {
@@ -154,7 +150,7 @@ static void set_mux(qspi_dev_t dev_no)
 	}
 }
 
-static void set_clk()
+static void set_clk(void)
 {
 	platformctl_t ctl;
 
@@ -168,6 +164,8 @@ static void set_clk()
 
 int qspi_setLutSeq(const lut_seq_t *lut, unsigned int lut_seq)
 {
+	int i;
+
 	if (lut_seq >= NUM_LUT_SEQ) {
 		return -1;
 	}
@@ -176,7 +174,7 @@ int qspi_setLutSeq(const lut_seq_t *lut, unsigned int lut_seq)
 		*(qspi_common.base + QSPI_LCKCR) = (*(qspi_common.base + QSPI_LCKCR) & ~(QSPI_LCKCR_UNLOCK | QSPI_LCKCR_LOCK)) | QSPI_LCKCR_UNLOCK;
 	}
 
-	for (int i = 0; i < 4; i++) {
+	for (i = 0; i < 4; i++) {
 		*(qspi_common.base + QSPI_LUTn(QSPI_SEQ_START_REGN(lut_seq) + i)) = (((uint32_t)lut->instrs[2 * i + 1]) << 16) | lut->instrs[2 * i];
 	}
 
@@ -204,17 +202,16 @@ int _qspi_readBusy(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, void *bu
 	uint8_t to_read, byte, i;
 	uint16_t len = 0;
 	uint32_t reg;
-	int err;
 
 
 	if (dev != qspi_flash_a && dev != qspi_flash_b) {
 		return -ENODEV;
 	}
 	if (lut_seq >= NUM_LUT_SEQ || size > MAX_READ_LEN) {
-		return -1;
+		return -EINVAL;
 	}
 
-	*(qspi_common.base + QSPI_RBCT) = (*(qspi_common.base + QSPI_RBCT) & ~(0x1f) | WATERMARK);
+	*(qspi_common.base + QSPI_RBCT) = ((*(qspi_common.base + QSPI_RBCT) & ~(0x1f)) | WATERMARK);
 	*(qspi_common.base + QSPI_SFAR) = qspi_common.flash_base_addr[dev] + addr;
 	*(qspi_common.base + QSPI_MCR) |= QSPI_MCR_CLR_RXF;
 
@@ -223,7 +220,7 @@ int _qspi_readBusy(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, void *bu
 	while (len < size) {
 		do {
 			reg = *(qspi_common.base + QSPI_SR);
-		} while ((reg & QSPI_SR_RXWE) == 0 && reg & QSPI_SR_BUSY);
+		} while (((reg & QSPI_SR_RXWE) == 0) && (reg & QSPI_SR_BUSY != 0));
 
 		for (i = 0; i < WATERMARK + 1 && len < size; i++) {
 			reg = *(qspi_common.base + QSPI_RBDRn(i));
@@ -268,7 +265,7 @@ int _qspi_write(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, const void 
 		return -ENODEV;
 	}
 	if (lut_seq >= NUM_LUT_SEQ || size > MAX_READ_LEN) {
-		return -1;
+		return -EINVAL;
 	}
 
 	if (*(qspi_common.base + QSPI_SR) & QSPI_SR_TXEDA) /* Check if TX buffer is not empty. */
@@ -298,7 +295,7 @@ int _qspi_init(qspi_dev_t dev)
 		return -ENODEV;
 	}
 
-	if (!qspi_common.init) {
+	if (qspi_common.init == 0) {
 		if ((qspi_common.base = mmap(NULL, 0x4000, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, QSPI_BASE)) == MAP_FAILED) {
 			printf("qspi: could not map qspi paddr %p.\n", QSPI_BASE);
 			return -ENOMEM;
