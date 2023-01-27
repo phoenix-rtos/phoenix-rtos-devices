@@ -39,7 +39,7 @@
 
 #define QSPI_MMAP_BASE 0x60000000
 
-#define QSPI_BASE ((void *)0x21e0000)
+#define QSPI_BASE 0x21e0000
 
 #define QSPI_LCKCR        (0x304 / sizeof(uint32_t))
 #define QSPI_LCKCR_LOCK   0x01
@@ -194,6 +194,8 @@ int qspi_setLutSeq(const lut_seq_t *lut, unsigned int lut_seq)
 
 	*(qspi_common.base + QSPI_LUTKEY) = QSPI_LUTKEY_KEY;
 	*(qspi_common.base + QSPI_LCKCR) = (*(qspi_common.base + QSPI_LCKCR) & ~(QSPI_LCKCR_UNLOCK | QSPI_LCKCR_LOCK)) | QSPI_LCKCR_LOCK;
+
+	return EOK;
 }
 
 
@@ -288,7 +290,7 @@ static size_t write_tx(const void *data, size_t size)
 int _qspi_write(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, const void *data, size_t size)
 {
 	size_t sent = 0;
-	int err, max_iter;
+	int max_iter;
 
 	if ((dev != qspi_flash_a) && (dev != qspi_flash_b)) {
 		return -ENODEV;
@@ -325,8 +327,6 @@ int _qspi_write(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, const void 
 
 int _qspi_init(qspi_dev_t dev)
 {
-	int err;
-
 	if ((dev != qspi_flash_a) && (dev != qspi_flash_b)) {
 		printf("qspi: invalid device %d.\n", dev);
 		return -ENODEV;
@@ -335,7 +335,7 @@ int _qspi_init(qspi_dev_t dev)
 	if (qspi_common.init == 0) {
 		qspi_common.base = mmap(NULL, 4 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, QSPI_BASE);
 		if (qspi_common.base == MAP_FAILED) {
-			printf("qspi: could not map qspi paddr %p.\n", QSPI_BASE);
+			printf("qspi: could not map qspi paddr %p.\n", (void *)QSPI_BASE);
 			return -ENOMEM;
 		}
 		set_clk();
