@@ -70,12 +70,23 @@ typedef struct {
 } gps_data_t;
 
 
-/* Gyroscope data */
+/*
+* Gyroscope data
+*
+* Delta angles are time integrated and are meant to over/underflow uint32_t.
+* Calculation of delta angle between `old` and `new` measurements:
+* 1) calculate d1 = (uint32_t)(new - old)
+* 2) calculate d2 = (uint32_t)(old - new)
+* 3) if (d1 <= d2) then (delta_angle = d1) else (delta_angle = -d2)
+*/
 typedef struct {
 	uint32_t devId;
-	int32_t gyroX; /* angular velocity value in [mrad/s] */
-	int32_t gyroY; /* angular velocity value in [mrad/s] */
-	int32_t gyroZ; /* angular velocity value in [mrad/s] */
+	int32_t gyroX;    /* latest angular velocity value in [mrad/s] */
+	int32_t gyroY;    /* latest angular velocity value in [mrad/s] */
+	int32_t gyroZ;    /* latest angular velocity value in [mrad/s] */
+	uint32_t dAngleX; /* delta angle in [urad] since driver start */
+	uint32_t dAngleY; /* delta angle in [urad] since driver start */
+	uint32_t dAngleZ; /* delta angle in [urad] since driver start */
 } gyro_data_t;
 
 
