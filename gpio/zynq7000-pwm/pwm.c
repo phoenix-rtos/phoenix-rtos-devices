@@ -22,6 +22,8 @@
 #include <posix/utils.h>
 #include <sys/mman.h>
 
+#include "pwm-msg.h"
+
 #define ROOTFS_WAIT 1
 #define PRIORITY    2
 
@@ -71,8 +73,9 @@ static void pwm_thread(void *arg)
 	msg_t msg;
 	unsigned long rid;
 	uint32_t val;
-	int ret;
+	int ret, i;
 	char buff[16];
+	pwm_data_t *dataPtr;
 
 	(void)arg;
 
@@ -136,6 +139,28 @@ static void pwm_thread(void *arg)
 			case mtGetAttr:
 				msg.o.attr.val = sizeof(buff);
 				msg.o.attr.err = EOK;
+				break;
+
+			case mtDevCtl:
+				if (msg.i.io.oid.id >= PWM_NCHAN) {
+					msg.o.io.err = -ENOENT;
+				}
+				else if (msg.i.data != NULL && msg.i.size != 0 && msg.o.data == NULL && msg.o.data == 0) {
+					/* write operation */
+					dataPtr = (pwm_data_t *)msg.i.data;
+					for (i = 0; i < (msg.i.size / sizeof(pwm_data_t)); i++) {
+						pwm_write(&pwm_common.channel[dataPtr[i].id], dataPtr[i].val);
+					}
+					msg.o.io.err = EOK;
+				}
+				else if (msg.o.data != NULL && msg.o.size == sizeof(uint32_t) && msg.i.data == NULL && msg.i.data == 0) {
+					/* read operation */
+					pwm_read(&pwm_common.channel[msg.i.io.oid.id], msg.o.data);
+					msg.o.io.err = EOK;
+				}
+				else {
+					msg.o.io.err = -EINVAL;
+				}
 				break;
 
 			default:
