@@ -91,27 +91,8 @@
 
 #define NUM_LUT_SEQ 16
 
-struct {
-	int mux;
-	char val;
-	char sion;
-} qspi_pctl_mux[2][8] = {
-	{ { pctl_mux_nand_d7, 2, 0 }, { pctl_mux_nand_ale, 2, 0 }, { pctl_mux_nand_wp, 2, 0 }, { pctl_mux_nand_rdy, 2, 0 }, { pctl_mux_nand_ce0, 2, 0 }, { pctl_mux_nand_ce1, 2, 0 }, { pctl_mux_nand_cle, 2, 0 }, { pctl_mux_nand_dqs, 2, 0 } },
-	{ { pctl_mux_nand_re, 2, 0 }, { pctl_mux_nand_we, 2, 0 }, { pctl_mux_nand_d0, 2, 0 }, { pctl_mux_nand_d1, 2, 0 }, { pctl_mux_nand_d2, 2, 0 }, { pctl_mux_nand_d3, 2, 0 }, { pctl_mux_nand_d4, 2, 0 }, { pctl_mux_nand_d5, 2, 0 } },
-};
 
-struct {
-	int pad;
-	char speed;
-	char dse;
-	char sre;
-} qspi_pctl_pad[2][8] = {
-	{ { pctl_pad_nand_d7, 1, 4, 0 }, { pctl_pad_nand_ale, 1, 4, 0 }, { pctl_pad_nand_wp, 1, 4, 0 }, { pctl_pad_nand_rdy, 1, 4, 0 }, { pctl_pad_nand_ce0, 1, 4, 0 }, { pctl_pad_nand_ce1, 1, 4, 0 }, { pctl_pad_nand_cle, 1, 4, 0 }, { pctl_pad_nand_dqs, 1, 4, 0 } },
-	{ { pctl_pad_nand_re, 1, 4, 0 }, { pctl_pad_nand_we, 1, 4, 0 }, { pctl_pad_nand_d0, 1, 4, 0 }, { pctl_pad_nand_d1, 1, 4, 0 }, { pctl_pad_nand_d2, 1, 4, 0 }, { pctl_pad_nand_d3, 1, 4, 0 }, { pctl_pad_nand_d4, 1, 4, 0 }, { pctl_pad_nand_d5, 1, 4, 0 } },
-};
-
-
-struct {
+static struct {
 	volatile uint32_t *base;
 	uint32_t flash_base_addr[2];
 	int init;
@@ -123,15 +104,15 @@ struct {
 
 static int wait_cmd_done_busy(void)
 {
-	int max_iter;
+	int maxIter;
 
-	for (max_iter = 1000; max_iter > 0; max_iter--) {
+	for (maxIter = 1000; maxIter > 0; maxIter--) {
 		if ((*(qspi_common.base + QSPI_SR) & QSPI_SR_BUSY) == 0) {
 			return EOK;
 		}
 		usleep(100);
 	}
-	printf("WAIT BUSY TIMEOUT\n");
+	printf("imx6ull-qspi: busy wait timeout\n");
 	return -ETIME;
 }
 
@@ -140,6 +121,23 @@ static void set_mux(qspi_dev_t dev_no)
 {
 	platformctl_t ctl;
 	int i;
+	static const struct {
+		int mux;
+		char val;
+		char sion;
+	} qspi_pctl_mux[2][8] = {
+		{ { pctl_mux_nand_d7, 2, 0 }, { pctl_mux_nand_ale, 2, 0 }, { pctl_mux_nand_wp, 2, 0 }, { pctl_mux_nand_rdy, 2, 0 }, { pctl_mux_nand_ce0, 2, 0 }, { pctl_mux_nand_ce1, 2, 0 }, { pctl_mux_nand_cle, 2, 0 }, { pctl_mux_nand_dqs, 2, 0 } },
+		{ { pctl_mux_nand_re, 2, 0 }, { pctl_mux_nand_we, 2, 0 }, { pctl_mux_nand_d0, 2, 0 }, { pctl_mux_nand_d1, 2, 0 }, { pctl_mux_nand_d2, 2, 0 }, { pctl_mux_nand_d3, 2, 0 }, { pctl_mux_nand_d4, 2, 0 }, { pctl_mux_nand_d5, 2, 0 } },
+	};
+	static const struct {
+		int pad;
+		char speed;
+		char dse;
+		char sre;
+	} qspi_pctl_pad[2][8] = {
+		{ { pctl_pad_nand_d7, 1, 4, 0 }, { pctl_pad_nand_ale, 1, 4, 0 }, { pctl_pad_nand_wp, 1, 4, 0 }, { pctl_pad_nand_rdy, 1, 4, 0 }, { pctl_pad_nand_ce0, 1, 4, 0 }, { pctl_pad_nand_ce1, 1, 4, 0 }, { pctl_pad_nand_cle, 1, 4, 0 }, { pctl_pad_nand_dqs, 1, 4, 0 } },
+		{ { pctl_pad_nand_re, 1, 4, 0 }, { pctl_pad_nand_we, 1, 4, 0 }, { pctl_pad_nand_d0, 1, 4, 0 }, { pctl_pad_nand_d1, 1, 4, 0 }, { pctl_pad_nand_d2, 1, 4, 0 }, { pctl_pad_nand_d3, 1, 4, 0 }, { pctl_pad_nand_d4, 1, 4, 0 }, { pctl_pad_nand_d5, 1, 4, 0 } },
+	};
 
 	ctl.action = pctl_set;
 	ctl.type = pctl_iomux;
@@ -176,7 +174,7 @@ static void set_clk(void)
 }
 
 
-int qspi_setLutSeq(const lut_seq_t *lut, unsigned int lut_seq)
+int _qspi_setLutSeq(const lut_seq_t *lut, unsigned int lut_seq)
 {
 	int i;
 
@@ -209,13 +207,13 @@ static void set_IPCR(int seq_num, size_t idatsz)
 }
 
 
-void qspi_setTCSH(uint8_t cycles)
+void _qspi_setTCSH(uint8_t cycles)
 {
 	*(qspi_common.base + QSPI_FLSHCR) = (*(qspi_common.base + QSPI_FLSHCR) & ~(0x0f << 8)) | (cycles << 8);
 }
 
 
-void qspi_setTCSS(uint8_t cycles)
+void _qspi_setTCSS(uint8_t cycles)
 {
 	*(qspi_common.base + QSPI_FLSHCR) = (*(qspi_common.base + QSPI_FLSHCR) & ~(0x0f)) | cycles;
 }
@@ -223,10 +221,10 @@ void qspi_setTCSS(uint8_t cycles)
 
 int _qspi_readBusy(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, void *buf, size_t size)
 {
-	uint8_t byte, i;
-	uint16_t len = 0;
+	uint8_t i;
+	size_t byte, len = 0;
 	uint32_t reg;
-	int max_iter;
+	int maxIter;
 
 	if ((dev != qspi_flash_a) && (dev != qspi_flash_b)) {
 		return -ENODEV;
@@ -242,19 +240,19 @@ int _qspi_readBusy(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, void *bu
 	set_IPCR(lut_seq, size);
 
 	while (len < size) {
-		for (max_iter = 1000; max_iter > 0; max_iter--) {
+		for (maxIter = 1000; maxIter > 0; maxIter--) {
 			reg = *(qspi_common.base + QSPI_SR);
 			if (((reg & QSPI_SR_RXWE) != 0) || ((reg & QSPI_SR_BUSY) == 0)) {
 				break;
 			}
 			usleep(100);
 		}
-		if (max_iter == 0) {
-			printf("READ TIMEOUT\n");
+		if (maxIter == 0) {
+			printf("imx6ull-qspi: read timeout\n");
 			return -ETIME;
 		}
 
-		for (i = 0; (i < WATERMARK + 1) && (len < size); i++) {
+		for (i = 0; (i <= WATERMARK) && (len < size); i++) {
 			reg = *(qspi_common.base + QSPI_RBDRn(i));
 			for (byte = 0; (byte < 4) && (len + byte < size); byte++) {
 				((uint8_t *)buf)[len + byte] = reg & 0xff;
@@ -290,7 +288,7 @@ static size_t write_tx(const void *data, size_t size)
 int _qspi_write(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, const void *data, size_t size)
 {
 	size_t sent = 0;
-	int max_iter;
+	int maxIter;
 
 	if ((dev != qspi_flash_a) && (dev != qspi_flash_b)) {
 		return -ENODEV;
@@ -299,8 +297,9 @@ int _qspi_write(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, const void 
 		return -EINVAL;
 	}
 
-	if (*(qspi_common.base + QSPI_SR) & QSPI_SR_TXEDA) /* Check if TX buffer is not empty. */
+	if (((*(qspi_common.base + QSPI_SR)) & QSPI_SR_TXEDA) != 0) { /* Check if TX buffer is not empty. */
 		*(qspi_common.base + QSPI_MCR) |= QSPI_MCR_CLR_TXF;
+	}
 
 	*(qspi_common.base + QSPI_SFAR) = qspi_common.flash_base_addr[dev] + addr;
 
@@ -309,14 +308,18 @@ int _qspi_write(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, const void 
 	set_IPCR(lut_seq, size);
 
 	if (sent < size) {
-		for (max_iter = 1000; max_iter > 0; max_iter--) {
+		maxIter = 1000;
+		while (maxIter > 0) {
 			sent += write_tx(data + sent, size - sent);
 			if (sent >= size) {
 				break;
 			}
+			if (sent == 0) {
+				maxIter--;
+			}
 			usleep(100);
 		}
-		if (max_iter == 0) {
+		if (maxIter == 0) {
 			printf("WRITE TIMEOUT\n");
 			return -ETIME;
 		}

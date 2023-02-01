@@ -21,7 +21,7 @@
 #define LUT_INSTR(code, pad, operand) ((((code)&0x3f) << 10) | (((pad)&0x03) << 8) | ((operand)&0xff))
 
 typedef enum {
-	lut_stop,
+	lut_stop = 0,
 	lut_cmd,
 	lut_addr,
 	lut_dummy,
@@ -62,14 +62,14 @@ typedef enum {
 int _qspi_init(qspi_dev_t dev);
 
 
-int qspi_setLutSeq(const lut_seq_t *lut, unsigned int lut_seq);
+int _qspi_setLutSeq(const lut_seq_t *lut, unsigned int lut_seq);
 
 
 // int qspi_setClockDiv(qspi_ctx_t* ctx, uint8_t pre, uint8_t post);
-void qspi_setTCSH(uint8_t cycles);
+void _qspi_setTCSH(uint8_t cycles);
 
 
-void qspi_setTCSS(uint8_t cycles);
+void _qspi_setTCSS(uint8_t cycles);
 
 /* TODO non busy read. */
 int _qspi_readBusy(qspi_dev_t dev, unsigned int lut_seq, uint32_t addr, void *buf, size_t size);

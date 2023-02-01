@@ -31,7 +31,7 @@
 #define FLASH_PAGE_SIZE 256
 
 enum {
-	lut_seq_jedec,
+	lut_seq_jedec = 0,
 	lut_seq_write_enable,
 	lut_seq_write,
 	lut_seq_erase,
@@ -82,20 +82,19 @@ static int _flashnor_qspiWaitBusy(qspi_dev_t dev)
 	int err, max_iter;
 	unsigned int sleep = 100;
 
-	err = _qspi_readBusy(dev, lut_seq_read_status, 0, &status, 1);
-	if (err < 0) {
-		return err;
-	}
 
 	for (max_iter = 1000; max_iter > 0; max_iter--) {
-		if ((status & 1) == 0) {
-			return EOK;
-		}
-		usleep(sleep);
 		err = _qspi_readBusy(dev, lut_seq_read_status, 0, &status, 1);
 		if (err < 0) {
 			return err;
 		}
+
+		if ((status & 1) == 0) {
+			return EOK;
+		}
+
+		usleep(sleep);
+
 		if (sleep < 100000) {
 			sleep <<= 1;
 		}
@@ -151,12 +150,14 @@ ssize_t flashnor_qspiWrite(qspi_dev_t dev, unsigned int addr, const void *buff, 
 			mutexUnlock(flashnor_common.lock);
 			return err;
 		}
-		if ((size = bufflen - len) > MAX_WRITE_LEN)
+		size = bufflen - len;
+		if (size > MAX_WRITE_LEN)
 			size = MAX_WRITE_LEN;
 
 		/* Limit write size to the page aligned address (don't wrap around at the page boundary) */
-		if (size > FLASH_PAGE_SIZE - ((addr + len) & (FLASH_PAGE_SIZE - 1)))
+		if (size > FLASH_PAGE_SIZE - ((addr + len) & (FLASH_PAGE_SIZE - 1))) {
 			size = FLASH_PAGE_SIZE - ((addr + len) & (FLASH_PAGE_SIZE - 1));
+		}
 		/* TODO XIP */
 		err = _qspi_write(dev, lut_seq_write, addr + len, ((const char *)buff) + len, size);
 		if (err < 0) {
@@ -209,9 +210,9 @@ int flashnor_qspiEraseSector(qspi_dev_t dev, unsigned int addr)
 static int get_jedec_id(qspi_dev_t dev, uint8_t data[3])
 {
 	int err;
-	lut_seq_t seq = { .instrs = { LUT_INSTR(lut_cmd, lut_pad1, CMD_JEDEC), LUT_INSTR(lut_read, lut_pad1, 3), 0 } };
+	static const lut_seq_t seq = { .instrs = { LUT_INSTR(lut_cmd, lut_pad1, CMD_JEDEC), LUT_INSTR(lut_read, lut_pad1, 3), 0 } };
 
-	err = qspi_setLutSeq(&seq, lut_seq_jedec);
+	err = _qspi_setLutSeq(&seq, lut_seq_jedec);
 	if (err < 0) {
 		return err;
 	}
@@ -222,8 +223,8 @@ static int get_jedec_id(qspi_dev_t dev, uint8_t data[3])
 static int enable_quad_io(qspi_dev_t dev)
 {
 	int err;
-	lut_seq_t seq = { .instrs = { LUT_INSTR(lut_cmd, lut_pad1, CMD_QENABLE), 0 } };
-	err = qspi_setLutSeq(&seq, lut_seq_quad_io);
+	static const lut_seq_t seq = { .instrs = { LUT_INSTR(lut_cmd, lut_pad1, CMD_QENABLE), 0 } };
+	err = _qspi_setLutSeq(&seq, lut_seq_quad_io);
 	if (err < 0) {
 		return err;
 	}
@@ -235,7 +236,7 @@ static int populate_lut(void)
 {
 	int err, i;
 	/* clang-format off */
-	struct {
+	static const struct {
 		unsigned int num;
 		lut_seq_t lut_seq;
 	} seqs[5] = {
@@ -247,7 +248,7 @@ static int populate_lut(void)
 	};
 	/* clang-format on */
 	for (i = 0; i < sizeof(seqs) / sizeof(*seqs); i++) {
-		err = qspi_setLutSeq(&seqs[i].lut_seq, seqs[i].num);
+		err = _qspi_setLutSeq(&seqs[i].lut_seq, seqs[i].num);
 		if (err < 0) {
 			return err;
 		}
@@ -265,8 +266,8 @@ int _flashnor_qspiInit(qspi_dev_t dev, storage_t *storage_dev)
 	if (err < 0) {
 		return err;
 	}
-	qspi_setTCSH(0);
-	qspi_setTCSS(0);
+	_qspi_setTCSH(0);
+	_qspi_setTCSS(0);
 
 	err = get_jedec_id(dev, jedec);
 	if (err < 0) {
