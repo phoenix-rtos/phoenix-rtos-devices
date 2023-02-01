@@ -11,6 +11,7 @@
  * %LICENSE%
  */
 
+#include <endian.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
@@ -49,7 +50,7 @@ enum { flash_memory_unactive = 0, flash_memory_active = 0xff };
 
 
 typedef struct {
-	ptable_partition_t *pHeader;
+	ptable_part_t *pHeader;
 
 	oid_t oid;
 	uint8_t fID;
@@ -719,13 +720,60 @@ static int flashsrv_mountPart(flashsrv_partition_t *part)
 }
 
 
+static ptable_t *flashsrv_ptableRead(flash_memory_t *memory)
+{
+	ptable_t *ptable;
+	uint32_t offs, count, size;
+	uint8_t magic[sizeof(ptable_magic)];
+
+	/* Read number of partitions */
+	offs = memory->ctx.properties.size - memory->ctx.properties.sector_size;
+	if (flash_readData(&memory->ctx, offs, &count, sizeof(count)) != sizeof(count)) {
+		return NULL;
+	}
+	count = le32toh(count);
+
+	/* Verify partition table size */
+	size = ptable_size(count);
+	if (size > memory->ctx.properties.sector_size) {
+		return NULL;
+	}
+
+	/* Read magic signature */
+	if (flash_readData(&memory->ctx, offs + size - sizeof(magic), magic, sizeof(magic)) != sizeof(magic)) {
+		return NULL;
+	}
+
+	/* Verify magic signature */
+	if (memcmp(magic, ptable_magic, sizeof(magic)) != 0) {
+		return NULL;
+	}
+
+	ptable = malloc(size);
+	if (ptable == NULL) {
+		return NULL;
+	}
+
+	if (flash_readData(&memory->ctx, offs, ptable, size) != size) {
+		free(ptable);
+		return NULL;
+	}
+
+	if (ptable_deserialize(ptable, memory->ctx.properties.size, memory->ctx.properties.sector_size) < 0) {
+		free(ptable);
+		return NULL;
+	}
+
+	return ptable;
+}
+
+
 static int flashsrv_partsInit(void)
 {
 	int res, i, j;
 
 	flash_memory_t *memory;
-	memory_properties_t memProp;
-	ptable_partition_t *pHeaders;
+	ptable_t *ptable;
 
 	for (i = 0; i < FLASH_MEMORIES_NO; ++i) {
 		memory = flashsrv_common.flash_memories + i;
@@ -734,20 +782,17 @@ static int flashsrv_partsInit(void)
 		}
 
 		/* Read partition table */
-		memProp.memSize = memory->ctx.properties.size;
-		memProp.sectorSize = memory->ctx.properties.sector_size;
-		memProp.read = i ? flashsrv_fsReadf1 : flashsrv_fsReadf0 ;
-
-		pHeaders = ptable_readPartitions(&memory->pCnt, &memProp);
-		if (pHeaders == NULL) {
+		ptable = flashsrv_ptableRead(memory);
+		if (ptable == NULL) {
 			LOG_ERROR("imxrt-flashsrv: cannot initialize partition table on flash %d, wrong attributes", i);
 			continue;
 		}
 
+		memory->pCnt = ptable->count;
 		memory->parts = calloc(memory->pCnt, sizeof(flashsrv_partition_t));
 		if (memory->parts == NULL) {
 			LOG_ERROR("imxrt-flashsrv: cannot allocate memory.");
-			free(pHeaders);
+			free(ptable);
 			return -ENOMEM;
 		}
 
@@ -755,10 +800,10 @@ static int flashsrv_partsInit(void)
 		for (j = 0; j < memory->pCnt; ++j) {
 			memory->parts[j].fID = i;
 			memory->parts[j].oid.id = j;
-			memory->parts[j].pHeader = pHeaders + j;
+			memory->parts[j].pHeader = ptable->parts + j;
 
 			if (flashsrv_mountPart(&memory->parts[j]) < 0) {
-				LOG_ERROR("imxrt-flashsrv: partition %s at flash %d is not mounted.", pHeaders[j].name, i);
+				LOG_ERROR("imxrt-flashsrv: partition %s at flash %d is not mounted.", ptable->parts[j].name, i);
 				memory->parts[j].pStatus = flash_memory_unactive;
 				free(memory->parts[j].fsCtx);
 			}
