@@ -18,10 +18,13 @@
 #include <sys/msg.h>
 
 
-int zynq7000pwm_set(oid_t *oid, uint32_t compval[8], uint8_t mask);
+#define ZYNQ7000_PWM_CHANNELS 8
 
 
-int zynq7000pwm_get(oid_t *oid, uint32_t compval[8]);
+int zynq7000pwm_set(oid_t *oid, uint32_t compval[ZYNQ7000_PWM_CHANNELS], uint8_t mask);
+
+
+int zynq7000pwm_get(oid_t *oid, uint32_t compval[ZYNQ7000_PWM_CHANNELS]);
 
 
 #endif
