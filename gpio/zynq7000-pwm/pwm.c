@@ -145,14 +145,14 @@ static void pwm_thread(void *arg)
 
 			case mtDevCtl:
 				if (iptr->type == zynq7000pwm_msgGet) {
-					for (i = 0; i < sizeof(iptr->compval); ++i) {
+					for (i = 0; i < sizeof(optr->compval) / sizeof(*optr->compval); ++i) {
 						pwm_read(&pwm_common.channel[i], &optr->compval[i]);
 					}
 					ret = i;
 				}
 				else if (iptr->type == zynq7000pwm_msgSet) {
 					ret = 0;
-					for (i = 0; i < sizeof(iptr->compval); ++i) {
+					for (i = 0; i < sizeof(iptr->compval) / sizeof(*iptr->compval); ++i) {
 						if ((iptr->mask & (1 << i)) != 0) {
 							pwm_write(&pwm_common.channel[i], iptr->compval[i]);
 							++ret;
