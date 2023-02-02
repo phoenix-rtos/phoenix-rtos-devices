@@ -17,7 +17,7 @@
 #include "zynq7000-pwm-msg.h"
 
 
-int zynq7000pwm_set(oid_t *oid, uint32_t compval[8], uint8_t mask)
+int zynq7000pwm_set(oid_t *oid, uint32_t compval[ZYNQ7000_PWM_CHANNELS], uint8_t mask)
 {
 	int ret;
 	msg_t msg;
@@ -43,7 +43,7 @@ int zynq7000pwm_set(oid_t *oid, uint32_t compval[8], uint8_t mask)
 }
 
 
-int zynq7000pwm_get(oid_t *oid, uint32_t compval[8])
+int zynq7000pwm_get(oid_t *oid, uint32_t compval[ZYNQ7000_PWM_CHANNELS])
 {
 	int ret;
 	msg_t msg;
