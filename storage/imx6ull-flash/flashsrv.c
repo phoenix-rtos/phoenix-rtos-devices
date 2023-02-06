@@ -11,6 +11,7 @@
  * %LICENSE%
  */
 
+#include <endian.h>
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
@@ -25,7 +26,11 @@
 #include <posix/utils.h>
 
 #include <libjffs2.h>
+#include <ptable.h>
 #include <storage/storage.h>
+
+/* Per project board configuration may overwrite PTABLE_NCOPIES definition */
+#include <board_config.h>
 
 #include "imx6ull-flashsrv.h"
 #include "imx6ull-flashdrv.h"
@@ -43,6 +48,12 @@
          and this define should be removed */
 /* Path for the whole NAND flash memory device */
 #define PATH_ROOT_STRG "/dev/mtd0"
+
+
+/* Number of partition table copies saved on flash */
+#ifndef PTABLE_NCOPIES
+#define PTABLE_NCOPIES 4
+#endif
 
 
 /* Auxiliary functions */
@@ -111,6 +122,96 @@ static int flashsrv_devfsSymlink(const char *name, const char *target)
 	free(msg.i.data);
 
 	return ret != EOK ? -EIO : msg.o.create.err;
+}
+
+
+/* Partition table access functions (ptable buffer must have mtd->writesz size) */
+
+static int flashsrv_ptableRead(storage_t *strg, ptable_t *ptable)
+{
+	storage_mtd_t *mtd = strg->dev->mtd;
+	size_t retlen;
+	off_t offs;
+	uint32_t count;
+	int err, i;
+
+	/* Find first valid partition table copy */
+	for (i = 0; i < PTABLE_NCOPIES; i++) {
+		offs = strg->size - (i + 1) * mtd->erasesz;
+		if (mtd->ops->block_isBad(strg, offs)) {
+			continue;
+		}
+
+		err = mtd->ops->read(strg, offs, ptable, mtd->writesz, &retlen);
+		/* -EUCLEAN isn't a fatal error (indicates dangerous page degradation but all bitflips were successfully corrected) */
+		if (((err < 0) && (err != -EUCLEAN)) || (retlen != mtd->writesz)) {
+			continue;
+		}
+		count = le32toh(ptable->count);
+
+		/* Partition table must fit in a NAND page */
+		if (ptable_size(count) > mtd->writesz) {
+			continue;
+		}
+
+		if (ptable_deserialize(ptable, strg->size, strg->dev->mtd->erasesz) < 0) {
+			continue;
+		}
+
+		return EOK;
+	}
+
+	return -ENOENT;
+}
+
+
+static int flashsrv_ptableWrite(storage_t *strg, const ptable_t *ptable)
+{
+	storage_mtd_t *mtd = strg->dev->mtd;
+	ptable_t *ptab;
+	size_t retlen;
+	off_t offs;
+	uint32_t size;
+	int err, i, n = 0;
+
+	/* Partition table must fit in a NAND page */
+	size = ptable_size(ptable->count);
+	if (size > mtd->writesz) {
+		return -EINVAL;
+	}
+
+	/* Copy input partition table and serialize it */
+	ptab = malloc(mtd->writesz);
+	if (ptab == NULL) {
+		return -ENOMEM;
+	}
+	memcpy(ptab, ptable, size - sizeof(ptable_magic));
+
+	if (ptable_serialize(ptab, strg->size, mtd->erasesz) < 0) {
+		free(ptab);
+		return -EINVAL;
+	}
+
+	/* Save all partition table copies */
+	for (i = 0; i < PTABLE_NCOPIES; i++) {
+		offs = strg->size - (i + 1) * mtd->erasesz;
+		if (mtd->ops->block_isBad(strg, offs)) {
+			continue;
+		}
+
+		if (mtd->ops->erase(strg, offs, mtd->erasesz) != 1) {
+			continue;
+		}
+
+		err = mtd->ops->write(strg, offs, ptab, mtd->writesz, &retlen);
+		if ((err < 0) || (retlen != mtd->writesz)) {
+			continue;
+		}
+		n++;
+	}
+	free(ptab);
+
+	return (n > 0) ? EOK : -EIO;
 }
 
 
@@ -322,6 +423,32 @@ static int flashsrv_devMaxBitflips(const flash_i_devctl_t *idevctl)
 }
 
 
+static int flashsrv_devPtableRead(const flash_i_devctl_t *idevctl, ptable_t *ptable)
+{
+	storage_t *strg = storage_get(idevctl->ptable.oid.id);
+
+	/* Only whole NAND device (/dev/mtd0) may access partition table */
+	if ((strg == NULL) || (strg->parent != NULL)) {
+		return -EINVAL;
+	}
+
+	return flashsrv_ptableRead(strg, ptable);
+}
+
+
+static int flashsrv_devPtableWrite(const flash_i_devctl_t *idevctl, const ptable_t *ptable)
+{
+	storage_t *strg = storage_get(idevctl->ptable.oid.id);
+
+	/* Only whole NAND device (/dev/mtd0) may access partition table */
+	if ((strg == NULL) || (strg->parent != NULL)) {
+		return -EINVAL;
+	}
+
+	return flashsrv_ptableWrite(strg, ptable);
+}
+
+
 /* Handling flash functions */
 
 static ssize_t flashsrv_read(oid_t *oid, size_t offs, char *data, size_t size)
@@ -439,6 +566,14 @@ static void flashsrv_devCtrl(msg_t *msg)
 			odevctl->err = flashsrv_devMaxBitflips(idevctl);
 			break;
 
+		case flashsrv_devctl_readptable:
+			odevctl->err = flashsrv_devPtableRead(idevctl, msg->o.data);
+			break;
+
+		case flashsrv_devctl_writeptable:
+			odevctl->err = flashsrv_devPtableWrite(idevctl, msg->i.data);
+			break;
+
 		default:
 			odevctl->err = -EINVAL;
 			break;
@@ -530,32 +665,32 @@ static int flashsrv_bootImage(void)
 }
 
 
-static int flashsrv_mountRoot(int rootFirst, int rootSecond, const char *fs)
+static int flashsrv_mountRoot(int rootfs1, int rootfs2, const char *fs)
 {
-	int err, rootfsID;
+	int err, rootfs;
 	oid_t oid;
 	char path[32];
 
-	if ((fs == NULL) || (rootFirst <= 0)) {
+	if ((fs == NULL) || (rootfs1 <= 0)) {
 		/* code path for psu/psd */
 		LOG("missing/invalid rootfs definition, not mounting '/'");
 		return 0;
 	}
 
-	rootfsID = rootFirst;
-	if (rootSecond > 0) {
+	rootfs = rootfs1;
+	if (rootfs2 > 0) {
 		err = flashsrv_bootImage();
 		if (err < 0) {
 			LOG_ERROR("failed to check boot image, mounting first rootfs");
 		}
 		else if (err == 1) {
 			LOG("using secondary boot image");
-			rootfsID = rootSecond;
+			rootfs = rootfs2;
 		}
 	}
 
 	/* mount / symlink rootfs partition */
-	err = storage_mountfs(storage_get(rootfsID), fs, NULL, 0, NULL, &oid);
+	err = storage_mountfs(storage_get(rootfs), fs, NULL, 0, NULL, &oid);
 	if (err < 0) {
 		LOG_ERROR("failed to mount a filesystem - %s: %d", fs, err);
 		return err;
@@ -567,7 +702,7 @@ static int flashsrv_mountRoot(int rootFirst, int rootSecond, const char *fs)
 		return err;
 	}
 
-	err = sprintf(path, "%sp%d", PATH_ROOT_STRG, rootfsID);
+	err = sprintf(path, "%sp%d", PATH_ROOT_STRG, rootfs);
 	if (err >= sizeof(path)) {
 		err = -ENAMETOOLONG;
 		LOG_ERROR("failed to build file path, err: %d", err);
@@ -576,9 +711,9 @@ static int flashsrv_mountRoot(int rootFirst, int rootSecond, const char *fs)
 
 	LOG("mounting %s as a rootfs (%s)", path, fs);
 	err = flashsrv_devfsSymlink("root", path);
-	/* Symlink error is not critical, does not return with error */
 	if (err < 0) {
 		LOG_ERROR("root symlink creation failed: %s", strerror(err));
+		return err;
 	}
 
 	return EOK;
@@ -675,18 +810,17 @@ static int flashsrv_partAdd(blkcnt_t start, blkcnt_t size, const char *name)
 }
 
 
-static int flashsrv_parseOpts(int argc, char **argv)
+static int flashsrv_parseOpts(int argc, char **argv, const char **fs, int *rootfs1, int *rootfs2)
 {
-	int err;
 	blkcnt_t partStart, partSize; /* start and size of the partition in erase blocks */
-	char *p, *partName, *fs = NULL;
-	int c, rootfsFirst = -1, rootfsSecond = -1, magic = PHOENIX_REBOOT_MAGIC;
+	char *p, *partName;
+	int err, c;
 
 	while ((c = getopt(argc, argv, "r:p:")) != -1) {
 		switch (c) {
 			case 'r': /* fs_name:rootfs_part_id[:secondary_rootfs_part_id] */
 
-				fs = optarg;
+				*fs = optarg;
 				p = strchr(optarg, ':');
 				if (p == NULL) {
 					LOG_ERROR("missing rootfs filesystem name");
@@ -696,9 +830,9 @@ static int flashsrv_parseOpts(int argc, char **argv)
 				*p++ = '\0';
 
 				errno = 0;
-				rootfsFirst = strtol(p, &p, 10);
+				*rootfs1 = strtol(p, &p, 10);
 				if (*p++ == ':') {
-					rootfsSecond = strtol(p, &p, 10);
+					*rootfs2 = strtol(p, &p, 10);
 				}
 				break;
 
@@ -722,6 +856,7 @@ static int flashsrv_parseOpts(int argc, char **argv)
 				err = flashsrv_partAdd(partStart, partSize, partName);
 				if (err < 0) {
 					LOG_ERROR("failed to add partition %lld:%lld", partStart, partSize);
+					return err;
 				}
 				break;
 
@@ -730,25 +865,11 @@ static int flashsrv_parseOpts(int argc, char **argv)
 		}
 	}
 
-	/* TODO: add partition table support */
-	err = flashsrv_mountRoot(rootfsFirst, rootfsSecond, fs);
-	if (err < 0) {
-		LOG_ERROR("failed to mount rootfs, rebooting to secondary image");
-
-		c = flashsrv_bootImage();
-		if (c != 1) {
-			magic = ~magic;
-		}
-		reboot(magic);
-
-		return err;
-	}
-
 	return EOK;
 }
 
 
-static int flashsrv_nandInit(void)
+static storage_t *flashsrv_nandInit(void)
 {
 	int err;
 	oid_t oid;
@@ -757,16 +878,17 @@ static int flashsrv_nandInit(void)
 	/* Initialize nand flash driver */
 	flashdrv_init();
 
-	strg = calloc(1, sizeof(storage_t));
+	strg = malloc(sizeof(storage_t));
 	if (strg == NULL) {
 		LOG_ERROR("cannot allocate memory");
-		return -ENOMEM;
+		return NULL;
 	}
 
 	err = flashdev_init(strg);
 	if (err < 0) {
 		LOG_ERROR("failed to initialize libstorage interface, err: %d", err);
-		return err;
+		free(strg);
+		return NULL;
 	}
 
 	err = storage_add(strg, &oid);
@@ -774,7 +896,7 @@ static int flashsrv_nandInit(void)
 		LOG_ERROR("failed to add new storage, err: %d", err);
 		flashdev_done(strg);
 		free(strg);
-		return err;
+		return NULL;
 	}
 
 	err = create_dev(&oid, PATH_ROOT_STRG);
@@ -782,12 +904,28 @@ static int flashsrv_nandInit(void)
 		LOG_ERROR("failed to create a device file, err: %d", err);
 		flashdev_done(strg);
 		free(strg);
-		return err;
+		return NULL;
 	}
 
 	LOG("%s", strg->dev->mtd->name);
 
-	return EOK;
+	return strg;
+}
+
+
+static int flashsrv_ptablePartCompare(const void *p1, const void *p2)
+{
+	const ptable_part_t *part1 = p1, *part2 = p2;
+
+	if (part1->offset < part2->offset) {
+		return -1;
+	}
+
+	if (part1->offset > part2->offset) {
+		return 1;
+	}
+
+	return 0;
 }
 
 
@@ -799,8 +937,13 @@ static void flashsrv_signalExit(int sig)
 
 int main(int argc, char **argv)
 {
-	int err;
+	int rootfs1 = -1, rootfs2 = -1, magic = PHOENIX_REBOOT_MAGIC;
+	const char *fs = NULL;
+	ptable_part_t *part;
+	ptable_t *ptable;
+	storage_t *strg;
 	pid_t pid;
+	int err, i;
 
 	/* Set parent exit handler */
 	signal(SIGUSR1, flashsrv_signalExit);
@@ -840,14 +983,53 @@ int main(int argc, char **argv)
 	}
 
 	/* Flash driver and mtd interface initialization */
-	err = flashsrv_nandInit();
-	if (err < 0) {
+	strg = flashsrv_nandInit();
+	if (strg == NULL) {
+		LOG_ERROR("failed to initialize NAND device");
 		return EXIT_FAILURE;
 	}
 
-	/* Based on args, create new partitions and mount rootfs */
-	if (flashsrv_parseOpts(argc, argv) < 0) {
+	/* Based on args, create new partitions and get rootfs index */
+	if (flashsrv_parseOpts(argc, argv, &fs, &rootfs1, &rootfs2) < 0) {
 		return EXIT_FAILURE;
+	}
+
+	/* No partitions defined in args, check for partition table */
+	if (strg->parts == NULL) {
+		ptable = malloc(strg->dev->mtd->writesz);
+		if (ptable == NULL) {
+			LOG_ERROR("failed to allocate partition table buffer");
+			return EXIT_FAILURE;
+		}
+
+		err = flashsrv_ptableRead(strg, ptable);
+		if (err == EOK) {
+			LOG("Initializing partitions from partition table");
+
+			/* Sort partition table */
+			/* (we need to preserve partitions initialization order due to rootfs indexing) */
+			qsort(ptable->parts, ptable->count, sizeof(ptable_part_t), flashsrv_ptablePartCompare);
+
+			/* Add partitions */
+			for (i = 0; i < ptable->count; i++) {
+				part = ptable->parts + i;
+				if (flashsrv_partAdd(part->offset / strg->dev->mtd->erasesz, part->size / strg->dev->mtd->erasesz, (const char *)part->name) < 0) {
+					LOG_ERROR("failed to add partition %s [%u:%u]", (const char *)part->name, part->offset, part->size);
+					return EXIT_FAILURE;
+				}
+			}
+		}
+		free(ptable);
+	}
+
+	err = flashsrv_mountRoot(rootfs1, rootfs2, fs);
+	if (err < 0) {
+		LOG_ERROR("failed to mount rootfs, rebooting to secondary image");
+
+		if (flashsrv_bootImage() != 1) {
+			magic = ~magic;
+		}
+		reboot(magic);
 	}
 
 	/* Finished server initialization - kill parent */
