@@ -49,8 +49,7 @@ typedef struct {
 typedef struct {
 	sensor_event_t evtGps;
 	int filedes;
-	char buff[1024];
-	char stack[512] __attribute__((aligned(8)));
+	char stack[1024] __attribute__((aligned(8)));
 } pa6h_ctx_t;
 
 
@@ -346,40 +345,29 @@ static void pa6h_threadPublish(void *data)
 	sensor_info_t *info = (sensor_info_t *)data;
 	pa6h_ctx_t *ctx = info->ctx;
 	nmea_t message;
-	char **lines;
-	int i, nlines = 0, nbytes = 0, ret = 0;
+	int i, ret = 0;
 	unsigned char doUpdate = 0;
 
+	pa6h_msg_t inbox[INBOX_SIZE];
+	int inbocCap;
+
 	while (1) {
-		memset(ctx->buff, 0, sizeof(ctx->buff));
-		usleep(1000 * UPDATE_RATE_MS);
+		inbocCap = pa6h_receiver(ctx->filedes, inbox, INBOX_SIZE);
 
-		nbytes = read(ctx->filedes, ctx->buff, sizeof(ctx->buff) - 1);
-		if (nbytes <= 0) {
-			continue;
-		}
-
-		nlines = nmea_countlines(ctx->buff);
-		lines = nmea_getlines(ctx->buff, nlines);
-		if (lines == NULL) {
-			continue;
-		}
-
-		for (i = 0; i < nlines; i++) {
-			if (nmea_assertChecksum(lines[i]) == EOK) {
-				ret = nmea_interpreter(lines[i], &message);
-				if (ret != nmea_broken && ret != nmea_unknown) {
-					pa6h_update(&message, ctx);
-					doUpdate = 1;
-				}
+		for (i = 0; i < inbocCap; i++) {
+			ret = nmea_interpreter(inbox[i].msg, &message);
+			if (ret != nmea_broken && ret != nmea_unknown) {
+				pa6h_update(&message, ctx);
+				doUpdate = 1;
 			}
 		}
 		if (doUpdate == 1) {
 			sensors_publish(info->id, &ctx->evtGps);
 			doUpdate = 0;
 		}
+
+		usleep(UPDATE_RATE_MS * 1000);
 	}
-	free(lines);
 }
 
 
