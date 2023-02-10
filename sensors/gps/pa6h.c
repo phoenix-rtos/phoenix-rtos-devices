@@ -425,9 +425,14 @@ static int pa6h_parse(const char *args, const char **path)
 
 static int pa6h_alloc(sensor_info_t *info, const char *args)
 {
-	int cnt = 0, err;
+	const time_t ackWait = 2 * 1000 * 1000;
+	const int repeat = 10;
+
+	int cnt = 0, err = -1;
 	const char *path;
 	pa6h_ctx_t *ctx;
+	struct termios termBackup;
+	enum pmtk_ack ack;
 
 	ctx = malloc(sizeof(pa6h_ctx_t));
 	if (ctx == NULL) {
@@ -442,19 +447,102 @@ static int pa6h_alloc(sensor_info_t *info, const char *args)
 		return err;
 	}
 
-	ctx->filedes = open(path, O_RDONLY | O_NOCTTY | O_NONBLOCK);
-	while (ctx->filedes < 0) {
-		usleep(10 * 1000);
-		cnt++;
+	/* Opening serial device */
+	do {
+		ctx->filedes = open(path, O_RDWR | O_NOCTTY | O_NONBLOCK);
 
-		if (cnt > 10000) {
+		if (ctx->filedes < 0) {
+			usleep(10 * 1000);
+			cnt++;
+
+			if (cnt > 10000) {
 				fprintf(stderr, "%s Can't open %s: %s\n", PA6H_STR, path, strerror(errno));
 				err = -errno;
 				free(ctx);
 				return err;
 			}
-		ctx->filedes = open(path, O_RDONLY | O_NOCTTY | O_NONBLOCK);
+		}
+	} while (ctx->filedes < 0);
+
+	if (isatty(ctx->filedes) != 1) {
+		fprintf(stderr, "%s %s not a tty\n", PA6H_STR, path);
+		close(ctx->filedes);
+		free(ctx);
+		return -1;
 	}
+
+	/* First serial setup backups termios settings */
+	if (pa6h_serialSetup(ctx->filedes, B9600, &termBackup) < 0) {
+		fprintf(stderr, "%s cannot set baud %d\n", PA6H_STR, 9600);
+		close(ctx->filedes);
+		free(ctx);
+		return -1;
+	}
+
+	/* Request baudrate change to 115200 */
+	for (cnt = 0; cnt < repeat; cnt++) {
+		/* PA6H does not acknowledge baudrate change success with PMTK_ACK. Discarding read `ack` value */
+		err = pa6h_paramSet(ctx->filedes, PMTK_ID_SET_NMEA_BAUDRATE, PMTK_SET_NMEA_BAUDRATE_115200, &ack, 0);
+		usleep(10 * 1000);
+	}
+	if (err < 0) {
+		fprintf(stderr, "%s cannot send baud %d request\n", PA6H_STR, 115200);
+		close(ctx->filedes);
+		free(ctx);
+		return -1;
+	}
+
+	if (pa6h_serialSetup(ctx->filedes, B115200, NULL) < 0) {
+		fprintf(stderr, "%s cannot set baud %d\n", PA6H_STR, 115200);
+		close(ctx->filedes);
+		tcsetattr(ctx->filedes, TCSANOW, &termBackup);
+		free(ctx);
+		return -1;
+	}
+
+	cnt = 0;
+	ack = pmtk_ack_none;
+	/* Reduce incoming messages only to GPGGA, GPGSA, GPRMC */
+	while (pa6h_paramSet(ctx->filedes, PMTK_ID_SET_NMEA_OUTPUT, PMTK_SET_NMEA_OUTPUT_GSA_GGA_VTG, &ack, ackWait) == 0 && cnt < repeat && ack != pmtk_ack_success) {
+		cnt++;
+	}
+	if (ack != pmtk_ack_success) {
+		fprintf(stderr, "%s cannot set output semantic\n", PA6H_STR);
+		tcsetattr(ctx->filedes, TCSANOW, &termBackup);
+		close(ctx->filedes);
+		free(ctx);
+		return -1;
+	}
+
+	/* Increase message output rate to 10Hz */
+	cnt = 0;
+	ack = pmtk_ack_none;
+	while (pa6h_paramSet(ctx->filedes, PMTK_ID_SET_NMEA_UPDATERATE, PMTK_SET_NMEA_UPDATERATE_100, &ack, ackWait) == 0 && cnt < repeat && ack != pmtk_ack_success) {
+		cnt++;
+	}
+	if (ack != pmtk_ack_success) {
+		fprintf(stderr, "%s cannot set message out. rate\n", PA6H_STR);
+		tcsetattr(ctx->filedes, TCSANOW, &termBackup);
+		close(ctx->filedes);
+		free(ctx);
+		return -1;
+	}
+
+
+	/* Increase position fix rate to 5Hz */
+	cnt = 0;
+	ack = pmtk_ack_none;
+	while (pa6h_paramSet(ctx->filedes, PMTK_ID_API_SET_FIX_CTL, PMTK_API_SET_FIX_CTL_200, &ack, ackWait) == 0 && cnt < repeat && ack != pmtk_ack_success) {
+		cnt++;
+	}
+	if (ack != pmtk_ack_success) {
+		fprintf(stderr, "%s cannot set fix rate\n", PA6H_STR);
+		tcsetattr(ctx->filedes, TCSANOW, &termBackup);
+		close(ctx->filedes);
+		free(ctx);
+		return -1;
+	}
+
 	info->ctx = ctx;
 
 	return EOK;
