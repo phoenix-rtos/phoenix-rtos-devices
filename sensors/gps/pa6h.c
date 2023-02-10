@@ -24,6 +24,7 @@
 #include "../sensors.h"
 #include "nmea.h"
 
+#define PA6H_STR "pa6h:"
 
 /* Specified by the module's documentation */
 #define UPDATE_RATE_MS 1000
@@ -133,7 +134,7 @@ static int pa6h_start(sensor_info_t *info)
 		free(ctx);
 	}
 	else {
-		printf("pa6h: launched sensor\n");
+		printf("%s launched sensor\n", PA6H_STR);
 	}
 
 	return err;
@@ -148,8 +149,11 @@ static int pa6h_parse(const char *args, const char **path)
 		*path = args;
 	}
 	else {
-		fprintf(stderr, "pa6h: Wrong arguments\n"
-						"Please specify the path to source device instance, for example: /dev/uart0\n");
+		fprintf(
+			stderr,
+			"%s Wrong arguments\n"
+			"Please specify the path to source device instance, for example: /dev/uart0\n",
+			PA6H_STR);
 		err = -EINVAL;
 	}
 
@@ -182,11 +186,11 @@ static int pa6h_alloc(sensor_info_t *info, const char *args)
 		cnt++;
 
 		if (cnt > 10000) {
-			fprintf(stderr, "pa6h: Can't open %s: %s\n", path, strerror(errno));
-			err = -errno;
-			free(ctx);
-			return err;
-		}
+				fprintf(stderr, "%s Can't open %s: %s\n", PA6H_STR, path, strerror(errno));
+				err = -errno;
+				free(ctx);
+				return err;
+			}
 		ctx->filedes = open(path, O_RDONLY | O_NOCTTY | O_NONBLOCK);
 	}
 	info->ctx = ctx;
