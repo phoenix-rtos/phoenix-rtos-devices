@@ -94,17 +94,4 @@ typedef struct {
 /* interpret one line of gps output into nmea message, if known */
 extern int nmea_interpreter(char *str, nmea_t *out);
 
-
-/* Returns the number of nmea lines with checksums occurring buffer */
-extern int nmea_countlines(char *buf);
-
-
-/* Splits gps input buffer to an array with n separate nmea strings */
-/* NULL will be returned if cannot allocate memory for the array or there is wrong input buffer */
-extern char **nmea_getlines(char *buf, int n);
-
-
-/* Returns 0 if counted and read checksum are the same */
-extern int nmea_assertChecksum(const char *line);
-
 #endif
