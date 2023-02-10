@@ -305,6 +305,7 @@ static int pa6h_paramSet(int fd, unsigned int msgId, const char *payload, enum p
 
 int pa6h_update(nmea_t *message, pa6h_ctx_t *ctx)
 {
+	/* timestamp update happens only on GPGGA message as it contains position */
 	switch (message->type) {
 		case nmea_gga:
 			ctx->evtGps.gps.lat = message->msg.gga.lat * 1e7;
@@ -314,6 +315,8 @@ int pa6h_update(nmea_t *message, pa6h_ctx_t *ctx)
 			ctx->evtGps.gps.alt = message->msg.gga.h_asl * 1e3;
 			ctx->evtGps.gps.altEllipsoid = message->msg.gga.h_wgs * 1e3;
 			ctx->evtGps.gps.satsNb = message->msg.gga.sats;
+
+			gettime(&(ctx->evtGps.timestamp), NULL);
 			break;
 
 		case nmea_gsa:
@@ -334,7 +337,6 @@ int pa6h_update(nmea_t *message, pa6h_ctx_t *ctx)
 		default:
 			break;
 	}
-	gettime(&(ctx->evtGps.timestamp), NULL);
 
 	return 0;
 }
