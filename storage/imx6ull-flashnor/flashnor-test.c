@@ -16,10 +16,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <meterfs.h>
-
-#include "storage.h"
 #include "flashnor-ecspi.h"
+#include "flashnor-drv.h"
 
 
 static unsigned valcmp(uint8_t *buf, size_t len, uint8_t val)
@@ -28,55 +26,58 @@ static unsigned valcmp(uint8_t *buf, size_t len, uint8_t val)
 	size_t i;
 
 	for (i = 0; i < len; i++) {
-		if (buf[i] != val)
+		if (buf[i] != val) {
 			errors++;
+		}
 	}
 
 	return errors;
 }
 
 
-static int test_read_write(size_t flashsz, size_t sectorsz)
+static int test_read_write(const flashnor_info_t *info)
 {
 	int res = 0;
-	unsigned errors = 0, addr;
+	unsigned errors = 0;
+	off_t addr;
 	uint8_t *pattern, *buf;
+	size_t sectorsz = info->devInfo->erasesz;
 
-	printf("%s: ", __func__);
+	(void)printf("%s: ", __func__);
 
 	pattern = malloc(sectorsz);
 	if (pattern == NULL) {
-		printf("fail: malloc\n");
+		(void)printf("fail: malloc\n");
 		return -1;
 	}
 
 	buf = malloc(sectorsz);
 	if (buf == NULL) {
-		printf("fail: malloc\n");
+		(void)printf("fail: malloc\n");
 		free(pattern);
 		return -1;
 	}
 
-	memset(pattern, 0x55, sectorsz);
+	(void)memset(pattern, 0x55, sectorsz);
 
 	/* Test only every sixteenth block */
-	for (addr = 0; addr < flashsz; addr += sectorsz * 16) {
+	for (addr = 0; addr < info->devInfo->size; addr += sectorsz * 16u) {
 		/* As meterfs is fixed right now in the driver implementation
 		   we have to erase sector before write, because of metadata written by meterfs */
-		if (flashnor_ecspiEraseSector(addr) < 0) {
-			printf("fail: erase sector at addr %u\n", addr);
+		if (info->ops->erase(info->ndev, addr, sectorsz) < 0) {
+			(void)printf("fail: erase sector at addr %llu\n", addr);
 			res = -1;
 			break;
 		}
 
-		if (flashnor_ecspiWrite(addr, pattern, sectorsz) < 0) {
-			printf("fail: write sector at addr %u\n", addr);
+		if (info->ops->write(info->ndev, addr, pattern, sectorsz) < 0) {
+			(void)printf("fail: write sector at addr %llu\n", addr);
 			res = -1;
 			break;
 		}
 
-		if (flashnor_ecspiRead(addr, buf, sectorsz) < 0) {
-			printf("fail: read sector at addr %u\n", addr);
+		if (info->ops->read(info->ndev, addr, buf, sectorsz) < 0) {
+			(void)printf("fail: read sector at addr %llu\n", addr);
 			res = -1;
 			break;
 		}
@@ -86,11 +87,11 @@ static int test_read_write(size_t flashsz, size_t sectorsz)
 
 	if (res == 0) {
 		if (errors) {
-			printf("fail: read %u errors\n", errors);
+			(void)printf("fail: read %u errors\n", errors);
 			res = -1;
 		}
 		else {
-			printf("ok\n");
+			(void)printf("ok\n");
 		}
 	}
 
@@ -101,30 +102,32 @@ static int test_read_write(size_t flashsz, size_t sectorsz)
 }
 
 
-static int test_erase(size_t flashsz, size_t sectorsz)
+static int test_erase(const flashnor_info_t *info)
 {
 	int res = 0;
-	unsigned errors = 0, addr;
+	unsigned errors = 0;
+	off_t addr;
 	uint8_t *buf;
+	size_t sectorsz = info->devInfo->erasesz;
 
-	printf("%s: ", __func__);
+	(void)printf("%s: ", __func__);
 
 	buf = malloc(sectorsz);
 	if (buf == NULL) {
-		printf("fail: malloc\n");
+		(void)printf("fail: malloc\n");
 		return -1;
 	}
 
 	/* Clean sectors written by test_write_read */
-	for (addr = 0; addr < flashsz; addr += sectorsz * 16) {
-		if (flashnor_ecspiEraseSector(addr) < 0) {
-			printf("fail: erase sector at addr %u\n", addr);
+	for (addr = 0; addr < info->devInfo->size; addr += sectorsz * 16u) {
+		if (info->ops->erase(info->ndev, addr, sectorsz) < 0) {
+			(void)printf("fail: erase sector at addr %llu\n", addr);
 			res = -1;
 			break;
 		}
 
-		if (flashnor_ecspiRead(addr, buf, sectorsz) < 0) {
-			printf("fail: erase sector read at addr %u\n", addr);
+		if (info->ops->read(info->ndev, addr, buf, sectorsz) < 0) {
+			(void)printf("fail: erase sector read at addr %llu\n", addr);
 			res = -1;
 			break;
 		}
@@ -133,12 +136,12 @@ static int test_erase(size_t flashsz, size_t sectorsz)
 	}
 
 	if (res == 0) {
-		if (errors) {
-			printf("fail: read %u errors\n", errors);
+		if (errors > 0u) {
+			(void)printf("fail: read %u errors\n", errors);
 			res = -1;
 		}
 		else {
-			printf("ok\n");
+			(void)printf("ok\n");
 		}
 	}
 
@@ -147,54 +150,54 @@ static int test_erase(size_t flashsz, size_t sectorsz)
 }
 
 
-static int run_tests(size_t flashsz, size_t sectorsz)
+static int run_tests(const flashnor_info_t *info)
 {
 
-	if (test_read_write(flashsz, sectorsz) < 0)
+	if (test_read_write(info) < 0) {
 		return -1;
+	}
 
-	if (test_erase(flashsz, sectorsz) < 0)
+	if (test_erase(info) < 0) {
 		return -1;
+	}
 
 	return 0;
 }
 
+
 static void flashnor_test_help(const char *prog)
 {
-	printf("Usage: %s [options]\n", prog);
-	printf("\t-e <n> | --ecspi <n>   - initialize ECSPI NOR flash device\n");
-	printf("\t\tn:      ECSPI instance number (by default ecspi no. 3 is used)\n");
+	(void)printf("Usage: %s [options]\n", prog);
+	(void)printf("\t-e <n> | --ecspi <n>   - initialize ECSPI NOR flash device\n");
+	(void)printf("\t\tn:      ECSPI instance number\n");
 }
 
 
 int main(int argc, char *argv[])
 {
-	int err, c;
-	storage_t dev = { 0 };
-	unsigned ecspi_no = 3;
-	meterfs_ctx_t *ctx;
+	int c, ndev;
+	flashnor_info_t info = { 0 };
+
+	if (argc < 2) {
+		flashnor_test_help(argv[0]);
+		return EXIT_FAILURE;
+	}
 
 	while ((c = getopt(argc, argv, "e:")) != -1) {
 		switch (c) {
 			case 'e':
-				ecspi_no = strtoul(optarg, NULL, 0);
+				ndev = strtoul(optarg, NULL, 0);
+				flashnor_ecspiInit(ndev, &info);
+
+				if (run_tests(&info) < 0) {
+					return EXIT_FAILURE;
+				}
 				break;
 			default:
 				flashnor_test_help(argv[0]);
 				return EXIT_FAILURE;
 		}
 	}
-
-	err = flashnor_ecspiInit(ecspi_no, &dev);
-	if (err < 0) {
-		printf("fail: failed to initialize device (err: %d)\n", err);
-		return EXIT_FAILURE;
-	}
-
-	ctx = dev.ctx;
-
-	if (run_tests(ctx->sz, ctx->sectorsz) < 0)
-		return EXIT_FAILURE;
 
 	return EXIT_SUCCESS;
 }
