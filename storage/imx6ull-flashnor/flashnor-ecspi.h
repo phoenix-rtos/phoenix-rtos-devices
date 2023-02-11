@@ -3,8 +3,8 @@
  *
  * i.MX 6ULL ECSPI NOR flash driver
  *
- * Copyright 2021 Phoenix Systems
- * Author: Lukasz Kosinski
+ * Copyright 2021, 2023 Phoenix Systems
+ * Author: Lukasz Kosinski, Hubert Badocha
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -16,19 +16,10 @@
 
 #include <unistd.h>
 
-#include "storage.h"
+#include "flashnor-drv.h"
 
 
-extern ssize_t flashnor_ecspiRead(unsigned int addr, void *buff, size_t bufflen);
-
-
-extern ssize_t flashnor_ecspiWrite(unsigned int addr, const void *buff, size_t bufflen);
-
-
-extern int flashnor_ecspiEraseSector(unsigned int addr);
-
-
-extern int flashnor_ecspiInit(unsigned int ndev, storage_t *dev);
+extern int flashnor_ecspiInit(int ndev, flashnor_info_t *info);
 
 
 #endif
