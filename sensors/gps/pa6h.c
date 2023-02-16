@@ -345,10 +345,14 @@ int pa6h_update(nmea_t *message, pa6h_ctx_t *ctx)
 static void pa6h_threadPublish(void *data)
 {
 	sensor_info_t *info = (sensor_info_t *)data;
+	struct __errno_t errnoNew;
 	pa6h_ctx_t *ctx = info->ctx;
 	nmea_t message;
 	int i, ret = 0;
 	unsigned char doUpdate = 0;
+
+	/* errno is currently not thread-safe. Rediricting to local errno structure */
+	_errno_new(&errnoNew);
 
 	pa6h_msg_t inbox[INBOX_SIZE];
 	int inbocCap;
