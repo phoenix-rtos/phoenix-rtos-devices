@@ -1011,10 +1011,11 @@ static void setup_flash_info(void)
 	memset(flash_id, 0, sizeof(*flash_id));
 	flashdrv_readid(dma, flash_id);
 
-
 	if (flash_id->manufacturerid == 0x98 && flash_id->deviceid == 0xd3) {
 		flashdrv_common.info.name = "Kioxia TH58NV 16Gbit NAND";
-		flashdrv_common.info.size = 4096ull * 64 * 8192;
+		/* FIXME: The 2nd GB is on a separate die controlled by a separate chip select signal */
+		/* Limit available chip size to 4096 blocks (1GB) until multiple chip selects support is implemented in the driver */
+		flashdrv_common.info.size = 4096ull * 64 * 4096;
 		flashdrv_common.info.writesz = 4096u;
 		flashdrv_common.info.metasz = 256u;
 		flashdrv_common.info.erasesz = 4096u * 64;
