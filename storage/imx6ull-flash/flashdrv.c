@@ -285,7 +285,8 @@ static int dma_irqHandler(unsigned int n, void *data)
 	*(flashdrv_common.dma + apbh_ctrl1_clr) = 1;
 	*(flashdrv_common.dma + apbh_ctrl2_clr) = 1;
 
-	flashdrv_common.result = -err;
+	/* If no error was detected return value set by DMA terminator descriptor (dma->buffer field prepared in dma_terminate()) */
+	flashdrv_common.result = (err == 0) ? *(flashdrv_common.dma + apbh_ch0_bar) : -err;
 
 	return 1;
 }
