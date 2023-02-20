@@ -35,6 +35,10 @@
 #define DEG2MILIRAD 17.4532925 /* 1 degree -> 1 milliradian conversion parameter */
 #define KMH2MMS     277.7778   /* 1 km/h -> mm/s conversion parameter */
 
+/* PA6H has: pos_CEP = 3m, vel_CEP = 0.1m/s. We use RMS values which are 0.849 * CEP (https://en.wikipedia.org/wiki/Circular_error_probable) */
+#define PA6H_POS_ACCURACY 2.547f
+#define PA6H_VEL_ACCURACY 0.0849f
+
 
 #define REC_BUF_SZ 2048
 #define INBOX_SIZE 32
@@ -303,42 +307,50 @@ static int pa6h_paramSet(int fd, unsigned int msgId, const char *payload, enum p
 }
 
 
-int pa6h_update(nmea_t *message, pa6h_ctx_t *ctx)
+/* Returns 1 if `gpsEvt` was updated with data from `message`. Otherwise returns 0. */
+int pa6h_update(nmea_t *message, sensor_event_t *evtGps)
 {
 	/* timestamp update happens only on GPGGA message as it contains position */
 	switch (message->type) {
 		case nmea_gga:
-			ctx->evtGps.gps.lat = message->msg.gga.lat * 1e7;
-			ctx->evtGps.gps.lon = message->msg.gga.lon * 1e7;
-			ctx->evtGps.gps.hdop = (unsigned int)(message->msg.gga.hdop * 1e2);
-			ctx->evtGps.gps.fix = message->msg.gga.fix;
-			ctx->evtGps.gps.alt = message->msg.gga.h_asl * 1e3;
-			ctx->evtGps.gps.altEllipsoid = message->msg.gga.h_wgs * 1e3;
-			ctx->evtGps.gps.satsNb = message->msg.gga.sats;
+			evtGps->gps.lat = message->msg.gga.lat * 1e7;
+			evtGps->gps.lon = message->msg.gga.lon * 1e7;
+			evtGps->gps.hdop = (unsigned int)(message->msg.gga.hdop * 1e2);
+			evtGps->gps.fix = message->msg.gga.fix;
+			evtGps->gps.alt = message->msg.gga.h_asl * 1e3;
+			evtGps->gps.altEllipsoid = message->msg.gga.h_wgs * 1e3;
+			evtGps->gps.satsNb = message->msg.gga.sats;
+			evtGps->gps.eph = evtGps->gps.hdop * PA6H_POS_ACCURACY;
 
-			gettime(&(ctx->evtGps.timestamp), NULL);
+			gettime(&(evtGps->timestamp), NULL);
 			break;
 
 		case nmea_gsa:
-			ctx->evtGps.gps.hdop = (unsigned int)(message->msg.gsa.hdop * 1e2);
-			ctx->evtGps.gps.vdop = (unsigned int)(message->msg.gsa.vdop * 1e2);
+			evtGps->gps.hdop = (unsigned int)(message->msg.gsa.hdop * 1e2);
+			evtGps->gps.vdop = (unsigned int)(message->msg.gsa.vdop * 1e2);
+
+			evtGps->gps.eph = evtGps->gps.hdop * PA6H_POS_ACCURACY;
+			evtGps->gps.epv = evtGps->gps.vdop * PA6H_POS_ACCURACY;
 			break;
 
 		case nmea_rmc:
 			break;
 
 		case nmea_vtg:
-			ctx->evtGps.gps.heading = message->msg.vtg.track * DEG2MILIRAD;     /* degrees -> milliradians */
-			ctx->evtGps.gps.groundSpeed = message->msg.vtg.speed_kmh * KMH2MMS; /* kmh->mm/s */
-			ctx->evtGps.gps.velNorth = cos(message->msg.vtg.track * DEG2RAD) * ctx->evtGps.gps.groundSpeed;
-			ctx->evtGps.gps.velEast = sin(message->msg.vtg.track * DEG2RAD) * ctx->evtGps.gps.groundSpeed;
+			evtGps->gps.heading = message->msg.vtg.track * DEG2MILIRAD;     /* degrees -> milliradians */
+			evtGps->gps.groundSpeed = message->msg.vtg.speed_kmh * KMH2MMS; /* kmh->mm/s */
+			evtGps->gps.velNorth = cos(message->msg.vtg.track * DEG2RAD) * evtGps->gps.groundSpeed;
+			evtGps->gps.velEast = sin(message->msg.vtg.track * DEG2RAD) * evtGps->gps.groundSpeed;
+
+			/* This is not 100% correct error estimation but the only we have */
+			evtGps->gps.evel = evtGps->gps.hdop * PA6H_VEL_ACCURACY;
 			break;
 
 		default:
-			break;
+			return 0;
 	}
 
-	return 0;
+	return 1;
 }
 
 
@@ -347,29 +359,24 @@ static void pa6h_threadPublish(void *data)
 	sensor_info_t *info = (sensor_info_t *)data;
 	struct __errno_t errnoNew;
 	pa6h_ctx_t *ctx = info->ctx;
+	pa6h_msg_t inbox[INBOX_SIZE];
 	nmea_t message;
-	int i, ret = 0;
-	unsigned char doUpdate = 0;
+	unsigned int i, inbocCap, update;
 
 	/* errno is currently not thread-safe. Rediricting to local errno structure */
 	_errno_new(&errnoNew);
 
-	pa6h_msg_t inbox[INBOX_SIZE];
-	int inbocCap;
-
 	while (1) {
 		inbocCap = pa6h_receiver(ctx->filedes, inbox, INBOX_SIZE);
 
+		update = 0;
 		for (i = 0; i < inbocCap; i++) {
-			ret = nmea_interpreter(inbox[i].msg, &message);
-			if (ret != nmea_broken && ret != nmea_unknown) {
-				pa6h_update(&message, ctx);
-				doUpdate = 1;
-			}
+			nmea_interpreter(inbox[i].msg, &message);
+			update |= pa6h_update(&message, &ctx->evtGps);
 		}
-		if (doUpdate == 1) {
+
+		if (update != 0) {
 			sensors_publish(info->id, &ctx->evtGps);
-			doUpdate = 0;
 		}
 
 		usleep(UPDATE_RATE_MS * 1000);
