@@ -155,7 +155,7 @@ static int pa6h_receiver(int fd, pa6h_msg_t *inbox, size_t inboxSz)
 			}
 
 			/* Ensure space for checksum and nul character not interfering with next message. Lack '/r/n' at the end is discarded */
-			len = ((nextStartToken == NULL) ? &buf[pos] : nextStartToken) - tokenEnd;
+			len = ((nextStartToken == NULL) ? &buf[pos] : nextStartToken - 1) - tokenEnd;
 			if (len < 3) {
 				break;
 			}
@@ -188,7 +188,7 @@ static int pa6h_receiver(int fd, pa6h_msg_t *inbox, size_t inboxSz)
 	}
 
 	for (i = 0; i < inboxFill; i++) {
-		inbox[i].msg[inbox[i].sz] = 0;
+		inbox[i].msg[inbox[i].sz - 1] = 0;
 	}
 
 	return inboxFill;
