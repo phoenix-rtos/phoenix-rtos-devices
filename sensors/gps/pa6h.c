@@ -313,8 +313,8 @@ int pa6h_update(nmea_t *message, sensor_event_t *evtGps)
 	/* timestamp update happens only on GPGGA message as it contains position */
 	switch (message->type) {
 		case nmea_gga:
-			evtGps->gps.lat = message->msg.gga.lat * 1e7;
-			evtGps->gps.lon = message->msg.gga.lon * 1e7;
+			evtGps->gps.lat = message->msg.gga.lat * 1e9;
+			evtGps->gps.lon = message->msg.gga.lon * 1e9;
 			evtGps->gps.hdop = (unsigned int)(message->msg.gga.hdop * 1e2);
 			evtGps->gps.fix = message->msg.gga.fix;
 			evtGps->gps.alt = message->msg.gga.h_asl * 1e3;

@@ -61,8 +61,8 @@ enum nmea_fields_vtg { field_vtg_track = 1, field_vtg_tracktype = 2, field_vtg_s
 
 /* GPGGA nmea type definitions: Global Positioning System Fix Data  */
 typedef struct {
-	float lat;
-	float lon;
+	double lat;
+	double lon;
 	unsigned int fix;
 	unsigned int sats;
 	float hdop;
