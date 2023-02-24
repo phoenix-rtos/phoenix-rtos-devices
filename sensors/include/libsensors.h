@@ -50,11 +50,11 @@ typedef struct {
 /* GPS position in WGS84 coordinates */
 typedef struct {
 	uint32_t devId;
-	int32_t lat;           /* latitude in 1E-7 degrees */
-	int32_t lon;           /* longitude in 1E-7 degrees */
+	int32_t alt;           /* altitude in 1E-3 [m] (millimetres) above MSL */
+	int64_t lat;           /* latitude in 1E-9 [deg] (nanodegrees) */
+	int64_t lon;           /* longitude in 1E-9 [deg] (nanodegrees) */
 	uint16_t hdop;         /* horizontal dilution of precision */
 	uint16_t vdop;         /* vertical dilution of precision */
-	int32_t alt;           /* altitude in 1E-3 [m] (millimetres) above MSL */
 	int32_t altEllipsoid;  /* altitude in 1E-3 [m] (millimetres) above Ellipsoid */
 	uint32_t groundSpeed;  /* GPS ground speed, [mm/s] */
 	int32_t velNorth;      /* GPS North velocity, [mm/s] */
