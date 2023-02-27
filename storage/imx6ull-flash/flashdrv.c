@@ -211,7 +211,7 @@ struct {
 	handle_t intbch, intdma, intgpmi;
 	unsigned rawmetasz; /* user metadata + ECC16 metadata bytes */
 
-	int result, bch_status, bch_done;
+	volatile int result, bch_status, bch_done;
 
 	uint8_t *uncached_buf;
 	flashdrv_info_t info;
@@ -263,6 +263,9 @@ static void dma_sequence(dma_t *prev, dma_t *next)
 
 static void dma_run(dma_t *dma, int channel)
 {
+	/* Synchronize memory before running DMA */
+	__asm__ volatile("dsb");
+
 	*(flashdrv_common.dma + apbh_ch0_nxtcmdar + channel * apbh_next_channel) = (uint32_t)va2pa(dma);
 	*(flashdrv_common.dma + apbh_ch0_sema + channel * apbh_next_channel) = 1;
 }
@@ -445,7 +448,13 @@ static void flashdrv_setDevClock(int dev, int state)
 
 flashdrv_dma_t *flashdrv_dmanew(void)
 {
-	flashdrv_dma_t *dma = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0);
+	flashdrv_dma_t *dma;
+
+	dma = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
+	if (dma == MAP_FAILED) {
+		return NULL;
+	}
+
 	dma->last = NULL;
 	dma->first = NULL;
 
@@ -705,6 +714,7 @@ int flashdrv_write(flashdrv_dma_t *dma, uint32_t paddr, void *data, char *aux)
 	int chip = 0, channel = 0, sz;
 	char addr[5] = { 0 };
 	int skipMeta = 0, err;
+	uint32_t tmp;
 	memcpy(addr + 2, &paddr, 3);
 
 	if (data == NULL) {
@@ -732,18 +742,24 @@ int flashdrv_write(flashdrv_dma_t *dma, uint32_t paddr, void *data, char *aux)
 
 	if (data == NULL) {
 		/* Trick BCH controller into thinking that the whole page consists of just the metadata block */
-		*(flashdrv_common.bch + bch_flash0layout0) &= ~(0xff << 24);
+		tmp = *(flashdrv_common.bch + bch_flash0layout0);
+		tmp &= ~(0xffu << 24);
+		*(flashdrv_common.bch + bch_flash0layout0) = tmp;
 
-		*(flashdrv_common.bch + bch_flash0layout1) &= ~(0xffff << 16);
-		*(flashdrv_common.bch + bch_flash0layout1) |= flashdrv_common.rawmetasz << 16;
+		tmp = *(flashdrv_common.bch + bch_flash0layout1);
+		tmp &= ~(0xffffu << 16);
+		tmp |= flashdrv_common.rawmetasz << 16;
+		*(flashdrv_common.bch + bch_flash0layout1) = tmp;
 	}
 	else if (skipMeta) {
 		/* Perform partial page programming (don't change metadata and its ECC) */
 		memset(aux, 0xff, flashdrv_common.rawmetasz);
 
 		/* Treat metadata and its ECC as raw byte area without ECC */
-		*(flashdrv_common.bch + bch_flash0layout0) &= ~(0x1fff << 11);
-		*(flashdrv_common.bch + bch_flash0layout0) |= flashdrv_common.rawmetasz << 16;
+		tmp = *(flashdrv_common.bch + bch_flash0layout0);
+		tmp &= ~(0x1fff << 11);
+		tmp |= flashdrv_common.rawmetasz << 16;
+		*(flashdrv_common.bch + bch_flash0layout0) = tmp;
 	}
 
 	flashdrv_common.result = 1;
@@ -757,14 +773,20 @@ int flashdrv_write(flashdrv_dma_t *dma, uint32_t paddr, void *data, char *aux)
 	err = flashdrv_common.result;
 
 	if (data == NULL) {
-		*(flashdrv_common.bch + bch_flash0layout0) |= 8 << 24;
+		tmp = *(flashdrv_common.bch + bch_flash0layout0);
+		tmp |= (8 << 24);
+		*(flashdrv_common.bch + bch_flash0layout0) = tmp;
 
-		*(flashdrv_common.bch + bch_flash0layout1) &= ~(0xffff << 16);
-		*(flashdrv_common.bch + bch_flash0layout1) |= (flashdrv_common.info.writesz + flashdrv_common.info.metasz) << 16;
+		tmp = *(flashdrv_common.bch + bch_flash0layout1);
+		tmp &= ~(0xffffu << 16);
+		tmp |= (flashdrv_common.info.writesz + flashdrv_common.info.metasz) << 16;
+		*(flashdrv_common.bch + bch_flash0layout1) = tmp;
 	}
 	else if (skipMeta) {
-		*(flashdrv_common.bch + bch_flash0layout0) &= ~(0x1fff << 11);
-		*(flashdrv_common.bch + bch_flash0layout0) |= 16 << 16 | 8 << 11;
+		tmp = *(flashdrv_common.bch + bch_flash0layout0);
+		tmp &= ~(0x1fff << 11);
+		tmp |= (16 << 16) | (8 << 11);
+		*(flashdrv_common.bch + bch_flash0layout0) = tmp;
 	}
 
 	mutexUnlock(flashdrv_common.mutex);
@@ -991,16 +1013,6 @@ int flashdrv_markbad(flashdrv_dma_t *dma, uint32_t paddr)
 }
 
 
-void flashdrv_rundma(flashdrv_dma_t *dma)
-{
-	int channel = 0;
-
-	mutexLock(flashdrv_common.mutex);
-	dma_run((dma_t *)dma->first, channel);
-	mutexUnlock(flashdrv_common.mutex);
-}
-
-
 static void setup_flash_info(void)
 {
 	flash_id_t *flash_id = (flash_id_t *)flashdrv_common.uncached_buf;
@@ -1044,13 +1056,42 @@ static void setup_flash_info(void)
 }
 
 
-void flashdrv_init(void)
+int flashdrv_init(void)
 {
-	flashdrv_common.dma  = mmap(NULL, 2 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x1804000);
-	flashdrv_common.gpmi = mmap(NULL, 2 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x1806000);
-	flashdrv_common.bch  = mmap(NULL, 4 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x1808000);
-	flashdrv_common.mux  = mmap(NULL, 4 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x20e0000);
-	flashdrv_common.uncached_buf = mmap(NULL, 2 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
+	flashdrv_common.dma = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x1804000);
+	if (flashdrv_common.dma == MAP_FAILED) {
+		return -ENOMEM;
+	}
+
+	flashdrv_common.gpmi = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x1806000);
+	if (flashdrv_common.gpmi == MAP_FAILED) {
+		munmap((void *)flashdrv_common.dma, _PAGE_SIZE);
+		return -ENOMEM;
+	}
+
+	flashdrv_common.bch = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x1808000);
+	if (flashdrv_common.bch == MAP_FAILED) {
+		munmap((void *)flashdrv_common.gpmi, _PAGE_SIZE);
+		munmap((void *)flashdrv_common.dma, _PAGE_SIZE);
+		return -ENOMEM;
+	}
+
+	flashdrv_common.mux = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0x20e0000);
+	if (flashdrv_common.mux == MAP_FAILED) {
+		munmap((void *)flashdrv_common.bch, _PAGE_SIZE);
+		munmap((void *)flashdrv_common.gpmi, _PAGE_SIZE);
+		munmap((void *)flashdrv_common.dma, _PAGE_SIZE);
+		return -ENOMEM;
+	}
+
+	flashdrv_common.uncached_buf = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
+	if (flashdrv_common.uncached_buf == MAP_FAILED) {
+		munmap((void *)flashdrv_common.mux, _PAGE_SIZE);
+		munmap((void *)flashdrv_common.bch, _PAGE_SIZE);
+		munmap((void *)flashdrv_common.gpmi, _PAGE_SIZE);
+		munmap((void *)flashdrv_common.dma, _PAGE_SIZE);
+		return -ENOMEM;
+	}
 
 	/* 16 bytes of user metadada + ECC16 * bits per parity level (13) / 8 = 26 bytes for ECC  */
 	flashdrv_common.rawmetasz = 16 + 26;
@@ -1122,6 +1163,8 @@ void flashdrv_init(void)
 	*(flashdrv_common.bch + bch_flash0layout1) = (flashdrv_common.info.writesz + flashdrv_common.info.metasz) << 16 | 7 << 11 | 0 << 10 | 128;
 
 	interrupt(32 + 15, bch_irqHandler, NULL, flashdrv_common.bch_cond, &flashdrv_common.intbch);
+
+	return EOK;
 }
 
 

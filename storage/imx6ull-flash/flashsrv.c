@@ -755,7 +755,11 @@ static int flashsrv_nandInit(void)
 	storage_t *strg;
 
 	/* Initialize nand flash driver */
-	flashdrv_init();
+	err = flashdrv_init();
+	if (err < 0) {
+		LOG_ERROR("failed to initialize driver, err: %d", err);
+		return err;
+	}
 
 	strg = calloc(1, sizeof(storage_t));
 	if (strg == NULL) {

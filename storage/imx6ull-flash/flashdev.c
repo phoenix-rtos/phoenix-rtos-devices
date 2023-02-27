@@ -600,7 +600,7 @@ int flashdev_init(storage_t *strg)
 	}
 
 	strg->dev->ctx->dma = flashdrv_dmanew();
-	if (strg->dev->ctx->dma == MAP_FAILED) {
+	if (strg->dev->ctx->dma == NULL) {
 		free(strg->dev->ctx);
 		free(strg->dev);
 		return -ENOMEM;

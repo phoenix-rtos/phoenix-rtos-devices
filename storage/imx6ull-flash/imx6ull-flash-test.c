@@ -135,7 +135,7 @@ int flip_bits(unsigned int n, unsigned int nblock, unsigned int start, unsigned 
 	if (!n)
 		return EOK;
 
-	if ((dma = flashdrv_dmanew()) == MAP_FAILED) {
+	if ((dma = flashdrv_dmanew()) == NULL) {
 		err = -ENOMEM;
 		printf("dmanew() failed, err: %d\n", err);
 		return err;
@@ -239,7 +239,7 @@ void test_bootrom(void)
 	const unsigned int seed = 0xaa55aa55;    /* Use fixed rand() seed (so we could revert the bit flips by running the test again) */
 	flashdrv_dma_t *dma;
 
-	if ((dma = flashdrv_dmanew()) == MAP_FAILED) {
+	if ((dma = flashdrv_dmanew()) == NULL) {
 		printf("dmanew() failed, err: %d\n", -ENOMEM);
 		return;
 	}
@@ -407,7 +407,7 @@ void test_ecc(void)
 	size_t boffs, blen;
 	int i, err;
 
-	if ((dma = flashdrv_dmanew()) == MAP_FAILED) {
+	if ((dma = flashdrv_dmanew()) == NULL) {
 		printf("dmanew() failed, err: %d\n", -ENOMEM);
 		return;
 	}
@@ -689,10 +689,17 @@ void test_write_fcb(void)
 	int err;
 
 	data = mmap(NULL, pagemapsz, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
-	if (data == MAP_FAILED)
-		FAIL("failed to mmap data buffer\n");
+	if (data == MAP_FAILED) {
+		printf("mmap() failed, err: %d\n", -ENOMEM);
+		return;
+	}
 
 	dma = flashdrv_dmanew();
+	if (dma == NULL) {
+		printf("dmanew() failed, err: %d\n", -ENOMEM);
+		munmap(data, pagemapsz);
+		return;
+	}
 
 #if 1
 	memcpy(data, fcb, FLASHDRV_PAGESZ);
@@ -728,10 +735,17 @@ void test_meta(void)
 	meta = data + _PAGE_SIZE;
 	aux = (flashdrv_meta_t *)meta;
 
-	if (data == MAP_FAILED)
-		FAIL("failed to mmap data buffer\n");
+	if (data == MAP_FAILED) {
+		printf("mmap() failed, err: %d\n", -ENOMEM);
+		return;
+	}
 
 	dma = flashdrv_dmanew();
+	if (dma == NULL) {
+		printf("dmanew() failed, err: %d\n", -ENOMEM);
+		munmap(data, pagemapsz);
+		return;
+	}
 
 	if ((err = flashdrv_erase(dma, paddr) < 0))
 		printf("erase() failed: %d\n", err);
@@ -864,10 +878,17 @@ void test_badblocks(void)
 	int total_read_fails = 0, total_bad_blocks = 0;
 
 	data = mmap(NULL, pagemapsz, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
-	if (data == MAP_FAILED)
-		FAIL("failed to mmap data buffer\n");
+	if (data == MAP_FAILED) {
+		printf("mmap() failed, err: %d\n", -ENOMEM);
+		return;
+	}
 
 	dma = flashdrv_dmanew();
+	if (dma == NULL) {
+		printf("dmanew() failed, err: %d\n", -ENOMEM);
+		munmap(data, pagemapsz);
+		return;
+	}
 
 #if 0 /* uncomment to create fake badblock */
 	flashdrv_markbad(dma, 1337 * 64);
@@ -933,7 +954,7 @@ void test_read_disturb(void)
 	unsigned int i, j, k;
 	int err, done;
 
-	if ((dma = flashdrv_dmanew()) == MAP_FAILED) {
+	if ((dma = flashdrv_dmanew()) == NULL) {
 		printf("dmanew() failed, err: %d\n", -ENOMEM);
 		return;
 	}
@@ -1026,8 +1047,18 @@ void test_stress_one_block(void)
 	flashdrv_meta_t *m;
 
 	dma = flashdrv_dmanew();
+	if (dma == NULL) {
+		printf("dmanew() failed, err: %d\n", -ENOMEM);
+		return;
+	}
 
 	data = mmap(NULL, pagemapsz, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
+	if (data == MAP_FAILED) {
+		printf("mmap() failed: %d\n", -ENOMEM);
+		flashdrv_dmadestroy(dma);
+		return;
+	}
+
 	meta = data + _PAGE_SIZE;
 	m = (flashdrv_meta_t *)meta;
 
@@ -1311,11 +1342,18 @@ void test_write_read_erase(void)
 	unsigned int blockno;
 
 	data = mmap(NULL, pagemapsz, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
-	if (data == MAP_FAILED)
-		FAIL("failed to mmap data buffers\n");
+	if (data == MAP_FAILED) {
+		printf("mmap() failed, err: %d\n", -ENOMEM);
+		return;
+	}
 
 	meta = data + _PAGE_SIZE;
 	dma = flashdrv_dmanew();
+	if (dma == NULL) {
+		printf("dmanew() failed, err: %d\n", -ENOMEM);
+		munmap(data, pagemapsz);
+		return;
+	}
 
 	for (blockno = 0; blockno < TOTAL_BLOCKS_CNT; ++blockno)
 		test_single_block(dma, blockno, data, meta);
@@ -1332,11 +1370,18 @@ void test_write_read_erase_raw(void)
 	unsigned int blockno;
 
 	data = mmap(NULL, pagemapsz, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
-	if (data == MAP_FAILED)
-		FAIL("failed to mmap data buffers\n");
+	if (data == MAP_FAILED) {
+		printf("mmap() failed, err: %d\n", -ENOMEM);
+		return;
+	}
 
 	meta = data + _PAGE_SIZE;
 	dma = flashdrv_dmanew();
+	if (dma == NULL) {
+		printf("dmanew() failed, err: %d\n", -ENOMEM);
+		munmap(data, pagemapsz);
+		return;
+	}
 
 	/* check every erease block (read first page metadata as RAW to omit ECC checks) */
 	for (blockno = 0; blockno < TOTAL_BLOCKS_CNT; ++blockno) {
@@ -1353,21 +1398,29 @@ void test_write_read_erase_raw(void)
 
 void test_3(void)
 {
-	void *buffer = mmap(NULL, 16 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_PHYSMEM, 0x900000);
+	void *buffer;
 	flashdrv_dma_t *dma;
 	int err;
 
-	memset(buffer, 0, 16 * _PAGE_SIZE);
+	printf("creating\n");
+	buffer = mmap(NULL, 16 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_PHYSMEM, 0x900000);
+	if (buffer == MAP_FAILED) {
+		printf("mmap() failed, err: %d\n", -ENOMEM);
+		return;
+	}
 
+	dma = flashdrv_dmanew();
+	if (dma == NULL) {
+		printf("dmanew() failed, err: %d\n", -ENOMEM);
+		munmap(buffer, 16 * _PAGE_SIZE);
+		return;
+	}
+
+	memset(buffer, 0, 16 * _PAGE_SIZE);
 	for (int i = 0; i < 0x1000; ++i) {
 		((char *)buffer)[i] = 0xb2;
 		((char *)buffer)[0x1000 + i] = 0x8a;
 	}
-
-
-	printf("creating\n");
-
-	dma = flashdrv_dmanew();
 
 	printf("reset\n");
 	flashdrv_reset(dma);
@@ -1403,7 +1456,6 @@ void test_3(void)
 	printf("%d\n", err);
 
 
-
 	printf("readraw ");
 	err = flashdrv_readraw(dma, 0, buffer + 0x9000, FLASHDRV_PAGESZ);
 	printf("%d\n", err);
@@ -1421,8 +1473,10 @@ void test_3(void)
 	err = flashdrv_read(dma, 0, buffer + 0xd000, buffer + 0xe000);
 	printf("%d\n", err);
 
-
 	printf("done\n");
+
+	flashdrv_dmadestroy(dma);
+	munmap(buffer, 16 * _PAGE_SIZE);
 }
 
 
