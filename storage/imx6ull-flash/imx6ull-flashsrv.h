@@ -20,7 +20,7 @@
 
 
 enum { flashsrv_devctl_info = 0, flashsrv_devctl_erase, flashsrv_devctl_writeraw, flashsrv_devctl_writemeta,
-	 flashsrv_devctl_readraw, flashsrv_devctl_isbad, flashsrv_devctl_markbad, flashsrv_devctl_maxbitflips,
+	 flashsrv_devctl_readraw, flashsrv_devctl_readmeta, flashsrv_devctl_isbad, flashsrv_devctl_markbad, flashsrv_devctl_maxbitflips,
 	 flashsrv_devctl_readptable, flashsrv_devctl_writeptable };
 
 /* information about NAND flash configuration */
@@ -28,6 +28,7 @@ typedef struct {
 	uint64_t size;    /* total NAND size in bytes */
 	uint32_t writesz; /* write page DATA size in bytes */
 	uint32_t metasz;  /* write page METADATA size in bytes */
+	uint32_t oobsz;   /* OOB size in bytes */
 	uint32_t erasesz; /* erase block size in bytes (multiply of writesize) */
 } flashsrv_info_t;
 
@@ -53,12 +54,12 @@ typedef struct {
 			size_t size;
 		} write;
 
-		/* readraw */
+		/* readraw, readmeta */
 		struct {
 			oid_t oid;
-			uint32_t address; /* multiply of (writesz + metasz) */
-			size_t size;      /* multiply of (writesz + metasz) */
-		} readraw;
+			uint32_t address; /* multiply of (writesz + metasz) or oobsz */
+			size_t size;      /* multiply of (writesz + metasz) or oobsz */
+		} read;
 
 		/* isbad, markbad */
 		struct {

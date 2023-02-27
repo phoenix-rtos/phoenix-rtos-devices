@@ -229,6 +229,7 @@ static int flashsrv_devInfo(flash_o_devctl_t *odevctl)
 	info.size = devInfo->size;
 	info.writesz = devInfo->writesz;
 	info.metasz = devInfo->metasz;
+	info.oobsz = devInfo->oobsz;
 	info.erasesz = devInfo->erasesz;
 
 	memcpy(&odevctl->info, &info, sizeof(flashsrv_info_t));
@@ -260,7 +261,30 @@ static int flashsrv_devErase(const flash_i_devctl_t *idevctl)
 }
 
 
-static int flashsrv_devWriteMeta(flash_i_devctl_t *idevctl, char *data)
+static int flashsrv_devReadMeta(flash_i_devctl_t *idevctl, void *data)
+{
+	storage_t *strg = storage_get(idevctl->read.oid.id);
+	off_t offs = idevctl->read.address;
+	size_t retlen, size = idevctl->read.size;
+	int res;
+
+	TRACE("META read off: %lld, size: %d, ptr: %p", offs, size, data);
+
+	if (strg == NULL || strg->dev == NULL || strg->dev->ctx == NULL || strg->dev->mtd == NULL || strg->dev->mtd->ops == NULL ||
+			strg->dev->mtd->ops->meta_read == NULL || (offs + size) >= strg->size || data == NULL) {
+		return -EINVAL;
+	}
+
+	res = strg->dev->mtd->ops->meta_read(strg, strg->start + offs, data, size, &retlen);
+	if (res >= 0) {
+		res = retlen;
+	}
+
+	return res;
+}
+
+
+static int flashsrv_devWriteMeta(flash_i_devctl_t *idevctl, void *data)
 {
 	int res;
 	size_t retlen;
@@ -338,8 +362,8 @@ static int flashsrv_devReadRaw(flash_i_devctl_t *idevctl, char *data)
 	size_t rawPagesz, rawEraseBlockSz, rawPartsz, tempsz = 0;
 	storage_t *strg = storage_get(idevctl->badblock.oid.id);
 
-	size_t rawsz = idevctl->readraw.size;
-	size_t rawoffs = idevctl->readraw.address;
+	size_t rawsz = idevctl->read.size;
+	size_t rawoffs = idevctl->read.address;
 
 	if (strg == NULL || strg->dev == NULL || strg->dev->ctx == NULL || strg->dev->mtd == NULL || data == NULL) {
 		return -EINVAL;
@@ -552,6 +576,10 @@ static void flashsrv_devCtrl(msg_t *msg)
 
 		case flashsrv_devctl_readraw:
 			odevctl->err = flashsrv_devReadRaw(idevctl, msg->o.data);
+			break;
+
+		case flashsrv_devctl_readmeta:
+			odevctl->err = flashsrv_devReadMeta(idevctl, msg->o.data);
 			break;
 
 		case flashsrv_devctl_isbad:
