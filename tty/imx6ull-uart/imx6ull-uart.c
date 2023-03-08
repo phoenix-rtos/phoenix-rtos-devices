@@ -279,8 +279,11 @@ static void uart_thr(void *arg)
 				const void *in_data = ioctl_unpack(&msg, &request, NULL);
 				const void *out_data = NULL;
 				pid_t pid = ioctl_getSenderPid(&msg);
+				int err = -EFAULT;
 
-				int err = libtty_ioctl(&uart.tty_common, pid, request, in_data, &out_data);
+				if (in_data != NULL) {
+					err = libtty_ioctl(&uart.tty_common, pid, request, in_data, &out_data);
+				}
 				ioctl_setResponse(&msg, request, err, out_data);
 			}
 			break;

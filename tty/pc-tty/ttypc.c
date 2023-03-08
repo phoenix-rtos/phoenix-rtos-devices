@@ -83,7 +83,10 @@ static void ttypc_poolthr(void *arg)
 
 		case mtDevCtl:
 			idata = ioctl_unpack(&msg, &req, &id);
-			if (id < NVTS) {
+			if (idata == NULL) {
+				err = -EFAULT;
+			}
+			else if (id < NVTS) {
 				err = ttypc_vt_ioctl(ttypc->vts + id, ioctl_getSenderPid(&msg), req, idata, &odata);
 			}
 			else {

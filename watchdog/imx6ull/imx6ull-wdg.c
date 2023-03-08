@@ -83,30 +83,35 @@ static void op_ioctl(msg_t *msg)
 
 	data = ioctl_unpack(msg, &request, &id);
 
-	switch (request) {
-		case WDIOC_KEEPALIVE:
-			wdog_kick();
-			break;
-		case WDIOC_SETTIMEOUT:
-			if (!data) {
-				err = -EINVAL;
+	if (data != NULL) {
+		switch (request) {
+			case WDIOC_KEEPALIVE:
+				wdog_kick();
 				break;
-			}
+			case WDIOC_SETTIMEOUT:
+				if (!data) {
+					err = -EINVAL;
+					break;
+				}
 
-			timeout = *data;
+				timeout = *data;
 
-			if (timeout <= 0) {
-				err = -EINVAL;
+				if (timeout <= 0) {
+					err = -EINVAL;
+					break;
+				}
+
+				/* Max timeout */
+				if (timeout >= 128)
+					timeout = 128;
+
+				timeout = wdog_settimeout(timeout);
+				data = &timeout;
 				break;
-			}
-
-			/* Max timeout */
-			if (timeout >= 128)
-				timeout = 128;
-
-			timeout = wdog_settimeout(timeout);
-			data = &timeout;
-			break;
+		}
+	}
+	else {
+		err = -EFAULT;
 	}
 
 	ioctl_setResponse(msg, request, err, data);

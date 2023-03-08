@@ -307,8 +307,14 @@ int uart_handleMsg(msg_t *msg, int dev)
 
 		case mtDevCtl:
 			in_data = ioctl_unpack(msg, &request, NULL);
-			pid = ioctl_getSenderPid(msg);
-			err = libtty_ioctl(&uart->tty_common, pid, request, in_data, &out_data);
+			if (in_data != NULL) {
+				pid = ioctl_getSenderPid(msg);
+				err = libtty_ioctl(&uart->tty_common, pid, request, in_data, &out_data);
+			}
+			else {
+				err = -EFAULT;
+			}
+
 			ioctl_setResponse(msg, request, err, out_data);
 			break;
 	}

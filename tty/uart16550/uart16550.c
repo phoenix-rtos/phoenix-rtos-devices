@@ -176,7 +176,10 @@ static void uart_ioctl(unsigned int port, msg_t *msg)
 	idata = ioctl_unpack(msg, &req, &oid.id);
 
 	uart = uart_get(&oid);
-	if (uart == NULL) {
+	if (idata == NULL) {
+		err = -EFAULT;
+	}
+	else if (uart == NULL) {
 		err = -EINVAL;
 	}
 	else {

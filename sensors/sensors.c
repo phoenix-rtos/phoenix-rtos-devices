@@ -248,38 +248,43 @@ static void sensors_ioctl(msg_t *msg)
 
 	const void *inData = ioctl_unpack(msg, &req, &id);
 
-	id = CLIENT_GET_ID(id);
+	if (inData != NULL) {
+		id = CLIENT_GET_ID(id);
 
-	client = sensors_clientFind(id);
-	if (client != NULL) {
-		switch (req) {
-			case SMIOC_SENSORSSET:
-				ops.types = sensors_checkTypes(((sensors_ops_t *)inData)->types);
-				ops.evtSz = sensors_evtsCnt(ops.types);
+		client = sensors_clientFind(id);
+		if (client != NULL) {
+			switch (req) {
+				case SMIOC_SENSORSSET:
+					ops.types = sensors_checkTypes(((sensors_ops_t *)inData)->types);
+					ops.evtSz = sensors_evtsCnt(ops.types);
 
-				client->ops.types = ops.types;
-				client->ops.evtSz = ops.evtSz;
+					client->ops.types = ops.types;
+					client->ops.evtSz = ops.evtSz;
 
-				outData = (void *)&ops;
-				break;
+					outData = (void *)&ops;
+					break;
 
-			case SMIOC_SENSORSAVAIL:
-				for (i = 0; i < NB_SENSOR_TYPES; ++i) {
-					if (sensors_common.evtNb[i] != 0) {
-						types |= (1 << i);
+				case SMIOC_SENSORSAVAIL:
+					for (i = 0; i < NB_SENSOR_TYPES; ++i) {
+						if (sensors_common.evtNb[i] != 0) {
+							types |= (1 << i);
+						}
 					}
-				}
-				outData = (void *)&types;
-				break;
+					outData = (void *)&types;
+					break;
 
-			default:
-				break;
+				default:
+					break;
+			}
+
+			sensors_clientPut(client);
 		}
-
-		sensors_clientPut(client);
+		else {
+			err = -EINVAL;
+		}
 	}
 	else {
-		err = -EINVAL;
+		err = -EFAULT;
 	}
 
 	ioctl_setResponse(msg, req, err, outData);

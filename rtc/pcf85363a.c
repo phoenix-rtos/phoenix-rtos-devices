@@ -129,6 +129,11 @@ static void dev_ctl(msg_t *msg)
 	const void *data = ioctl_unpack(msg, &request, &id);
 	struct rtc_time time;
 
+	if (data == NULL) {
+		ioctl_setResponse(msg, request, -EFAULT, NULL);
+		return;
+	}
+
 	if (id != dev_id_rtc) {
 		printf("rtc: this device does not support ioctls: id=%llu\n", id);
 		ioctl_setResponse(msg, request, -ENOSYS, NULL);

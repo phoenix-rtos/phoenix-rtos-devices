@@ -90,10 +90,15 @@ static void spiketty_ioctl(unsigned int port, msg_t *msg)
 
 	idata = ioctl_unpack(msg, &req, &oid.id);
 
-	if ((spiketty = spiketty_get(&oid)) == NULL)
+	if (idata == NULL) {
+		err = -EFAULT;
+	}
+	else if ((spiketty = spiketty_get(&oid)) == NULL) {
 		err = -EINVAL;
-	else
+	}
+	else {
 		err = libtty_ioctl(&spiketty->tty, ioctl_getSenderPid(msg), req, idata, &odata);
+	}
 
 	ioctl_setResponse(msg, req, err, odata);
 }

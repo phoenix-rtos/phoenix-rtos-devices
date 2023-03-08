@@ -351,7 +351,10 @@ static void tty_thread(void *arg)
 
 		case mtDevCtl:
 			in_data = ioctl_unpack(&msg, &request, &id);
-			if ((ctx = tty_getCtx(id)) == NULL) {
+			if (in_data == NULL) {
+				err = -EFAULT;
+			}
+			else if ((ctx = tty_getCtx(id)) == NULL) {
 				err = -EINVAL;
 			}
 			else {
