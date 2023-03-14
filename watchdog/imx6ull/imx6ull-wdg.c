@@ -13,12 +13,14 @@
 
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/msg.h>
 #include <sys/platform.h>
+#include <sys/threads.h>
 #include <phoenix/arch/imx6ull.h>
 #include <posix/utils.h>
 
@@ -186,22 +188,73 @@ int wdog_init(void)
 	return EOK;
 }
 
-int main(void)
+
+static void wdog_help(const char *prog)
+{
+	printf("Usage: %s [options]\n", prog);
+	printf("Options:\n");
+	printf("\t-p priority - priority for the watchdog driver, must be in [0, 7] range\n");
+}
+
+
+static int wdog_parseArgs(int argc, char *argv[])
+{
+	unsigned long prio;
+	char *endptr;
+	int c;
+
+	while ((c = getopt(argc, argv, "p:h")) != -1) {
+		switch (c) {
+			case 'p':
+				prio = strtoul(optarg, &endptr, 0);
+				if ((endptr == optarg) || (*endptr != '\0') || (prio > 7)) {
+					printf("%s: invalid priority value (%s)\n", argv[0], optarg);
+					wdog_help(argv[0]);
+					return -EINVAL;
+				}
+				priority(prio);
+				break;
+
+			case 'h':
+				wdog_help(argv[0]);
+				exit(EXIT_SUCCESS);
+
+			default:
+				wdog_help(argv[0]);
+				return -EINVAL;
+		}
+	}
+
+	return EOK;
+}
+
+
+int main(int argc, char *argv[])
 {
 	oid_t root;
+	int err;
+
+	err = wdog_parseArgs(argc, argv);
+	if (err < 0) {
+		return EXIT_FAILURE;
+	}
 
 	/* Wait for the filesystem */
-	while (lookup("/", NULL, &root) < 0)
+	while (lookup("/", NULL, &root) < 0) {
 		usleep(10000);
+	}
 
 	/* Wait for the console */
-	while (write(1, "", 0) < 0)
+	while (write(1, "", 0) < 0) {
 		usleep(10000);
+	}
 
-	if (wdog_init())
-		return -EIO;
+	err = wdog_init();
+	if (err < 0) {
+		return EXIT_FAILURE;
+	}
 
 	wdog_handle();
 
-	return 0;
+	return EXIT_SUCCESS;
 }
