@@ -671,6 +671,36 @@ void _ttypc_vtf_sgr(ttypc_vt_t *vt)
 				attr = (bgansitopc[(vt->parms[i - 1] - 40) & 7] << 8) | (attr & 0x0f00);
 			}
 			break;
+
+		case 90: /* Bright Foreground colors */
+		case 91:
+		case 92:
+		case 93:
+		case 94:
+		case 95:
+		case 96:
+		case 97:
+			if (ttypc->color) {
+				cc = 1;
+				attr = (attr & 0xf000) | (fgansitopc[(vt->parms[i - 1] - 90) & 7] << 8);
+				attr |= 0x0800;
+			}
+			break;
+
+		case 100: /* Bright Background colors */
+		case 101:
+		case 102:
+		case 103:
+		case 104:
+		case 105:
+		case 106:
+		case 107:
+			if (ttypc->color) {
+				cc = 1;
+				attr = (bgansitopc[(vt->parms[i - 1] - 100) & 7] << 8) | (attr & 0x0f00);
+				attr |= 0x8000;
+			}
+			break;
 		}
 	} while (i <= vt->parmi);
 
