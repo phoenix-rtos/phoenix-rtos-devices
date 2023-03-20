@@ -674,7 +674,27 @@ void _ttypc_vtf_sgr(ttypc_vt_t *vt)
 		}
 	} while (i <= vt->parmi);
 
-	vt->attr = (ttypc->color) ? ((cc) ? attr : csgr[vt->sgr] << 8) : msgr[vt->sgr] << 8;
+	if (ttypc->color != 0) {
+		if (cc == 0) {
+			attr = csgr[vt->sgr] << 8;
+		}
+
+		if ((vt->sgr & VT_BOLD) != 0) {
+			if ((vt->sgr & VT_INVERSED) != 0) {
+				attr &= ~FG_BRIGHT;
+				attr |= BG_BRIGHT;
+			}
+			else {
+				attr |= FG_BRIGHT;
+				attr &= ~BG_BRIGHT;
+			}
+		}
+
+		vt->attr = attr;
+	}
+	else {
+		vt->attr = msgr[vt->sgr] << 8;
+	}
 }
 
 
