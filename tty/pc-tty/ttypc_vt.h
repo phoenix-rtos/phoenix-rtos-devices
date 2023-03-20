@@ -125,7 +125,7 @@ typedef struct {
 	uint8_t dcsst;           /* Device Control String state machine */
 	uint8_t escst;           /* Escape sequence state machine */
 	uint8_t parmi;           /* Escape sequence parameter index */
-	uint8_t parms[MAXPARMS]; /* Escape sequence parameter array */
+	uint16_t parms[MAXPARMS]; /* Escape sequence parameter array */
 	char tabs[MAXTABS];      /* Table of active tab stops */
 	libtty_common_t tty;     /* Terminal character processing (using libtty) */
 
