@@ -105,7 +105,8 @@ enum {
 	FG_LIGHTMAGENTA = 0x0d,
 	FG_YELLOW       = 0x0e,
 	FG_WHITE        = 0x0f,
-	FG_BLINK        = 0x80
+	FG_BLINK        = 0x80,
+	FG_BRIGHT       = 0x800
 };
 
 
@@ -118,7 +119,8 @@ enum {
 	BG_RED          = 0x40,
 	BG_MAGENTA      = 0x50,
 	BG_BROWN        = 0x60,
-	BG_LIGHTGREY    = 0x70
+	BG_LIGHTGREY    = 0x70,
+	BG_BRIGHT       = 0x8000
 };
 
 
