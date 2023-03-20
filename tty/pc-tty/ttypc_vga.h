@@ -20,6 +20,9 @@
 #include "ttypc_vt.h"
 
 
+/* clang-format off */
+
+
 /* VGA screen memory address */
 enum {
 	VGA_GRAPHICS   = 0xa0000, /* Graphics mode */
@@ -149,6 +152,9 @@ enum {
 	CUR_DEF         = CUR_UNDERLINE
 };
 
+
+
+/* clang-format off */
 
 /* Copies VGA screen buffer to buff */
 extern ssize_t _ttypc_vga_read(volatile uint16_t *vga, uint16_t *buff, size_t n);
