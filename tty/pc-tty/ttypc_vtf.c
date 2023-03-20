@@ -608,7 +608,8 @@ void _ttypc_vtf_sgr(ttypc_vt_t *vt)
 	do {
 		switch (vt->parms[i++]) {
 		case 0: /* Reset to normal attributes */
-			vt->sgr &= VT_INVERSED;
+			vt->sgr = VT_NORMAL;
+			cc = 0;
 			break;
 
 		case 1: /* Bold */
