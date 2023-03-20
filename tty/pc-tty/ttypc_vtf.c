@@ -424,7 +424,7 @@ void _ttypc_vtf_curadr(ttypc_vt_t *vt)
 
 	if (vt->parms[0] < 1)
 		vt->parms[0] = 1;
-	else if (vt->parms[0] > (vt->om) ? vt->bottom - vt->top + 1 : vt->rows)
+	else if (vt->parms[0] > ((vt->om) ? vt->bottom - vt->top + 1 : vt->rows))
 		vt->parms[0] = (vt->om) ? vt->bottom - vt->top + 1 : vt->rows;
 
 	if (vt->parms[1] < 1)
@@ -432,7 +432,7 @@ void _ttypc_vtf_curadr(ttypc_vt_t *vt)
 	else if (vt->parms[1] > vt->cols)
 		vt->parms[1] = vt->cols;
 
-	vt->cpos = (vt->parms[0] - 1) * vt->cols + vt->parms[1] - 1 + (vt->om) ? vt->top * vt->cols : 0;
+	vt->cpos = (vt->parms[0] - 1) * vt->cols + vt->parms[1] - 1 + ((vt->om) ? vt->top * vt->cols : 0);
 	vt->ccol = vt->parms[1] - 1;
 }
 
