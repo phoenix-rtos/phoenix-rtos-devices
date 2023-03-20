@@ -517,7 +517,11 @@ static int ttypc_kbd_waitstatus(ttypc_t *ttypc, unsigned char bit, unsigned char
 
 
 /* Reads a byte from keyboard controller output buffer */
-static int ttypc_kbd_read(ttypc_t *ttypc)
+/*
+ * FIXME: (unused) Function not to be removed, needs to be preserved
+ * for future implementation of ps2-aux (mouse device) support.
+ */
+__attribute__((unused)) static int ttypc_kbd_read(ttypc_t *ttypc)
 {
 	int err;
 
