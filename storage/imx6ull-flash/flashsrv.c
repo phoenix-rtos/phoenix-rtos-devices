@@ -1064,7 +1064,9 @@ int main(int argc, char **argv)
 	kill(getppid(), SIGUSR1);
 
 	LOG("initialized");
-	err = storage_run(4, 2 * _PAGE_SIZE);
+	/* Spawn 31 new worker threads (32 total with the current one) */
+	/* We want to have a lot of workers to avoid server requests being stalled due to lack of free workers */
+	err = storage_run(31, 2 * _PAGE_SIZE);
 
 	return err < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 }
