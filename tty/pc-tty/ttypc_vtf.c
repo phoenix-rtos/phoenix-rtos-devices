@@ -4,8 +4,8 @@
  * Virtual Terminal Functions
  *
  * Copyright 2008 Pawel Pisarczyk
- * Copyright 2012, 2019, 2020 Phoenix Systems
- * Author: Pawel Pisarczyk, Lukasz Kosinski
+ * Copyright 2012, 2019, 2020, 2023 Phoenix Systems
+ * Author: Pawel Pisarczyk, Lukasz Kosinski, Gerard Swiderski
  *
  * %LICENSE%
  */
@@ -284,8 +284,8 @@ void _ttypc_vtf_rc(ttypc_vt_t *vt)
 void _ttypc_vtf_da(ttypc_vt_t *vt)
 {
 	/* 62 - class 2 terminal, c - end of attributes list */
-	static char da[] = "\033[62;c";
-	write(0, da, sizeof(da));
+	static const char da[] = "\033[62;c";
+	ttypc_vt_respond(vt, da);
 }
 
 
@@ -680,17 +680,17 @@ void _ttypc_vtf_sgr(ttypc_vt_t *vt)
 /* Device status reports */
 void _ttypc_vtf_dsr(ttypc_vt_t *vt)
 {
-	static char stat[]  = "\033[0n";     /* Status */
-	static char print[] = "\033[?13n";   /* Printer Unattached */
-	static char udk[]   = "\033[?21n";   /* UDK Locked */
-	static char lang[]  = "\033[?27;1n"; /* North American */
+	static const char stat[] = "\033[0n";     /* Status */
+	static const char print[] = "\033[?13n";  /* Printer Unattached */
+	static const char udk[] = "\033[?21n";    /* UDK Locked */
+	static const char lang[] = "\033[?27;1n"; /* North American */
 	char buff[16];
 	int i = 0;
 
 	switch (vt->parms[0]) {
 	/* Status */
 	case 5:
-		write(0, stat, sizeof(stat));
+		ttypc_vt_respond(vt, stat);
 		break;
 
 	/* Cursor position */
@@ -709,22 +709,22 @@ void _ttypc_vtf_dsr(ttypc_vt_t *vt)
 		buff[i++] = 'R';
 		buff[i++] = '\0';
 
-		write(0, buff, i);
+		ttypc_vt_respond(vt, buff);
 		break;
 
 	/* Printer status */
 	case 15:
-		write(0, print, sizeof(print));
+		ttypc_vt_respond(vt, print);
 		break;
 
 	/* User Defined Keys status */
 	case 25:
-		write(0, udk, sizeof(udk));
+		ttypc_vt_respond(vt, udk);
 		break;
 
 	/* Language status */
 	case 26:
-		write(0, lang, sizeof(lang));
+		ttypc_vt_respond(vt, lang);
 		break;
 
 	default:
@@ -981,8 +981,8 @@ void _ttypc_vtf_resetansi(ttypc_vt_t *vt)
 
 void _ttypc_vtf_reqtparm(ttypc_vt_t *vt)
 {
-	static char tparm[] = "\033[3;1;1;120;120;1;0x";
-	write(0, tparm, sizeof(tparm));
+	static const char tparm[] = "\033[3;1;1;120;120;1;0x";
+	ttypc_vt_respond(vt, tparm);
 }
 
 
