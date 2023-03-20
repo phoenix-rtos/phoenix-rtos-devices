@@ -658,6 +658,13 @@ void _ttypc_vtf_sgr(ttypc_vt_t *vt)
 			}
 			break;
 
+		case 39: /* Reset foreground color to default */
+			if (ttypc->color) {
+				cc = 1;
+				attr = (attr & 0xf000) | (fgansitopc[FG_LIGHTGREY] << 8);
+			}
+			break;
+
 		case 40: /* Background colors */
 		case 41:
 		case 42:
@@ -669,6 +676,13 @@ void _ttypc_vtf_sgr(ttypc_vt_t *vt)
 			if (ttypc->color) {
 				cc = 1;
 				attr = (bgansitopc[(vt->parms[i - 1] - 40) & 7] << 8) | (attr & 0x0f00);
+			}
+			break;
+
+		case 49: /* Reset background color to default */
+			if (ttypc->color) {
+				cc = 1;
+				attr = (bgansitopc[BG_BLACK] << 8) | (attr & 0x0f00);
 			}
 			break;
 
