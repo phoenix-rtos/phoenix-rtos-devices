@@ -4,8 +4,8 @@
  * Virtual Terminal (based on FreeBSD 4.4 pcvt)
  *
  * Copyright 2006-2008 Pawel Pisarczyk
- * Copyright 2019, 2020 Phoenix Systems
- * Author: Pawel Pisarczyk, Lukasz Kosinski
+ * Copyright 2019, 2020, 2023 Phoenix Systems
+ * Author: Pawel Pisarczyk, Lukasz Kosinski, Gerard Swiderski
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -144,6 +144,10 @@ extern ssize_t ttypc_vt_read(ttypc_vt_t *vt, int mode, char *buff, size_t len);
 
 /* Write characters to virtual terminal */
 extern ssize_t ttypc_vt_write(ttypc_vt_t *vt, int mode, const char *buff, size_t len);
+
+
+/* Respond to requests for a terminal reports */
+extern int ttypc_vt_respond(ttypc_vt_t *vt, const char *buff);
 
 
 /* Polls virtual terminal status */

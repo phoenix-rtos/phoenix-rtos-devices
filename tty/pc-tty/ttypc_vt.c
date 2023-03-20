@@ -4,8 +4,8 @@
  * Virtual Terminal (based on FreeBSD 4.4 pcvt)
  *
  * Copyright 2007-2008 Pawel Pisarczyk
- * Copyright 2012, 2018, 2019, 2020 Phoenix Systems
- * Author: Pawel Pisarczyk, Lukasz Kosinski
+ * Copyright 2012, 2018, 2019, 2020, 2023 Phoenix Systems
+ * Author: Pawel Pisarczyk, Lukasz Kosinski, Gerard Swiderski
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -524,7 +524,7 @@ static void _ttypc_vt_sput(ttypc_vt_t *vt, char c)
 			case '8':
 			case '9':   /* Parameters */
 				vt->parms[vt->parmi] *= 10;
-				vt->parms[vt->parmi] += (c -'0');
+				vt->parms[vt->parmi] += (c - '0');
 				break;
 
 			case ';':   /* Next parameter */
@@ -620,6 +620,16 @@ ssize_t ttypc_vt_read(ttypc_vt_t *vt, int mode, char *buff, size_t len)
 ssize_t ttypc_vt_write(ttypc_vt_t *vt, int mode, const char *buff, size_t len)
 {
 	return libtty_write(&vt->tty, buff, len, mode);
+}
+
+
+int ttypc_vt_respond(ttypc_vt_t *vt, const char *buff)
+{
+	int err = 0;
+	while ((*buff != '\0') && (err == 0)) {
+		err = libtty_putchar(&vt->tty, *(buff++), NULL);
+	}
+	return err;
 }
 
 
