@@ -19,7 +19,7 @@
 #include <errno.h>
 #include <math.h>
 
-#include "adc-api.h"
+#include "adc-api-ad7779.h"
 
 #define MIDSCALE        0x800000
 #define FULLSCALE       0xFFFFFF

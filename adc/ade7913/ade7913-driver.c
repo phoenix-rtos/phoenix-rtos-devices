@@ -30,7 +30,7 @@
 #include <board_config.h>
 
 #include "ade7913.h"
-#include "adc-api.h"
+#include "adc-api-ade7913.h"
 #include "flexpwm.h"
 
 

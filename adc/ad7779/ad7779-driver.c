@@ -26,7 +26,7 @@
 #include <phoenix/arch/imxrt.h>
 
 #include "ad7779.h"
-#include "adc-api.h"
+#include "adc-api-ad7779.h"
 
 #define MAX_INIT_TRIES              (4)
 
