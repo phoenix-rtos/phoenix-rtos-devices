@@ -25,15 +25,18 @@ static struct {
 	size_t sectorsz;
 } hostflash_common;
 
-ssize_t hostflash_read(unsigned int addr, void *buff, size_t bufflen)
+
+ssize_t hostflash_read(struct _meterfs_devCtx_t *devCtx, off_t offs, void *buff, size_t bufflen)
 {
 	ssize_t stat;
 	int readsz = 0;
 
-	if (addr + bufflen > hostflash_common.flashsz)
+	(void)devCtx;
+
+	if (offs + bufflen > hostflash_common.flashsz)
 		return -EINVAL;
 
-	while ((stat = pread(hostflash_common.filefd, (void *)((char *)buff + readsz), bufflen - readsz, addr + readsz)) != 0) {
+	while ((stat = pread(hostflash_common.filefd, (void *)((char *)buff + readsz), bufflen - readsz, offs + readsz)) != 0) {
 		if (stat < 0) {
 			if (errno == EINTR)
 				continue;
@@ -50,14 +53,16 @@ ssize_t hostflash_read(unsigned int addr, void *buff, size_t bufflen)
 }
 
 
-ssize_t hostflash_write(unsigned int addr, const void *buff, size_t bufflen)
+ssize_t hostflash_write(struct _meterfs_devCtx_t *devCtx, off_t offs, const void *buff, size_t bufflen)
 {
 	char tempTab[256];
 	size_t wrote = 0, i;
 	int len;
 	ssize_t stat, readsz;
 
-	if (addr + bufflen > hostflash_common.flashsz)
+	(void)devCtx;
+
+	if (offs + bufflen > hostflash_common.flashsz)
 		return -EINVAL;
 
 	while (wrote != bufflen) {
@@ -66,7 +71,7 @@ ssize_t hostflash_write(unsigned int addr, const void *buff, size_t bufflen)
 		else
 			len = bufflen - wrote;
 
-		readsz = hostflash_read(addr + wrote, tempTab, len);
+		readsz = hostflash_read(devCtx, offs + wrote, tempTab, len);
 		if (readsz <= 0)
 			return readsz;
 
@@ -75,7 +80,7 @@ ssize_t hostflash_write(unsigned int addr, const void *buff, size_t bufflen)
 
 		len = 0;
 		while (len != readsz) {
-			stat = pwrite(hostflash_common.filefd, &tempTab, readsz - len, addr + wrote + len);
+			stat = pwrite(hostflash_common.filefd, &tempTab, readsz - len, offs + wrote + len);
 			if (stat < 0) {
 				if (errno == EINTR)
 					continue;
@@ -91,7 +96,7 @@ ssize_t hostflash_write(unsigned int addr, const void *buff, size_t bufflen)
 }
 
 
-int hostflash_sectorErase(unsigned int addr)
+int hostflash_sectorErase(struct _meterfs_devCtx_t *devCtx, off_t offs)
 {
 	char tempTab[256];
 	ssize_t len = sizeof(tempTab);
@@ -99,43 +104,17 @@ int hostflash_sectorErase(unsigned int addr)
 	unsigned int sectorAddr;
 	int stat;
 
+	(void)devCtx;
+
 	memset(tempTab, 0xff, sizeof(tempTab));
 
-	if (addr >= hostflash_common.flashsz)
+	if (offs >= hostflash_common.flashsz)
 		return -EINVAL;
 
-	sectorAddr = (addr / hostflash_common.sectorsz) * hostflash_common.sectorsz;
+	sectorAddr = (offs / hostflash_common.sectorsz) * hostflash_common.sectorsz;
 
 	while (erased != hostflash_common.sectorsz) {
 		stat = pwrite(hostflash_common.filefd, tempTab, len, sectorAddr + erased);
-		if (stat < 0) {
-			if (errno == EINTR)
-				continue;
-
-			return stat;
-		}
-
-		len -= stat;
-		if (len == 0)
-			len = sizeof(tempTab);
-
-		erased += stat;
-	}
-
-	return 0;
-}
-
-
-int hostflash_chipErase(void)
-{
-	char tempTab[256];
-	size_t erased = 0, len = sizeof(tempTab);
-	ssize_t stat;
-
-	memset(tempTab, 0xff, sizeof(tempTab));
-
-	while (erased != hostflash_common.flashsz) {
-		stat = pwrite(hostflash_common.filefd, tempTab, len, erased);
 		if (stat < 0) {
 			if (errno == EINTR)
 				continue;

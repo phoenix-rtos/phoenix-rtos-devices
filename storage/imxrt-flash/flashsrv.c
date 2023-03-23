@@ -177,87 +177,63 @@ static int flashsrv_chipErase(unsigned char fID)
 
 /* Callbacks to meterfs - wrappers for basic flash functions */
 
-static ssize_t flashsrv_fsWritef0(unsigned int addr, const void *buff, size_t bufflen)
+static ssize_t flashsrv_fsWritef0(struct _meterfs_devCtx_t *devCtx, off_t offs, const void *buff, size_t bufflen)
 {
+	(void)devCtx;
+
 	flash_memory_t *flash_memory = flashsrv_common.flash_memories + 0;
 
 	if (flash_memory->fStatus == flash_memory_unactive) {
 		return -ENODEV;
 	}
 
-	return flash_directBytesWrite(&flash_memory->ctx, addr, buff, bufflen);
+	return flash_directBytesWrite(&flash_memory->ctx, offs, buff, bufflen);
 }
 
 
-static ssize_t flashsrv_fsWritef1(unsigned int addr, const void *buff, size_t bufflen)
+static ssize_t flashsrv_fsWritef1(struct _meterfs_devCtx_t *devCtx, off_t offs, const void *buff, size_t bufflen)
 {
+	(void)devCtx;
+
 	flash_memory_t *flash_memory = flashsrv_common.flash_memories + 1;
 
 	if (flash_memory->fStatus == flash_memory_unactive) {
 		return -ENODEV;
 	}
 
-	return flash_directBytesWrite(&flash_memory->ctx, addr, buff, bufflen);
+	return flash_directBytesWrite(&flash_memory->ctx, offs, buff, bufflen);
 }
 
 
-static ssize_t flashsrv_fsReadf0(unsigned int addr, void *buff, size_t bufflen)
+static ssize_t flashsrv_fsReadf0(struct _meterfs_devCtx_t *devCtx, off_t offs, void *buff, size_t bufflen)
 {
-	return flashsrv_read(0, addr, buff, bufflen);
+	(void)devCtx;
+
+	return flashsrv_read(0, offs, buff, bufflen);
 }
 
 
-static ssize_t flashsrv_fsReadf1(unsigned int addr, void *buff, size_t bufflen)
+static ssize_t flashsrv_fsReadf1(struct _meterfs_devCtx_t *devCtx, off_t offs, void *buff, size_t bufflen)
 {
-	return flashsrv_read(1, addr, buff, bufflen);
+	(void)devCtx;
+
+	return flashsrv_read(1, offs, buff, bufflen);
 }
 
 
-static int flashsrv_fsEraseSectorf0(unsigned int addr)
+static int flashsrv_fsEraseSectorf0(struct _meterfs_devCtx_t *devCtx, off_t offs)
 {
-	return flashsrv_eraseSector(0, addr);
+	(void)devCtx;
+
+	return flashsrv_eraseSector(0, offs);
 }
 
 
-static int flashsrv_fsEraseSectorf1(unsigned int addr)
+static int flashsrv_fsEraseSectorf1(struct _meterfs_devCtx_t *devCtx, off_t offs)
 {
-	return flashsrv_eraseSector(1, addr);
-}
+	(void)devCtx;
 
-
-static int flashsrv_fsPartitionErase(uint8_t fID)
-{
-	int i, err;
-	uint32_t sectorsNb;
-	flash_memory_t *flash_memory;
-
-	if (FLASH_MEMORIES_NO <= fID) {
-		return -EINVAL;
-	}
-
-	flash_memory = flashsrv_common.flash_memories + fID;
-	sectorsNb = flash_memory->parts[flash_memory->currPart].pHeader->size / flash_memory->ctx.properties.sector_size;
-
-	for (i = 0; i < sectorsNb; ++i) {
-		err = flashsrv_eraseSector(fID, flash_memory->parts[flash_memory->currPart].pHeader->offset + flash_memory->ctx.properties.sector_size * i);
-		if (err < 0) {
-			return err;
-		}
-	}
-
-	return EOK;
-}
-
-
-static int flashsrv_fsPartitionErasef0(void)
-{
-	return flashsrv_fsPartitionErase(0);
-}
-
-
-static int flashsrv_fsPartitionErasef1(void)
-{
-	return flashsrv_fsPartitionErase(1);
+	return flashsrv_eraseSector(1, offs);
 }
 
 
@@ -632,13 +608,11 @@ static int flashsrv_initMeterfs(flashsrv_partition_t *part)
 	if (part->fID == 0) {
 		ctx->read = flashsrv_fsReadf0;
 		ctx->write = flashsrv_fsWritef0;
-		ctx->partitionErase = flashsrv_fsPartitionErasef0;
 		ctx->eraseSector = flashsrv_fsEraseSectorf0;
 	}
 	else if (part->fID == 1) {
 		ctx->read = flashsrv_fsReadf1;
 		ctx->write = flashsrv_fsWritef1;
-		ctx->partitionErase = flashsrv_fsPartitionErasef1;
 		ctx->eraseSector = flashsrv_fsEraseSectorf1;
 	}
 

@@ -107,7 +107,6 @@ int hostflashsrv_init(size_t *flashsz, size_t *sectorsz, const char *fileName)
 	hostflashsrv_common.ctx.read = hostflash_read;
 	hostflashsrv_common.ctx.write = hostflash_write;
 	hostflashsrv_common.ctx.eraseSector = hostflash_sectorErase;
-	hostflashsrv_common.ctx.partitionErase = hostflash_chipErase;
 	hostflashsrv_common.ctx.powerCtrl = NULL;
 
 	if (meterfs_init(&hostflashsrv_common.ctx) < 0) {
