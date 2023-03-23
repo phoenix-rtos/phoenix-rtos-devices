@@ -13,17 +13,16 @@
 #define HOST_FLASH_H
 
 #include <sys/types.h>
-
-ssize_t hostflash_read(unsigned int addr, void *buff, size_t bufflen);
-
-
-ssize_t hostflash_write(unsigned int addr, const void *buff, size_t bufflen);
+#include <meterfs.h>
 
 
-int hostflash_sectorErase(unsigned int addr);
+ssize_t hostflash_read(struct _meterfs_devCtx_t *devCtx, off_t offs, void *buff, size_t bufflen);
 
 
-int hostflash_chipErase(void);
+ssize_t hostflash_write(struct _meterfs_devCtx_t *devCtx, off_t offs, const void *buff, size_t bufflen);
+
+
+int hostflash_sectorErase(struct _meterfs_devCtx_t *devCtx, off_t offs);
 
 
 int hostflash_init(size_t *flashsz, size_t *sectorsz, const char *fileName);

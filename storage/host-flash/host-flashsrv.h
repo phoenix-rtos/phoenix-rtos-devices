@@ -13,8 +13,8 @@
 #define HOST_FLASHSRV_H
 
 #include <sys/types.h>
-#include <stdint.h>
 #include <meterfs.h>
+
 
 int hostflashsrv_readFile(id_t *id, off_t off, char *buff, size_t bufflen);
 
