@@ -7,7 +7,7 @@
 NAME := ad7779
 LOCAL_PATH := $(call my-dir)
 SRCS := $(addprefix $(LOCAL_PATH), ad7779.c ad7779-driver.c)
-LOCAL_HEADERS := adc-api.h
+LOCAL_HEADERS := adc-api-ad7779.h
 
 ifneq (, $(findstring imxrt, $(TARGET)))
   SRCS += $(wildcard $(LOCAL_PATH)imxrt/*.c)
