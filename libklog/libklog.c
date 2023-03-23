@@ -24,6 +24,8 @@
 
 #include "libklog.h"
 
+#define ERROR_MSG "libklog: Fatal error, exiting\n"
+
 static struct {
 	char __attribute__((aligned(8))) stack[2048];
 	libklog_write_t ttywrite;
@@ -74,10 +76,13 @@ static void pumpthr(void *arg)
 	while (1) {
 		ret = read(fd, buf, sizeof(buf));
 		if (ret <= 0) {
-			if (errno == -EINTR || errno == -EPIPE)
+			if ((ret == 0) || (errno == EINTR) || (errno == EPIPE)) {
 				continue;
-			else
+			}
+			else {
+				libklog_common.ttywrite(ERROR_MSG, sizeof(ERROR_MSG));
 				break;
+			}
 		}
 		libklog_common.ttywrite(buf, ret);
 	}
