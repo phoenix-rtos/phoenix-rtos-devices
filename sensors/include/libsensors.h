@@ -20,6 +20,7 @@
 
 /* Available sensor types */
 
+#define NO_SENSOR         0
 #define SENSOR_TYPE_ACCEL (1 << 0)
 #define SENSOR_TYPE_BARO  (1 << 1)
 #define SENSOR_TYPE_GPS   (1 << 2)
