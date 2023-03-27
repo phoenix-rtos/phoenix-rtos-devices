@@ -26,6 +26,6 @@ include $(ALL_MAKES)
 
 # create generic targets
 .PHONY: all install clean
-all: $(DEFAULT_COMPONENTS)
-install: $(patsubst %,%-install,$(DEFAULT_COMPONENTS))
-clean: $(patsubst %,%-clean,$(ALL_COMPONENTS))
+all: $(DEFAULT_COMPONENTS) libsensors libsimsensor
+install: $(patsubst %,%-install,$(DEFAULT_COMPONENTS) libsensors libsimsensor)
+clean: $(patsubst %,%-clean,$(ALL_COMPONENTS) libsensors libsimsensor)
