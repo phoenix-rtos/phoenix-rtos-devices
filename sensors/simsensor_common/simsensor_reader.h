@@ -20,17 +20,33 @@
 #include "event_queue.h"
 
 
-/* Object of simsensor reader */
-typedef struct simsens_reader_t simsens_reader_t;
+typedef struct {
+	time_t firstTimestamp;
+	time_t lastTimestamp;
+	int loops;
+} simsens_time_t;
 
 
-simsens_reader_t *reader_open(const char *path, int sensor_types, time_t time_horizon);
+typedef struct {
+	FILE *scenarioFile;
+	int sensorTypes;
+
+	time_t timeHorizon;
+
+	char *lineBuf; /* Buffer for storing line from file */
+	size_t bufLen;
+
+	simsens_time_t timeStruct;
+} simsens_reader_t;
 
 
-void reader_close(simsens_reader_t *reader);
+extern int reader_open(simsens_reader_t *rd, const char *path, int sensorTypes, time_t timeHorizon);
 
 
-int32_t reader_read(simsens_reader_t *rd, event_queue_t *queue);
+extern void reader_close(simsens_reader_t *reader);
+
+
+extern int32_t reader_read(simsens_reader_t *rd, event_queue_t *queue);
 
 
 #endif

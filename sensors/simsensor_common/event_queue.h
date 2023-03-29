@@ -14,16 +14,27 @@
 #ifndef EVENT_QUEUE_H
 #define EVENT_QUEUE_H
 
+#include <stdbool.h>
+#include <time.h>
+
 #include <libsensors.h>
 
 
-typedef struct event_queue_t event_queue_t;
+typedef struct {
+	sensor_event_t *queue;
+	unsigned int capacity; /* queue max length */
+	unsigned int len;      /* current length of queue */
+
+	sensor_event_t *head;
+	sensor_event_t *tail;
+} event_queue_t;
 
 
-/* Initiates event queue. Returns ready event_queue_t object. */
-extern event_queue_t *eventQueue_init(unsigned int elem_cnt);
+/* Initiates `q` as an event queue. If succeeded returns 0. In other case -1. */
+extern int eventQueue_init(event_queue_t *q, unsigned int elem_cnt);
 
 
+/* Deallocates queue pointed by `q` */
 extern void eventQueue_free(event_queue_t *q);
 
 
@@ -31,7 +42,8 @@ extern void eventQueue_free(event_queue_t *q);
 extern int eventQueue_enqueue(event_queue_t *q, const sensor_event_t *event);
 
 
-extern int eventQueue_canEnqueue(const event_queue_t *q);
+/* Returns information if the queue `q` is full. */
+extern bool eventQueue_full(const event_queue_t *q);
 
 
 /* Returns and removes the last element from queue. If there is no element in queue, then returns NULL. */
