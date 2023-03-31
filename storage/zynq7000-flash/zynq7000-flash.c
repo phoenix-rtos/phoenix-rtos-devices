@@ -44,7 +44,7 @@ static ssize_t flash_read(oid_t *oid, offs_t offs, void *buff, size_t len)
 	ssize_t res = -ENOSYS;
 	storage_t *strg = storage_get(GET_STORAGE_ID(oid->id));
 
-	if (strg == NULL || strg->dev == NULL || (offs + len) >= strg->size || buff == NULL) {
+	if (strg == NULL || strg->dev == NULL || (offs + len) > strg->size || buff == NULL) {
 		res = -EINVAL;
 	}
 	else if (len == 0) {
@@ -74,7 +74,7 @@ static ssize_t flash_write(oid_t *oid, offs_t offs, const void *buff, size_t len
 	ssize_t res = -ENOSYS;
 	storage_t *strg = storage_get(GET_STORAGE_ID(oid->id));
 
-	if (strg == NULL || strg->dev == NULL || (offs + len) >= strg->size) {
+	if (strg == NULL || strg->dev == NULL || (offs + len) > strg->size) {
 		res = -EINVAL;
 	}
 	else if (len == 0) {
