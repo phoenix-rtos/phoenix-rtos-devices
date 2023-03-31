@@ -248,7 +248,7 @@ static int flashsrv_devErase(const flash_i_devctl_t *idevctl)
 
 	if (strg == NULL || strg->dev == NULL || strg->dev->ctx == NULL || strg->dev->mtd == NULL || strg->dev->mtd->ops == NULL ||
 			strg->dev->mtd->ops->block_markBad == NULL || strg->dev->mtd->ops->block_isBad == NULL || strg->dev->mtd->ops->erase == NULL ||
-			(offs + size) >= strg->size) {
+			(offs + size) > strg->size) {
 		return -EINVAL;
 	}
 
@@ -271,7 +271,7 @@ static int flashsrv_devReadMeta(flash_i_devctl_t *idevctl, void *data)
 	TRACE("META read off: %lld, size: %d, ptr: %p", offs, size, data);
 
 	if (strg == NULL || strg->dev == NULL || strg->dev->ctx == NULL || strg->dev->mtd == NULL || strg->dev->mtd->ops == NULL ||
-			strg->dev->mtd->ops->meta_read == NULL || (offs + size) >= strg->size || data == NULL) {
+			strg->dev->mtd->ops->meta_read == NULL || (offs + size) > strg->size || data == NULL) {
 		return -EINVAL;
 	}
 
@@ -295,7 +295,7 @@ static int flashsrv_devWriteMeta(flash_i_devctl_t *idevctl, void *data)
 	TRACE("META write off: %lld, size: %d, ptr: %p", offs, size, data);
 
 	if (strg == NULL || strg->dev == NULL || strg->dev->ctx == NULL || strg->dev->mtd == NULL || strg->dev->mtd->ops == NULL ||
-			strg->dev->mtd->ops->meta_write == NULL || (offs + size) >= strg->size || data == NULL) {
+			strg->dev->mtd->ops->meta_write == NULL || (offs + size) > strg->size || data == NULL) {
 		return -EINVAL;
 	}
 
