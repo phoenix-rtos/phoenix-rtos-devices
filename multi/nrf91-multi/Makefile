@@ -9,8 +9,8 @@ LOCAL_PATH := $(call my-dir)
 NAME := nrf91-multi
 SRCS := $(wildcard $(LOCAL_PATH)*.c)
 LOCAL_HEADERS := nrf91-multi.h
-DEP_LIBS := libtty
-LIBS := libdummyfs
+DEP_LIBS := libtty libklog
+LIBS := libdummyfs libklog
 # CFLAGS += -O0 -ggdb3 #DEBUG CFLAGS
 
 include $(binary.mk)

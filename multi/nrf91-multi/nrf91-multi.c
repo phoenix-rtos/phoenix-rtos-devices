@@ -16,10 +16,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <paths.h>
 #include <stdint.h>
 #include <sys/threads.h>
 #include <sys/msg.h>
 #include <sys/pwman.h>
+
+#include <libklog.h>
 
 #include "common.h"
 
@@ -41,8 +44,7 @@ struct {
 
 static ssize_t console_write(const char *str, size_t len, int mode)
 {
-	tty_consoleLog(str);
-	return (ssize_t)len;
+	return tty_log(str, len);
 }
 
 
@@ -102,32 +104,38 @@ static void thread(void *arg)
 }
 
 
+static void log_write(const char *buff, size_t len)
+{
+	(void)console_write(buff, len, 0);
+}
+
+
 int main(void)
 {
 	int i;
 	oid_t oid;
-	static const char welcome[] = "multidrv: Started\n";
-	unsigned int ttyConsolePort;
 
 	priority(THREADS_PRIORITY);
 
-	portCreate(&ttyConsolePort);
 	portCreate(&common.port);
 
 	fs_init();
-	/* Wait for the filesystem */
-	while (lookup("/", NULL, &oid) < 0)
-		usleep(10000);
+	tty_init();
+	libklog_init(log_write);
 
-	tty_init(&ttyConsolePort);
+
+	/* Do this after klog init to keep shell from overtaking klog */
+	tty_createDev();
 
 	/* it doesn't work! it crashes here, probably because of no dummyfs */
 	portRegister(common.port, "/multi", &oid);
 
-	console_write(welcome, sizeof(welcome) - 1, 0);
+	// printf("multidrv: Started\n");
+	// printf("ttyConsolePort = %d\n", ttyConsolePort);
 
-	for (i = 0; i < THREADS_NO - 1; ++i)
+	for (i = 0; i < THREADS_NO - 1; ++i) {
 		beginthread(thread, THREADS_PRIORITY, common.stack[i], STACKSZ, (void *)i);
+	}
 
 	thread((void *)i);
 

@@ -16,6 +16,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <paths.h>
 #include <posix/utils.h>
 #include <sys/pwman.h>
 #include <sys/interrupt.h>
@@ -37,12 +38,12 @@
 
 #define TTY_CNT (TTY0 + TTY1 + TTY2 + TTY3)
 
-#define THREAD_POOL 3
+#define THREAD_POOL    3
 #define THREAD_STACKSZ 768
-#define THREAD_PRIO 1
+#define THREAD_PRIO    1
 
 typedef struct {
-	char stack[512] __attribute__ ((aligned(8)));
+	char stack[512] __attribute__((aligned(8)));
 
 	volatile unsigned int *base;
 	volatile int enabled;
@@ -83,18 +84,49 @@ static const int uartConfig[] = { TTY0, TTY1, TTY2, TTY3 };
 static const int uartPos[] = { TTY0_POS, TTY1_POS, TTY2_POS, TTY3_POS };
 
 
-enum { uarte_startrx = 0, uarte_stoprx, uarte_starttx, uarte_stoptx, uarte_flushrx = 11,
-uarte_events_cts = 64, uarte_events_ncts, uarte_events_rxdrdy, uarte_events_endrx = 68, uarte_events_txdrdy = 71, uarte_events_endtx, uarte_events_error, uarte_events_rxto = 81, uarte_events_rxstarted = 83, uarte_events_txstarted, uarte_events_txstopped = 86,
-uarte_inten = 192, uarte_intenset, uarte_intenclr, uarte_errorsrc = 288, uarte_enable = 320, 
-uarte_psel_rts = 322, uarte_psel_txd, uarte_psel_cts, uarte_psel_rxd, uarte_baudrate = 329, 
-uarte_rxd_ptr = 333, uarte_rxd_maxcnt, uarte_rxd_amount, uarte_txd_ptr = 337, uarte_txd_maxcnt, uarte_txd_amount, 
-uarte_config = 347 };
+enum { uarte_startrx = 0,
+	uarte_stoprx,
+	uarte_starttx,
+	uarte_stoptx,
+	uarte_flushrx = 11,
+	uarte_events_cts = 64,
+	uarte_events_ncts,
+	uarte_events_rxdrdy,
+	uarte_events_endrx = 68,
+	uarte_events_txdrdy = 71,
+	uarte_events_endtx,
+	uarte_events_error,
+	uarte_events_rxto = 81,
+	uarte_events_rxstarted = 83,
+	uarte_events_txstarted,
+	uarte_events_txstopped = 86,
+	uarte_inten = 192,
+	uarte_intenset,
+	uarte_intenclr,
+	uarte_errorsrc = 288,
+	uarte_enable = 320,
+	uarte_psel_rts = 322,
+	uarte_psel_txd,
+	uarte_psel_cts,
+	uarte_psel_rxd,
+	uarte_baudrate = 329,
+	uarte_rxd_ptr = 333,
+	uarte_rxd_maxcnt,
+	uarte_rxd_amount,
+	uarte_txd_ptr = 337,
+	uarte_txd_maxcnt,
+	uarte_txd_amount,
+	uarte_config = 347 };
 
 
-enum { baud_9600 = 0x00275000, baud_115200 = 0x01D60000 };
+enum { baud_9600 = 0x00275000,
+	baud_115200 = 0x01D60000 };
 
 
-enum { uart0 = 0, uart1, uart2, uart3 };
+enum { uart0 = 0,
+	uart1,
+	uart2,
+	uart3 };
 
 
 static int tty_txready(tty_ctx_t *ctx)
@@ -129,10 +161,9 @@ static int tty_irqHandler(unsigned int n, void *arg)
 		/* disable endtx interrupt and clear flag */
 		*(ctx->base + uarte_events_endtx) = 0u;
 		*(ctx->base + uarte_intenclr) = 0x100;
-		*(ctx->base + uarte_startrx) = 1u;
 	}
 
-	if (ctx->base + uarte_events_endrx) {
+	if (*(ctx->base + uarte_events_endrx)) {
 		/* clear endrx event flag */
 		*(ctx->base + uarte_events_endrx) = 0u;
 		ctx->cnt = 0;
@@ -152,7 +183,8 @@ static void tty_irqthread(void *arg)
 
 	while (1) {
 		mutexLock(ctx->irqlock);
-		while ((!ctx->rxready && !((libtty_txready(&ctx->tty_common) || keptidle))) || !(*(ctx->base + uarte_enable) & 0x08))
+		// there was no tty_txready!!!
+		while ((!ctx->rxready && !(libtty_txready(&ctx->tty_common) || keptidle)) || !(*(ctx->base + uarte_enable) & 0x08))
 			condWait(ctx->cond, ctx->irqlock, 0);
 		mutexUnlock(ctx->irqlock);
 
@@ -223,7 +255,7 @@ static void _tty_configure(tty_ctx_t *ctx, unsigned char parity, char enable)
 	}
 	/* TODO: add pins configuartion and selecting them, now it's done in plo
 	I have to ask about it coz can't find gpio configuration in tty/uart/spi drivers for stm */
-	//uart_configPins(minor);
+	// uart_configPins(minor);
 	/* Select pins */
 	// *(ctx->base + uarte_psel_txd) = uartInfo[minor].txpin;
 	// *(ctx->base + uarte_psel_rxd) = uartInfo[minor].rxpin;
@@ -291,12 +323,12 @@ static void tty_setBaudrate(void *uart, speed_t baud)
 
 	if (ctx->baud != baudr) {
 		switch (baudr) {
-		case 9600:
-			*(ctx->base + uarte_baudrate) = baud_9600;
-			break;
-		case 115200:
-		default:
-			*(ctx->base + uarte_baudrate) = baud_115200;
+			case 9600:
+				*(ctx->base + uarte_baudrate) = baud_9600;
+				break;
+			case 115200:
+			default:
+				*(ctx->base + uarte_baudrate) = baud_115200;
 		}
 		dataBarier();
 
@@ -342,52 +374,52 @@ static void tty_thread(void *arg)
 		priority(msg.priority);
 
 		switch (msg.type) {
-		case mtOpen:
-		case mtClose:
-			if ((ctx = tty_getCtx(msg.i.io.oid.id)) == NULL) {
-				msg.o.io.err = -EINVAL;
+			case mtOpen:
+			case mtClose:
+				if ((ctx = tty_getCtx(msg.i.io.oid.id)) == NULL) {
+					msg.o.io.err = -EINVAL;
+					break;
+				}
+
+				msg.o.io.err = EOK;
 				break;
-			}
 
-			msg.o.io.err = EOK;
-			break;
-
-		case mtWrite:
-			if ((ctx = tty_getCtx(msg.i.io.oid.id)) == NULL) {
-				msg.o.io.err = -EINVAL;
+			case mtWrite:
+				if ((ctx = tty_getCtx(msg.i.io.oid.id)) == NULL) {
+					msg.o.io.err = -EINVAL;
+					break;
+				}
+				msg.o.io.err = libtty_write(&ctx->tty_common, msg.i.data, msg.i.size, msg.i.io.mode);
 				break;
-			}
-			msg.o.io.err = libtty_write(&ctx->tty_common, msg.i.data, msg.i.size, msg.i.io.mode);
-			break;
 
-		case mtRead:
-			if ((ctx = tty_getCtx(msg.i.io.oid.id)) == NULL) {
-				msg.o.io.err = -EINVAL;
+			case mtRead:
+				if ((ctx = tty_getCtx(msg.i.io.oid.id)) == NULL) {
+					msg.o.io.err = -EINVAL;
+					break;
+				}
+				msg.o.io.err = libtty_read(&ctx->tty_common, msg.o.data, msg.o.size, msg.i.io.mode);
 				break;
-			}
-			msg.o.io.err = libtty_read(&ctx->tty_common, msg.o.data, msg.o.size, msg.i.io.mode);
-			break;
 
-		case mtGetAttr:
-			if ((msg.i.attr.type != atPollStatus) || ((ctx = tty_getCtx(msg.i.attr.oid.id)) == NULL)) {
-				msg.o.attr.err = -EINVAL;
+			case mtGetAttr:
+				if ((msg.i.attr.type != atPollStatus) || ((ctx = tty_getCtx(msg.i.attr.oid.id)) == NULL)) {
+					msg.o.attr.err = -EINVAL;
+					break;
+				}
+				msg.o.attr.val = libtty_poll_status(&ctx->tty_common);
+				msg.o.attr.err = EOK;
 				break;
-			}
-			msg.o.attr.val = libtty_poll_status(&ctx->tty_common);
-			msg.o.attr.err = EOK;
-			break;
 
-		case mtDevCtl:
-			in_data = ioctl_unpack(&msg, &request, &id);
-			if ((ctx = tty_getCtx(id)) == NULL) {
-				err = -EINVAL;
-			}
-			else {
-				pid = ioctl_getSenderPid(&msg);
-				err = libtty_ioctl(&ctx->tty_common, pid, request, in_data, &out_data);
-			}
-			ioctl_setResponse(&msg, request, err, out_data);
-			break;
+			case mtDevCtl:
+				in_data = ioctl_unpack(&msg, &request, &id);
+				if ((ctx = tty_getCtx(id)) == NULL) {
+					err = -EINVAL;
+				}
+				else {
+					pid = ioctl_getSenderPid(&msg);
+					err = libtty_ioctl(&ctx->tty_common, pid, request, in_data, &out_data);
+				}
+				ioctl_setResponse(&msg, request, err, out_data);
+				break;
 		}
 
 		msgRespond(uart_common.port, &msg, rid);
@@ -397,13 +429,27 @@ static void tty_thread(void *arg)
 }
 
 
-void tty_consoleLog(const char *str)
+ssize_t tty_log(const char *str, size_t len)
 {
-	libtty_write(&tty_getCtx(0)->tty_common, str, strlen(str), 0);
+	return libtty_write(&tty_getCtx(0)->tty_common, str, len, 0);
 }
 
 
-int tty_init(unsigned int *port)
+void tty_createDev(void)
+{
+#if CONSOLE_IS_TTY
+	oid_t oid;
+
+	oid.port = uart_common.port;
+	oid.id = 0;
+	// create_dev(&oid, "tty");
+	create_dev(&oid, _PATH_TTY);
+	create_dev(&oid, _PATH_CONSOLE);
+#endif
+}
+
+
+int tty_init(void)
 {
 	unsigned int uart, i;
 	char fname[] = "uartx";
@@ -415,7 +461,7 @@ int tty_init(unsigned int *port)
 	/* TODO: add pins! */
 	/* Supported configuartions - uart0/uart2 + uart1/uart3
 	   sizes of uart dma memory regions are set to max value of txd_maxcnt/rxd_maxcnt register (8191)
-	   uart0 pins - default uart instance for nrf9160 dk, connected to VCOM0 
+	   uart0 pins - default uart instance for nrf9160 dk, connected to VCOM0
 	   uart1 pins -second uart interface on nrf9160 dk called nRF91_UART_2 on the board's schematic
 	   uart0 dma - ram7: section 2 and 3
 	   uart1 dma - ram7: section 0 and 1 */
@@ -432,18 +478,11 @@ int tty_init(unsigned int *port)
 		{ (void *)0x5000B000, uarte3_irq + 16, (volatile char *)0x20038000, (volatile char *)0x2003A000 }
 	};
 
-	if (port == NULL)
-		portCreate(&uart_common.port);
-	else
-		uart_common.port = *port;
+	portCreate(&uart_common.port);
+	// oid.port = uart_common.port;
 
-	oid.port = uart_common.port;
-	common_port = 0;
-#if CONSOLE_IS_TTY
-	oid.id = 0;
-	create_dev(&oid, "tty");
-	// create_dev(&oid, "/dev/console");
-#endif
+	//     oid.id = 0;
+	//    create_dev(&oid, "tty");
 
 	for (uart = uart0; uart <= uart3; uart++) {
 		if (!uartConfig[uart])
@@ -486,7 +525,7 @@ int tty_init(unsigned int *port)
 		ctx->enabled = 1;
 
 		fname[sizeof(fname) - 2] = '0' + uart - uart0;
-		oid.id = uart - uart0; //+1
+		oid.id = uart - uart0;  //+1
 		create_dev(&oid, fname);
 	}
 
