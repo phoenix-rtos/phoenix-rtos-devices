@@ -22,6 +22,7 @@
 
 typedef struct {
 	FILE *scenarioFile;
+	ssize_t headerLen;
 	int sensorTypes;
 
 	time_t timeHorizon;
@@ -30,17 +31,25 @@ typedef struct {
 	size_t bufLen;
 
 	time_t timeLast;
-	time_t offset;
+	long long timeOffset;
 } simsens_reader_t;
 
 
+/*
+ * Initiates `simsens_reader_t` structure.
+ * `path` specifies file with test scenario
+ * `sensorType` tells what types of readings are parsed from test file. Argument can be a logical or of different types
+ * `timeHorizon` - max difference between first and last reader timestamp in single `reader_read` execution
+ */
 extern int reader_open(simsens_reader_t *rd, const char *path, int sensorTypes, time_t timeHorizon);
 
 
+/* Frees elements form `reader`  */
 extern void reader_close(simsens_reader_t *reader);
 
 
-extern int32_t reader_read(simsens_reader_t *rd, event_queue_t *queue);
+/* Parses the file. Stores results in `queue`. */
+extern int reader_read(simsens_reader_t *rd, event_queue_t *queue);
 
 
 #endif

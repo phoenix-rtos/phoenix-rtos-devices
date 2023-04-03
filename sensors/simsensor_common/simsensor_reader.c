@@ -15,92 +15,29 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <limits.h>
 #include <stdbool.h>
+#include <sys/types.h>
+#include <string.h>
 
 #include "simsensor_reader.h"
 
 #define READER_END_SCENARIO_INDICATOR NO_SENSOR
 #define READER_DATA_SEPARATOR         ','
 
-#define READER_TIMESTAMP_NOT_SET -1
-
-
-static int reader_skipHeader(simsens_reader_t *rd)
-{
-	size_t lineLen = getline(&rd->lineBuf, &rd->bufLen, rd->scenarioFile);
-	if (lineLen < 1) {
-		return -1;
-	}
-
-	/* Checking if current line is header */
-	if (rd->lineBuf[0] == 's' || rd->lineBuf[0] == 'S') {
-		return 0;
-	}
-
-	if (fseek(rd->scenarioFile, -lineLen, SEEK_CUR) != 0) {
-		return -1;
-	}
-
-	clearerr(rd->scenarioFile);
-
-	return 0;
-}
-
-
-int reader_open(simsens_reader_t *rd, const char *path, int sensorTypes, time_t timeHorizon)
-{
-	if (rd == NULL || path == NULL) {
-		return -1;
-	}
-
-	rd->scenarioFile = fopen(path, "r");
-	if (rd->scenarioFile == NULL) {
-		return -1;
-	}
-
-	rd->lineBuf = NULL;
-
-	rd->bufLen = 0;
-	rd->sensorTypes = sensorTypes;
-	rd->timeHorizon = timeHorizon;
-
-	rd->timeLast = READER_TIMESTAMP_NOT_SET;
-	rd->offset = 0;
-
-	if (reader_skipHeader(rd) != 0) {
-		fclose(rd->scenarioFile);
-		free(rd->lineBuf);
-		return -1;
-	}
-
-	return 0;
-}
-
-
-void reader_close(simsens_reader_t *reader)
-{
-	if (reader == NULL) {
-		return;
-	}
-
-	if (reader->scenarioFile != NULL) {
-		fclose(reader->scenarioFile);
-	}
-
-	free(reader->lineBuf);
-}
+#define READER_TIMESTAMP_NOT_SET (time_t) LLONG_MAX
 
 
 static int reader_getFieldLLong(const char *actField, char **nextField, long long *res)
 {
 	char *endptr;
 	long long value = strtoll(actField, &endptr, 10);
-
-	if (!(*endptr == READER_DATA_SEPARATOR || *endptr == '\0' || *endptr == '\n')) {
+	if (!(*endptr == READER_DATA_SEPARATOR || *endptr == '\0' || *endptr == '\n') || actField == endptr) {
+		printf("Wrong filed\n");
 		return -1;
 	}
 
-	if (*endptr == READER_DATA_SEPARATOR) {
+	if (*endptr == READER_DATA_SEPARATOR && nextField != NULL) {
 		*nextField = endptr + 1;
 	}
 
@@ -132,11 +69,10 @@ static int reader_accelDataParse(char *startOfDataSection, time_t timestamp, sen
 	result->accels.accelY = tmp;
 	actField = nextField;
 
-	if (reader_getFieldLLong(actField, &nextField, &tmp) < 0) {
+	if (reader_getFieldLLong(actField, NULL, &tmp) < 0) {
 		return -1;
 	}
 	result->accels.accelZ = tmp;
-	actField = nextField;
 
 	return 0;
 }
@@ -158,11 +94,10 @@ static int reader_baroDataParse(char *startOfDataSection, time_t timestamp, sens
 	result->baro.pressure = tmp;
 	actField = nextField;
 
-	if (reader_getFieldLLong(actField, &nextField, &tmp) < 0) {
+	if (reader_getFieldLLong(actField, NULL, &tmp) < 0) {
 		return -1;
 	}
 	result->baro.temp = tmp;
-	actField = nextField;
 
 	return 0;
 }
@@ -172,52 +107,51 @@ int reader_read(simsens_reader_t *rd, event_queue_t *queue)
 {
 	char *actField, *nextField;
 	long long tmp;
-	int sensorID, err = 0, maxInter = 200;
-	size_t curLineLen;
-	time_t timestamp, first_timestamp = READER_TIMESTAMP_NOT_SET;
-	sensor_event_t parsedResult;
+	int sensorID, err = 0, emptyIter = 100;
+	ssize_t lineLen;
+	time_t timestamp, timeStart = READER_TIMESTAMP_NOT_SET;
+	sensor_event_t parsed;
 
-	while (!eventQueue_full(queue) && maxInter > 0) {
-		maxInter--;
-		curLineLen = getline(&rd->lineBuf, &rd->bufLen, rd->scenarioFile);
-		if (curLineLen == -1) {
+	if (rd == NULL || queue == NULL) {
+		return -1;
+	}
+
+	while (!eventQueue_full(queue) && emptyIter > 0) {
+		lineLen = getline(&rd->lineBuf, &rd->bufLen, rd->scenarioFile);
+		if (lineLen == -1) {
 			if (!feof(rd->scenarioFile)) {
 				err = -1;
 				break;
 			}
 
-			/* Going to the beginning of the file */
-			if (fseek(rd->scenarioFile, 0, SEEK_SET) != 0) {
-				err = -1;
-				break;
-			}
 			clearerr(rd->scenarioFile);
 
-			if (reader_skipHeader(rd) != 0) {
+			/* Going to the beginning of the file and omitting file header */
+			if (fseek(rd->scenarioFile, rd->headerLen, SEEK_SET) != 0) {
 				err = -1;
 				break;
 			}
+			emptyIter--;
 
 			continue;
 		}
 
-		actField = rd->lineBuf;
-
-		if (reader_getFieldLLong(actField, &nextField, &tmp) < 0) {
+		if (reader_getFieldLLong(rd->lineBuf, &nextField, &tmp) < 0) {
 			err = -1;
 			break;
 		}
 		sensorID = tmp;
+		actField = nextField;
 
-
+		/* Checking if we are parsing our header */
 		if ((sensorID & rd->sensorTypes) == 0) {
 			if (sensorID == READER_END_SCENARIO_INDICATOR) {
 				break;
 			}
+			emptyIter--;
 
 			continue;
 		}
-		actField = nextField;
 
 		if (reader_getFieldLLong(actField, &nextField, &tmp) < 0) {
 			err = -1;
@@ -227,19 +161,19 @@ int reader_read(simsens_reader_t *rd, event_queue_t *queue)
 		actField = nextField;
 
 		if (timestamp < rd->timeLast && rd->timeLast != READER_TIMESTAMP_NOT_SET) {
-			rd->offset += rd->timeLast - timestamp;
+			rd->timeOffset += rd->timeLast - timestamp;
 		}
 		rd->timeLast = timestamp;
 
-		timestamp += rd->offset;
+		timestamp += rd->timeOffset;
 
-		if (first_timestamp == READER_TIMESTAMP_NOT_SET) {
-			first_timestamp = timestamp;
+		if (timeStart == READER_TIMESTAMP_NOT_SET) {
+			timeStart = timestamp;
 		}
 
-		if (timestamp - first_timestamp > rd->timeHorizon) {
+		if (timestamp - timeStart > rd->timeHorizon) {
 			/* Go to start of the line */
-			if (fseek(rd->scenarioFile, -curLineLen, SEEK_CUR) != 0) {
+			if (fseek(rd->scenarioFile, -lineLen, SEEK_CUR) != 0) {
 				err = -1;
 			}
 			break;
@@ -247,10 +181,10 @@ int reader_read(simsens_reader_t *rd, event_queue_t *queue)
 
 		switch (sensorID) {
 			case SENSOR_TYPE_ACCEL:
-				err = reader_accelDataParse(actField, timestamp, &parsedResult);
+				err = reader_accelDataParse(actField, timestamp, &parsed);
 				break;
 			case SENSOR_TYPE_BARO:
-				err = reader_baroDataParse(actField, timestamp, &parsedResult);
+				err = reader_baroDataParse(actField, timestamp, &parsed);
 				break;
 			default:
 				fprintf(stderr, "%s: Unknown sensor type\n", __FUNCTION__);
@@ -262,11 +196,83 @@ int reader_read(simsens_reader_t *rd, event_queue_t *queue)
 			break;
 		}
 
-		if (eventQueue_enqueue(queue, &parsedResult) < 0) {
+		if (eventQueue_enqueue(queue, &parsed) < 0) {
 			err = -1;
 			break;
 		}
 	}
 
 	return (err < 0) ? err : 0;
+}
+
+
+void reader_close(simsens_reader_t *reader)
+{
+	if (reader == NULL) {
+		return;
+	}
+
+	if (reader->scenarioFile != NULL) {
+		fclose(reader->scenarioFile);
+	}
+
+	free(reader->lineBuf);
+}
+
+
+int reader_open(simsens_reader_t *rd, const char *path, int sensorTypes, time_t timeHorizon)
+{
+	ssize_t lineLen;
+
+	if (rd == NULL || path == NULL) {
+		return -1;
+	}
+
+	rd->scenarioFile = fopen(path, "r");
+	if (rd->scenarioFile == NULL) {
+		return -1;
+	}
+
+	rd->lineBuf = NULL;
+	rd->bufLen = 0;
+	rd->sensorTypes = sensorTypes;
+	rd->timeHorizon = timeHorizon;
+	rd->timeLast = READER_TIMESTAMP_NOT_SET;
+
+	lineLen = getline(&rd->lineBuf, &rd->bufLen, rd->scenarioFile);
+	if (lineLen < 1) {
+		free(rd->lineBuf);
+		fclose(rd->scenarioFile);
+		return -1;
+	}
+
+	rd->headerLen = 0;
+
+	/* Checking if current line is header */
+	if (rd->lineBuf[0] == 's' || rd->lineBuf[0] == 'S') {
+		/* Read next line */
+		if (getline(&rd->lineBuf, &rd->bufLen, rd->scenarioFile) < 1) {
+			free(rd->lineBuf);
+			fclose(rd->scenarioFile);
+			return -1;
+		}
+		rd->headerLen = lineLen;
+	}
+
+	/* Omitting first sensorID */
+	char *p = strchr(rd->lineBuf, READER_DATA_SEPARATOR);
+	if (p == NULL || reader_getFieldLLong(p + 1, NULL, &rd->timeOffset) != 0) {
+		free(rd->lineBuf);
+		fclose(rd->scenarioFile);
+		return -1;
+	}
+	rd->timeOffset = -rd->timeOffset;
+
+	if (fseek(rd->scenarioFile, rd->headerLen, SEEK_SET) != 0) {
+		free(rd->lineBuf);
+		fclose(rd->scenarioFile);
+		return -1;
+	}
+
+	return 0;
 }

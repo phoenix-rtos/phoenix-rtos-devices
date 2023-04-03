@@ -31,7 +31,7 @@ typedef struct {
 
 
 /* Initiates `q` as an event queue. If succeeded returns 0. In other case -1. */
-extern int eventQueue_init(event_queue_t *q, unsigned int elem_cnt);
+extern int eventQueue_init(event_queue_t *q, unsigned int cnt);
 
 
 /* Deallocates queue pointed by `q` */
@@ -42,7 +42,7 @@ extern void eventQueue_free(event_queue_t *q);
 extern int eventQueue_enqueue(event_queue_t *q, const sensor_event_t *event);
 
 
-/* Returns information if the queue `q` is full. */
+/* Returns information if the queue `q` is full. If `q` is NULL, then the behaviour is undefined. */
 extern bool eventQueue_full(const event_queue_t *q);
 
 

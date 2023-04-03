@@ -16,18 +16,18 @@
 #include <stdlib.h>
 
 
-int eventQueue_init(event_queue_t *q, unsigned int elem_cnt)
+int eventQueue_init(event_queue_t *q, unsigned int cnt)
 {
-	if (elem_cnt == 0 || q == NULL) {
+	if (cnt == 0 || q == NULL) {
 		return -1;
 	}
 
-	q->queue = malloc(sizeof(sensor_event_t) * elem_cnt);
+	q->queue = malloc(sizeof(sensor_event_t) * cnt);
 	if (q->queue == NULL) {
 		return -1;
 	}
 
-	q->capacity = elem_cnt;
+	q->capacity = cnt;
 	q->len = 0;
 
 	q->head = q->queue;
@@ -70,8 +70,12 @@ int eventQueue_enqueue(event_queue_t *q, const sensor_event_t *event)
 }
 
 
-inline bool eventQueue_full(const event_queue_t *q)
+bool eventQueue_full(const event_queue_t *q)
 {
+	if (q == NULL) {
+		return true;
+	}
+
 	return q->len >= q->capacity;
 }
 
