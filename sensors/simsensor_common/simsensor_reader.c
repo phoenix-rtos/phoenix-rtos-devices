@@ -64,9 +64,8 @@ int reader_open(simsens_reader_t *rd, const char *path, int sensorTypes, time_t 
 	rd->sensorTypes = sensorTypes;
 	rd->timeHorizon = timeHorizon;
 
-	rd->timeStruct.firstTimestamp = READER_TIMESTAMP_NOT_SET;
-	rd->timeStruct.lastTimestamp = READER_TIMESTAMP_NOT_SET;
-	rd->timeStruct.loops = 0;
+	rd->timeLast = READER_TIMESTAMP_NOT_SET;
+	rd->offset = 0;
 
 	if (reader_skipHeader(rd) != 0) {
 		fclose(rd->scenarioFile);
@@ -169,23 +168,6 @@ static int reader_baroDataParse(char *startOfDataSection, time_t timestamp, sens
 }
 
 
-static time_t reader_nextTimeStampGet(simsens_time_t *timeStruct, time_t timestampFromFile)
-{
-	if (timeStruct->firstTimestamp == READER_TIMESTAMP_NOT_SET) {
-		timeStruct->firstTimestamp = timestampFromFile;
-		timeStruct->lastTimestamp = timestampFromFile;
-	}
-	else if (timeStruct->firstTimestamp == timestampFromFile) {
-		timeStruct->loops++;
-	}
-	else if (timeStruct->lastTimestamp < timestampFromFile) {
-		timeStruct->lastTimestamp = timestampFromFile;
-	}
-
-	return timestampFromFile + timeStruct->loops * (timeStruct->lastTimestamp - timeStruct->firstTimestamp);
-}
-
-
 int reader_read(simsens_reader_t *rd, event_queue_t *queue)
 {
 	char *actField, *nextField;
@@ -244,7 +226,12 @@ int reader_read(simsens_reader_t *rd, event_queue_t *queue)
 		timestamp = tmp;
 		actField = nextField;
 
-		timestamp = reader_nextTimeStampGet(&rd->timeStruct, timestamp);
+		if (timestamp < rd->timeLast && rd->timeLast != READER_TIMESTAMP_NOT_SET) {
+			rd->offset += rd->timeLast - timestamp;
+		}
+		rd->timeLast = timestamp;
+
+		timestamp += rd->offset;
 
 		if (first_timestamp == READER_TIMESTAMP_NOT_SET) {
 			first_timestamp = timestamp;

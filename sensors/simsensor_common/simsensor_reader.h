@@ -21,13 +21,6 @@
 
 
 typedef struct {
-	time_t firstTimestamp;
-	time_t lastTimestamp;
-	int loops;
-} simsens_time_t;
-
-
-typedef struct {
 	FILE *scenarioFile;
 	int sensorTypes;
 
@@ -36,7 +29,8 @@ typedef struct {
 	char *lineBuf; /* Buffer for storing line from file */
 	size_t bufLen;
 
-	simsens_time_t timeStruct;
+	time_t timeLast;
+	time_t offset;
 } simsens_reader_t;
 
 
