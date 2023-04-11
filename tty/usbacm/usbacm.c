@@ -196,26 +196,55 @@ static usbacm_dev_t *usbacm_get(int id)
 }
 
 
-static void _usbacm_put(usbacm_dev_t *dev)
+static void usbacm_free(usbacm_dev_t *dev)
+{
+	fprintf(stdout, "usbacm: Device removed: %s\n", dev->path);
+	remove(dev->path);
+	if (dev->fifo != NULL) {
+		free(dev->fifo);
+		resourceDestroy(dev->rxLock);
+		resourceDestroy(dev->rxCond);
+	}
+	free(dev);
+}
+
+
+static void usbacm_freeAll(usbacm_dev_t **devices)
+{
+	usbacm_dev_t *next, *dev = *devices;
+
+	if (dev != NULL) {
+		do {
+			next = dev->next;
+			usbacm_free(dev);
+			dev = next;
+		} while (dev != *devices);
+	}
+
+	*devices = NULL;
+}
+
+
+static int _usbacm_put(usbacm_dev_t *dev)
 {
 	if (--dev->rfcnt == 0) {
-		if (dev->fifo != NULL) {
-			free(dev->fifo);
-			dev->fifo = NULL;
-			resourceDestroy(dev->rxLock);
-			resourceDestroy(dev->rxCond);
-		}
 		LIST_REMOVE(&usbacm_common.devices, dev);
-		free(dev);
 	}
+	return dev->rfcnt;
 }
 
 
 static void usbacm_put(usbacm_dev_t *dev)
 {
+	int rfcnt;
+
 	mutexLock(usbacm_common.lock);
-	_usbacm_put(dev);
+	rfcnt = _usbacm_put(dev);
 	mutexUnlock(usbacm_common.lock);
+
+	if (rfcnt == 0) {
+		usbacm_free(dev);
+	}
 }
 
 
@@ -650,7 +679,7 @@ static int _usbacm_handleInsertion(usb_devinfo_t *insertion)
 }
 
 
-static int _usbacm_handleDeletion(usb_deletion_t *del)
+static int _usbacm_handleDeletion(usb_deletion_t *del, usbacm_dev_t **devicesToFree)
 {
 	usbacm_dev_t *next, *dev = usbacm_common.devices;
 	int cont = 1;
@@ -662,12 +691,11 @@ static int _usbacm_handleDeletion(usb_deletion_t *del)
 		next = dev->next;
 		if (dev->instance.bus == del->bus && dev->instance.dev == del->dev &&
 				dev->instance.interface == del->interface) {
-			fprintf(stdout, "usbacm: Device removed: %s\n", dev->path);
 			if (dev == next)
 				cont = 0;
-
-			remove(dev->path);
-			_usbacm_put(dev);
+			if (_usbacm_put(dev) == 0) {
+				LIST_ADD(devicesToFree, dev);
+			}
 			if (!cont)
 				break;
 		}
@@ -683,6 +711,7 @@ static void usbthr(void *arg)
 	msg_t msg;
 	usb_msg_t *umsg = (usb_msg_t *)msg.i.raw;
 	unsigned long rid;
+	usbacm_dev_t *devicesToFree = NULL;
 
 	for (;;) {
 		if (msgRecv(usbacm_common.drvport, &msg, &rid) < 0)
@@ -694,8 +723,9 @@ static void usbthr(void *arg)
 				break;
 			case usb_msg_deletion:
 				mutexLock(usbacm_common.lock);
-				_usbacm_handleDeletion(&umsg->deletion);
+				_usbacm_handleDeletion(&umsg->deletion, &devicesToFree);
 				mutexUnlock(usbacm_common.lock);
+				usbacm_freeAll(&devicesToFree);
 				break;
 			case usb_msg_completion:
 				usbacm_handleCompletion(&umsg->completion, msg.i.data, msg.i.size);
