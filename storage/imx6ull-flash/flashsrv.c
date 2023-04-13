@@ -343,7 +343,6 @@ static ssize_t flashsrv_devWriteRaw(flash_i_devctl_t *idevctl, char *data)
 		res = flashdrv_writeraw(strg->dev->ctx->dma, rawoffs / rawPagesz, strg->dev->ctx->databuf, rawPagesz);
 		if (res < 0) {
 			LOG_ERROR("raw write error %d", res);
-			mutexUnlock(strg->dev->ctx->lock);
 			break;
 		}
 
@@ -387,7 +386,6 @@ static int flashsrv_devReadRaw(flash_i_devctl_t *idevctl, char *data)
 		res = flashdrv_readraw(strg->dev->ctx->dma, rawoffs / rawPagesz, strg->dev->ctx->databuf, rawPagesz);
 		if (res < 0) {
 			LOG_ERROR("error in readraw(): %d", res);
-			mutexUnlock(strg->dev->ctx->lock);
 			break;
 		}
 
