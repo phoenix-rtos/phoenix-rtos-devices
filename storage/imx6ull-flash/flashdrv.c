@@ -447,8 +447,10 @@ static void flashdrv_setDevClock(int dev, int state)
 flashdrv_dma_t *flashdrv_dmanew(void)
 {
 	flashdrv_dma_t *dma = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_NULL, 0);
-	dma->last = NULL;
-	dma->first = NULL;
+	if (dma != MAP_FAILED) {
+		dma->last = NULL;
+		dma->first = NULL;
+	}
 
 	return dma;
 }
@@ -456,7 +458,9 @@ flashdrv_dma_t *flashdrv_dmanew(void)
 
 void flashdrv_dmadestroy(flashdrv_dma_t *dma)
 {
-	munmap(dma, _PAGE_SIZE);
+	if (dma != MAP_FAILED && dma != NULL) {
+		munmap(dma, _PAGE_SIZE);
+	}
 }
 
 
@@ -992,24 +996,18 @@ int flashdrv_markbad(flashdrv_dma_t *dma, uint32_t paddr)
 }
 
 
-void flashdrv_rundma(flashdrv_dma_t *dma)
-{
-	int channel = 0;
-
-	mutexLock(flashdrv_common.mutex);
-	dma_run((dma_t *)dma->first, channel);
-	mutexUnlock(flashdrv_common.mutex);
-}
-
-
 static void setup_flash_info(void)
 {
 	flash_id_t *flash_id = (flash_id_t *)flashdrv_common.uncached_buf;
 	flashdrv_dma_t *dma = flashdrv_dmanew();
 
-	flashdrv_reset(dma);
 	memset(flash_id, 0, sizeof(*flash_id));
-	flashdrv_readid(dma, flash_id);
+
+	/* FIXME no way to handle this error, avoid crash for now */
+	if (dma != MAP_FAILED) {
+		flashdrv_reset(dma);
+		flashdrv_readid(dma, flash_id);
+	}
 
 	if (flash_id->manufacturerid == 0x98 && flash_id->deviceid == 0xd3) {
 		flashdrv_common.info.name = "Kioxia TH58NV 16Gbit NAND";
