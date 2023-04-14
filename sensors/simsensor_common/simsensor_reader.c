@@ -16,9 +16,9 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <limits.h>
-#include <stdbool.h>
 #include <sys/types.h>
 #include <string.h>
+#include <sys/time.h>
 
 #include "simsensor_reader.h"
 
@@ -33,7 +33,7 @@ static int reader_getFieldLLong(const char *actField, char **nextField, long lon
 	char *endptr;
 	long long value = strtoll(actField, &endptr, 10);
 	if (!(*endptr == READER_DATA_SEPARATOR || *endptr == '\0' || *endptr == '\n') || actField == endptr) {
-		printf("Wrong filed\n");
+		printf("Wrong file\n");
 		return -1;
 	}
 
@@ -146,6 +146,11 @@ int reader_read(simsens_reader_t *rd, event_queue_t *queue)
 		/* Checking if we are parsing our header */
 		if ((sensorID & rd->sensorTypes) == 0) {
 			if (sensorID == READER_END_SCENARIO_INDICATOR) {
+				parsed.type = READER_STOP_EVENT;
+				if (eventQueue_enqueue(queue, &parsed) < 0) {
+					err = -1;
+				}
+
 				break;
 			}
 			emptyIter--;
@@ -160,11 +165,11 @@ int reader_read(simsens_reader_t *rd, event_queue_t *queue)
 		timestamp = tmp;
 		actField = nextField;
 
+		/* Increasing timeOffset on scenario timestamp decrease (as on file loop) */
 		if (timestamp < rd->timeLast && rd->timeLast != READER_TIMESTAMP_NOT_SET) {
 			rd->timeOffset += rd->timeLast - timestamp;
 		}
 		rd->timeLast = timestamp;
-
 		timestamp += rd->timeOffset;
 
 		if (timeStart == READER_TIMESTAMP_NOT_SET) {
@@ -187,12 +192,12 @@ int reader_read(simsens_reader_t *rd, event_queue_t *queue)
 				err = reader_baroDataParse(actField, timestamp, &parsed);
 				break;
 			default:
-				fprintf(stderr, "%s: Unknown sensor type\n", __FUNCTION__);
+				fprintf(stderr, "%s: Unknown sensor type: %d\n", __FUNCTION__, sensorID);
 				err = -1;
 				break;
 		}
 
-		if (err < 0) {
+		if (err != 0) {
 			break;
 		}
 
@@ -202,7 +207,7 @@ int reader_read(simsens_reader_t *rd, event_queue_t *queue)
 		}
 	}
 
-	return (err < 0) ? err : 0;
+	return err;
 }
 
 
@@ -214,15 +219,18 @@ void reader_close(simsens_reader_t *reader)
 
 	if (reader->scenarioFile != NULL) {
 		fclose(reader->scenarioFile);
+		reader->scenarioFile = NULL;
 	}
 
 	free(reader->lineBuf);
+	reader->lineBuf = NULL;
 }
 
 
 int reader_open(simsens_reader_t *rd, const char *path, int sensorTypes, time_t timeHorizon)
 {
 	ssize_t lineLen;
+	time_t act_time;
 
 	if (rd == NULL || path == NULL) {
 		return -1;
@@ -238,35 +246,33 @@ int reader_open(simsens_reader_t *rd, const char *path, int sensorTypes, time_t 
 	rd->sensorTypes = sensorTypes;
 	rd->timeHorizon = timeHorizon;
 	rd->timeLast = READER_TIMESTAMP_NOT_SET;
+	rd->headerLen = 0;
 
 	lineLen = getline(&rd->lineBuf, &rd->bufLen, rd->scenarioFile);
 	if (lineLen < 1) {
-		free(rd->lineBuf);
 		fclose(rd->scenarioFile);
 		return -1;
 	}
-
-	rd->headerLen = 0;
 
 	/* Checking if current line is header */
 	if (rd->lineBuf[0] == 's' || rd->lineBuf[0] == 'S') {
 		/* Read next line */
 		if (getline(&rd->lineBuf, &rd->bufLen, rd->scenarioFile) < 1) {
-			free(rd->lineBuf);
 			fclose(rd->scenarioFile);
 			return -1;
 		}
 		rd->headerLen = lineLen;
 	}
 
-	/* Omitting first sensorID */
+	/* Omitting first sensorID, to get first event timestamp for timeOffset */
 	char *p = strchr(rd->lineBuf, READER_DATA_SEPARATOR);
 	if (p == NULL || reader_getFieldLLong(p + 1, NULL, &rd->timeOffset) != 0) {
-		free(rd->lineBuf);
 		fclose(rd->scenarioFile);
 		return -1;
 	}
-	rd->timeOffset = -rd->timeOffset;
+
+	gettime(&act_time, NULL);
+	rd->timeOffset = act_time - rd->timeOffset;
 
 	if (fseek(rd->scenarioFile, rd->headerLen, SEEK_SET) != 0) {
 		free(rd->lineBuf);
