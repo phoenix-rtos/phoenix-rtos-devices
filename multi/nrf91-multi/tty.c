@@ -344,6 +344,7 @@ static tty_ctx_t *tty_getCtx(id_t id)
 {
 	tty_ctx_t *ctx = NULL;
 
+	//why console even if 0 is set?? probably to not need to remember what is consoel
 	if (!id) {
 		id = uart0 + UART_CONSOLE;
 	}
@@ -431,10 +432,12 @@ static void tty_thread(void *arg)
 
 ssize_t tty_log(const char *str, size_t len)
 {
+	// for 0 changes it to console, 
 	return libtty_write(&tty_getCtx(0)->tty_common, str, len, 0);
 }
 
 
+// looks good
 void tty_createDev(void)
 {
 #if CONSOLE_IS_TTY
@@ -449,6 +452,7 @@ void tty_createDev(void)
 }
 
 
+// looks good
 int tty_init(void)
 {
 	unsigned int uart, i;
@@ -471,7 +475,7 @@ int tty_init(void)
 		unsigned int irq;
 		volatile char *tx_dma;
 		volatile char *rx_dma;
-	} info[] = {
+	} info[] = {			/* same tx on uart1 and rx on uart0!!! */
 		{ (void *)0x50008000, uarte0_irq + 16, (volatile char *)0x2003C000, (volatile char *)0x20038000 },
 		{ (void *)0x50009000, uarte1_irq + 16, (volatile char *)0x20038000, (volatile char *)0x2003A000 },
 		{ (void *)0x5000A000, uarte2_irq + 16, (volatile char *)0x2003C000, (volatile char *)0x20038000 },
@@ -479,7 +483,7 @@ int tty_init(void)
 	};
 
 	portCreate(&uart_common.port);
-	// oid.port = uart_common.port;
+	oid.port = uart_common.port;
 
 	//     oid.id = 0;
 	//    create_dev(&oid, "tty");
@@ -517,15 +521,16 @@ int tty_init(void)
 		/* TODO: add support for other br values */
 		tty_setBaudrate(ctx, baudrate);
 
+		/* #flashcards conditional arg in interrupt?? */
 		interrupt(info[uart - uart0].irq, tty_irqHandler, (void *)ctx, ctx->cond, NULL);
 
-		/* is stack initilized*/
 		beginthread(tty_irqthread, 1, ctx->stack, sizeof(ctx->stack), (void *)ctx);
 
 		ctx->enabled = 1;
 
 		fname[sizeof(fname) - 2] = '0' + uart - uart0;
-		oid.id = uart - uart0;  //+1
+		//this +1 makes sense, because 0 is reserved by klog/uart console, so I thinl I will set it back
+		oid.id = uart - uart0 + 1; //port.1, 
 		create_dev(&oid, fname);
 	}
 

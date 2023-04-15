@@ -121,6 +121,7 @@ int main(void)
 
 	fs_init();
 	tty_init();
+
 	libklog_init(log_write);
 
 
