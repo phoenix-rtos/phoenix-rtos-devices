@@ -9,5 +9,6 @@
 NAME := host-flash
 LOCAL_SRCS := host-flash.c host-flashsrv.c
 LOCAL_HEADERS := host-flashsrv.h
+LIBS := libmeterfs
 
 include $(static-lib.mk)

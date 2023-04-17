@@ -107,7 +107,9 @@ int hostflashsrv_init(size_t *flashsz, size_t *sectorsz, const char *fileName)
 	hostflashsrv_common.ctx.read = hostflash_read;
 	hostflashsrv_common.ctx.write = hostflash_write;
 	hostflashsrv_common.ctx.eraseSector = hostflash_sectorErase;
-	hostflashsrv_common.ctx.powerCtrl = NULL;
+	hostflashsrv_common.ctx.powerCtrl = hostflash_powerCtrl;
+
+	hostflashsrv_common.ctx.devCtx = hostflash_devCtx();
 
 	if (meterfs_init(&hostflashsrv_common.ctx) < 0) {
 		printf("hostflashsrv: meterfs init failed\n");
