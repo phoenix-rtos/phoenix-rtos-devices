@@ -25,6 +25,12 @@ ssize_t hostflash_write(struct _meterfs_devCtx_t *devCtx, off_t offs, const void
 int hostflash_sectorErase(struct _meterfs_devCtx_t *devCtx, off_t offs);
 
 
+void hostflash_powerCtrl(struct _meterfs_devCtx_t *devCtx, int state);
+
+
+struct _meterfs_devCtx_t *hostflash_devCtx(void);
+
+
 int hostflash_init(size_t *flashsz, size_t *sectorsz, const char *fileName);
 
 #endif
