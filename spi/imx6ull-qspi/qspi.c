@@ -281,14 +281,14 @@ int qspi_init(qspi_t *qspi)
 	size_t ahbSize;
 
 	qspi->base = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, QSPI_BASE);
-	if (qspi->base == NULL) {
+	if (qspi->base == MAP_FAILED) {
 		return -ENOMEM;
 	}
 
 	qspi->ahbAddr = QSPI_MMAP_BASE;
 	ahbSize = qspi->base[QSPI_SFB2AD] - qspi->ahbAddr;
 	qspi->ahbBase = mmap(NULL, ahbSize, PROT_READ, MAP_DEVICE, OID_PHYSMEM, qspi->ahbAddr);
-	if (qspi->ahbBase == NULL) {
+	if (qspi->ahbBase == MAP_FAILED) {
 		(void)munmap(qspi->base, _PAGE_SIZE);
 		return -ENOMEM;
 	}
