@@ -250,6 +250,35 @@ static int reader_gyroDataParse(const char *data, time_t timestamp, sensor_event
 }
 
 
+static int reader_magDataParse(const char *data, time_t timestamp, sensor_event_t *result)
+{
+	const char *actField;
+	long long tmp;
+
+	actField = data;
+
+	result->type = SENSOR_TYPE_MAG;
+	result->timestamp = timestamp;
+
+	if (reader_getFieldLLong(&actField, &tmp) < 0) {
+		return -1;
+	}
+	result->mag.magX = tmp;
+
+	if (reader_getFieldLLong(&actField, &tmp) < 0) {
+		return -1;
+	}
+	result->mag.magY = tmp;
+
+	if (reader_getFieldLLong(&actField, &tmp) < 0) {
+		return -1;
+	}
+	result->mag.magZ = tmp;
+
+	return 0;
+}
+
+
 int reader_read(simsens_reader_t *rd, event_queue_t *queue)
 {
 	const char *actField;
@@ -342,6 +371,9 @@ int reader_read(simsens_reader_t *rd, event_queue_t *queue)
 				break;
 			case SENSOR_TYPE_GYRO:
 				err = reader_gyroDataParse(actField, timestamp, &parsed);
+				break;
+			case SENSOR_TYPE_MAG:
+				err = reader_magDataParse(actField, timestamp, &parsed);
 				break;
 			default:
 				fprintf(stderr, "%s: Unknown sensor type: %d\n", __FUNCTION__, sensorID);
