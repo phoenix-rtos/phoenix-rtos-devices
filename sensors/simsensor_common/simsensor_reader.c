@@ -206,6 +206,50 @@ static int reader_gpsDataParse(const char *data, time_t timestamp, sensor_event_
 }
 
 
+static int reader_gyroDataParse(const char *data, time_t timestamp, sensor_event_t *result)
+{
+	const char *actField;
+	long long tmp;
+
+	actField = data;
+
+	result->type = SENSOR_TYPE_GYRO;
+	result->timestamp = timestamp;
+
+	if (reader_getFieldLLong(&actField, &tmp) < 0) {
+		return -1;
+	}
+	result->gyro.gyroX = tmp;
+
+	if (reader_getFieldLLong(&actField, &tmp) < 0) {
+		return -1;
+	}
+	result->gyro.gyroY = tmp;
+
+	if (reader_getFieldLLong(&actField, &tmp) < 0) {
+		return -1;
+	}
+	result->gyro.gyroZ = tmp;
+
+	if (reader_getFieldLLong(&actField, &tmp) < 0) {
+		return -1;
+	}
+	result->gyro.dAngleX = tmp;
+
+	if (reader_getFieldLLong(&actField, &tmp) < 0) {
+		return -1;
+	}
+	result->gyro.dAngleY = tmp;
+
+	if (reader_getFieldLLong(&actField, &tmp) < 0) {
+		return -1;
+	}
+	result->gyro.dAngleZ = tmp;
+
+	return 0;
+}
+
+
 int reader_read(simsens_reader_t *rd, event_queue_t *queue)
 {
 	const char *actField;
@@ -295,6 +339,9 @@ int reader_read(simsens_reader_t *rd, event_queue_t *queue)
 				break;
 			case SENSOR_TYPE_GPS:
 				err = reader_gpsDataParse(actField, timestamp, &parsed);
+				break;
+			case SENSOR_TYPE_GYRO:
+				err = reader_gyroDataParse(actField, timestamp, &parsed);
 				break;
 			default:
 				fprintf(stderr, "%s: Unknown sensor type: %d\n", __FUNCTION__, sensorID);
