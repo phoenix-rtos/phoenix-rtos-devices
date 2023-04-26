@@ -28,17 +28,19 @@
 #define READER_TIMESTAMP_NOT_SET (time_t) LLONG_MAX
 
 
-static int reader_getFieldLLong(const char *actField, char **nextField, long long *res)
+/* Reads actual field (`actField`) and parses it to `res`. Updates `actField` so it's pointing to next field. Returns -1 if error occurs. */
+static int reader_getFieldLLong(const char **actField, long long *res)
 {
 	char *endptr;
-	long long value = strtoll(actField, &endptr, 10);
-	if (!(*endptr == READER_DATA_SEPARATOR || *endptr == '\0' || *endptr == '\n' || *endptr == '\r') || actField == endptr) {
+	long long value = strtoll(*actField, &endptr, 10);
+
+	if (!(*endptr == READER_DATA_SEPARATOR || *endptr == '\0' || *endptr == '\n' || *endptr == '\r') || *actField == endptr) {
 		printf("simsensor: Invalid file\n");
 		return -1;
 	}
 
-	if (*endptr == READER_DATA_SEPARATOR && nextField != NULL) {
-		*nextField = endptr + 1;
+	if (*endptr == READER_DATA_SEPARATOR) {
+		*actField = endptr + 1;
 	}
 
 	*res = value;
@@ -47,29 +49,27 @@ static int reader_getFieldLLong(const char *actField, char **nextField, long lon
 }
 
 
-static int reader_accelDataParse(char *startOfDataSection, time_t timestamp, sensor_event_t *result)
+static int reader_accelDataParse(const char *data, time_t timestamp, sensor_event_t *result)
 {
-	char *actField, *nextField;
+	const char *actField;
 	long long tmp;
 
-	actField = startOfDataSection;
+	actField = data;
 
 	result->type = SENSOR_TYPE_ACCEL;
 	result->timestamp = timestamp;
 
-	if (reader_getFieldLLong(actField, &nextField, &tmp) < 0) {
+	if (reader_getFieldLLong(&actField, &tmp) < 0) {
 		return -1;
 	}
 	result->accels.accelX = tmp;
-	actField = nextField;
 
-	if (reader_getFieldLLong(actField, &nextField, &tmp) < 0) {
+	if (reader_getFieldLLong(&actField, &tmp) < 0) {
 		return -1;
 	}
 	result->accels.accelY = tmp;
-	actField = nextField;
 
-	if (reader_getFieldLLong(actField, NULL, &tmp) < 0) {
+	if (reader_getFieldLLong(&actField, &tmp) < 0) {
 		return -1;
 	}
 	result->accels.accelZ = tmp;
@@ -78,23 +78,22 @@ static int reader_accelDataParse(char *startOfDataSection, time_t timestamp, sen
 }
 
 
-static int reader_baroDataParse(char *startOfDataSection, time_t timestamp, sensor_event_t *result)
+static int reader_baroDataParse(const char *data, time_t timestamp, sensor_event_t *result)
 {
-	char *actField, *nextField;
+	const char *actField;
 	long long tmp;
 
-	actField = startOfDataSection;
+	actField = data;
 
 	result->type = SENSOR_TYPE_BARO;
 	result->timestamp = timestamp;
 
-	if (reader_getFieldLLong(actField, &nextField, &tmp) < 0) {
+	if (reader_getFieldLLong(&actField, &tmp) < 0) {
 		return -1;
 	}
 	result->baro.pressure = tmp;
-	actField = nextField;
 
-	if (reader_getFieldLLong(actField, NULL, &tmp) < 0) {
+	if (reader_getFieldLLong(&actField, &tmp) < 0) {
 		return -1;
 	}
 	result->baro.temp = tmp;
@@ -105,7 +104,7 @@ static int reader_baroDataParse(char *startOfDataSection, time_t timestamp, sens
 
 int reader_read(simsens_reader_t *rd, event_queue_t *queue)
 {
-	char *actField, *nextField;
+	const char *actField;
 	long long tmp;
 	int sensorID, err = 0, emptyIter = 100;
 	ssize_t lineLen;
@@ -136,12 +135,12 @@ int reader_read(simsens_reader_t *rd, event_queue_t *queue)
 			continue;
 		}
 
-		if (reader_getFieldLLong(rd->lineBuf, &nextField, &tmp) < 0) {
+		actField = rd->lineBuf;
+		if (reader_getFieldLLong(&actField, &tmp) < 0) {
 			err = -1;
 			break;
 		}
 		sensorID = tmp;
-		actField = nextField;
 
 		/* Checking if we are parsing our header */
 		if ((sensorID & rd->sensorTypes) == 0) {
@@ -158,12 +157,11 @@ int reader_read(simsens_reader_t *rd, event_queue_t *queue)
 			continue;
 		}
 
-		if (reader_getFieldLLong(actField, &nextField, &tmp) < 0) {
+		if (reader_getFieldLLong(&actField, &tmp) < 0) {
 			err = -1;
 			break;
 		}
 		timestamp = tmp;
-		actField = nextField;
 
 		/* Increasing timeOffset on scenario timestamp decrease (as on file loop) */
 		if (timestamp < rd->timeLast && rd->timeLast != READER_TIMESTAMP_NOT_SET) {
@@ -231,6 +229,7 @@ int reader_open(simsens_reader_t *rd, const char *path, int sensorTypes, time_t 
 {
 	ssize_t lineLen;
 	time_t act_time;
+	const char *p;
 
 	if (rd == NULL || path == NULL) {
 		return -1;
@@ -266,8 +265,15 @@ int reader_open(simsens_reader_t *rd, const char *path, int sensorTypes, time_t 
 	}
 
 	/* Omitting first sensorID, to get first event timestamp for timeOffset */
-	char *p = strchr(rd->lineBuf, READER_DATA_SEPARATOR);
-	if (p == NULL || reader_getFieldLLong(p + 1, NULL, &rd->timeOffset) != 0) {
+	p = strchr(rd->lineBuf, READER_DATA_SEPARATOR);
+	if (p == NULL) {
+		free(rd->lineBuf);
+		fclose(rd->scenarioFile);
+		return -1;
+	}
+
+	p++;
+	if (reader_getFieldLLong(&p, &rd->timeOffset) != 0) {
 		free(rd->lineBuf);
 		fclose(rd->scenarioFile);
 		return -1;
