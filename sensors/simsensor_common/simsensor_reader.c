@@ -102,6 +102,110 @@ static int reader_baroDataParse(const char *startOfDataSection, time_t timestamp
 }
 
 
+static int reader_gpsDataParse(const char *startOfDataSection, time_t timestamp, sensor_event_t *result)
+{
+	char *actField;
+	long long tmp;
+
+	actField = startOfDataSection;
+
+	result->type = SENSOR_TYPE_GPS;
+	result->timestamp = timestamp;
+
+	if (reader_getFieldLLong(&actField, &tmp) < 0) {
+		return -1;
+	}
+	result->gps.alt = tmp;
+
+	if (reader_getFieldLLong(&actField, &tmp) < 0) {
+		return -1;
+	}
+	result->gps.lat = tmp;
+
+	if (reader_getFieldLLong(&actField, &tmp) < 0) {
+		return -1;
+	}
+	result->gps.lon = tmp;
+
+	if (reader_getFieldLLong(&actField, &tmp) < 0) {
+		return -1;
+	}
+	result->gps.hdop = tmp;
+
+	if (reader_getFieldLLong(&actField, &tmp) < 0) {
+		return -1;
+	}
+	result->gps.vdop = tmp;
+
+	if (reader_getFieldLLong(&actField, &tmp) < 0) {
+		return -1;
+	}
+	result->gps.altEllipsoid = tmp;
+
+	if (reader_getFieldLLong(&actField, &tmp) < 0) {
+		return -1;
+	}
+	result->gps.groundSpeed = tmp;
+
+	if (reader_getFieldLLong(&actField, &tmp) < 0) {
+		return -1;
+	}
+	result->gps.velNorth = tmp;
+
+	if (reader_getFieldLLong(&actField, &tmp) < 0) {
+		return -1;
+	}
+	result->gps.velEast = tmp;
+
+	if (reader_getFieldLLong(&actField, &tmp) < 0) {
+		return -1;
+	}
+	result->gps.velDown = tmp;
+
+	if (reader_getFieldLLong(&actField, &tmp) < 0) {
+		return -1;
+	}
+	result->gps.eph = tmp;
+
+	if (reader_getFieldLLong(&actField, &tmp) < 0) {
+		return -1;
+	}
+	result->gps.epv = tmp;
+
+	if (reader_getFieldLLong(&actField, &tmp) < 0) {
+		return -1;
+	}
+	result->gps.evel = tmp;
+
+	if (reader_getFieldLLong(&actField, &tmp) < 0) {
+		return -1;
+	}
+	result->gps.heading = tmp;
+
+	if (reader_getFieldLLong(&actField, &tmp) < 0) {
+		return -1;
+	}
+	result->gps.headingOffs = tmp;
+
+	if (reader_getFieldLLong(&actField, &tmp) < 0) {
+		return -1;
+	}
+	result->gps.headingAccur = tmp;
+
+	if (reader_getFieldLLong(&actField, &tmp) < 0) {
+		return -1;
+	}
+	result->gps.satsNb = tmp;
+
+	if (reader_getFieldLLong(&actField, &tmp) < 0) {
+		return -1;
+	}
+	result->gps.fix = tmp;
+
+	return 0;
+}
+
+
 int reader_read(simsens_reader_t *rd, event_queue_t *queue)
 {
 	char *actField;
@@ -188,6 +292,9 @@ int reader_read(simsens_reader_t *rd, event_queue_t *queue)
 				break;
 			case SENSOR_TYPE_BARO:
 				err = reader_baroDataParse(actField, timestamp, &parsed);
+				break;
+			case SENSOR_TYPE_GPS:
+				err = reader_gpsDataParse(actField, timestamp, &parsed);
 				break;
 			default:
 				fprintf(stderr, "%s: Unknown sensor type: %d\n", __FUNCTION__, sensorID);
