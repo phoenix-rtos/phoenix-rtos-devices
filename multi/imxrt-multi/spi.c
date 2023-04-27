@@ -19,7 +19,7 @@
 #include <unistd.h>
 #include <errno.h>
 
-
+#include <board_config.h>
 #include "imxrt-multi.h"
 #include "common.h"
 #include "config.h"
