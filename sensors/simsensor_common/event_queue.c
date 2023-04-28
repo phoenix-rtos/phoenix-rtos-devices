@@ -80,6 +80,16 @@ bool eventQueue_full(const event_queue_t *q)
 }
 
 
+extern bool eventQueue_empty(const event_queue_t *q)
+{
+	if (q == NULL) {
+		return true;
+	}
+
+	return q->len == 0;
+}
+
+
 int eventQueue_dequeue(event_queue_t *q, sensor_event_t *event)
 {
 	if (q == NULL || event == NULL) {
