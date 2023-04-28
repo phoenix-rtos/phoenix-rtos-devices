@@ -46,6 +46,10 @@ extern int eventQueue_enqueue(event_queue_t *q, const sensor_event_t *event);
 extern bool eventQueue_full(const event_queue_t *q);
 
 
+/* Returns information if the queue `q` is empty. If `q` is NULL, then the behaviour is undefined. */
+extern bool eventQueue_empty(const event_queue_t *q);
+
+
 /* Removes the last element from queue `q` and saves it into `event`. Returns 0 on success, or -1 if queue is empty */
 extern int eventQueue_dequeue(event_queue_t *q, sensor_event_t *event);
 
