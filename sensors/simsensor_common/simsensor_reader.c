@@ -302,7 +302,8 @@ int reader_read(simsens_reader_t *rd, event_queue_t *queue)
 {
 	const char *actField;
 	long long tmp;
-	int sensorID, err = 0, emptyIter = 100;
+	int err = 0, emptyIter = 100;
+	sensor_type_t sensorID;
 	ssize_t lineLen;
 	time_t timestamp, timeStart = READER_TIMESTAMP_NOT_SET;
 	sensor_event_t parsed;
@@ -433,7 +434,7 @@ void reader_close(simsens_reader_t *reader)
 }
 
 
-int reader_open(simsens_reader_t *rd, const char *path, int sensorTypes, time_t timeHorizon)
+int reader_open(simsens_reader_t *rd, const char *path, sensor_type_t sensorTypes, time_t timeHorizon)
 {
 	ssize_t lineLen;
 	time_t act_time;

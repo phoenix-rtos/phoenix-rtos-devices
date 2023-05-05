@@ -25,7 +25,7 @@
 typedef struct {
 	FILE *scenarioFile;
 	ssize_t headerLen;
-	int sensorTypes;
+	sensor_type_t sensorTypes;
 
 	time_t timeHorizon;
 
@@ -45,7 +45,7 @@ typedef struct {
  *
  * Successful open initialises timeline of sensor reader
  */
-extern int reader_open(simsens_reader_t *rd, const char *path, int sensorTypes, time_t timeHorizon);
+extern int reader_open(simsens_reader_t *rd, const char *path, sensor_type_t sensorTypes, time_t timeHorizon);
 
 
 /* Frees elements form `reader`  */
