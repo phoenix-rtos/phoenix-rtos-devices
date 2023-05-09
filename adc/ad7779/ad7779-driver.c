@@ -383,6 +383,8 @@ int main(int argc, char *argv[])
 	int i;
 	oid_t root;
 
+	priority(AD7779_PRIO);
+
 	if (parse_args(argc, argv) < 0)
 		return 1;
 
@@ -404,7 +406,6 @@ int main(int argc, char *argv[])
 
 	log_info("initialized");
 
-	priority(AD7779_PRIO);
 	msg_loop();
 
 	/* Should never be reached */
