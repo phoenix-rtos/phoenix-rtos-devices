@@ -33,7 +33,7 @@ enum { atr0 = 0, atr1, atr2, atr3, arr0, arr1, arr2, arr3, asr, acr };
 enum { chan0 = 0, chan1, chan2, chan3, chanLen };
 
 
-enum { scr_scr = 0, scr_smsr };
+enum { src_scr = 0, src_srmr };
 // clang-format on
 
 
@@ -58,7 +58,7 @@ struct {
 	volatile void *m4memory;
 	size_t m4memorysz;
 
-	volatile uint32_t *scr;
+	volatile uint32_t *src;
 	volatile uint32_t *mu;
 
 	struct {
@@ -210,10 +210,10 @@ static ssize_t chanWrite(id_t id, const void *buff, size_t bufflen)
 }
 
 
-static int runCore(void)
+static int runCore(unsigned int offset)
 {
 	platformctl_t pctl;
-	static const unsigned int vectors = (unsigned int)M4_MEMORY_START + 0x100;
+	unsigned int vectors = (unsigned int)M4_MEMORY_START + offset;
 
 	/* Set CM4's VTOR to the start of it's memory */
 	pctl.action = pctl_set;
@@ -233,9 +233,9 @@ static int runCore(void)
 		return -EIO;
 
 	/* Release the Kraken */
-	*(m4_common.scr + scr_smsr) |= 0xf << 10;
+	*(m4_common.src + src_srmr) |= 0x3u << 10;
 	__asm__ volatile("dmb");
-	*(m4_common.scr + scr_scr) = 3;
+	*(m4_common.src + src_scr) |= 1;
 
 	return EOK;
 }
@@ -259,6 +259,7 @@ static int loadFromFile(const char *path)
 		ptr += r;
 		total += r;
 	}
+	/* FIXME: clean & invalidate dcache */
 
 	return (int)total;
 }
@@ -270,6 +271,7 @@ static int loadFromBuff(const void *buff, size_t bufflen)
 		bufflen = m4_common.m4memorysz;
 
 	memcpy((void *)m4_common.m4memory, buff, bufflen);
+	/* FIXME: clean & invalidate dcache */
 
 	return (int)bufflen;
 }
@@ -300,7 +302,11 @@ static void devctl(msg_t *msg)
 		break;
 
 	case m4_runCore:
-		o->err = runCore();
+		if (msg->i.data == NULL || msg->i.size != sizeof(unsigned int)) {
+			o->err = -EINVAL;
+			break;
+		}
+		o->err = runCore(*(unsigned int *)msg->i.data);
 		break;
 
 	default:
@@ -368,7 +374,7 @@ int main(int argc, char *argv[])
 	m4_common.m4memory = M4_MEMORY_START;
 	m4_common.m4memorysz = M4_MEMORY_SIZE;
 
-	m4_common.scr = (void *)0x40c04000;
+	m4_common.src = (void *)0x40c04000;
 	m4_common.mu = (void *)0x40c48000;
 
 	if (portCreate(&m4_common.port) < 0) {
