@@ -41,6 +41,7 @@ struct nor_info {
 	size_t totalSz;
 	size_t pageSz;
 	size_t sectorSz;
+	size_t blockSz;
 };
 
 
@@ -70,6 +71,9 @@ extern int nor_writeEnable(qspi_t *qspi, uint8_t port, int enable, time_t timeou
 
 
 extern int nor_eraseSector(qspi_t *qspi, uint8_t port, addr_t addr, time_t timeout);
+
+
+extern int nor_eraseBlock(qspi_t *qspi, uint8_t port, addr_t addr, time_t timeout);
 
 
 extern int nor_eraseChip(qspi_t *qspi, uint8_t port, time_t timeout);

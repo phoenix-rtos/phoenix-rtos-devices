@@ -28,9 +28,11 @@ static int flashnor_mtdErase(storage_t *storage, off_t offs, size_t size)
 {
 	int err;
 
+	/* Offs alignment is not checked as meterfs sometimes issues unaligned erases. */
 	if ((size % storage->dev->mtd->erasesz) != 0) {
 		return -EINVAL;
 	}
+
 	err = storage->dev->ctx->ops->erase(storage->dev->ctx->ndev, offs, size);
 	if (err < 0) {
 		return err;
@@ -42,8 +44,8 @@ static int flashnor_mtdErase(storage_t *storage, off_t offs, size_t size)
 static int flashnor_mtdRead(storage_t *storage, off_t offs, void *data, size_t len, size_t *retlen)
 {
 	int res;
-	res = storage->dev->ctx->ops->read(storage->dev->ctx->ndev, offs, data, len);
 
+	res = storage->dev->ctx->ops->read(storage->dev->ctx->ndev, offs, data, len);
 	if (res >= 0) {
 		*retlen = res;
 	}
@@ -57,7 +59,6 @@ static int flashnor_mtdWrite(storage_t *storage, off_t offs, const void *data, s
 	int res;
 
 	res = storage->dev->ctx->ops->write(storage->dev->ctx->ndev, offs, data, len);
-
 	if (res >= 0) {
 		*retlen = res;
 	}
@@ -80,7 +81,6 @@ void flashnor_drvDone(storage_t *storage)
 
 int flashnor_drvInit(const flashnor_info_t *info, storage_t *storage)
 {
-	int err;
 	static const storage_mtdops_t mtdOps = {
 		.erase = flashnor_mtdErase,
 		.unPoint = NULL,

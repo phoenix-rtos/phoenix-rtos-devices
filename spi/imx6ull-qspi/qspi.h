@@ -19,6 +19,8 @@
 
 #define QSPI_PORTS 4
 
+#define QSPI_RXBUFSIZE 128u
+
 
 /* Use to enable particular slave buses of QSPI controller (slPortMask) */
 enum { qspi_slBusA1 = 0x1,

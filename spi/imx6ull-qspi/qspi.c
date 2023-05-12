@@ -289,7 +289,7 @@ int qspi_init(qspi_t *qspi)
 	ahbSize = qspi->base[QSPI_SFB2AD] - qspi->ahbAddr;
 	qspi->ahbBase = mmap(NULL, ahbSize, PROT_READ, MAP_DEVICE, OID_PHYSMEM, qspi->ahbAddr);
 	if (qspi->ahbBase == MAP_FAILED) {
-		(void)munmap(qspi->base, _PAGE_SIZE);
+		(void)munmap((void *)qspi->base, _PAGE_SIZE);
 		return -ENOMEM;
 	}
 

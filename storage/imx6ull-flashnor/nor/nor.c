@@ -36,27 +36,27 @@ static const char *nor_vendors[] = {
 
 static const struct nor_info flashInfo[] = {
 	/* Winbond */
-	{ FLASH_ID(0xefu, 0x4015u), "W25Q16", 2 * 1024 * 1024, 0x100, 0x1000 },
-	{ FLASH_ID(0xefu, 0x4016u), "W25Q32", 4 * 1024 * 1024, 0x100, 0x1000 },
-	{ FLASH_ID(0xefu, 0x4017u), "W25Q64", 8 * 1024 * 1024, 0x100, 0x1000 },
-	{ FLASH_ID(0xefu, 0x4018u), "W25Q128", 16 * 1024 * 1024, 0x100, 0x1000 },
-	{ FLASH_ID(0xefu, 0x4019u), "W25Q256JVEIQ", 32 * 1024 * 1024, 0x100, 0x1000 },
-	{ FLASH_ID(0xefu, 0x6019u), "W25Q256JW-Q", 32 * 1024 * 1024, 0x100, 0x1000 },
-	{ FLASH_ID(0xefu, 0x8019u), "W25Q256JW-M", 32 * 1024 * 1024, 0x100, 0x1000 },
+	{ FLASH_ID(0xefu, 0x4015u), "W25Q16", 2 * 1024 * 1024, 0x100, 0x1000, 0x10000 },
+	{ FLASH_ID(0xefu, 0x4016u), "W25Q32", 4 * 1024 * 1024, 0x100, 0x1000, 0x10000 },
+	{ FLASH_ID(0xefu, 0x4017u), "W25Q64", 8 * 1024 * 1024, 0x100, 0x1000, 0x10000 },
+	{ FLASH_ID(0xefu, 0x4018u), "W25Q128", 16 * 1024 * 1024, 0x100, 0x1000, 0x10000 },
+	{ FLASH_ID(0xefu, 0x4019u), "W25Q256JVEIQ", 32 * 1024 * 1024, 0x100, 0x1000, 0x10000 },
+	{ FLASH_ID(0xefu, 0x6019u), "W25Q256JW-Q", 32 * 1024 * 1024, 0x100, 0x1000, 0x10000 },
+	{ FLASH_ID(0xefu, 0x8019u), "W25Q256JW-M", 32 * 1024 * 1024, 0x100, 0x1000, 0x10000 },
 
 	/* ISSI */
-	{ FLASH_ID(0x9du, 0x7016u), "IS25WP032", 4 * 1024 * 1024, 0x100, 0x1000 },
-	{ FLASH_ID(0x9du, 0x7017u), "IS25WP064", 8 * 1024 * 1024, 0x100, 0x1000 },
-	{ FLASH_ID(0x9du, 0x7018u), "IS25WP128", 16 * 1024 * 1024, 0x100, 0x1000 },
+	{ FLASH_ID(0x9du, 0x7016u), "IS25WP032", 4 * 1024 * 1024, 0x100, 0x1000, 0x10000 },
+	{ FLASH_ID(0x9du, 0x7017u), "IS25WP064", 8 * 1024 * 1024, 0x100, 0x1000, 0x10000 },
+	{ FLASH_ID(0x9du, 0x7018u), "IS25WP128", 16 * 1024 * 1024, 0x100, 0x1000, 0x10000 },
 
 	/* Micron */
-	{ FLASH_ID(0x20u, 0xba19u), "MT25QL256", 32 * 1024 * 1024, 0x100, 0x1000 },
-	{ FLASH_ID(0x20u, 0xba20u), "MT25QL512", 64 * 1024 * 1024, 0x100, 0x1000 },
-	{ FLASH_ID(0x20u, 0xba21u), "MT25QL01G", 128 * 1024 * 1024, 0x100, 0x1000 },
-	{ FLASH_ID(0x20u, 0xba22u), "MT25QL02G", 256 * 1024 * 1024, 0x100, 0x1000 },
+	{ FLASH_ID(0x20u, 0xba19u), "MT25QL256", 32 * 1024 * 1024, 0x100, 0x1000, 0x10000 },
+	{ FLASH_ID(0x20u, 0xba20u), "MT25QL512", 64 * 1024 * 1024, 0x100, 0x1000, 0x10000 },
+	{ FLASH_ID(0x20u, 0xba21u), "MT25QL01G", 128 * 1024 * 1024, 0x100, 0x1000, 0x10000 },
+	{ FLASH_ID(0x20u, 0xba22u), "MT25QL02G", 256 * 1024 * 1024, 0x100, 0x1000, 0x10000 },
 
 	/* Macronix (MXIX) */
-	{ FLASH_ID(0xc2u, 0x2016u), "MX25L3233", 4 * 1024 * 1024, 0x100, 0x1000 },
+	{ FLASH_ID(0xc2u, 0x2016u), "MX25L3233", 4 * 1024 * 1024, 0x100, 0x1000, 0x10000 },
 };
 
 
@@ -159,6 +159,30 @@ int nor_eraseSector(qspi_t *qspi, uint8_t port, addr_t addr, time_t timeout)
 	xfer.timeout = timeout;
 	xfer.addr = addr;
 	xfer.seqIdx = LUT_SEQIDX(qspi_eraseSector);
+
+	res = qspi_xferExec(qspi, &xfer);
+	if (res < EOK) {
+		return res;
+	}
+
+	return nor_waitBusy(qspi, port, timeout);
+}
+
+
+int nor_eraseBlock(qspi_t *qspi, uint8_t port, addr_t addr, time_t timeout)
+{
+	struct xferOp xfer;
+
+	int res = nor_writeEnable(qspi, port, 1, timeout);
+	if (res < EOK) {
+		return res;
+	}
+
+	xfer.op = xfer_opCommand;
+	xfer.port = port;
+	xfer.timeout = timeout;
+	xfer.addr = addr;
+	xfer.seqIdx = LUT_SEQIDX(qspi_eraseBlock);
 
 	res = qspi_xferExec(qspi, &xfer);
 	if (res < EOK) {
