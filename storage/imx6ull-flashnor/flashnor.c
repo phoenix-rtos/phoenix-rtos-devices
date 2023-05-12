@@ -23,6 +23,7 @@
 
 #include <posix/utils.h>
 
+#include <libjffs2.h>
 #include <meterfs_storage.h>
 #include <storage/storage.h>
 
@@ -34,6 +35,12 @@
 /* Default registered device files prefix and starting ID */
 #define FLASHNOR_PREFIX "flashnor"
 #define FLASHNOR_ID     0
+
+
+static char flashnor_path[32];
+static char *flashnor_prefix = FLASHNOR_PREFIX;
+static unsigned int flashnor_id = FLASHNOR_ID;
+
 
 static void flashnor_msgloop(void *arg, msg_t *msg)
 {
@@ -67,21 +74,21 @@ static void flashnor_msgloop(void *arg, msg_t *msg)
 static void flashnor_help(const char *prog)
 {
 	(void)printf("Usage: %s [options] or no args to automatically detect and initialize all NOR flash devices\n", prog);
-	(void)printf("\t-e <n> | --ecspi <n>   - initialize ECSPI NOR flash device\n");
+	(void)printf("\t-e <n> | --ecspi <n>         - initialize ECSPI NOR flash device\n");
 	(void)printf("\t\tn:      ECSPI instance number\n");
-	(void)printf("\t-q <n> | --qspi <n>    - initialize QuadSPI NOR flash device\n");
+	(void)printf("\t-q <n> | --qspi <n>          - initialize QuadSPI NOR flash device\n");
 	(void)printf("\t\tn:      QuadSPI instance number\n");
-	(void)printf("\t-p <id> <start> <size> - register partition\n");
+	(void)printf("\t-p <id> <start> <size>       - register partition\n");
 	(void)printf("\t\tid:     device id starting at 0\n");
 	(void)printf("\t\tstart:  partition start in erase blocks\n");
 	(void)printf("\t\tsize:   partition size in erase blocks\n");
-	(void)printf("\t-r <id> <fs>           - mount root filesystem\n");
+	(void)printf("\t-r <id> <start> <size> <fs>  - mount root filesystem\n");
 	(void)printf("\t\tid:     device id starting at 0\n");
 	(void)printf("\t\tfs:     filesystem name\n");
-	(void)printf("\t-n <prefix> <id>       - use given prefix and starting id for device files registration\n");
+	(void)printf("\t-n <prefix> <id>             - use given prefix and starting id for device files registration\n");
 	(void)printf("\t\tprefix: device prefix\n");
 	(void)printf("\t\tid:     device starting id, e.g. -n flash 4 registers devices /dev/flash4, /dev/flash5, etc.\n");
-	(void)printf("\t-h | --help            - print this help message\n");
+	(void)printf("\t-h | --help                  - print this help message\n");
 }
 
 
@@ -93,6 +100,67 @@ static void flashnor_exit(int sig)
 }
 
 
+static storage_t *flashnor_partAdd(int parentId, off_t start, size_t size)
+{
+	storage_t *dev = calloc(1, sizeof(storage_t)), *parent;
+	int err;
+	oid_t oid;
+
+	if (dev == NULL) {
+		err = -ENOMEM;
+		(void)printf("imx6ull-flashnor: failed to allocate device, err: %s\n", strerror(err));
+		return NULL;
+	}
+	parent = storage_get(parentId);
+	if (parent == NULL) {
+		err = -EINVAL;
+		(void)printf("imx6ull-flashnor: failed to find parent device, err: %s\n", strerror(err));
+		free(dev);
+		return NULL;
+	}
+
+	dev->start = start;
+	dev->size = size;
+	dev->parent = parent;
+
+	/* Only storage parameter matters in case of partition. */
+	err = flashnor_drvInit(NULL, dev);
+	if (err < 0) {
+		(void)printf("imx6ull-flashnor: failed to initialize device, err: %s\n", strerror(err));
+		free(dev);
+		return NULL;
+	}
+	optind += 2;
+
+	err = storage_add(dev, &oid);
+	if (err < 0) {
+		(void)printf("imx6ull-flashnor: failed to create partition, err: %s\n", strerror(err));
+		flashnor_drvDone(dev);
+		free(dev);
+		return NULL;
+	}
+
+	if (snprintf(flashnor_path, sizeof(flashnor_path), "/dev/%s%u", flashnor_prefix, flashnor_id++) >= sizeof(flashnor_path)) {
+		err = -ENAMETOOLONG;
+		(void)printf("imx6ull-flashnor: failed to build partition file flashnor_path, err: %s\n", strerror(err));
+		(void)storage_remove(dev);
+		flashnor_drvDone(dev);
+		free(dev);
+		return NULL;
+	}
+
+	err = create_dev(&oid, flashnor_path);
+	if (err < 0) {
+		(void)printf("imx6ull-flashnor: failed to create partition file, err: %s\n", strerror(err));
+		(void)storage_remove(dev);
+		flashnor_drvDone(dev);
+		free(dev);
+		return NULL;
+	}
+	return dev;
+}
+
+
 int main(int argc, char *argv[])
 {
 	struct option longopts[] = {
@@ -101,25 +169,15 @@ int main(int argc, char *argv[])
 		{ "help", no_argument, NULL, 'h' },
 		{ NULL, 0, NULL, 0 }
 	};
-	unsigned int id = FLASHNOR_ID;
-	char *prefix = FLASHNOR_PREFIX;
-	char path[32];
-	int err, arg, c;
-	storage_t *dev, *parent;
+	int err, arg, c, parentId;
+	storage_t *dev;
 	pid_t pid;
 	oid_t oid;
+	off_t start;
+	size_t size;
 	flashnor_info_t info;
 	int (*init)(int ndev, flashnor_info_t *info);
-
-	/* Wait for console */
-	while (write(1, "", 0) < 0) {
-		usleep(10000);
-	}
-
-	/* Wait for rootfs */
-	while (lookup("/", NULL, &oid) < 0) {
-		usleep(10000);
-	}
+	char *fsName;
 
 	/* Daemonize server */
 	signal(SIGUSR1, flashnor_exit);
@@ -148,7 +206,13 @@ int main(int argc, char *argv[])
 
 	err = storage_registerfs("meterfs", meterfs_mount, meterfs_umount);
 	if (err < 0) {
-		(void)printf("imx6ull-flashnor: failed to register filesystem, err: %s\n", strerror(err));
+		(void)printf("imx6ull-flashnor: failed to register meterfs, err: %s\n", strerror(err));
+		return EXIT_FAILURE;
+	}
+
+	err = storage_registerfs("jffs2", libjffs2_mount, libjffs2_umount);
+	if (err < 0) {
+		(void)printf("imx6ull-flashnor: failed to register jffs2, err: %s\n", strerror(err));
 		return EXIT_FAILURE;
 	}
 
@@ -169,30 +233,40 @@ int main(int argc, char *argv[])
 					err = init(strtoul(optarg, NULL, 0), &info);
 					if (err < 0) {
 						(void)printf("imx6ull-flashnor: failed to initialize spi device, err: %s\n", strerror(err));
+						free(dev);
 						return EXIT_FAILURE;
 					}
 
 					err = flashnor_drvInit(&info, dev);
 					if (err < 0) {
 						(void)printf("imx6ull-flashnor: failed to initialize device, err: %s\n", strerror(err));
+						free(dev);
 						return EXIT_FAILURE;
 					}
 
 					err = storage_add(dev, &oid);
 					if (err < 0) {
 						(void)printf("imx6ull-flashnor: failed to register device, err: %s\n", strerror(err));
+						flashnor_drvDone(dev);
+						free(dev);
 						return EXIT_FAILURE;
 					}
 
-					if (snprintf(path, sizeof(path), "/dev/%s%u", prefix, id++) >= sizeof(path)) {
+					if (snprintf(flashnor_path, sizeof(flashnor_path), "/dev/%s%u", flashnor_prefix, flashnor_id++) >= sizeof(flashnor_path)) {
 						err = -ENAMETOOLONG;
-						(void)printf("imx6ull-flashnor: failed to build device file path, err: %s\n", strerror(err));
+						(void)printf("imx6ull-flashnor: failed to build device file flashnor_path, err: %s\n", strerror(err));
+						(void)storage_remove(dev);
+						flashnor_drvDone(dev);
+						free(dev);
 						return EXIT_FAILURE;
 					}
 
-					err = create_dev(&oid, path);
+					err = create_dev(&oid, flashnor_path);
 					if (err < 0) {
 						(void)printf("imx6ull-flashnor: failed to create device file, err: %s\n", strerror(err));
+						(void)storage_remove(dev);
+						flashnor_drvDone(dev);
+						free(dev);
 						return EXIT_FAILURE;
 					}
 					break;
@@ -205,53 +279,43 @@ int main(int argc, char *argv[])
 						return EXIT_FAILURE;
 					}
 
-					dev = calloc(1, sizeof(storage_t));
+					parentId = strtoul(argv[arg], NULL, 0);
+					start = strtoull(argv[arg + 1], NULL, 0);
+					size = strtoull(argv[arg + 2], NULL, 0);
+
+					dev = flashnor_partAdd(parentId, start, size);
 					if (dev == NULL) {
-						err = -ENOMEM;
-						(void)printf("imx6ull-flashnor: failed to allocate device, err: %s\n", strerror(err));
-						return EXIT_FAILURE;
-					}
-					parent = storage_get(strtoul(argv[arg++], NULL, 0));
-					if (parent == NULL) {
-						err = -EINVAL;
-						(void)printf("imx6ull-flashnor: failed to find parent device, err: %s\n", strerror(err));
-						return EXIT_FAILURE;
-					}
-
-					dev->start = strtoll(argv[arg++], NULL, 0) * parent->dev->mtd->erasesz;
-					dev->size = strtoll(argv[arg++], NULL, 0) * parent->dev->mtd->erasesz;
-					dev->parent = parent;
-
-					/* Only storage parameter matters in case of partition. */
-					err = flashnor_drvInit(NULL, dev);
-					if (err < 0) {
-						(void)printf("imx6ull-flashnor: failed to initialize device, err: %s\n", strerror(err));
-						return EXIT_FAILURE;
-					}
-					optind += 2;
-
-					err = storage_add(dev, &oid);
-					if (err < 0) {
-						(void)printf("imx6ull-flashnor: failed to create partition, err: %s\n", strerror(err));
-						return EXIT_FAILURE;
-					}
-
-					if (snprintf(path, sizeof(path), "/dev/%s%u", prefix, id++) >= sizeof(path)) {
-						err = -ENAMETOOLONG;
-						(void)printf("imx6ull-flashnor: failed to build partition file path, err: %s\n", strerror(err));
-						return EXIT_FAILURE;
-					}
-
-					err = create_dev(&oid, path);
-					if (err < 0) {
-						(void)printf("imx6ull-flashnor: failed to create partition file, err: %s\n", strerror(err));
 						return EXIT_FAILURE;
 					}
 					break;
 
 				case 'r':
-					/* TODO: add rootfs mount and register support */
-					return -ENOTSUP;
+					arg = optind - 1;
+					if ((arg + 4) > argc) {
+						err = -EINVAL;
+						(void)printf("imx6ull-flashnor: missing arg(s) for -r option, err: %s\n", strerror(err));
+						return EXIT_FAILURE;
+					}
+
+					parentId = strtoul(argv[arg], NULL, 0);
+					start = strtoull(argv[arg + 1], NULL, 0);
+					size = strtoull(argv[arg + 2], NULL, 0);
+					fsName = argv[arg + 3];
+
+					dev = flashnor_partAdd(parentId, start, size);
+					if (dev == NULL) {
+						return EXIT_FAILURE;
+					}
+
+					err = storage_mountfs(dev, fsName, NULL, 0, NULL, &oid);
+					if (err < 0) {
+						(void)printf("imx6ull-flashnor: failed to mount a filesystem - %s: %s\n", fsName, strerror(err));
+						return EXIT_FAILURE;
+					}
+
+					portRegister(oid.port, "/", &oid);
+					optind += 3;
+					break;
 
 				case 'n':
 					arg = optind - 1;
@@ -261,8 +325,8 @@ int main(int argc, char *argv[])
 						return EXIT_FAILURE;
 					}
 
-					prefix = argv[arg++];
-					id = strtoul(argv[arg++], NULL, 0);
+					flashnor_prefix = argv[arg++];
+					flashnor_id = strtoul(argv[arg++], NULL, 0);
 					optind++;
 					break;
 
