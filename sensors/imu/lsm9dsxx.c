@@ -244,9 +244,11 @@ static void lsm9dsxx_threadPublish(void *data)
 
 			/* Integration of current measurement */
 			step = (tstamp_gyro - lastGyroTime) / 1000;
+			lastGyroTime = tstamp_gyro;
 			dAngleX += ctx->evtGyro.gyro.gyroX * step;
 			dAngleY += ctx->evtGyro.gyro.gyroY * step;
 			dAngleZ += ctx->evtGyro.gyro.gyroZ * step;
+
 			ctx->evtGyro.gyro.dAngleX = dAngleX;
 			ctx->evtGyro.gyro.dAngleY = dAngleY;
 			ctx->evtGyro.gyro.dAngleZ = dAngleZ;
