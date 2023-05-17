@@ -84,7 +84,7 @@ int gps_recv(int fd, gps_receiver_t *rcv)
 	rcv->pos = 0;
 
 	/* NMEA/PMTK messages are no longer than 128 bytes. Discard partials longer than sizeof(buf)/2 */
-	if (rcv->remLen < (sizeof(rcv->buf) / 2)) {
+	if (rcv->remLen < (rcv->bufSz / 2)) {
 		/* move partial at the end to the beginning of buffer */
 		if (rcv->remStart != rcv->buf) {
 			memmove(rcv->buf, rcv->remStart, rcv->remLen);
@@ -92,7 +92,7 @@ int gps_recv(int fd, gps_receiver_t *rcv)
 		rcv->pos = rcv->remLen;
 	}
 
-	ret = read(fd, &rcv->buf[rcv->pos], sizeof(rcv->buf) - 1 - rcv->pos);
+	ret = read(fd, &rcv->buf[rcv->pos], rcv->bufSz - 1 - rcv->pos);
 	rcv->remStart = rcv->buf;
 	nextStartToken = NULL;
 
@@ -123,6 +123,7 @@ int gps_recv(int fd, gps_receiver_t *rcv)
 			}
 
 			/* Read and validate checksum. Save message to inbox if there is space there */
+			errno = EOK;
 			val = strtol(tokenEnd + 1, (char **)NULL, 16);
 			if (!(val == 0 && errno == EINVAL) && val <= 0xff && inboxFill < rcv->inboxLen) {
 
