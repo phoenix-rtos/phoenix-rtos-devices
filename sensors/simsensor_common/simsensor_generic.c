@@ -30,16 +30,8 @@ typedef struct {
 	const char *name;
 	event_queue_t eventQueue;
 	simsens_reader_t reader;
-	char stack[512] __attribute__((aligned(8)));
+	char stack[2048] __attribute__((aligned(8)));
 } simsens_ctx_t;
-
-
-static void simsens_freeCtx(simsens_ctx_t *ctx)
-{
-	eventQueue_free(&ctx->eventQueue);
-	reader_close(&ctx->reader);
-	free(ctx);
-}
 
 
 static void simsens_publishthr(void *data)
@@ -53,8 +45,8 @@ static void simsens_publishthr(void *data)
 	while (run) {
 		if (reader_read(&ctx->reader, &ctx->eventQueue) != 0) {
 			fprintf(stderr, "simsensor %s: error during file reading", ctx->name);
-			simsens_freeCtx(ctx);
-			return;
+
+			endthread();
 		}
 
 		/* If event queue is empty, then we know, that there is not new event for at least timHorizon time span. */
@@ -102,9 +94,7 @@ static void simsens_publishthr(void *data)
 		}
 	}
 
-	simsens_freeCtx(ctx);
-
-	return;
+	endthread();
 }
 
 
