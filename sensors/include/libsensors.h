@@ -16,6 +16,7 @@
 
 #include <stdint.h>
 #include <sys/ioctl.h>
+#include <time.h>
 
 
 /* Available sensor types */
