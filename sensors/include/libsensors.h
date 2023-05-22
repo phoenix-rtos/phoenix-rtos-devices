@@ -55,6 +55,7 @@ typedef struct {
 	int32_t alt;           /* altitude in 1E-3 [m] (millimetres) above MSL */
 	int64_t lat;           /* latitude in 1E-9 [deg] (nanodegrees) */
 	int64_t lon;           /* longitude in 1E-9 [deg] (nanodegrees) */
+	uint64_t utc;          /* gps utc time in us */
 	uint16_t hdop;         /* horizontal dilution of precision */
 	uint16_t vdop;         /* vertical dilution of precision */
 	int32_t altEllipsoid;  /* altitude in 1E-3 [m] (millimetres) above Ellipsoid */

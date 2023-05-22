@@ -117,8 +117,15 @@ static void nmea_parsegga(char *str, nmea_t *out)
 
 	out->type = nmea_broken;
 
+	/* utc fix time */
+	p = nmea_nField(p, field_gga_utc);
+	if (p == NULL) {
+		return;
+	}
+	in.utc = strtod(p + 1, NULL);
+
 	/* latitude read */
-	p = nmea_nField(p, field_gga_lat);
+	p = nmea_nField(p, field_gga_lat - field_gga_utc);
 	if (p == NULL) {
 		return;
 	}

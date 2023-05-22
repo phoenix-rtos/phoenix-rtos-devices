@@ -172,8 +172,9 @@ int gps_updateEvt(nmea_t *message, sensor_event_t *evtGps, float posStdev, float
 			evtGps->gps.altEllipsoid = message->msg.gga.h_wgs * 1e3;
 			evtGps->gps.satsNb = message->msg.gga.sats;
 			evtGps->gps.eph = evtGps->gps.hdop * posStdev;
+			evtGps->gps.utc = message->msg.gga.utc * 1000000;
 
-			gettime(&(evtGps->timestamp), NULL);
+			gettime(&evtGps->timestamp, NULL);
 			break;
 
 		case nmea_gsa:
