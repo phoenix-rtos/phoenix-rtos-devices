@@ -71,8 +71,6 @@ static void ubx_threadPublish(void *data)
 		if (update != 0) {
 			sensors_publish(info->id, &ctx->evtGps);
 		}
-
-		usleep(UPDATE_RATE_MS * 1000);
 	}
 }
 
@@ -146,7 +144,7 @@ static int ubx_alloc(sensor_info_t *info, const char *args)
 
 	/* Opening serial device */
 	do {
-		ctx->filedes = open(path, O_RDWR | O_NOCTTY | O_NONBLOCK);
+		ctx->filedes = open(path, O_RDWR | O_NOCTTY);
 
 		if (ctx->filedes < 0) {
 			usleep(10 * 1000);
