@@ -190,7 +190,7 @@ int flash_sync(flash_context_t *ctx)
 	}
 
 	/* all 'ones' in buffer means sector is erased ... */
-	for (pos = 0; pos < ctx->properties.page_size; ++pos) {
+	for (pos = 0; pos < ctx->properties.sector_size; ++pos) {
 		if (*(ctx->buff + pos) != NOR_ERASED_STATE) {
 			break;
 		}
