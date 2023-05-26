@@ -6,4 +6,4 @@
 # Copyright 2023 Phoenix Systems
 #
 
-DEFAULT_COMPONENTS := gr716-uart
+DEFAULT_COMPONENTS := gr716-uart gr716-flash
