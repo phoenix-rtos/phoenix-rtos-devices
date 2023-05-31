@@ -166,6 +166,7 @@ static int _flashdrv_wipCheck(unsigned int id, time_t timeout)
 	int res;
 	unsigned int st;
 	time_t start = flashdrv_timeMsGet();
+	int lastTry = 0;
 
 	do {
 		res = _flashdrv_statusRegGet(id, &st);
@@ -174,7 +175,13 @@ static int _flashdrv_wipCheck(unsigned int id, time_t timeout)
 		}
 
 		if ((flashdrv_timeMsGet() - start) >= timeout) {
-			return -ETIME;
+			/* Check one last time to prevent the possibility of starvation. */
+			if (lastTry == 0) {
+				lastTry = 1;
+			}
+			else {
+				return -ETIME;
+			}
 		}
 	} while ((st >> 8) & 0x1);
 

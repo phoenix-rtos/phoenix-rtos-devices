@@ -25,9 +25,11 @@
 #include <phoenix/arch/zynq7000.h>
 
 
+/* clang-format off */
 enum { cr = 0, sr, ier, idr, imr, er, dr, txd00, rxd, sicr, txth, rxth, gpio,
 	   lpbk = 0xe, txd01 = 0x20, txd10, txd11,
 	   lqspi_cr = 0x28, lqspi_sr, modid = 0x3f };
+/* clang-format on */
 
 
 struct {
@@ -41,7 +43,9 @@ struct {
 
 static inline void qspi_dataMemoryBarrier(void)
 {
+	/* clang-format off */
 	__asm__ volatile ("dmb");
+	/* clang-format on */
 }
 
 
@@ -50,15 +54,6 @@ static int qspi_irqHandler(unsigned int n, void *arg)
 	*(qspi_common.base + idr) |= (1 << 2);
 
 	return 1;
-}
-
-
-static inline time_t qspi_timeMsGet(void)
-{
-	time_t now;
-	gettime(&now, NULL);
-
-	return now / 1000;
 }
 
 
@@ -166,15 +161,12 @@ static unsigned int qspi_txData(const uint8_t *txBuff, size_t size)
 
 ssize_t qspi_transfer(const uint8_t *txBuff, uint8_t *rxBuff, size_t size, time_t timeout)
 {
-	int err = 0;
+	int err;
 	size_t tempSz, txSz = size, rxSz = 0;
-	time_t interval = 0, start = 0;
-
-	if (timeout != 0) {
-		start = qspi_timeMsGet();
-	}
+	time_t now, end;
 
 	while (txSz || rxSz) {
+		err = 0;
 		/* Transmit data */
 		while (txSz) {
 			/* Incomplete word has to be send and receive as a last transfer
@@ -205,12 +197,20 @@ ssize_t qspi_transfer(const uint8_t *txBuff, uint8_t *rxBuff, size_t size, time_
 
 		/* Wait until TX Fifo is empty */
 		mutexLock(qspi_common.irqLock);
-		while ((*(qspi_common.base + sr) & (1 << 2)) == 0) {
-			err = condWait(qspi_common.cond, qspi_common.irqLock, (timeout - interval) * 1000);
+
+		(void)gettime(&now, NULL);
+		end = now + (timeout * 1000);
+
+		while ((now < end) && ((*(qspi_common.base + sr) & (1 << 2)) == 0)) {
+			err = condWait(qspi_common.cond, qspi_common.irqLock, end - now);
+			(void)gettime(&now, NULL);
 		}
+
 		mutexUnlock(qspi_common.irqLock);
 
-		if (err < 0) {
+		/* In case of timeout check for the last time if TX Fifo is empty. */
+		/* This check is done to prevent the possibly of starvation. */
+		if ((err < 0) && ((*(qspi_common.base + sr) & (1 << 2)) == 0)) {
 			return err;
 		}
 
@@ -226,13 +226,6 @@ ssize_t qspi_transfer(const uint8_t *txBuff, uint8_t *rxBuff, size_t size, time_
 
 			if (rxBuff != NULL) {
 				rxBuff += tempSz;
-			}
-		}
-
-		if (timeout != 0) {
-			interval = qspi_timeMsGet() - start;
-			if (interval > timeout) {
-				return -ETIMEDOUT;
 			}
 		}
 	}
