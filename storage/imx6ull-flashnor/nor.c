@@ -17,7 +17,7 @@
 #include <stdio.h>
 #include <errno.h>
 
-#include "nor.h"
+#include "imx6ull-nor.h"
 
 /* clang-format off */
 #define FLASH_ID(vid, pid) (((vid) & 0xffu) | ((pid) & 0xff00u) | (((pid) & 0xffu) << 16))

@@ -15,7 +15,7 @@
 #include <stdlib.h>
 #include <sys/threads.h>
 
-#include "flashnor-drv.h"
+#include "imx6ull-flashnor-drv.h"
 
 
 struct _storage_devCtx_t {

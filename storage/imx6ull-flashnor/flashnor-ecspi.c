@@ -18,9 +18,9 @@
 
 #include <sys/types.h>
 
-#include <ecspi.h>
+#include <imx6ull-ecspi.h>
 
-#include "flashnor-ecspi.h"
+#include "imx6ull-flashnor-ecspi.h"
 
 
 enum {

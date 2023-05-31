@@ -23,7 +23,7 @@
 #include <string.h>
 #include <errno.h>
 
-#include "qspi.h"
+#include "imx6ull-qspi.h"
 
 
 #define QSPI_LUT (0x310u / sizeof(uint32_t))

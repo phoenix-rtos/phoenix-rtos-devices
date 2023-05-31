@@ -16,7 +16,7 @@
 
 #include <unistd.h>
 
-#include "flashnor-drv.h"
+#include "imx6ull-flashnor-drv.h"
 
 
 extern int flashnor_ecspiInit(int ndev, flashnor_info_t *info);

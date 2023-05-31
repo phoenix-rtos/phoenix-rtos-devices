@@ -18,7 +18,7 @@
 
 #include <phoenix/arch/imx6ull.h>
 
-#include "ecspi.h"
+#include "imx6ull-ecspi.h"
 
 
 #define BYTES_2_RXTHRESHOLD(LEN) (((LEN) + 3) / 4 - 1)

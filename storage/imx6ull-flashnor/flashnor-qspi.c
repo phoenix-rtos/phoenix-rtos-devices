@@ -14,10 +14,10 @@
 #include <stdio.h>
 #include <errno.h>
 #include <sys/threads.h>
-#include <qspi.h>
+#include <imx6ull-qspi.h>
 
-#include "nor/nor.h"
-#include "flashnor-drv.h"
+#include "imx6ull-nor.h"
+#include "imx6ull-flashnor-drv.h"
 
 
 #define MIN(a, b) ({ \
