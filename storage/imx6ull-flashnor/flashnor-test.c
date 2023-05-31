@@ -16,9 +16,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "flashnor-ecspi.h"
-#include "flashnor-qspi.h"
-#include "flashnor-drv.h"
+#include "imx6ull-flashnor-ecspi.h"
+#include "imx6ull-flashnor-qspi.h"
+#include "imx6ull-flashnor-drv.h"
 
 
 static unsigned valcmp(uint8_t *buf, size_t len, uint8_t val)

@@ -1,7 +1,7 @@
 #include <unistd.h>
 #include <sys/msg.h>
 
-#include <ecspi.h>
+#include <imx6ull-ecspi.h>
 
 #include "../ad7779.h"
 

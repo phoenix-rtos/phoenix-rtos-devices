@@ -14,7 +14,7 @@
 #ifndef _QSPI_NOR_H_
 #define _QSPI_NOR_H_
 
-#include <qspi.h>
+#include <imx6ull-qspi.h>
 
 #define NOR_ERASED_STATE    0xff
 #define NOR_DEFAULT_TIMEOUT 10000

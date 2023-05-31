@@ -6,5 +6,4 @@
 
 NAME := libimx6ull-ecspi
 LOCAL_SRCS := libecspi.c
-LOCAL_HEADERS := ecspi.h
 include $(static-lib.mk)

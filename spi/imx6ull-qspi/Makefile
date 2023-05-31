@@ -6,5 +6,4 @@
 
 NAME := libimx6ull-qspi
 LOCAL_SRCS := qspi.c
-LOCAL_HEADERS := qspi.h
 include $(static-lib.mk)

@@ -6,7 +6,7 @@
 # Copyright 2019 Phoenix Systems
 #
 
-DEFAULT_COMPONENTS := imx6ull-sdma imx6ull-gpio libimx6ull-ecspi
+DEFAULT_COMPONENTS := imx6ull-sdma imx6ull-gpio libimx6ull-ecspi libimx6ull-qspi
 DEFAULT_COMPONENTS += imx6ull-flash
 DEFAULT_COMPONENTS += imx6ull-flashnor
 DEFAULT_COMPONENTS += libusbclient cdc-demo
