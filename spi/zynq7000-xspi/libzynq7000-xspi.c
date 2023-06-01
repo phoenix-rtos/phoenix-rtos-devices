@@ -87,7 +87,7 @@ static int spi_isr(unsigned int n, void *arg)
 	spi_t *spi = arg;
 
 	/* TX FIFO empty */
-	if (*(spi->base + SPI_ISR) & (1 << 2)) {
+	if (*(spi->base + SPI_ISR) & (1 << 3)) {
 		return 1;
 	}
 
@@ -234,7 +234,7 @@ int spi_xfer(unsigned int dev, unsigned int ss, const void *out, size_t olen, vo
 
 		/* Wait until TX FIFO is empty */
 		/* spi->lock mutex is locked in spi_init() */
-		while (!(*(spi->base + SPI_ISR) & (1 << 2))) {
+		while (!(*(spi->base + SPI_ISR) & (1 << 3))) {
 			condWait(spi->cond, spi->lock, 0);
 		}
 
@@ -296,7 +296,7 @@ int spi_init(unsigned int dev)
 	spi_dmb();
 
 	/* Disable all interrupts and enable global interrupt gate */
-	*(spi->base + SPI_IER) = 1 << 2;
+	*(spi->base + SPI_IER) = 1 << 3;
 	*(spi->base + SPI_DGIER) = 1U << 31;
 	spi_dmb();
 
