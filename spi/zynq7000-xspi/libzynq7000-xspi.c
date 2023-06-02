@@ -42,7 +42,8 @@
 #define SPI_IER   10 /* Interrupt enable register */
 
 /* SPI definitions */
-#define SPI_FIFO_SIZE 256 /* SPI TX and RX FIFO size */
+#define SPI_FIFO_SIZE            256 /* SPI TX and RX FIFO size */
+#define SPI_CONDWAIT_DATA_THRESH 32  /* Max. data that use condWait for completion check */
 
 
 typedef struct {
@@ -235,7 +236,10 @@ int spi_xfer(unsigned int dev, unsigned int ss, const void *out, size_t olen, vo
 		/* Wait until TX FIFO is empty */
 		/* spi->lock mutex is locked in spi_init() */
 		while (!(*(spi->base + SPI_ISR) & (1 << 2))) {
-			condWait(spi->cond, spi->lock, 0);
+			/* Skip condition wait if amount of data is too small */
+			if (ilen + olen < SPI_CONDWAIT_DATA_THRESH) {
+				condWait(spi->cond, spi->lock, 0);
+			}
 		}
 
 		/* Read from RX FIFO */

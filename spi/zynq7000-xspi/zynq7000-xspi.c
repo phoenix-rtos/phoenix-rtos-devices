@@ -53,7 +53,20 @@ static void spisrv_devctl(msg_t *msg)
 				break;
 			}
 
-			out->o.err = spi_xfer(spisrv_common.dev, in->i.ctx.oid.id, msg->i.data, msg->i.size, msg->o.data, msg->o.size, in->i.iskip);
+			if (msg->i.data == NULL && msg->i.size == 0) {
+				/* Raw mode - io data can be stored in raw part of msg */
+				out->o.err = spi_xfer(
+					spisrv_common.dev,
+					in->i.ctx.oid.id,
+					(void *)(&msg->i.raw[sizeof(spi_devctl_t) + 2]),
+					(size_t)msg->i.raw[sizeof(spi_devctl_t)],
+					(void *)(&msg->o.raw[sizeof(spi_devctl_t)]),
+					(size_t)msg->i.raw[sizeof(spi_devctl_t) + 1],
+					in->i.iskip);
+			}
+			else {
+				out->o.err = spi_xfer(spisrv_common.dev, in->i.ctx.oid.id, msg->i.data, msg->i.size, msg->o.data, msg->o.size, in->i.iskip);
+			}
 			break;
 
 		default:
