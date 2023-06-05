@@ -283,11 +283,6 @@ int uart_handleMsg(msg_t *msg, int dev)
 	uart = &uart_common.uarts[uartPos[dev]];
 
 	switch (msg->type) {
-		case mtOpen:
-		case mtClose:
-			msg->o.io.err = EOK;
-			break;
-
 		case mtWrite:
 			msg->o.io.err = libtty_write(&uart->tty_common, msg->i.data, msg->i.size, msg->i.io.mode);
 			break;
