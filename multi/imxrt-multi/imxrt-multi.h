@@ -16,7 +16,9 @@
 
 #include <stdlib.h>
 
+
 /* IDs of special files OIDs */
+/* clang-format off */
 enum { id_console = 0, id_uart1, id_uart2, id_uart3, id_uart4, id_uart5, id_uart6, id_uart7, id_uart8,
 	id_uart9, id_uart10, id_uart11, id_uart12, id_gpio1, id_gpio2, id_gpio3, id_gpio4, id_gpio5,
 	id_gpio6, id_gpio7, id_gpio8, id_gpio9, id_gpio10, id_gpio11, id_gpio12, id_gpio13, id_spi1,
@@ -24,7 +26,12 @@ enum { id_console = 0, id_uart1, id_uart2, id_uart3, id_uart4, id_uart5, id_uart
 #ifdef TARGET_IMXRT1170
 	id_spi5, id_spi6,
 #endif
-	id_i2c1, id_i2c2, id_i2c3, id_i2c4, id_trng };
+	id_i2c1, id_i2c2, id_i2c3, id_i2c4, id_trng,
+#ifdef TARGET_IMXRT1170
+	id_cm4_0, id_cm4_1, id_cm4_2, id_cm4_3
+#endif
+};
+/* clang-format on */
 
 
 #pragma pack(push, 8)
@@ -53,7 +60,7 @@ typedef struct {
 
 /* SPI */
 
-
+/* clang-format off */
 enum { spi_msb = 0, spi_lsb = 1};
 
 
@@ -79,27 +86,35 @@ typedef struct {
 	};
 
 } spi_t;
+/* clang-format on */
 
+
+/* Cortex M4 */
+
+
+#define CM4_LOAD_FILE 0
+#define CM4_LOAD_BUFF 1
+#define CM4_RUN_CORE  2
 
 
 /* MULTI */
 
 
-typedef struct _multi_i_t {
+typedef struct {
 	id_t id;
 
 	union {
 		gpio_t gpio;
 		spi_t spi;
+		int cm4_type;
 	};
 
 } multi_i_t;
 
 
-typedef struct _multi_o_t {
+typedef struct {
 	int err;
 	unsigned int val;
-
 } multi_o_t;
 
 

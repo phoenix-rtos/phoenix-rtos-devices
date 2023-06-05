@@ -261,8 +261,19 @@
 #endif
 
 /* TRNG */
+
 #ifndef TRNG
 #define TRNG 0
+#endif
+
+/* Cortex M4 */
+
+#ifdef TARGET_IMXRT1170
+
+#ifndef CM4
+#define CM4 1
+#endif
+
 #endif
 
 #endif
