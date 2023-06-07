@@ -32,17 +32,25 @@ typedef struct {
 } spimsg_ctx_t;
 
 
-typedef union {
-	struct {
-		unsigned int type; /* Devctl type */
-		spimsg_ctx_t ctx;  /* SPI context */
-		size_t iskip;      /* Number of bytes to skip from MISO */
-	} i;
+typedef struct {
+	union {
+		struct {
+			unsigned int type; /* Devctl type */
+			spimsg_ctx_t ctx;  /* SPI context */
+			struct {
+				size_t isize; /* Size of input data */
+				size_t osize; /* Size of output data */
+				size_t iskip; /* Number of bytes to skip from MISO */
+			} xfer;
+		} i;
 
-	struct {
-		int err;
-	} o;
-} __attribute__((packed)) spi_devctl_t;
+		struct {
+			int err;
+		} o;
+	} u;
+
+	unsigned char payload[0];
+} spi_devctl_t;
 
 
 /* Performs SPI transaction */
