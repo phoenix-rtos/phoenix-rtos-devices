@@ -44,24 +44,36 @@ static void spisrv_devctl(msg_t *msg)
 {
 	spi_devctl_t *in = (spi_devctl_t *)msg->i.raw;
 	spi_devctl_t *out = (spi_devctl_t *)msg->o.raw;
+	void *idata = msg->i.data;
+	void *odata = msg->o.data;
 
-	switch (in->i.type) {
+	switch (in->u.i.type) {
 		case spi_devctl_xfer:
-			out->o.err = spi_setMode(spisrv_common.dev, in->i.ctx.mode);
-			if (out->o.err < 0) {
+			out->u.o.err = spi_setMode(spisrv_common.dev, in->u.i.ctx.mode);
+			if (out->u.o.err < 0) {
 				break;
 			}
 
-			out->o.err = spi_setSpeed(spisrv_common.dev, in->i.ctx.speed);
-			if (out->o.err < 0) {
+			out->u.o.err = spi_setSpeed(spisrv_common.dev, in->u.i.ctx.speed);
+			if (out->u.o.err < 0) {
 				break;
 			}
 
-			out->o.err = spi_xfer(spisrv_common.dev, in->i.ctx.oid.id, msg->i.data, msg->i.size, msg->o.data, msg->o.size, in->i.iskip);
+			/* Unpack msg */
+			if ((in->u.i.xfer.isize != 0) && (msg->i.data == NULL)) {
+				idata = in->payload;
+			}
+
+			if ((in->u.i.xfer.osize != 0) && (msg->o.data == NULL)) {
+				odata = out->payload;
+			}
+
+			out->u.o.err = spi_xfer(spisrv_common.dev, in->u.i.ctx.oid.id, idata, in->u.i.xfer.isize, odata, in->u.i.xfer.osize, in->u.i.xfer.iskip);
 			break;
 
 		default:
-			out->o.err = -EINVAL;
+			out->u.o.err = -EINVAL;
+			break;
 	}
 }
 
