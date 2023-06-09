@@ -17,13 +17,13 @@ DEPS := libzynq7000-gpio-msg libspi-msg
 include $(static-lib.mk)
 
 # Sensors Server
+SENSORS_ALL := imu/lsm9dsxx mag/lsm9dsxx baro/lps25xx baro/ms5611 gps/pa6h gps/ubx
+SENSORS_SIM := imu/imu_sim.c mag/mag_sim.c baro/baro_sim.c gps/gps_sim.c gps/gps_sim.c
+SENSORS_LOCAL := $(SENSORS_SIM) $(addsuffix .c, $(filter $(SENSORS_ALL), $(DEVICE_SENSORS)))
+
 NAME := sensors
 LOCAL_HEADERS_DIR := nothing
-LOCAL_SRCS := sensors.c
-LOCAL_SRCS += imu/lsm9dsxx.c imu/imu_sim.c
-LOCAL_SRCS += baro/lps25xx.c baro/ms5611.c baro/baro_sim.c
-LOCAL_SRCS += gps/pa6h.c gps/ubx.c gps/nmea.c gps/common.c gps/gps_sim.c
-LOCAL_SRCS += mag/lsm9dsxx.c mag/mag_sim.c
-LOCAL_SRCS += simsensor_common/event_queue.c simsensor_common/simsensor_reader.c simsensor_common/simsensor_generic.c
+LOCAL_SRCS += sensors.c $(SENSORS_LOCAL) $(SENSORS_SIM)
+LOCAL_SRCS += gps/nmea.c gps/common.c simsensor_common/event_queue.c simsensor_common/simsensor_reader.c simsensor_common/simsensor_generic.c
 DEP_LIBS := libsensors libsensors-spi libzynq7000-gpio-msg libspi-msg
 include $(binary.mk)
