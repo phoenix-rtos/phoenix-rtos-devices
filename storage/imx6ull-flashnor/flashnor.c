@@ -130,7 +130,6 @@ static storage_t *flashnor_partAdd(int parentId, off_t start, size_t size)
 		free(dev);
 		return NULL;
 	}
-	optind += 2;
 
 	err = storage_add(dev, &oid);
 	if (err < 0) {
@@ -287,6 +286,7 @@ int main(int argc, char *argv[])
 					if (dev == NULL) {
 						return EXIT_FAILURE;
 					}
+					optind += 2;
 					break;
 
 				case 'r':
