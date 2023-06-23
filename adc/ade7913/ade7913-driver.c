@@ -765,7 +765,7 @@ static int dev_read(void *data, size_t size)
 	mutexLock(common.edma_spi_rcv_lock);
 	res = condWait(common.edma_spi_rcv_cond, common.edma_spi_rcv_lock, 1000000);
 	if (res == 0) {
-		*(uint32_t **)data = (uint32_t *)&common.edma_transfers;
+		*(uint32_t *)data = common.edma_transfers;
 	}
 	mutexUnlock(common.edma_spi_rcv_lock);
 
