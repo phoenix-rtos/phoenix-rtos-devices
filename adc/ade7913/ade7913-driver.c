@@ -34,10 +34,6 @@
 #include "flexpwm.h"
 
 
-#ifndef ADE7913_PRIO
-#define ADE7913_PRIO 4
-#endif
-
 #define COL_RED    "\033[1;31m"
 #define COL_CYAN   "\033[1;36m"
 #define COL_NORMAL "\033[0m"
@@ -63,16 +59,22 @@
 	} while (0)
 
 
+#ifndef ADE7913_PRIO
+#define ADE7913_PRIO 4
+#endif
+
+/* ADE7913_BUF_NUM - number of dma buffers, needs to be power of two */
+#ifndef ADE7913_BUF_NUM
+#define ADE7913_BUF_NUM 4
+#endif
+
 /*
  * The buffer needs to be aligned with:
  * num_of_devices * bytes_per_device * num_of_buffers
  * so that in each filled buffer there will be same amount
  * of samples for each device.
  */
-#define NUM_OF_BUFFERS  4
-#define ADC_BUFFER_SIZE (4 * NUM_OF_BUFFERS * _PAGE_SIZE)
-
-#define ADE7913_NUM_OF_BITS 24
+#define ADC_BUFFER_SIZE (4 * (ADE7913_BUF_NUM) * _PAGE_SIZE)
 
 #define DREADY_DMA_CHANNEL  5
 #define SPI_RCV_DMA_CHANNEL 6
@@ -137,7 +139,7 @@ struct {
 	volatile struct edma_tcd_s *tcd_spircv_ptr;
 	volatile struct edma_tcd_s *tcd_seq_ptr;
 
-	volatile struct edma_tcd_s tcds[5 + 4 * 4 + NUM_OF_BUFFERS];
+	volatile struct edma_tcd_s tcds[5 + 4 * 4 + ADE7913_BUF_NUM];
 	volatile uint32_t edma_transfers;
 	addr_t buffer_paddr;
 
@@ -208,9 +210,9 @@ static int edma_spi_rcv_irq_handler(unsigned int n, void *arg)
 		edma_channel_enable(SPI_RCV_DMA_CHANNEL);
 		edma_read_tcd(&tcd, SPI_RCV_DMA_CHANNEL);
 
-		common.edma_transfers += NUM_OF_BUFFERS;
-		common.edma_transfers &= ~(NUM_OF_BUFFERS - 1);
-		common.edma_transfers += ((((tcd.daddr + tcd.doff) - (uint32_t)common.buff) & ~(ADC_BUFFER_SIZE / NUM_OF_BUFFERS - 1)) >> 11);
+		common.edma_transfers += ADE7913_BUF_NUM;
+		common.edma_transfers &= ~(ADE7913_BUF_NUM - 1);
+		common.edma_transfers += ((((tcd.daddr + tcd.doff) - (uint32_t)common.buff) & ~(ADC_BUFFER_SIZE / (ADE7913_BUF_NUM) - 1)) >> 11);
 	}
 
 	edma_clear_interrupt(SPI_RCV_DMA_CHANNEL);
@@ -511,17 +513,17 @@ static int dma_setup_tcds(void)
 	common.tcds[5].nbytes_mlnoffno = sizeof(uint32_t);
 	common.tcds[5].attr = (edma_get_tcd_attr_xsize(sizeof(uint32_t)) << 8) | edma_get_tcd_attr_xsize(sizeof(uint32_t));
 
-	common.tcds[5].biter_elinkyes = ADC_BUFFER_SIZE / common.tcds[5].nbytes_mlnoffno / NUM_OF_BUFFERS;
+	common.tcds[5].biter_elinkyes = ADC_BUFFER_SIZE / common.tcds[5].nbytes_mlnoffno / (ADE7913_BUF_NUM);
 	common.tcds[5].biter_elinkyes &= ~E_LINK_CH(0xff);
 	common.tcds[5].biter_elinkyes |= E_LINK_CH(SEQ_DMA_CHANNEL);
 	common.tcds[5].citer_elinkyes = common.tcds[5].biter_elinkyes;
 	common.tcds[5].csr = TCD_CSR_INTMAJOR_BIT | TCD_CSR_ESG_BIT | TCD_CSR_MAJORLINK_CH(SEQ_DMA_CHANNEL);
 
 	/* Clone SPI receive buffer setup and make it a ring buffer */
-	for (i = 1; i < NUM_OF_BUFFERS; ++i) {
+	for (i = 1; i < ADE7913_BUF_NUM; ++i) {
 		edma_copy_tcd(&common.tcds[5 + i], &common.tcds[5]);
-		common.tcds[5 + i].daddr = (uint32_t)common.buff + i * ADC_BUFFER_SIZE / NUM_OF_BUFFERS;
-		common.tcds[5 + i].dlast_sga = (uint32_t)&common.tcds[5 + ((i + 1) % NUM_OF_BUFFERS)];
+		common.tcds[5 + i].daddr = (uint32_t)common.buff + i * ADC_BUFFER_SIZE / (ADE7913_BUF_NUM);
+		common.tcds[5 + i].dlast_sga = (uint32_t)&common.tcds[5 + ((i + 1) % (ADE7913_BUF_NUM))];
 	}
 
 	/* Create chip-select sequencer triggered by /DREADY signal
@@ -819,7 +821,7 @@ static int dev_ctl(msg_t *msg)
 			return EOK;
 
 		case adc_dev_ctl__get_config:
-			dev_ctl.config.bits = ADE7913_NUM_OF_BITS;
+			dev_ctl.config.bits = 24; /* device constant */
 			res = ade7913_get_sampling_rate(&common.ade7913_spi,
 				(int)(common.order[0] - '0'), (int *)&dev_ctl.config.sampling_rate);
 
@@ -833,7 +835,7 @@ static int dev_ctl(msg_t *msg)
 
 		case adc_dev_ctl__get_buffers:
 			dev_ctl.buffers.paddr = common.buffer_paddr;
-			dev_ctl.buffers.num = NUM_OF_BUFFERS;
+			dev_ctl.buffers.num = ADE7913_BUF_NUM;
 			dev_ctl.buffers.size = ADC_BUFFER_SIZE;
 			memcpy(msg->o.raw, &dev_ctl, sizeof(adc_dev_ctl_t));
 			return EOK;
