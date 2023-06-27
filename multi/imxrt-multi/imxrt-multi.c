@@ -47,7 +47,6 @@
 #define IMXRT_MULTI_PRIO 2
 #endif
 
-
 #define STACKSZ 512
 
 
@@ -207,9 +206,11 @@ static int createDevFiles(void)
 	oid_t dir;
 	char name[8];
 
-	while (lookup("/", NULL, &dir) < 0) {
-		usleep(100000);
-	}
+#ifndef IMXRT_MULTI_DUMMYFS
+	/* Wait for the filesystem */
+	while (lookup("/", NULL, &dir) < 0)
+		usleep(10000);
+#endif
 
 	/* /dev */
 
@@ -488,6 +489,11 @@ static void uart_thread(void *arg)
 }
 
 
+#if IMXRT_MULTI_DUMMYFS
+int fs_init(void);
+#endif
+
+
 int main(void)
 {
 	int i;
@@ -496,6 +502,9 @@ int main(void)
 	portCreate(&common.uart_port);
 	portCreate(&multi_port);
 
+#if IMXRT_MULTI_DUMMYFS
+	fs_init();
+#endif
 
 	uart_init();
 	gpio_init();
