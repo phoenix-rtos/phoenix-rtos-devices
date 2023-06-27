@@ -6,12 +6,16 @@
 
 NAME := imxrt-multi
 
-LOCAL_SRCS = imxrt-multi.c common.c uart.c gpio.c spi.c
+LOCAL_PATH := $(call my-dir)
+
+LOCAL_SRCS = imxrt-multi.c common.c uart.c gpio.c spi.c fs.c
 ifneq ($(TARGET_SUBFAMILY), imxrt117x)
   LOCAL_SRCS += i2c.c trng.c
 else
   LOCAL_SRCS += cm4.c
 endif
 DEP_LIBS := libtty libklog
+LIBS := libdummyfs libklog
 LOCAL_HEADERS := imxrt-multi.h
+
 include $(binary.mk)

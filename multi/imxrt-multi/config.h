@@ -266,6 +266,11 @@
 #define TRNG 0
 #endif
 
+/* libdummyfs */
+#ifndef BUILTIN_DUMMYFS
+#define BUILTIN_DUMMYFS 0
+#endif
+
 /* Cortex M4 */
 
 #ifdef TARGET_IMXRT1170

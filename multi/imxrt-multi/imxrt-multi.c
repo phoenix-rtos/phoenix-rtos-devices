@@ -47,7 +47,6 @@
 #define IMXRT_MULTI_PRIO 2
 #endif
 
-
 #define STACKSZ 512
 
 
@@ -206,10 +205,6 @@ static int createDevFiles(void)
 	int err, i;
 	oid_t dir;
 	char name[8];
-
-	while (lookup("/", NULL, &dir) < 0) {
-		usleep(100000);
-	}
 
 	/* /dev */
 
@@ -488,14 +483,29 @@ static void uart_thread(void *arg)
 }
 
 
+#if BUILTIN_DUMMYFS
+extern int fs_init(void);
+#endif
+
+
 int main(void)
 {
 	int i;
 	oid_t oid;
 
+	priority(IMXRT_MULTI_PRIO);
+
 	portCreate(&common.uart_port);
 	portCreate(&multi_port);
 
+#if BUILTIN_DUMMYFS
+	fs_init();
+#else
+	/* Wait for the filesystem */
+	while (lookup("/", NULL, &oid) < 0) {
+		usleep(10 * 1000);
+	}
+#endif
 
 	uart_init();
 	gpio_init();
@@ -525,11 +535,11 @@ int main(void)
 
 	if (createDevFiles() < 0) {
 		printf("imxrt-multi: createSpecialFiles failed\n");
-		return -1;
+		return EXIT_FAILURE;
 	}
 
-	priority(IMXRT_MULTI_PRIO);
 	multi_thread((void *)i);
 
-	return 0;
+	/* never reached */
+	return EXIT_FAILURE;
 }
