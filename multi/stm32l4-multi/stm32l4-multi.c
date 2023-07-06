@@ -28,7 +28,6 @@
 #include "adc.h"
 #include "exti.h"
 #include "flash.h"
-#include "fs.h"
 #include "gpio.h"
 #include "i2c.h"
 #include "rcc.h"
@@ -272,6 +271,11 @@ static void log_write(const char *buff, size_t len)
 }
 
 
+#if BUILTIN_DUMMYFS
+extern int fs_init(void);
+#endif
+
+
 int main(void)
 {
 	int i;
@@ -284,8 +288,9 @@ int main(void)
 	fs_init();
 #else
 	/* Wait for the filesystem */
-	while (lookup("/", NULL, &oid) < 0)
-		usleep(10000);
+	while (lookup("/", NULL, &oid) < 0) {
+		usleep(10 * 1000);
+	}
 #endif
 
 	rcc_init();

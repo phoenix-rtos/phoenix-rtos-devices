@@ -11,6 +11,11 @@
  * %LICENSE%
  */
 
+#include <board_config.h>
+#include "config.h"
+
+#if BUILTIN_DUMMYFS
+
 #include <errno.h>
 #include <sys/file.h>
 #include <sys/mman.h>
@@ -161,3 +166,5 @@ int fs_init(void)
 
 	return EOK;
 }
+
+#endif /* BUILTIN_DUMMYFS */
