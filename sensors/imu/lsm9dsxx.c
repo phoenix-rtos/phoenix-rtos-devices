@@ -108,31 +108,33 @@ typedef struct {
 } lsm9dsxx_ctx_t;
 
 
-static int16_t translateGyr(uint8_t hbyte, uint8_t lbyte)
+static int32_t translateGyr(uint8_t hbyte, uint8_t lbyte)
 {
-	int16_t val = 0;
-	val |= hbyte;
-	val <<= 8;
-	val |= lbyte;
+	/* MISRA incompliant - casting u16 to s16 with no regard to sign */
+	int16_t val = ((uint16_t)hbyte << 8) | (uint16_t)lbyte;
 
-	/* overflow handling */
-	if (val > GYR_OVERFLOW) {
-		return INT16_MAX;
-	}
-	if (val < -GYR_OVERFLOW) {
-		return INT16_MIN;
-	}
 	return GYR2000DPS_CONV_MRAD * val; /* sensor value to [mrad/s] */
 }
 
 
 static int16_t translateAcc(uint8_t hbyte, uint8_t lbyte)
 {
-	int16_t val = 0;
-	val |= hbyte;
-	val <<= 8;
-	val |= lbyte;
-	return ACC8G_CONV_MG * MG_CONV_MMS2 * val; /* sensor value to [mm/s^2] */
+	int32_t val = 0;
+
+	/* MISRA incompliant - casting u16 to s16 with no regard to sign */
+	val = (int16_t)(((uint16_t)hbyte << 8) | (uint16_t)lbyte);
+	val *= ACC8G_CONV_MG * MG_CONV_MMS2;
+
+	/* TODO: this restricts max acceleration to ~32 m/s^2 */
+	if (val > INT16_MAX) {
+		return INT16_MAX;
+	}
+	else if (val < INT16_MIN) {
+		return INT16_MIN;
+	}
+	else {
+		return val; /* sensor value to [mm/s^2] */
+	}
 }
 
 
@@ -201,10 +203,12 @@ static int lsm9dsxx_hwSetup(lsm9dsxx_ctx_t *ctx)
 static void lsm9dsxx_threadPublish(void *data)
 {
 	static uint32_t dAngleX = 0, dAngleY = 0, dAngleZ = 0;
+	static int32_t lastGyroX = 0, lastGyroY = 0, lastGyroZ = 0;
 	static time_t lastGyroTime;
 
 	int err;
-	time_t tstamp_gyro, tstamp_accl, step;
+	time_t tstamp_gyro, tstamp_accl;
+	float step;
 	sensor_info_t *info = (sensor_info_t *)data;
 	lsm9dsxx_ctx_t *ctx = info->ctx;
 	uint8_t ibuf[SENSOR_OUTPUT_SIZE] = { 0 };
@@ -243,15 +247,19 @@ static void lsm9dsxx_threadPublish(void *data)
 			ctx->evtGyro.timestamp = tstamp_gyro;
 
 			/* Integration of current measurement */
-			step = (tstamp_gyro - lastGyroTime) / 1000;
-			lastGyroTime = tstamp_gyro;
-			dAngleX += ctx->evtGyro.gyro.gyroX * step;
-			dAngleY += ctx->evtGyro.gyro.gyroY * step;
-			dAngleZ += ctx->evtGyro.gyro.gyroZ * step;
+			step = (tstamp_gyro - lastGyroTime) / 2000.f; /* dividing by (1000 * 2) for correct unit and avg. of current and last measurement */
+			dAngleX += (uint32_t)((ctx->evtGyro.gyro.gyroX + lastGyroX) * step);
+			dAngleY += (uint32_t)((ctx->evtGyro.gyro.gyroY + lastGyroY) * step);
+			dAngleZ += (uint32_t)((ctx->evtGyro.gyro.gyroZ + lastGyroZ) * step);
 
 			ctx->evtGyro.gyro.dAngleX = dAngleX;
 			ctx->evtGyro.gyro.dAngleY = dAngleY;
 			ctx->evtGyro.gyro.dAngleZ = dAngleZ;
+
+			lastGyroTime = tstamp_gyro;
+			lastGyroX = ctx->evtGyro.gyro.gyroX;
+			lastGyroY = ctx->evtGyro.gyro.gyroY;
+			lastGyroZ = ctx->evtGyro.gyro.gyroZ;
 
 			sensors_publish(info->id, &ctx->evtGyro);
 		}
