@@ -227,8 +227,8 @@ static int uart_close(id_t id)
 		mutexLock(uart.openclose_lock);
 
 		/* stop RX */
-		*(uart.base + ucr1) |= UCR1_RRDYEN;
-		*(uart.base + ucr2) |= UCR2_RXEN;
+		*(uart.base + ucr1) &= ~UCR1_RRDYEN;
+		*(uart.base + ucr2) &= ~UCR2_RXEN;
 
 		uart.reader_busy = 0;
 
