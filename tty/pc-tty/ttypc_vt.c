@@ -723,6 +723,9 @@ int ttypc_vt_init(ttypc_t *ttypc, unsigned int ttybuffsz, ttypc_vt_t *vt)
 		return err;
 	}
 
+	/* Disable default libtty tab expansion */
+	vt->tty.term.c_oflag &= ~(XTABS);
+
 	/* Init emulator */
 	vt->ttypc = ttypc;
 	vt->cols = 80;
