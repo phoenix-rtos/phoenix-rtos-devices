@@ -17,7 +17,7 @@ DEPS := libzynq7000-gpio-msg libspi-msg
 include $(static-lib.mk)
 
 # Sensors Server
-SENSORS_ALL := imu/lsm9dsxx mag/lsm9dsxx baro/lps25xx baro/ms5611 gps/pa6h gps/ubx
+SENSORS_ALL := imu/lsm9dsxx mag/lsm9dsxx mag/lis2mdl baro/lps25xx baro/ms5611 gps/pa6h gps/ubx
 SENSORS_SIM := imu/imu_sim.c mag/mag_sim.c baro/baro_sim.c gps/gps_sim.c gps/gps_sim.c
 SENSORS_LOCAL := $(SENSORS_SIM) $(addsuffix .c, $(filter $(SENSORS_ALL), $(DEVICE_SENSORS)))
 
