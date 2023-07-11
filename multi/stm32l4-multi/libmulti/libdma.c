@@ -12,6 +12,8 @@
 
 #include <errno.h>
 #include <sys/interrupt.h>
+#include <sys/time.h>
+#include <sys/pwman.h>
 
 #include "../common.h"
 #include "libmulti/libdma.h"
@@ -21,13 +23,20 @@
 #define DMA_HTIE_FLAG     (1 << 2)
 #define DMA_CIRCULAR_FLAG (1 << 5)
 
+#define DMA_NUM_CONTROLLERS 2
+#define DMA_NUM_CHANNELS    7
+
+#define DMA_DMA2_ALT_IRQ_BASE 68
 
 struct {
 	volatile unsigned int *base;
-	int irq_base;
-	handle_t irqLock;
-	handle_t cond;
-} dma_common[2];
+	struct {
+		handle_t irqLock;
+		handle_t cond;
+		int taken;
+	} channels[DMA_NUM_CHANNELS];
+	handle_t takenLock;
+} dma_common[DMA_NUM_CONTROLLERS];
 
 
 static const int dma2pctl[] = { pctl_dma1, pctl_dma2 };
@@ -59,7 +68,7 @@ static const struct libdma_per libdma_persSpi[] = {
 
 
 static const struct libdma_per libdma_persUart[] = {
-	{ dma1, { 4, 3 }, 0x2 },  // or { dma2, { 6, 5 }, 0x2 }
+	{ dma2, { 6, 5 }, 0x2 },  // or { dma1, { 4, 3 }, 0x2 }
 	{ dma1, { 5, 6 }, 0x2 },
 	{ dma1, { 2, 1 }, 0x2 },
 	{ dma2, { 4, 2 }, 0x2 },
@@ -68,9 +77,9 @@ static const struct libdma_per libdma_persUart[] = {
 
 
 static const struct {
-	unsigned int base;
-	int irq_base;
-} dmainfo[2] = { { 0x40020000, 11 }, { 0x40020400, 56 } };
+	uintptr_t base;
+	int irqBase;
+} dmainfo[DMA_NUM_CONTROLLERS] = { { 0x40020000, 11 }, { 0x40020400, 56 } };
 
 
 static struct {
@@ -85,50 +94,84 @@ static struct {
 			void *arg;
 		} inf;
 		struct {
-			volatile int *done_flag;
-			volatile unsigned int *channel_base;
+			volatile int *doneFlag;
 		} once;
 	};
-} dma_transfers[2][8];
+} dma_transfers[DMA_NUM_CONTROLLERS][DMA_NUM_CHANNELS];
 
 
-static void _prepare_transfer(volatile unsigned int *channel_base, void *maddr, size_t len, int flags)
+volatile unsigned int *libdma_channelBase(int dma, int channel)
 {
-	*(channel_base + cmar) = (unsigned int)maddr;
-	*(channel_base + cndtr) = len;
+	return dma_common[dma].base + 2 + (5 * channel);
+}
+
+
+static void libdma_prepareTransfer(int dma, int channel, void *maddr, size_t len, int flags)
+{
+	volatile unsigned int *channelBase = libdma_channelBase(dma, channel);
+	volatile unsigned int *base = dma_common[dma].base;
+
+	*(base + ifcr) = 1 << (4 * channel);
 	dataBarier();
-	*(channel_base + ccr) |= flags | 0x1;
+	*(channelBase + cmar) = (unsigned int)maddr;
+	*(channelBase + cndtr) = len;
+	dataBarier();
+	*(channelBase + ccr) |= flags | 0x1;
 	dataBarier();
 }
 
 
-static void _unprepare_transfer(volatile unsigned int *channel_base)
+static void libdma_unprepareTransfer(int dma, int channel)
 {
+	volatile unsigned int *channelBase = libdma_channelBase(dma, channel);
+
 	dataBarier();
-	/* Disable interrupts, disable channel */
-	*(channel_base + ccr) &= ~(DMA_TCIE_FLAG | DMA_HTIE_FLAG | 0x1);
+	/* Disable interrupts, disable circular mode, disable channel */
+	*(channelBase + ccr) &= ~(DMA_TCIE_FLAG | DMA_HTIE_FLAG | DMA_CIRCULAR_FLAG | 0x1);
 	dataBarier();
 }
 
 
-static int irqHandler(unsigned int n, void *arg)
+static unsigned int libdma_irqnum(int dma, int channel)
+{
+	/* Channels of DMA2 are noncontiguous */
+	if ((dma == dma2) && (channel >= 5)) {
+		return 16 + DMA_DMA2_ALT_IRQ_BASE - 5 + channel;
+	}
+	return 16 + dmainfo[dma].irqBase + channel;
+}
+
+
+static int libdma_irqnumToChannel(int dma, int irqnum)
+{
+	/* Channels of DMA2 are noncontiguous */
+	if ((dma == dma2) && ((irqnum == 16 + DMA_DMA2_ALT_IRQ_BASE) || (irqnum == 16 + DMA_DMA2_ALT_IRQ_BASE + 1))) {
+		return irqnum - (16 + DMA_DMA2_ALT_IRQ_BASE - 5);
+	}
+	return irqnum - dmainfo[dma].irqBase - 16;
+}
+
+
+static int libdma_irqHandler(unsigned int n, void *arg)
 {
 	int dma = (int)arg;
-	int channel = n - dma_common[dma].irq_base - 16;
+	int channel = libdma_irqnumToChannel(dma, n);
 	volatile unsigned int *base = dma_common[dma].base;
-	unsigned int flags = (*(base + isr) & (0xF << (channel * 4))) >> (channel * 4);
+	unsigned int flags = (*(base + isr) >> (channel * 4)) & 0xF;
 
 	if (flags == 0) {
 		return -1;
 	}
 
-	*(base + ifcr) = (0xF << (channel * 4));
+	*(base + ifcr) = (1 << (channel * 4));
 
 	switch (dma_transfers[dma][channel].type) {
 		case dma_transferOnce:
-			_unprepare_transfer(dma_transfers[dma][channel].once.channel_base);
+			libdma_unprepareTransfer(dma, channel);
 
-			*dma_transfers[dma][channel].once.done_flag = 1;
+			if (dma_transfers[dma][channel].once.doneFlag != NULL) {
+				*dma_transfers[dma][channel].once.doneFlag = 1;
+			}
 
 			dma_transfers[dma][channel].type = dma_transferNull;
 			break;
@@ -141,6 +184,7 @@ static int irqHandler(unsigned int n, void *arg)
 			}
 			break;
 		case dma_transferNull:
+		default:
 			/* Shouldn't happen */
 			break;
 	}
@@ -149,25 +193,17 @@ static int irqHandler(unsigned int n, void *arg)
 }
 
 
-static void _configureChannel(int dma, int channel, int dir, int priority, void *paddr, int msize, int psize, int minc, int pinc, unsigned char reqmap, handle_t *cond)
+static void libdma_configureChannel(int dma, int channel, int dir, int priority, void *paddr, int msize, int psize, int minc, int pinc, unsigned char reqmap, handle_t *cond)
 {
-	unsigned int tmp, irqnum;
-	volatile unsigned int *channel_base = dma_common[dma].base + 2 + (5 * channel);
-	handle_t interruptCond = (cond == NULL) ? dma_common[dma].cond : *cond;
+	unsigned int tmp, irqnum = libdma_irqnum(dma, channel);
+	volatile unsigned int *channelBase = libdma_channelBase(dma, channel);
+	handle_t interruptCond = (cond == NULL) ? dma_common[dma].channels[channel].cond : *cond;
 
-	/* Channels of DMA2 are noncontiguous */
-	if (dma == dma2 && channel >= 5) {
-		irqnum = 16 + 68 - 5 + channel;
-	}
-	else {
-		irqnum = 16 + dmainfo[dma].irq_base + channel;
-	}
+	interrupt(irqnum, libdma_irqHandler, (void *)dma, interruptCond, NULL);
 
-	interrupt(irqnum, irqHandler, (void *)dma, interruptCond, NULL);
-
-	*(channel_base + ccr) = ((priority & 0x3) << 12) | ((msize & 0x3) << 10) | ((psize & 0x3) << 8) |
+	*(channelBase + ccr) = ((priority & 0x3) << 12) | ((msize & 0x3) << 10) | ((psize & 0x3) << 8) |
 		((minc & 0x1) << 7) | ((pinc & 0x1) << 6) | ((dir & 0x1) << 4);
-	*(channel_base + cpar) = (unsigned int)paddr;
+	*(channelBase + cpar) = (unsigned int)paddr;
 	tmp = *(dma_common[dma].base + cselr) & ~(0xF << channel * 4);
 	*(dma_common[dma].base + cselr) = tmp | ((unsigned int)reqmap << channel * 4);
 }
@@ -178,104 +214,171 @@ int libdma_configurePeripheral(const struct libdma_per *per, int dir, int priori
 	int dma = per->dma, channel = per->channel[dir];
 	char reqmap = per->reqmap;
 
-	_configureChannel(dma, channel, dir, priority, paddr, msize, psize, minc, pinc, reqmap, cond);
+	libdma_configureChannel(dma, channel, dir, priority, paddr, msize, psize, minc, pinc, reqmap, cond);
 
 	return 0;
 }
 
 
-static int _has_channel_finished(const void *maddr, volatile unsigned int *channel_base)
+static int libdma_hasChannelFinished(volatile unsigned int *channelBase)
 {
-	return ((maddr != NULL) && (*(channel_base + cndtr) > 0)) ? 1 : 0;
+	return ((channelBase == NULL) || (*(channelBase + cndtr) == 0)) ? 1 : 0;
 }
 
 
-static int _transfer(int dma, int rx_channel, int tx_channel, void *rx_maddr, const void *tx_maddr, size_t len)
+static int libdma_transferTimeout(int dma, int channel, void *maddr, size_t len, int mode, time_t timeout)
 {
-	/* Empirically chosen value to avoid mutex+cond overhead for short transactions */
-	int use_interrupts = len > 24;
-	int interrupts_flags = (use_interrupts == 0) ? 0 : DMA_TCIE_FLAG;
+	time_t now, end, condTimeout;
+	volatile unsigned int *channelBase = libdma_channelBase(dma, channel);
+	volatile int done = 0;
 
-	volatile unsigned int *rx_channel_base = dma_common[dma].base + 2 + (5 * rx_channel);
-	volatile unsigned int *tx_channel_base = dma_common[dma].base + 2 + (5 * tx_channel);
+	dma_transfers[dma][channel].type = dma_transferOnce;
+	dma_transfers[dma][channel].once.doneFlag = &done;
+	libdma_prepareTransfer(dma, channel, maddr, len, DMA_TCIE_FLAG);
 
-	if (rx_maddr != NULL) {
-		_prepare_transfer(rx_channel_base, rx_maddr, len, interrupts_flags);
+	condTimeout = timeout;
+	if (timeout > 0) {
+		gettime(&now, NULL);
+		end = now + timeout;
 	}
 
-	if (tx_maddr != NULL) {
-		/* When doing rw transfer, avoid unnecessary interrupt handling and condSignal()
-		by waiting only for RX transfer completion, ignoring TX */
-		_prepare_transfer(tx_channel_base, (void *)tx_maddr, len, rx_maddr == NULL ? interrupts_flags : 0);
-	}
-
-	if (use_interrupts != 0) {
-		mutexLock(dma_common[dma].irqLock);
-		while (_has_channel_finished(rx_maddr, rx_channel_base) || _has_channel_finished(tx_maddr, tx_channel_base)) {
-			condWait(dma_common[dma].cond, dma_common[dma].irqLock, 1);
+	mutexLock(dma_common[dma].channels[channel].irqLock);
+	while (done == 0) {
+		condWait(dma_common[dma].channels[channel].cond, dma_common[dma].channels[channel].irqLock, condTimeout);
+		if (mode == dma_modeNoBlock) {
+			break;
 		}
-		mutexUnlock(dma_common[dma].irqLock);
+		if (timeout != 0) {
+			gettime(&now, NULL);
+			if (end <= now) {
+				break;
+			}
+			condTimeout = end - now;
+		}
 	}
-	else {
-		while (_has_channel_finished(rx_maddr, rx_channel_base) || _has_channel_finished(tx_maddr, tx_channel_base))
-			;
+	mutexUnlock(dma_common[dma].channels[channel].irqLock);
+
+	if (done == 1) {
+		return len;
+	}
+	/* May result in unpreparing channel twice but that's valid. */
+	libdma_unprepareTransfer(dma, channel);
+	dma_transfers[dma][channel].type = dma_transferNull;
+
+	return len - *(channelBase + cndtr);
+}
+
+
+static int libdma_transferHelperInterrupts(int dma, int rxChannel, int txChannel, void *rxMAddr, const void *txMAddr, size_t len)
+{
+	volatile unsigned int *txChannelBase = libdma_channelBase(dma, txChannel);
+	volatile int rxDone = 0;
+
+	if (rxMAddr == NULL) {
+		return libdma_transferTimeout(dma, txChannel, (void *)txMAddr, len, dma_modeNormal, 0);
 	}
 
-	if (rx_maddr != NULL) {
-		_unprepare_transfer(rx_channel_base);
-	}
+	dma_transfers[dma][rxChannel].type = dma_transferOnce;
+	dma_transfers[dma][rxChannel].once.doneFlag = &rxDone;
+	libdma_prepareTransfer(dma, rxChannel, rxMAddr, len, DMA_TCIE_FLAG);
 
-	if (tx_maddr != NULL) {
-		_unprepare_transfer(tx_channel_base);
+	/* When doing rw transfer, avoid unnecessary interrupt handling and condSignal()
+	by waiting only for RX transfer completion, ignoring TX */
+	libdma_prepareTransfer(dma, txChannel, (void *)txMAddr, len, 0);
+
+	mutexLock(dma_common[dma].channels[rxChannel].irqLock);
+	while ((rxDone == 0) || (libdma_hasChannelFinished(txChannelBase) == 0)) {
+		condWait(dma_common[dma].channels[rxChannel].cond, dma_common[dma].channels[rxChannel].irqLock, 0);
 	}
+	mutexUnlock(dma_common[dma].channels[rxChannel].irqLock);
+
+	/* Unprepare rx is handled by irq */
+	libdma_unprepareTransfer(dma, txChannel);
 
 	return len;
 }
 
 
-static int libdma_transferAsync(const struct libdma_per *per, void *maddr, int dir, size_t len, volatile int *done_flag)
+static int libdma_transferHelperNoInterrupts(int dma, int rxChannel, int txChannel, void *rxMAddr, const void *txMAddr, size_t len)
+{
+	volatile unsigned int *rxChannelBase;
+	volatile unsigned int *txChannelBase = libdma_channelBase(dma, txChannel);
+
+	if (rxMAddr == NULL) {
+		rxChannelBase = NULL;
+	}
+	else {
+		rxChannelBase = libdma_channelBase(dma, rxChannel);
+		libdma_prepareTransfer(dma, rxChannel, rxMAddr, len, 0);
+	}
+
+	libdma_prepareTransfer(dma, txChannel, (void *)txMAddr, len, 0);
+
+	while ((libdma_hasChannelFinished(rxChannelBase) == 0) || (libdma_hasChannelFinished(txChannelBase) == 0)) {
+		;
+	}
+
+	if (rxMAddr != NULL) {
+		libdma_unprepareTransfer(dma, rxChannel);
+	}
+
+	libdma_unprepareTransfer(dma, txChannel);
+
+	return len;
+}
+
+
+static int libdma_transferHelper(int dma, int rxChannel, int txChannel, void *rxMAddr, const void *txMAddr, size_t len)
+{
+	/* rxMAddr may be NULL, txMAddr must be a valid address */
+
+	/* Empirically chosen value to avoid mutex+cond overhead for short transactions */
+	/* TODO: this value was chosen before refactor reducing locking overhead. */
+	if (len > 24) {
+		return libdma_transferHelperInterrupts(dma, rxChannel, txChannel, rxMAddr, txMAddr, len);
+	}
+	return libdma_transferHelperNoInterrupts(dma, rxChannel, txChannel, rxMAddr, txMAddr, len);
+}
+
+
+static int libdma_transferAsync(const struct libdma_per *per, void *maddr, int dir, size_t len, volatile int *doneFlag)
 {
 	int dma = per->dma;
 	int channel = per->channel[dir];
-	volatile unsigned int *channel_base = dma_common[dma].base + 2 + (5 * channel);
 
-	/* Only one request may be issued on one channel at one time. */
-	if ((dma_transfers[dma][channel].type != dma_transferNull) || (DMA_MAX_LEN < len)) {
+	if (DMA_MAX_LEN < len) {
 		return -EINVAL;
 	}
 
-	*done_flag = 0;
+	*doneFlag = 0;
 
 	dma_transfers[dma][channel].type = dma_transferOnce;
-	dma_transfers[dma][channel].once.done_flag = done_flag;
-	dma_transfers[dma][channel].once.channel_base = channel_base;
+	dma_transfers[dma][channel].once.doneFlag = doneFlag;
 
-	_prepare_transfer(channel_base, maddr, len, DMA_TCIE_FLAG);
+	libdma_prepareTransfer(dma, channel, maddr, len, DMA_TCIE_FLAG);
 
 	return 0;
 }
 
 
-int libdma_txAsync(const struct libdma_per *per, const void *tx_maddr, size_t len, volatile int *done_flag)
+int libdma_txAsync(const struct libdma_per *per, const void *txMAddr, size_t len, volatile int *doneFlag)
 {
-	return libdma_transferAsync(per, (void *)tx_maddr, dma_mem2per, len, done_flag);
+	return libdma_transferAsync(per, (void *)txMAddr, dma_mem2per, len, doneFlag);
 }
 
 
-int libdma_rxAsync(const struct libdma_per *per, void *rx_maddr, size_t len, volatile int *done_flag)
+int libdma_rxAsync(const struct libdma_per *per, void *rxMAddr, size_t len, volatile int *doneFlag)
 {
-	return libdma_transferAsync(per, rx_maddr, dma_per2mem, len, done_flag);
+	return libdma_transferAsync(per, rxMAddr, dma_per2mem, len, doneFlag);
 }
 
 
-int libdma_infiniteRxAsync(const struct libdma_per *per, void *rx_maddr, size_t len, void fn(void *arg, int type), void *arg)
+int libdma_infiniteRxAsync(const struct libdma_per *per, void *rxMAddr, size_t len, void fn(void *arg, int type), void *arg)
 {
 	int dma = per->dma;
 	int channel = per->channel[dma_per2mem];
-	volatile unsigned int *channel_base = dma_common[dma].base + 2 + (5 * channel);
 
-	/* Only one request may be issued on one channel at one time. */
-	if ((dma_transfers[dma][channel].type != dma_transferNull) || (DMA_MAX_LEN < len)) {
+	if (DMA_MAX_LEN < len) {
 		return -EINVAL;
 	}
 
@@ -283,38 +386,64 @@ int libdma_infiniteRxAsync(const struct libdma_per *per, void *rx_maddr, size_t 
 	dma_transfers[dma][channel].inf.fn = fn;
 	dma_transfers[dma][channel].inf.arg = arg;
 
-	_prepare_transfer(channel_base, rx_maddr, len, DMA_TCIE_FLAG | DMA_HTIE_FLAG | DMA_CIRCULAR_FLAG);
+	libdma_prepareTransfer(dma, channel, rxMAddr, len, DMA_TCIE_FLAG | DMA_HTIE_FLAG | DMA_CIRCULAR_FLAG);
 
 	return 0;
 }
 
 
-int libdma_transfer(const struct libdma_per *per, void *rx_maddr, const void *tx_maddr, size_t len)
+int libdma_transfer(const struct libdma_per *per, void *rxMAddr, const void *txMAddr, size_t len)
 {
 	int res;
-	volatile unsigned int *tx_channel_base;
+	volatile unsigned int *txChannelBase;
 	int dma = per->dma;
-	int rx_channel = per->channel[dma_per2mem];
-	int tx_channel = per->channel[dma_mem2per];
+	int rxChannel = per->channel[dma_per2mem];
+	int txChannel = per->channel[dma_mem2per];
 	unsigned char txbuf = 0;
 
 	if (DMA_MAX_LEN < len) {
 		return -EINVAL;
 	}
 
-	if (tx_maddr == NULL) {
+	if (txMAddr == NULL) {
 		/* In case no tx buffer is provided, use a 1-byte dummy
 		and configure DMA not to increment the memory address. */
-		tx_channel_base = dma_common[dma].base + 2 + (5 * tx_channel);
-		*(tx_channel_base + ccr) &= ~(1 << 7);
-		res = _transfer(dma, rx_channel, tx_channel, rx_maddr, &txbuf, len);
-		*(tx_channel_base + ccr) |= (1 << 7);
+		txChannelBase = libdma_channelBase(dma, txChannel);
+		*(txChannelBase + ccr) &= ~(1 << 7);
+		res = libdma_transferHelper(dma, rxChannel, txChannel, rxMAddr, &txbuf, len);
+		*(txChannelBase + ccr) |= (1 << 7);
 	}
 	else {
-		res = _transfer(dma, rx_channel, tx_channel, rx_maddr, tx_maddr, len);
+		res = libdma_transferHelper(dma, rxChannel, txChannel, rxMAddr, txMAddr, len);
 	}
 
 	return res;
+}
+
+
+int libdma_tx(const struct libdma_per *per, const void *txMAddr, size_t len, int mode, time_t timeout)
+{
+	int dma = per->dma;
+	int txChannel = per->channel[dma_mem2per];
+
+	if (len > DMA_MAX_LEN) {
+		return -EINVAL;
+	}
+
+	return libdma_transferTimeout(dma, txChannel, (void *)txMAddr, len, mode, timeout);
+}
+
+
+int libdma_rx(const struct libdma_per *per, void *rxMAddr, size_t len, int mode, time_t timeout)
+{
+	int dma = per->dma;
+	int rxChannel = per->channel[dma_per2mem];
+
+	if (len > DMA_MAX_LEN) {
+		return -EINVAL;
+	}
+
+	return libdma_transferTimeout(dma, rxChannel, rxMAddr, len, mode, timeout);
 }
 
 
@@ -322,35 +451,55 @@ uint16_t libdma_leftToRx(const struct libdma_per *per)
 {
 	int dma = per->dma;
 	int channel = per->channel[dma_per2mem];
-	volatile unsigned int *channel_base = dma_common[dma].base + 2 + (5 * channel);
+	volatile unsigned int *channelBase = libdma_channelBase(dma, channel);
 
 	/* Only bottom 16 bits contain data. */
-	return (uint16_t)(*(channel_base + cndtr));
+	return (uint16_t)(*(channelBase + cndtr));
 }
 
 
-const struct libdma_per *libdma_getPeripheral(int per, unsigned int num)
+int libdma_acquirePeripheral(int per, unsigned int num, const struct libdma_per **perP)
 {
-	switch (per) {
-		case dma_spi:
-			if (num >= sizeof(libdma_persSpi) / sizeof(libdma_persSpi[0])) {
-				return NULL;
-			}
-			return &libdma_persSpi[num];
-		case dma_uart:
-			if (num >= sizeof(libdma_persUart) / sizeof(libdma_persUart[0])) {
-				return NULL;
-			}
-			return &libdma_persUart[num];
-		default:
-			return NULL;
+	const struct libdma_per *p = NULL;
+	int err = 0;
+
+	if (per == dma_spi) {
+		if (num < sizeof(libdma_persSpi) / sizeof(libdma_persSpi[0])) {
+			p = &libdma_persSpi[num];
+		}
 	}
+	else if (per == dma_uart) {
+		if (num < sizeof(libdma_persUart) / sizeof(libdma_persUart[0])) {
+			p = &libdma_persUart[num];
+		}
+	}
+
+	if (p == NULL) {
+		return -EINVAL;
+	}
+
+	mutexLock(dma_common[(int)p->dma].takenLock);
+
+	if ((dma_common[(int)p->dma].channels[(int)p->channel[0]].taken == 0) && (dma_common[(int)p->dma].channels[(int)p->channel[1]].taken == 0)) {
+		dma_common[(int)p->dma].channels[(int)p->channel[0]].taken = 1;
+		dma_common[(int)p->dma].channels[(int)p->channel[1]].taken = 1;
+
+		*perP = p;
+	}
+	else {
+		err = -EBUSY;
+	}
+
+	mutexUnlock(dma_common[(int)p->dma].takenLock);
+
+	return err;
 }
 
 
 int libdma_init(void)
 {
 	int dma;
+	int channel;
 	static int init = 0;
 
 	if (init != 0) {
@@ -359,12 +508,20 @@ int libdma_init(void)
 
 	init = 1;
 
-	for (dma = 0; dma < 2; ++dma) {
+	for (dma = 0; dma < DMA_NUM_CONTROLLERS; ++dma) {
 		dma_common[dma].base = (void *)dmainfo[dma].base;
-		dma_common[dma].irq_base = dmainfo[dma].irq_base;
 
-		mutexCreate(&dma_common[dma].irqLock);
-		condCreate(&dma_common[dma].cond);
+		mutexCreate(&dma_common[dma].takenLock);
+
+		for (channel = 0; channel < DMA_NUM_CHANNELS; channel++) {
+			condCreate(&dma_common[dma].channels[channel].cond);
+
+			/* Only purpose of the mutex is to be able to use condWait. */
+			/* Synchronization and exclusion on channels must be done externally by the user. */
+			mutexCreate(&dma_common[dma].channels[channel].irqLock);
+
+			dma_common[dma].channels[channel].taken = 0;
+		}
 
 		devClk(dma2pctl[dma], 1);
 	}

@@ -36,10 +36,14 @@
 
 #define UART_CNT (UART1 + UART2 + UART3 + UART4 + UART5)
 
+
 static libuart_ctx uart_common[UART_CNT];
 
 
-static const int uartConfig[] = { UART1, UART2, UART3, UART4, UART5 };
+static const int uartEnabled[] = { UART1, UART2, UART3, UART4, UART5 };
+
+
+static const int uartDMA[] = { UART1_DMA, UART2_DMA, UART3_DMA, UART4_DMA, UART5_DMA };
 
 
 static const int uartPos[] = { UART1_POS, UART2_POS, UART3_POS, UART4_POS, UART5_POS };
@@ -47,26 +51,29 @@ static const int uartPos[] = { UART1_POS, UART2_POS, UART3_POS, UART4_POS, UART5
 
 int uart_configure(int uart, char bits, char parity, unsigned int baud, char enable)
 {
-	if (uart < usart1 || uart > uart5 || !uartConfig[uart])
+	if ((uart < usart1) || (uart > uart5) || (uartEnabled[uart] == 0)) {
 		return -EINVAL;
+	}
 
 	return libuart_configure(&uart_common[uartPos[uart]], bits, parity, baud, enable);
 }
 
 
-int uart_write(int uart, const void* buff, unsigned int bufflen)
+int uart_write(int uart, const void *buff, unsigned int bufflen)
 {
-	if (uart < usart1 || uart > uart5 || !uartConfig[uart])
+	if ((uart < usart1) || (uart > uart5) || (uartEnabled[uart] == 0)) {
 		return -EINVAL;
+	}
 
 	return libuart_write(&uart_common[uartPos[uart]], buff, bufflen);
 }
 
 
-int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int timeout)
+int uart_read(int uart, void *buff, unsigned int count, char mode, unsigned int timeout)
 {
-	if (uart < usart1 || uart > uart5 || !uartConfig[uart])
+	if ((uart < usart1) || (uart > uart5) || (uartEnabled[uart] == 0)) {
 		return -EINVAL;
+	}
 
 	return libuart_read(&uart_common[uartPos[uart]], buff, count, mode, timeout);
 }
@@ -77,10 +84,11 @@ int uart_init(void)
 	unsigned int uart;
 
 	for (uart = usart1; uart <= uart5; ++uart) {
-		if (!uartConfig[uart])
+		if (uartEnabled[uart] == 0) {
 			continue;
+		}
 
-		libuart_init(&uart_common[uartPos[uart]], uart);
+		libuart_init(&uart_common[uartPos[uart]], uart, uartDMA[uart]);
 	}
 
 	return EOK;

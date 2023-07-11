@@ -185,6 +185,8 @@ int libspi_configure(libspi_ctx_t *ctx, char mode, char bdiv, int enable)
 
 int libspi_init(libspi_ctx_t *ctx, unsigned int spi, int useDma)
 {
+	int err;
+
 	if ((spi > spi3) || (ctx == NULL)) {
 		return -1;
 	}
@@ -193,9 +195,12 @@ int libspi_init(libspi_ctx_t *ctx, unsigned int spi, int useDma)
 
 	if (useDma != 0) {
 		libdma_init();
-		ctx->per = libdma_getPeripheral(dma_spi, spi - spi1);
-		libdma_configurePeripheral(ctx->per, dma_mem2per, 0x1, (void *)(ctx->base + dr), 0x0, 0x0, 0x1, 0x0, NULL);
-		libdma_configurePeripheral(ctx->per, dma_per2mem, 0x1, (void *)(ctx->base + dr), 0x0, 0x0, 0x1, 0x0, NULL);
+		err = libdma_acquirePeripheral(dma_spi, spi - spi1, &ctx->per);
+		if (err < 0) {
+			return err;
+		}
+		libdma_configurePeripheral(ctx->per, dma_mem2per, dma_priorityMedium, (void *)(ctx->base + dr), 0x0, 0x0, 0x1, 0x0, NULL);
+		libdma_configurePeripheral(ctx->per, dma_per2mem, dma_priorityMedium, (void *)(ctx->base + dr), 0x0, 0x0, 0x1, 0x0, NULL);
 	}
 	else {
 		ctx->per = NULL;

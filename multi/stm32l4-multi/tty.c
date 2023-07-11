@@ -641,6 +641,7 @@ int tty_init(void)
 	oid_t oid;
 	libtty_callbacks_t callbacks;
 	tty_ctx_t *ctx;
+	int err;
 	static const struct {
 		volatile uint32_t *base;
 		int dev;
@@ -690,7 +691,10 @@ int tty_init(void)
 		}
 		else {
 			libdma_init();
-			ctx->data.dma.per = libdma_getPeripheral(dma_uart, tty);
+			err = libdma_acquirePeripheral(dma_uart, tty, &ctx->data.dma.per);
+			if (err < 0) {
+				return err;
+			}
 			/* Configure dma for tx and rx, medium priority, transfer size 8bits, increment memory address by 1 after each transfer. */
 			libdma_configurePeripheral(ctx->data.dma.per, dma_mem2per, 0x1, (void *)(ctx->base + tdr), 0x0, 0x0, 0x1, 0x0, &ctx->cond);
 			libdma_configurePeripheral(ctx->data.dma.per, dma_per2mem, 0x1, (void *)(ctx->base + rdr), 0x0, 0x0, 0x1, 0x0, &ctx->cond);

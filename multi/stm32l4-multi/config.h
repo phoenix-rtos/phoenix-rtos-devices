@@ -36,6 +36,31 @@
 #define UART5 0
 #endif
 
+#ifndef UART1_DMA
+#define UART1_DMA 0
+#endif
+
+#ifndef UART2_DMA
+#define UART2_DMA 0
+#endif
+
+#ifndef UART3_DMA
+#define UART3_DMA 0
+#endif
+
+#ifndef UART4_DMA
+#define UART4_DMA 0
+#endif
+
+#ifndef UART5_DMA
+#define UART5_DMA 0
+#endif
+
+#if (UART1_DMA && !UART1) || (UART2_DMA && !UART2) || (UART3_DMA && !UART3) || \
+	(UART4_DMA && !UART4) || (UART5_DMA && !UART5)
+#error "DMA mode cannot be enabled on a disabled UART!"
+#endif
+
 #ifndef TTY1
 #define TTY1 0
 #endif
@@ -136,6 +161,26 @@
 
 #ifndef TTY5_LIBTTY_BUFSZ
 #define TTY5_LIBTTY_BUFSZ 512
+#endif
+
+#ifndef UART1_RXFIFOSZ
+#define UART1_RXFIFOSZ 64
+#endif
+
+#ifndef UART2_RXFIFOSZ
+#define UART2_RXFIFOSZ 64
+#endif
+
+#ifndef UART3_RXFIFOSZ
+#define UART3_RXFIFOSZ 64
+#endif
+
+#ifndef UART4_RXFIFOSZ
+#define UART4_RXFIFOSZ 64
+#endif
+
+#ifndef UART5_RXFIFOSZ
+#define UART5_RXFIFOSZ 64
 #endif
 
 
