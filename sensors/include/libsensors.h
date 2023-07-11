@@ -35,10 +35,9 @@ typedef unsigned int sensor_type_t;
 
 typedef struct {
 	uint32_t devId;
-	int16_t accelX; /* value [mm/s^2] */
-	int16_t accelY; /* value [mm/s^2] */
-	int16_t accelZ; /* value [mm/s^2] */
-	uint8_t reserved[2];
+	int32_t accelX; /* value [mm/s^2] */
+	int32_t accelY; /* value [mm/s^2] */
+	int32_t accelZ; /* value [mm/s^2] */
 } accel_data_t;
 
 
