@@ -95,24 +95,12 @@ static int32_t translateGyr(uint8_t hbyte, uint8_t lbyte)
 }
 
 
-static int16_t translateAcc(uint8_t hbyte, uint8_t lbyte)
+static int32_t translateAcc(uint8_t hbyte, uint8_t lbyte)
 {
-	int32_t val = 0;
-
 	/* MISRA incompliant - casting u16 to s16 with no regard to sign */
-	val = (int16_t)(((uint16_t)hbyte << 8) | (uint16_t)lbyte);
-	val *= ACC8G_CONV_MG * MG_CONV_MMS2;
+	int16_t val = ((uint16_t)hbyte << 8) | (uint16_t)lbyte;
 
-	/* TODO: this restricts max acceleration to ~32 m/s^2 */
-	if (val > INT16_MAX) {
-		return INT16_MAX;
-	}
-	else if (val < INT16_MIN) {
-		return INT16_MIN;
-	}
-	else {
-		return val; /* sensor value to [mm/s^2] */
-	}
+	return ACC8G_CONV_MG * MG_CONV_MMS2 * val; /* sensor value to [mm/s^2] */
 }
 
 
