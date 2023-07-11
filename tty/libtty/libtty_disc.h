@@ -24,12 +24,12 @@
 #include <termios.h>
 
 /* termios comparison macro's. */
-#define	CMP_CC(v,c) (tty->term.c_cc[v] != _POSIX_VDISABLE && \
-			tty->term.c_cc[v] == (c))
-#define	CMP_FLAG(field,opt) (tty->term.c_ ## field ## flag & (opt))
+#define CMP_CC(v, c) (tty->term.c_cc[v] != _POSIX_VDISABLE && \
+	tty->term.c_cc[v] == (c))
+#define CMP_FLAG(field, opt) (tty->term.c_##field##flag & (opt))
 
 /* Character is a control character. */
-#define CTL_VALID(c)	((c) == 0x7f || (unsigned char)(c) < 0x20)
+#define CTL_VALID(c) ((c) == 0x7f || (unsigned char)(c) < 0x20)
 
 
 /* maximum amount of chars outputed by libttydisc_write_oproc */
@@ -44,7 +44,7 @@ ssize_t libttydisc_read_raw(libtty_common_t *tty, char *data, size_t size, unsig
 
 static inline int libttydisc_is_breakchar(libtty_common_t *tty, char c)
 {
-	for (char* breakc = tty->breakchars; *breakc; ++breakc)
+	for (char *breakc = tty->breakchars; *breakc; ++breakc)
 		if (c == *breakc)
 			return 1;
 
@@ -53,7 +53,7 @@ static inline int libttydisc_is_breakchar(libtty_common_t *tty, char c)
 
 static inline int libttydisc_rx_have_breakchar(libtty_common_t *tty)
 {
-	char* breakc = tty->breakchars;
+	char *breakc = tty->breakchars;
 	while (*breakc) {
 		if (fifo_has_char(tty->rx_fifo, *breakc))
 			return 1;
@@ -65,4 +65,4 @@ static inline int libttydisc_rx_have_breakchar(libtty_common_t *tty)
 }
 
 
-#endif //_LIBTTY_DISC_H_
+#endif /* _LIBTTY_DISC_H_ */

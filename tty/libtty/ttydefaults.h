@@ -38,57 +38,57 @@
  * System wide defaults for terminal state.  Linux version.
  */
 #ifndef _TTYDEFAULTS_H_
-#define	_TTYDEFAULTS_H_
+#define _TTYDEFAULTS_H_
 
 /*
  * Defaults on "first" open.
  */
-#define	TTYDEF_IFLAG	(BRKINT | ISTRIP | ICRNL | IMAXBEL)
-#define TTYDEF_OFLAG	(OPOST | ONLCR | CR0 | NL0 | BS0 | TAB3 | VT0 | FF0)
-#define TTYDEF_LFLAG	(ECHO | ICANON | ISIG | IEXTEN | ECHOE|ECHOK|ECHOCTL)
-#define TTYDEF_CFLAG	(CREAD | CS8 | CLOCAL)
-#define TTYDEF_SPEED	(B115200)
+#define TTYDEF_IFLAG (BRKINT | ISTRIP | ICRNL | IMAXBEL)
+#define TTYDEF_OFLAG (OPOST | ONLCR | CR0 | NL0 | BS0 | TAB3 | VT0 | FF0)
+#define TTYDEF_LFLAG (ECHO | ICANON | ISIG | IEXTEN | ECHOE | ECHOK | ECHOCTL)
+#define TTYDEF_CFLAG (CREAD | CS8 | CLOCAL)
+#define TTYDEF_SPEED (B115200)
 
 /*
  * Control Character Defaults
  */
-#define CTRL(x)	(x&037)
-#define	CEOF		CTRL('d')
+#define CTRL(x) (x & 037)
+#define CEOF    CTRL('d')
 #ifdef _POSIX_VDISABLE
-# define CEOL		_POSIX_VDISABLE
+#define CEOL _POSIX_VDISABLE
 #else
-# define CEOL		'\0'		/* XXX avoid _POSIX_VDISABLE */
+#define CEOL '\0' /* XXX avoid _POSIX_VDISABLE */
 #endif
-#define	CERASE		0177
-#define	CERASE2		CTRL('H')
-#define	CINTR		CTRL('c')
+#define CERASE  0177
+#define CERASE2 CTRL('H')
+#define CINTR   CTRL('c')
 #ifdef _POSIX_VDISABLE
-# define CSTATUS	_POSIX_VDISABLE
+#define CSTATUS _POSIX_VDISABLE
 #else
-# define CSTATUS	'\0'		/* XXX avoid _POSIX_VDISABLE */
+#define CSTATUS '\0' /* XXX avoid _POSIX_VDISABLE */
 #endif
-#define	CKILL		CTRL('u')
-#define	CMIN		1
-#define	CQUIT		034		/* FS, ^\ */
-#define	CSUSP		CTRL('z')
-#define	CTIME		0
-#define	CDSUSP		CTRL('y')
-#define	CSTART		CTRL('q')
-#define	CSTOP		CTRL('s')
-#define	CLNEXT		CTRL('v')
-#define	CDISCARD 	CTRL('o')
-#define	CWERASE 	CTRL('w')
-#define	CREPRINT 	CTRL('r')
-#define	CEOT		CEOF
+#define CKILL    CTRL('u')
+#define CMIN     1
+#define CQUIT    034 /* FS, ^\ */
+#define CSUSP    CTRL('z')
+#define CTIME    0
+#define CDSUSP   CTRL('y')
+#define CSTART   CTRL('q')
+#define CSTOP    CTRL('s')
+#define CLNEXT   CTRL('v')
+#define CDISCARD CTRL('o')
+#define CWERASE  CTRL('w')
+#define CREPRINT CTRL('r')
+#define CEOT     CEOF
 /* compat */
-#define	CBRK		CEOL
-#define CRPRNT		CREPRINT
-#define	CFLUSH		CDISCARD
+#define CBRK   CEOL
+#define CRPRNT CREPRINT
+#define CFLUSH CDISCARD
 
 /* Characters that cannot be modified through c_cc. */
-#define CTAB	'\t'
-#define CNL	'\n'
-#define CCR	'\r'
+#define CTAB '\t'
+#define CNL  '\n'
+#define CCR  '\r'
 
 
 /* PROTECTED INCLUSION ENDS HERE */
@@ -98,7 +98,7 @@
  * #define TTYDEFCHARS to include an array of default control characters.
  */
 #ifdef TTYDEFCHARS
-cc_t	ttydefchars[NCCS] = {
+cc_t ttydefchars[NCCS] = {
 	CINTR, CQUIT, CERASE, CKILL, CEOF, CTIME, CMIN,
 	CSTART, CSTOP, CSUSP, CEOL, CREPRINT, CDISCARD,
 	CWERASE, CLNEXT, CERASE2, CEOL
