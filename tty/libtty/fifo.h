@@ -92,7 +92,7 @@ static inline int fifo_has_char(fifo_t *f, char byte)
 		return 0;
 
 	while (tail != f->head) {
-		if (f->data[tail] == (uint8_t) byte)
+		if (f->data[tail] == (uint8_t)byte)
 			return 1;
 
 		tail = (tail + 1) & f->size_mask;
@@ -101,4 +101,4 @@ static inline int fifo_has_char(fifo_t *f, char byte)
 	return 0;
 }
 
-#endif // _LIBTTY_FIFO_H
+#endif /* _LIBTTY_FIFO_H */

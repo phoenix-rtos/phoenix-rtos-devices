@@ -32,6 +32,7 @@ struct lf_fifo_s {
 
 
 /* NOTE: size must be a power of 2 */
+/* NOTE: effective capacity is size - 1 */
 static inline void lf_fifo_init(lf_fifo_t *f, uint8_t *data, unsigned int size)
 {
 	f->head = 0;
@@ -73,5 +74,6 @@ static inline int lf_fifo_pop(lf_fifo_t *f, uint8_t *byte)
 
 	return 1;
 }
+
 
 #endif
