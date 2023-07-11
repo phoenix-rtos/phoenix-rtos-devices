@@ -197,7 +197,7 @@ static int libttydisc_rubchar(libtty_common_t *tty)
 }
 
 
-int libtty_putchar(libtty_common_t *tty, unsigned char c, int *wake_reader)
+static int libtty_putchar_helper(libtty_common_t *tty, unsigned char c, int *wake_reader, int lock)
 {
 	if (wake_reader != NULL) {
 		*wake_reader = 0;
@@ -296,7 +296,9 @@ int libtty_putchar(libtty_common_t *tty, unsigned char c, int *wake_reader)
 
 
 processed:
-	mutexLock(tty->rx_mutex);
+	if (lock != 0) {
+		mutexLock(tty->rx_mutex);
+	}
 	if (fifo_is_full(tty->rx_fifo)) {
 		log_warn("RX OVERRUN!");
 		fifo_pop_back(tty->rx_fifo);
@@ -313,18 +315,54 @@ processed:
 			if (wake_reader != NULL) {
 				*wake_reader = 1;
 			}
-			condSignal(tty->rx_waitq);
+			if (lock != 0) {
+				condSignal(tty->rx_waitq);
+			}
 		}
 	}
 	else {
 		if (wake_reader != NULL) {
 			*wake_reader = 1;
 		}
-		condSignal(tty->rx_waitq);
+		if (lock != 0) {
+			condSignal(tty->rx_waitq);
+		}
 	}
-	mutexUnlock(tty->rx_mutex);
+	if (lock != 0) {
+		mutexUnlock(tty->rx_mutex);
+	}
 
 	return 0;
+}
+
+
+int libtty_putchar(libtty_common_t *tty, unsigned char c, int *wake_reader)
+{
+	return libtty_putchar_helper(tty, c, wake_reader, 1);
+}
+
+
+void libtty_putchar_lock(libtty_common_t *tty)
+{
+	mutexLock(tty->rx_mutex);
+}
+
+
+void libtty_wake_reader(libtty_common_t *tty)
+{
+	condSignal(tty->rx_waitq);
+}
+
+
+void libtty_putchar_unlock(libtty_common_t *tty)
+{
+	mutexUnlock(tty->rx_mutex);
+}
+
+
+int libtty_putchar_unlocked(libtty_common_t *tty, unsigned char c, int *wake_reader)
+{
+	return libtty_putchar_helper(tty, c, wake_reader, 0);
 }
 
 
