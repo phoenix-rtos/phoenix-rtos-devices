@@ -21,12 +21,15 @@
 #include "libmulti/libspi.h"
 
 
+/* clang-format off */
 enum { cr1 = 0, cr2 = 2, sr = 4, dr = 6, crcpr = 8, rxcrcr = 10, txcrcr = 12 };
+/* clang-format on */
 
 
 static const struct {
-	unsigned int base;
+	uintptr_t base;
 	unsigned int pctl;
+	struct libdma *per;
 } spiinfo[] = {
 	{ 0x40013000, pctl_spi1 },
 	{ 0x40003800, pctl_spi2 },
@@ -36,11 +39,12 @@ static const struct {
 
 static int libspi_spino(libspi_ctx_t *ctx)
 {
-	if ((uintptr_t)ctx->base == (uintptr_t)spiinfo[0].base)
+	if ((uintptr_t)ctx->base == spiinfo[0].base) {
 		return spi1;
-	else if ((uintptr_t)ctx->base == (uintptr_t)spiinfo[1].base)
+	}
+	if ((uintptr_t)ctx->base == spiinfo[1].base) {
 		return spi2;
-
+	}
 	return spi3;
 }
 
@@ -64,10 +68,10 @@ static unsigned char libspi_readwrite(libspi_ctx_t *ctx, unsigned char txd)
 
 static void libspi_readwriteDma(libspi_ctx_t *ctx, unsigned char *ibuff, const unsigned char *obuff, size_t bufflen)
 {
-	unsigned int dmach = (1 << 1) | (ibuff != NULL);
+	unsigned int dmach = (1 << 1) | (ibuff == NULL ? 0 : 1);
 
 	*(ctx->base + cr2) |= dmach;
-	libdma_transferSpi(libspi_spino(ctx), ibuff, obuff, bufflen);
+	libdma_transfer(ctx->per, ibuff, obuff, bufflen);
 	*(ctx->base + cr2) &= ~dmach;
 }
 
@@ -84,11 +88,12 @@ int libspi_transaction(libspi_ctx_t *ctx, int dir, unsigned char cmd, unsigned i
 	*(ctx->base + cr1) |= 1 << 6;
 	dataBarier();
 
-	if (flags & spi_cmd)
+	if ((flags & spi_cmd) != 0) {
 		libspi_readwrite(ctx, cmd);
+	}
 
 	if (addrsz > 0) {
-		if (flags & spi_addrlsb) {
+		if ((flags & spi_addrlsb) != 0) {
 			for (i = 0; i < addrsz; ++i) {
 				libspi_readwrite(ctx, addr & 0xFF);
 				addr >>= 8;
@@ -102,24 +107,28 @@ int libspi_transaction(libspi_ctx_t *ctx, int dir, unsigned char cmd, unsigned i
 		}
 	}
 
-	if (flags & spi_dummy)
+	if ((flags & spi_dummy) != 0) {
 		libspi_readwrite(ctx, 0);
+	}
 
-	if (bufflen >= 6 && ctx->usedma) {
+	if ((bufflen >= 6) && (ctx->per != NULL)) {
 		libspi_readwriteDma(ctx, ibuff, obuff, bufflen);
 	}
 	else {
 		if (dir == spi_dir_read) {
-			for (i = 0; i < bufflen; ++i)
+			for (i = 0; i < bufflen; ++i) {
 				ibuff[i] = libspi_readwrite(ctx, 0);
+			}
 		}
 		else if (dir == spi_dir_write) {
-			for (i = 0; i < bufflen; ++i)
+			for (i = 0; i < bufflen; ++i) {
 				libspi_readwrite(ctx, obuff[i]);
+			}
 		}
 		else {
-			for (i = 0; i < bufflen; ++i)
+			for (i = 0; i < bufflen; ++i) {
 				ibuff[i] = libspi_readwrite(ctx, obuff[i]);
+			}
 		}
 	}
 
@@ -166,7 +175,7 @@ int libspi_configure(libspi_ctx_t *ctx, char mode, char bdiv, int enable)
 	*(ctx->base + cr2) |= (1 << 12) | (0x7 << 8) | (1 << 2);
 	dataBarier();
 
-	if (!enable) {
+	if (enable == 0) {
 		devClk(spiinfo[libspi_spino(ctx) - spi1].pctl, 0);
 	}
 
@@ -176,21 +185,21 @@ int libspi_configure(libspi_ctx_t *ctx, char mode, char bdiv, int enable)
 
 int libspi_init(libspi_ctx_t *ctx, unsigned int spi, int useDma)
 {
-	if (useDma)
-		libdma_init();
-
-	if (spi > spi3 || ctx == NULL)
+	if ((spi > spi3) || (ctx == NULL)) {
 		return -1;
-
-	ctx->base = (void *)spiinfo[spi - spi1].base;
-	ctx->usedma = useDma;
-
-	libspi_configure(ctx, 0, 0, 1);
-
-	if (useDma) {
-		libdma_configureSpi(spi, dma_mem2per, 0x1, (void *)(ctx->base + dr), 0x0, 0x0, 0x1, 0x0);
-		libdma_configureSpi(spi, dma_per2mem, 0x1, (void *)(ctx->base + dr), 0x0, 0x0, 0x1, 0x0);
 	}
 
-	return 0;
+	ctx->base = (void *)spiinfo[spi - spi1].base;
+
+	if (useDma != 0) {
+		libdma_init();
+		ctx->per = libdma_getPeripheral(dma_spi, spi - spi1);
+		libdma_configurePeripheral(ctx->per, dma_mem2per, 0x1, (void *)(ctx->base + dr), 0x0, 0x0, 0x1, 0x0, NULL);
+		libdma_configurePeripheral(ctx->per, dma_per2mem, 0x1, (void *)(ctx->base + dr), 0x0, 0x0, 0x1, 0x0, NULL);
+	}
+	else {
+		ctx->per = NULL;
+	}
+
+	return libspi_configure(ctx, 0, 0, 1);
 }

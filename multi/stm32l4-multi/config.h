@@ -58,6 +58,86 @@
 
 /* UART_CONSOLE has to be specified in board_config.h */
 
+#ifndef TTY1_DMA
+#define TTY1_DMA 0
+#endif
+
+#ifndef TTY2_DMA
+#define TTY2_DMA 0
+#endif
+
+#ifndef TTY3_DMA
+#define TTY3_DMA 0
+#endif
+
+#ifndef TTY4_DMA
+#define TTY4_DMA 0
+#endif
+
+#ifndef TTY5_DMA
+#define TTY5_DMA 0
+#endif
+
+#ifndef TTY1_DMA_RXSZ
+#define TTY1_DMA_RXSZ 64
+#endif
+
+#ifndef TTY2_DMA_RXSZ
+#define TTY2_DMA_RXSZ 64
+#endif
+
+#ifndef TTY3_DMA_RXSZ
+#define TTY3_DMA_RXSZ 64
+#endif
+
+#ifndef TTY4_DMA_RXSZ
+#define TTY4_DMA_RXSZ 64
+#endif
+
+#ifndef TTY5_DMA_RXSZ
+#define TTY5_DMA_RXSZ 64
+#endif
+
+#ifndef TTY1_DMA_TXSZ
+#define TTY1_DMA_TXSZ 64
+#endif
+
+#ifndef TTY2_DMA_TXSZ
+#define TTY2_DMA_TXSZ 64
+#endif
+
+#ifndef TTY3_DMA_TXSZ
+#define TTY3_DMA_TXSZ 64
+#endif
+
+#ifndef TTY4_DMA_TXSZ
+#define TTY4_DMA_TXSZ 64
+#endif
+
+#ifndef TTY5_DMA_TXSZ
+#define TTY5_DMA_TXSZ 64
+#endif
+
+#ifndef TTY1_LIBTTY_BUFSZ
+#define TTY1_LIBTTY_BUFSZ 512
+#endif
+
+#ifndef TTY2_LIBTTY_BUFSZ
+#define TTY2_LIBTTY_BUFSZ 512
+#endif
+
+#ifndef TTY3_LIBTTY_BUFSZ
+#define TTY3_LIBTTY_BUFSZ 512
+#endif
+
+#ifndef TTY4_LIBTTY_BUFSZ
+#define TTY4_LIBTTY_BUFSZ 512
+#endif
+
+#ifndef TTY5_LIBTTY_BUFSZ
+#define TTY5_LIBTTY_BUFSZ 512
+#endif
+
 
 /* SPI */
 #ifndef SPI1
