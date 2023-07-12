@@ -15,7 +15,7 @@
 #ifndef _FLEXSPI_H_
 #define _FLEXSPI_H_
 
-#if defined(TARGET_IMXRT1060)
+#if defined(__CPU_IMXRT106X)
 
 #define FLEXSPI_COUNT     2
 #define FLEXSPI1_BASE     ((addr_t)0x402a8000)
@@ -23,7 +23,7 @@
 #define FLEXSPI1_AHB_ADDR ((addr_t)0x60000000)
 #define FLEXSPI2_AHB_ADDR ((addr_t)0x70000000)
 
-#elif defined(TARGET_IMXRT1170)
+#elif defined(__CPU_IMXRT117X)
 
 #define FLEXSPI_COUNT     1
 #define FLEXSPI1_BASE     ((addr_t)0x400cc000)
