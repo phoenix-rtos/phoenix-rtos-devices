@@ -147,7 +147,7 @@ static void lis2mdl_threadPublish(void *data)
 		if (err >= 0) {
 			gettime(&(ctx->evt.timestamp), NULL);
 			ctx->evt.mag.magX = translateMag(ibuf[1], ibuf[0]);
-			ctx->evt.mag.magY = translateMag(ibuf[3], ibuf[2]);
+			ctx->evt.mag.magY = -translateMag(ibuf[3], ibuf[2]); /* minus accounts for non right-handness of measurement */
 			ctx->evt.mag.magZ = translateMag(ibuf[5], ibuf[4]);
 			sensors_publish(info->id, &ctx->evt);
 		}
