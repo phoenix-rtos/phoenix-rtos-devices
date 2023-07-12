@@ -6,6 +6,4 @@
 # Copyright 2019, 2020 Phoenix Systems
 #
 
-CFLAGS += -DTARGET_STM32 -DTARGET_STM32L4
-
 DEFAULT_COMPONENTS := stm32l4-multi
