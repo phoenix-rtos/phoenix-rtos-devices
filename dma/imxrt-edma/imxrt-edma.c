@@ -16,20 +16,24 @@
 #include <sys/interrupt.h>
 #include <sys/platform.h>
 
-#if defined(TARGET_IMXRT1060)
-#include <phoenix/arch/imxrt.h>
-#elif defined(TARGET_IMXRT1170)
+#if defined(__CPU_IMXRT117X)
 #include <phoenix/arch/imxrt1170.h>
+#elif defined(__CPU_IMXRT106X)
+#include <phoenix/arch/imxrt.h>
+#else
+#error "Unsupported CPU"
 #endif
 
 #include "edma.h"
 
-#if defined(TARGET_IMXRT1060)
-#define EDMA_BASE_ADDR      ((void*)0x400e8000)
-#define EDMA_CLK            pctl_clk_dma
-#elif defined(TARGET_IMXRT1170)
+#if defined(__CPU_IMXRT106X)
+#define EDMA_BASE_ADDR ((void *)0x400e8000)
+#define EDMA_CLK       pctl_clk_dma
+#elif defined(__CPU_IMXRT117X)
 #define EDMA_BASE_ADDR ((void *)0x40070000)
 #define EDMA_CLK       pctl_clk_bus
+#else
+#error "Unsupported CPU"
 #endif
 
 #define DMA_MUX_BASE_ADDR EDMA_BASE_ADDR + 0x4000
@@ -145,10 +149,13 @@ int edma_init(int (*error_isr)(unsigned int n, void *arg))
 		return res;
 	}
 
-#if defined(TARGET_IMXRT1060)
+#if defined(__CPU_IMXRT106X)
 	if (pctl.devclock.state == clk_state_run) {
-#elif defined(TARGET_IMXRT1170)
+#elif defined(__CPU_IMXRT117X)
 	if (pctl.devclock.state == 1) {
+#else
+#error "Unsupported CPU"
+	if (!0) { /* only for syntax correctness */
 #endif
 		/* someone else already started initialization - sleep 1 ms make sure it has finished */
 		usleep(1000);
@@ -158,10 +165,12 @@ int edma_init(int (*error_isr)(unsigned int n, void *arg))
 	if (init) {
 		pctl.action = pctl_set;
 
-#if defined(TARGET_IMXRT1060)
+#if defined(__CPU_IMXRT106X)
 		pctl.devclock.state = clk_state_run;
-#elif defined(TARGET_IMXRT1170)
+#elif defined(__CPU_IMXRT117X)
 		pctl.devclock.state = 1;
+#else
+#error "Unsupported CPU"
 #endif
 
 		if ((res = platformctl(&pctl)) != 0) {
