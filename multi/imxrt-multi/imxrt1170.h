@@ -12,8 +12,8 @@
  */
 
 
-#ifndef _IMXRT1179_H_
-#define _IMXRT1179_H_
+#ifndef _IMXRT1170_H_
+#define _IMXRT1170_H_
 
 #include <phoenix/arch/imxrt1170.h>
 #include <sys/platform.h>
