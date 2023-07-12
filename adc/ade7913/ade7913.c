@@ -23,7 +23,7 @@
 
 #include <imxrt-multi.h>
 
-#ifdef TARGET_IMXRT1170
+#ifdef __CPU_IMXRT117X
 #include <phoenix/arch/imxrt1170.h>
 #endif
 
