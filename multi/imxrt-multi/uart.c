@@ -311,7 +311,7 @@ int uart_handleMsg(msg_t *msg, int dev)
 	return EOK;
 }
 
-#ifdef TARGET_IMXRT1170
+#ifdef __CPU_IMXRT117X
 
 static int uart_muxVal(int uart, int mux)
 {
@@ -710,7 +710,7 @@ int uart_init(void)
 		uart = &uart_common.uarts[i++];
 		uart->base = info[dev].base;
 
-#ifdef TARGET_IMXRT1170
+#ifdef __CPU_IMXRT117X
 		common_setClock(info[dev].dev, 0, 0, 0, 0, 1);
 #else
 		common_setClock(info[dev].dev, clk_state_run);

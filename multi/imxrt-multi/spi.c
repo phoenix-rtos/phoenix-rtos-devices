@@ -328,7 +328,7 @@ int spi_handleMsg(msg_t *msg, int dev)
 }
 
 
-#ifdef TARGET_IMXRT1170
+#ifdef __CPU_IMXRT117X
 
 static int spi_getIsel(int mux, int *isel, int *val)
 {
@@ -784,7 +784,7 @@ int spi_init(void)
 		{ LPSPI2_BASE, LPSPI2_CLK, LPSPI2_IRQ },
 		{ LPSPI3_BASE, LPSPI3_CLK, LPSPI3_IRQ },
 		{ LPSPI4_BASE, LPSPI4_CLK, LPSPI4_IRQ },
-#ifdef TARGET_IMXRT1170
+#ifdef __CPU_IMXRT117X
 		{ LPSPI5_BASE, LPSPI5_CLK, LPSPI5_IRQ },
 		{ LPSPI6_BASE, LPSPI6_CLK, LPSPI6_IRQ }
 #endif
@@ -796,7 +796,7 @@ int spi_init(void)
 		if (!spiConfig[spi])
 			continue;
 
-#ifdef TARGET_IMXRT1170
+#ifdef __CPU_IMXRT117X
 		if (common_setClock(spiInfo[spi].clk, -1, -1, -1, -1, 1) < 0)
 #else
 		if (common_setClock(spiInfo[spi].clk, clk_state_run) < 0)

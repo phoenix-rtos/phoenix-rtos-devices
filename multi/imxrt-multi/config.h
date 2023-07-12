@@ -15,11 +15,11 @@
 #ifndef _CONFIG_H_
 #define _CONFIG_H_
 
-#if defined(TARGET_IMXRT1050)
+#if defined(__CPU_IMXRT105X)
 #include "imxrt1050.h"
-#elif defined(TARGET_IMXRT1060)
+#elif defined(__CPU_IMXRT106X)
 #include "imxrt1060.h"
-#elif defined(TARGET_IMXRT1170)
+#elif defined(__CPU_IMXRT117X)
 #include "imxrt1170.h"
 #else
 #warning "No target specified! Falling back to default"
@@ -124,7 +124,7 @@
 #define UART8_BAUDRATE 115200
 #endif
 
-#ifdef TARGET_IMXRT1170
+#ifdef __CPU_IMXRT117X
 
 #ifndef UART9
 #define UART9 0
@@ -204,11 +204,11 @@
 	UART12_BAUDRATE
 
 #ifndef UART_CONSOLE
-#if defined(TARGET_IMXRT1050)
+#if defined(__CPU_IMXRT105X)
 #define UART_CONSOLE 1
-#elif defined(TARGET_IMXRT1060)
+#elif defined(__CPU_IMXRT106X)
 #define UART_CONSOLE 1
-#elif defined(TARGET_IMXRT1170)
+#elif defined(__CPU_IMXRT117X)
 #define UART_CONSOLE 11
 #else
 #define UART_CONSOLE 1
@@ -273,7 +273,7 @@
 
 /* Cortex M4 */
 
-#ifdef TARGET_IMXRT1170
+#ifdef __CPU_IMXRT117X
 
 #ifndef CM4
 #define CM4 1
