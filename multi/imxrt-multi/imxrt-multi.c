@@ -112,7 +112,7 @@ static void multi_dispatchMsg(msg_t *msg)
 			spi_handleMsg(msg, id);
 			break;
 
-#ifdef TARGET_IMXRT1170
+#ifdef __CPU_IMXRT117X
 		case id_spi5:
 		case id_spi6:
 			spi_handleMsg(msg, id);
@@ -126,7 +126,7 @@ static void multi_dispatchMsg(msg_t *msg)
 			break;
 #endif
 
-#ifndef TARGET_IMXRT1170
+#ifndef __CPU_IMXRT117X
 		case id_i2c1:
 		case id_i2c2:
 		case id_i2c3:
@@ -327,7 +327,7 @@ static int createDevFiles(void)
 	}
 #endif
 
-#ifdef TARGET_IMXRT1170
+#ifdef __CPU_IMXRT117X
 
 #if SPI5
 	if (mkFile(&dir, id_spi5, "spi5", multi_port) < 0) {
@@ -354,7 +354,7 @@ static int createDevFiles(void)
 #endif
 
 /* I2Cs */
-#ifndef TARGET_IMXRT1170
+#ifndef __CPU_IMXRT117X
 
 #if I2C1
 	if (mkFile(&dir, id_i2c1, "i2c1", multi_port) < 0) {
