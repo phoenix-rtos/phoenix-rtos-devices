@@ -31,7 +31,7 @@
 
 
 /* Use polling instead of interrupts on RISCV64 (interrupt handler code triggers memory protection exception) */
-#ifdef TARGET_RISCV64
+#ifdef __TARGET_RISCV64
 #define USE_POLLING
 #endif
 
@@ -87,7 +87,7 @@ typedef struct {
 static const virtio_devinfo_t info[] = {
 	{ .type = vdevPCI, .id = 0x1001 },
 	{ .type = vdevPCI, .id = 0x1042 },
-#ifdef TARGET_RISCV64
+#ifdef __TARGET_RISCV64
 	/* Direct VirtIO MMIO QEMU block device descriptors */
 	{ .type = vdevMMIO, .id = 0x02, .irq = 8, .base = { (void *)0x10008000, 0x1000 } },
 	{ .type = vdevMMIO, .id = 0x02, .irq = 7, .base = { (void *)0x10007000, 0x1000 } },
