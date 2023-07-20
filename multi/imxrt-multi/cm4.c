@@ -19,8 +19,13 @@
 #include <sys/interrupt.h>
 #include <sys/threads.h>
 #include <phoenix/arch/imxrt1170.h>
+#include <board_config.h>
 
 #include "common.h"
+
+#ifndef CM4_MU_FIFO_SIZE
+#define CM4_MU_FIFO_SIZE 256
+#endif
 
 #define CM4_MEMORY_START ((void *)0x20200000)
 #define CM4_MEMORY_SIZE  (256 * 1024)
@@ -47,7 +52,7 @@ typedef union {
 
 
 typedef struct {
-	unsigned char buff[256];
+	unsigned char buff[CM4_MU_FIFO_SIZE];
 	volatile int wptr;
 	volatile int rptr;
 } fifo_t;
@@ -151,15 +156,18 @@ static inline int fifo_pushPacket(packet_t *packet, fifo_t *fifo)
 
 static int mu_irqHandler(unsigned int n, void *arg)
 {
+	uint32_t sr;
 	int chan;
 	packet_t packet;
 
 	(void)n;
 	(void)arg;
 
+	sr = *(m4_common.mu + asr);
+
 	/* TX */
 	for (chan = 0; chan < chanLen; ++chan) {
-		if ((*(m4_common.mu + asr) & (1 << (23 - chan))) != 0) {
+		if ((sr & (1 << (23 - chan))) != 0) {
 			if (fifo_popPacket(&packet, &m4_common.channel[chan].tx) == 0) {
 				setTXirq(chan, 0);
 			}
@@ -171,7 +179,7 @@ static int mu_irqHandler(unsigned int n, void *arg)
 
 	/* RX */
 	for (chan = 0; chan < chanLen; ++chan) {
-		if ((*(m4_common.mu + asr) & (1 << (27 - chan))) != 0) {
+		if ((sr & (1 << (27 - chan))) != 0) {
 			packet.word = *(m4_common.mu + arr0 + chan);
 			fifo_pushPacket(&packet, &m4_common.channel[chan].rx);
 		}
