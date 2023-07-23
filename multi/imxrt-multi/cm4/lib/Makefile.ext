@@ -11,7 +11,7 @@ CC = $(CROSS)gcc
 AR = $(CROSS)ar
 
 TOPDIR := $(CURDIR)
-PREFIX_BUILD ?= ../../../../_build/$(TARGET)
+PREFIX_BUILD ?= ../_build/$(TARGET)
 PREFIX_BUILD := $(abspath $(PREFIX_BUILD))
 BUILD_DIR ?= $(PREFIX_BUILD)/$(notdir $(TOPDIR))
 BUILD_DIR := $(abspath $(BUILD_DIR))

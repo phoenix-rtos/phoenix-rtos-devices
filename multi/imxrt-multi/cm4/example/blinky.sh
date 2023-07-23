@@ -2,12 +2,13 @@
 
 set -e
 
-cd ../lib
-make -f Makefile.ext clean all
-cd ../example
-make -f Makefile.ext clean all
+export TARGET=armv7m4-imxrt117x
+export PREFIX_BUILD=../../../../../_build/${TARGET}
 
-pushd ../../../../_build/armv7m4-imxrt117x/prog.stripped/
+make -C ../lib -f Makefile.ext clean all
+make -C ../example -f Makefile.ext clean all
+
+pushd ${PREFIX_BUILD}/prog.stripped/
 
 xxd -ps -c1 blinky.bin | awk '{printf("0x%s,",$0);if (NR % 16 == 0) printf("\n")}' > blinky.hex
 
