@@ -287,47 +287,6 @@ static void uart_mkDev(unsigned int id)
 }
 
 
-static int uart_setPin(uint8_t pin)
-{
-	platformctl_t ctl;
-
-	ctl.action = pctl_set;
-	ctl.type = pctl_iocfg;
-
-	ctl.iocfg.pin = pin;
-	ctl.iocfg.pulldn = 0;
-	ctl.iocfg.pullup = 0;
-	ctl.iocfg.opt = 0x1;
-
-	switch (pin) {
-		case UART0_TX:
-		case UART1_TX:
-			/* pins used for SRAM */
-			return -EINVAL;
-		case UART2_TX:
-		case UART3_TX:
-		case UART4_TX:
-		case UART5_TX:
-			ctl.iocfg.dir = GPIO_DIR_OUT;
-			break;
-		case UART0_RX:
-		case UART1_RX:
-			/* pins used for SRAM */
-			return -EINVAL;
-		case UART2_RX:
-		case UART3_RX:
-		case UART4_RX:
-		case UART5_RX:
-			ctl.iocfg.dir = GPIO_DIR_IN;
-			break;
-		default:
-			return -EINVAL;
-	}
-
-	return platformctl(&ctl);
-}
-
-
 static int uart_cguInit(unsigned int cgudev)
 {
 	platformctl_t ctl;
@@ -347,8 +306,28 @@ static int uart_init(unsigned int n, speed_t baud, int raw)
 {
 	libtty_callbacks_t callbacks;
 	uart_t *uart = &uart_common.uart;
+	platformctl_t ctl = {
+		.action = pctl_set,
+		.type = pctl_iomux,
+		.iocfg = {
+			.opt = 0x1,
+			.pin = info[n].rxPin,
+			.pullup = 0,
+			.pulldn = 0,
+		}
+	};
 
-	if (uart_setPin(info[n].rxPin) < 0 || uart_setPin(info[n].txPin) < 0 || uart_cguInit(info[n].cgudev) < 0) {
+	if (platformctl(&ctl) < 0) {
+		return -1;
+	}
+
+	ctl.iocfg.pin = info[n].txPin;
+
+	if (platformctl(&ctl) < 0) {
+		return -1;
+	}
+
+	if (uart_cguInit(info[n].cgudev) < 0) {
 		return -1;
 	}
 
