@@ -372,6 +372,7 @@ static void flashsrv_rawThread(void *arg)
 
 			case mtOpen:
 				msg.o.io.err = EOK;
+				break;
 
 			case mtClose:
 				mutexLock(memory->lock);
