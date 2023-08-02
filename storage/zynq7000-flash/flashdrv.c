@@ -16,6 +16,7 @@
 #include "qspi.h"
 
 #include <stdlib.h>
+#include <assert.h>
 #include <errno.h>
 #include <string.h>
 #include <sys/time.h>
@@ -84,10 +85,10 @@ static size_t flashdrv_regStart(int id)
 }
 
 
-static inline void flashdrv_serializeTxCmd(uint8_t *buff, const flash_cmd_t *cmd, addr_t offs)
+static inline void flashdrv_serializeTxCmd(uint8_t *buff, flash_cmd_t cmd, addr_t offs)
 {
-	memset(buff, 0, cmd->size);
-	buff[0] = cmd->opCode;
+	memset(buff, 0, cmd.size);
+	buff[0] = cmd.opCode;
 
 	if (fdrv_common.info.addrMode == flash_4byteAddr) {
 		buff[1] = (offs >> 24) & 0xff;
@@ -117,7 +118,7 @@ static int flashdrv_cfiRead(flash_cfi_t *cfi)
 	flashcfg_jedecIDGet(&cmd);
 
 	/* Cmd size is rounded to 4 bytes, it includes dummy cycles [b]. */
-	cmdSz = (cmd.size + cmd.dummyCyc / 8 + 0x3) & ~0x3;
+	cmdSz = (cmd.size + (cmd.dummyCyc * cmd.dataLines) / 8 + 0x3) & ~0x3;
 	/* Size of the data which is received during cmd transfer */
 	dataSz = cmdSz - cmd.size;
 
@@ -144,14 +145,14 @@ static int _flashdrv_statusRegGet(unsigned int id, unsigned int *val)
 {
 	ssize_t res;
 	size_t cmdSz;
-	const flash_cmd_t *cmd = &fdrv_common.info.cmds[flash_cmd_rdsr1];
+	const flash_cmd_t cmd = fdrv_common.info.cmds[flash_cmd_rdsr1];
 
 	*val = 0;
 
-	cmdSz = cmd->size + cmd->dummyCyc / 8;
+	cmdSz = cmd.size + (cmd.dummyCyc * cmd.dataLines) / 8;
 	memset(fdrv_common.regs[id].cmdTx, 0, cmdSz);
 
-	fdrv_common.regs[id].cmdTx[0] = cmd->opCode;
+	fdrv_common.regs[id].cmdTx[0] = cmd.opCode;
 
 	qspi_start();
 	res = qspi_transfer(fdrv_common.regs[id].cmdTx, (uint8_t *)val, cmdSz, TIMEOUT_CMD_MS);
@@ -192,19 +193,19 @@ static int _flashdrv_wipCheck(unsigned int id, time_t timeout)
 static int _flashdrv_welSet(unsigned int id, unsigned int cmdID)
 {
 	ssize_t res;
-	const flash_cmd_t *cmd;
+	flash_cmd_t cmd;
 
 	if (cmdID != flash_cmd_wrdi && cmdID != flash_cmd_wren) {
 		return -EINVAL;
 	}
 
-	cmd = &fdrv_common.info.cmds[cmdID];
+	cmd = fdrv_common.info.cmds[cmdID];
 
-	memset(fdrv_common.regs[id].cmdTx, 0, cmd->size);
-	fdrv_common.regs[id].cmdTx[0] = cmd->opCode;
+	memset(fdrv_common.regs[id].cmdTx, 0, cmd.size);
+	fdrv_common.regs[id].cmdTx[0] = cmd.opCode;
 
 	qspi_start();
-	res = qspi_transfer(fdrv_common.regs[id].cmdTx, fdrv_common.regs[id].cmdRx, cmd->size, TIMEOUT_CMD_MS);
+	res = qspi_transfer(fdrv_common.regs[id].cmdTx, fdrv_common.regs[id].cmdRx, cmd.size, TIMEOUT_CMD_MS);
 	qspi_stop();
 
 	return res;
@@ -216,7 +217,7 @@ static ssize_t _flashdrv_pageProgram(unsigned int id, addr_t offs, const void *b
 	ssize_t res;
 	time_t timeout;
 	const flash_cfi_t *cfi = &fdrv_common.info.cfi;
-	const flash_cmd_t *cmd = &fdrv_common.info.cmds[fdrv_common.info.ppCmd];
+	const flash_cmd_t cmd = fdrv_common.info.cmds[fdrv_common.info.ppCmd];
 
 	res = _flashdrv_welSet(id, flash_cmd_wren);
 	if (res < 0) {
@@ -226,7 +227,7 @@ static ssize_t _flashdrv_pageProgram(unsigned int id, addr_t offs, const void *b
 	flashdrv_serializeTxCmd(fdrv_common.regs[id].cmdTx, cmd, offs);
 
 	qspi_start();
-	res = qspi_transfer(fdrv_common.regs[id].cmdTx, fdrv_common.regs[id].cmdRx, cmd->size, TIMEOUT_CMD_MS);
+	res = qspi_transfer(fdrv_common.regs[id].cmdTx, fdrv_common.regs[id].cmdRx, cmd.size, TIMEOUT_CMD_MS);
 	if (res < 0) {
 		qspi_stop();
 		return res;
@@ -257,7 +258,7 @@ static int _flashdrv_sectorErase(unsigned int id, addr_t offs)
 	ssize_t res;
 	size_t sectorSz;
 	time_t timeout;
-	const flash_cmd_t *cmd;
+	flash_cmd_t cmd;
 	const flash_cfi_t *cfi = &fdrv_common.info.cfi;
 
 	/* Check offset alligment */
@@ -268,10 +269,10 @@ static int _flashdrv_sectorErase(unsigned int id, addr_t offs)
 
 	switch (sectorSz) {
 		case 0x1000:
-			cmd = (fdrv_common.info.addrMode == flash_4byteAddr) ? &fdrv_common.info.cmds[flash_cmd_4p4e] : &fdrv_common.info.cmds[flash_cmd_p4e];
+			cmd = (fdrv_common.info.addrMode == flash_4byteAddr) ? fdrv_common.info.cmds[flash_cmd_4p4e] : fdrv_common.info.cmds[flash_cmd_p4e];
 			break;
 		case 0x10000:
-			cmd = (fdrv_common.info.addrMode == flash_4byteAddr) ? &fdrv_common.info.cmds[flash_cmd_4p64e] : &fdrv_common.info.cmds[flash_cmd_p64e];
+			cmd = (fdrv_common.info.addrMode == flash_4byteAddr) ? fdrv_common.info.cmds[flash_cmd_4p64e] : fdrv_common.info.cmds[flash_cmd_p64e];
 			break;
 		default:
 			return -EINVAL;
@@ -285,7 +286,7 @@ static int _flashdrv_sectorErase(unsigned int id, addr_t offs)
 	flashdrv_serializeTxCmd(fdrv_common.regs[id].cmdTx, cmd, offs);
 
 	qspi_start();
-	res = qspi_transfer(fdrv_common.regs[id].cmdTx, fdrv_common.regs[id].cmdRx, cmd->size, TIMEOUT_CMD_MS);
+	res = qspi_transfer(fdrv_common.regs[id].cmdTx, fdrv_common.regs[id].cmdRx, cmd.size, TIMEOUT_CMD_MS);
 	if (res < 0) {
 		qspi_stop();
 		return res;
@@ -305,17 +306,17 @@ static int _flashdrv_chipErase(unsigned int id)
 	time_t timeout;
 
 	const flash_cfi_t *cfi = &fdrv_common.info.cfi;
-	const flash_cmd_t *cmd = &fdrv_common.info.cmds[flash_cmd_be];
+	const flash_cmd_t cmd = fdrv_common.info.cmds[flash_cmd_be];
 
 	res = _flashdrv_welSet(id, flash_cmd_wren);
 	if (res < 0) {
 		return res;
 	}
 
-	cmdSz = cmd->size + cmd->dummyCyc / 8;
+	cmdSz = cmd.size + (cmd.dummyCyc * cmd.dataLines) / 8;
 	memset(fdrv_common.regs[id].cmdTx, 0, cmdSz);
 
-	fdrv_common.regs[id].cmdTx[0] = cmd->opCode;
+	fdrv_common.regs[id].cmdTx[0] = cmd.opCode;
 
 	qspi_start();
 	res = qspi_transfer(fdrv_common.regs[id].cmdTx, NULL, cmdSz, TIMEOUT_CMD_MS);
@@ -334,26 +335,32 @@ static int _flashdrv_chipErase(unsigned int id)
 static ssize_t _flashdrv_read(unsigned int id, addr_t offs, void *buff, size_t len)
 {
 	ssize_t res;
-	size_t cmdSz, dataSz, transferSz;
-	const flash_cmd_t *cmd = &fdrv_common.info.cmds[fdrv_common.info.readCmd];
+	size_t cmdSz, dataSz, transferSz, paddedCmdSz, dummySz;
+	const flash_cmd_t cmd = fdrv_common.info.cmds[fdrv_common.info.readCmd];
 
 	flashdrv_serializeTxCmd(fdrv_common.regs[id].cmdTx, cmd, offs);
 
+	dummySz = (cmd.dummyCyc * cmd.dataLines) / 8;
+	cmdSz = cmd.size + dummySz;
+
+	/* Send 0xff as dummy byte as some flashes require dummy byte that starts with 0xf. */
+	memset(fdrv_common.regs[id].cmdTx + cmdSz, 0xff, dummySz);
+
 	/* Cmd size is rounded to 4 bytes, it includes dummy cycles [b]. */
-	cmdSz = (cmd->size + cmd->dummyCyc / 8 + 0x3) & ~0x3;
+	paddedCmdSz = (cmdSz + 0x3) & ~0x3;
 
 	/* Size of the data which is received during cmd transfer */
-	transferSz = cmdSz - cmd->size - cmd->dummyCyc / 8;
+	transferSz = paddedCmdSz - cmdSz;
 	dataSz = (transferSz > len) ? len : transferSz;
 
 	qspi_start();
-	res = qspi_transfer(fdrv_common.regs[id].cmdTx, fdrv_common.regs[id].cmdRx, cmdSz, TIMEOUT_CMD_MS);
+	res = qspi_transfer(fdrv_common.regs[id].cmdTx, fdrv_common.regs[id].cmdRx, paddedCmdSz, TIMEOUT_CMD_MS);
 	if (res < 0) {
 		qspi_stop();
 		return res;
 	}
 	/* Copy data received after dummy bytes */
-	memcpy(buff, (fdrv_common.regs[id].cmdRx + cmd->size + cmd->dummyCyc / 8), dataSz);
+	memcpy(buff, (fdrv_common.regs[id].cmdRx + cmdSz), dataSz);
 
 	res = qspi_transfer(NULL, (uint8_t *)buff + dataSz, len - dataSz, TIMEOUT_CMD_MS * len);
 	qspi_stop();
@@ -703,7 +710,7 @@ int flashdrv_devInit(storage_t *strg)
 	strg->dev->mtd->oobSize = 0;
 	strg->dev->mtd->writesz = 0x1;
 	strg->dev->mtd->writeBuffsz = CFI_SIZE_PAGE(info->cfi.pageSize);
-	strg->dev->mtd->erasesz = secSz < MTD_DEFAULT_ERASESZ ? MTD_DEFAULT_ERASESZ : secSz;
+	strg->dev->mtd->erasesz = (secSz < MTD_DEFAULT_ERASESZ) ? MTD_DEFAULT_ERASESZ : secSz;
 
 
 	/* NOR flash supports block device interface */
@@ -742,6 +749,7 @@ int flashdrv_devInit(storage_t *strg)
 int flashdrv_init(storage_t *strg)
 {
 	int res;
+	flash_cmd_t readCmd;
 
 	if (strg == NULL) {
 		return -EINVAL;
@@ -762,6 +770,21 @@ int flashdrv_init(storage_t *strg)
 		res = flashcfg_infoResolve(&fdrv_common.info);
 		if (res < 0) {
 			return res;
+		}
+
+		readCmd = fdrv_common.info.cmds[fdrv_common.info.readCmd];
+		/* Only used for assert. */
+		(void)readCmd;
+
+		/* Require data RXed due to dummy cycles to be byte aligned. */
+		/* This requirement is in place to simplify implementation of read. */
+		assert((readCmd.dummyCyc != CFI_DUMMY_CYCLES_NOT_SET) && (((readCmd.dummyCyc * readCmd.dataLines) % 8) == 0));
+
+		if (fdrv_common.info.init != NULL) {
+			res = fdrv_common.info.init(&fdrv_common.info);
+			if (res < 0) {
+				return res;
+			}
 		}
 
 		fdrv_common.regs = malloc(fdrv_common.info.cfi.regsCount * sizeof(flash_reg_t));
