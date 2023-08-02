@@ -20,6 +20,7 @@
 #include <sys/threads.h>
 #include <sys/platform.h>
 #include <sys/interrupt.h>
+#include <sys/minmax.h>
 
 #include <board_config.h>
 #include <phoenix/arch/zynq7000.h>
@@ -37,7 +38,6 @@ struct {
 	handle_t cond;
 	handle_t inth;
 	handle_t irqLock;
-	handle_t lock;
 } qspi_common;
 
 
@@ -57,11 +57,21 @@ static int qspi_irqHandler(unsigned int n, void *arg)
 }
 
 
+static int qspi_rxFifoEmpty(void)
+{
+	/* Update of RX not empty bit is delayed, thus it should be read twice. */
+	/* https://support.xilinx.com/s/article/47575?language=en_US */
+	(void)*(qspi_common.base + sr);
+
+	return ((*(qspi_common.base + sr) & (1 << 4)) == 0) ? 1 : 0;
+}
+
+
 /* TODO: add timeout exit condition to be compliant with MISRA */
-static inline void qspi_cleanFifo(void)
+void qspi_stop(void)
 {
 	/* Clean up RX Fifo */
-	while ((*(qspi_common.base + sr) & (1 << 4))) {
+	while (qspi_rxFifoEmpty() == 0) {
 		*(qspi_common.base + rxd);
 	}
 
@@ -72,17 +82,8 @@ static inline void qspi_cleanFifo(void)
 }
 
 
-void qspi_stop(void)
-{
-	qspi_cleanFifo();
-	mutexUnlock(qspi_common.lock);
-}
-
-
 void qspi_start(void)
 {
-	mutexLock(qspi_common.lock);
-
 	*(qspi_common.base + rxth) = 0x1;
 	*(qspi_common.base + cr) &= ~(1 << 10);
 	qspi_dataMemoryBarrier();
@@ -126,7 +127,7 @@ static unsigned int qspi_rxData(uint8_t *rxBuff, size_t size)
 		}
 	}
 
-	return (size < 4) ? size : 4;
+	return min(size, 4);
 }
 
 
@@ -159,34 +160,47 @@ static unsigned int qspi_txData(const uint8_t *txBuff, size_t size)
 }
 
 
+static int qspi_txFifoFull(void)
+{
+	return ((*(qspi_common.base + sr) & (1 << 3)) == 0) ? 0 : 1;
+}
+
+
+static int qspi_txFifoEmpty(void)
+{
+	return ((*(qspi_common.base + sr) & (1 << 2)) == 0) ? 0 : 1;
+}
+
+
 ssize_t qspi_transfer(const uint8_t *txBuff, uint8_t *rxBuff, size_t size, time_t timeout)
 {
 	int err;
 	size_t tempSz, txSz = size, rxSz = 0;
 	time_t now, end;
 
-	while (txSz || rxSz) {
-		err = 0;
-		/* Transmit data */
-		while (txSz) {
-			/* Incomplete word has to be send and receive as a last transfer
-			 * otherwise there is an undefined behaviour.                   */
-			if ((txSz < sizeof(uint32_t)) && (rxSz >= sizeof(uint32_t))) {
-				break;
-			}
-
-			/* TX Fifo is full */
-			if ((*(qspi_common.base + sr) & (1 << 3))) {
-				break;
-			}
-
+	/* At the start of each iteration FIFOs are empty.
+	   Controller only transfers as much data as inserted onto TxFIFO,
+	   and each transmission is started manually. When no data is on TxFIFO SCLK is stopped.
+	   Thus, there's no potential of potential data loss. */
+	while (txSz != 0) {
+		/* Incomplete word can only be written onto an empty TxFIFO. */
+		if (txSz < sizeof(uint32_t)) {
 			tempSz = qspi_txData(txBuff, txSz);
 
 			txSz -= tempSz;
 			rxSz += tempSz;
+		}
+		else {
+			/* Transmit data */
+			while ((txSz >= sizeof(uint32_t)) && (qspi_txFifoFull() == 0)) {
+				tempSz = qspi_txData(txBuff, txSz);
 
-			if (txBuff != NULL) {
-				txBuff += tempSz;
+				txSz -= tempSz;
+				rxSz += tempSz;
+
+				if (txBuff != NULL) {
+					txBuff += tempSz;
+				}
 			}
 		}
 
@@ -195,13 +209,14 @@ ssize_t qspi_transfer(const uint8_t *txBuff, uint8_t *rxBuff, size_t size, time_
 		/* Start data transmission */
 		*(qspi_common.base + cr) |= (1 << 16);
 
-		/* Wait until TX Fifo is empty */
 		mutexLock(qspi_common.irqLock);
 
 		(void)gettime(&now, NULL);
 		end = now + (timeout * 1000);
 
-		while ((now < end) && ((*(qspi_common.base + sr) & (1 << 2)) == 0)) {
+		err = 0;
+		/* Wait until TX Fifo is empty */
+		while ((now < end) && (qspi_txFifoEmpty() == 0)) {
 			err = condWait(qspi_common.cond, qspi_common.irqLock, end - now);
 			(void)gettime(&now, NULL);
 		}
@@ -210,15 +225,15 @@ ssize_t qspi_transfer(const uint8_t *txBuff, uint8_t *rxBuff, size_t size, time_
 
 		/* In case of timeout check for the last time if TX Fifo is empty. */
 		/* This check is done to prevent the possibly of starvation. */
-		if ((err < 0) && ((*(qspi_common.base + sr) & (1 << 2)) == 0)) {
+		if ((err < 0) && (qspi_txFifoEmpty() == 0)) {
 			return err;
 		}
 
 		/* Receive data */
-		while (rxSz) {
-			/* RX Fifo is empty */
-			if ((*(qspi_common.base + sr) & (1 << 4)) == 0) {
-				break;
+		while (rxSz != 0) {
+			if (qspi_rxFifoEmpty() == 1) {
+				/* Invalid state. */
+				return -EIO;
 			}
 
 			tempSz = qspi_rxData(rxBuff, rxSz);
@@ -230,7 +245,7 @@ ssize_t qspi_transfer(const uint8_t *txBuff, uint8_t *rxBuff, size_t size, time_
 		}
 	}
 
-	return size - txSz;
+	return size;
 }
 
 
@@ -289,7 +304,7 @@ static void qspi_IOMode(void)
 	/* Configure controller */
 
 	/* Set master mode, not Legacy mode */
-	*(qspi_common.base + cr) = 0x1 | (1 << 31);
+	*(qspi_common.base + cr) = 0x1 | (1u << 31);
 
 	/* Set baud rate to 100 MHz: 200 MHz / 2 */
 	*(qspi_common.base + cr) &= ~(0x7 << 3);
@@ -356,7 +371,12 @@ static int qspi_setPin(uint32_t pin)
 {
 	platformctl_t ctl;
 
-	if (pin < pctl_mio_pin_01 && pin > pctl_mio_pin_08) {
+	/* Pin should not be configured by the driver */
+	if (pin < 0) {
+		return EOK;
+	}
+
+	if ((pin < pctl_mio_pin_01) && (pin > pctl_mio_pin_08)) {
 		return -EINVAL;
 	}
 
@@ -365,7 +385,9 @@ static int qspi_setPin(uint32_t pin)
 
 	ctl.mio.pin = pin;
 	ctl.mio.l0 = 0x1;
-	ctl.mio.l1 = ctl.mio.l2 = ctl.mio.l3 = 0;
+	ctl.mio.l1 = 0;
+	ctl.mio.l2 = 0;
+	ctl.mio.l3 = 0;
 	ctl.mio.pullup = 0;
 	ctl.mio.speed = 0x1;
 	ctl.mio.ioType = 0x1;
@@ -412,10 +434,9 @@ static int qspi_initPins(void)
 
 int qspi_deinit(void)
 {
-	qspi_cleanFifo();
+	qspi_stop();
 
 	resourceDestroy(qspi_common.cond);
-	resourceDestroy(qspi_common.lock);
 	resourceDestroy(qspi_common.irqLock);
 
 	munmap((void *)qspi_common.base, _PAGE_SIZE);
@@ -460,19 +481,11 @@ int qspi_init(void)
 		return -ENOENT;
 	}
 
+	/* irqLock is only set for the purpose of condWait it doesn't serve synchronization purpose. */
 	res = mutexCreate(&qspi_common.irqLock);
 	if (res < 0) {
 		munmap((void *)qspi_common.base, _PAGE_SIZE);
 		resourceDestroy(qspi_common.cond);
-		qspi_setAmbaClk(pctl_amba_lqspi_clk, 0);
-		return -ENOENT;
-	}
-
-	res = mutexCreate(&qspi_common.lock);
-	if (res < 0) {
-		munmap((void *)qspi_common.base, _PAGE_SIZE);
-		resourceDestroy(qspi_common.cond);
-		resourceDestroy(qspi_common.irqLock);
 		qspi_setAmbaClk(pctl_amba_lqspi_clk, 0);
 		return -ENOENT;
 	}
