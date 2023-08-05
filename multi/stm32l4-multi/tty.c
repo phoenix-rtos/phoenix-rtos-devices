@@ -84,7 +84,7 @@ typedef struct {
 	handle_t inth;
 	handle_t irqlock;
 
-	libtty_common_t tty_common;
+	libtty_common_t ttyCommon;
 
 	enum {
 		tty_irq,
@@ -92,28 +92,28 @@ typedef struct {
 	} type;
 	union {
 		struct {
-			uint8_t rx_fifo_buffer[16];
-			lf_fifo_t rx_fifo;
+			uint8_t rxFifoBuffer[16];
+			lf_fifo_t rxFifo;
 			volatile int rxready;
 		} irq;
 		struct {
 			const struct libdma_per *per;
-			volatile int tx_done_flag;
+			volatile int txDoneFlag;
 
 			unsigned char *rxbuf;
 			unsigned char *txbuf;
 			size_t rxbufsz;
-			unsigned int rxbufsz_mask;
+			unsigned int rxbufszMask;
 			size_t txbufsz;
 
-			unsigned int read_pos;
+			unsigned int readPos;
 
 			/* Flag followed by the number of bytes left to rx */
 			atomic_ulong rxready;
 
 			struct {
-				size_t dropped_bytes;
-				atomic_uint fill_cnt;
+				size_t droppedBytes;
+				atomic_uint fillCnt;
 			} debug;
 		} dma;
 	} data;
@@ -131,10 +131,10 @@ static struct {
 static const struct {
 	int enabled;
 	int dma;
-	size_t dma_buf_size_rx;
-	size_t dma_buf_size_tx;
+	size_t dmaBufSizeRx;
+	size_t dmaBufSizeTx;
 	int pos;
-	size_t libtty_buf_size;
+	size_t libttyBufSize;
 } ttySetup[] = {
 	{ TTY1, TTY1_DMA, TTY1_DMA_RXSZ, TTY1_DMA_TXSZ, TTY1_POS, TTY1_LIBTTY_BUFSZ },
 	{ TTY2, TTY2_DMA, TTY2_DMA_RXSZ, TTY2_DMA_TXSZ, TTY2_POS, TTY2_LIBTTY_BUFSZ },
@@ -154,7 +154,7 @@ enum { tty_parnone = 0, tty_pareven, tty_parodd };
 
 static inline int tty_txready(tty_ctx_t *ctx)
 {
-	return *(ctx->base + isr) & (1 << 7);
+	return (*(ctx->base + isr) & (1 << 7)) ? 1 : 0;
 }
 
 
@@ -166,7 +166,7 @@ static int tty_irqHandler(unsigned int n, void *arg)
 		/* Clear overrun error bit */
 		*(ctx->base + icr) |= (1 << 3);
 
-		lf_fifo_push(&ctx->data.irq.rx_fifo, *(ctx->base + rdr));
+		lf_fifo_push(&ctx->data.irq.rxFifo, *(ctx->base + rdr));
 		ctx->data.irq.rxready = 1;
 	}
 
@@ -188,7 +188,7 @@ static void tty_dmaCallback(void *arg, int type)
 
 	if (type == dma_tc) {
 		rxreadyFlags |= TTY_RX_FILLED_FLAG;
-		atomic_fetch_add_explicit(&ctx->data.dma.debug.fill_cnt, 1, memory_order_acq_rel);
+		atomic_fetch_add_explicit(&ctx->data.dma.debug.fillCnt, 1, memory_order_acq_rel);
 	}
 
 	rxready |= rxreadyFlags << TTY_RX_FLAG_SHIFT;
@@ -221,12 +221,12 @@ static int tty_irqHandlerDMA(unsigned int n, void *arg)
 
 static void tty_dmaHandleRx(tty_ctx_t *ctx)
 {
-	unsigned int write_pos, read_pos;
-	int wake = 0, wake_helper;
+	unsigned int writePos, readPos;
+	int wake = 0, wakeHelper;
 	unsigned long rxready = atomic_exchange_explicit(&ctx->data.dma.rxready, TTY_RX_NOT_READY_FLAG << TTY_RX_FLAG_SHIFT, memory_order_acq_rel);
 	unsigned long rxreadyFlags = rxready >> TTY_RX_FLAG_SHIFT;
 	unsigned long leftToRx = rxready & TTY_RX_DATA_MASK;
-	unsigned int fill_cnt;
+	unsigned int fillCnt;
 	unsigned int rxBytes;
 
 	if (rxreadyFlags == TTY_RX_NOT_READY_FLAG) {
@@ -234,41 +234,41 @@ static void tty_dmaHandleRx(tty_ctx_t *ctx)
 	}
 
 	if ((rxreadyFlags & TTY_RX_FILLED_FLAG) != 0) {
-		fill_cnt = atomic_exchange_explicit(&ctx->data.dma.debug.fill_cnt, 0, memory_order_acq_rel);
-		if (fill_cnt > 1) {
-			ctx->data.dma.debug.dropped_bytes += (fill_cnt - 1) * ctx->data.dma.rxbufsz;
+		fillCnt = atomic_exchange_explicit(&ctx->data.dma.debug.fillCnt, 0, memory_order_acq_rel);
+		if (fillCnt > 1) {
+			ctx->data.dma.debug.droppedBytes += (fillCnt - 1) * ctx->data.dma.rxbufsz;
 		}
 	}
 
-	libtty_putchar_lock(&ctx->tty_common);
+	libtty_putchar_lock(&ctx->ttyCommon);
 
-	write_pos = (ctx->data.dma.rxbufsz - leftToRx) & ctx->data.dma.rxbufsz_mask;
-	read_pos = ctx->data.dma.read_pos;
+	writePos = (ctx->data.dma.rxbufsz - leftToRx) & ctx->data.dma.rxbufszMask;
+	readPos = ctx->data.dma.readPos;
 
-	if (((rxreadyFlags & TTY_RX_FILLED_FLAG) != 0) && (write_pos >= read_pos)) {
+	if (((rxreadyFlags & TTY_RX_FILLED_FLAG) != 0) && (writePos >= readPos)) {
 		rxBytes = ctx->data.dma.rxbufsz;
 		/* Detect dropped bytes. */
-		if (write_pos > read_pos) {
-			ctx->data.dma.debug.dropped_bytes += write_pos - read_pos;
-			read_pos = write_pos;
+		if (writePos > readPos) {
+			ctx->data.dma.debug.droppedBytes += writePos - readPos;
+			readPos = writePos;
 		}
 	}
 	else {
-		rxBytes = (ctx->data.dma.rxbufsz + (write_pos - read_pos)) & ctx->data.dma.rxbufsz_mask;
+		rxBytes = (ctx->data.dma.rxbufsz + (writePos - readPos)) & ctx->data.dma.rxbufszMask;
 	}
 
 	for (; rxBytes != 0; rxBytes--) {
-		libtty_putchar_unlocked(&ctx->tty_common, ctx->data.dma.rxbuf[read_pos], &wake_helper);
-		read_pos = (read_pos + 1) & ctx->data.dma.rxbufsz_mask;
-		wake |= wake_helper;
+		libtty_putchar_unlocked(&ctx->ttyCommon, ctx->data.dma.rxbuf[readPos], &wakeHelper);
+		readPos = (readPos + 1) & ctx->data.dma.rxbufszMask;
+		wake |= wakeHelper;
 	}
 
-	libtty_putchar_unlock(&ctx->tty_common);
+	libtty_putchar_unlock(&ctx->ttyCommon);
 
 	if (wake != 0) {
-		libtty_wake_reader(&ctx->tty_common);
+		libtty_wake_reader(&ctx->ttyCommon);
 	}
-	ctx->data.dma.read_pos = read_pos;
+	ctx->data.dma.readPos = readPos;
 }
 
 
@@ -276,34 +276,34 @@ static void tty_dmaHandleTx(tty_ctx_t *ctx)
 {
 	unsigned int i;
 
-	if (libtty_txready(&ctx->tty_common) != 0) {
-		for (i = 0; i < ctx->data.dma.txbufsz && (libtty_txready(&ctx->tty_common) != 0); i++) {
-			ctx->data.dma.txbuf[i] = libtty_popchar(&ctx->tty_common);
+	if (libtty_txready(&ctx->ttyCommon) != 0) {
+		for (i = 0; i < ctx->data.dma.txbufsz && (libtty_txready(&ctx->ttyCommon) != 0); i++) {
+			ctx->data.dma.txbuf[i] = libtty_popchar(&ctx->ttyCommon);
 		}
-		libtty_wake_writer(&ctx->tty_common);
+		libtty_wake_writer(&ctx->ttyCommon);
 
 		*(ctx->base + icr) |= (1 << 6);
 
-		(void)libdma_txAsync(ctx->data.dma.per, ctx->data.dma.txbuf, i, &ctx->data.dma.tx_done_flag);
+		(void)libdma_txAsync(ctx->data.dma.per, ctx->data.dma.txbuf, i, &ctx->data.dma.txDoneFlag);
 	}
 }
 
 
 static int tty_dmarxready(tty_ctx_t *ctx)
 {
-	return atomic_load_explicit(&ctx->data.dma.rxready, memory_order_acquire) != TTY_RX_NOT_READY_FLAG;
+	return (atomic_load_explicit(&ctx->data.dma.rxready, memory_order_acquire) != TTY_RX_NOT_READY_FLAG) ? 1 : 0;
 }
 
 
 static int tty_dmatxready(tty_ctx_t *ctx)
 {
-	return (ctx->data.dma.tx_done_flag != 0) && (libtty_txready(&ctx->tty_common) != 0);
+	return ((ctx->data.dma.txDoneFlag != 0) && (libtty_txready(&ctx->ttyCommon) != 0)) ? 1 : 0;
 }
 
 
 static int tty_uartenabled(tty_ctx_t *ctx)
 {
-	return *(ctx->base + cr1) & 1;
+	return (*(ctx->base + cr1) & 1) ? 1 : 0;
 }
 
 
@@ -339,7 +339,7 @@ static void tty_irqthread(void *arg)
 		unsigned rxcount;
 
 		mutexLock(ctx->irqlock);
-		while (((ctx->data.irq.rxready == 0) && !((tty_txready(ctx) != 0) && ((libtty_txready(&ctx->tty_common) != 0) || (keptidle != 0)))) || (tty_uartenabled(ctx) == 0)) {
+		while (((ctx->data.irq.rxready == 0) && !((tty_txready(ctx) != 0) && ((libtty_txready(&ctx->ttyCommon) != 0) || (keptidle != 0)))) || (tty_uartenabled(ctx) == 0)) {
 			condWait(ctx->cond, ctx->irqlock, 0);
 		}
 		mutexUnlock(ctx->irqlock);
@@ -348,8 +348,8 @@ static void tty_irqthread(void *arg)
 		dataBarier();
 
 		/* limiting byte count to 8 to avoid starving tx */
-		for (rxcount = 8; (rxcount != 0) && (lf_fifo_pop(&ctx->data.irq.rx_fifo, &rxbyte) != 0); rxcount--) {
-			libtty_putchar(&ctx->tty_common, rxbyte, NULL);
+		for (rxcount = 8; (rxcount != 0) && (lf_fifo_pop(&ctx->data.irq.rxFifo, &rxbyte) != 0); rxcount--) {
+			libtty_putchar(&ctx->ttyCommon, rxbyte, NULL);
 		}
 		if (rxcount == 0) {
 			/* aborted due to rxcount limit - setting rxready to skip next condWait */
@@ -357,7 +357,7 @@ static void tty_irqthread(void *arg)
 		}
 
 
-		if (libtty_txready(&ctx->tty_common) != 0) {
+		if (libtty_txready(&ctx->ttyCommon) != 0) {
 			if (tty_txready(ctx) != 0) {
 				if (keptidle == 0) {
 					keptidle = 1;
@@ -365,7 +365,7 @@ static void tty_irqthread(void *arg)
 				}
 
 				/* TODO add small TX fifo that can be read directly from IRQ */
-				*(ctx->base + tdr) = libtty_getchar(&ctx->tty_common, NULL);
+				*(ctx->base + tdr) = libtty_getchar(&ctx->ttyCommon, NULL);
 				*(ctx->base + cr1) |= (1 << 7);
 			}
 		}
@@ -457,21 +457,26 @@ static void tty_setCflag(void *uart, tcflag_t *cflag)
 	tty_ctx_t *ctx = (tty_ctx_t *)uart;
 	char bits, parity = tty_parnone;
 
-	if ((*cflag & CSIZE) == CS6)
+	if ((*cflag & CSIZE) == CS6) {
 		bits = 6;
-	else if ((*cflag & CSIZE) == CS7)
+	}
+	else if ((*cflag & CSIZE) == CS7) {
 		bits = 7;
-	else
+	}
+	else {
 		bits = 8;
-
-	if (*cflag & PARENB) {
-		if (*cflag & PARODD)
-			parity = tty_parodd;
-		else
-			parity = tty_pareven;
 	}
 
-	if (bits != ctx->bits || parity != ctx->parity) {
+	if ((*cflag & PARENB) != 0) {
+		if ((*cflag & PARODD) != 0) {
+			parity = tty_parodd;
+		}
+		else {
+			parity = tty_pareven;
+		}
+	}
+
+	if ((bits != ctx->bits) || (parity != ctx->parity)) {
 		_tty_configure(ctx, bits, parity, 1);
 		condSignal(ctx->cond);
 	}
@@ -516,13 +521,15 @@ static tty_ctx_t *tty_getCtx(id_t id)
 {
 	tty_ctx_t *ctx = NULL;
 
-	if (!id)
+	if (id == 0) {
 		id = usart1 + UART_CONSOLE;
+	}
 
 	id -= 1;
 
-	if (id >= usart1 && id <= uart5)
+	if ((id >= usart1) && (id <= uart5)) {
 		ctx = &uart_common.ctx[ttySetup[id - usart1].pos];
+	}
 
 	return ctx;
 }
@@ -540,15 +547,17 @@ static void tty_thread(void *arg)
 	id_t id;
 
 	while (1) {
-		while (msgRecv(uart_common.port, &msg, &rid) < 0)
+		while (msgRecv(uart_common.port, &msg, &rid) < 0) {
 			;
+		}
 
 		priority(msg.priority);
 
 		switch (msg.type) {
 			case mtOpen:
 			case mtClose:
-				if ((ctx = tty_getCtx(msg.i.io.oid.id)) == NULL) {
+				ctx = tty_getCtx(msg.i.io.oid.id);
+				if (ctx == NULL) {
 					msg.o.io.err = -EINVAL;
 					break;
 				}
@@ -557,38 +566,42 @@ static void tty_thread(void *arg)
 				break;
 
 			case mtWrite:
-				if ((ctx = tty_getCtx(msg.i.io.oid.id)) == NULL) {
+				ctx = tty_getCtx(msg.i.io.oid.id);
+				if (ctx == NULL) {
 					msg.o.io.err = -EINVAL;
 					break;
 				}
-				msg.o.io.err = libtty_write(&ctx->tty_common, msg.i.data, msg.i.size, msg.i.io.mode);
+				msg.o.io.err = libtty_write(&ctx->ttyCommon, msg.i.data, msg.i.size, msg.i.io.mode);
 				break;
 
 			case mtRead:
-				if ((ctx = tty_getCtx(msg.i.io.oid.id)) == NULL) {
+				ctx = tty_getCtx(msg.i.io.oid.id);
+				if (ctx == NULL) {
 					msg.o.io.err = -EINVAL;
 					break;
 				}
-				msg.o.io.err = libtty_read(&ctx->tty_common, msg.o.data, msg.o.size, msg.i.io.mode);
+				msg.o.io.err = libtty_read(&ctx->ttyCommon, msg.o.data, msg.o.size, msg.i.io.mode);
 				break;
 
 			case mtGetAttr:
-				if ((msg.i.attr.type != atPollStatus) || ((ctx = tty_getCtx(msg.i.attr.oid.id)) == NULL)) {
+				ctx = tty_getCtx(msg.i.attr.oid.id);
+				if ((msg.i.attr.type != atPollStatus) || (ctx == NULL)) {
 					msg.o.attr.err = -EINVAL;
 					break;
 				}
-				msg.o.attr.val = libtty_poll_status(&ctx->tty_common);
+				msg.o.attr.val = libtty_poll_status(&ctx->ttyCommon);
 				msg.o.attr.err = EOK;
 				break;
 
 			case mtDevCtl:
 				in_data = ioctl_unpack(&msg, &request, &id);
-				if ((ctx = tty_getCtx(id)) == NULL) {
+				ctx = tty_getCtx(id);
+				if (ctx == NULL) {
 					err = -EINVAL;
 				}
 				else {
 					pid = ioctl_getSenderPid(&msg);
-					err = libtty_ioctl(&ctx->tty_common, pid, request, in_data, &out_data);
+					err = libtty_ioctl(&ctx->ttyCommon, pid, request, in_data, &out_data);
 				}
 				ioctl_setResponse(&msg, request, err, out_data);
 				break;
@@ -603,7 +616,7 @@ static void tty_thread(void *arg)
 
 ssize_t tty_log(const char *str, size_t len)
 {
-	return libtty_write(&tty_getCtx(0)->tty_common, str, len, 0);
+	return libtty_write(&tty_getCtx(0)->ttyCommon, str, len, 0);
 }
 
 
@@ -657,7 +670,7 @@ int tty_init(void)
 		callbacks.set_cflag = tty_setCflag;
 		callbacks.signal_txready = tty_signalTxReady;
 
-		if (libtty_init(&ctx->tty_common, &callbacks, ttySetup[tty].libtty_buf_size, baudrate) < 0) {
+		if (libtty_init(&ctx->ttyCommon, &callbacks, ttySetup[tty].libttyBufSize, baudrate) < 0) {
 			return -1;
 		}
 
@@ -670,7 +683,7 @@ int tty_init(void)
 		ctx->baud = -1;
 
 		if (ttySetup[tty].dma == 0) {
-			lf_fifo_init(&ctx->data.irq.rx_fifo, ctx->data.irq.rx_fifo_buffer, sizeof(ctx->data.irq.rx_fifo_buffer));
+			lf_fifo_init(&ctx->data.irq.rxFifo, ctx->data.irq.rxFifoBuffer, sizeof(ctx->data.irq.rxFifoBuffer));
 			ctx->data.irq.rxready = 0;
 
 			ctx->type = tty_irq;
@@ -683,20 +696,20 @@ int tty_init(void)
 			libdma_configurePeripheral(ctx->data.dma.per, dma_per2mem, 0x1, (void *)(ctx->base + rdr), 0x0, 0x0, 0x1, 0x0, &ctx->cond);
 			*(ctx->base + cr3) |= (1 << 7) | (1 << 6); /* Enable DMA for transmission and reception. */
 
-			ctx->data.dma.tx_done_flag = 1;
-			ctx->data.dma.read_pos = 0;
+			ctx->data.dma.txDoneFlag = 1;
+			ctx->data.dma.readPos = 0;
 			atomic_init(&ctx->data.dma.rxready, TTY_RX_NOT_READY_FLAG << TTY_RX_FLAG_SHIFT);
 
-			ctx->data.dma.debug.dropped_bytes = 0;
-			atomic_init(&ctx->data.dma.debug.fill_cnt, 0);
+			ctx->data.dma.debug.droppedBytes = 0;
+			atomic_init(&ctx->data.dma.debug.fillCnt, 0);
 
-			ctx->data.dma.rxbufsz = ttySetup[tty].dma_buf_size_rx;
-			ctx->data.dma.rxbufsz_mask = ctx->data.dma.rxbufsz - 1;
+			ctx->data.dma.rxbufsz = ttySetup[tty].dmaBufSizeRx;
+			ctx->data.dma.rxbufszMask = ctx->data.dma.rxbufsz - 1;
 			ctx->data.dma.rxbuf = malloc(ctx->data.dma.rxbufsz);
 			if (ctx->data.dma.rxbuf == NULL) {
 				return -ENOMEM;
 			}
-			ctx->data.dma.txbufsz = ttySetup[tty].dma_buf_size_tx;
+			ctx->data.dma.txbufsz = ttySetup[tty].dmaBufSizeTx;
 			ctx->data.dma.txbuf = malloc(ctx->data.dma.txbufsz);
 			if (ctx->data.dma.txbuf == NULL) {
 				free(ctx->data.dma.rxbuf);
