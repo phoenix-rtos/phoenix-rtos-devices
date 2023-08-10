@@ -3,8 +3,8 @@
  *
  * ADE7913 driver API
  *
- * Copyright 2021 Phoenix Systems
- * Author: Marcin Baran
+ * Copyright 2021, 2023 Phoenix Systems
+ * Author: Marcin Baran, Gerard Swiderski
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -21,25 +21,17 @@
 
 #define ADC_DEVICE_FILE_NAME "/dev/ade7913"
 
-typedef enum {
-	adc_dev_ctl__enable,
-	adc_dev_ctl__disable,
-	adc_dev_ctl__reset,
-	adc_dev_ctl__status,
-	adc_dev_ctl__set_adc_mux,
-	adc_dev_ctl__set_config,
-	adc_dev_ctl__get_config,
-	adc_dev_ctl__get_buffers,
-	adc_dev_ctl__set_channel_gain,
-	adc_dev_ctl__get_channel_gain,
-	adc_dev_ctl__set_channel_calib,
-	adc_dev_ctl__get_channel_calib,
-	adc_dev_ctl__set_channel_config,
-	adc_dev_ctl__get_channel_config
-} adc_dev_ctl_type_t;
 
 typedef struct {
-	adc_dev_ctl_type_t type;
+	enum {
+		ade7913_dev_ctl__enable = 0,
+		ade7913_dev_ctl__disable,
+		ade7913_dev_ctl__reset,
+		ade7913_dev_ctl__status,
+		ade7913_dev_ctl__set_config,
+		ade7913_dev_ctl__get_config,
+		ade7913_dev_ctl__get_buffers,
+	} type;
 
 	union {
 		/* buffers */
@@ -52,46 +44,11 @@ typedef struct {
 		/* config */
 		struct {
 			uint32_t sampling_rate;
-			uint8_t channels;
-			uint8_t enabled_ch;
+			uint8_t devices;
 			uint8_t bits;
 		} config;
-
-		/* status */
-		struct {
-			uint8_t ch_status[8];
-			uint8_t dsp_status[4];
-			uint8_t general_err[2];
-			uint8_t status[3];
-		} status;
-
-		/* adc mux */
-		uint8_t mux;
-
-		/* if hardware reset */
-		uint8_t reset_hard;
-
-		/* channel calib */
-		struct {
-			uint32_t offset;
-			uint32_t gain;
-			uint8_t channel;
-		} calib;
-
-		/* channel gain */
-		struct {
-			uint32_t channel;
-			uint8_t val;
-		} gain;
-
-		/* channel config */
-		struct {
-			uint32_t channel;
-			unsigned gain : 6;
-			unsigned meter_rx_mode : 1;
-			unsigned ref_monitor_mode : 1;
-		} ch_config;
 	};
-} adc_dev_ctl_t;
+} ade7913_dev_ctl_t;
+
 
 #endif /* ADC_API_H */
