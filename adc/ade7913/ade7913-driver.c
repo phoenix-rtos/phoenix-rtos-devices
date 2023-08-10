@@ -40,23 +40,16 @@
 
 #define LOG_TAG "ade7913: "
 
+/* clang-format off */
 #ifdef NDEBUG
 #define log_debug(fmt, ...)
 #else
-#define log_debug(fmt, ...) \
-	do { \
-		printf(LOG_TAG fmt "\n", ##__VA_ARGS__); \
-	} while (0)
+#define log_debug(fmt, ...) do { printf(LOG_TAG fmt "\n", ##__VA_ARGS__); } while (0)
 #endif
 
-#define log_info(fmt, ...) \
-	do { \
-		printf(LOG_TAG COL_CYAN fmt COL_NORMAL "\n", ##__VA_ARGS__); \
-	} while (0)
-#define log_error(fmt, ...) \
-	do { \
-		printf(LOG_TAG COL_RED fmt COL_NORMAL "\n", ##__VA_ARGS__); \
-	} while (0)
+#define log_info(fmt, ...)  do { printf(LOG_TAG COL_CYAN fmt COL_NORMAL "\n", ##__VA_ARGS__); } while (0)
+#define log_error(fmt, ...) do { printf(LOG_TAG COL_RED fmt COL_NORMAL "\n", ##__VA_ARGS__); } while (0)
+/* clang-format on */
 
 
 #ifndef ADE7913_PRIO
@@ -775,26 +768,26 @@ static int dev_read(void *data, size_t size)
 
 static int dev_ctl(msg_t *msg)
 {
-	adc_dev_ctl_t dev_ctl;
+	ade7913_dev_ctl_t dev_ctl;
 	int devnum, res, i;
 
 	memcpy(&dev_ctl, msg->o.raw, sizeof(dev_ctl));
 
 	switch (dev_ctl.type) {
-		case adc_dev_ctl__enable:
+		case ade7913_dev_ctl__enable:
 			common.enabled = 1;
 			dma_start();
 			return EOK;
 
-		case adc_dev_ctl__disable:
+		case ade7913_dev_ctl__disable:
 			common.enabled = 0;
 			dma_stop();
 			return EOK;
 
-		case adc_dev_ctl__reset:
+		case ade7913_dev_ctl__reset:
 			return restart_sampling();
 
-		case adc_dev_ctl__set_config:
+		case ade7913_dev_ctl__set_config:
 			if (common.enabled) {
 				return -EBUSY;
 			}
@@ -820,8 +813,9 @@ static int dev_ctl(msg_t *msg)
 
 			return EOK;
 
-		case adc_dev_ctl__get_config:
+		case ade7913_dev_ctl__get_config:
 			dev_ctl.config.bits = 24; /* device constant */
+			dev_ctl.config.devices = common.devcnt;
 			res = ade7913_get_sampling_rate(&common.ade7913_spi,
 				(int)(common.order[0] - '0'), (int *)&dev_ctl.config.sampling_rate);
 
@@ -829,28 +823,18 @@ static int dev_ctl(msg_t *msg)
 				return -EIO;
 			}
 
-			memcpy(msg->o.raw, &dev_ctl, sizeof(adc_dev_ctl_t));
+			memcpy(msg->o.raw, &dev_ctl, sizeof(ade7913_dev_ctl_t));
 
 			return EOK;
 
-		case adc_dev_ctl__get_buffers:
+		case ade7913_dev_ctl__get_buffers:
 			dev_ctl.buffers.paddr = common.buffer_paddr;
 			dev_ctl.buffers.num = ADE7913_BUF_NUM;
 			dev_ctl.buffers.size = ADC_BUFFER_SIZE;
-			memcpy(msg->o.raw, &dev_ctl, sizeof(adc_dev_ctl_t));
+			memcpy(msg->o.raw, &dev_ctl, sizeof(ade7913_dev_ctl_t));
 			return EOK;
 
-		case adc_dev_ctl__status:
-			return EOK;
-
-			/* The below are not supported, but needs to be compatible with AD7779 API. */
-		case adc_dev_ctl__set_channel_config:
-		case adc_dev_ctl__get_channel_config:
-		case adc_dev_ctl__set_channel_gain:
-		case adc_dev_ctl__get_channel_gain:
-		case adc_dev_ctl__set_channel_calib:
-		case adc_dev_ctl__get_channel_calib:
-		case adc_dev_ctl__set_adc_mux:
+		case ade7913_dev_ctl__status:
 			return EOK;
 
 		default:
