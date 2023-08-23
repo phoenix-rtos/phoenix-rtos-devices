@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <stdint.h>
+#include <string.h>
 #include <stdlib.h>
 #include <sys/pwman.h>
 #include <sys/interrupt.h>
@@ -32,6 +33,17 @@
 /* clang-format off */
 enum { cr1 = 0, cr2, cr3, brr, gtpr, rtor, rqr, isr, icr, rdr, tdr };
 /* clang-format on */
+
+
+static struct {
+	size_t rxfifosz;
+} libuart_config[] = {
+	{ UART1_RXFIFOSZ },
+	{ UART2_RXFIFOSZ },
+	{ UART3_RXFIFOSZ },
+	{ UART4_RXFIFOSZ },
+	{ UART5_RXFIFOSZ },
+};
 
 
 static const struct {
@@ -85,17 +97,17 @@ static int libuart_rxirq(unsigned int n, void *arg)
 
 		/* Rxd buffer not empty */
 		ctx->data.irq.rxdfifo[ctx->data.irq.rxdw++] = *(ctx->base + rdr);
-		ctx->data.irq.rxdw %= sizeof(ctx->data.irq.rxdfifo);
+		ctx->data.irq.rxdw %= ctx->data.irq.rxdfifosz;
 
 		if (ctx->data.irq.rxdr == ctx->data.irq.rxdw) {
-			ctx->data.irq.rxdr = (ctx->data.irq.rxdr + 1) % sizeof(ctx->data.irq.rxdfifo);
+			ctx->data.irq.rxdr = (ctx->data.irq.rxdr + 1) % ctx->data.irq.rxdfifosz;
 		}
 	}
 
 	if (ctx->data.irq.rxbeg != NULL) {
 		while (ctx->data.irq.rxdr != ctx->data.irq.rxdw && ctx->data.irq.rxbeg != ctx->data.irq.rxend) {
 			*(ctx->data.irq.rxbeg++) = ctx->data.irq.rxdfifo[ctx->data.irq.rxdr++];
-			ctx->data.irq.rxdr %= sizeof(ctx->data.irq.rxdfifo);
+			ctx->data.irq.rxdr %= ctx->data.irq.rxdfifosz;
 			(*ctx->data.irq.read)++;
 		}
 
@@ -120,7 +132,6 @@ int libuart_configure(libuart_ctx *ctx, char bits, char parity, unsigned int bau
 	ctx->enabled = 0;
 
 	if (ctx->type == uart_irq) {
-
 		condBroadcast(ctx->data.irq.rxcond);
 
 		mutexLock(ctx->data.irq.txlock);
@@ -139,8 +150,11 @@ int libuart_configure(libuart_ctx *ctx, char bits, char parity, unsigned int bau
 		ctx->data.irq.rxdw = 0;
 	}
 	else {
+		condBroadcast(ctx->data.dma.rxcond);
+
 		mutexLock(ctx->data.dma.txlock);
 		mutexLock(ctx->data.dma.rxlock);
+		mutexLock(ctx->data.dma.rxcondlock);
 	}
 
 	if (parity != uart_parnone) {
@@ -204,6 +218,7 @@ int libuart_configure(libuart_ctx *ctx, char bits, char parity, unsigned int bau
 		mutexUnlock(ctx->data.irq.txlock);
 	}
 	else {
+		mutexUnlock(ctx->data.dma.rxcondlock);
 		mutexUnlock(ctx->data.dma.rxlock);
 		mutexUnlock(ctx->data.dma.txlock);
 	}
@@ -233,7 +248,6 @@ static int libuart_irqWrite(libuart_ctx *ctx, const void *buff, unsigned int buf
 
 	return bufflen;
 }
-
 
 static int libuart_dmaWrite(libuart_ctx *ctx, const void *buff, unsigned int bufflen)
 {
@@ -289,14 +303,21 @@ static void libuart_readMaskBits(libuart_ctx *ctx, void *buff, unsigned int read
 }
 
 
+static void libuart_triggerInterrupt(libuart_ctx *ctx)
+{
+	/* Enable TX Empty interrupt that will eventually be triggered. */
+	*(ctx->base + cr1) |= 1 << 7;
+}
+
+
 static int libuart_dmaRead(libuart_ctx *ctx, void *buff, unsigned int count, char mode, unsigned int timeout)
 {
-	int read, readsz;
-	int timedout;
-	time_t now, end, rxtimeout;
-	int dmamode = (mode == uart_mnblock) ? dma_modeNoBlock : dma_modeNormal;
+	time_t now, end = 0, rxtimeout;
+	size_t read;
+	int err;
 
 	mutexLock(ctx->data.dma.rxlock);
+	mutexLock(ctx->data.dma.rxcondlock);
 
 	rxtimeout = timeout;
 	if (timeout > 0) {
@@ -304,26 +325,25 @@ static int libuart_dmaRead(libuart_ctx *ctx, void *buff, unsigned int count, cha
 		end = now + timeout;
 	}
 
-	for (read = 0, timedout = 0; (timedout == 0) && (read < count); read += readsz) {
-		/* Clear overrun error. */
-		if ((*(ctx->base + isr) & ((1 << 5) | (1 << 3))) != 0) {
-			*(ctx->base + icr) |= (1 << 3);
-			((char *)buff)[read] = *(ctx->base + rdr);
-			readsz = 1;
-			continue;
-		}
+	ctx->data.dma.read = 0;
+	ctx->data.dma.rxbufsz = count;
+	ctx->data.dma.rxbuf = buff;
 
-		*(ctx->base + cr3) |= (1 << 6); /* Enable DMA for reception. */
-		readsz = libdma_rx(ctx->data.dma.per, ((char *)buff) + read, min(DMA_MAX_LEN, count - read), dmamode, rxtimeout);
-		*(ctx->base + cr3) &= ~(1 << 6); /* Disable DMA for reception. */
+	libuart_triggerInterrupt(ctx);
 
-		if (readsz == 0) {
+	/* Enable idle line interrupt. */
+	*(ctx->base + cr1) |= (1 << 4);
+
+	while (ctx->data.dma.read != count) {
+		err = condWait(ctx->data.dma.rxcond, ctx->data.dma.rxcondlock, rxtimeout);
+
+		if ((err == -ETIME) || (mode == uart_mnblock) || (ctx->enabled == 0)) {
 			break;
 		}
-		if (timeout != 0) {
+		if (timeout > 0) {
 			gettime(&now, NULL);
 			if (now >= end) {
-				timedout = 1;
+				break;
 			}
 			else {
 				rxtimeout = end - now;
@@ -331,6 +351,13 @@ static int libuart_dmaRead(libuart_ctx *ctx, void *buff, unsigned int count, cha
 		}
 	}
 
+	/* Disable idle line interrupt. */
+	*(ctx->base + cr1) &= ~(1 << 4);
+
+	ctx->data.dma.rxbuf = NULL;
+	read = ctx->data.dma.read;
+
+	mutexUnlock(ctx->data.dma.rxcondlock);
 	mutexUnlock(ctx->data.dma.rxlock);
 
 	libuart_readMaskBits(ctx, buff, read);
@@ -357,8 +384,7 @@ static int libuart_irqRead(libuart_ctx *ctx, void *buff, unsigned int count, cha
 	/* Provoke UART exception to fire so that existing data from
 	 * rxdfifo is copied into buff. The handler will clear this
 	 * bit. */
-
-	*(ctx->base + cr1) |= 1 << 7;
+	libuart_triggerInterrupt(ctx);
 
 	while (ctx->data.irq.rxbeg != ctx->data.irq.rxend) {
 		err = condWait(ctx->data.irq.rxcond, ctx->data.irq.lock, timeout);
@@ -397,6 +423,87 @@ int libuart_read(libuart_ctx *ctx, void *buff, unsigned int count, char mode, un
 }
 
 
+static void libuart_infiniteRxHandler(void *arg, int type)
+{
+	libuart_ctx *ctx = arg;
+	size_t endPos;
+	size_t read;
+	size_t rxfifopos;
+	size_t rxfifoprevend;
+	size_t rxbufsz;
+	size_t torx;
+	size_t infifo;
+	size_t cpysz;
+	char *rxbuf = (char *)ctx->data.dma.rxbuf;
+
+	endPos = (ctx->data.dma.rxfifosz - libdma_leftToRx(ctx->data.dma.per)) % ctx->data.dma.rxfifosz;
+
+	/* Check overrun */
+	rxfifopos = ctx->data.dma.rxfifopos;
+	rxfifoprevend = ctx->data.dma.rxfifoprevend;
+
+	if (((rxfifoprevend < rxfifopos) && ((rxfifopos < endPos) || (endPos < rxfifoprevend))) ||
+		((rxfifopos <= rxfifoprevend) && ((rxfifopos < endPos) && (endPos < rxfifoprevend)))) {
+		rxfifopos = endPos;
+	}
+
+	infifo = (ctx->data.dma.rxfifosz + endPos - rxfifopos) % ctx->data.dma.rxfifosz;
+	if (((endPos != rxfifoprevend) && (infifo == 0)) || (ctx->data.dma.rxfifofull != 0)) {
+		ctx->data.dma.rxfifofull = 1;
+		infifo = ctx->data.dma.rxfifosz;
+	}
+
+	if (rxbuf != NULL) {
+		rxbufsz = ctx->data.dma.rxbufsz;
+		read = ctx->data.dma.read;
+
+		torx = min(rxbufsz - read, infifo);
+		if (torx != 0) {
+			ctx->data.dma.rxfifofull = 0;
+			cpysz = min(ctx->data.dma.rxfifosz - rxfifopos, torx);
+			memcpy(rxbuf + read, ctx->data.dma.rxfifo + rxfifopos, cpysz);
+			if (torx != cpysz) {
+				memcpy(rxbuf + read + cpysz, ctx->data.dma.rxfifo, torx - cpysz);
+			}
+
+			rxfifopos = (rxfifopos + torx) % ctx->data.dma.rxfifosz;
+			ctx->data.dma.read = read + torx;
+		}
+	}
+
+	ctx->data.dma.rxfifopos = rxfifopos % ctx->data.dma.rxfifosz;
+	ctx->data.dma.rxfifoprevend = endPos;
+}
+
+
+static int uart_irqDMA(unsigned int n, void *arg)
+{
+	libuart_ctx *ctx = arg;
+	int read;
+	uint32_t status = *(ctx->base + isr);
+
+	/* Check for the idle line. */
+	if ((status & (1 << 4)) != 0) {
+		/* Clear idle line bit */
+		*(ctx->base + icr) |= (1 << 4);
+	} /* RX user request interrupt. */
+	else if ((status & (1 << 7)) != 0) {
+		*(ctx->base + cr1) &= ~(1 << 7);
+	}
+	else {
+		return -1;
+	}
+
+	read = libdma_leftToRx(ctx->data.dma.per);
+
+	if (read != 0) {
+		libuart_infiniteRxHandler(ctx, -read);
+	}
+
+	return 1;
+}
+
+
 static int libuart_dmaInit(libuart_ctx *ctx, unsigned int uart)
 {
 	int err;
@@ -404,24 +511,62 @@ static int libuart_dmaInit(libuart_ctx *ctx, unsigned int uart)
 	ctx->type = uart_dma;
 
 	libdma_init();
+
+	if (ctx->data.dma.rxfifosz >= DMA_MAX_LEN) {
+		return -EINVAL;
+	}
+
+	ctx->data.dma.rxfifopos = 0;
+	ctx->data.dma.rxfifoprevend = 0;
+	ctx->data.dma.rxfifosz = libuart_config[uart].rxfifosz;
+	ctx->data.dma.rxfifo = malloc(ctx->data.dma.rxfifosz);
+	ctx->data.dma.rxfifofull = 0;
+
+	if (ctx->data.dma.rxfifo == NULL) {
+		return -ENOMEM;
+	}
+
+	ctx->data.dma.read = 0;
+	ctx->data.dma.rxbufsz = 0;
+	ctx->data.dma.rxbuf = NULL;
+
 	err = libdma_acquirePeripheral(dma_uart, uart, &ctx->data.dma.per);
 	if (err < 0) {
+		free((void *)ctx->data.dma.rxfifo);
 		return err;
 	}
-	libdma_configurePeripheral(ctx->data.dma.per, dma_mem2per, dma_priorityHigh, (void *)(ctx->base + tdr), 0x0, 0x0, 0x1, 0x0, NULL);
-	libdma_configurePeripheral(ctx->data.dma.per, dma_per2mem, dma_priorityVeryHigh, (void *)(ctx->base + rdr), 0x0, 0x0, 0x1, 0x0, NULL);
-	*(ctx->base + cr3) |= (1 << 7); /* Enable DMA for transmission. */
 
 	mutexCreate(&ctx->data.dma.rxlock);
+	mutexCreate(&ctx->data.dma.rxcondlock); /* No synchronization purpose only existing to conform to condWait API. */
 	mutexCreate(&ctx->data.dma.txlock);
+	condCreate(&ctx->data.dma.rxcond);
+
+	libdma_configurePeripheral(ctx->data.dma.per, dma_mem2per, dma_priorityHigh, (void *)(ctx->base + tdr), 0x0, 0x0, 0x1, 0x0, NULL);
+	libdma_configurePeripheral(ctx->data.dma.per, dma_per2mem, dma_priorityVeryHigh, (void *)(ctx->base + rdr), 0x0, 0x0, 0x1, 0x0, &ctx->data.dma.rxcond);
+
+	*(ctx->base + cr3) |= (1 << 7) | (1 << 6); /* Enable DMA for transmission and reception. */
+
+	/* Clear overflow bit. */
+	*(ctx->base + icr) |= (1 << 3);
+
+	(void)libdma_infiniteRxAsync(ctx->data.dma.per, (void *)ctx->data.dma.rxfifo, ctx->data.dma.rxfifosz, libuart_infiniteRxHandler, ctx);
+
+	interrupt(libuart_info[uart].irq, uart_irqDMA, (void *)ctx, ctx->data.dma.rxcond, NULL);
 
 	return 0;
 }
 
 
-static void libuart_irqInit(libuart_ctx *ctx, unsigned int uart)
+static int libuart_irqInit(libuart_ctx *ctx, unsigned int uart)
 {
 	ctx->type = uart_irq;
+
+	ctx->data.irq.rxdfifosz = libuart_config[uart].rxfifosz;
+	ctx->data.irq.rxdfifo = malloc(ctx->data.irq.rxdfifosz);
+
+	if (ctx->data.irq.rxdfifo == NULL) {
+		return -ENOMEM;
+	}
 
 	mutexCreate(&ctx->data.irq.rxlock);
 	condCreate(&ctx->data.irq.rxcond);
@@ -432,6 +577,8 @@ static void libuart_irqInit(libuart_ctx *ctx, unsigned int uart)
 
 	interrupt(libuart_info[uart].irq, libuart_rxirq, (void *)ctx, ctx->data.irq.rxcond, NULL);
 	interrupt(libuart_info[uart].irq, libuart_txirq, (void *)ctx, ctx->data.irq.txcond, NULL);
+
+	return 0;
 }
 
 
@@ -445,17 +592,18 @@ int libuart_init(libuart_ctx *ctx, unsigned int uart, int dma)
 
 	devClk(libuart_info[uart].dev, 1);
 	ctx->base = libuart_info[uart].base;
-	/* Set up UART to 9600,8,n,1 16-bit oversampling */
+	/* Set up UART to 115200,8,n,1 16-bit oversampling */
 	libuart_configure(ctx, 8, uart_parnone, 115200, 1);
 
 	if (dma == 0) {
-		libuart_irqInit(ctx, uart);
+		err = libuart_irqInit(ctx, uart);
 	}
 	else {
 		err = libuart_dmaInit(ctx, uart);
-		if (err < 0) {
-			return err;
-		}
+	}
+
+	if (err < 0) {
+		return err;
 	}
 
 	ctx->enabled = 1;

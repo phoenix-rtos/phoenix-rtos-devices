@@ -34,7 +34,8 @@ typedef struct {
 			volatile char *volatile txbeg;
 			volatile char *volatile txend;
 
-			volatile char rxdfifo[64];
+			char *volatile rxdfifo;
+			size_t rxdfifosz;
 			volatile unsigned int rxdr;
 			volatile unsigned int rxdw;
 			volatile char *volatile rxbeg;
@@ -50,7 +51,18 @@ typedef struct {
 		struct {
 			handle_t txlock;
 			handle_t rxlock;
+			handle_t rxcond;
+			handle_t rxcondlock;
 			const struct libdma_per *per;
+
+			volatile char *rxbuf;
+			volatile size_t rxbufsz;
+			volatile size_t read;
+			volatile size_t rxfifopos;
+			volatile size_t rxfifoprevend;
+			volatile int rxfifofull;
+			char *rxfifo;
+			size_t rxfifosz;
 		} dma;
 	} data;
 } libuart_ctx;
