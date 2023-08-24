@@ -6,12 +6,12 @@
 # Copyright 2019 Phoenix Systems
 #
 
-DEFAULT_COMPONENTS := imxrt-multi libusbclient imxrt-flash cdc-demo
+DEFAULT_COMPONENTS := imxrt-multi
 
 ifneq (, $(findstring 117, $(TARGET)))
-  DEFAULT_COMPONENTS += imxrt117x-otp libusbehci umass usbacm
+  DEFAULT_COMPONENTS += libusbclient imxrt-flash cdc-demo imxrt117x-otp libusbehci umass usbacm
 else ifneq (, $(findstring 105, $(TARGET)))
   # placeholder
 else ifneq (, $(findstring 106, $(TARGET)))
-  DEFAULT_COMPONENTS += libimxrt-edma libusbehci umass usbacm
+  DEFAULT_COMPONENTS += libusbclient imxrt-flash cdc-demo libimxrt-edma libusbehci umass usbacm
 endif
