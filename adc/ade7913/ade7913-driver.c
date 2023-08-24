@@ -386,7 +386,7 @@ static int adc_init(int hard)
 
 	res = ade7913_sync(&common.ade7913_spi, common.order, common.devcnt, 0);
 	if (res < 0) {
-		log_error("Could not synchronize ADE7913 devices: %s", strerror(res));
+		log_error("Could not synchronize ADE7913 devices (%d)", res);
 		return -1;
 	}
 
