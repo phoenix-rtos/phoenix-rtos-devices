@@ -16,12 +16,15 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <string.h>
 
 #include <sys/io.h>
 #include <sys/list.h>
 #include <sys/threads.h>
 
 #include "ata.h"
+
+#define ATA_SECTORSZ_MAX 4096 /* Max supported sector size */
 
 
 ata_common_t ata_common;
@@ -294,6 +297,97 @@ static ssize_t _ata_access(ata_dev_t *dev, uint64_t lba, uint16_t sectors, uint8
 }
 
 
+ssize_t _ata_byteAccess(ata_dev_t *dev, offs_t offs, char *buff, size_t len, uint8_t cmd)
+{
+	ssize_t ret;
+	ssize_t cnt = 0;
+	uint8_t readCmd;
+	int rmw;
+	uint8_t sectorBuff[ATA_SECTORSZ_MAX];
+
+	if (cmd == CMD_WRITE_PIO) {
+		rmw = 1;
+		readCmd = CMD_READ_PIO;
+	}
+	else if (cmd == CMD_WRITE_PIO_EXT) {
+		rmw = 1;
+		readCmd = CMD_READ_PIO_EXT;
+	}
+	else {
+		rmw = 0;
+	}
+
+	/* Handle unaligned beginning */
+	offs_t offsMisalign = offs % (offs_t)dev->sectorsz;
+	if (offsMisalign != 0) {
+		size_t chunk = dev->sectorsz - offsMisalign;
+		if (chunk > len) {
+			chunk = len;
+		}
+
+		if (rmw != 0) {
+			ret = _ata_access(dev, offs / (offs_t)dev->sectorsz, 1, readCmd, sectorBuff);
+			if (ret < 0) {
+				return ret;
+			}
+			memcpy(sectorBuff + offsMisalign, buff, chunk);
+		}
+
+		ret = _ata_access(dev, offs / (offs_t)dev->sectorsz, 1, cmd, sectorBuff);
+		if (ret < 0) {
+			return ret;
+		}
+
+		if (rmw == 0) {
+			memcpy(buff, sectorBuff + offsMisalign, chunk);
+		}
+
+		offs += dev->sectorsz - offsMisalign;
+		len -= chunk;
+		buff += chunk;
+		cnt += chunk;
+	}
+
+	/* Handle aligned part */
+	size_t lenAligned = len - (len % (size_t)dev->sectorsz);
+	if (lenAligned > 0) {
+		ret = _ata_access(dev, offs / (offs_t)dev->sectorsz, lenAligned / dev->sectorsz, cmd, (uint8_t *)buff);
+		if (ret < 0) {
+			return ret;
+		}
+
+		len -= lenAligned;
+		offs += lenAligned;
+		buff += lenAligned;
+		cnt += lenAligned;
+	}
+
+	/* Handle unaligned end */
+	if (len > 0) {
+		if (rmw != 0) {
+			ret = _ata_access(dev, offs / (offs_t)dev->sectorsz, 1, readCmd, sectorBuff);
+			if (ret < 0) {
+				return ret;
+			}
+			memcpy(sectorBuff, buff, len);
+		}
+
+		ret = _ata_access(dev, offs / (offs_t)dev->sectorsz, 1, cmd, sectorBuff);
+		if (ret < 0) {
+			return ret;
+		}
+
+		if (rmw == 0) {
+			memcpy(buff, sectorBuff, len);
+		}
+
+		cnt += len;
+	}
+
+	return cnt;
+}
+
+
 ssize_t ata_read(ata_dev_t *dev, offs_t offs, char *buff, size_t len)
 {
 	uint8_t cmd;
@@ -317,9 +411,7 @@ ssize_t ata_read(ata_dev_t *dev, offs_t offs, char *buff, size_t len)
 	}
 
 	mutexLock(dev->bus->lock);
-
-	ret = _ata_access(dev, (uint64_t)(offs / dev->sectorsz), (uint16_t)(len / dev->sectorsz), cmd, (uint8_t *)buff);
-
+	ret = _ata_byteAccess(dev, offs, buff, len, cmd);
 	mutexUnlock(dev->bus->lock);
 
 	return ret;
@@ -349,9 +441,7 @@ ssize_t ata_write(ata_dev_t *dev, offs_t offs, const char *buff, size_t len)
 	}
 
 	mutexLock(dev->bus->lock);
-
-	ret = _ata_access(dev, (uint64_t)(offs / dev->sectorsz), (uint16_t)(len / dev->sectorsz), cmd, (uint8_t *)buff);
-
+	ret = _ata_byteAccess(dev, offs, (char *)buff, len, cmd);
 	mutexUnlock(dev->bus->lock);
 
 	return ret;
@@ -422,8 +512,13 @@ static int ata_initdev(ata_bus_t *bus, ata_dev_t *dev)
 	dev->sectorsz  = (info[235] << 0) | (info[234] << 8) | (info[237] << 16) | (info[236] << 24);
 
 	/* sectorsz = 0 => use default ATA sector size */
-	if (!dev->sectorsz)
+	if (dev->sectorsz == 0) {
 		dev->sectorsz = 512;
+	}
+
+	if (dev->sectorsz > ATA_SECTORSZ_MAX) {
+		return -E2BIG;
+	}
 
 	switch (dev->mode) {
 	case CHS:

@@ -51,7 +51,7 @@ enum {
 	PIO_DEFAULT         = 0x00, /* Default mode */
 	PIO_0               = 0x08, /* max 3,3  MB/s */
 	PIO_1               = 0x09, /* max 5,2  MB/s */
-	PIO_2               = 0x0a, /* max 8,3  MB/s */ 
+	PIO_2               = 0x0a, /* max 8,3  MB/s */
 	PIO_3               = 0x0b, /* max 11,1 MB/s */
 	PIO_4               = 0x0c  /* max 16,7 MB/s */
 };
