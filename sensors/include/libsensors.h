@@ -38,6 +38,7 @@ typedef struct {
 	int32_t accelX; /* value [mm/s^2] */
 	int32_t accelY; /* value [mm/s^2] */
 	int32_t accelZ; /* value [mm/s^2] */
+	uint32_t temp;  /* internal accel temperature in millikelvins [mK]. 0 if not supported */
 } accel_data_t;
 
 
@@ -90,6 +91,7 @@ typedef struct {
 	uint32_t dAngleX; /* delta angle in [urad] since driver start */
 	uint32_t dAngleY; /* delta angle in [urad] since driver start */
 	uint32_t dAngleZ; /* delta angle in [urad] since driver start */
+	uint32_t temp;    /* internal gyro temperature in millikelvins [mK]. 0 if not supported */
 } gyro_data_t;
 
 

@@ -204,6 +204,13 @@ static void lsm9dsxx_threadPublish(void *data)
 
 	gettime(&lastGyroTime, NULL);
 
+	/*
+	 * TODO: Temperature read not implemented!
+	 * If gyro read is extended temperature may be read at once (temp. registers are close to gyro registers).
+	 */
+	ctx->evtAccel.accels.temp = 0;
+	ctx->evtGyro.gyro.temp = 0;
+
 	while (1) {
 		/* odr is set to 952, thus 1ms wait is satisfactory */
 		usleep(1000);
