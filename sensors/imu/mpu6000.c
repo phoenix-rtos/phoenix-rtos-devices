@@ -80,6 +80,7 @@ typedef struct {
 	oid_t spiSS;
 	sensor_event_t evtAccel;
 	sensor_event_t evtGyro;
+	uint8_t lpfSel;
 	char stack[512] __attribute__((aligned(8)));
 } mpu6000_ctx_t;
 
@@ -156,7 +157,7 @@ static int mpu6000_hwSetup(mpu6000_ctx_t *ctx)
 	}
 
 	/* Sampling rate and LPF config */
-	if (spiWriteReg(ctx, REG_CONFIG, VAL_CONFIG_DLPF_CFG_256HZ) < 0) {
+	if (spiWriteReg(ctx, REG_CONFIG, ctx->lpfSel) < 0) {
 		return -1;
 	}
 
@@ -256,8 +257,9 @@ static int mpu6000_start(sensor_info_t *info)
 static int mpu6000_alloc(sensor_info_t *info, const char *args)
 {
 	mpu6000_ctx_t *ctx;
-	char *ss;
+	char *ss, *lpfChr;
 	int err;
+	unsigned long lpfSel = 0;
 
 	/* sensor context allocation */
 	ctx = malloc(sizeof(mpu6000_ctx_t));
@@ -280,7 +282,21 @@ static int mpu6000_alloc(sensor_info_t *info, const char *args)
 	ss = strchr(args, ':');
 	if (ss != NULL) {
 		*(ss++) = '\0';
+
+		lpfChr = strchr(ss, ':');
+		if (lpfChr != NULL) {
+			*(lpfChr++) = '\0';
+
+			errno = EOK;
+			lpfSel = strtoul(lpfChr, NULL, 10);
+			if (lpfSel > 7 || (lpfSel == 0 && errno != EOK)) {
+				fprintf(stderr, "mpu6000: failed to read lpfSel\n");
+				free(ctx);
+				return -1;
+			}
+		}
 	}
+	ctx->lpfSel = lpfSel;
 
 	/* initialize SPI device communication */
 	err = sensorsspi_open(args, ss, &ctx->spiCtx.oid, &ctx->spiSS);
