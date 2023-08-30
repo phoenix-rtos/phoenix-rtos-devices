@@ -71,9 +71,11 @@
 #define SENSOR_OUTPUT_SIZE 14
 
 /* conversions */
-#define GYR2000DPS_CONV_MRAD 1.064225152 /* convert gyroscope value (at scale 2000DPS) to mrad/s */
-#define ACC8G_CONV_MG        0.24414F    /* convert accelerations (at 8G scale) [m/s^2] */
-#define MG_CONV_MMS2         9.80665f    /* convert milli G to [mm/s^2] */
+#define GYR2000DPS_CONV_MRAD 1.064225152f     /* convert gyroscope value (at scale 2000DPS) to mrad/s */
+#define ACC8G_CONV_MG        0.24414f         /* convert accelerations (at 8G scale) [m/s^2] */
+#define MG_CONV_MMS2         9.80665f         /* convert milli G to [mm/s^2] */
+#define TEMP_SCALER          340              /* temperature register scaler */
+#define TEMP_OFFSET          (36530 + 273150) /* sensor offset + celsius2kelvin offset */
 
 typedef struct {
 	spimsg_ctx_t spiCtx;
@@ -101,6 +103,15 @@ static int32_t translateAcc(uint8_t hbyte, uint8_t lbyte)
 	int16_t val = ((uint16_t)hbyte << 8) | (uint16_t)lbyte;
 
 	return ACC8G_CONV_MG * MG_CONV_MMS2 * val; /* sensor value to [mm/s^2] */
+}
+
+
+static uint32_t translateTemp(uint8_t hbyte, uint8_t lbyte)
+{
+	/* MISRA incompliant - casting u16 to s16 with no regard to sign */
+	int16_t val = ((uint16_t)hbyte << 8) | (uint16_t)lbyte;
+
+	return (1000 * (int32_t)val) / TEMP_SCALER + TEMP_OFFSET; /* sensor value to [millikelvins] */
 }
 
 
@@ -207,6 +218,10 @@ static void mpu6000_threadPublish(void *data)
 		if (err < 0) {
 			continue;
 		}
+
+		/* Common package: gyro and accel utilize the same temperature reading */
+		ctx->evtAccel.accels.temp = translateTemp(ibuf[6], ibuf[7]);
+		ctx->evtGyro.gyro.temp = ctx->evtAccel.accels.temp;
 
 		ctx->evtAccel.accels.accelX = translateAcc(ibuf[0], ibuf[1]);
 		ctx->evtAccel.accels.accelY = translateAcc(ibuf[2], ibuf[3]);
