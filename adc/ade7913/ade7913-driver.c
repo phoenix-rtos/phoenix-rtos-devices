@@ -3,7 +3,7 @@
  *
  * i.MX RT1170 ADE7913 polyphase ADC driver
  *
- * Copyright 2021-2022 Phoenix Systems
+ * Copyright 2021-2023 Phoenix Systems
  * Author: Marcin Baran, Gerard Swiderski
  *
  * This file is part of Phoenix-RTOS.
@@ -27,11 +27,12 @@
 #include <phoenix/arch/imxrt1170.h>
 
 #include <edma.h>
-#include <board_config.h>
 
 #include "ade7913.h"
 #include "adc-api-ade7913.h"
 #include "flexpwm.h"
+
+#include <board_config.h> /* Need FLEXPWM_BOARDCONFIG */
 
 
 #define COL_RED    "\033[1;31m"
@@ -50,6 +51,13 @@
 #define log_info(fmt, ...)  do { printf(LOG_TAG COL_CYAN fmt COL_NORMAL "\n", ##__VA_ARGS__); } while (0)
 #define log_error(fmt, ...) do { printf(LOG_TAG COL_RED fmt COL_NORMAL "\n", ##__VA_ARGS__); } while (0)
 /* clang-format on */
+
+
+#define ADE7913_DREADY_MUXPIN pctl_mux_gpio_ad_21
+#define ADE7913_DREADY_MUXMOD 11 /* FLEXPWM4 (PWM3_X) */
+#define ADE7913_DREADY_PWMDEV (FLEXPWM_PWM4)
+#define ADE7913_DREADY_PWMPIN (FLEXPWM_PWMX)
+#define ADE7913_DREADY_PWMSM  (FLEXPWM_SM3)
 
 
 #ifndef ADE7913_PRIO
@@ -75,8 +83,6 @@
 #define SEQ_DMA_CHANNEL     8
 #define SPI_RCV_DMA_REQUEST 36
 
-#define PWM4SM3_READ_DMA_REQUEST 112
-#define PWM4_BASE_ADDR           ((void *)0x40198000)
 
 #define TCD_CSR_INTMAJOR_BIT     (1 << 1)
 #define TCD_CSR_INTHALF_BIT      (1 << 2)
@@ -229,13 +235,15 @@ static int edma_error_handler(unsigned int n, void *arg)
 static int pwm_init(void)
 {
 	int res;
-	platformctl_t pctl = { 0 };
-
-	pctl.action = pctl_set;
-	pctl.type = pctl_iomux;
-	pctl.iomux.mux = pctl_mux_gpio_ad_21;
-	pctl.iomux.sion = 0;
-	pctl.iomux.mode = 11; /* FLEXPWM4 (PWM3_X) */
+	platformctl_t pctl = {
+		.action = pctl_set,
+		.type = pctl_iomux,
+		.iomux = {
+			.mux = ADE7913_DREADY_MUXPIN,
+			.sion = 0,
+			.mode = ADE7913_DREADY_MUXMOD,
+		},
+	};
 
 	res = platformctl(&pctl);
 	if (res < 0) {
@@ -243,10 +251,10 @@ static int pwm_init(void)
 		return res;
 	}
 
-	flexpwm_init(PWM4_BASE_ADDR);
+	flexpwm_init(ADE7913_DREADY_PWMDEV);
 
 	/* Enable PWM in input capture mode to trigger on /DREADY signal */
-	res = flexpwm_input_capture(3, FLEXPWM_CAP_EDGE_FALLING, FLEXPWM_CAP_DISABLED);
+	res = flexpwm_input_capture(ADE7913_DREADY_PWMSM, ADE7913_DREADY_PWMPIN, FLEXPWM_CAP_EDGE_FALLING, FLEXPWM_CAP_DISABLED);
 	if (res < 0) {
 		log_error("Unable to set input capture");
 	}
@@ -422,7 +430,7 @@ static void dma_stop(void)
 static void dma_start(void)
 {
 	dmamux_set_source(SPI_RCV_DMA_CHANNEL, SPI_RCV_DMA_REQUEST);
-	dmamux_set_source(DREADY_DMA_CHANNEL, PWM4SM3_READ_DMA_REQUEST);
+	dmamux_set_source(DREADY_DMA_CHANNEL, FLEXPWM_DMA_RREQ(ADE7913_DREADY_PWMDEV, ADE7913_DREADY_PWMSM));
 
 	dmamux_channel_enable(SPI_RCV_DMA_CHANNEL);
 	dmamux_channel_enable(SPI_SND_DMA_CHANNEL);
