@@ -3,7 +3,7 @@
  *
  * i.MX RT1170 FlexPWM input capture
  *
- * Copyright 2021-2022 Phoenix Systems
+ * Copyright 2021-2023 Phoenix Systems
  * Author: Gerard Swiderski
  *
  * This file is part of Phoenix-RTOS.
@@ -12,6 +12,7 @@
  */
 
 #include <errno.h>
+#include <stdio.h>
 #include "flexpwm.h"
 
 
@@ -42,11 +43,11 @@ struct flexpwm_submodule_regs_s {
 	uint16_t reserved1;
 	uint16_t dtcnt0;
 	uint16_t dtcnt1;
-	uint16_t capctrla;
+	uint16_t captctrla;
 	uint16_t captcompa;
 	uint16_t captctrlb;
 	uint16_t captcompb;
-	uint16_t capctrlx;
+	uint16_t captctrlx;
 	uint16_t captcompx;
 	uint16_t cval0;
 	uint16_t cval0cyc;
@@ -83,30 +84,48 @@ struct flexpwm_regs_s {
 static volatile struct flexpwm_regs_s *flexpwm_regs;
 
 
-void flexpwm_init(void *base)
+int flexpwm_init(unsigned int dev)
 {
-	flexpwm_regs = base;
+	switch (dev) {
+		case FLEXPWM_PWM1: flexpwm_regs = ((void *)0x4018C000); break;
+		case FLEXPWM_PWM2: flexpwm_regs = ((void *)0x40190000); break;
+		case FLEXPWM_PWM3: flexpwm_regs = ((void *)0x40194000); break;
+		case FLEXPWM_PWM4: flexpwm_regs = ((void *)0x40198000); break;
+		default: flexpwm_regs = NULL; return -EINVAL;
+	}
+
+	return 0;
 }
 
 
-int flexpwm_input_capture(unsigned int no, unsigned int cap0_edge, unsigned int cap1_edge)
+int flexpwm_input_capture(unsigned int sm, unsigned int pwm, unsigned int cap0_edge, unsigned int cap1_edge)
 {
-	if (no > 3 || cap0_edge > FLEXPWM_CAP_EDGE_ANY || cap1_edge > FLEXPWM_CAP_EDGE_ANY) {
+	volatile uint16_t *captctrl;
+
+	if ((flexpwm_regs == NULL) || (sm > 3) || (cap0_edge > FLEXPWM_CAP_EDGE_ANY) || (cap1_edge > FLEXPWM_CAP_EDGE_ANY)) {
 		return -EINVAL;
 	}
 
-	/* use PWM_X as input capture */
-	flexpwm_regs->outen &= ~(1 << no);
+	switch (pwm) {
+		case FLEXPWM_PWMX: captctrl = &flexpwm_regs->sm[sm].captctrlx; break;
+		case FLEXPWM_PWMB: captctrl = &flexpwm_regs->sm[sm].captctrlb; break;
+		case FLEXPWM_PWMA: captctrl = &flexpwm_regs->sm[sm].captctrla; break;
+		default: return -EINVAL;
+	}
+
+	/* use PWM as input capture */
+	flexpwm_regs->outen &= ~(1 << (sm + 4 * pwm));
 
 	/* enable free running input capture without edge counting */
-	flexpwm_regs->sm[no].capctrlx = (cap1_edge << 4) | (cap0_edge << 2) | 1;
+	*captctrl = (cap1_edge << 4) | (cap0_edge << 2) | 1;
 
-	/* enable DMA on PWM_X */
-	flexpwm_regs->sm[no].dmaen =
-		(1 << 6) | ((cap1_edge != FLEXPWM_CAP_DISABLED) << 1) | (cap0_edge != FLEXPWM_CAP_DISABLED);
+	/* enable DMA on selected PWM */
+	flexpwm_regs->sm[sm].dmaen = (1 << 6) |
+		((cap1_edge != FLEXPWM_CAP_DISABLED) << (1 + 2 * pwm)) |
+		((cap0_edge != FLEXPWM_CAP_DISABLED) << (0 + 2 * pwm));
 
 	/* disable fault pin condition */
-	flexpwm_regs->sm[no].dismap0 = 0;
+	flexpwm_regs->sm[sm].dismap0 = 0;
 
-	return EOK;
+	return 0;
 }
