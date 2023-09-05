@@ -91,7 +91,6 @@ static inline volatile uint32_t *gpio_portToAddr(int port)
 
 static int gpio_setPort(int port, uint32_t mask, uint32_t val)
 {
-	uint32_t clearedMsk;
 	uint32_t set = val & mask;
 	uint32_t clear = (~val) & mask;
 
@@ -124,7 +123,6 @@ static int gpio_getPort(int port, uint32_t *val)
 
 static int gpio_setPortDir(int port, uint32_t mask, uint32_t val)
 {
-	uint32_t clearedMsk;
 	uint32_t set = val & mask;
 	uint32_t clear = (~val) & mask;
 
