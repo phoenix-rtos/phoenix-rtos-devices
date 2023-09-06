@@ -1351,6 +1351,108 @@ void test_write_read_erase_raw(void)
 }
 
 
+/* Erase whole flash, write test pattern on block zero and check if it appeared in any other block */
+void test_memory_aliasing(void)
+{
+	void *buffer = mmap(NULL, 16 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_PHYSMEM | MAP_ANONYMOUS, -1, 0x900000);
+	flashdrv_dma_t *dma;
+	int err;
+	size_t pagesPerBlock = (flashinfo.erasesz / flashinfo.writesz);
+
+	if (buffer == MAP_FAILED) {
+		printf("test_memory_aliasing: mmap fail\n");
+		return;
+	}
+
+	memset(buffer, 0, 16 * _PAGE_SIZE);
+
+	for (int i = 0; i < 0x1000; ++i) {
+		((char *)buffer)[i] = 0xb2;
+		((char *)buffer)[0x1000 + i] = 0x8a;
+	}
+
+	printf("test_memory_aliasing: creating\n");
+
+	dma = flashdrv_dmanew();
+	if (dma == MAP_FAILED) {
+		printf("test_memory_aliasing: dmanew error\n");
+		return;
+	}
+
+	printf("test_memory_aliasing: chip erase\n");
+	for (size_t i = 0; i < flashinfo.size / flashinfo.erasesz; ++i) {
+		err = flashdrv_isbad(dma, i * flashinfo.erasesz / flashinfo.writesz);
+		if (err != 0) {
+			if (err < 0) {
+				printf("test_memory_aliasing: isbad err %d\n", err);
+				return;
+			}
+			continue;
+		}
+
+		err = flashdrv_erase(dma, i * flashinfo.erasesz / flashinfo.writesz);
+		if (err < 0) {
+			printf("test_memory_aliasing: erase err %d\n", err);
+			return;
+		}
+	}
+
+	/* Block 0 must be good */
+	err = flashdrv_isbad(dma, 0);
+	if (err != 0) {
+		printf("test_memory_aliasing: block 0 not good err %d\n", err);
+		return;
+	}
+
+	printf("test_memory_aliasing: writing test pattern\n");
+	err = flashdrv_write(dma, 0, buffer, buffer + 0x1000);
+	printf("test_memory_aliasing: write err %d\n", err);
+
+	printf("test_memory_aliasing: test pattern verify\n");
+	err = flashdrv_read(dma, 0, buffer + 0x2000, buffer + 0x3000);
+	printf("test_memory_aliasing: error %d\n", err);
+
+	if (memcmp(buffer, buffer + 0x2000, flashinfo.writesz) != 0) {
+		printf("test_memory_aliasing: verify failed\n");
+		return;
+	}
+
+	for (size_t i = pagesPerBlock; i < flashinfo.size / flashinfo.writesz; i += pagesPerBlock) {
+		// printf("\rtest_memory_aliasing: Checking page %zu (block %zu)...", i, i / pagesPerBlock);
+		err = flashdrv_isbad(dma, i);
+		if (err != 0) {
+			if (err < 0) {
+				printf("test_memory_aliasing: isbad err %d\n", err);
+				return;
+			}
+			continue;
+		}
+
+		err = flashdrv_read(dma, i, buffer + 0x2000, buffer + 0x3000);
+		if (err != 0) {
+			printf("test_memory_aliasing: error %d\n", err);
+			return;
+		}
+
+		for (size_t j = 0; j < flashinfo.writesz; ++j) {
+			if (((char *)buffer)[0x2000 + j] == ((char *)buffer)[j]) {
+				printf("test_memory_aliasing: Found unexpected data at %zu+%zu\n", i, j);
+				return;
+			}
+		}
+	}
+
+	/* Restore flash to empty state */
+	err = flashdrv_erase(dma, 0);
+	if (err < 0) {
+		printf("test_memory_aliasing: erase err %d\n", err);
+		return;
+	}
+
+	printf("\ntest_memory_aliasing: No aliasing detected\n");
+}
+
+
 void test_3(void)
 {
 	void *buffer = mmap(NULL, 16 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_PHYSMEM | MAP_ANONYMOUS, -1, 0x900000);
@@ -1438,6 +1540,7 @@ int main(int argc, char **argv)
 	//test_meta();
 	//test_write_fcb();
 	//test_badblocks();
+	test_memory_aliasing();
 	test_write_read_erase();
 	//test_write_read_erase_raw();
 	//test_stress_one_block();
