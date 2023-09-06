@@ -1038,7 +1038,7 @@ void test_stress_one_block(void)
 		meta[i] = 0xba;
 
 	printf("reset\n");
-	flashdrv_reset(dma);
+	flashdrv_reset(dma, 0);
 
 	for (i = 0; ; ++i) {
 		printf("%d: ", i);
@@ -1370,7 +1370,7 @@ void test_3(void)
 	dma = flashdrv_dmanew();
 
 	printf("reset\n");
-	flashdrv_reset(dma);
+	flashdrv_reset(dma, 0);
 
 	printf("erase\n");
 	flashdrv_erase(dma, 0);
