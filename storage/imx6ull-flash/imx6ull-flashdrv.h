@@ -58,6 +58,8 @@ typedef struct {
 	uint32_t erasesz;  /* erase block size in bytes (multiply of writesize) */
 	uint32_t oobsz;    /* out-of-bound (oob) data size */
 	uint32_t oobavail; /* available out-of-bound (oob) data size */
+	uint32_t pbits;    /* number of meaningful page address bits */
+	uint8_t chips;     /* number of internal chips */
 } flashdrv_info_t;
 
 /* paddr: page address, so NAND address / writesz */
@@ -68,7 +70,7 @@ extern flashdrv_dma_t *flashdrv_dmanew(void);
 extern void flashdrv_dmadestroy(flashdrv_dma_t *dma);
 
 
-extern int flashdrv_reset(flashdrv_dma_t *dma);
+extern int flashdrv_reset(flashdrv_dma_t *dma, int chip);
 
 
 extern int flashdrv_write(flashdrv_dma_t *dma, uint32_t paddr, void *data, char *metadata);
