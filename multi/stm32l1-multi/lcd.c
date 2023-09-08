@@ -276,7 +276,7 @@ void lcd_getDisplay(lcdmsg_t *disp)
 	mutexLock(lcd_common.lock);
 
 	memcpy(disp->str, lcd_common.str, sizeof(lcd_common.str));
-	memcpy(disp->str_small, lcd_common.str_small, sizeof(lcd_common.str_small));
+	memcpy(disp->str_small, lcd_common.str_small, sizeof(disp->str_small));
 	disp->sym_mask = lcd_common.sym_mask;
 	disp->on = lcd_common.on;
 
