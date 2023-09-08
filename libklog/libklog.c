@@ -87,6 +87,7 @@ static void pumpthr(void *arg)
 		libklog_common.ttywrite(buf, ret);
 	}
 
+	close(fd);
 	_errno_remove(&libklog_common.e);
 	endthread();
 }
