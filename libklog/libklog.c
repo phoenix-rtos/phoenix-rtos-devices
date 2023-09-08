@@ -47,14 +47,15 @@ static void pumpthr(void *arg)
 	dev.port = 0;
 
 	_errno_new(&libklog_common.e);
-
-	if ((fd = open(_PATH_KLOG, O_RDONLY)) < 0) {
+	fd = open(_PATH_KLOG, O_RDONLY);
+	if (fd < 0) {
 		/* On some architectures devFS might not be bound
 		 * to /dev directory yet, which makes /dev/kmsg path not resolvable.
 		 * To make devfs/kmsg resolvable, we need to register it first.
 		 */
 		strcpy(buf, "devfs");
-		if ((name = strrchr(_PATH_KLOG, '/')) == NULL) {
+		name = strrchr(_PATH_KLOG, '/');
+		if (name == NULL) {
 			_errno_remove(&libklog_common.e);
 			endthread();
 		}
@@ -67,7 +68,8 @@ static void pumpthr(void *arg)
 		}
 
 		/* open() treats paths not starting with '/' slash as local */
-		if ((fd = sys_open(buf, O_RDONLY, 0)) < 0) {
+		fd = sys_open(buf, O_RDONLY, 0);
+		if (fd < 0) {
 			_errno_remove(&libklog_common.e);
 			endthread();
 		}
@@ -103,12 +105,15 @@ int libklog_init(libklog_write_t clbk)
 	/* kmsg device is handled inside kernel */
 	dev.port = 0;
 	dev.id = 0;
-	if ((err = create_dev(&dev, _PATH_KLOG)) < 0)
+	err = create_dev(&dev, _PATH_KLOG);
+	if (err < 0) {
 		return err;
+	}
 
 	/* Pump klog messages from kernel buffer to tty driver */
-	if (beginthread(pumpthr, 4, libklog_common.stack, sizeof(libklog_common.stack), NULL) != 0)
+	if (beginthread(pumpthr, 4, libklog_common.stack, sizeof(libklog_common.stack), NULL) != 0) {
 		return -ENOMEM;
+	}
 
 	return 0;
 }
