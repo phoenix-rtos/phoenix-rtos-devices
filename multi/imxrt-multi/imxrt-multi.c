@@ -131,6 +131,12 @@ static void multi_dispatchMsg(msg_t *msg)
 		case id_gpio7:
 		case id_gpio8:
 		case id_gpio9:
+#ifdef __CPU_IMXRT117X
+		case id_gpio10:
+		case id_gpio11:
+		case id_gpio12:
+		case id_gpio13:
+#endif
 			gpio_handleMsg(msg, id);
 			break;
 
