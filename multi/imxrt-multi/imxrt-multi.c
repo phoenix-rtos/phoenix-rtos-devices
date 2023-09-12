@@ -79,6 +79,35 @@ static id_t multi_getID(msg_t *msg)
 }
 
 
+static void multi_handleError(msg_t *msg, int err)
+{
+	multi_o_t *omsg = (multi_o_t *)msg->o.raw;
+
+	switch (msg->type) {
+		case mtSetAttr:
+		case mtGetAttr:
+			msg->o.attr.err = err;
+			break;
+
+		case mtCreate:
+			msg->o.create.err = err;
+			break;
+
+		case mtLookup:
+			msg->o.lookup.err = err;
+			break;
+
+		case mtDevCtl:
+			omsg->err = err;
+			break;
+
+		default:
+			msg->o.io.err = err;
+			break;
+	}
+}
+
+
 static void multi_dispatchMsg(msg_t *msg)
 {
 	id_t id;
@@ -137,6 +166,9 @@ static void multi_dispatchMsg(msg_t *msg)
 			trng_handleMsg(msg);
 			break;
 #endif
+		default:
+			multi_handleError(msg, -ENODEV);
+			break;
 	}
 }
 
