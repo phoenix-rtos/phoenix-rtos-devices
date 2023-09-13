@@ -118,7 +118,7 @@ static void op_ioctl(msg_t *msg)
 void wdog_handle(void)
 {
 	msg_t msg;
-	unsigned long int rid;
+	msg_rid_t rid;
 
 	while (1) {
 		if (msgRecv(wdog.port, &msg, &rid) < 0)

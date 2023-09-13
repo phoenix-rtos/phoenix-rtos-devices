@@ -86,7 +86,7 @@ static void gpiosrv_devctl(msg_t *msg)
 static void gpiosrv_msgthr(void *arg)
 {
 	unsigned int bank, pin, port = (unsigned int)arg;
-	unsigned long rid;
+	msg_rid_t rid;
 	char buff[16];
 	uint32_t val;
 	msg_t msg;

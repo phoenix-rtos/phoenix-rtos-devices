@@ -264,7 +264,7 @@ static int dev_ctl(msg_t *msg)
 static void msg_loop(void)
 {
 	msg_t msg;
-	unsigned long rid;
+	msg_rid_t rid;
 
 	while (1) {
 		if (msgRecv(ad7779_common.port, &msg, &rid) < 0)

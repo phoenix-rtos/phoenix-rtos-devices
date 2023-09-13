@@ -42,7 +42,7 @@ static void ttypc_poolthr(void *arg)
 	ttypc_t* ttypc = (ttypc_t *)arg;
 	const void *idata, *odata;
 	unsigned long req;
-	unsigned long rid;
+	msg_rid_t rid;
 	msg_t msg;
 	id_t id;
 	int err;

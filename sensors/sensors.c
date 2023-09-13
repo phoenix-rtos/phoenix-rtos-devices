@@ -289,7 +289,7 @@ static void sensors_ioctl(msg_t *msg)
 static void sensors_msgThread(void)
 {
 	msg_t msg;
-	unsigned long int rid;
+	msg_rid_t rid;
 
 	while (1) {
 		if (msgRecv(sensors_common.oid.port, &msg, &rid) < 0) {

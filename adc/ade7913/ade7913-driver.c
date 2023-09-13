@@ -849,7 +849,7 @@ static int dev_ctl(msg_t *msg)
 static int msg_loop(void)
 {
 	msg_t msg;
-	unsigned long rid;
+	msg_rid_t rid;
 	int err = EOK;
 
 	for (;;) {

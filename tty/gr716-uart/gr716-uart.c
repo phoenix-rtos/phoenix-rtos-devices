@@ -216,7 +216,7 @@ static void uart_ioctl(unsigned port, msg_t *msg)
 static void uart_dispatchMsg(void *arg)
 {
 	msg_t msg;
-	unsigned long int rid;
+	msg_rid_t rid;
 	uint32_t port = uart_common.uart.oid.port;
 
 	for (;;) {

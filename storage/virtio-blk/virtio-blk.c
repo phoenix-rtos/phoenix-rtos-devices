@@ -445,7 +445,7 @@ static int virtioblk_initDev(virtioblk_dev_t *vblk)
 static void virtioblk_poolthr(void *arg)
 {
 	virtioblk_dev_t *vblk = (virtioblk_dev_t *)arg;
-	unsigned long rid;
+	msg_rid_t rid;
 	void *rctx;
 	msg_t msg;
 

@@ -299,7 +299,7 @@ static tty_ctx_t *tty_getCtx(id_t id)
 static void tty_thread(void *arg)
 {
 	msg_t msg;
-	unsigned long rid;
+	msg_rid_t rid;
 	tty_ctx_t *ctx;
 	unsigned long request;
 	const void *in_data, *out_data = NULL;

@@ -243,7 +243,7 @@ static void uart_thr(void *arg)
 {
 	uint32_t port = (uint32_t)arg;
 	msg_t msg;
-	unsigned long int rid;
+	msg_rid_t rid;
 
 	for (;;) {
 
