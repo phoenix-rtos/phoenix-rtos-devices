@@ -161,7 +161,7 @@ static void handleMsg(msg_t *msg)
 static void thread(void *arg)
 {
 	msg_t msg;
-	unsigned long int rid;
+	msg_rid_t rid;
 
 	while (1) {
 		while (msgRecv(common.port, &msg, &rid) < 0)

@@ -173,7 +173,7 @@ static int gpio_readPin(int channel, int pin, uint32_t *val)
 static void gpio_thread(void *arg)
 {
 	msg_t msg;
-	unsigned long rid;
+	msg_rid_t rid;
 	uint32_t val;
 	int ret;
 	char buff[16];

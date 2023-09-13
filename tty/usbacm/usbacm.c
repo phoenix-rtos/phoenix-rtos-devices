@@ -536,7 +536,7 @@ static int _usbacm_open(usbacm_dev_t *dev, int flags, pid_t pid)
 static void usbacm_msgthr(void *arg)
 {
 	usbacm_dev_t *dev;
-	unsigned long rid;
+	msg_rid_t rid;
 	msg_t msg;
 	int id;
 
@@ -710,7 +710,7 @@ static void usbthr(void *arg)
 {
 	msg_t msg;
 	usb_msg_t *umsg = (usb_msg_t *)msg.i.raw;
-	unsigned long rid;
+	msg_rid_t rid;
 	usbacm_dev_t *devicesToFree = NULL;
 
 	for (;;) {

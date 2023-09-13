@@ -267,7 +267,7 @@ static umass_dev_t *umass_devFind(int id)
 static void umass_msgthr(void *arg)
 {
 	umass_dev_t *dev;
-	unsigned long rid;
+	msg_rid_t rid;
 	int id;
 	msg_t msg;
 

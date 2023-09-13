@@ -71,7 +71,7 @@ static void pwm_setReload(uint32_t reload)
 static void pwm_thread(void *arg)
 {
 	msg_t msg;
-	unsigned long rid;
+	msg_rid_t rid;
 	uint32_t val;
 	int ret;
 	char buff[16];

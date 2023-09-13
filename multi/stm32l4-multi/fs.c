@@ -62,7 +62,7 @@ static int syspage_create(void *ctx, oid_t *root)
 static void msgthr(void *ctx)
 {
 	msg_t msg;
-	unsigned long rid;
+	msg_rid_t rid;
 
 	for (;;) {
 		if (msgRecv(fs_common.port, &msg, &rid) < 0)

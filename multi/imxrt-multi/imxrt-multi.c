@@ -438,7 +438,7 @@ static int createDevFiles(void)
 static void multi_thread(void *arg)
 {
 	msg_t msg;
-	unsigned long int rid;
+	msg_rid_t rid;
 
 	while (1) {
 		while (msgRecv(multi_port, &msg, &rid) < 0) {
@@ -481,7 +481,7 @@ static void multi_thread(void *arg)
 static void uart_thread(void *arg)
 {
 	msg_t msg;
-	unsigned long int rid;
+	msg_rid_t rid;
 
 	while (1) {
 		while (msgRecv(common.uart_port, &msg, &rid) < 0) {

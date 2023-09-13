@@ -127,7 +127,7 @@ static void multi_dispatchMsg(msg_t *msg)
 static void multi_thread(void *arg)
 {
 	msg_t msg;
-	unsigned long int rid;
+	msg_rid_t rid;
 
 	(void)arg;
 
@@ -200,7 +200,7 @@ static void uart_dispatchMsg(msg_t *msg)
 static void uart_thread(void *arg)
 {
 	msg_t msg;
-	unsigned long int rid;
+	msg_rid_t rid;
 
 	(void)arg;
 

@@ -103,7 +103,7 @@ static void poolthr(void *arg)
 {
 	unsigned int port = (uintptr_t)arg;
 	spiketty_t *spiketty;
-	unsigned long rid;
+	msg_rid_t rid;
 	msg_t msg;
 
 	for (;;) {

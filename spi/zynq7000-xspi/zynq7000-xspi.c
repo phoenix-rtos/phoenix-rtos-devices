@@ -77,7 +77,7 @@ static void spisrv_devctl(msg_t *msg)
 static void spisrv_msgthr(void *arg)
 {
 	unsigned int port = (unsigned int)arg;
-	unsigned long int rid;
+	msg_rid_t rid;
 	msg_t msg;
 	int err;
 

@@ -109,7 +109,7 @@ static int dev_write(oled_write_t *cmd)
 void msg_loop(void)
 {
 	msg_t msg;
-	unsigned long int rid;
+	msg_rid_t rid;
 
 	while (1) {
 		if (msgRecv(dev_common.port, &msg, &rid) < 0)
