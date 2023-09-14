@@ -11,6 +11,7 @@
 
 #include <stdio.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <string.h>
 #include <stdint.h>
 #include <sys/msg.h>
@@ -69,6 +70,10 @@ struct {
 	struct {
 		fifo_t rx;
 		fifo_t tx;
+		struct {
+			uint8_t busy : 1;
+			uint8_t nonblock : 1;
+		} state;
 	} channel[chanLen];
 
 	handle_t lock;
@@ -189,6 +194,39 @@ static int mu_irqHandler(unsigned int n, void *arg)
 }
 
 
+static ssize_t chanOpen(id_t id, int flags)
+{
+	if ((id < chan0) || (id > chan3)) {
+		return -EINVAL;
+	}
+
+	if (m4_common.channel[id].state.busy == 1) {
+		return -EBUSY;
+	}
+
+	m4_common.channel[id].state.busy = 1;
+	m4_common.channel[id].state.nonblock = ((flags & O_NONBLOCK) != 0) ? 1 : 0;
+
+	return EOK;
+}
+
+
+static ssize_t chanClose(id_t id)
+{
+	if ((id < chan0) || (id > chan3)) {
+		return -EINVAL;
+	}
+
+	if (m4_common.channel[id].state.busy == 0) {
+		return -EBADF;
+	}
+
+	m4_common.channel[id].state.busy = 0;
+
+	return EOK;
+}
+
+
 static ssize_t chanRead(id_t id, void *buff, size_t bufflen)
 {
 	unsigned char *tbuff = buff;
@@ -205,6 +243,10 @@ static ssize_t chanRead(id_t id, void *buff, size_t bufflen)
 		if (fifo_pop(&tbuff[i], fifo) == 0) {
 			break;
 		}
+	}
+
+	if (i == 0 && m4_common.channel[id].state.nonblock == 1) {
+		i = -EAGAIN;
 	}
 
 	return (ssize_t)i;
@@ -231,6 +273,10 @@ static ssize_t chanWrite(id_t id, const void *buff, size_t bufflen)
 
 	if (i != 0) {
 		setTXirq(id, 1);
+	}
+
+	if (i == 0 && m4_common.channel[id].state.nonblock == 1) {
+		i = -EAGAIN;
 	}
 
 	return (ssize_t)i;
@@ -365,6 +411,14 @@ void cm4_handleMsg(msg_t *msg)
 {
 	mutexLock(m4_common.lock);
 	switch (msg->type) {
+		case mtOpen:
+			msg->o.io.err = chanOpen(msg->i.io.oid.id - id_cm4_0, msg->i.openclose.flags);
+			break;
+
+		case mtClose:
+			msg->o.io.err = chanClose(msg->i.io.oid.id - id_cm4_0);
+			break;
+
 		case mtRead:
 			msg->o.io.err = chanRead(msg->i.io.oid.id - id_cm4_0, msg->o.data, msg->o.size);
 			break;

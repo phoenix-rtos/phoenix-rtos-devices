@@ -61,6 +61,8 @@ static id_t multi_getID(msg_t *msg)
 	id_t id = 0;
 
 	switch (msg->type) {
+		case mtOpen:
+		case mtClose:
 		case mtRead:
 		case mtWrite:
 			id = msg->i.io.oid.id;
@@ -445,17 +447,14 @@ static void multi_thread(void *arg)
 		}
 
 		switch (msg.type) {
+			case mtOpen:
+			case mtClose:
 			case mtRead:
 			case mtWrite:
 			case mtGetAttr:
 			case mtSetAttr:
 			case mtDevCtl:
 				multi_dispatchMsg(&msg);
-				break;
-
-			case mtOpen:
-			case mtClose:
-				msg.o.io.err = EOK;
 				break;
 
 			case mtCreate:
