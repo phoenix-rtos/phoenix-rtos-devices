@@ -314,6 +314,8 @@ int spi_handleMsg(msg_t *msg, int dev)
 	switch (msg->type) {
 		case mtGetAttr:
 		case mtSetAttr:
+		case mtOpen:
+		case mtClose:
 		case mtWrite:
 		case mtRead:
 			msg->o.io.err = EOK;

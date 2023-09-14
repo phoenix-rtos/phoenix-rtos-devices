@@ -37,7 +37,16 @@ enum { veridr = 0, paramr, mcr = 4, msr, mier, mder, mscfgr0, mscfgr1, mscfgr2, 
 
 int i2c_handleMsg(msg_t *msg, int dev)
 {
-	return -1;
+	switch (msg->type) {
+		case mtOpen:
+		case mtClose:
+			msg->o.io.err = EOK;
+			break;
+		default:
+			msg->o.io.err = -EINVAL;
+	}
+
+	return EOK;
 }
 
 

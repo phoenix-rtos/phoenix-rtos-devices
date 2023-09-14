@@ -88,6 +88,10 @@ static int trng_read(char *data, size_t size)
 int trng_handleMsg(msg_t *msg)
 {
 	switch (msg->type) {
+		case mtOpen:
+		case mtClose:
+			msg->o.io.err = EOK;
+			break;
 		case mtRead:
 			msg->o.io.err = trng_read(msg->o.data, msg->o.size);
 			break;
