@@ -22,8 +22,8 @@
 #include "libmulti/libuart.h"
 
 #include "stm32l4-multi.h"
-#include "config.h"
 #include "common.h"
+#include "config.h"
 #include "gpio.h"
 #include "uart.h"
 #include "rcc.h"

@@ -13,6 +13,9 @@
 #ifndef _CONFIG_H_
 #define _CONFIG_H_
 
+#include <board_config.h>
+
+/* UART */
 #ifndef UART1
 #define UART1 0
 #endif
@@ -46,24 +49,19 @@
 #endif
 
 #ifndef TTY4
-#define TTY4 1
+#define TTY4 0
 #endif
 
 #ifndef TTY5
 #define TTY5 0
 #endif
 
-#if (UART1 && TTY1) || (UART2 && TTY2) || (UART3 && TTY3) || \
-	(UART4 && TTY4) || (UART5 && TTY5)
-#error "Can't use UART as UART and TTY at the same time!"
-#endif
+/* UART_CONSOLE has to be specified in board_config.h */
 
-#ifndef UART_CONSOLE
-#define UART_CONSOLE 4
-#endif
 
+/* SPI */
 #ifndef SPI1
-#define SPI1 1
+#define SPI1 0
 #endif
 
 #ifndef SPI2
@@ -79,13 +77,15 @@
 #endif
 
 #ifndef SPI2_USEDMA
-#define SPI2_USEDMA 1
+#define SPI2_USEDMA 0
 #endif
 
 #ifndef SPI3_USEDMA
 #define SPI3_USEDMA 0
 #endif
 
+
+/* I2C */
 #ifndef I2C1
 #define I2C1 0
 #endif
@@ -102,8 +102,8 @@
 #define I2C4 0
 #endif
 
-#define CONSOLE_IS_TTY ((UART_CONSOLE == 1 && TTY1) || (UART_CONSOLE == 2 && TTY2) || (UART_CONSOLE == 3 && TTY3) || (UART_CONSOLE == 4 && TTY4) || (UART_CONSOLE == 5 && TTY5))
 
+/* dummyfs */
 #ifndef BUILTIN_DUMMYFS
 #define BUILTIN_DUMMYFS 1
 #endif

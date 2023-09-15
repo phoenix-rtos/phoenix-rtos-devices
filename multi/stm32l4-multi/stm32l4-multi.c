@@ -24,6 +24,7 @@
 #include <libklog.h>
 
 #include "common.h"
+#include "config.h"
 
 #include "adc.h"
 #include "exti.h"
@@ -39,6 +40,30 @@
 #define THREADS_NO 3
 #define THREADS_PRIORITY 1
 #define STACKSZ 640
+
+
+#if (UART1 && TTY1) || (UART2 && TTY2) || (UART3 && TTY3) || \
+	(UART4 && TTY4) || (UART5 && TTY5)
+#error "Can't use UART as UART and TTY at the same time!"
+#endif
+
+#ifndef UART_CONSOLE
+#error "UART_CONSOLE not specified"
+#endif
+
+#if !(UART_CONSOLE == 1 && (UART1 || TTY1)) && \
+	!(UART_CONSOLE == 2 && (UART2 || TTY2)) && \
+	!(UART_CONSOLE == 3 && (UART3 || TTY3)) && \
+	!(UART_CONSOLE == 4 && (UART4 || TTY4)) && \
+	!(UART_CONSOLE == 5 && (UART5 || TTY5))
+#warning "Console enabled on disabled UART/TTY"
+#endif
+
+#define CONSOLE_IS_TTY ((UART_CONSOLE == 1 && TTY1) || \
+	(UART_CONSOLE == 2 && TTY2) || \
+	(UART_CONSOLE == 3 && TTY3) || \
+	(UART_CONSOLE == 4 && TTY4) || \
+	(UART_CONSOLE == 5 && TTY5))
 
 
 struct {
@@ -306,7 +331,10 @@ int main(void)
 	libklog_init(log_write);
 
 	/* Do this after klog init to keep shell from overtaking klog */
+
+#if CONSOLE_IS_TTY
 	tty_createDev();
+#endif
 
 	portRegister(common.port, "/multi", &oid);
 

@@ -27,8 +27,8 @@
 #include <libtty-lf-fifo.h>
 
 #include "stm32l4-multi.h"
-#include "config.h"
 #include "common.h"
+#include "config.h"
 #include "gpio.h"
 #include "tty.h"
 #include "rcc.h"
@@ -367,29 +367,24 @@ static void tty_thread(void *arg)
 		priority(THREAD_PRIO);
 	}
 }
-#endif
 
 
 ssize_t tty_log(const char *str, size_t len)
 {
-#if CONSOLE_IS_TTY
 	return libtty_write(&tty_getCtx(0)->tty_common, str, len, 0);
-#endif
-	return 0;
 }
 
 
 void tty_createDev(void)
 {
-#if CONSOLE_IS_TTY
 	oid_t oid;
 
 	oid.port = uart_common.port;
 	oid.id = 0;
 	create_dev(&oid, _PATH_TTY);
 	create_dev(&oid, _PATH_CONSOLE);
-#endif
 }
+#endif
 
 
 int tty_init(void)

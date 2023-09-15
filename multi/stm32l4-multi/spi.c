@@ -25,6 +25,7 @@
 
 #include "stm32l4-multi.h"
 #include "common.h"
+#include "config.h"
 #include "rcc.h"
 #include "spi.h"
 
