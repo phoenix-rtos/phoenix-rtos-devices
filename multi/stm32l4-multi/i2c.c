@@ -21,6 +21,7 @@
 
 #include "stm32l4-multi.h"
 #include "common.h"
+#include "config.h"
 #include "gpio.h"
 #include "i2c.h"
 #include "rcc.h"

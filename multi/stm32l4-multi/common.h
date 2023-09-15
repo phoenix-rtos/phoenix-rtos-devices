@@ -19,8 +19,6 @@
 #include <phoenix/arch/stm32l4.h>
 #include <sys/platform.h>
 
-#include "config.h"
-
 
 #define NELEMS(x) (sizeof(x) / sizeof(x[0]))
 
