@@ -11,6 +11,7 @@
  * %LICENSE%
  */
 
+#include <board_config.h>
 #include <errno.h>
 #include <sys/interrupt.h>
 #include <sys/platform.h>

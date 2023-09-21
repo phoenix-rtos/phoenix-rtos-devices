@@ -18,8 +18,6 @@
 #include <stdint.h>
 
 
-#define SYSCLK_FREQ (50 * 1000 * 1000)
-
 /* Atomic access offsets (APB peripherals) */
 
 #define ATOMIC_AND_OFFS 0x20000

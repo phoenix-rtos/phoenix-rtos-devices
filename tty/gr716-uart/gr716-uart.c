@@ -55,7 +55,7 @@
 #define TX_SR_EMPTY   (1 << 1)
 #define DATA_READY    (1 << 0)
 
-#define UART_CLK 50000000
+#define UART_CLK SYSCLK_FREQ
 
 
 enum {
