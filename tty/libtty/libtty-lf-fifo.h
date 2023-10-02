@@ -1,12 +1,13 @@
 /*
  * Phoenix-RTOS
  *
- * Operating system kernel
+ * libtty
  *
- * Lock-free SPSC Lamport FIFO
+ * Lock-free SPSC FIFO assuming push operations happen inside of interrupt handler.
+ * In case of overflow old data is discarded.
  *
- * Copyright 2022 Phoenix Systems
- * Author: Ziemowit Leszczynski
+ * Copyright 2022-2023 Phoenix Systems
+ * Author: Ziemowit Leszczynski, Hubert Badocha
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -16,63 +17,79 @@
 #ifndef LIBTTY_LF_FIFO_H
 #define LIBTTY_LF_FIFO_H
 
-#include <stdint.h>
 
-/* TODO: consider merging with libtty/fifo.h */
+#include <stdint.h>
+#include <stdatomic.h>
+
+
+#if ATOMIC_INT_LOCK_FREE != 2
+#error "Atomic int is not lock free."
+#endif
+
+
+/* TODO: consider migrating to weakrb */
 /* TODO: move into corelibs */
 
-typedef struct lf_fifo_s lf_fifo_t;
 
-struct lf_fifo_s {
-	unsigned int head;
-	unsigned int tail;
-	unsigned int size_mask;
+typedef struct {
+	atomic_uint headPos;
+	/* LSB indicates if push (0) or pop (1) last updated tail.
+	 * Without this information pop could read an old byte
+	 * discarding a new one in case of an overrun by multiple of fifo size. */
+	atomic_uint tail;
+	unsigned int sizeMask;
 	uint8_t *data;
-};
+} lf_fifo_t;
 
 
 /* NOTE: size must be a power of 2 */
 /* NOTE: effective capacity is size - 1 */
 static inline void lf_fifo_init(lf_fifo_t *f, uint8_t *data, unsigned int size)
 {
-	f->head = 0;
-	f->tail = 0;
-	f->size_mask = size - 1;
+	atomic_init(&f->headPos, 0);
+	atomic_init(&f->tail, 0);
+	f->sizeMask = size - 1;
 	f->data = data;
 }
 
 
-/* returns 1 if element has been pushed 0 otherwise */
+/* return 0 in case of overrun, 1 otherwise */
 static inline int lf_fifo_push(lf_fifo_t *f, uint8_t byte)
 {
-	unsigned int head = __atomic_load_n(&f->head, __ATOMIC_SEQ_CST);
-	unsigned int tail = __atomic_load_n(&f->tail, __ATOMIC_SEQ_CST);
+	unsigned int headPos = atomic_load_explicit(&f->headPos, memory_order_seq_cst);
+	unsigned int tail = atomic_load_explicit(&f->tail, memory_order_seq_cst);
+	unsigned int tailPos = tail >> 1;
+	int ret = 1;
 
-	if (((head + 1) & f->size_mask) == tail) {
-		return 0;
+	f->data[headPos] = byte;
+
+	headPos = (headPos + 1) & f->sizeMask;
+	if (headPos == tailPos) {
+		atomic_store_explicit(&f->tail, ((headPos + 1) & f->sizeMask) << 1, memory_order_seq_cst);
+		ret = 0;
 	}
 
-	f->data[head] = byte;
-	__atomic_store_n(&f->head, (head + 1) & f->size_mask, __ATOMIC_SEQ_CST);
+	atomic_store_explicit(&f->headPos, headPos, memory_order_seq_cst);
 
-	return 1;
+	return ret;
 }
 
 
 /* returns 1 if element has been popped 0 otherwise */
 static inline int lf_fifo_pop(lf_fifo_t *f, uint8_t *byte)
 {
-	unsigned int head = __atomic_load_n(&f->head, __ATOMIC_SEQ_CST);
-	unsigned int tail = __atomic_load_n(&f->tail, __ATOMIC_SEQ_CST);
+	unsigned int headPos = atomic_load_explicit(&f->headPos, memory_order_seq_cst);
+	unsigned int tail = atomic_fetch_or_explicit(&f->tail, 1, memory_order_seq_cst) | 1;
+	unsigned int tailPos = tail >> 1;
+	unsigned int newTail = (((tailPos + 1) & f->sizeMask) << 1) | 1;
 
-	if (head == tail) {
+	if (headPos == tailPos) {
 		return 0;
 	}
 
-	*byte = f->data[tail];
-	__atomic_store_n(&f->tail, (tail + 1) & f->size_mask, __ATOMIC_SEQ_CST);
+	*byte = f->data[tailPos];
 
-	return 1;
+	return atomic_compare_exchange_strong_explicit(&f->tail, &tail, newTail, memory_order_seq_cst, memory_order_seq_cst) ? 1 : 0;
 }
 
 
