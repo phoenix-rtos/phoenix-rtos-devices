@@ -79,13 +79,17 @@
 #define UCR3_DCD       (1 << 9)
 #define UCR3_DSR       (1 << 10)
 
-enum { urxd = 0, utxd = 16, ucr1 = 32, ucr2, ucr3, ucr4, ufcr, usr1, usr2,
-	uesc, utim, ubir, ubmr, ubrc, onems, uts, umcr };
 
-uint32_t uart_addr[8] = { 0x02020000, 0x021E8000, 0x021EC000, 0x021F0000,
+/* clang-format off */
+enum { urxd = 0, utxd = 16, ucr1 = 32, ucr2, ucr3, ucr4, ufcr, usr1, usr2,
+		uesc, utim, ubir, ubmr, ubrc, onems, uts, umcr };
+/* clang-format on */
+
+
+static uint32_t uart_addr[8] = { 0x02020000, 0x021E8000, 0x021EC000, 0x021F0000,
 	0x021F4000, 0x021FC000, 0x02018000, 0x02288000 };
 
-uint32_t uart_pctl_clk[8] = { pctl_clk_uart1, pctl_clk_uart2, pctl_clk_uart3, pctl_clk_uart4,
+static uint32_t uart_pctl_clk[8] = { pctl_clk_uart1, pctl_clk_uart2, pctl_clk_uart3, pctl_clk_uart4,
 	pctl_clk_uart5, pctl_clk_uart6, pctl_clk_uart7, pctl_clk_uart8 };
 
 typedef struct {
@@ -93,7 +97,8 @@ typedef struct {
 	char val;
 } uart_pctl_t;
 
-uart_pctl_t uart_pctl_mux[8][4] = {
+/* clang-format off */
+static uart_pctl_t uart_pctl_mux[8][4] = {
 	{ { pctl_mux_uart1_cts, 0 }, { pctl_mux_uart1_rts,  0 }, { pctl_mux_uart1_rx,  0 }, { pctl_mux_uart1_tx,  0 } },
 	{ { pctl_mux_uart2_cts, 0 }, { pctl_mux_uart2_rts,  0 }, { pctl_mux_uart2_rx,  0 }, { pctl_mux_uart2_tx,  0 } },
 	{ { pctl_mux_uart3_cts, 0 }, { pctl_mux_uart3_rts,  0 }, { pctl_mux_uart3_rx,  0 }, { pctl_mux_uart3_tx,  0 } },
@@ -103,8 +108,9 @@ uart_pctl_t uart_pctl_mux[8][4] = {
 	{ { pctl_mux_lcd_d6,    1 }, { pctl_mux_lcd_d7,     1 }, { pctl_mux_lcd_d17,   1 }, { pctl_mux_lcd_d16,   1 } },
 	{ { pctl_mux_lcd_d4,    1 }, { pctl_mux_lcd_d5,     1 }, { pctl_mux_lcd_d21,   1 }, { pctl_mux_lcd_d20,   1 } },
 };
+/* clang-format on */
 
-uart_pctl_t uart_pctl_isel[8][2] = {
+static uart_pctl_t uart_pctl_isel[8][2] = {
 	{ { pctl_isel_uart1_rts, 3 }, { pctl_isel_uart1_rx, 3 } },
 	{ { pctl_isel_uart2_rts, 1 }, { pctl_isel_uart2_rx, 1 } },
 	{ { pctl_isel_uart3_rts, 1 }, { pctl_isel_uart3_rx, 1 } },
@@ -115,7 +121,7 @@ uart_pctl_t uart_pctl_isel[8][2] = {
 	{ { pctl_isel_uart8_rts, 3 }, { pctl_isel_uart8_rx, 3 } },
 };
 
-unsigned uart_intr_number[8] = { 58, 59, 60, 61, 62, 49, 71, 72 };
+static unsigned uart_intr_number[8] = { 58, 59, 60, 61, 62, 49, 71, 72 };
 
 typedef struct {
 	volatile uint32_t *base;
@@ -150,7 +156,7 @@ typedef struct {
 	libtty_common_t tty_common;
 } uart_t;
 
-uart_t uart = { 0 };
+static uart_t uart = { 0 };
 
 
 static void log_printf(int priority, const char *fmt, ...)
@@ -195,10 +201,10 @@ static int uart_open(int flags)
 		return -EACCES;
 	}
 
-	if (id & READER) {
+	if ((id & READER) != 0) {
 		mutexLock(uart.openclose_lock);
 
-		if (uart.reader_busy) {
+		if (uart.reader_busy != 0) {
 			mutexUnlock(uart.openclose_lock);
 			return -EACCES;
 		}
@@ -223,7 +229,7 @@ static int uart_close(id_t id)
 		return -EBADF;
 	}
 
-	if (id & READER) {
+	if ((id & READER) != 0) {
 		mutexLock(uart.openclose_lock);
 
 		/* stop RX */
@@ -254,27 +260,27 @@ static void uart_thr(void *arg)
 		}
 
 		switch (msg.type) {
-		case mtOpen:
-			msg.o.io.err = uart_open(msg.i.openclose.flags);
-			break;
-		case mtClose:
-			msg.o.io.err = uart_close(msg.i.openclose.oid.id);
-			break;
-		case mtWrite:
-			msg.o.io.err = libtty_write(&uart.tty_common, msg.i.data, msg.i.size, msg.i.io.mode);
-			break;
-		case mtRead:
-			msg.o.io.err = libtty_read(&uart.tty_common, msg.o.data, msg.o.size, msg.i.io.mode);
-			break;
-		case mtGetAttr:
-			if (msg.i.attr.type != atPollStatus) {
-				msg.o.attr.err = -EINVAL;
+			case mtOpen:
+				msg.o.io.err = uart_open(msg.i.openclose.flags);
 				break;
-			}
-			msg.o.attr.val = libtty_poll_status(&uart.tty_common);
-			msg.o.attr.err = EOK;
-			break;
-		case mtDevCtl: { /* ioctl */
+			case mtClose:
+				msg.o.io.err = uart_close(msg.i.openclose.oid.id);
+				break;
+			case mtWrite:
+				msg.o.io.err = libtty_write(&uart.tty_common, msg.i.data, msg.i.size, msg.i.io.mode);
+				break;
+			case mtRead:
+				msg.o.io.err = libtty_read(&uart.tty_common, msg.o.data, msg.o.size, msg.i.io.mode);
+				break;
+			case mtGetAttr:
+				if (msg.i.attr.type != atPollStatus) {
+					msg.o.attr.err = -EINVAL;
+					break;
+				}
+				msg.o.attr.val = libtty_poll_status(&uart.tty_common);
+				msg.o.attr.err = EOK;
+				break;
+			case mtDevCtl: { /* ioctl */
 				unsigned long request;
 				const void *in_data = ioctl_unpack(&msg, &request, NULL);
 				const void *out_data = NULL;
@@ -282,8 +288,9 @@ static void uart_thr(void *arg)
 
 				int err = libtty_ioctl(&uart.tty_common, pid, request, in_data, &out_data);
 				ioctl_setResponse(&msg, request, err, out_data);
+
+				break;
 			}
-			break;
 		}
 
 		msgRespond(port, &msg, rid);
@@ -298,10 +305,10 @@ static int uart_intr(unsigned int intr, void *data)
 	*(uart.base + ucr1) &= ~UCR1_TRDYEN;
 
 	/* RX */
-	if (*(uart.base + ucr1) & UCR1_RRDYEN) {
-		while ((*(uart.base + usr2) & USR2_RDR)) {
+	if ((*(uart.base + ucr1) & UCR1_RRDYEN) != 0) {
+		while ((*(uart.base + usr2) & USR2_RDR) != 0) {
 			/* NOTE: lock-free push */
-			if (!lf_fifo_push(&uart.rx_sw_fifo, *(uart.base + urxd))) {
+			if (lf_fifo_push(&uart.rx_sw_fifo, (*(uart.base + urxd)) & 0xff) == 0) {
 				uart.counters.sw_overrun++;
 			}
 		}
@@ -316,20 +323,20 @@ static void check_errors(void)
 	uint32_t stat1 = *(uart.base + usr1);
 	uint32_t stat2 = *(uart.base + usr2);
 
-	if (stat1 & USR1_PARITYERR) {
+	if ((stat1 & USR1_PARITYERR) != 0) {
 		*(uart.base + usr1) = USR1_PARITYERR;
 		uart.counters.parity++;
 	}
-	if (stat1 & USR1_FRAMERR) {
+	if ((stat1 & USR1_FRAMERR) != 0) {
 		*(uart.base + usr1) = USR1_FRAMERR;
 		uart.counters.frame++;
 	}
-	if (stat2 & USR2_ORE) {
+	if ((stat2 & USR2_ORE) != 0) {
 		*(uart.base + usr2) = USR2_ORE;
 		uart.counters.hw_overrun++;
 	}
 
-	if (uart.print_errors) {
+	if (uart.print_errors != 0) {
 		if (uart.counters.last_parity != uart.counters.parity) {
 			log_printf(LOG_WARNING, "parity error (%u)\n", uart.counters.parity);
 			uart.counters.last_parity = uart.counters.parity;
@@ -355,7 +362,7 @@ static void uart_process_rx(void)
 	uint8_t c;
 
 	/* NOTE: lock-free pop */
-	while (lf_fifo_pop(&uart.rx_sw_fifo, &c)) {
+	while (lf_fifo_pop(&uart.rx_sw_fifo, &c) != 0) {
 		libtty_putchar(&uart.tty_common, c, NULL);
 	}
 }
@@ -365,8 +372,8 @@ static void uart_process_tx(void)
 {
 	int wake = 0;
 
-	while (libtty_txready(&uart.tty_common)) {
-		if ((*(uart.base + uts) & UTS_TXFULL)) {
+	while (libtty_txready(&uart.tty_common) != 0) {
+		if ((*(uart.base + uts) & UTS_TXFULL) != 0) {
 			*(uart.base + ucr1) |= UCR1_TRDYEN;
 			break;
 		}
@@ -377,7 +384,7 @@ static void uart_process_tx(void)
 		wake = 1;
 	}
 
-	if (wake) {
+	if (wake != 0) {
 		libtty_wake_writer(&uart.tty_common);
 	}
 }
@@ -429,8 +436,9 @@ static void set_mux(int dev_no, int use_rts_cts)
 	uart_ctl.action = pctl_set;
 	uart_ctl.type = pctl_iomux;
 
-	if (!use_rts_cts)
+	if (use_rts_cts == 0) {
 		first_mux = 2; /* Skip RTS/CTS mux configuration */
+	}
 
 	for (i = first_mux; i < 4; i++) {
 		uart_ctl.iomux.mux = uart_pctl_mux[(dev_no - 1)][i].pctl;
@@ -455,39 +463,46 @@ static void set_baudrate(void *_uart, speed_t baud)
 	int md, in, div, res;
 
 	int baud_rate = libtty_baudrate_to_int(baud);
-	uart_t* uartptr = (uart_t*) _uart;
+	uart_t *uartptr = (uart_t *)_uart;
 
-	if (!baud_rate)
+	if (baud_rate == 0) {
 		return;
+	}
 
 	/* count gcd */
 	md = MODULE_CLK;
 	in = 16 * baud_rate;
 
 	div = 0;
-	while (md % 2 == 0 && in % 2 == 0) {
+	while (((md % 2) == 0) && ((in % 2) == 0)) {
 		md = md / 2;
 		md = md / 2;
 		div++;
 	}
 
 	while (md != in) {
-		if (md % 2 == 0)
-			md = md / 2;
-		else if (in % 2 == 0)
-			in = in / 2;
-		else if (md > in)
+		if ((md % 2) == 0) {
+			md /= 2;
+		}
+		else if ((in % 2) == 0) {
+			in /= 2;
+		}
+		else if (md > in) {
 			md = (md - in) / 2;
-		else in = (in - md) / 2;
+		}
+		else {
+			in = (in - md) / 2;
+		}
 	}
 	res = md;
 
 	/* pow */
 	md = 1;
 	in = 2;
-	while (div) {
-		if (div & 1)
+	while (div != 0) {
+		if ((div & 1) != 0) {
 			md *= in;
+		}
 		div /= 2;
 		in *= in;
 	}
@@ -503,11 +518,12 @@ static void set_baudrate(void *_uart, speed_t baud)
 
 static void set_cflag(void *_uart, tcflag_t *cflag)
 {
-	uart_t* uartptr = (uart_t*) _uart;
+	uart_t *uartptr = (uart_t *)_uart;
 
 	/* CSIZE ony CS7 and CS8 (default) is supported */
-	if ((*cflag & CSIZE) == CS7)
+	if ((*cflag & CSIZE) == CS7) {
 		*(uartptr->base + ucr2) &= ~(1 << 6);
+	}
 	else { /* CS8 */
 		*cflag &= ~CSIZE;
 		*cflag |= CS8;
@@ -520,10 +536,12 @@ static void set_cflag(void *_uart, tcflag_t *cflag)
 	*(uartptr->base + ucr2) |= (((*cflag & PARENB) != 0) << 8) | (((*cflag & PARODD) != 0) << 7);
 
 	/* stop bits */
-	if (*cflag & CSTOPB)
+	if ((*cflag & CSTOPB) != 0) {
 		*(uartptr->base + ucr2) |= (1 << 6);
-	else
+	}
+	else {
 		*(uartptr->base + ucr2) &= ~(1 << 6);
+	}
 }
 
 
@@ -575,14 +593,15 @@ int main(int argc, char **argv)
 		.signal_txready = &signal_txready,
 	};
 
-	if (libtty_init(&uart.tty_common, &callbacks, BUFSIZE, baud) < 0)
+	if (libtty_init(&uart.tty_common, &callbacks, BUFSIZE, baud) < 0) {
 		return -1;
+	}
 
 	if (argc == 1) {
 		uart.dev_no = 1;
 		is_console = 1;
 	}
-	else if (argc >= 6 && argc <= 8) {
+	else if ((argc >= 6) && (argc <= 8)) {
 		is_cooked = atoi(argv[1]);
 		uart.dev_no = atoi(argv[2]);
 		baud = libtty_int_to_baudrate(atoi(argv[3]));
@@ -590,13 +609,13 @@ int main(int argc, char **argv)
 		use_rts_cts = atoi(argv[5]);
 
 		for (int num = 6; num < argc; num++) {
-			if (!strcmp(argv[num], "-t")) {
+			if (strcmp(argv[num], "-t") == 0) {
 				is_console = 1;
 			}
-			else if (!strcmp(argv[num], "-e")) {
+			else if (strcmp(argv[num], "-e") == 0) {
 				uart.print_errors = 1;
 			}
-			else if (!strcmp(argv[num], "-s")) {
+			else if (strcmp(argv[num], "-s") == 0) {
 				uart.use_syslog = 1;
 			}
 			else {
@@ -610,7 +629,7 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
-	if (uart.use_syslog) {
+	if (uart.use_syslog != 0) {
 		openlog(LOG_TAG, LOG_NDELAY, LOG_DAEMON);
 	}
 
@@ -621,51 +640,58 @@ int main(int argc, char **argv)
 	}
 	uart.tty_common.term.c_ispeed = uart.tty_common.term.c_ospeed = baud;
 
-	if (parity < 0 || parity > 2) {
+	if ((parity < 0) || (parity > 2)) {
 		printf("Invalid parity!\n");
 		print_usage(argv[0]);
 		return 1;
 	}
-	if (parity > 0)
+	if (parity > 0) {
 		uart.tty_common.term.c_cflag = PARENB | ((parity == 1) ? PARODD : 0);
+	}
 
-	if (!is_cooked)
+	if (is_cooked == 0) {
 		libtty_set_mode_raw(&uart.tty_common);
+	}
 
-	if (uart.dev_no <= 0 || uart.dev_no > 8) {
+	if ((uart.dev_no <= 0) || (uart.dev_no > 8)) {
 		printf("device number must be value 1-8\n");
 		print_usage(argv[0]);
 		return 1;
 	}
 
-	if (portCreate(&port) != EOK)
+	if (portCreate(&port) != EOK) {
 		return 2;
+	}
 
 	lf_fifo_init(&uart.rx_sw_fifo, uart.rx_sw_fifo_data, sizeof(uart.rx_sw_fifo_data));
 
 	uart.base = mmap(NULL, 0x1000, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, uart_addr[uart.dev_no - 1]);
 
-	if (uart.base == MAP_FAILED)
+	if (uart.base == MAP_FAILED) {
 		return 2;
+	}
 
 	set_clk(uart.dev_no);
 
 	/* software reset */
 	*(uart.base + ucr2) = 0;
-	while ((*(uart.base + uts) & UTS_SOFTRST))
-		;
+	while ((*(uart.base + uts) & UTS_SOFTRST) != 0) {
+	}
 
 	/* set correct daisy for rx input */
 	set_mux(uart.dev_no, use_rts_cts);
 
-	if (mutexCreate(&uart.lock) != EOK)
+	if (mutexCreate(&uart.lock) != EOK) {
 		return 2;
+	}
 
-	if (mutexCreate(&uart.openclose_lock) != EOK)
+	if (mutexCreate(&uart.openclose_lock) != EOK) {
 		return 2;
+	}
 
-	if (condCreate(&uart.cond) != EOK)
+	if (condCreate(&uart.cond) != EOK) {
 		return 2;
+	}
 
 	interrupt(uart_intr_number[uart.dev_no - 1], uart_intr, NULL, uart.cond, &uart.inth);
 
@@ -691,16 +717,19 @@ int main(int argc, char **argv)
 	beginthread(uart_intrthr, 3, &stack0, 2048, NULL);
 	beginthread(uart_thr, 3, &stack, 2048, (void *)port);
 
-	sprintf(uartn, "uart%u", uart.dev_no % 10);
+	sprintf(uartn, "uart%u", uart.dev_no % 10u);
 
 	dev.port = port;
 	dev.id = 0;
 
-	if ((err = create_dev(&dev, uartn)))
+	err = create_dev(&dev, uartn);
+	if (err != 0) {
 		debug("imx6ull-uart: Could not create device file\n");
+	}
 
-	if (is_console)
+	if (is_console != 0) {
 		create_dev(&dev, _PATH_CONSOLE);
+	}
 
 	libklog_init(libklog_clbk);
 
