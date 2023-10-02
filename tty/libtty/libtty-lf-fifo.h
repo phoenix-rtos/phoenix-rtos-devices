@@ -93,4 +93,13 @@ static inline int lf_fifo_pop(lf_fifo_t *f, uint8_t *byte)
 }
 
 
+static inline int lf_fifo_empty(lf_fifo_t *f)
+{
+	unsigned int headPos = atomic_load_explicit(&f->headPos, memory_order_seq_cst);
+	unsigned int tailPos = atomic_fetch_or_explicit(&f->tail, 1, memory_order_seq_cst) >> 1;
+
+	return headPos == tailPos;
+}
+
+
 #endif

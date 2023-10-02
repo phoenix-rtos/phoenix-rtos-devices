@@ -104,23 +104,43 @@
 #endif
 
 #ifndef TTY1_DMA_RXSZ
-#define TTY1_DMA_RXSZ 64
+#define TTY1_DMA_RXSZ 32
 #endif
 
 #ifndef TTY2_DMA_RXSZ
-#define TTY2_DMA_RXSZ 64
+#define TTY2_DMA_RXSZ 32
 #endif
 
 #ifndef TTY3_DMA_RXSZ
-#define TTY3_DMA_RXSZ 64
+#define TTY3_DMA_RXSZ 32
 #endif
 
 #ifndef TTY4_DMA_RXSZ
-#define TTY4_DMA_RXSZ 64
+#define TTY4_DMA_RXSZ 32
 #endif
 
 #ifndef TTY5_DMA_RXSZ
-#define TTY5_DMA_RXSZ 64
+#define TTY5_DMA_RXSZ 32
+#endif
+
+#ifndef TTY1_DMA_RXFIFOSZ
+#define TTY1_DMA_RXFIFOSZ 64
+#endif
+
+#ifndef TTY2_DMA_RXFIFOSZ
+#define TTY2_DMA_RXFIFOSZ 64
+#endif
+
+#ifndef TTY3_DMA_RXFIFOSZ
+#define TTY3_DMA_RXFIFOSZ 64
+#endif
+
+#ifndef TTY4_DMA_RXFIFOSZ
+#define TTY4_DMA_RXFIFOSZ 64
+#endif
+
+#ifndef TTY5_DMA_RXFIFOSZ
+#define TTY5_DMA_RXFIFOSZ 64
 #endif
 
 #ifndef TTY1_DMA_TXSZ
