@@ -40,6 +40,10 @@
 #include "trng.h"
 #include "cm4.h"
 
+#if PSEUDODEV
+#include <pseudodev.h>
+#endif
+
 #define MULTI_THREADS_NO 2
 #define UART_THREADS_NO 2
 
@@ -298,6 +302,10 @@ static int createDevFiles(void)
 	if (mkFile(&dir, id_pseudoFull, "full", multi_port) < 0) {
 		return -1;
 	}
+
+	if (mkFile(&dir, id_pseudoRandom, "urandom", multi_port) < 0) {
+		return -1;
+	}
 #endif
 
 	/* UARTs */
@@ -432,12 +440,6 @@ static int createDevFiles(void)
 	}
 #endif
 
-#if PSEUDODEV
-	if (mkFile(&dir, id_pseudoRandom, "random", multi_port) < 0) {
-		return -1;
-	}
-#endif
-
 #endif
 
 
@@ -478,6 +480,7 @@ static int createDevFiles(void)
 		return -1;
 	}
 #endif
+
 
 #endif
 
