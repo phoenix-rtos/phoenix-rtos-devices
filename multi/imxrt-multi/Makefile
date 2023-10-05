@@ -14,8 +14,8 @@ ifneq ($(TARGET_SUBFAMILY), imxrt117x)
 else
   LOCAL_SRCS += cm4.c
 endif
-DEP_LIBS := libtty libklog
-LIBS := libdummyfs libklog
+DEP_LIBS := libtty libklog libpseudodev
+LIBS := libdummyfs libklog libpseudodev
 LOCAL_HEADERS := imxrt-multi.h
 
 include $(binary.mk)

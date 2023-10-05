@@ -28,8 +28,9 @@ enum { id_console = 0, id_uart1, id_uart2, id_uart3, id_uart4, id_uart5, id_uart
 #endif
 	id_i2c1, id_i2c2, id_i2c3, id_i2c4, id_trng,
 #ifdef __CPU_IMXRT117X
-	id_cm4_0, id_cm4_1, id_cm4_2, id_cm4_3
+	id_cm4_0, id_cm4_1, id_cm4_2, id_cm4_3,
 #endif
+	id_pseudoNull, id_pseudoZero, id_pseudoFull, id_pseudoRandom
 };
 /* clang-format on */
 
