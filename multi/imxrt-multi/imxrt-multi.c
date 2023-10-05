@@ -106,6 +106,24 @@ static void multi_handleError(msg_t *msg, int err)
 }
 
 
+#if PSEUDODEV
+static inline int multi2pseudo(id_t id)
+{
+	switch (id) {
+		default:
+		case id_pseudoNull:
+			return pseudo_idNull;
+		case id_pseudoZero:
+			return pseudo_idZero;
+		case id_pseudoFull:
+			return pseudo_idFull;
+		case id_pseudoRandom:
+			return pseudo_idRandom;
+	}
+}
+#endif
+
+
 static void multi_dispatchMsg(msg_t *msg)
 {
 	id_t id;
@@ -170,6 +188,18 @@ static void multi_dispatchMsg(msg_t *msg)
 			trng_handleMsg(msg);
 			break;
 #endif
+
+#if PSEUDODEV
+		case id_pseudoNull:
+		case id_pseudoZero:
+		case id_pseudoFull:
+		case id_pseudoRandom:
+			if (pseudo_handleMsg(msg, multi2pseudo(id)) < 0) {
+				multi_handleError(msg, -EPERM);
+			}
+			break;
+#endif
+
 		default:
 			multi_handleError(msg, -ENODEV);
 			break;
@@ -220,7 +250,7 @@ static int mkFile(oid_t *dir, id_t id, char *name, uint32_t port)
 	msg.type = mtCreate;
 	msg.i.create.dir = *dir;
 	msg.i.create.type = otDev;
-	msg.i.create.mode = 0;
+	msg.i.create.mode = DEFFILEMODE;
 	msg.i.create.dev.port = port;
 	msg.i.create.dev.id = id;
 	msg.i.data = name;
@@ -254,6 +284,21 @@ static int createDevFiles(void)
 		return -1;
 	}
 
+#if PSEUDODEV
+	/* Pseudo devices */
+
+	if (mkFile(&dir, id_pseudoNull, "null", multi_port) < 0) {
+		return -1;
+	}
+
+	if (mkFile(&dir, id_pseudoZero, "zero", multi_port) < 0) {
+		return -1;
+	}
+
+	if (mkFile(&dir, id_pseudoFull, "full", multi_port) < 0) {
+		return -1;
+	}
+#endif
 
 	/* UARTs */
 
@@ -387,7 +432,14 @@ static int createDevFiles(void)
 	}
 #endif
 
+#if PSEUDODEV
+	if (mkFile(&dir, id_pseudoRandom, "random", multi_port) < 0) {
+		return -1;
+	}
 #endif
+
+#endif
+
 
 /* I2Cs */
 #ifndef __CPU_IMXRT117X
@@ -556,6 +608,10 @@ int main(void)
 
 #if CM4
 	cm4_init();
+#endif
+
+#if PSEUDODEV
+	pseudo_init();
 #endif
 
 	for (i = 0; i < UART_THREADS_NO; ++i) {
