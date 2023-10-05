@@ -28,6 +28,10 @@
 #include <sys/threads.h>
 #include <posix/utils.h>
 
+#if PSEUDODEV
+#include <pseudodev.h>
+#endif
+
 #include "adc.h"
 #include "gpio.h"
 #include "spi.h"
@@ -45,7 +49,11 @@
 #define LOG_ERROR(fmt, ...) fprintf(stderr, "gr716-multi: " fmt "\n", ##__VA_ARGS__)
 
 
-static const char *multi_devs[] = { "gpio0", "gpio1", "spi0", "spi1", "uart2", "adc0", NULL };
+static const char *multi_devs[] = { "gpio0", "gpio1", "spi0", "spi1", "uart2", "adc0",
+#if PSEUDODEV
+	"null", "zero", "full", "urandom",
+#endif
+	NULL };
 
 static struct {
 	oid_t multiOid;
@@ -90,6 +98,23 @@ static id_t multi_getId(msg_t *msg)
 	return id;
 }
 
+#if PSEUDODEV
+static inline int multi2pseudo(id_t id)
+{
+	switch (id) {
+		default:
+		case id_pseudoNull:
+			return pseudo_idNull;
+		case id_pseudoZero:
+			return pseudo_idZero;
+		case id_pseudoFull:
+			return pseudo_idFull;
+		case id_pseudoRandom:
+			return pseudo_idRandom;
+	}
+}
+#endif
+
 
 static void multi_dispatchMsg(msg_t *msg)
 {
@@ -116,6 +141,17 @@ static void multi_dispatchMsg(msg_t *msg)
 		case id_adc7:
 			adc_handleMsg(msg, id);
 			break;
+
+#if PSEUDODEV
+		case id_pseudoNull:
+		case id_pseudoZero:
+		case id_pseudoFull:
+		case id_pseudoRandom:
+			if (pseudo_handleMsg(msg, multi2pseudo(id)) < 0) {
+				msg->o.io.err = -EPERM;
+			}
+			break;
+#endif
 
 		default:
 			msg->o.io.err = -EINVAL;
@@ -301,6 +337,10 @@ int main(void)
 	}
 
 	libklog_init(uart_klogClbk);
+
+#if PSEUDODEV
+	pseudo_init();
+#endif
 
 	if (multi_createDevs() < 0) {
 		multi_cleanup(NULL);

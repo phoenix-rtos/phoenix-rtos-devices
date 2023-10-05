@@ -9,6 +9,6 @@
 NAME := gr716-multi
 LOCAL_SRCS := adc.c gpio.c spi.c uart.c gr716-multi.c
 LOCAL_HEADERS := gr716-multi.h
-DEP_LIBS := libtty libklog
+DEP_LIBS := libtty libklog libpseudodev
 
 include $(binary.mk)
