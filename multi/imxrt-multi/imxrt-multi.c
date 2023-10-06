@@ -43,10 +43,6 @@
 #define MULTI_THREADS_NO 2
 #define UART_THREADS_NO 2
 
-#ifndef IMXRT_MULTI_PRIO
-#define IMXRT_MULTI_PRIO 2
-#endif
-
 #define STACKSZ 512
 
 
