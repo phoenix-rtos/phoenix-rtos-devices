@@ -26,6 +26,10 @@
 #include "imxrt1060.h"
 #endif
 
+#ifndef IMXRT_MULTI_PRIO
+#define IMXRT_MULTI_PRIO 2
+#endif
+
 /* UART */
 
 #ifndef UART1

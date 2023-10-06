@@ -158,7 +158,7 @@ int fs_init(void)
 		return -1;
 	}
 
-	if (beginthread(msgthr, 4, fs_common.stack, MSGTHR_STACKSZ, ctx) != EOK) {
+	if (beginthread(msgthr, IMXRT_MULTI_PRIO, fs_common.stack, MSGTHR_STACKSZ, ctx) != EOK) {
 		dummyfs_unmount(ctx);
 		portDestroy(fs_common.port);
 		return -1;

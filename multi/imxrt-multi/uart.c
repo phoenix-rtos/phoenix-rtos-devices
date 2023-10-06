@@ -770,7 +770,7 @@ int uart_init(void)
 		/* Enable TX and RX */
 		*(uart->base + ctrlr) |= (1 << 19) | (1 << 18);
 
-		beginthread(uart_intrThread, 2, &uart->stack, sizeof(uart->stack), uart);
+		beginthread(uart_intrThread, IMXRT_MULTI_PRIO, &uart->stack, sizeof(uart->stack), uart);
 		interrupt(info[dev].irq, uart_handleIntr, (void *)uart, uart->cond, NULL);
 	}
 
