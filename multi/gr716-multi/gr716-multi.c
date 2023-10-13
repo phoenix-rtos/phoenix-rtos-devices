@@ -49,11 +49,25 @@
 #define LOG_ERROR(fmt, ...) fprintf(stderr, "gr716-multi: " fmt "\n", ##__VA_ARGS__)
 
 
-static const char *multi_devs[] = { "gpio0", "gpio1", "spi0", "spi1", "uart2", "adc0",
+static const char *multi_devs[] = {
+#ifdef MULTI_GPIO
+	"gpio0", "gpio1",
+#endif
+
+#ifdef MULTI_SPI
+	"spi0", "spi1",
+#endif
+	"uart2", "uart3",
+
+#ifdef MULTI_ADC
+	"adc0",
+#endif
+
 #if PSEUDODEV
 	"null", "zero", "full", "urandom",
 #endif
-	NULL };
+	NULL
+};
 
 static struct {
 	oid_t multiOid;
@@ -121,16 +135,21 @@ static void multi_dispatchMsg(msg_t *msg)
 	id_t id = multi_getId(msg);
 
 	switch (id) {
+#ifdef MULTI_GPIO
 		case id_gpio0:
 		case id_gpio1:
 			gpio_handleMsg(msg, id);
 			break;
+#endif
 
+#ifdef MULTI_SPI
 		case id_spi0:
 		case id_spi1:
 			spi_handleMsg(msg, id);
 			break;
+#endif
 
+#ifdef MULTI_ADC
 		case id_adc0:
 		case id_adc1:
 		case id_adc2:
@@ -141,6 +160,7 @@ static void multi_dispatchMsg(msg_t *msg)
 		case id_adc7:
 			adc_handleMsg(msg, id);
 			break;
+#endif
 
 #if PSEUDODEV
 		case id_pseudoNull:
@@ -315,18 +335,24 @@ int main(void)
 		multi_cleanup("Failed to initialize UART\n");
 		return EXIT_FAILURE;
 	}
+#ifdef MULTI_SPI
 	if (spi_init() < 0) {
 		multi_cleanup("Failed to initialize SPI\n");
 		return EXIT_FAILURE;
 	}
+#endif
+#ifdef MULTI_GPIO
 	if (gpio_init() < 0) {
 		multi_cleanup("Failed to initialize GPIO\n");
 		return EXIT_FAILURE;
 	}
+#endif
+#ifdef MULTI_ADC
 	if (adc_init() < 0) {
 		multi_cleanup("Failed to initialize ADC\n");
 		return EXIT_FAILURE;
 	}
+#endif
 
 	oid.port = multi_common.uartOid.port;
 	oid.id = id_console;

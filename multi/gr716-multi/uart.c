@@ -81,12 +81,12 @@ static const struct {
 	uint8_t rxPin;
 	uint8_t active;
 } info[UART_MAX_CNT] = {
-	{ UART0_BASE, UART0_IRQ, cgudev_apbuart0, UART0_TX, UART0_RX, 0 },
-	{ UART1_BASE, UART1_IRQ, cgudev_apbuart1, UART1_TX, UART1_RX, 0 },
-	{ UART2_BASE, UART2_IRQ, cgudev_apbuart2, UART2_TX, UART2_RX, 1 },
-	{ UART3_BASE, UART3_IRQ, cgudev_apbuart3, UART3_TX, UART3_RX, 0 },
-	{ UART4_BASE, UART4_IRQ, cgudev_apbuart4, UART4_TX, UART4_RX, 0 },
-	{ UART5_BASE, UART5_IRQ, cgudev_apbuart5, UART5_TX, UART5_RX, 0 }
+	{ UART0_BASE, UART0_IRQ, cgudev_apbuart0, UART0_TX, UART0_RX, UART0_ACTIVE },
+	{ UART1_BASE, UART1_IRQ, cgudev_apbuart1, UART1_TX, UART1_RX, UART1_ACTIVE },
+	{ UART2_BASE, UART2_IRQ, cgudev_apbuart2, UART2_TX, UART2_RX, UART2_ACTIVE },
+	{ UART3_BASE, UART3_IRQ, cgudev_apbuart3, UART3_TX, UART3_RX, UART3_ACTIVE },
+	{ UART4_BASE, UART4_IRQ, cgudev_apbuart4, UART4_TX, UART4_RX, UART4_ACTIVE },
+	{ UART5_BASE, UART5_IRQ, cgudev_apbuart5, UART5_TX, UART5_RX, UART5_ACTIVE }
 };
 
 
