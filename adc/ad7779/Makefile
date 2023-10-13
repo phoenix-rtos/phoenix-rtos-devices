@@ -24,3 +24,8 @@ $(NAME): ; $(error $(NAME) for $(TARGET) not implemented)
 endif
 
 include $(binary.mk)
+
+NAME := ad7779-tool
+SRCS := $(addprefix $(LOCAL_PATH), ad7779-tool.c)
+DEPS := ad7779
+include $(binary.mk)
