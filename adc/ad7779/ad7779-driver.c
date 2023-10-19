@@ -1,10 +1,10 @@
 /*
  * Phoenix-RTOS
  *
- * i.MX RT1064 AD7779 driver.
+ * i.MX RT1064 / i.MX 6ULL AD7779 driver.
  *
- * Copyright 2018, 2020 Phoenix Systems
- * Author: Krystian Wasik, Marcin Baran
+ * Copyright 2018, 2020, 2023 Phoenix Systems
+ * Author: Krystian Wasik, Marcin Baran, Marek Bialowas
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <signal.h>
 
 #include <sys/stat.h>
 #include <sys/threads.h>
@@ -35,11 +36,66 @@
 #endif
 
 
+/* mtRead message is the only blocking one, handling it asynchronously makes it possible
+ * to support multiple clients (readers).
+ * To be defined in board_config.h if needed */
+/* #define AD7779_SUPPORT_ASYNC_REQS */
+
+#define MAX_PENDING_REQS 4
+#define READ_SIZE        (sizeof(uint32_t))
+
+
+enum asyncState {
+	stUnused = 0,
+	stUsed,
+	stPendingRead
+};
+
+
+typedef struct {
+	volatile sig_atomic_t state; /* one of asyncState, access is thread-safe */
+	msg_t msg;
+	msg_rid_t rid;
+} async_req_t;
+
+
 static struct {
 	uint32_t port;
-	int enabled;
+	volatile sig_atomic_t enabled;
+	unsigned long prio;
 	addr_t buffer_paddr;
+#ifdef AD7779_SUPPORT_ASYNC_REQS
+	struct {
+		handle_t lock;
+		handle_t cond;
+		async_req_t pending[MAX_PENDING_REQS];
+		uint8_t stack[2048] __attribute__((aligned(8)));
+	} async;
+#endif
 } ad7779_common;
+
+
+static async_req_t *allocReq(void)
+{
+	async_req_t *ret = NULL;
+
+#ifdef AD7779_SUPPORT_ASYNC_REQS
+	for (int i = 0; i < MAX_PENDING_REQS; ++i) {
+		/* NOTE: no need for mutex (allocReq called only by one thread), access to `state` is thread-safe */
+		if (ad7779_common.async.pending[i].state == stUnused) {
+			ad7779_common.async.pending[i].state = stUsed;
+			ret = &ad7779_common.async.pending[i];
+			break;
+		}
+	}
+#else
+	/* all requests are blocking/synchronous - use single req */
+	static async_req_t req_storage;
+	ret = &req_storage;
+#endif /* AD7779_SUPPORT_ASYNC_REQS */
+
+	return ret;
+}
 
 
 static int dev_init(void)
@@ -81,10 +137,37 @@ static int dev_close(oid_t *oid, int flags)
 	return EOK;
 }
 
-static int dev_read(void *data, size_t size)
+
+static int dev_read(async_req_t *req, int *respond)
 {
-	return dma_read(data, size);
+#ifdef AD7779_SUPPORT_ASYNC_REQS
+	*respond = 1;
+
+	if (ad7779_common.enabled != 1) {
+		log_error("trying to read when not enabled");
+		return -EIO;
+	}
+
+	if ((req->msg.o.data != NULL) && (req->msg.o.size != READ_SIZE)) {
+		return -EIO;
+	}
+
+	/* NOTE: mutex not needed for data races, but ensures no reader would be added while servicing single read */
+	mutexLock(ad7779_common.async.lock);
+
+	/* schedule async read */
+	req->state = stPendingRead;
+	*respond = 0;
+
+	condSignal(ad7779_common.async.cond);
+	mutexUnlock(ad7779_common.async.lock);
+
+	return EOK;
+#else
+	return dma_read(req->msg.o.data, req->msg.o.size);
+#endif /* AD7779_SUPPORT_ASYNC_REQS */
 }
+
 
 static int dev_ctl(msg_t *msg)
 {
@@ -101,6 +184,7 @@ static int dev_ctl(msg_t *msg)
 			return EOK;
 
 		case adc_dev_ctl__disable:
+			/* NOTE: it's not guaranteed that dma_read() would ever finish (read_thr may be blocked until next enable or timeout) */
 			dma_disable();
 			sai_rx_disable();
 			ad7779_common.enabled = 0;
@@ -261,38 +345,103 @@ static int dev_ctl(msg_t *msg)
 	return EOK;
 }
 
+#ifdef AD7779_SUPPORT_ASYNC_REQS
+static void read_thr(void *arg)
+{
+	uint32_t data;
+
+	mutexLock(ad7779_common.async.lock);
+	for (;;) {
+		if (condWait(ad7779_common.async.cond, ad7779_common.async.lock, 0) != 0) {
+			continue;
+		}
+
+		if (ad7779_common.enabled != 1) {
+			continue;
+		}
+
+		mutexUnlock(ad7779_common.async.lock);
+		int ret = dma_read(&data, READ_SIZE);
+
+		/* NOTE: mutex not needed for data races, but ensures no reader would be added while servicing single read
+		 * prevents interrupt double-read by the same process */
+		mutexLock(ad7779_common.async.lock);
+
+		for (int i = 0; i < MAX_PENDING_REQS; ++i) {
+			async_req_t *req = &ad7779_common.async.pending[i];
+			if (req->state == stPendingRead) {
+				req->msg.o.io.err = ret;
+				if ((req->msg.o.data != NULL) && (ret == EOK)) {
+					memcpy(req->msg.o.data, &data, READ_SIZE);
+				}
+
+				msgRespond(ad7779_common.port, &req->msg, req->rid);
+				req->state = stUnused;
+			}
+		}
+	}
+
+	endthread();
+}
+#endif
+
 static void msg_loop(void)
 {
-	msg_t msg;
-	msg_rid_t rid;
+	async_req_t *req = NULL;
 
 	while (1) {
-		if (msgRecv(ad7779_common.port, &msg, &rid) < 0)
-			continue;
+		if (req == NULL) {
+			req = allocReq();
+			if (req == NULL) {
+				log_error("no memory for handling new request");
+				usleep(100); /* assume there are some pending read requests which will finish soon */
+				continue;
+			}
+		}
 
-		switch (msg.type) {
+		/* NOTE: it's forbidden to memcpy msg_t (eg o.data may point to o.raw), we need to keep full message for async requests to work */
+		msg_t *msg = &req->msg;
+		if (msgRecv(ad7779_common.port, msg, &req->rid) < 0) {
+			continue;
+		}
+
+		int respond = 1;
+
+		switch (msg->type) {
 			case mtOpen:
-				msg.o.io.err = dev_open(&msg.i.openclose.oid, msg.i.openclose.flags);
+				msg->o.io.err = dev_open(&msg->i.openclose.oid, msg->i.openclose.flags);
 				break;
 
 			case mtClose:
-				msg.o.io.err = dev_close(&msg.i.openclose.oid, msg.i.openclose.flags);
+				msg->o.io.err = dev_close(&msg->i.openclose.oid, msg->i.openclose.flags);
 				break;
 
 			case mtRead:
-				msg.o.io.err = dev_read(msg.o.data, msg.o.size);
+				/* FIXME: read should return number of bytes read (now returns 0 on success */
+				msg->o.io.err = dev_read(req, &respond);
 				break;
 
 			case mtWrite:
-				msg.o.io.err = -ENOSYS;
+				msg->o.io.err = -ENOSYS;
 				break;
 
 			case mtDevCtl:
-				msg.o.io.err = dev_ctl(&msg);
+				msg->o.io.err = dev_ctl(msg);
+				break;
+
+			default:
+				msg->o.io.err = -ENOSYS;
 				break;
 		}
 
-		msgRespond(ad7779_common.port, &msg, rid);
+		if (respond == 1) {
+			msgRespond(ad7779_common.port, msg, req->rid);
+			/* safe to reuse current `req` for next request */
+		}
+		else {
+			/* current req is pending - we need to alloc new req */
+			req = NULL;
+		}
 	}
 }
 
@@ -346,25 +495,25 @@ static int init(void)
 static int parse_args(int argc, char *argv[])
 {
 	int opt;
-	unsigned long prio;
+	ad7779_common.prio = AD7779_PRIO;
 	char *endptr;
 
 	while ((opt = getopt(argc, argv, "p:")) != -1) {
 		switch (opt) {
 			case 'p':
-				prio = strtoul(optarg, &endptr, 0);
+				ad7779_common.prio = strtoul(optarg, &endptr, 0);
 				if (*endptr != '\0') {
 					printf("%s: incorrect priority value (%s)\n", argv[0], optarg);
 					return -1;
 				}
 
-				if (prio > 7) {
+				if (ad7779_common.prio > 7) {
 					printf("%s: incorrect priority value (%lu). It must be in [0,7] range\n",
-						argv[0], prio);
+						argv[0], ad7779_common.prio);
 					return -1;
 				}
 
-				priority(prio);
+				priority(ad7779_common.prio);
 				break;
 
 			default:
@@ -377,6 +526,7 @@ static int parse_args(int argc, char *argv[])
 
 	return 0;
 }
+
 
 int main(int argc, char *argv[])
 {
@@ -401,8 +551,24 @@ int main(int argc, char *argv[])
 
 	if (i == MAX_INIT_TRIES) {
 		log_error("could not init driver.");
-		return -EIO;
+		return 1;
 	}
+
+#ifdef AD7779_SUPPORT_ASYNC_REQS
+	if (mutexCreate(&ad7779_common.async.lock) != EOK) {
+		log_error("mutex resource creation failed");
+		return 1;
+	}
+	if (condCreate(&ad7779_common.async.cond) != EOK) {
+		log_error("conditional resource creation failed");
+		return 1;
+	}
+
+	if (beginthread(read_thr, ad7779_common.prio, ad7779_common.async.stack, sizeof(ad7779_common.async.stack), NULL) < 0) {
+		log_error("read_thr startup failed");
+		return 1;
+	}
+#endif
 
 	log_info("initialized");
 
