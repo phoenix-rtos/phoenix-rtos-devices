@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * sparcv8leon3-gr716 UART driver
+ * sparcv8leon3-grlib UART driver
  *
  * Copyright 2023 Phoenix Systems
  * Author: Lukasz Leczkowski
@@ -273,7 +273,7 @@ static void uart_mkDev(unsigned int id)
 
 	snprintf(path, sizeof(path), "uart%u", id);
 	if (create_dev(&uart_common.uart.oid, path) < 0) {
-		debug("gr716-uart: Cannot create device file.\n");
+		debug("grlib-uart: Cannot create device file.\n");
 		return;
 	}
 
@@ -281,7 +281,7 @@ static void uart_mkDev(unsigned int id)
 		libklog_init(uart_klogClbk);
 
 		if (create_dev(&uart_common.uart.oid, _PATH_CONSOLE) < 0) {
-			debug("gr716-uart: Cannot create device file.\n");
+			debug("grlib-uart: Cannot create device file.\n");
 		}
 	}
 }
@@ -397,7 +397,7 @@ int main(int argc, char **argv)
 				case 'b':
 					baud = libtty_int_to_baudrate(atoi(optarg));
 					if (baud == (speed_t)-1) {
-						debug("gr716-uart: wrong baudrate value\n");
+						debug("grlib-uart: wrong baudrate value\n");
 						return EXIT_FAILURE;
 					}
 					break;
@@ -405,7 +405,7 @@ int main(int argc, char **argv)
 				case 'n':
 					uartn = atoi(optarg);
 					if (uartn >= UART_MAX_CNT) {
-						debug("gr716-uart: wrong uart ID\n");
+						debug("grlib-uart: wrong uart ID\n");
 						return EXIT_FAILURE;
 					}
 					break;
@@ -426,14 +426,14 @@ int main(int argc, char **argv)
 	}
 
 	if (uartn < 0) {
-		debug("gr716-uart: wrong uart ID, this uart cannot be a console\n");
+		debug("grlib-uart: wrong uart ID, this uart cannot be a console\n");
 		return EXIT_FAILURE;
 	}
 
 	portCreate(&uart_common.uart.oid.port);
 
 	if (uart_init(uartn, baud, raw) < 0) {
-		debug("gr716-uart: cannot initialize uart\n");
+		debug("grlib-uart: cannot initialize uart\n");
 		return EXIT_FAILURE;
 	}
 
