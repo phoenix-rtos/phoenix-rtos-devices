@@ -33,7 +33,14 @@
 #include <posix/utils.h>
 
 #include <phoenix/ioctl.h>
+
+#if defined(__CPU_GR716)
 #include <phoenix/arch/gr716.h>
+#elif defined(__CPU_GR712RC)
+#include <phoenix/arch/gr712rc.h>
+#else
+#error "Unsupported target"
+#endif
 
 
 /* UART control bits */
@@ -83,16 +90,15 @@ typedef struct {
 static const struct {
 	uint32_t *base;
 	unsigned int irq;
-	unsigned int cgudev;
 	uint8_t txPin;
 	uint8_t rxPin;
 } info[UART_MAX_CNT] = {
-	{ UART0_BASE, UART0_IRQ, cgudev_apbuart0, UART0_TX, UART0_RX },
-	{ UART1_BASE, UART1_IRQ, cgudev_apbuart1, UART1_TX, UART1_RX },
-	{ UART2_BASE, UART2_IRQ, cgudev_apbuart2, UART2_TX, UART2_RX },
-	{ UART3_BASE, UART3_IRQ, cgudev_apbuart3, UART3_TX, UART3_RX },
-	{ UART4_BASE, UART4_IRQ, cgudev_apbuart4, UART4_TX, UART4_RX },
-	{ UART5_BASE, UART5_IRQ, cgudev_apbuart5, UART5_TX, UART5_RX }
+	{ UART0_BASE, UART0_IRQ, UART0_TX, UART0_RX },
+	{ UART1_BASE, UART1_IRQ, UART1_TX, UART1_RX },
+	{ UART2_BASE, UART2_IRQ, UART2_TX, UART2_RX },
+	{ UART3_BASE, UART3_IRQ, UART3_TX, UART3_RX },
+	{ UART4_BASE, UART4_IRQ, UART4_TX, UART4_RX },
+	{ UART5_BASE, UART5_IRQ, UART5_TX, UART5_RX }
 };
 
 
@@ -287,19 +293,41 @@ static void uart_mkDev(unsigned int id)
 }
 
 
-static int uart_cguInit(unsigned int cgudev)
+#if defined(__CPU_GR716)
+
+static int uart_cguInit(unsigned int n)
 {
 	platformctl_t ctl;
+	static const unsigned int cguinfo[UART_MAX_CNT] = {
+		cgudev_apbuart0,
+		cgudev_apbuart1,
+		cgudev_apbuart2,
+		cgudev_apbuart3,
+		cgudev_apbuart4,
+		cgudev_apbuart5
+	};
 
 	ctl.action = pctl_set;
 	ctl.type = pctl_cguctrl;
 
 	ctl.cguctrl.state = enable;
 	ctl.cguctrl.cgu = cgu_primary;
-	ctl.cguctrl.cgudev = cgudev;
+	ctl.cguctrl.cgudev = cguinfo[n];
 
 	return platformctl(&ctl);
 }
+
+
+#else
+
+
+static int uart_cguInit(unsigned int n)
+{
+	return 0;
+}
+
+
+#endif
 
 
 static int uart_init(unsigned int n, speed_t baud, int raw)
@@ -327,11 +355,16 @@ static int uart_init(unsigned int n, speed_t baud, int raw)
 		return -1;
 	}
 
-	if (uart_cguInit(info[n].cgudev) < 0) {
+	if (uart_cguInit(n) < 0) {
 		return -1;
 	}
 
-	uart->base = info[n].base;
+	uintptr_t base = ((uintptr_t)info[n].base) & ~(_PAGE_SIZE - 1);
+	uart->base = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, (off_t)base);
+	if (uart->base == MAP_FAILED) {
+		return -1;
+	}
+	uart->base += ((uintptr_t)info[n].base - base) / sizeof(uintptr_t);
 
 	callbacks.arg = uart;
 	callbacks.set_cflag = uart_setCFlag;
