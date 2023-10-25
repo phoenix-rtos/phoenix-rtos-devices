@@ -729,9 +729,8 @@ int main(int argc, char **argv)
 
 	if (is_console != 0) {
 		create_dev(&dev, _PATH_CONSOLE);
+		libklog_init(libklog_clbk);
 	}
-
-	libklog_init(libklog_clbk);
 
 	uart_thr((void *)port);
 
