@@ -16,6 +16,6 @@ include $(static-lib.mk)
 NAME := zynq7000-sdcard
 LOCAL_SRCS := sdstorage_dev.c sdstorage_srv.c
 DEP_LIBS := libmbr libsdcard-zynq
-LIBS := libstorage libcache libmtd libjffs2
+LIBS := libstorage libcache libmtd libjffs2 libext2
 
 include $(binary.mk)
