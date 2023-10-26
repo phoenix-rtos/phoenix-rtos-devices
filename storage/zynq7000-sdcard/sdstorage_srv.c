@@ -25,6 +25,7 @@
 #include <cache.h>
 #include <storage/storage.h>
 #include <libjffs2.h>
+#include <libext2.h>
 
 #include "sdstorage_dev.h"
 
@@ -387,6 +388,12 @@ int main(int argc, char *argv[])
 	ret = storage_registerfs("jffs2", libjffs2_mount, libjffs2_umount);
 	if (ret < 0) {
 		LOG_ERROR("failed to register jffs2 filesystem, err: %d", ret);
+		exit(EXIT_FAILURE);
+	}
+
+	ret = storage_registerfs("ext2", libext2_storage_mount, libext2_storage_umount);
+	if (ret < 0) {
+		LOG_ERROR("failed to register ext2 filesystem, err: %d", ret);
 		exit(EXIT_FAILURE);
 	}
 
