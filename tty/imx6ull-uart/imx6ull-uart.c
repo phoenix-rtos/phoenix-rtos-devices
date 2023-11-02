@@ -665,7 +665,7 @@ int main(int argc, char **argv)
 
 	lf_fifo_init(&uart.rx_sw_fifo, uart.rx_sw_fifo_data, sizeof(uart.rx_sw_fifo_data));
 
-	uart.base = mmap(NULL, 0x1000, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, uart_addr[uart.dev_no - 1]);
+	uart.base = mmap(NULL, 0x1000, PROT_WRITE | PROT_READ, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, uart_addr[uart.dev_no - 1]);
 
 	if (uart.base == MAP_FAILED) {
 		return 2;

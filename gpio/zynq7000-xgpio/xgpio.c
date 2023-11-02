@@ -338,7 +338,7 @@ int main(int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 
-	gpio_common.base = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, baseaddr);
+	gpio_common.base = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, baseaddr);
 
 	if (gpio_common.base == MAP_FAILED) {
 		fprintf(stderr, "xgpio: failed to mmap device\n");

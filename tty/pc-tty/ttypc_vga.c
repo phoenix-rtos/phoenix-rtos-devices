@@ -290,7 +290,7 @@ int ttypc_vga_init(ttypc_t *ttypc)
 	ttypc->crtc = (ttypc->color) ? (void *)CRTC_COLOR : (void *)CRTC_MONO;
 
 	/* Map video memory */
-	if ((ttypc->vga = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, 0, OID_PHYSMEM, (ttypc->color) ? VGA_COLOR : VGA_MONO)) == MAP_FAILED)
+	if ((ttypc->vga = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PHYSMEM | MAP_ANONYMOUS, -1, (ttypc->color) ? VGA_COLOR : VGA_MONO)) == MAP_FAILED)
 		return -ENOMEM;
 
 	return EOK;

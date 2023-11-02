@@ -75,7 +75,7 @@ int sai_init(void)
 {
 	platformctl_t pctl = { 0 };
 
-	sai_common.reg = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, sai_common.paddr);
+	sai_common.reg = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, sai_common.paddr);
 	if (sai_common.reg == MAP_FAILED) {
 		sai_common.reg = NULL;
 		return -1;

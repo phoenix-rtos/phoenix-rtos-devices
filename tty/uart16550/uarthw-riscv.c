@@ -67,7 +67,7 @@ int uarthw_init(unsigned int uartn, void *hwctx, size_t hwctxsz, unsigned int *f
 		return -ENODEV;
 	}
 
-	base = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, (offs_t)0x10000000);
+	base = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, (offs_t)0x10000000);
 	if (base == MAP_FAILED) {
 		return -ENOMEM;
 	}

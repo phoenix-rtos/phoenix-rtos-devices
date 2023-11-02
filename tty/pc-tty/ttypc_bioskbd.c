@@ -63,7 +63,7 @@ int ttypc_bioskbd_init(ttypc_t *ttypc)
 {
 	int err;
 
-	if ((ttypc->kbd = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, 0, OID_PHYSMEM, 0x0)) == MAP_FAILED)
+	if ((ttypc->kbd = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PHYSMEM | MAP_ANONYMOUS, -1, 0x0)) == MAP_FAILED)
 		return -ENOMEM;
 
 	/* Launch keyboard control thread */

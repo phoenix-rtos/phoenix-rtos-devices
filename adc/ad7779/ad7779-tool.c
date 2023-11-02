@@ -157,7 +157,7 @@ static int adc_getConfig(uint32_t port, bool configDump)
 
 	tool_common.config.size = ioctl.buffers.size / ioctl.buffers.num; /* size in bytes of a single buffer */
 	tool_common.config.nr = ioctl.buffers.num;
-	volatile uint32_t *base = mmap(NULL, ioctl.buffers.size, PROT_READ, MAP_DEVICE, OID_PHYSMEM, ioctl.buffers.paddr);
+	volatile uint32_t *base = mmap(NULL, ioctl.buffers.size, PROT_READ, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, ioctl.buffers.paddr);
 
 	if (base == MAP_FAILED) {
 		printf("failed to mmap buffers\n");

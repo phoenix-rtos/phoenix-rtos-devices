@@ -124,13 +124,13 @@ int phy_init(hcd_t *hcd)
 	off_t offs;
 
 	offs = hcd->info->phyaddr % _PAGE_SIZE;
-	hcd->phybase = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, hcd->info->phyaddr - offs);
+	hcd->phybase = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, hcd->info->phyaddr - offs);
 	if (hcd->phybase == MAP_FAILED)
 		return -ENOMEM;
 	hcd->phybase += (offs / sizeof(int));
 
 	offs = hcd->info->hcdaddr % _PAGE_SIZE;
-	hcd->base = mmap(NULL, 2 * _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, hcd->info->hcdaddr - offs);
+	hcd->base = mmap(NULL, 2 * _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, hcd->info->hcdaddr - offs);
 	if (hcd->base == MAP_FAILED) {
 		munmap((void *)hcd->phybase, _PAGE_SIZE);
 		return -ENOMEM;

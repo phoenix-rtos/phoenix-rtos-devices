@@ -468,7 +468,7 @@ int qspi_init(void)
 		return -EIO;
 	}
 
-	qspi_common.base = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, 0xe000d000);
+	qspi_common.base = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, 0xe000d000);
 	if (qspi_common.base == MAP_FAILED) {
 		qspi_setAmbaClk(pctl_amba_lqspi_clk, 0);
 		return -ENOMEM;

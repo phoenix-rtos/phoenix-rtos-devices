@@ -492,7 +492,7 @@ int i2c_init(unsigned int dev_no)
 	}
 
 	/* map i2c registers */
-	i2c.base = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, devsInfo[dev_no].paddr);
+	i2c.base = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, devsInfo[dev_no].paddr);
 	if (i2c.base == MAP_FAILED) {
 		resourceDestroy(i2c.cond);
 		resourceDestroy(i2c.lock);

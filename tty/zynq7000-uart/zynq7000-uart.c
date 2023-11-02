@@ -395,7 +395,7 @@ static int uart_init(unsigned int n, speed_t baud, int raw)
 		return -EINVAL;
 	}
 
-	uart->base = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, info[n].base);
+	uart->base = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, info[n].base);
 	if (uart->base == MAP_FAILED) {
 		return -ENOMEM;
 	}

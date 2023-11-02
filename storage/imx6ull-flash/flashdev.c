@@ -146,7 +146,7 @@ static int _flashmtd_chunkFlips(struct _storage_t *strg, flashdrv_meta_t *meta, 
 			/* BCH reports chunk as uncorrectable in case of an erased page with bitflips within that chunk area */
 			/* Check if that's the case by counting the bitflips with an assumption that the page is fully erased */
 			/* Read raw page in order to check full chunk - both data and its ECC area */
-			raw = mmap(NULL, rawsz, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
+			raw = mmap(NULL, rawsz, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_CONTIGUOUS | MAP_ANONYMOUS, -1, 0);
 			if (raw == MAP_FAILED) {
 				ret = -ENOMEM;
 				raw = NULL;
@@ -606,7 +606,7 @@ int flashdev_init(storage_t *strg)
 		return -ENOMEM;
 	}
 
-	strg->dev->ctx->databuf = mmap(NULL, 2 * info->writesz, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
+	strg->dev->ctx->databuf = mmap(NULL, 2 * info->writesz, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_CONTIGUOUS | MAP_ANONYMOUS, -1, 0);
 	if (strg->dev->ctx->databuf == MAP_FAILED) {
 		flashdrv_dmadestroy(strg->dev->ctx->dma);
 		free(strg->dev->ctx);
@@ -614,7 +614,7 @@ int flashdev_init(storage_t *strg)
 		return -ENOMEM;
 	}
 
-	strg->dev->ctx->metabuf = mmap(NULL, info->writesz, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
+	strg->dev->ctx->metabuf = mmap(NULL, info->writesz, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_CONTIGUOUS | MAP_ANONYMOUS, -1, 0);
 	if (strg->dev->ctx->metabuf == MAP_FAILED) {
 		munmap(strg->dev->ctx->databuf, 2 * info->writesz);
 		flashdrv_dmadestroy(strg->dev->ctx->dma);
