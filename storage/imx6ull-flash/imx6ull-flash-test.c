@@ -151,7 +151,7 @@ int flip_bits(unsigned int n, unsigned int nblock, unsigned int start, unsigned 
 	do {
 		/* Read raw block data into memory and flip bits */
 		for (mapped_cnt = 0; mapped_cnt < BLOCK_PAGES_CNT; mapped_cnt++) {
-			if ((data[mapped_cnt] = mmap(NULL, pagemapsz, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0)) == MAP_FAILED) {
+			if ((data[mapped_cnt] = mmap(NULL, pagemapsz, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_CONTIGUOUS | MAP_ANONYMOUS, -1, 0)) == MAP_FAILED) {
 				err = -ENOMEM;
 				printf("mmap() failed: %d\n", err);
 				break;
@@ -412,7 +412,7 @@ void test_ecc(void)
 		return;
 	}
 
-	if ((data = mmap(NULL, pagemapsz, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0)) == MAP_FAILED) {
+	if ((data = mmap(NULL, pagemapsz, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_CONTIGUOUS | MAP_ANONYMOUS, -1, 0)) == MAP_FAILED) {
 		printf("mmap() failed: %d\n", -ENOMEM);
 		flashdrv_dmadestroy(dma);
 		return;
@@ -569,7 +569,7 @@ void test_ecc(void)
 					/* Read raw page in order to check full chunk - both data and its ECC area */
 					if (raw == NULL) {
 						/* Map raw page buffer */
-						raw = mmap(NULL, pagemapsz, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
+						raw = mmap(NULL, pagemapsz, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_CONTIGUOUS | MAP_ANONYMOUS, -1, 0);
 						if (raw == MAP_FAILED) {
 							raw = NULL;
 							err = -ENOMEM;
@@ -688,7 +688,7 @@ void test_write_fcb(void)
 	uint8_t *data;
 	int err;
 
-	data = mmap(NULL, pagemapsz, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
+	data = mmap(NULL, pagemapsz, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_CONTIGUOUS | MAP_ANONYMOUS, -1, 0);
 	if (data == MAP_FAILED)
 		FAIL("failed to mmap data buffer\n");
 
@@ -724,7 +724,7 @@ void test_meta(void)
 	const unsigned int blockno = 0;
 	uint32_t paddr = blockno * 64;
 
-	data = mmap(NULL, pagemapsz, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
+	data = mmap(NULL, pagemapsz, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_CONTIGUOUS | MAP_ANONYMOUS, -1, 0);
 	meta = data + _PAGE_SIZE;
 	aux = (flashdrv_meta_t *)meta;
 
@@ -863,7 +863,7 @@ void test_badblocks(void)
 	int err;
 	int total_read_fails = 0, total_bad_blocks = 0;
 
-	data = mmap(NULL, pagemapsz, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
+	data = mmap(NULL, pagemapsz, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_CONTIGUOUS | MAP_ANONYMOUS, -1, 0);
 	if (data == MAP_FAILED)
 		FAIL("failed to mmap data buffer\n");
 
@@ -938,7 +938,7 @@ void test_read_disturb(void)
 		return;
 	}
 
-	if ((data = mmap(NULL, pagemapsz, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0)) == MAP_FAILED) {
+	if ((data = mmap(NULL, pagemapsz, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_CONTIGUOUS | MAP_ANONYMOUS, -1, 0)) == MAP_FAILED) {
 		printf("mmap() failed: %d\n", -ENOMEM);
 		flashdrv_dmadestroy(dma);
 		return;
@@ -1027,7 +1027,7 @@ void test_stress_one_block(void)
 
 	dma = flashdrv_dmanew();
 
-	data = mmap(NULL, pagemapsz, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
+	data = mmap(NULL, pagemapsz, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_CONTIGUOUS | MAP_ANONYMOUS, -1, 0);
 	meta = data + _PAGE_SIZE;
 	m = (flashdrv_meta_t *)meta;
 
@@ -1310,7 +1310,7 @@ void test_write_read_erase(void)
 	uint8_t *data, *meta;
 	unsigned int blockno;
 
-	data = mmap(NULL, pagemapsz, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
+	data = mmap(NULL, pagemapsz, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_CONTIGUOUS | MAP_ANONYMOUS, -1, 0);
 	if (data == MAP_FAILED)
 		FAIL("failed to mmap data buffers\n");
 
@@ -1331,7 +1331,7 @@ void test_write_read_erase_raw(void)
 	uint8_t *data, *meta;
 	unsigned int blockno;
 
-	data = mmap(NULL, pagemapsz, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_CONTIGUOUS, 0);
+	data = mmap(NULL, pagemapsz, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_CONTIGUOUS | MAP_ANONYMOUS, -1, 0);
 	if (data == MAP_FAILED)
 		FAIL("failed to mmap data buffers\n");
 
@@ -1353,7 +1353,7 @@ void test_write_read_erase_raw(void)
 
 void test_3(void)
 {
-	void *buffer = mmap(NULL, 16 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, OID_PHYSMEM, 0x900000);
+	void *buffer = mmap(NULL, 16 * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_PHYSMEM | MAP_ANONYMOUS, -1, 0x900000);
 	flashdrv_dma_t *dma;
 	int err;
 

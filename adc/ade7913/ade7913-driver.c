@@ -651,7 +651,6 @@ static void edma_destroy(void)
 static int edma_configure(void)
 {
 	int devnum, res, i;
-	oid_t *oid = OID_NULL;
 
 	common.edma_spi_ch_handle = (handle_t)-1;
 	common.edma_spi_rcv_lock = (handle_t)-1;
@@ -684,7 +683,7 @@ static int edma_configure(void)
 	}
 
 	common.buff = mmap(NULL, (ADC_BUFFER_SIZE + _PAGE_SIZE - 1) / _PAGE_SIZE * _PAGE_SIZE,
-		PROT_READ | PROT_WRITE, MAP_UNCACHED, oid, common.buffer_paddr);
+		PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_ANONYMOUS, -1, common.buffer_paddr);
 
 	if (common.buff == MAP_FAILED) {
 		log_error("eDMA buffer allocation failed");

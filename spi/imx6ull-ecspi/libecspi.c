@@ -658,7 +658,7 @@ int ecspi_init(int dev_no, uint8_t chan_msk)
 	e->chan_msk = chan_msk;
 	e->mode = mode_sync_exchange;
 
-	if ((e->base = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, ecspi_addr[dev_no - 1])) == MAP_FAILED) {
+	if ((e->base = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, ecspi_addr[dev_no - 1])) == MAP_FAILED) {
 		printf("ecspi: could not map ecspi%d paddr %p.\n", dev_no, (void*) ecspi_addr[dev_no - 1]);
 		return -1;
 	}

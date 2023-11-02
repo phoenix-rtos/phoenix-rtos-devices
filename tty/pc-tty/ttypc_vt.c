@@ -693,19 +693,22 @@ int ttypc_vt_init(ttypc_t *ttypc, unsigned int ttybuffsz, ttypc_vt_t *vt)
 	if ((err = mutexCreate(&vt->lock)) < 0)
 		return err;
 
-	if ((vt->vram = vt->mem = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE, NULL, 0)) == MAP_FAILED) {
+	vt->mem = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (vt->mem == MAP_FAILED) {
 		resourceDestroy(vt->lock);
 		return -ENOMEM;
 	}
+	vt->vram = vt->mem;
 
 	if (SCRB_PAGES) {
-		if ((vt->scro = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE, NULL, 0)) == MAP_FAILED) {
+		vt->scro = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		if (vt->scro == MAP_FAILED) {
 			resourceDestroy(vt->lock);
 			munmap(vt->mem, _PAGE_SIZE);
 			return -ENOMEM;
 		}
-
-		if ((vt->scrb = mmap(NULL, SCRB_PAGES * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE, NULL, 0)) == MAP_FAILED) {
+		vt->scrb = mmap(NULL, SCRB_PAGES * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		if (vt->scrb == MAP_FAILED) {
 			resourceDestroy(vt->lock);
 			munmap(vt->mem, _PAGE_SIZE);
 			munmap(vt->scro, _PAGE_SIZE);

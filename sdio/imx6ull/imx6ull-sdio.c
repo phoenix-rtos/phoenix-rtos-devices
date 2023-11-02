@@ -272,7 +272,7 @@ static void *sdio_dmammap(void)
 	void *p;
 	size_t sz = (DMA_BUFFER_SIZE + _PAGE_SIZE - 1) & ~(_PAGE_SIZE - 1);
 
-	p = mmap(NULL, sz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_UNCACHED, NULL, 0);
+	p = mmap(NULL, sz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_UNCACHED, -1, 0);
 	if (p == MAP_FAILED) {
 		return NULL;
 	}
@@ -580,7 +580,7 @@ int sdio_init(void)
 		return 0;
 	}
 
-	ptr = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, USDHC2_ADDR);
+	ptr = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, USDHC2_ADDR);
 	if (ptr == MAP_FAILED) {
 		_sdio_free();
 		return -EIO;

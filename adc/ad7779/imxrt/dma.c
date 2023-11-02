@@ -64,10 +64,9 @@ static int edma_irq_handler(unsigned int n, void *arg)
 static void *alloc_uncached(size_t size, addr_t *paddr)
 {
 	uint32_t n = (size + _PAGE_SIZE - 1) / _PAGE_SIZE;
-	oid_t *oid = OID_NULL;
 	addr_t _paddr = 0;
 
-	void *vaddr = mmap(NULL, n * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, oid, _paddr);
+	void *vaddr = mmap(NULL, n * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_ANONYMOUS, -1, _paddr);
 	if (vaddr == MAP_FAILED)
 		return NULL;
 

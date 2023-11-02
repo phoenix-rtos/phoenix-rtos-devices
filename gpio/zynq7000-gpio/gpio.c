@@ -288,7 +288,7 @@ int gpio_init(void)
 	}
 
 	/* Map GPIO registers */
-	gpio_common.base = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, 0xe000a000);
+	gpio_common.base = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, 0xe000a000);
 	if (gpio_common.base == MAP_FAILED) {
 		return -ENOMEM;
 	}

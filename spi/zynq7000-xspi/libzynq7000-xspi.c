@@ -280,7 +280,7 @@ int spi_init(unsigned int dev)
 	}
 
 	/* Map SPI registers */
-	spi->base = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, spi->paddr);
+	spi->base = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, spi->paddr);
 	if (spi->base == MAP_FAILED) {
 		resourceDestroy(spi->cond);
 		resourceDestroy(spi->lock);

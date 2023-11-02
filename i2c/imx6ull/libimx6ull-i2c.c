@@ -338,7 +338,7 @@ int i2c_init(unsigned int dev_no)
 		return -1;
 
 	/* initialize */
-	i2c.base = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, i2c_addr[i2c.dev_no - 1]);
+	i2c.base = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, i2c_addr[i2c.dev_no - 1]);
 
 	if (i2c.base == MAP_FAILED)
 		return -2;

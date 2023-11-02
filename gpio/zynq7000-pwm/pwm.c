@@ -249,7 +249,7 @@ int main(int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 
-	pwm_common.base = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, baseaddr);
+	pwm_common.base = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, baseaddr);
 
 	if (pwm_common.base == MAP_FAILED) {
 		fprintf(stderr, "pwm: failed to mmap device\n");

@@ -151,7 +151,7 @@ int wdog_init(void)
 	oid_t dev;
 	platformctl_t pctl;
 
-	wdog.base = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, wdog_addr);
+	wdog.base = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, wdog_addr);
 	if (wdog.base == MAP_FAILED) {
 		puts("watchdog: mmap failed");
 		return -1;

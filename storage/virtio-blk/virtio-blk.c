@@ -202,7 +202,7 @@ static int _virtioblk_resizeBuff(virtioblk_req_t *req, size_t len)
 
 	if (len > req->buffsz) {
 		buffsz = (len + _PAGE_SIZE - 1) & ~(_PAGE_SIZE - 1);
-		if ((buff = mmap(NULL, buffsz, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_ANONYMOUS, OID_CONTIGUOUS, 0)) == MAP_FAILED)
+		if ((buff = mmap(NULL, buffsz, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_ANONYMOUS | MAP_CONTIGUOUS, -1, 0)) == MAP_FAILED)
 			return -ENOMEM;
 
 		munmap(req->buff, req->buffsz);
@@ -219,11 +219,11 @@ static void *virtioblk_open(void)
 {
 	virtioblk_req_t *req;
 
-	if ((req = mmap(NULL, (sizeof(virtioblk_req_t) + _PAGE_SIZE - 1) & ~(_PAGE_SIZE - 1), PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_ANONYMOUS, OID_CONTIGUOUS, 0)) == MAP_FAILED)
+	if ((req = mmap(NULL, (sizeof(virtioblk_req_t) + _PAGE_SIZE - 1) & ~(_PAGE_SIZE - 1), PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_ANONYMOUS | MAP_CONTIGUOUS, -1, 0)) == MAP_FAILED)
 		return NULL;
 
 	req->buffsz = _PAGE_SIZE;
-	if ((req->buff = mmap(NULL, req->buffsz, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_ANONYMOUS, OID_CONTIGUOUS, 0)) == MAP_FAILED) {
+	if ((req->buff = mmap(NULL, req->buffsz, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_ANONYMOUS | MAP_CONTIGUOUS, -1, 0)) == MAP_FAILED) {
 		munmap(req, (sizeof(virtioblk_req_t) + _PAGE_SIZE - 1) & ~(_PAGE_SIZE - 1));
 		return NULL;
 	}

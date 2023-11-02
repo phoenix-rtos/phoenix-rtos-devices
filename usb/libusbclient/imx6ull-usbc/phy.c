@@ -21,7 +21,7 @@
 /* TODO: It should be moved into imx-usbc. */
 void *usbclient_allocBuff(uint32_t size)
 {
-	return mmap(NULL, size, PROT_WRITE | PROT_READ, MAP_UNCACHED, OID_NULL, 0);
+	return mmap(NULL, size, PROT_WRITE | PROT_READ, MAP_UNCACHED | MAP_ANONYMOUS, -1, 0);
 }
 
 
@@ -40,7 +40,7 @@ void phy_setClock(void)
 
 void *phy_getBase(uint32_t size)
 {
-	return mmap(NULL, size, PROT_WRITE | PROT_READ, MAP_DEVICE, OID_PHYSMEM, USB_BASE_ADDR);
+	return mmap(NULL, size, PROT_WRITE | PROT_READ, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, USB_BASE_ADDR);
 }
 
 

@@ -303,17 +303,17 @@ static addr_t sdma_ocram_alloc(size_t size)
 static void *sdma_alloc_uncached(size_t size, addr_t *paddr, int ocram)
 {
 	uint32_t n = (size + _PAGE_SIZE - 1)/_PAGE_SIZE;
-	oid_t *oid = OID_NULL;
+	int flags = MAP_UNCACHED | MAP_ANONYMOUS;
 	addr_t _paddr = 0;
 
 	if (ocram) {
-		oid = OID_PHYSMEM;
+		flags |= MAP_PHYSMEM;
 		_paddr = sdma_ocram_alloc(n*_PAGE_SIZE);
 		if (!_paddr)
 			return NULL;
 	}
 
-	void *vaddr = mmap(NULL, n*_PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED, oid, _paddr);
+	void *vaddr = mmap(NULL, n * _PAGE_SIZE, PROT_READ | PROT_WRITE, flags, -1, _paddr);
 	if (vaddr == MAP_FAILED)
 		return NULL;
 
@@ -498,7 +498,7 @@ static int sdma_init(void)
 	unsigned handle;
 
 	const addr_t sdma_paddr = 0x20ec000;
-	common.regs = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, sdma_paddr);
+	common.regs = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, sdma_paddr);
 	if (common.regs == MAP_FAILED) {
 		log_error("sdma_init: mmap failed");
 		return -errno;
@@ -532,7 +532,7 @@ static int sdma_set_bd_array(uint8_t channel_id, addr_t paddr, unsigned cnt)
 
 	size_t size = cnt * sizeof(sdma_buffer_desc_t);
 	unsigned n = (size + _PAGE_SIZE - 1)/_PAGE_SIZE;
-	bd = mmap(NULL, n*_PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE, OID_PHYSMEM, paddr);
+	bd = mmap(NULL, n * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, paddr);
 	if (bd == MAP_FAILED) {
 		log_error("sdma_set_bd_array: mmap failed");
 		return -errno;
