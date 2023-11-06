@@ -323,30 +323,6 @@ static int adc_read(uint32_t port, uint32_t readIntCnt, int streamFd, bool dumpS
 			break;
 		}
 
-#if 0 /* simulate periodic samplerate monitoring in infinite stream (meter-srv use case) */
-		const int readCntEstimateStep = 100;
-
-		if (dumpSamplerate && (i % readCntEstimateStep == 0)) {
-			clock_gettime(CLOCK_MONOTONIC_RAW, &end);
-
-			uint64_t us = (end.tv_sec * 1000000 + end.tv_nsec / 1000) - (start.tv_sec * 1000000 + start.tv_nsec / 1000);
-			uint64_t us_per_buffer = us / (last_intr - first_intr);
-			uint64_t us_per_sample = us_per_buffer / (tool_common.config.size / TOTAL_CHANNELS / sizeof(uint32_t));
-
-			if (tool_common.verbose > 0) {
-				printf("read operations: %u\n", readCntEstimateStep);
-				printf("ints: %u - %u  + 1 = %u\n", last_intr, first_intr, last_intr - first_intr + 1);
-				print_us("total", us);
-				print_us("per buffer", us_per_buffer);
-				print_us("per sample", us_per_sample);
-			}
-
-			printf("freq = %6.3f\n", (float)1000000 / us_per_sample);
-
-			first_intr = 0; /* start new measure window */
-		}
-#endif
-
 		/* dumping & averaging */
 		if ((streamFd >= 0) || dumpAverage) {
 			volatile uint32_t *samplebuf = tool_common.config.ptr[(intr - 1) % tool_common.config.nr];
@@ -392,7 +368,7 @@ static int adc_read(uint32_t port, uint32_t readIntCnt, int streamFd, bool dumpS
 			printf("AVG[%u]:\n", sumcnt);
 		}
 		for (int i = 0; i < TOTAL_CHANNELS; ++i) {
-			const float valMax = (uint32_t)(1 << 24) - 1;
+			const float valMax = (uint32_t)(1 << 23) - 1;
 			const float voltMax = 1.65f / adc_gain[i];
 
 			float avg = (float)sum[i] / sumcnt;
