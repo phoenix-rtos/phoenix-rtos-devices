@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * GR716 GPIO driver
+ * GRLIB GPIO driver
  *
  * Copyright 2023 Phoenix Systems
  * Author: Lukasz Leczkowski
@@ -18,7 +18,7 @@
 
 #include "common.h"
 #include "gpio.h"
-#include "gr716-multi.h"
+#include "grlib-multi.h"
 
 
 #define GPIO_PORT_0 0

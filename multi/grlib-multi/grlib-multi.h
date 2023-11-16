@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * GR716 multi driver main
+ * GRLIB multi driver main
  *
  * Copyright 2023 Phoenix Systems
  * Author: Lukasz Leczkowski
@@ -12,8 +12,8 @@
  */
 
 
-#ifndef _GR716_MULTI_H_
-#define _GR716_MULTI_H_
+#ifndef _GRLIB_MULTI_H_
+#define _GRLIB_MULTI_H_
 
 
 #include <sys/types.h>

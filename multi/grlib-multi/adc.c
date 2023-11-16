@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * GR716 ADC driver
+ * GRLIB ADC driver
  *
  * Copyright 2023 Phoenix Systems
  * Author: Lukasz Leczkowski
@@ -21,7 +21,7 @@
 
 #include "adc.h"
 #include "common.h"
-#include "gr716-multi.h"
+#include "grlib-multi.h"
 
 
 #define ADC_CNT 8

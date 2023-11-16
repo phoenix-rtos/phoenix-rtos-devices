@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * GR716 multi driver main
+ * GRLIB multi driver main
  *
  * Copyright 2023 Phoenix Systems
  * Author: Lukasz Leczkowski
@@ -36,17 +36,17 @@
 #include "gpio.h"
 #include "spi.h"
 #include "uart.h"
-#include "gr716-multi.h"
+#include "grlib-multi.h"
 
 
 #define UART_THREADS_NO  2
 #define MULTI_THREADS_NO 2
-#define GR716_MULTI_PRIO 3
+#define GRLIB_MULTI_PRIO 3
 
 #define STACKSZ 2048
 
-#define LOG(fmt, ...)       printf("gr716-multi: " fmt "\n", ##__VA_ARGS__)
-#define LOG_ERROR(fmt, ...) fprintf(stderr, "gr716-multi: " fmt "\n", ##__VA_ARGS__)
+#define LOG(fmt, ...)       printf("grlib-multi: " fmt "\n", ##__VA_ARGS__)
+#define LOG_ERROR(fmt, ...) fprintf(stderr, "grlib-multi: " fmt "\n", ##__VA_ARGS__)
 
 
 static const char *multi_devs[] = {
@@ -308,7 +308,7 @@ static void multi_cleanup(const char *msg)
 	portDestroy(multi_common.multiOid.port);
 	portDestroy(multi_common.uartOid.port);
 	if (msg != NULL) {
-		debug("gr716-multi: ");
+		debug("grlib-multi: ");
 		debug(msg);
 	}
 }
@@ -318,16 +318,16 @@ int main(void)
 {
 	oid_t oid;
 
-	(void)priority(GR716_MULTI_PRIO);
+	(void)priority(GRLIB_MULTI_PRIO);
 
 	if (portCreate(&multi_common.uartOid.port) < 0) {
-		debug("gr716-multi: Failed to create port\n");
+		debug("grlib-multi: Failed to create port\n");
 		return EXIT_FAILURE;
 	}
 
 	if (portCreate(&multi_common.multiOid.port) < 0) {
 		portDestroy(multi_common.uartOid.port);
-		debug("gr716-multi: Failed to create port\n");
+		debug("grlib-multi: Failed to create port\n");
 		return EXIT_FAILURE;
 	}
 
@@ -381,11 +381,11 @@ int main(void)
 	}
 
 	for (int i = 0; i < UART_THREADS_NO; i++) {
-		beginthread(uart_thread, GR716_MULTI_PRIO, multi_common.uartStack[i], STACKSZ, NULL);
+		beginthread(uart_thread, GRLIB_MULTI_PRIO, multi_common.uartStack[i], STACKSZ, NULL);
 	}
 
 	for (int i = 0; i < MULTI_THREADS_NO - 1; i++) {
-		beginthread(multi_thread, GR716_MULTI_PRIO, multi_common.stack[i], STACKSZ, NULL);
+		beginthread(multi_thread, GRLIB_MULTI_PRIO, multi_common.stack[i], STACKSZ, NULL);
 	}
 
 	LOG("initialized");
