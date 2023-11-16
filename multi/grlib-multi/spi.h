@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * GR716 GPIO driver
+ * GRLIB SPI driver
  *
  * Copyright 2023 Phoenix Systems
  * Author: Lukasz Leczkowski
@@ -11,18 +11,17 @@
  * %LICENSE%
  */
 
-
-#ifndef _MULTI_GPIO_H_
-#define _MULTI_GPIO_H_
+#ifndef _MULTI_SPI_H_
+#define _MULTI_SPI_H_
 
 
 #include <sys/msg.h>
 
 
-void gpio_handleMsg(msg_t *msg, int dev);
+void spi_handleMsg(msg_t *msg, int dev);
 
 
-int gpio_init(void);
+int spi_init(void);
 
 
 #endif

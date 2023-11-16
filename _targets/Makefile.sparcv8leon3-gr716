@@ -6,4 +6,4 @@
 # Copyright 2023 Phoenix Systems
 #
 
-DEFAULT_COMPONENTS := gr716-flash gr716-multi
+DEFAULT_COMPONENTS := gr716-flash grlib-multi

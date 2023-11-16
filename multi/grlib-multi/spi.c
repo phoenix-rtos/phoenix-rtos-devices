@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * GR716 SPI driver
+ * GRLIB SPI driver
  *
  * Copyright 2023 Phoenix Systems
  * Author: Lukasz Leczkowski
@@ -22,7 +22,7 @@
 
 #include "common.h"
 #include "spi.h"
-#include "gr716-multi.h"
+#include "grlib-multi.h"
 
 
 #define SPI_CNT 2

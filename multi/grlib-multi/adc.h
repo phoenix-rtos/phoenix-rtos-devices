@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * GR716 UART driver
+ * GRLIB ADC driver
  *
  * Copyright 2023 Phoenix Systems
  * Author: Lukasz Leczkowski
@@ -11,20 +11,17 @@
  * %LICENSE%
  */
 
-#ifndef _MULTI_UART_H_
-#define _MULTI_UART_H_
+#ifndef _MULTI_ADC_H_
+#define _MULTI_ADC_H_
 
 
 #include <sys/msg.h>
 
 
-void uart_handleMsg(msg_t *msg, int dev);
+void adc_handleMsg(msg_t *msg, int dev);
 
 
-void uart_klogClbk(const char *data, size_t size);
-
-
-int uart_init(void);
+int adc_init(void);
 
 
 #endif

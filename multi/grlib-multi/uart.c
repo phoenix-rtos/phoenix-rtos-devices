@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * GR716 UART driver
+ * GRLIB UART driver
  *
  * Copyright 2023 Phoenix Systems
  * Author: Lukasz Leczkowski
@@ -28,7 +28,7 @@
 
 #include "uart.h"
 #include "common.h"
-#include "gr716-multi.h"
+#include "grlib-multi.h"
 
 /* UART registers */
 #define UART_DATA   0
