@@ -42,6 +42,8 @@
 #define UARTS_MAX_CNT 2
 #define UART_REF_CLK  50000000 /* 50 MHz */
 
+#define KMSG_CTRL_ID 100
+
 
 typedef struct {
 	volatile uint32_t *base;
@@ -258,6 +260,11 @@ static void uart_dispatchMsg(void *arg)
 			continue;
 		}
 
+		if (libklog_ctrlHandle(port, &msg, rid) == 0) {
+			/* msg has been handled by libklog */
+			continue;
+		}
+
 		switch (msg.type) {
 			case mtOpen:
 				break;
@@ -314,6 +321,9 @@ static void uart_mkDev(unsigned int id)
 		if (create_dev(&uart_common.uart.oid, _PATH_CONSOLE) < 0) {
 			debug("zynq7000-uart: cannot create device file\n");
 		}
+
+		oid_t kmsgctrl = { .port = uart_common.uart.oid.port, .id = KMSG_CTRL_ID };
+		libklog_ctrlRegister(&kmsgctrl);
 	}
 }
 

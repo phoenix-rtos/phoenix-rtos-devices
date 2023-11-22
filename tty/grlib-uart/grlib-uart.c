@@ -64,6 +64,8 @@
 
 #define UART_CLK SYSCLK_FREQ
 
+#define KMSG_CTRL_ID 100
+
 
 enum {
 	uart_data,   /* Data register           : 0x00 */
@@ -230,6 +232,11 @@ static void uart_dispatchMsg(void *arg)
 			continue;
 		}
 
+		if (libklog_ctrlHandle(port, &msg, rid) == 0) {
+			/* msg has been handled by libklog */
+			continue;
+		}
+
 		switch (msg.type) {
 			case mtOpen:
 				msg.o.io.err = EOK;
@@ -284,10 +291,16 @@ static void uart_mkDev(unsigned int id)
 	}
 
 	if (id == UART_CONSOLE_USER) {
+		oid_t kmsg = { .port = uart_common.uart.oid.port, .id = KMSG_CTRL_ID };
+
 		libklog_init(uart_klogClbk);
 
 		if (create_dev(&uart_common.uart.oid, _PATH_CONSOLE) < 0) {
 			debug("grlib-uart: Cannot create device file.\n");
+		}
+
+		if (libklog_ctrlRegister(&kmsg) < 0) {
+			debug("grlib-uart: Cannot create kmsg control device file.\n");
 		}
 	}
 }

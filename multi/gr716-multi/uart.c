@@ -30,7 +30,6 @@
 #include "common.h"
 #include "gr716-multi.h"
 
-
 /* UART registers */
 #define UART_DATA   0
 #define UART_STATUS 1
