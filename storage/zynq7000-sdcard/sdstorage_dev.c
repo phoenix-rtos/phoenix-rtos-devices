@@ -18,6 +18,7 @@
 #include <sys/list.h>
 #include <sys/msg.h>
 #include <sys/minmax.h>
+#include <sys/mount.h>
 #include <sys/types.h>
 #include <sys/file.h>
 #include <sys/threads.h>
@@ -51,6 +52,16 @@
 
 typedef uint32_t blockSize_t;
 
+typedef struct _sdstorage_automount sdstorage_automount_t;
+struct _sdstorage_automount {
+	sdstorage_automount_t *prev;
+	sdstorage_automount_t *next;
+	char device[32];
+	char fsName[16];
+	char *mountpoint; /* NULL if mount as rootfs */
+	bool doRetry;
+};
+
 typedef struct {
 	blockSize_t offsetBl;
 	blockSize_t sizeBl;
@@ -74,13 +85,126 @@ typedef struct _storage_devCtx_t {
 
 static struct {
 	bool commonInit;
+	bool haveDeferredAutomount;
 	handle_t lock;
 	mbr_t mbr_temp;
 	int defaultCachePolicy;
+	sdstorage_automount_t *automount;
 } sdcard_common = { .commonInit = false };
 
 #define PRESENCE_THREAD_STACK_SIZE 1024
 static char presenceThreadStack[PRESENCE_THREAD_STACK_SIZE] __attribute__((aligned(8)));
+
+
+static sdstorage_automount_t *sdstorage_findAutomount(const char *device)
+{
+	sdstorage_automount_t *elem = sdcard_common.automount;
+	do {
+		if (elem == NULL) {
+			break;
+		}
+
+		if (strcmp(device, elem->device) == 0) {
+			return elem;
+		}
+
+		elem = elem->next;
+	} while (elem != sdcard_common.automount);
+
+	return NULL;
+}
+
+
+static int sdstorage_doAutomount(sdstorage_automount_t *elem, bool doMount)
+{
+	if (elem == NULL) {
+		return -ENOENT;
+	}
+
+	elem->doRetry = false;
+	if (!doMount) {
+		return EOK;
+	}
+
+	oid_t dummy;
+	int ret = lookup(elem->mountpoint, NULL, &dummy);
+	if (ret < 0) {
+		elem->doRetry = true;
+		sdcard_common.haveDeferredAutomount = true;
+		return ret;
+	}
+
+	TRACE("mounting dev %s at %s with fs %s", elem->device, elem->mountpoint, elem->fsName);
+	return mount(elem->device, elem->mountpoint, elem->fsName, 0, NULL);
+}
+
+
+int sdstorage_addAutomount(const char *device, const char *fsName, const char *mountpoint)
+{
+	sdstorage_automount_t *entry = malloc(sizeof(sdstorage_automount_t));
+	if (entry == NULL) {
+		return -ENOMEM;
+	}
+
+	if ((strlen(device) >= (sizeof(entry->device) - 1)) || (strlen(fsName) >= (sizeof(entry->fsName) - 1))) {
+		free(entry);
+		return -ENAMETOOLONG;
+	}
+
+	strcpy(entry->device, device);
+	strcpy(entry->fsName, fsName);
+	if (mountpoint == NULL) {
+		entry->mountpoint = NULL;
+	}
+	else {
+		entry->mountpoint = strdup(mountpoint);
+		if (entry->mountpoint == NULL) {
+			free(entry);
+			return -ENOMEM;
+		}
+	}
+
+	entry->doRetry = true;
+	entry->prev = NULL;
+	entry->next = NULL;
+
+	mutexLock(sdcard_common.lock);
+	LIST_ADD(&sdcard_common.automount, entry);
+	mutexUnlock(sdcard_common.lock);
+	return EOK;
+}
+
+
+void sdstorage_handleDeferredAutomount(void)
+{
+	mutexLock(sdcard_common.lock);
+	if (!sdcard_common.haveDeferredAutomount) {
+		mutexUnlock(sdcard_common.lock);
+		return;
+	}
+
+	sdstorage_automount_t *elem = sdcard_common.automount;
+	bool anyMounted;
+	do {
+		anyMounted = false;
+		sdcard_common.haveDeferredAutomount = false;
+		do {
+			if (elem == NULL) {
+				break;
+			}
+
+			if (elem->doRetry) {
+				if (sdstorage_doAutomount(elem, true) == 0) {
+					anyMounted = true;
+				}
+			}
+
+			elem = elem->next;
+		} while (elem != sdcard_common.automount);
+	} while (anyMounted);
+
+	mutexUnlock(sdcard_common.lock);
+}
 
 
 static size_t calculateSizeWithSaturation(blockSize_t sizeBlocks)
@@ -315,6 +439,8 @@ static int sdstorage_createDeviceFile(oid_t *oid, const char *pathFmt, unsigned 
 		LOG_ERROR("failed to create a device file, err: %d", ret);
 		return ret;
 	}
+
+	(void)sdstorage_doAutomount(sdstorage_findAutomount(path), true);
 
 	return EOK;
 }
@@ -631,6 +757,7 @@ static int sdstorage_removeDevice(const char *format, unsigned int slot, unsigne
 		}
 	}
 
+	(void)sdstorage_doAutomount(sdstorage_findAutomount(path), false);
 	ret = remove(path);
 	/* remove() sometimes returns -1 even though the removal was successful */
 	return (ret == -1) ? 0 : ret;
@@ -722,7 +849,7 @@ int sdstorage_runPresenceDetection(void)
 }
 
 
-int sdstorage_initHost(unsigned int slot)
+int sdstorage_initCommon(void)
 {
 	if (!sdcard_common.commonInit) {
 		if (mutexCreate(&sdcard_common.lock) < 0) {
@@ -731,10 +858,30 @@ int sdstorage_initHost(unsigned int slot)
 		}
 
 		sdcard_common.defaultCachePolicy = LIBCACHE_WRITE_THROUGH;
+		sdcard_common.automount = NULL;
+		sdcard_common.haveDeferredAutomount = false;
 		sdcard_common.commonInit = true;
 	}
 
-	return sdcard_initHost(slot);
+	return EOK;
+}
+
+
+int sdstorage_initHosts(void)
+{
+	int nSlots = 0;
+	int ret;
+	do {
+		ret = sdcard_initHost(nSlots);
+		if (ret < 0) {
+			LOG_ERROR("failed to init host, err: %d", ret);
+			return ret;
+		}
+
+		nSlots++;
+	} while (ret > 0);
+
+	return nSlots;
 }
 
 

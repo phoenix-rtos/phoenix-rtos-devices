@@ -35,6 +35,9 @@
 #define TRACE(str, ...)     do { if (0) fprintf(stderr, LOG_TAG " trace: " str "\n", ##__VA_ARGS__); } while (0)
 /* clang-format on */
 
+#define AUTOMOUNT_THREAD_STACK_SIZE 1024
+static char automountThreadStack[AUTOMOUNT_THREAD_STACK_SIZE] __attribute__((aligned(8)));
+
 
 static ssize_t storage_read(id_t id, offs_t offs, void *buff, size_t len)
 {
@@ -232,40 +235,57 @@ static int storage_oidResolve(const char *devPath, oid_t *oid)
 static void flash_help(const char *prog)
 {
 	printf("Usage: %s [options] or no args to automatically detect and initialize SD cards\n", prog);
-	printf("\t-c {0,1}    - Cache setting: 0 - write back, 1 - write through (default)\n");
-	printf("\t-r <dev:fs> - mount root filesystem\n");
+	printf("\t-c {0,1}        - Cache setting: 0 - write back, 1 - write through (default)\n");
+	printf("\t-r <dev:fs>     - mount root filesystem\n");
 	printf("\t\tdev:    device name\n");
 	printf("\t\tfs:     filesystem name\n");
-	printf("\t-h          - print this help message\n");
+	printf("\t-m <dev:fs:mtp> - auto-mount filesystem on card insertion\n");
+	printf("\t\tdev:    device name\n");
+	printf("\t\tfs:     filesystem name\n");
+	printf("\t\tmtp:    mountpoint\n");
+	printf("\t-h              - print this help message\n");
 }
 
 
 typedef struct {
-	int cachePolicy;
 	char rootDev[32];
 	char rootFsName[32];
 } options_parsed_t;
 
 
+static char *strsplit(char **arg, char c)
+{
+	char *thisArg = *arg;
+	char *after = strchr(*arg, c);
+	if ((after == NULL) || (*after != c)) {
+		*arg = NULL;
+		return thisArg;
+	}
+
+	*after = '\0';
+	*arg = after + 1;
+	return thisArg;
+}
+
+
 static int sdstorage_optsParse(int argc, char **argv, options_parsed_t *opts)
 {
 	int c;
-	char *arg, *devPath;
+	int cachePolicy = LIBCACHE_WRITE_THROUGH;
 	opts->rootDev[0] = '\0';
 	opts->rootFsName[0] = '\0';
-	opts->cachePolicy = LIBCACHE_WRITE_THROUGH;
 
 	do {
-		c = getopt(argc, argv, "c:r:h");
+		c = getopt(argc, argv, "c:r:m:h");
 		switch (c) {
 			case 'c':
 				if ((optarg[0] != '\0') && (optarg[1] == '\0')) {
 					if (optarg[0] == '0') {
-						opts->cachePolicy = LIBCACHE_WRITE_BACK;
+						cachePolicy = LIBCACHE_WRITE_BACK;
 						break;
 					}
 					else if (optarg[0] == '1') {
-						opts->cachePolicy = LIBCACHE_WRITE_THROUGH;
+						cachePolicy = LIBCACHE_WRITE_THROUGH;
 						break;
 					}
 				}
@@ -274,19 +294,43 @@ static int sdstorage_optsParse(int argc, char **argv, options_parsed_t *opts)
 				return -EINVAL;
 
 			case 'r': { /* <dev:fs> */
-				devPath = optarg;
-				arg = strchr(optarg, ':');
-				if ((arg == NULL) || (*arg != ':')) {
+				if (opts->rootDev[0] != '\0') {
+					LOG_ERROR("multiple rootfs arguments given");
+					return -EINVAL;
+				}
+
+				char *arg = optarg;
+				char *devPath = strsplit(&arg, ':');
+				if (arg == NULL) {
 					LOG_ERROR("missing a filesystem name");
 					return -EINVAL;
 				}
 
-				*arg = '\0';
-				arg++;
 				strncpy(opts->rootDev, devPath, sizeof(opts->rootDev));
 				opts->rootDev[sizeof(opts->rootDev) - 1] = '\0';
 				strncpy(opts->rootFsName, arg, sizeof(opts->rootFsName));
 				opts->rootFsName[sizeof(opts->rootFsName) - 1] = '\0';
+			} break;
+
+			case 'm': { /* <dev:fs:mtp> */
+				char *arg = optarg;
+				char *devPath = strsplit(&arg, ':');
+				if (arg == NULL) {
+					LOG_ERROR("missing a filesystem name");
+					return -EINVAL;
+				}
+
+				char *fsName = strsplit(&arg, ':');
+				if (arg == NULL) {
+					LOG_ERROR("missing a mountpoint");
+					return -EINVAL;
+				}
+
+				char *mountpoint = arg;
+				int ret = sdstorage_addAutomount(devPath, fsName, mountpoint);
+				if (ret < 0) {
+					return ret;
+				}
 			} break;
 
 			case 'h':
@@ -301,7 +345,20 @@ static int sdstorage_optsParse(int argc, char **argv, options_parsed_t *opts)
 		}
 	} while (c != EOF);
 
+	sdstorage_setDefaultCachePolicy(cachePolicy);
+
 	return EOK;
+}
+
+
+static void sdstorage_automountThread(void *arg)
+{
+	for (;;) {
+		sleep(1);
+		sdstorage_handleDeferredAutomount();
+	}
+
+	endthread();
 }
 
 
@@ -359,25 +416,24 @@ int main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 	}
 
+	int ret = sdstorage_initCommon();
+	if (ret < 0) {
+		LOG_ERROR("failed to initialize SD server, err: %d", ret);
+		exit(EXIT_FAILURE);
+	}
+
 	options_parsed_t opts;
-	int ret = sdstorage_optsParse(argc, argv, &opts);
+	ret = sdstorage_optsParse(argc, argv, &opts);
 	if (ret < 0) {
 		LOG_ERROR("failed to parse arguments, err: %d", ret);
 		exit(EXIT_FAILURE);
 	}
 
-	int nSlots = 0;
-	do {
-		ret = sdstorage_initHost(nSlots);
-		if (ret < 0) {
-			LOG_ERROR("failed to init host, err: %d", ret);
-			exit(EXIT_FAILURE);
-		}
-
-		nSlots++;
-	} while (ret > 0);
-
-	sdstorage_setDefaultCachePolicy(opts.cachePolicy);
+	ret = sdstorage_initHosts();
+	if (ret < 0) {
+		LOG_ERROR("failed to initialize SD hosts, err: %d", ret);
+		exit(EXIT_FAILURE);
+	}
 
 	ret = storage_init(sdcard_msgHandler, 16);
 	if (ret < 0) {
@@ -410,7 +466,7 @@ int main(int argc, char *argv[])
 	}
 
 	kill(getppid(), SIGUSR1);
-
+	beginthread(sdstorage_automountThread, 3, automountThreadStack, AUTOMOUNT_THREAD_STACK_SIZE, NULL);
 	storage_run(2, 2 * _PAGE_SIZE);
 
 	return 0;

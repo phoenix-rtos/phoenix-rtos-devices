@@ -30,12 +30,21 @@ int sdstorage_handleInsertion(unsigned int slot);
 int sdstorage_handleRemoval(unsigned int slot);
 
 
-int sdstorage_initHost(unsigned int slot);
+int sdstorage_initCommon(void);
+
+
+int sdstorage_initHosts(void);
 
 
 int sdstorage_runPresenceDetection(void);
 
 
 void sdstorage_setDefaultCachePolicy(int cachePolicy);
+
+
+int sdstorage_addAutomount(const char *device, const char *fsName, const char *mountpoint);
+
+
+void sdstorage_handleDeferredAutomount(void);
 
 #endif /* _SDSTORAGE_DEV_H_ */
