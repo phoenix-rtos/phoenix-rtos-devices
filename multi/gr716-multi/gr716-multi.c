@@ -264,6 +264,11 @@ static void uart_thread(void *arg)
 		while (msgRecv(multi_common.uartOid.port, &msg, &rid) < 0) {
 		}
 
+		if (libklog_ctrlHandle(multi_common.uartOid.port, &msg, rid) == 0) {
+			/* msg has been handled by libklog */
+			continue;
+		}
+
 		switch (msg.type) {
 			case mtRead:
 			case mtWrite:
@@ -363,6 +368,8 @@ int main(void)
 	}
 
 	libklog_init(uart_klogClbk);
+	oid_t kmsgctrl = { .port = oid.port, .id = id_kmsgctrl };
+	libklog_ctrlRegister(&kmsgctrl);
 
 #if PSEUDODEV
 	pseudo_init();

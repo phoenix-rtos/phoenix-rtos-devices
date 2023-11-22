@@ -33,6 +33,8 @@
 #include "uarthw.h"
 #include "uart16550.h"
 
+#define KMSG_CTRL_ID 100
+
 typedef struct {
 	uint8_t hwctx[64];
 
@@ -199,6 +201,11 @@ static void poolthr(void *arg)
 			continue;
 		}
 
+		if (libklog_ctrlHandle(port, &msg, rid) == 0) {
+			/* msg has been handled by libklog */
+			continue;
+		}
+
 		switch (msg.type) {
 			case mtOpen:
 			case mtClose:
@@ -275,6 +282,9 @@ static void _uart_mkDev(uint32_t port)
 					fprintf(stderr, "uart16550: failed to register %s\n", _PATH_CONSOLE);
 					return;
 				}
+
+				oid_t kmsgctrl = { .port = port, .id = KMSG_CTRL_ID };
+				libklog_ctrlRegister(&kmsgctrl);
 			}
 		}
 	}

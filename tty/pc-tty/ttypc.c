@@ -33,6 +33,7 @@
 #include "ttypc_kbd.h"
 #include "ttypc_vga.h"
 
+#define KMSG_CTRL_ID 100
 
 ttypc_t ttypc_common;
 
@@ -50,6 +51,11 @@ static void ttypc_poolthr(void *arg)
 	for (;;) {
 		if (msgRecv(ttypc->port, &msg, &rid) < 0)
 			continue;
+
+		if (libklog_ctrlHandle(ttypc->port, &msg, rid) == 0) {
+			/* msg has been handled by libklog */
+			continue;
+		}
 
 		switch (msg.type) {
 		case mtOpen:
@@ -168,6 +174,8 @@ int main(void)
 	}
 
 	libklog_init(ttypc_klogClbk);
+	oid_t kmsgctrl = { .port = ttypc_common.port, .id = KMSG_CTRL_ID };
+	libklog_ctrlRegister(&kmsgctrl);
 
 	/* Register devices */
 	for (i = 0; i < NVTS; i++) {

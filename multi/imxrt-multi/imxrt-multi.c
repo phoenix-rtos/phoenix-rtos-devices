@@ -537,6 +537,11 @@ static void uart_thread(void *arg)
 		while (msgRecv(common.uart_port, &msg, &rid) < 0) {
 		}
 
+		if (libklog_ctrlHandle(common.uart_port, &msg, rid) == 0) {
+			/* msg has been handled by libklog */
+			continue;
+		}
+
 		switch (msg.type) {
 			case mtRead:
 			case mtWrite:
@@ -604,6 +609,8 @@ int main(void)
 	create_dev(&oid, _PATH_CONSOLE);
 
 	libklog_init(uart_klogCblk);
+	oid_t kmsgctrl = { .port = common.uart_port, .id = id_kmsgctrl };
+	libklog_ctrlRegister(&kmsgctrl);
 
 #if TRNG
 	trng_init();

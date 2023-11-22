@@ -26,6 +26,8 @@
 #include <libtty.h>
 #include <libklog.h>
 
+#define KMSG_CTRL_ID 100
+
 
 typedef struct {
 	int active;
@@ -109,6 +111,11 @@ static void poolthr(void *arg)
 	for (;;) {
 		if (msgRecv(port, &msg, &rid) < 0)
 			continue;
+
+		if (libklog_ctrlHandle(port, &msg, rid) == 0) {
+			/* msg has been handled by libklog */
+			continue;
+		}
 
 		switch (msg.type) {
 			case mtOpen:
@@ -223,6 +230,8 @@ int main(void)
 			}
 
 			libklog_init(spiketty_klogClbk);
+			oid_t kmsgctrl = { .port = port, .id = KMSG_CTRL_ID };
+			libklog_ctrlRegister(&kmsgctrl);
 		}
 	}
 

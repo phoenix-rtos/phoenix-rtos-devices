@@ -38,6 +38,8 @@
 
 #include <phoenix/arch/imx6ull.h>
 
+#define KMSG_CTRL_ID 100
+
 #define LOG_TAG "imx6ull-uart"
 
 #define READER 1
@@ -256,6 +258,11 @@ static void uart_thr(void *arg)
 		if (msgRecv(port, &msg, &rid) < 0) {
 			memset(&msg, 0, sizeof(msg));
 			msgRespond(port, &msg, rid);
+			continue;
+		}
+
+		if (libklog_ctrlHandle(port, &msg, rid) == 0) {
+			/* msg has been handled by libklog */
 			continue;
 		}
 
@@ -730,6 +737,8 @@ int main(int argc, char **argv)
 	if (is_console != 0) {
 		create_dev(&dev, _PATH_CONSOLE);
 		libklog_init(libklog_clbk);
+		oid_t kmsgctrl = { .port = port, .id = KMSG_CTRL_ID };
+		libklog_ctrlRegister(&kmsgctrl);
 	}
 
 	uart_thr((void *)port);
