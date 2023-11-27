@@ -293,7 +293,6 @@ static int _sdio_cmdSend(sdcard_hostData_t *host, uint8_t cmd, uint32_t arg, uin
 				((uint32_t)blockCount << 16) |
 				TRANSFER_BLOCK_SDMA_BOUNDARY_4K |
 				blockLength;
-			*(host->base + SDHOST_REG_SDMA_ADDRESS) = host->dmaBufferPhys;
 		}
 
 		cmdFrame.dataPresent = 1;
@@ -314,6 +313,7 @@ static int _sdio_cmdSend(sdcard_hostData_t *host, uint8_t cmd, uint32_t arg, uin
 	mutexLock(host->eventLock);
 	/* This register write starts command execution and must be done last */
 	*(host->base + SDHOST_REG_CMD) = cmdFrame.raw;
+	*(host->base + SDHOST_REG_SDMA_ADDRESS) = host->dmaBufferPhys;
 
 	/* wait 1 ms max */
 	int ret = _sdio_cmdExecutionWait(host, SDHOST_INTR_CMD_DONE, 1000);

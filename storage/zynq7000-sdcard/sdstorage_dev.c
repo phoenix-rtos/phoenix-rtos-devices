@@ -524,7 +524,7 @@ int sdstorage_handleInsertion(unsigned int slot)
 	strg->dev->mtd->type = mtd_norFlash;
 	strg->dev->mtd->name = "SD CARD";
 	strg->dev->mtd->erasesz = (eraseSize < MTD_DEFAULT_ERASESZ) ? MTD_DEFAULT_ERASESZ : eraseSize;
-	strg->dev->mtd->writesz = SDCARD_BLOCKLEN;
+	strg->dev->mtd->writesz = 1;
 	strg->dev->mtd->writeBuffsz = SDCARD_BLOCKLEN;
 	strg->dev->mtd->metaSize = 0;
 	strg->dev->mtd->oobSize = 0;
