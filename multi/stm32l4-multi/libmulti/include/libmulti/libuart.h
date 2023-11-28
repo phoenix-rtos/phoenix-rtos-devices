@@ -85,6 +85,7 @@ int libuart_configure(libuart_ctx *ctx, char bits, char parity, unsigned int bau
 int libuart_write(libuart_ctx *ctx, const void *buff, unsigned int bufflen);
 
 
+/* timeout in milliseconds - zero disables timeout */
 int libuart_read(libuart_ctx *ctx, void *buff, unsigned int count, char mode, unsigned int timeout);
 
 

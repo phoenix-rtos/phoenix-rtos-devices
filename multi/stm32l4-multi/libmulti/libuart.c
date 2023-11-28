@@ -3,8 +3,8 @@
  *
  * Multidrv-lib: STM32L4 UART driver
  *
- * Copyright 2017, 2018, 2020 Phoenix Systems
- * Author: Jan Sikorski, Aleksander Kaminski, Andrzej Glowinski
+ * Copyright 2017, 2018, 2020, 2023 Phoenix Systems
+ * Author: Jan Sikorski, Aleksander Kaminski, Andrzej Glowinski, Jan Wisniewski
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -18,6 +18,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
+#include <assert.h>
 #include <sys/pwman.h>
 #include <sys/interrupt.h>
 #include <sys/minmax.h>
@@ -59,6 +60,13 @@ static const struct {
 };
 
 
+static inline size_t libuart_incrementWrap(size_t value, size_t size)
+{
+	value += 1;
+	return (value < size) ? value : 0;
+}
+
+
 static int libuart_txirq(unsigned int n, void *arg)
 {
 	libuart_ctx *ctx = (libuart_ctx *)arg;
@@ -96,19 +104,20 @@ static int libuart_rxirq(unsigned int n, void *arg)
 		*(ctx->base + icr) |= (1 << 3);
 
 		/* Rxd buffer not empty */
-		ctx->data.irq.rxdfifo[ctx->data.irq.rxdw++] = *(ctx->base + rdr);
-		ctx->data.irq.rxdw %= ctx->data.irq.rxdfifosz;
+		ctx->data.irq.rxdfifo[ctx->data.irq.rxdw] = *(ctx->base + rdr);
+		ctx->data.irq.rxdw = libuart_incrementWrap(ctx->data.irq.rxdw, ctx->data.irq.rxdfifosz);
 
 		if (ctx->data.irq.rxdr == ctx->data.irq.rxdw) {
-			ctx->data.irq.rxdr = (ctx->data.irq.rxdr + 1) % ctx->data.irq.rxdfifosz;
+			ctx->data.irq.rxdr = libuart_incrementWrap(ctx->data.irq.rxdr, ctx->data.irq.rxdfifosz);
 		}
 	}
 
 	if (ctx->data.irq.rxbeg != NULL) {
 		while (ctx->data.irq.rxdr != ctx->data.irq.rxdw && ctx->data.irq.rxbeg != ctx->data.irq.rxend) {
-			*(ctx->data.irq.rxbeg++) = ctx->data.irq.rxdfifo[ctx->data.irq.rxdr++];
-			ctx->data.irq.rxdr %= ctx->data.irq.rxdfifosz;
-			(*ctx->data.irq.read)++;
+			*(ctx->data.irq.rxbeg) = ctx->data.irq.rxdfifo[ctx->data.irq.rxdr];
+			ctx->data.irq.rxdr = libuart_incrementWrap(ctx->data.irq.rxdr, ctx->data.irq.rxdfifosz);
+			ctx->data.irq.rxbeg += 1;
+			*ctx->data.irq.read += 1;
 		}
 
 		if (ctx->data.irq.rxbeg == ctx->data.irq.rxend) {
