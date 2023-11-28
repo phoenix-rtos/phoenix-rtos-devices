@@ -36,6 +36,7 @@ typedef struct {
 
 			char *volatile rxdfifo;
 			size_t rxdfifosz;
+			volatile unsigned int rxnblock; /* set to 1 to read imdiately available bytes only */
 			volatile unsigned int rxdr;
 			volatile unsigned int rxdw;
 			volatile char *volatile rxbeg;
