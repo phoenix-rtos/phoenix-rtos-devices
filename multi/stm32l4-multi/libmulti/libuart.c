@@ -74,14 +74,22 @@ static int libuart_txirq(unsigned int n, void *arg)
 
 	if (((*(ctx->base + cr1) & (1 << 7)) != 0) && ((*(ctx->base + isr) & (1 << 7)) != 0)) {
 		/* Txd buffer empty */
-		if (ctx->data.irq.txbeg != ctx->data.irq.txend) {
-			*(ctx->base + tdr) = *(ctx->data.irq.txbeg++);
+		if (ctx->data.irq.txbeg != NULL) {
+			if (ctx->data.irq.txbeg != ctx->data.irq.txend) {
+				*(ctx->base + tdr) = *(ctx->data.irq.txbeg);
+				ctx->data.irq.txbeg += 1;
+			}
+
+			if (ctx->data.irq.txbeg == ctx->data.irq.txend) {
+				ctx->data.irq.txbeg = NULL;
+				ctx->data.irq.txend = NULL;
+				release = 1;
+				*(ctx->base + cr1) &= ~(1 << 7);
+			}
 		}
 		else {
+			/* wake-up from libuart_triggerInterrupt */
 			*(ctx->base + cr1) &= ~(1 << 7);
-			ctx->data.irq.txbeg = NULL;
-			ctx->data.irq.txend = NULL;
-			release = 1;
 		}
 	}
 
@@ -94,38 +102,48 @@ static int libuart_rxirq(unsigned int n, void *arg)
 	libuart_ctx *ctx = (libuart_ctx *)arg;
 	int release = -1;
 
-	/* Clear wakeup from stop mode flag */
+	/* Clear wake-up from stop mode flag */
 	if (n == lpuart1_irq) {
 		*(ctx->base + icr) |= 1 << 20;
 	}
 
-	if (*(ctx->base + isr) & ((1 << 5) | (1 << 3))) {
-		/* Clear overrun error bit */
-		*(ctx->base + icr) |= (1 << 3);
+	/*
+	 * Reading twice as we can have bytes in both data and shift registers
+	 * It is not obvious from manual that second byte is available in this scenario
+	 */
+	for (int i = 0; i < 2; ++i) {
+		if ((*(ctx->base + isr) & (1 << 5)) == 0) {
+			/* Rxd buffer empty */
+			break;
+		}
 
-		/* Rxd buffer not empty */
 		ctx->data.irq.rxdfifo[ctx->data.irq.rxdw] = *(ctx->base + rdr);
 		ctx->data.irq.rxdw = libuart_incrementWrap(ctx->data.irq.rxdw, ctx->data.irq.rxdfifosz);
 
+		/* discard oldest byte if queue full */
 		if (ctx->data.irq.rxdr == ctx->data.irq.rxdw) {
 			ctx->data.irq.rxdr = libuart_incrementWrap(ctx->data.irq.rxdr, ctx->data.irq.rxdfifosz);
 		}
 	}
 
+	/* TODO: consider disabling overrun exception completely */
+	if (*(ctx->base + isr) & (1 << 3)) {
+		/* Clear overrun error bit */
+		*(ctx->base + icr) |= (1 << 3);
+	}
+
 	if (ctx->data.irq.rxbeg != NULL) {
-		while (ctx->data.irq.rxdr != ctx->data.irq.rxdw && ctx->data.irq.rxbeg != ctx->data.irq.rxend) {
+		while ((ctx->data.irq.rxdr != ctx->data.irq.rxdw) && (ctx->data.irq.rxbeg != ctx->data.irq.rxend)) {
 			*(ctx->data.irq.rxbeg) = ctx->data.irq.rxdfifo[ctx->data.irq.rxdr];
 			ctx->data.irq.rxdr = libuart_incrementWrap(ctx->data.irq.rxdr, ctx->data.irq.rxdfifosz);
 			ctx->data.irq.rxbeg += 1;
 			*ctx->data.irq.read += 1;
 		}
 
-		if (ctx->data.irq.rxbeg == ctx->data.irq.rxend) {
+		if ((ctx->data.irq.rxbeg == ctx->data.irq.rxend) || (ctx->data.irq.rxnblock != 0)) {
 			ctx->data.irq.rxbeg = NULL;
-			ctx->data.irq.rxend = NULL;
-			ctx->data.irq.read = NULL;
+			release = 1;
 		}
-		release = 1;
 	}
 
 	return release;
@@ -155,6 +173,7 @@ int libuart_configure(libuart_ctx *ctx, char bits, char parity, unsigned int bau
 		ctx->data.irq.rxbeg = NULL;
 		ctx->data.irq.rxend = NULL;
 		ctx->data.irq.read = NULL;
+		ctx->data.irq.rxnblock = 0;
 		ctx->data.irq.rxdr = 0;
 		ctx->data.irq.rxdw = 0;
 	}
@@ -242,12 +261,11 @@ static int libuart_irqWrite(libuart_ctx *ctx, const void *buff, unsigned int buf
 
 	keepidle(1);
 
-	*(ctx->base + tdr) = *((unsigned char *)buff);
-	ctx->data.irq.txbeg = (void *)((unsigned char *)buff + 1);
+	ctx->data.irq.txbeg = (void *)((unsigned char *)buff);
 	ctx->data.irq.txend = (void *)((unsigned char *)buff + bufflen);
 	*(ctx->base + cr1) |= 1 << 7;
 
-	while (ctx->data.irq.txbeg != ctx->data.irq.txend) {
+	while (ctx->data.irq.txbeg != NULL) {
 		condWait(ctx->data.irq.txcond, ctx->data.irq.lock, 0);
 	}
 	mutexUnlock(ctx->data.irq.lock);
@@ -377,14 +395,24 @@ static int libuart_dmaRead(libuart_ctx *ctx, void *buff, unsigned int count, cha
 
 static int libuart_irqRead(libuart_ctx *ctx, void *buff, unsigned int count, char mode, unsigned int timeout)
 {
-	int err;
 	volatile unsigned int read = 0;
 
 	mutexLock(ctx->data.irq.rxlock);
 	mutexLock(ctx->data.irq.lock);
 
+	assert(ctx->data.irq.rxbeg == NULL);
+
 	ctx->data.irq.read = &read;
 	ctx->data.irq.rxend = (char *)buff + count;
+
+	if (mode == uart_mnblock) {
+		/* end transaction as soon as irq handler is triggered */
+		ctx->data.irq.rxnblock = 1;
+		timeout = 0;
+	}
+	else {
+		ctx->data.irq.rxnblock = 0;
+	}
 
 	/* This field works as trigger for rx interrupt to store data in buffer
 	 * instead of FIFO */
@@ -395,16 +423,24 @@ static int libuart_irqRead(libuart_ctx *ctx, void *buff, unsigned int count, cha
 	 * bit. */
 	libuart_triggerInterrupt(ctx);
 
-	while (ctx->data.irq.rxbeg != ctx->data.irq.rxend) {
-		err = condWait(ctx->data.irq.rxcond, ctx->data.irq.lock, timeout);
+	while (ctx->data.irq.rxbeg != NULL) {
+		const int err = condWait(ctx->data.irq.rxcond, ctx->data.irq.lock, timeout);
 
-		if ((mode == uart_mnblock) || (timeout && err == -ETIME) || (ctx->enabled == 0)) {
-			ctx->data.irq.rxbeg = NULL;
-			ctx->data.irq.rxend = NULL;
-			ctx->data.irq.read = NULL;
+		if ((err == -ETIME) || ctx->enabled == 0) {
+			/* rxbeg will be set to NULL as soon as irq is handled */
+			ctx->data.irq.rxnblock = 1;
+			libuart_triggerInterrupt(ctx);
 			break;
 		}
 	}
+
+	/* if ended early wait until last interrupt is handled */
+	while (ctx->data.irq.rxbeg != NULL) {
+		condWait(ctx->data.irq.rxcond, ctx->data.irq.lock, 0);
+	}
+
+	ctx->data.irq.rxend = NULL;
+	ctx->data.irq.read = NULL;
 
 	libuart_readMaskBits(ctx, buff, read);
 	mutexUnlock(ctx->data.irq.lock);
