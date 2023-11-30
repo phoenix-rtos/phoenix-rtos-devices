@@ -209,6 +209,8 @@ static int _sdio_cmdExecutionWait(sdcard_hostData_t *host, uint32_t flags, time_
 		doResetCmd = (val & SDHOST_INTR_CMD_ERRORS) != 0;
 		doResetDat = (val & SDHOST_INTR_DAT_ERRORS) != 0;
 		*(host->base + SDHOST_REG_INTR_STATUS) = SDHOST_ERROR_REASONS;
+		/* Under QEMU it is important to zero out this register if an incomplete transfer happens */
+		*(host->base + SDHOST_REG_TRANSFER_BLOCK) = 0;
 		ret = -EIO;
 	}
 	else if ((val & flags) == flags) {
@@ -289,11 +291,12 @@ static int _sdio_cmdSend(sdcard_hostData_t *host, uint8_t cmd, uint32_t arg, uin
 					break;
 			}
 
+			*(host->base + SDHOST_REG_SDMA_ADDRESS) = host->dmaBufferPhys;
+			sdio_dataBarrier();
 			*(host->base + SDHOST_REG_TRANSFER_BLOCK) =
 				((uint32_t)blockCount << 16) |
 				TRANSFER_BLOCK_SDMA_BOUNDARY_4K |
 				blockLength;
-			*(host->base + SDHOST_REG_SDMA_ADDRESS) = host->dmaBufferPhys;
 		}
 
 		cmdFrame.dataPresent = 1;
