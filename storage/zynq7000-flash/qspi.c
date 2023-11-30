@@ -182,6 +182,7 @@ ssize_t qspi_transfer(const uint8_t *txBuff, uint8_t *rxBuff, size_t size, time_
 	   Controller only transfers as much data as inserted onto TxFIFO,
 	   and each transmission is started manually. When no data is on TxFIFO SCLK is stopped.
 	   Thus, there's no potential of potential data loss. */
+	mutexLock(qspi_common.irqLock);
 	while (txSz != 0) {
 		/* Incomplete word can only be written onto an empty TxFIFO. */
 		if (txSz < sizeof(uint32_t)) {
@@ -209,8 +210,6 @@ ssize_t qspi_transfer(const uint8_t *txBuff, uint8_t *rxBuff, size_t size, time_
 		/* Start data transmission */
 		*(qspi_common.base + cr) |= (1 << 16);
 
-		mutexLock(qspi_common.irqLock);
-
 		(void)gettime(&now, NULL);
 		end = now + (timeout * 1000);
 
@@ -221,11 +220,10 @@ ssize_t qspi_transfer(const uint8_t *txBuff, uint8_t *rxBuff, size_t size, time_
 			(void)gettime(&now, NULL);
 		}
 
-		mutexUnlock(qspi_common.irqLock);
-
 		/* In case of timeout check for the last time if TX Fifo is empty. */
 		/* This check is done to prevent the possibly of starvation. */
 		if ((err < 0) && (qspi_txFifoEmpty() == 0)) {
+			mutexUnlock(qspi_common.irqLock);
 			return err;
 		}
 
@@ -233,6 +231,7 @@ ssize_t qspi_transfer(const uint8_t *txBuff, uint8_t *rxBuff, size_t size, time_
 		while (rxSz != 0) {
 			if (qspi_rxFifoEmpty() == 1) {
 				/* Invalid state. */
+				mutexUnlock(qspi_common.irqLock);
 				return -EIO;
 			}
 
@@ -245,6 +244,7 @@ ssize_t qspi_transfer(const uint8_t *txBuff, uint8_t *rxBuff, size_t size, time_
 		}
 	}
 
+	mutexUnlock(qspi_common.irqLock);
 	return size;
 }
 
