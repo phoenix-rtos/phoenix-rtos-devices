@@ -19,7 +19,12 @@
 #include <sys/msg.h>
 
 
-enum { flashsrv_devctl_properties = 0, flashsrv_devctl_sync, flashsrv_devctl_eraseSector, flashsrv_devctl_erasePartition, flashsrv_devctl_directWrite };
+/* clang-format off */
+
+enum { flashsrv_devctl_properties = 0, flashsrv_devctl_sync, flashsrv_devctl_eraseSector,
+	flashsrv_devctl_erasePartition, flashsrv_devctl_directWrite, flashsrv_devctl_directRead };
+
+/* clang-format on */
 
 
 typedef struct {
