@@ -3,7 +3,7 @@
  *
  * i.MX RT Flash driver
  *
- * Copyright 2019-2022 Phoenix Systems
+ * Copyright 2019-2023 Phoenix Systems
  * Author: Hubert Buczynski, Gerard Swiderski
  *
  * This file is part of Phoenix-RTOS.
@@ -46,7 +46,7 @@ static int flash_isValidAddress(flash_context_t *context, addr_t addr, size_t si
 }
 
 
-ssize_t flash_readData(flash_context_t *ctx, uint32_t offset, void *buff, size_t size)
+ssize_t flash_directRead(flash_context_t *ctx, uint32_t offset, void *buff, size_t size)
 {
 	if (flash_isValidAddress(ctx, offset, size)) {
 		return -1;
@@ -56,7 +56,7 @@ ssize_t flash_readData(flash_context_t *ctx, uint32_t offset, void *buff, size_t
 }
 
 
-ssize_t flash_directBytesWrite(flash_context_t *ctx, uint32_t offset, const void *buff, size_t size)
+ssize_t flash_directWrite(flash_context_t *ctx, uint32_t offset, const void *buff, size_t size)
 {
 	int err;
 	size_t chunk, len = size;
@@ -119,7 +119,50 @@ static ssize_t bufferSync(flash_context_t *ctx, uint32_t dstAddr, int isLast)
 }
 
 
-ssize_t flash_bufferedPagesWrite(flash_context_t *ctx, uint32_t dstAddr, const void *srcPtr, size_t size)
+ssize_t flash_bufferedRead(flash_context_t *ctx, uint32_t srcAddr, void *dstPtr, size_t size)
+{
+	if ((ctx->prevAddr == (uint32_t)-1) || (ctx->isDirty == 0)) {
+		return flash_directRead(ctx, srcAddr, dstPtr, size);
+	}
+
+	uint32_t bufSize = ctx->properties.sector_size;
+	uint32_t bufAddr = ctx->prevAddr & ~(bufSize - 1);
+	uint32_t bufEndAddr = bufAddr + bufSize;
+
+	/* Source area does not overlap the buffer window, read the entire buffer directly from flash */
+	if ((srcAddr >= bufEndAddr) || (bufAddr >= srcAddr + size)) {
+		return flash_directRead(ctx, srcAddr, dstPtr, size);
+	}
+
+	/* Determine the overlapping range */
+	uint32_t overlapStart = (srcAddr > bufAddr) ? srcAddr : bufAddr;
+	uint32_t overlapEnd = (srcAddr + size < bufEndAddr) ? srcAddr + size : bufEndAddr;
+	uint32_t overlapSize = overlapEnd - overlapStart;
+
+	/* Read the non-overlapping part from flash */
+	if (srcAddr < bufAddr) {
+		ssize_t res = flash_directRead(ctx, srcAddr, dstPtr, bufAddr - srcAddr);
+		if (res < 0) {
+			return res;
+		}
+	}
+
+	/* Copy the overlapping part from the buffer */
+	memcpy((uint8_t *)dstPtr + (overlapStart - srcAddr), ctx->buff + (overlapStart - bufAddr), overlapSize);
+
+	/* Read the remaining non-overlapping part from flash */
+	if (srcAddr + size > bufEndAddr) {
+		ssize_t res = flash_directRead(ctx, bufEndAddr, (uint8_t *)dstPtr + (bufEndAddr - srcAddr), (srcAddr + size) - bufEndAddr);
+		if (res < 0) {
+			return res;
+		}
+	}
+
+	return size;
+}
+
+
+ssize_t flash_bufferedWrite(flash_context_t *ctx, uint32_t dstAddr, const void *srcPtr, size_t size)
 {
 	int res;
 	uint32_t ofs;
@@ -144,6 +187,7 @@ ssize_t flash_bufferedPagesWrite(flash_context_t *ctx, uint32_t dstAddr, const v
 		}
 
 		memcpy((char *)ctx->buff + ofs, srcPtr, chunkSz);
+		ctx->isDirty = 1;
 
 		dstAddr += chunkSz;
 		srcPtr = (const char *)srcPtr + chunkSz;
@@ -178,16 +222,18 @@ int flash_sectorErase(flash_context_t *ctx, uint32_t offset)
 int flash_sync(flash_context_t *ctx)
 {
 	ssize_t res;
-	uint32_t ofs, pos, sectorAddr = get_sectorAddress(ctx, ctx->prevAddr);
+	uint32_t ofs, pos, sectorAddr;
 
 	/* Initial sector value check, nothing to do */
 	if (ctx->prevAddr == (uint32_t)-1) {
 		return EOK;
 	}
 
-	if (ctx->prevAddr == ctx->syncAddr) {
+	if ((ctx->prevAddr == ctx->syncAddr) && (ctx->isDirty == 0)) {
 		return EOK;
 	}
+
+	sectorAddr = get_sectorAddress(ctx, ctx->prevAddr);
 
 	/* all 'ones' in buffer means sector is erased ... */
 	for (pos = 0; pos < ctx->properties.sector_size; ++pos) {
@@ -229,6 +275,7 @@ int flash_sync(flash_context_t *ctx)
 	 */
 
 	ctx->syncAddr = ctx->prevAddr;
+	ctx->isDirty = 0;
 
 	return EOK;
 }
@@ -273,6 +320,7 @@ int flash_init(flash_context_t *ctx)
 
 	ctx->prevAddr = (uint32_t)-1;
 	ctx->syncAddr = (uint32_t)-1;
+	ctx->isDirty = 0;
 	ctx->buff = NULL;
 
 	res = flash_defineFlexSPI(ctx);

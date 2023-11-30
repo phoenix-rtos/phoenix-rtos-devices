@@ -3,8 +3,8 @@
  *
  * i.MX RT Flash driver
  *
- * Copyright 2019, 2020 Phoenix Systems
- * Author: Hubert Buczynski
+ * Copyright 2019, 2020, 2023 Phoenix Systems
+ * Author: Hubert Buczynski, Gerard Swiderski
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -33,6 +33,7 @@ typedef struct {
 	flash_properties_t properties;
 	flexspi_t fspi;
 	uint8_t port;
+	uint8_t isDirty;
 
 	uint32_t address;
 	uint32_t instance;
@@ -42,17 +43,20 @@ typedef struct {
 	uint32_t prevAddr;
 	uint32_t syncAddr;
 
-	char *buff;
+	uint8_t *buff;
 } flash_context_t;
 
 
-ssize_t flash_readData(flash_context_t *ctx, uint32_t offset, void *buff, size_t size);
+ssize_t flash_directRead(flash_context_t *ctx, uint32_t offset, void *buff, size_t size);
 
 
-ssize_t flash_directBytesWrite(flash_context_t *ctx, uint32_t offset, const void *buff, size_t size);
+ssize_t flash_directWrite(flash_context_t *ctx, uint32_t offset, const void *buff, size_t size);
 
 
-ssize_t flash_bufferedPagesWrite(flash_context_t *ctx, uint32_t offset, const void *buff, size_t size);
+ssize_t flash_bufferedRead(flash_context_t *ctx, uint32_t srcAddr, void *dstPtr, size_t size);
+
+
+ssize_t flash_bufferedWrite(flash_context_t *ctx, uint32_t offset, const void *buff, size_t size);
 
 
 int flash_sync(flash_context_t *ctx);
