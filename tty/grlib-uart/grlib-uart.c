@@ -42,6 +42,7 @@
 #error "Unsupported target"
 #endif
 
+#define UART_STACKSZ (4096)
 
 /* UART control bits */
 #define STOP_BITS   (1 << 15)
@@ -85,7 +86,7 @@ typedef struct {
 	handle_t lock;
 	libtty_common_t tty;
 
-	uint8_t stack[8 * _PAGE_SIZE] __attribute__((aligned(8)));
+	uint8_t stack[UART_STACKSZ] __attribute__((aligned(8)));
 } uart_t;
 
 
@@ -106,7 +107,7 @@ static const struct {
 
 static struct {
 	uart_t uart;
-	uint8_t stack[16 * _PAGE_SIZE] __attribute__((aligned(8)));
+	uint8_t stack[UART_STACKSZ] __attribute__((aligned(8)));
 } uart_common;
 
 
