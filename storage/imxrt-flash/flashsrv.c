@@ -85,7 +85,7 @@ struct {
 
 /* Flash functions */
 
-static ssize_t flashsrv_bufferedWrite(uint8_t fID, size_t offset, const void *data, size_t size)
+static int flashsrv_getFlashMemory(uint8_t fID, flash_memory_t **pFlashMemory)
 {
 	flash_memory_t *flash_memory;
 
@@ -99,97 +99,68 @@ static ssize_t flashsrv_bufferedWrite(uint8_t fID, size_t offset, const void *da
 		return -ENODEV;
 	}
 
-	return flash_bufferedWrite(&flash_memory->ctx, offset, data, size);
+	*pFlashMemory = flash_memory;
+
+	return EOK;
+}
+
+/* Buffered access */
+
+static ssize_t flashsrv_bufferedWrite(uint8_t fID, size_t offset, const void *data, size_t size)
+{
+	flash_memory_t *flash_memory;
+	int res = flashsrv_getFlashMemory(fID, &flash_memory);
+	return (res == EOK) ? flash_bufferedWrite(&flash_memory->ctx, offset, data, size) : res;
 }
 
 
 static ssize_t flashsrv_bufferedRead(uint8_t fID, size_t offset, void *data, size_t size)
 {
 	flash_memory_t *flash_memory;
-
-	if (FLASH_MEMORIES_NO <= fID) {
-		return -EINVAL;
-	}
-
-	flash_memory = flashsrv_common.flash_memories + fID;
-
-	if (flash_memory->fStatus == flash_memory_unactive) {
-		return -ENODEV;
-	}
-
-	return flash_bufferedRead(&flash_memory->ctx, offset, data, size);
+	int res = flashsrv_getFlashMemory(fID, &flash_memory);
+	return (res == EOK) ? flash_bufferedRead(&flash_memory->ctx, offset, data, size) : res;
 }
 
+
+static ssize_t flashsrv_bufferedSync(uint8_t fID)
+{
+	flash_memory_t *flash_memory;
+	int res = flashsrv_getFlashMemory(fID, &flash_memory);
+	return (res == EOK) ? flash_sync(&flash_memory->ctx) : res;
+}
+
+
+/* Direct access */
 
 static ssize_t flashsrv_directWrite(uint8_t fID, size_t offset, const void *data, size_t size)
 {
 	flash_memory_t *flash_memory;
-
-	if (FLASH_MEMORIES_NO <= fID) {
-		return -EINVAL;
-	}
-
-	flash_memory = flashsrv_common.flash_memories + fID;
-
-	if (flash_memory->fStatus == flash_memory_unactive) {
-		return -ENODEV;
-	}
-
-	return flash_directWrite(&flash_memory->ctx, offset, data, size);
+	int res = flashsrv_getFlashMemory(fID, &flash_memory);
+	return (res == EOK) ? flash_directWrite(&flash_memory->ctx, offset, data, size) : res;
 }
 
 
 static ssize_t flashsrv_directRead(uint8_t fID, size_t offset, void *data, size_t size)
 {
 	flash_memory_t *flash_memory;
-
-	if (FLASH_MEMORIES_NO <= fID) {
-		return -EINVAL;
-	}
-
-	flash_memory = flashsrv_common.flash_memories + fID;
-
-	if (flash_memory->fStatus == flash_memory_unactive) {
-		return -ENODEV;
-	}
-
-	return flash_directRead(&flash_memory->ctx, offset, data, size);
+	int res = flashsrv_getFlashMemory(fID, &flash_memory);
+	return (res == EOK) ? flash_directRead(&flash_memory->ctx, offset, data, size) : res;
 }
 
 
 static int flashsrv_eraseSector(unsigned char fID, unsigned int offs)
 {
 	flash_memory_t *flash_memory;
-
-	if (FLASH_MEMORIES_NO <= fID) {
-		return -EINVAL;
-	}
-
-	flash_memory = flashsrv_common.flash_memories + fID;
-
-	if (flash_memory->fStatus == flash_memory_unactive) {
-		return -ENODEV;
-	}
-
-	return flash_sectorErase(&flash_memory->ctx, offs);
+	int res = flashsrv_getFlashMemory(fID, &flash_memory);
+	return (res == EOK) ? flash_sectorErase(&flash_memory->ctx, offs) : res;
 }
 
 
 static int flashsrv_chipErase(unsigned char fID)
 {
 	flash_memory_t *flash_memory;
-
-	if (FLASH_MEMORIES_NO <= fID) {
-		return -EINVAL;
-	}
-
-	flash_memory = flashsrv_common.flash_memories + fID;
-
-	if (flash_memory->fStatus == flash_memory_unactive) {
-		return -ENODEV;
-	}
-
-	return flash_chipErase(&flash_memory->ctx);
+	int res = flashsrv_getFlashMemory(fID, &flash_memory);
+	return (res == EOK) ? flash_chipErase(&flash_memory->ctx) : res;
 }
 
 
@@ -199,13 +170,7 @@ static ssize_t flashsrv_fsWritef0(struct _meterfs_devCtx_t *devCtx, off_t offs, 
 {
 	(void)devCtx;
 
-	flash_memory_t *flash_memory = flashsrv_common.flash_memories + 0;
-
-	if (flash_memory->fStatus == flash_memory_unactive) {
-		return -ENODEV;
-	}
-
-	return flash_directWrite(&flash_memory->ctx, offs, buff, bufflen);
+	return flashsrv_directWrite(0, offs, buff, bufflen);
 }
 
 
@@ -213,13 +178,7 @@ static ssize_t flashsrv_fsWritef1(struct _meterfs_devCtx_t *devCtx, off_t offs, 
 {
 	(void)devCtx;
 
-	flash_memory_t *flash_memory = flashsrv_common.flash_memories + 1;
-
-	if (flash_memory->fStatus == flash_memory_unactive) {
-		return -ENODEV;
-	}
-
-	return flash_directWrite(&flash_memory->ctx, offs, buff, bufflen);
+	return flashsrv_directWrite(1, offs, buff, bufflen);
 }
 
 
@@ -365,7 +324,7 @@ static void flashsrv_rawCtl(flash_memory_t *memory, msg_t *msg)
 			TRACE("imxrt-flashsrv: flashsrv_devctl_eraseSector - addr: %u, id: %u, port: %u.",
 				idevctl->addr + memory->parts[partID].pHeader->offset, partID, idevctl->oid.port);
 
-			if (idevctl->addr > memory->parts[idevctl->oid.id].pHeader->size) {
+			if (idevctl->addr >= memory->parts[idevctl->oid.id].pHeader->size) {
 				odevctl->err = -EINVAL;
 				break;
 			}
@@ -389,7 +348,7 @@ static void flashsrv_rawCtl(flash_memory_t *memory, msg_t *msg)
 			TRACE("imxrt-flashsrv: flashsrv_devctl_directWrite, addr: %u, size: %u, id: %u, port: %u.",
 				idevctl->addr + memory->parts[partID].pHeader->offset, msg->i.size, idevctl->oid.id, idevctl->oid.port);
 
-			if (idevctl->addr > memory->parts[idevctl->oid.id].pHeader->size) {
+			if (idevctl->addr >= memory->parts[idevctl->oid.id].pHeader->size) {
 				odevctl->err = -EINVAL;
 				break;
 			}
@@ -401,7 +360,7 @@ static void flashsrv_rawCtl(flash_memory_t *memory, msg_t *msg)
 			TRACE("imxrt-flashsrv: flashsrv_devctl_directRead, addr: %u, size: %u, id: %u, port: %u.",
 				idevctl->addr + memory->parts[partID].pHeader->offset, msg->o.size, idevctl->oid.id, idevctl->oid.port);
 
-			if (idevctl->addr > memory->parts[idevctl->oid.id].pHeader->size) {
+			if (idevctl->addr >= memory->parts[idevctl->oid.id].pHeader->size) {
 				odevctl->err = -EINVAL;
 				break;
 			}
@@ -553,12 +512,12 @@ static void flashsrv_rawThread(void *arg)
 				break;
 
 			case mtClose:
-				(void)flash_sync(&memory->ctx);
+				(void)flashsrv_bufferedSync(memory->fOid.id);
 				msg.o.io.err = EOK;
 				break;
 
 			case mtSync:
-				msg.o.io.err = flash_sync(&memory->ctx);
+				msg.o.io.err = flashsrv_bufferedSync(memory->fOid.id);
 				break;
 
 			default:
@@ -606,7 +565,7 @@ static void flashsrv_devThread(void *arg)
 				break;
 
 			case mtSync:
-				msg.o.io.err = flash_sync(&memory->ctx);
+				msg.o.io.err = flashsrv_bufferedSync(memory->fOid.id);
 				break;
 
 			default:
