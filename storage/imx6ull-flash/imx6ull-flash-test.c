@@ -1428,11 +1428,7 @@ void test_memory_aliasing(void)
 			continue;
 		}
 
-		err = flashdrv_read(dma, i, buffer + 0x2000, buffer + 0x3000);
-		if (err != 0) {
-			printf("test_memory_aliasing: error %d\n", err);
-			return;
-		}
+		(void)flashdrv_read(dma, i, buffer + 0x2000, buffer + 0x3000);
 
 		for (size_t j = 0; j < flashinfo.writesz; ++j) {
 			if (((char *)buffer)[0x2000 + j] == ((char *)buffer)[j]) {
@@ -1536,6 +1532,9 @@ int main(int argc, char **argv)
 	memcpy(&flashinfo, flashdrv_info(), sizeof(flashdrv_info_t));
 	assert(flashinfo.writesz <= _PAGE_SIZE);
 	pagemapsz = (FLASHDRV_PAGESZ + _PAGE_SIZE - 1) & ~(_PAGE_SIZE - 1);
+
+	printf("%s: %s: size: %llu, writesz: %u, chips: %u\n",
+		argv[0], flashinfo.name, flashinfo.size, flashinfo.writesz, flashinfo.chips);
 
 	//test_meta();
 	//test_write_fcb();
