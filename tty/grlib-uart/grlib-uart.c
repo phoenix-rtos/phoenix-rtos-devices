@@ -42,6 +42,8 @@
 #error "Unsupported target"
 #endif
 
+#include <phoenix/arch/sparcv8leon3.h>
+
 #define UART_STACKSZ (4096)
 
 /* UART control bits */
@@ -90,18 +92,18 @@ typedef struct {
 } uart_t;
 
 
-static const struct {
+static struct {
 	uint32_t *base;
 	unsigned int irq;
 	uint8_t txPin;
 	uint8_t rxPin;
-} info[UART_MAX_CNT] = {
-	{ UART0_BASE, UART0_IRQ, UART0_TX, UART0_RX },
-	{ UART1_BASE, UART1_IRQ, UART1_TX, UART1_RX },
-	{ UART2_BASE, UART2_IRQ, UART2_TX, UART2_RX },
-	{ UART3_BASE, UART3_IRQ, UART3_TX, UART3_RX },
-	{ UART4_BASE, UART4_IRQ, UART4_TX, UART4_RX },
-	{ UART5_BASE, UART5_IRQ, UART5_TX, UART5_RX }
+} info[] = {
+	{ .txPin = UART0_TX, .rxPin = UART0_RX },
+	{ .txPin = UART1_TX, .rxPin = UART1_RX },
+	{ .txPin = UART2_TX, .rxPin = UART2_RX },
+	{ .txPin = UART3_TX, .rxPin = UART3_RX },
+	{ .txPin = UART4_TX, .rxPin = UART4_RX },
+	{ .txPin = UART5_TX, .rxPin = UART5_RX }
 };
 
 
@@ -307,12 +309,11 @@ static void uart_mkDev(unsigned int id)
 }
 
 
-#if defined(__CPU_GR716)
-
 static int uart_cguInit(unsigned int n)
 {
+#if defined(__CPU_GR716)
 	platformctl_t ctl;
-	static const unsigned int cguinfo[UART_MAX_CNT] = {
+	static const unsigned int cguinfo[] = {
 		cgudev_apbuart0,
 		cgudev_apbuart1,
 		cgudev_apbuart2,
@@ -329,19 +330,10 @@ static int uart_cguInit(unsigned int n)
 	ctl.cguctrl.cgudev = cguinfo[n];
 
 	return platformctl(&ctl);
-}
-
-
 #else
-
-
-static int uart_cguInit(unsigned int n)
-{
 	return 0;
-}
-
-
 #endif
+}
 
 
 static int uart_init(unsigned int n, speed_t baud, int raw)
@@ -373,12 +365,31 @@ static int uart_init(unsigned int n, speed_t baud, int raw)
 		return -1;
 	}
 
+	/* Get info from AMBA PnP about APBUART */
+	unsigned int instance = n;
+	ambapp_dev_t dev = { .devId = CORE_ID_APBUART };
+
+	ctl.action = pctl_get;
+	ctl.type = pctl_ambapp;
+	ctl.ambapp.dev = &dev;
+	ctl.ambapp.instance = &instance;
+
+	if (platformctl(&ctl) < 0) {
+		return -1;
+	}
+
+	if (dev.bus != BUS_AMBA_APB) {
+		/* APBUART should be on APB bus */
+		return -1;
+	}
+	info[n].base = dev.info.apb.base;
+	info[n].irq = dev.irqn;
+
 	uintptr_t base = ((uintptr_t)info[n].base) & ~(_PAGE_SIZE - 1);
 	uart->base = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, (off_t)base);
 	if (uart->base == MAP_FAILED) {
 		return -1;
 	}
-	uart->base += ((uintptr_t)info[n].base - base) / sizeof(uintptr_t);
 
 	callbacks.arg = uart;
 	callbacks.set_cflag = uart_setCFlag;
@@ -386,21 +397,26 @@ static int uart_init(unsigned int n, speed_t baud, int raw)
 	callbacks.signal_txready = uart_signalTXReady;
 
 	if (libtty_init(&uart->tty, &callbacks, _PAGE_SIZE, baud) < 0) {
+		munmap((void *)uart->base, _PAGE_SIZE);
 		return -1;
 	}
 
 	if (condCreate(&uart->cond) != EOK) {
+		munmap((void *)uart->base, _PAGE_SIZE);
 		libtty_close(&uart->tty);
 		libtty_destroy(&uart->tty);
 		return -1;
 	}
 
 	if (mutexCreate(&uart->lock) != EOK) {
+		munmap((void *)uart->base, _PAGE_SIZE);
 		libtty_close(&uart->tty);
 		libtty_destroy(&uart->tty);
 		resourceDestroy(uart->cond);
 		return -1;
 	}
+
+	uart->base += ((uintptr_t)info[n].base - base) / sizeof(uintptr_t);
 
 	/* Set raw mode */
 	if (raw == 1) {
@@ -451,7 +467,7 @@ int main(int argc, char **argv)
 
 				case 'n':
 					uartn = atoi(optarg);
-					if (uartn >= UART_MAX_CNT) {
+					if ((uartn >= UART_MAX_CNT) || (uartn < 0)) {
 						debug("grlib-uart: wrong uart ID\n");
 						return EXIT_FAILURE;
 					}
@@ -470,11 +486,6 @@ int main(int argc, char **argv)
 					return EXIT_FAILURE;
 			}
 		}
-	}
-
-	if (uartn < 0) {
-		debug("grlib-uart: wrong uart ID, this uart cannot be a console\n");
-		return EXIT_FAILURE;
 	}
 
 	portCreate(&uart_common.uart.oid.port);
