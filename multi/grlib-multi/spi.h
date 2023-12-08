@@ -21,6 +21,9 @@
 void spi_handleMsg(msg_t *msg, int dev);
 
 
+int spi_createDevs(oid_t *oid);
+
+
 int spi_init(void);
 
 

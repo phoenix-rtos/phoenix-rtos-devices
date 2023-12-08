@@ -49,20 +49,7 @@
 #define LOG_ERROR(fmt, ...) fprintf(stderr, "grlib-multi: " fmt "\n", ##__VA_ARGS__)
 
 
-static const char *multi_devs[] = {
-#ifdef MULTI_GPIO
-	"gpio0", "gpio1",
-#endif
-
-#ifdef MULTI_SPI
-	"spi0", "spi1",
-#endif
-	"uart2", "uart3",
-
-#ifdef MULTI_ADC
-	"adc0",
-#endif
-
+static const char *pseudo_devs[] = {
 #if PSEUDODEV
 	"null", "zero", "full", "urandom",
 #endif
@@ -79,13 +66,30 @@ static struct {
 
 static int multi_createDevs(void)
 {
-	int err;
+	if (uart_createDevs(&multi_common.multiOid) < 0) {
+		LOG_ERROR("Failed to create UART devices");
+		return -1;
+	}
 
-	for (int i = 0; multi_devs[i] != NULL; i++) {
-		err = create_dev(&multi_common.multiOid, multi_devs[i]);
-		if (err < 0) {
-			LOG_ERROR("Failed to create %s device file", multi_devs[i]);
-			return err;
+	if (spi_createDevs(&multi_common.multiOid) < 0) {
+		LOG_ERROR("Failed to create SPI devices");
+		return -1;
+	}
+
+	if (gpio_createDevs(&multi_common.multiOid) < 0) {
+		LOG_ERROR("Failed to create GPIO devices");
+		return -1;
+	}
+
+	if (adc_createDevs(&multi_common.multiOid) < 0) {
+		LOG_ERROR("Failed to create ADC devices");
+		return -1;
+	}
+
+	for (int i = 0; pseudo_devs[i] != NULL; i++) {
+		if (create_dev(&multi_common.multiOid, pseudo_devs[i]) < 0) {
+			LOG_ERROR("Failed to create %s device file", pseudo_devs[i]);
+			return -1;
 		}
 	}
 
@@ -135,21 +139,16 @@ static void multi_dispatchMsg(msg_t *msg)
 	id_t id = multi_getId(msg);
 
 	switch (id) {
-#ifdef MULTI_GPIO
 		case id_gpio0:
 		case id_gpio1:
 			gpio_handleMsg(msg, id);
 			break;
-#endif
 
-#ifdef MULTI_SPI
 		case id_spi0:
 		case id_spi1:
 			spi_handleMsg(msg, id);
 			break;
-#endif
 
-#ifdef MULTI_ADC
 		case id_adc0:
 		case id_adc1:
 		case id_adc2:
@@ -160,7 +159,6 @@ static void multi_dispatchMsg(msg_t *msg)
 		case id_adc7:
 			adc_handleMsg(msg, id);
 			break;
-#endif
 
 #if PSEUDODEV
 		case id_pseudoNull:
@@ -340,24 +338,21 @@ int main(void)
 		multi_cleanup("Failed to initialize UART\n");
 		return EXIT_FAILURE;
 	}
-#ifdef MULTI_SPI
+
 	if (spi_init() < 0) {
 		multi_cleanup("Failed to initialize SPI\n");
 		return EXIT_FAILURE;
 	}
-#endif
-#ifdef MULTI_GPIO
+
 	if (gpio_init() < 0) {
 		multi_cleanup("Failed to initialize GPIO\n");
 		return EXIT_FAILURE;
 	}
-#endif
-#ifdef MULTI_ADC
+
 	if (adc_init() < 0) {
 		multi_cleanup("Failed to initialize ADC\n");
 		return EXIT_FAILURE;
 	}
-#endif
 
 	oid.port = multi_common.uartOid.port;
 	oid.id = id_console;

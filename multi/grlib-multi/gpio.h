@@ -22,6 +22,9 @@
 void gpio_handleMsg(msg_t *msg, int dev);
 
 
+int gpio_createDevs(oid_t *oid);
+
+
 int gpio_init(void);
 
 
