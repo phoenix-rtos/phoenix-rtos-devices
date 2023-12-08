@@ -254,8 +254,8 @@ int adc_init(void)
 {
 	adc_config_t defaultConf = {
 		.sampleRate = ADC_DEFAULT_SR,
-		.mode = adc_mode_single,
-		.sampleCnt = adc_sampleCnt_1
+		.mode = adc_modeSingle,
+		.sampleCnt = adc_sampleCnt1
 	};
 
 	for (unsigned int i = 0; i < ADC_CNT; i++) {

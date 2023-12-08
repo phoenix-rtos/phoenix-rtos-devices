@@ -35,7 +35,7 @@ enum { id_gpio0 = 0, id_gpio1, id_spi0, id_spi1, id_uart0, id_uart1, id_uart2, i
 
 typedef struct {
 	/* clang-format off */
-	enum { gpio_set_port = 0, gpio_get_port, gpio_set_dir, gpio_get_dir } type;
+	enum { gpio_setPort = 0, gpio_getPort, gpio_setDir, gpio_getDir } type;
 	/* clang-format on */
 	union {
 		struct {
@@ -65,7 +65,7 @@ typedef struct {
 /* clang-format off */
 enum { spi_lsb = 0, spi_msb };
 
-enum { spi_mode_0 = 0, spi_mode_1, spi_mode_2, spi_mode_3 };
+enum { spi_mode0 = 0, spi_mode1, spi_mode2, spi_mode3 };
 /* clang-format on */
 
 
@@ -85,7 +85,7 @@ typedef struct {
 
 typedef struct {
 	/* clang-format off */
-	enum { spi_set_pins = 0, spi_config, spi_transaction } type;
+	enum { spi_setPins = 0, spi_config, spi_transaction } type;
 	/* clang-format on */
 
 	union {
@@ -103,8 +103,8 @@ typedef struct {
 /* ADC */
 
 /* clang-format off */
-enum { adc_mode_diff = 0, adc_mode_single };
-enum { adc_sampleCnt_1 = 0, adc_sampleCnt_2, adc_sampleCnt_3, adc_sampleCnt_4 };
+enum { adc_modeDiff = 0, adc_modeSingle };
+enum { adc_sampleCnt1 = 0, adc_sampleCnt2, adc_sampleCnt3, adc_sampleCnt4 };
 /* clang-format on */
 
 

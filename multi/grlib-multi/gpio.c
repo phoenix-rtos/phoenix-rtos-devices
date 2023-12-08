@@ -82,7 +82,7 @@ static struct {
 } gpio_common[GPIO_PORT_CNT];
 
 
-static int gpio_setPort(int port, uint32_t mask, uint32_t val)
+static int gpio_setPortVal(int port, uint32_t mask, uint32_t val)
 {
 	if (port >= GPIO_PORT_CNT) {
 		return -EINVAL;
@@ -100,7 +100,7 @@ static int gpio_setPort(int port, uint32_t mask, uint32_t val)
 }
 
 
-static int gpio_getPort(int port, uint32_t *val)
+static int gpio_getPortVal(int port, uint32_t *val)
 {
 	if (port >= GPIO_PORT_CNT) {
 		return -EINVAL;
@@ -152,19 +152,19 @@ static void gpio_handleDevCtl(msg_t *msg, int port)
 	multi_o_t *odevctl = (multi_o_t *)msg->o.raw;
 
 	switch (idevctl->gpio.type) {
-		case gpio_set_port:
-			odevctl->err = gpio_setPort(port, idevctl->gpio.port.mask, idevctl->gpio.port.val);
+		case gpio_setPort:
+			odevctl->err = gpio_setPortVal(port, idevctl->gpio.port.mask, idevctl->gpio.port.val);
 			break;
 
-		case gpio_get_port:
-			odevctl->err = gpio_getPort(port, &odevctl->val);
+		case gpio_getPort:
+			odevctl->err = gpio_getPortVal(port, &odevctl->val);
 			break;
 
-		case gpio_set_dir:
+		case gpio_setDir:
 			odevctl->err = gpio_setPortDir(port, idevctl->gpio.dir.mask, idevctl->gpio.dir.val);
 			break;
 
-		case gpio_get_dir:
+		case gpio_getDir:
 			odevctl->err = gpio_getPortDir(port, &odevctl->val);
 			break;
 
