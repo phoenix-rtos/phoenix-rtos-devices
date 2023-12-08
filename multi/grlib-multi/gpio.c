@@ -11,15 +11,26 @@
  * %LICENSE%
  */
 
-
+#include <board_config.h>
 #include <errno.h>
+#include <sys/mman.h>
+#include <sys/platform.h>
 #include <sys/types.h>
 #include <sys/threads.h>
+#include <posix/utils.h>
 
-#include "common.h"
 #include "gpio.h"
 #include "grlib-multi.h"
 
+#if defined(__CPU_GR716)
+#include <phoenix/arch/gr716.h>
+#elif defined(__CPU_GR712RC)
+#include <phoenix/arch/gr712rc.h>
+#else
+#error "Unsupported target"
+#endif
+
+#include <phoenix/arch/sparcv8leon3.h>
 
 #define GPIO_PORT_0 0
 #define GPIO_PORT_1 1
@@ -27,10 +38,6 @@
 #define GPIO_DIR_IN  0
 #define GPIO_DIR_OUT 1
 
-#define GPIO_PORT_CNT 2
-
-#define GRGPIO0_BASE ((void *)0x8030C000)
-#define GRGPIO1_BASE ((void *)0x8030D000)
 
 /* GPIO registers */
 
@@ -65,40 +72,26 @@
 
 
 static struct {
-	volatile uint32_t *grgpio0;
-	volatile uint32_t *grgpio1;
-} gpio_common;
+	uint32_t *base;
+	uint32_t irq;
+} gpio_info[GPIO_PORT_CNT];
 
 
-static inline int gpio_pinToPort(uint8_t pin)
-{
-	return (pin >> 5);
-}
-
-
-static inline volatile uint32_t *gpio_portToAddr(int port)
-{
-	switch (port) {
-		case GPIO_PORT_0:
-			return gpio_common.grgpio0;
-		case GPIO_PORT_1:
-			return gpio_common.grgpio1;
-		default:
-			return NULL;
-	}
-}
+static struct {
+	volatile uint32_t *vbase;
+} gpio_common[GPIO_PORT_CNT];
 
 
 static int gpio_setPort(int port, uint32_t mask, uint32_t val)
 {
-	uint32_t set = val & mask;
-	uint32_t clear = (~val) & mask;
-
-	volatile uint32_t *gpio = gpio_portToAddr(port);
-
-	if (gpio == NULL) {
+	if (port >= GPIO_PORT_CNT) {
 		return -EINVAL;
 	}
+
+	volatile uint32_t *gpio = gpio_common[port].vbase;
+
+	uint32_t set = val & mask;
+	uint32_t clear = (~val) & mask;
 
 	*(gpio + GPIO_PO_LAND) = ~clear;
 	*(gpio + GPIO_PO_LOR) = set;
@@ -109,11 +102,11 @@ static int gpio_setPort(int port, uint32_t mask, uint32_t val)
 
 static int gpio_getPort(int port, uint32_t *val)
 {
-	volatile uint32_t *gpio = gpio_portToAddr(port);
-
-	if (gpio == NULL) {
+	if (port >= GPIO_PORT_CNT) {
 		return -EINVAL;
 	}
+
+	volatile uint32_t *gpio = gpio_common[port].vbase;
 
 	*val = *(gpio + GPIO_DATA);
 
@@ -123,14 +116,14 @@ static int gpio_getPort(int port, uint32_t *val)
 
 static int gpio_setPortDir(int port, uint32_t mask, uint32_t val)
 {
-	uint32_t set = val & mask;
-	uint32_t clear = (~val) & mask;
-
-	volatile uint32_t *gpio = gpio_portToAddr(port);
-
-	if (gpio == NULL) {
+	if (port >= GPIO_PORT_CNT) {
 		return -EINVAL;
 	}
+
+	volatile uint32_t *gpio = gpio_common[port].vbase;
+
+	uint32_t set = val & mask;
+	uint32_t clear = (~val) & mask;
 
 	*(gpio + GPIO_PD_LAND) = ~clear;
 	*(gpio + GPIO_PD_LOR) = set;
@@ -141,11 +134,11 @@ static int gpio_setPortDir(int port, uint32_t mask, uint32_t val)
 
 static int gpio_getPortDir(int port, uint32_t *val)
 {
-	volatile uint32_t *gpio = gpio_portToAddr(port);
-
-	if (gpio == NULL) {
+	if (port >= GPIO_PORT_CNT) {
 		return -EINVAL;
 	}
+
+	volatile uint32_t *gpio = gpio_common[port].vbase;
 
 	*val = *(gpio + GPIO_DIR);
 
@@ -207,10 +200,56 @@ void gpio_handleMsg(msg_t *msg, int dev)
 }
 
 
+int gpio_createDevs(oid_t *oid)
+{
+	for (unsigned int i = 0; i < GPIO_PORT_CNT; i++) {
+		char buf[8];
+		if (snprintf(buf, sizeof(buf), "gpio%u", i) >= sizeof(buf)) {
+			return -1;
+		}
+
+		if (create_dev(oid, buf) < 0) {
+			return -1;
+		}
+	}
+	return 0;
+}
+
+
 int gpio_init(void)
 {
-	gpio_common.grgpio0 = GRGPIO0_BASE;
-	gpio_common.grgpio1 = GRGPIO1_BASE;
+	for (unsigned int i = 0; i < GPIO_PORT_CNT; i++) {
+
+		unsigned int instance = i;
+		ambapp_dev_t dev = { .devId = CORE_ID_GRGPIO };
+		platformctl_t pctl = {
+			.action = pctl_get,
+			.type = pctl_ambapp,
+			.ambapp = {
+				.dev = &dev,
+				.instance = &instance,
+			}
+		};
+
+		if (platformctl(&pctl) < 0) {
+			return -1;
+		}
+
+		if (dev.bus != BUS_AMBA_APB) {
+			/* GRGPIO should be on APB bus */
+			return -1;
+		}
+		gpio_info[i].base = dev.info.apb.base;
+		gpio_info[i].irq = dev.irqn;
+
+		uintptr_t base = ((uintptr_t)gpio_info[i].base & ~(_PAGE_SIZE - 1));
+		gpio_common[i].vbase = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, (off_t)base);
+		if (gpio_common[i].vbase == MAP_FAILED) {
+			return -1;
+		}
+
+		gpio_common[i].vbase += ((uintptr_t)gpio_info[i].base - base) / sizeof(uintptr_t);
+	}
 
 	return 0;
 }

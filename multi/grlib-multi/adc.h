@@ -21,6 +21,9 @@
 void adc_handleMsg(msg_t *msg, int dev);
 
 
+int adc_createDevs(oid_t *oid);
+
+
 int adc_init(void);
 
 

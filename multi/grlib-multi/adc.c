@@ -13,36 +13,25 @@
 
 #include <board_config.h>
 #include <errno.h>
+#include <sys/mman.h>
 #include <sys/interrupt.h>
 #include <sys/platform.h>
 #include <sys/types.h>
 #include <sys/threads.h>
+#include <posix/utils.h>
+
+#if defined(__CPU_GR716)
 #include <phoenix/arch/gr716.h>
+#elif defined(__CPU_GR712RC)
+#include <phoenix/arch/gr712rc.h>
+#else
+#error "Unsupported target"
+#endif
+
+#include <phoenix/arch/sparcv8leon3.h>
 
 #include "adc.h"
-#include "common.h"
 #include "grlib-multi.h"
-
-
-#define ADC_CNT 8
-
-#define ADC0_BASE ((void *)0x80400000)
-#define ADC1_BASE ((void *)0x80401000)
-#define ADC2_BASE ((void *)0x80402000)
-#define ADC3_BASE ((void *)0x80403000)
-#define ADC4_BASE ((void *)0x80404000)
-#define ADC5_BASE ((void *)0x80405000)
-#define ADC6_BASE ((void *)0x80406000)
-#define ADC7_BASE ((void *)0x80407000)
-
-#define ADC0_IRQ 28
-#define ADC1_IRQ 29
-#define ADC2_IRQ 30
-#define ADC3_IRQ 31
-#define ADC4_IRQ 28
-#define ADC5_IRQ 29
-#define ADC6_IRQ 30
-#define ADC7_IRQ 31
 
 #define ADC_DEFAULT_SR (200 * 1000) /* 200 kSps */
 
@@ -74,34 +63,40 @@
 #define ADC_PREAMP_BYPASS (1 << 2)
 
 
-static const struct {
+typedef struct {
+	volatile uint32_t *vbase;
+
+	handle_t mutex;
+	handle_t irqLock;
+	handle_t cond;
+} adc_dev_t;
+
+
+static struct {
 	volatile uint32_t *base;
 	uint32_t irq;
 	int active;
-} adc_info[ADC_CNT] = {
-	{ ADC0_BASE, ADC0_IRQ, 1 },
-	{ ADC1_BASE, ADC1_IRQ, 0 },
-	{ ADC2_BASE, ADC2_IRQ, 0 },
-	{ ADC3_BASE, ADC3_IRQ, 0 },
-	{ ADC4_BASE, ADC4_IRQ, 0 },
-	{ ADC5_BASE, ADC5_IRQ, 0 },
-	{ ADC6_BASE, ADC6_IRQ, 0 },
-	{ ADC7_BASE, ADC7_IRQ, 0 }
+} adc_info[] = {
+	{ .active = ADC0_ACTIVE },
+	{ .active = ADC1_ACTIVE },
+	{ .active = ADC2_ACTIVE },
+	{ .active = ADC3_ACTIVE },
+	{ .active = ADC4_ACTIVE },
+	{ .active = ADC5_ACTIVE },
+	{ .active = ADC6_ACTIVE },
+	{ .active = ADC7_ACTIVE }
 };
 
 
 static struct {
-	handle_t mutex;
-	handle_t irqLock;
-	handle_t cond;
-	handle_t inth;
-} adc_common[ADC_CNT];
+	adc_dev_t adc[ADC_CNT];
+} adc_common;
 
 
 static int adc_irqHandler(unsigned int n, void *arg)
 {
-	int adc = (int)arg;
-	volatile uint32_t *adc_base = adc_info[adc].base;
+	int dev = (int)arg;
+	volatile uint32_t *adc_base = adc_common.adc[dev].vbase;
 
 	(void)n;
 
@@ -116,32 +111,34 @@ static int adc_irqHandler(unsigned int n, void *arg)
 
 static void adc_convert(int dev, uint32_t *value)
 {
-	volatile uint32_t *adc_base = adc_info[dev].base;
+	volatile uint32_t *adc_base = adc_common.adc[dev].vbase;
 
-	mutexLock(adc_common[dev].mutex);
+	mutexLock(adc_common.adc[dev].mutex);
 
 	/* Start conversion */
-	common_atomicOr(adc_base + ADC_CTRL, ADC_CONV_START);
+	*(adc_base + ADC_CTRL) |= ADC_CONV_START;
 
 	/* Wait for conversion to end */
+	mutexLock(adc_common.adc[dev].irqLock);
 	while ((*(adc_base + ADC_STATUS) & ADC_STS_CONV_END) == 0) {
-		condWait(adc_common[dev].cond, adc_common[dev].mutex, 0);
+		condWait(adc_common.adc[dev].cond, adc_common.adc[dev].irqLock, 0);
 	}
+	mutexUnlock(adc_common.adc[dev].irqLock);
 
 	*value = *(adc_base + ADC_STATUS) & ADC_STS_VAL;
 
-	mutexUnlock(adc_common[dev].mutex);
+	mutexUnlock(adc_common.adc[dev].mutex);
 }
 
 
 static void adc_configure(int dev, adc_config_t *config)
 {
-	volatile uint32_t *adc_base = adc_info[dev].base;
+	volatile uint32_t *adc_base = adc_common.adc[dev].vbase;
 	uint32_t scaler = (SYSCLK_FREQ / (config->sampleRate * 20));
 
 	uint32_t ctrl = (scaler << 16) | ((dev & 0xf) << 2) | (config->mode & 0x1) | ADC_ENABLE;
 
-	mutexLock(adc_common[dev].mutex);
+	mutexLock(adc_common.adc[dev].mutex);
 
 	*(adc_base + ADC_CTRL) = ctrl;
 
@@ -151,7 +148,7 @@ static void adc_configure(int dev, adc_config_t *config)
 	/* Enable end of conversion interrupt */
 	*(adc_base + ADC_IRQ_MSK) = ADC_IRQ_CONV_END;
 
-	mutexUnlock(adc_common[dev].mutex);
+	mutexUnlock(adc_common.adc[dev].mutex);
 }
 
 
@@ -170,6 +167,25 @@ static void adc_handleDevCtl(msg_t *msg, int dev)
 			odevctl->err = -EINVAL;
 			break;
 	}
+}
+
+
+static int adc_cguInit(int dev)
+{
+#if defined(__CPU_GR716)
+	platformctl_t pctl = {
+		.action = pctl_set,
+		.type = pctl_cguctrl,
+		.cguctrl = {
+			.state = enable,
+			.cgu = cgu_secondary,
+			.cgudev = cgudev_gradc0 + dev }
+	};
+
+	return platformctl(&pctl);
+#else
+	return 0;
+#endif
 }
 
 
@@ -214,57 +230,94 @@ void adc_handleMsg(msg_t *msg, int dev)
 }
 
 
+int adc_createDevs(oid_t *oid)
+{
+	for (unsigned int i = 0; i < ADC_CNT; i++) {
+		if (adc_info[i].active == 0) {
+			continue;
+		}
+
+		char buf[8];
+		if (snprintf(buf, sizeof(buf), "adc%u", i) >= sizeof(buf)) {
+			return -1;
+		}
+
+		if (create_dev(oid, buf) < 0) {
+			return -1;
+		}
+	}
+	return 0;
+}
+
+
 int adc_init(void)
 {
-	int res = 0;
-	platformctl_t pctl = {
-		.action = pctl_set,
-		.type = pctl_cguctrl,
-		.cguctrl = {
-			.state = enable,
-			.cgu = cgu_secondary,
-		}
-	};
-
 	adc_config_t defaultConf = {
 		.sampleRate = ADC_DEFAULT_SR,
 		.mode = adc_mode_single,
 		.sampleCnt = adc_sampleCnt_1
 	};
 
-	for (int i = 0; i < ADC_CNT; i++) {
+	for (unsigned int i = 0; i < ADC_CNT; i++) {
 		if (adc_info[i].active == 0) {
 			continue;
 		}
 
-		/* Enable clock */
-		pctl.cguctrl.cgudev = cgudev_gradc0 + i;
-		res = platformctl(&pctl);
-		if (res < 0) {
-			return res;
+		unsigned int instance = i;
+		ambapp_dev_t dev = { .devId = CORE_ID_GRADCDAC };
+		platformctl_t pctl = {
+			.action = pctl_get,
+			.type = pctl_ambapp,
+			.ambapp = {
+				.dev = &dev,
+				.instance = &instance,
+			}
+		};
+
+		if (platformctl(&pctl) < 0) {
+			return -1;
 		}
 
-		res = condCreate(&adc_common[i].cond);
-		if (res < 0) {
-			return -ENOENT;
+		if (dev.bus != BUS_AMBA_APB) {
+			/* GRADCDAC should be on APB bus */
+			return -1;
+		}
+		adc_info[i].base = dev.info.apb.base;
+		adc_info[i].irq = dev.irqn;
+
+		if (adc_cguInit(i) < 0) {
+			return -1;
 		}
 
-		res = mutexCreate(&adc_common[i].mutex);
-		if (res < 0) {
-			resourceDestroy(adc_common[i].cond);
-			return -ENOENT;
+		uintptr_t base = ((uintptr_t)adc_info[i].base & ~(_PAGE_SIZE - 1));
+		adc_common.adc[i].vbase = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, (off_t)base);
+		if (adc_common.adc[i].vbase == MAP_FAILED) {
+			return -1;
 		}
 
-		res = mutexCreate(&adc_common[i].irqLock);
-		if (res < 0) {
-			resourceDestroy(adc_common[i].cond);
-			resourceDestroy(adc_common[i].mutex);
-			return -ENOENT;
+		if (condCreate(&adc_common.adc[i].cond) < 0) {
+			munmap((void *)adc_common.adc[i].vbase, _PAGE_SIZE);
+			return -1;
 		}
+
+		if (mutexCreate(&adc_common.adc[i].mutex) < 0) {
+			munmap((void *)adc_common.adc[i].vbase, _PAGE_SIZE);
+			resourceDestroy(adc_common.adc[i].cond);
+			return -1;
+		}
+
+		if (mutexCreate(&adc_common.adc[i].irqLock) < 0) {
+			munmap((void *)adc_common.adc[i].vbase, _PAGE_SIZE);
+			resourceDestroy(adc_common.adc[i].cond);
+			resourceDestroy(adc_common.adc[i].mutex);
+			return -1;
+		}
+
+		adc_common.adc[i].vbase += ((uintptr_t)adc_info[i].base - base) / sizeof(uintptr_t);
 
 		adc_configure(i, &defaultConf);
 
-		interrupt(adc_info[i].irq, adc_irqHandler, (void *)i, adc_common[i].cond, &adc_common[i].inth);
+		interrupt(adc_info[i].irq, adc_irqHandler, (void *)i, adc_common.adc[i].cond, NULL);
 	}
 	return 0;
 }

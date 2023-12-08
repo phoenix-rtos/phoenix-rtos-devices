@@ -19,16 +19,28 @@
 
 #include <sys/debug.h>
 #include <sys/file.h>
+#include <sys/mman.h>
 #include <sys/interrupt.h>
 #include <sys/platform.h>
 #include <sys/threads.h>
+#include <posix/utils.h>
 
 #include <phoenix/ioctl.h>
+
+#if defined(__CPU_GR716)
 #include <phoenix/arch/gr716.h>
+#elif defined(__CPU_GR712RC)
+#include <phoenix/arch/gr712rc.h>
+#else
+#error "Unsupported target"
+#endif
+
+#include <phoenix/arch/sparcv8leon3.h>
 
 #include "uart.h"
-#include "common.h"
 #include "grlib-multi.h"
+
+#define UART_STACKSZ (4096)
 
 /* UART registers */
 #define UART_DATA   0
@@ -60,7 +72,7 @@
 
 
 typedef struct {
-	volatile uint32_t *base;
+	volatile uint32_t *vbase;
 	oid_t oid;
 
 	handle_t cond;
@@ -68,30 +80,29 @@ typedef struct {
 	handle_t lock;
 	libtty_common_t tty;
 
-	uint8_t stack[8 * _PAGE_SIZE] __attribute__((aligned(8)));
+	uint8_t stack[UART_STACKSZ] __attribute__((aligned(8)));
 } uart_t;
 
 
-static const struct {
+static struct {
 	uint32_t *base;
 	unsigned int irq;
-	unsigned int cgudev;
 	uint8_t txPin;
 	uint8_t rxPin;
 	uint8_t active;
-} info[UART_MAX_CNT] = {
-	{ UART0_BASE, UART0_IRQ, cgudev_apbuart0, UART0_TX, UART0_RX, UART0_ACTIVE },
-	{ UART1_BASE, UART1_IRQ, cgudev_apbuart1, UART1_TX, UART1_RX, UART1_ACTIVE },
-	{ UART2_BASE, UART2_IRQ, cgudev_apbuart2, UART2_TX, UART2_RX, UART2_ACTIVE },
-	{ UART3_BASE, UART3_IRQ, cgudev_apbuart3, UART3_TX, UART3_RX, UART3_ACTIVE },
-	{ UART4_BASE, UART4_IRQ, cgudev_apbuart4, UART4_TX, UART4_RX, UART4_ACTIVE },
-	{ UART5_BASE, UART5_IRQ, cgudev_apbuart5, UART5_TX, UART5_RX, UART5_ACTIVE }
+} info[] = {
+	{ .txPin = UART0_TX, .rxPin = UART0_RX, .active = UART0_ACTIVE },
+	{ .txPin = UART1_TX, .rxPin = UART1_RX, .active = UART1_ACTIVE },
+	{ .txPin = UART2_TX, .rxPin = UART2_RX, .active = UART2_ACTIVE },
+	{ .txPin = UART3_TX, .rxPin = UART3_RX, .active = UART3_ACTIVE },
+	{ .txPin = UART4_TX, .rxPin = UART4_RX, .active = UART4_ACTIVE },
+	{ .txPin = UART5_TX, .rxPin = UART5_RX, .active = UART5_ACTIVE }
 };
 
 
 static struct {
 	uart_t uart[UART_MAX_CNT];
-	uint8_t stack[16 * _PAGE_SIZE] __attribute__((aligned(8)));
+	uint8_t stack[UART_STACKSZ] __attribute__((aligned(8)));
 } uart_common;
 
 
@@ -102,9 +113,9 @@ static int uart_interrupt(unsigned int n, void *arg)
 	(void)n;
 
 	/* Check if we have data to receive */
-	if ((*(uart->base + UART_CTRL) & RX_INT) != 0 && (*(uart->base + UART_STATUS) & DATA_READY) != 0) {
+	if ((*(uart->vbase + UART_CTRL) & RX_INT) != 0 && (*(uart->vbase + UART_STATUS) & DATA_READY) != 0) {
 		/* Disable irq */
-		*(uart->base + UART_CTRL) &= ~RX_INT;
+		*(uart->vbase + UART_CTRL) &= ~RX_INT;
 	}
 
 	return 1;
@@ -119,19 +130,19 @@ static void uart_intThread(void *arg)
 	mutexLock(uart->lock);
 
 	for (;;) {
-		while (libtty_txready(&uart->tty) == 0 && (*(uart->base + UART_STATUS) & DATA_READY) == 0) {
+		while (libtty_txready(&uart->tty) == 0 && (*(uart->vbase + UART_STATUS) & DATA_READY) == 0) {
 			condWait(uart->cond, uart->lock, 0);
 		}
 
 		/* Receive data until RX FIFO is not empty */
-		while ((*(uart->base + UART_STATUS) & DATA_READY) != 0) {
-			libtty_putchar(&uart->tty, (*(uart->base + UART_DATA) & 0xff), NULL);
+		while ((*(uart->vbase + UART_STATUS) & DATA_READY) != 0) {
+			libtty_putchar(&uart->tty, (*(uart->vbase + UART_DATA) & 0xff), NULL);
 		}
 
 		/* Transmit data until TX TTY buffer is empty or TX FIFO is full */
 		wake = 0;
-		while (libtty_txready(&uart->tty) != 0 && (*(uart->base + UART_STATUS) & TX_FIFO_FULL) == 0) {
-			*(uart->base + UART_DATA) = libtty_popchar(&uart->tty);
+		while (libtty_txready(&uart->tty) != 0 && (*(uart->vbase + UART_STATUS) & TX_FIFO_FULL) == 0) {
+			*(uart->vbase + UART_DATA) = libtty_popchar(&uart->tty);
 			wake = 1;
 		}
 
@@ -140,9 +151,9 @@ static void uart_intThread(void *arg)
 		}
 
 		/* If RX int is disabled */
-		if ((*(uart->base + UART_CTRL) & RX_INT) == 0) {
+		if ((*(uart->vbase + UART_CTRL) & RX_INT) == 0) {
 			/* Enable RX int */
-			*(uart->base + UART_CTRL) |= RX_INT;
+			*(uart->vbase + UART_CTRL) |= RX_INT;
 		}
 	}
 
@@ -155,7 +166,7 @@ static void uart_setBaudrate(void *data, speed_t speed)
 	uart_t *uart = (uart_t *)data;
 	uint32_t scaler = (UART_CLK / (libtty_baudrate_to_int(speed) * 8 + 7));
 
-	*(uart->base + UART_SCALER) = scaler;
+	*(uart->vbase + UART_SCALER) = scaler;
 }
 
 
@@ -165,21 +176,21 @@ static void uart_setCFlag(void *data, tcflag_t *cflag)
 
 	/* Parity */
 	if ((*cflag & PARENB) != 0) {
-		*(uart->base + UART_CTRL) |= (PARITY_EN | PARITY_ODD);
+		*(uart->vbase + UART_CTRL) |= (PARITY_EN | PARITY_ODD);
 		if ((*cflag & PARODD) == 0) {
-			*(uart->base + UART_CTRL) &= ~PARITY_ODD;
+			*(uart->vbase + UART_CTRL) &= ~PARITY_ODD;
 		}
 	}
 	else {
-		*(uart->base + UART_CTRL) &= ~PARITY_EN;
+		*(uart->vbase + UART_CTRL) &= ~PARITY_EN;
 	}
 
 	/* Stop bits */
 	if ((*cflag & CSTOPB) != 0) {
-		*(uart->base + UART_CTRL) |= STOP_BITS;
+		*(uart->vbase + UART_CTRL) |= STOP_BITS;
 	}
 	else {
-		*(uart->base + UART_CTRL) &= ~STOP_BITS;
+		*(uart->vbase + UART_CTRL) &= ~STOP_BITS;
 	}
 }
 
@@ -208,18 +219,30 @@ static void uart_ioctl(msg_t *msg, int dev)
 }
 
 
-static int uart_cguInit(unsigned int cgudev)
+static int uart_cguInit(unsigned int n)
 {
-	platformctl_t ctl;
+#if defined(__CPU_GR716)
+	platformctl_t pctl;
+	static const unsigned int cguinfo[] = {
+		cgudev_apbuart0,
+		cgudev_apbuart1,
+		cgudev_apbuart2,
+		cgudev_apbuart3,
+		cgudev_apbuart4,
+		cgudev_apbuart5
+	};
 
-	ctl.action = pctl_set;
-	ctl.type = pctl_cguctrl;
+	pctl.action = pctl_set;
+	pctl.type = pctl_cguctrl;
 
-	ctl.cguctrl.state = enable;
-	ctl.cguctrl.cgu = cgu_primary;
-	ctl.cguctrl.cgudev = cgudev;
+	pctl.cguctrl.state = enable;
+	pctl.cguctrl.cgu = cgu_primary;
+	pctl.cguctrl.cgudev = cguinfo[n];
 
-	return platformctl(&ctl);
+	return platformctl(&pctl);
+#else
+	return 0;
+#endif
 }
 
 
@@ -227,7 +250,7 @@ static int uart_setup(unsigned int n, speed_t baud, int raw)
 {
 	libtty_callbacks_t callbacks;
 	uart_t *uart = &uart_common.uart[n];
-	platformctl_t ctl = {
+	platformctl_t pctl = {
 		.action = pctl_set,
 		.type = pctl_iomux,
 		.iocfg = {
@@ -238,21 +261,25 @@ static int uart_setup(unsigned int n, speed_t baud, int raw)
 		}
 	};
 
-	if (platformctl(&ctl) < 0) {
+	if (platformctl(&pctl) < 0) {
 		return -1;
 	}
 
-	ctl.iocfg.pin = info[n].txPin;
+	pctl.iocfg.pin = info[n].txPin;
 
-	if (platformctl(&ctl) < 0) {
+	if (platformctl(&pctl) < 0) {
 		return -1;
 	}
 
-	if (uart_cguInit(info[n].cgudev) < 0) {
+	if (uart_cguInit(n) < 0) {
 		return -1;
 	}
 
-	uart->base = info[n].base;
+	uintptr_t base = ((uintptr_t)info[n].base) & ~(_PAGE_SIZE - 1);
+	uart->vbase = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, (off_t)base);
+	if (uart->vbase == MAP_FAILED) {
+		return -1;
+	}
 
 	callbacks.arg = uart;
 	callbacks.set_cflag = uart_setCFlag;
@@ -260,16 +287,19 @@ static int uart_setup(unsigned int n, speed_t baud, int raw)
 	callbacks.signal_txready = uart_signalTXReady;
 
 	if (libtty_init(&uart->tty, &callbacks, _PAGE_SIZE, baud) < 0) {
+		munmap((void *)uart->vbase, _PAGE_SIZE);
 		return -1;
 	}
 
 	if (condCreate(&uart->cond) != EOK) {
+		munmap((void *)uart->vbase, _PAGE_SIZE);
 		libtty_close(&uart->tty);
 		libtty_destroy(&uart->tty);
 		return -1;
 	}
 
 	if (mutexCreate(&uart->lock) != EOK) {
+		munmap((void *)uart->vbase, _PAGE_SIZE);
 		libtty_close(&uart->tty);
 		libtty_destroy(&uart->tty);
 		resourceDestroy(uart->cond);
@@ -281,12 +311,14 @@ static int uart_setup(unsigned int n, speed_t baud, int raw)
 		libtty_set_mode_raw(&uart->tty);
 	}
 
+	uart->vbase += ((uintptr_t)info[n].base - base) / sizeof(uintptr_t);
+
 	/* normal mode, 1 stop bit, no parity, 8 bits */
 	uart_setCFlag(uart, &uart->tty.term.c_cflag);
 
 	uart->tty.term.c_ispeed = uart->tty.term.c_ospeed = baud;
 	uart_setBaudrate(uart, baud);
-	*(uart->base + UART_CTRL) = RX_INT | RX_EN | TX_EN;
+	*(uart->vbase + UART_CTRL) = RX_INT | RX_EN | TX_EN;
 
 	beginthread(uart_intThread, 2, &uart->stack, sizeof(uart->stack), (void *)uart);
 	interrupt(info[n].irq, uart_interrupt, uart, uart->cond, &uart->inth);
@@ -344,15 +376,57 @@ void uart_klogClbk(const char *data, size_t size)
 }
 
 
+int uart_createDevs(oid_t *oid)
+{
+	for (unsigned int i = 0; i < UART_MAX_CNT; i++) {
+		if (info[i].active == 0) {
+			continue;
+		}
+
+		char buf[8];
+		if (snprintf(buf, sizeof(buf), "uart%u", i) >= sizeof(buf)) {
+			return -1;
+		}
+
+		if (create_dev(oid, buf) < 0) {
+			return -1;
+		}
+	}
+	return 0;
+}
+
+
 int uart_init(void)
 {
 	int raw = 0;
 	speed_t baud = B115200;
 
-	for (int n = 0; n < UART_MAX_CNT; n++) {
+	for (unsigned int n = 0; n < UART_MAX_CNT; n++) {
 		if (info[n].active == 0) {
 			continue;
 		}
+
+		unsigned int instance = n;
+		ambapp_dev_t dev = { .devId = CORE_ID_APBUART };
+		platformctl_t pctl = {
+			.action = pctl_get,
+			.type = pctl_ambapp,
+			.ambapp = {
+				.dev = &dev,
+				.instance = &instance,
+			}
+		};
+
+		if (platformctl(&pctl) < 0) {
+			return -1;
+		}
+
+		if (dev.bus != BUS_AMBA_APB) {
+			/* APBUART should be on APB bus */
+			return -1;
+		}
+		info[n].base = dev.info.apb.base;
+		info[n].irq = dev.irqn;
 
 		if (uart_setup(n, baud, raw) < 0) {
 			return -1;
