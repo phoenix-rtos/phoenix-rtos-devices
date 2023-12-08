@@ -264,7 +264,7 @@ static void spi_handleDevCtl(msg_t *msg, int dev)
 	}
 
 	switch (idevctl->spi.type) {
-		case spi_set_pins:
+		case spi_setPins:
 			odevctl->err = spi_initPins(&idevctl->spi.pins);
 			break;
 
