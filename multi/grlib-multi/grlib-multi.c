@@ -34,16 +34,19 @@
 
 #include "adc.h"
 #include "gpio.h"
+#include "spacewire.h"
 #include "spi.h"
 #include "uart.h"
 #include "grlib-multi.h"
 
+#define SPW_THREADS_NO 4
 
 #define UART_THREADS_NO  2
 #define MULTI_THREADS_NO 2
 #define GRLIB_MULTI_PRIO 3
 
-#define STACKSZ 2048
+#define STACKSZ     2048
+#define SPW_STACKSZ 4096
 
 #define LOG(fmt, ...)       printf("grlib-multi: " fmt "\n", ##__VA_ARGS__)
 #define LOG_ERROR(fmt, ...) fprintf(stderr, "grlib-multi: " fmt "\n", ##__VA_ARGS__)
@@ -59,15 +62,22 @@ static const char *pseudo_devs[] = {
 static struct {
 	oid_t multiOid;
 	oid_t uartOid;
+	oid_t spwOid;
 	char uartStack[UART_THREADS_NO][STACKSZ] __attribute__((aligned(8)));
 	char stack[MULTI_THREADS_NO - 1][STACKSZ] __attribute__((aligned(8)));
+	char spwStack[SPW_THREADS_NO][SPW_STACKSZ] __attribute__((aligned(8)));
 } multi_common;
 
 
 static int multi_createDevs(void)
 {
-	if (uart_createDevs(&multi_common.multiOid) < 0) {
+	if (uart_createDevs(&multi_common.uartOid) < 0) {
 		LOG_ERROR("Failed to create UART devices");
+		return -1;
+	}
+
+	if (spw_createDevs(&multi_common.spwOid) < 0) {
+		LOG_ERROR("Failed to create SpaceWire devices");
 		return -1;
 	}
 
@@ -301,10 +311,79 @@ static void uart_thread(void *arg)
 }
 
 
+static void spw_dispatchMsg(msg_t *msg)
+{
+	id_t id = multi_getId(msg);
+
+	switch (id) {
+		case id_spw0:
+		case id_spw1:
+		case id_spw2:
+		case id_spw3:
+		case id_spw4:
+		case id_spw5:
+			spw_handleMsg(msg, id);
+			break;
+
+		default:
+			msg->o.io.err = -EINVAL;
+			break;
+	}
+}
+
+
+static void spw_thread(void *arg)
+{
+	(void)arg;
+
+	msg_t msg;
+	msg_rid_t rid;
+
+	for (;;) {
+		while (msgRecv(multi_common.spwOid.port, &msg, &rid) < 0) {
+		}
+
+		switch (msg.type) {
+			case mtDevCtl:
+				spw_dispatchMsg(&msg);
+				break;
+
+			case mtGetAttr:
+			case mtSetAttr:
+				msg.o.attr.err = -ENOSYS;
+				break;
+			case mtRead:
+			case mtWrite:
+			case mtOpen:
+			case mtClose:
+				msg.o.io.err = EOK;
+				break;
+
+			case mtCreate:
+				msg.o.create.err = -ENOSYS;
+				break;
+
+			case mtTruncate:
+			case mtDestroy:
+			case mtLookup:
+			case mtLink:
+			case mtUnlink:
+			case mtReaddir:
+			default:
+				msg.o.io.err = -ENOSYS;
+				break;
+		}
+
+		msgRespond(multi_common.spwOid.port, &msg, rid);
+	}
+}
+
+
 static void multi_cleanup(const char *msg)
 {
 	portDestroy(multi_common.multiOid.port);
 	portDestroy(multi_common.uartOid.port);
+	portDestroy(multi_common.spwOid.port);
 	if (msg != NULL) {
 		debug("grlib-multi: ");
 		debug(msg);
@@ -325,6 +404,13 @@ int main(void)
 
 	if (portCreate(&multi_common.multiOid.port) < 0) {
 		portDestroy(multi_common.uartOid.port);
+		debug("grlib-multi: Failed to create port\n");
+		return EXIT_FAILURE;
+	}
+
+	if (portCreate(&multi_common.spwOid.port) < 0) {
+		portDestroy(multi_common.uartOid.port);
+		portDestroy(multi_common.multiOid.port);
 		debug("grlib-multi: Failed to create port\n");
 		return EXIT_FAILURE;
 	}
@@ -351,6 +437,11 @@ int main(void)
 
 	if (adc_init() < 0) {
 		multi_cleanup("Failed to initialize ADC\n");
+		return EXIT_FAILURE;
+	}
+
+	if (spw_init() < 0) {
+		multi_cleanup("Failed to initialize SpaceWire\n");
 		return EXIT_FAILURE;
 	}
 
@@ -381,6 +472,10 @@ int main(void)
 
 	for (int i = 0; i < MULTI_THREADS_NO - 1; i++) {
 		beginthread(multi_thread, GRLIB_MULTI_PRIO, multi_common.stack[i], STACKSZ, NULL);
+	}
+
+	for (int i = 0; i < SPW_THREADS_NO; i++) {
+		beginthread(spw_thread, GRLIB_MULTI_PRIO, multi_common.spwStack[i], SPW_STACKSZ, NULL);
 	}
 
 	LOG("initialized");
