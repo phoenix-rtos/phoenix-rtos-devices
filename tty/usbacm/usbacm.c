@@ -59,6 +59,10 @@
 #define USBACM_BULK_SZ 2048
 
 
+/* clang-format off */
+#define TRACE(fmt, ...) if (0) printf("usbacm: " fmt "\n", ##__VA_ARGS__)
+/* clang-format on */
+
 typedef struct _usbacm_dev {
 	struct _usbacm_dev *prev, *next;
 	int rxtid;
@@ -129,6 +133,7 @@ static const usb_modeswitch_t modeswitch[] = {
 
 static int usbacm_rxStop(usbacm_dev_t *dev)
 {
+	TRACE("rxStop");
 	usb_setup_packet_t setup;
 
 	setup.bmRequestType = REQUEST_DIR_HOST2DEV | REQUEST_TYPE_CLASS | REQUEST_RECIPIENT_INTERFACE;
@@ -259,6 +264,7 @@ static void usbacm_handleCompletion(usb_completion_t *c, char *data, size_t len)
 	if (dev == NULL) {
 		return;
 	}
+	TRACE("handleCompletion: c->err=%d, len=%u, rxbuflen=%u", c->err, len, dev->rxbuflen);
 
 	if (c->err != 0) {
 		/* Error, stop receiving */
@@ -351,6 +357,7 @@ static int usbacm_read(usbacm_dev_t *dev, char *data, size_t len)
 	if ((dev->flags & (O_RDONLY | O_RDWR)) == 0) {
 		return -EPERM;
 	}
+	TRACE("read: len=%u, flags=%u", len, dev->flags);
 
 	mutexLock(dev->rxLock);
 	if ((dev->flags & O_NONBLOCK) && dev->rxrunning) {
@@ -388,6 +395,7 @@ static int usbacm_write(usbacm_dev_t *dev, char *data, size_t len)
 {
 	int ret = 0;
 
+	TRACE("write: len=%u, flags=%u", len, dev->flags);
 	if ((ret = usb_transferBulk(dev->pipeBulkOUT, data, len, usb_dir_out)) <= 0) {
 		fprintf(stderr, "usbacm: write failed\n");
 		ret = -EIO;
@@ -450,6 +458,7 @@ static int _usbacm_openNonblock(usbacm_dev_t *dev)
 {
 	fifo_t *fifo;
 	int ret = 0;
+	TRACE("openNonblock");
 
 	if ((fifo = malloc(sizeof(fifo_t) + RX_FIFO_SIZE)) == NULL) {
 		return -ENOMEM;
@@ -476,6 +485,7 @@ static int _usbacm_openNonblock(usbacm_dev_t *dev)
 static void _usbacm_close(usbacm_dev_t *dev)
 {
 	int i;
+	TRACE("close: flags=%u", dev->flags);
 
 	for (i = 0; i < USBACM_N_URBS; i++) {
 		usb_urbFree(dev->pipeBulkIN, dev->urbs[i]);
@@ -498,6 +508,7 @@ static int _usbacm_open(usbacm_dev_t *dev, int flags, pid_t pid)
 	if (dev->flags != 0) {
 		return -EBUSY;
 	}
+	TRACE("open: flags=%u", flags);
 
 	if ((flags & O_RDONLY) || (flags & O_RDWR)) {
 		if (mutexCreate(&dev->rxLock) != 0) {
@@ -628,6 +639,8 @@ static int _usbacm_handleInsertion(usb_devinfo_t *insertion)
 	const usb_modeswitch_t *mode;
 	oid_t oid;
 
+	TRACE("handleInsertion");
+
 	if ((mode = usb_modeswitchFind(insertion->descriptor.idVendor,
 			insertion->descriptor.idProduct,
 			modeswitch, sizeof(modeswitch) / sizeof(modeswitch[0]))) != NULL) {
@@ -690,6 +703,8 @@ static int _usbacm_handleDeletion(usb_deletion_t *del, usbacm_dev_t **devicesToF
 
 	if (dev == NULL)
 		return 0;
+
+	TRACE("handleDeletion");
 
 	do {
 		next = dev->next;
