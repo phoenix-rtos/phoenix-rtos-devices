@@ -58,36 +58,42 @@
 
 #define USBACM_BULK_SZ 2048
 
-
 /* clang-format off */
 #define TRACE(fmt, ...) if (0) printf("usbacm: " fmt "\n", ##__VA_ARGS__)
+
+enum { RxStopped = 0, RxRunning = 1, RxDisconnected = -1 };
 /* clang-format on */
 
 typedef struct _usbacm_dev {
 	struct _usbacm_dev *prev, *next;
-	int rxtid;
-	char path[32];
 	usb_devinfo_t instance;
+
+	/* USB HOST related */
 	int pipeCtrl;
 	int pipeIntIN;
 	int pipeBulkIN;
 	int pipeBulkOUT;
-	int id;
-	int fileId;
-	int flags;
-	pid_t clientpid;
-	volatile int rfcnt;
-	volatile int thrFinished;
-	unsigned port;
-	fifo_t *fifo;
-	char *rxptr;
-	int rxrunning;
-	size_t rxbuflen;
-	oid_t oid;
-	handle_t rxLock;
-	handle_t rxCond;
 	int urbs[USBACM_N_URBS];
 	int urbctrl;
+
+	char path[32];
+	unsigned int id; /* ACM id (/dev/usbacm[ID]) */
+	int fileId;      /* oid.id */
+
+	/* opened file state */
+	int flags;
+	pid_t clientpid;
+
+	volatile int rfcnt; /* protected by usbacm_common.lock */
+
+	/* blocking/nonblocking READ state - protected by rxLock */
+	char *rxptr;
+	size_t rxbuflen;
+	fifo_t *fifo;
+	handle_t rxLock;
+	handle_t rxCond;
+	int rxState;
+
 } usbacm_dev_t;
 
 
@@ -131,7 +137,8 @@ static const usb_modeswitch_t modeswitch[] = {
 };
 
 
-static int usbacm_rxStop(usbacm_dev_t *dev)
+/* called always under dev->rxLock */
+static int _usbacm_rxStop(usbacm_dev_t *dev)
 {
 	TRACE("rxStop");
 	usb_setup_packet_t setup;
@@ -142,6 +149,7 @@ static int usbacm_rxStop(usbacm_dev_t *dev)
 	setup.wValue = 0;
 	setup.wLength = 0;
 
+	dev->rxState = RxStopped;
 	return usb_transferAsync(dev->pipeCtrl, dev->urbctrl, 0, &setup);
 }
 
@@ -205,11 +213,10 @@ static void usbacm_free(usbacm_dev_t *dev)
 {
 	fprintf(stdout, "usbacm: Device removed: %s\n", dev->path);
 	remove(dev->path);
-	if (dev->fifo != NULL) {
-		free(dev->fifo);
-		resourceDestroy(dev->rxLock);
-		resourceDestroy(dev->rxCond);
-	}
+
+	free(dev->fifo);
+	resourceDestroy(dev->rxCond);
+	resourceDestroy(dev->rxLock);
 	free(dev);
 }
 
@@ -257,8 +264,6 @@ static void usbacm_handleCompletion(usb_completion_t *c, char *data, size_t len)
 {
 	usbacm_dev_t *dev;
 	size_t bytes;
-	int retransfer = 0;
-	int sig = 0;
 
 	dev = usbacm_getByPipe(c->pipeid);
 	if (dev == NULL) {
@@ -269,15 +274,12 @@ static void usbacm_handleCompletion(usb_completion_t *c, char *data, size_t len)
 	if (c->err != 0) {
 		/* Error, stop receiving */
 		mutexLock(dev->rxLock);
-		dev->rxrunning = 0;
+		dev->rxState = RxStopped;
 		if ((dev->flags & O_NONBLOCK) == 0) {
 			/* Stop the blocking read in progress */
-			sig = 1;
-		}
-		mutexUnlock(dev->rxLock);
-		if (sig == 1) {
 			condSignal(dev->rxCond);
 		}
+		mutexUnlock(dev->rxLock);
 		usbacm_put(dev);
 		return;
 	}
@@ -289,43 +291,33 @@ static void usbacm_handleCompletion(usb_completion_t *c, char *data, size_t len)
 
 	if (dev->flags & O_NONBLOCK) {
 		usbacm_fifoPush(dev, data, len);
-		retransfer = 1;
+		/* assume rxState == RxRunning unless the device was ejected */
 	}
 	else if (dev->rxptr != NULL) {
 		mutexLock(dev->rxLock);
-		if (c->err == 0) {
-			bytes = min(len, dev->rxbuflen);
-			memcpy(dev->rxptr, data, bytes);
-			dev->rxptr += bytes;
-			dev->rxbuflen -= bytes;
 
-			if (dev->rxbuflen > 0) {
-				retransfer = 1;
-			}
-			else {
-				dev->rxrunning = 0;
-				sig = 1;
-			}
-		}
-		else {
-			dev->rxrunning = 0;
-			sig = 1;
+		bytes = min(len, dev->rxbuflen);
+		memcpy(dev->rxptr, data, bytes);
+		dev->rxptr += bytes;
+		dev->rxbuflen -= bytes;
+
+		if (dev->rxbuflen == 0) {
+			dev->rxState = RxStopped;
+			condSignal(dev->rxCond);
 		}
 		mutexUnlock(dev->rxLock);
 	}
 
-	if (retransfer != 0) {
+	if (dev->rxState == RxRunning) {
 		usb_transferAsync(dev->pipeBulkIN, c->urbid, USBACM_BULK_SZ, NULL);
-	}
-	else if (sig == 1) {
-		condSignal(dev->rxCond);
 	}
 
 	usbacm_put(dev);
 }
 
 
-static int usbacm_rxStart(usbacm_dev_t *dev)
+/* called always under dev->rxLock */
+static int _usbacm_rxStart(usbacm_dev_t *dev)
 {
 	usb_setup_packet_t setup;
 	int i;
@@ -346,6 +338,7 @@ static int usbacm_rxStart(usbacm_dev_t *dev)
 		}
 	}
 
+	dev->rxState = RxRunning;
 	return 0;
 }
 
@@ -357,34 +350,45 @@ static int usbacm_read(usbacm_dev_t *dev, char *data, size_t len)
 	if ((dev->flags & (O_RDONLY | O_RDWR)) == 0) {
 		return -EPERM;
 	}
-	TRACE("read: len=%u, flags=%u", len, dev->flags);
+	TRACE("read: len=%u, flags=%u, rxState=%d", len, dev->flags, dev->rxState);
 
 	mutexLock(dev->rxLock);
-	if ((dev->flags & O_NONBLOCK) && dev->rxrunning) {
-		for (ret = 0; ret < len && !fifo_is_empty(dev->fifo); ret++) {
-			data[ret] = fifo_pop_back(dev->fifo);
+	do {
+		if ((dev->flags & O_NONBLOCK) && (dev->rxState == RxRunning)) {
+			for (ret = 0; ret < len && !fifo_is_empty(dev->fifo); ret++) {
+				data[ret] = fifo_pop_back(dev->fifo);
+			}
 		}
-	}
-	else if ((dev->flags & O_NONBLOCK) == 0 && !dev->rxrunning) {
-		dev->rxptr = data;
-		dev->rxbuflen = len;
-		dev->rxrunning = 1;
+		else if ((dev->flags & O_NONBLOCK) == 0 && (dev->rxState == RxStopped)) {
+			dev->rxptr = data;
+			dev->rxbuflen = len;
 
-		usbacm_rxStart(dev);
-		/* Block until len bytes is received or an error occurs */
-		while (dev->rxbuflen > 0 && dev->rxrunning) {
-			condWait(dev->rxCond, dev->rxLock, 0);
+			ret = _usbacm_rxStart(dev);
+			if (ret != 0) {
+				TRACE("rxStart error: %d", ret);
+				break;
+			}
+
+			/* Block until len bytes is received or an error occurs */
+			while ((dev->rxbuflen > 0) && (dev->rxState == RxRunning)) {
+				condWait(dev->rxCond, dev->rxLock, 0);
+			}
+
+			ret = _usbacm_rxStop(dev);
+			if (ret != 0) {
+				TRACE("rxStop error: %d", ret);
+				break;
+			}
+
+			ret = len - dev->rxbuflen;
 		}
-		usbacm_rxStop(dev);
+		else {
+			ret = -EIO;
+		}
+	} while (0);
 
-		ret = len - dev->rxbuflen;
-		dev->rxbuflen = 0;
-		dev->rxptr = NULL;
-	}
-	else {
-		ret = -EIO;
-	}
-
+	dev->rxbuflen = 0;
+	dev->rxptr = NULL;
 	mutexUnlock(dev->rxLock);
 
 	return ret;
@@ -422,7 +426,7 @@ static usbacm_dev_t *usbacm_devAlloc(void)
 
 	dev->fileId = usbacm_common.lastId++;
 
-	snprintf(dev->path, sizeof(dev->path), "/dev/usbacm%d", dev->id);
+	snprintf(dev->path, sizeof(dev->path), "/dev/usbacm%u", dev->id);
 
 	return dev;
 }
@@ -456,24 +460,29 @@ static int _usbacm_urbsAlloc(usbacm_dev_t *dev)
 
 static int _usbacm_openNonblock(usbacm_dev_t *dev)
 {
+	/* TODO: switch to lf-fifo */
 	fifo_t *fifo;
 	int ret = 0;
 	TRACE("openNonblock");
 
-	if ((fifo = malloc(sizeof(fifo_t) + RX_FIFO_SIZE)) == NULL) {
-		return -ENOMEM;
+	if (dev->fifo != NULL) {
+		fifo = dev->fifo;
+	}
+	else {
+		fifo = malloc(sizeof(fifo_t) + RX_FIFO_SIZE);
+		if (fifo == NULL) {
+			return -ENOMEM;
+		}
 	}
 
 	fifo_init(fifo, RX_FIFO_SIZE);
 
 	mutexLock(dev->rxLock);
 	dev->fifo = fifo;
-	dev->rxrunning = 1;
 
-	if (usbacm_rxStart(dev) != 0) {
+	if (_usbacm_rxStart(dev) != 0) {
+		dev->fifo = NULL;
 		free(fifo);
-		dev->fifo = 0;
-		dev->rxrunning = 0;
 		ret = -EIO;
 	}
 	mutexUnlock(dev->rxLock);
@@ -492,7 +501,9 @@ static void _usbacm_close(usbacm_dev_t *dev)
 	}
 
 	if (dev->flags & O_NONBLOCK) {
-		usbacm_rxStop(dev);
+		mutexLock(dev->rxLock);
+		_usbacm_rxStop(dev);
+		mutexUnlock(dev->rxLock);
 	}
 
 	usb_urbFree(dev->pipeCtrl, dev->urbctrl);
@@ -511,26 +522,13 @@ static int _usbacm_open(usbacm_dev_t *dev, int flags, pid_t pid)
 	TRACE("open: flags=%u", flags);
 
 	if ((flags & O_RDONLY) || (flags & O_RDWR)) {
-		if (mutexCreate(&dev->rxLock) != 0) {
-			return -ENOMEM;
-		}
-
-		if (condCreate(&dev->rxCond) != 0) {
-			resourceDestroy(dev->rxLock);
-			return -ENOMEM;
-		}
-
 		if (_usbacm_urbsAlloc(dev) < 0) {
-			resourceDestroy(dev->rxCond);
-			resourceDestroy(dev->rxLock);
 			return -EPERM;
 		}
 
 		if (flags & O_NONBLOCK) {
 			/* Start receiving data */
 			if (_usbacm_openNonblock(dev) < 0) {
-				resourceDestroy(dev->rxCond);
-				resourceDestroy(dev->rxLock);
 				_usbacm_close(dev);
 				return -EPERM;
 			}
@@ -614,8 +612,11 @@ static void usbacm_msgthr(void *arg)
 				break;
 
 			case mtGetAttr:
-				if ((msg.i.attr.type == atPollStatus)) {
-					msg.o.attr.val = fifo_is_empty(dev->fifo) ? POLLOUT : POLLOUT | POLLIN;
+				if (msg.i.attr.type == atPollStatus) {
+					msg.o.attr.val = POLLOUT;
+					if (((dev->flags & O_NONBLOCK) != 0) && fifo_is_empty(dev->fifo)) {
+						msg.o.attr.val |= POLLIN;
+					}
 					msg.o.attr.err = EOK;
 					break;
 				}
@@ -633,7 +634,7 @@ static void usbacm_msgthr(void *arg)
 }
 
 
-static int _usbacm_handleInsertion(usb_devinfo_t *insertion)
+static int usbacm_handleInsertion(usb_devinfo_t *insertion)
 {
 	usbacm_dev_t *dev;
 	const usb_modeswitch_t *mode;
@@ -677,9 +678,22 @@ static int _usbacm_handleInsertion(usb_devinfo_t *insertion)
 	/* Interrupt pipe is optional */
 	dev->pipeIntIN = usb_open(insertion, usb_transfer_interrupt, usb_dir_in);
 
+	if (mutexCreate(&dev->rxLock) != 0) {
+		free(dev);
+		return -ENOMEM;
+	}
+
+	if (condCreate(&dev->rxCond) != 0) {
+		resourceDestroy(dev->rxLock);
+		free(dev);
+		return -ENOMEM;
+	}
+
 	oid.port = usbacm_common.msgport;
 	oid.id = dev->fileId;
 	if (create_dev(&oid, dev->path) != 0) {
+		resourceDestroy(dev->rxCond);
+		resourceDestroy(dev->rxLock);
 		free(dev);
 		fprintf(stderr, "usbacm: Can't create dev!\n");
 		return -EINVAL;
@@ -712,6 +726,13 @@ static int _usbacm_handleDeletion(usb_deletion_t *del, usbacm_dev_t **devicesToF
 				dev->instance.interface == del->interface) {
 			if (dev == next)
 				cont = 0;
+
+			/* close pending transfers, reject new ones */
+			mutexLock(dev->rxLock);
+			dev->rxState = RxDisconnected;
+			condSignal(dev->rxCond);
+			mutexUnlock(dev->rxLock);
+
 			if (_usbacm_put(dev) == 0) {
 				LIST_ADD(devicesToFree, dev);
 			}
@@ -738,7 +759,7 @@ static void usbthr(void *arg)
 
 		switch (umsg->type) {
 			case usb_msg_insertion:
-				_usbacm_handleInsertion(&umsg->insertion);
+				usbacm_handleInsertion(&umsg->insertion);
 				break;
 			case usb_msg_deletion:
 				mutexLock(usbacm_common.lock);
