@@ -423,6 +423,14 @@ static int uart_init(unsigned int n, speed_t baud, int raw)
 		libtty_set_mode_raw(&uart->tty);
 	}
 
+	*(uart->base + uart_ctrl) = 0;
+	*(uart->base + uart_scaler) = 0;
+
+	/* Clear UART FIFO */
+	while ((*(uart->base + uart_status) & (1 << 0)) != 0) {
+		(void)*(uart->base + uart_data);
+	}
+
 	/* normal mode, 1 stop bit, no parity, 8 bits */
 	uart_setCFlag(uart, &uart->tty.term.c_cflag);
 
