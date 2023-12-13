@@ -313,6 +313,14 @@ static int uart_setup(unsigned int n, speed_t baud, int raw)
 
 	uart->vbase += ((uintptr_t)info[n].base - base) / sizeof(uintptr_t);
 
+	*(uart->vbase + UART_CTRL) = 0;
+	*(uart->vbase + UART_SCALER) = 0;
+
+	/* Clear UART FIFO */
+	while ((*(uart->vbase + UART_STATUS) & (1 << 0)) != 0) {
+		(void)*(uart->vbase + UART_DATA);
+	}
+
 	/* normal mode, 1 stop bit, no parity, 8 bits */
 	uart_setCFlag(uart, &uart->tty.term.c_cflag);
 
