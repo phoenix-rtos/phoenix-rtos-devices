@@ -17,6 +17,8 @@
 #include <errno.h>
 #include <sys/mman.h>
 
+#include <board_config.h>
+
 #include "uart16550.h"
 
 
@@ -67,13 +69,13 @@ int uarthw_init(unsigned int uartn, void *hwctx, size_t hwctxsz, unsigned int *f
 		return -ENODEV;
 	}
 
-	base = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, (offs_t)0x10000000);
+	base = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, (off_t)UART16550_BASE);
 	if (base == MAP_FAILED) {
 		return -ENOMEM;
 	}
 
 	((uarthw_ctx_t *)hwctx)->base = (uintptr_t)base;
-	((uarthw_ctx_t *)hwctx)->irq = 0xa;
+	((uarthw_ctx_t *)hwctx)->irq = UART16550_IRQ;
 
 	/* Detect device presence */
 	if (uarthw_read(hwctx, REG_IIR) == 0xff) {
