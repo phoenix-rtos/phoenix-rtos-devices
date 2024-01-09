@@ -56,8 +56,9 @@ otp_t otp = { 0 };
 #define OTP_OP_READ 2
 
 /* PLC MAC otp address */
-#define OTP_ADDR_PLC_MAC0	0x26
-#define OTP_ADDR_PLC_MAC1 	0x27
+#define OTP_ADDR_PLC_MAC0 0x26
+#define OTP_ADDR_PLC_MAC1 0x27 /* lower 2 bytes occupied by PLC mac */
+#define OTP_ADDR_HW_REV   0x27 /* MSB */
 
 /* serial number otp addresses */
 #define OTP_ADDR_SN0	0x28
@@ -79,15 +80,22 @@ otp_t otp = { 0 };
 #define OTP_WR_UNLOCK (0x3e77 << 16)
 
 
+#define READ_ADDR_UNDEFINED 0xffff
+
 static struct {
 	int blow_boot;
 	int get_uid;
 	int rw_mac;
 	int r_mac_no;
 	int rw_sn;
+	int rw_revision;
 	int force;
 	int dry_run;
-} common;
+
+	uint32_t read_addr;
+} common = {
+	.read_addr = READ_ADDR_UNDEFINED,
+};
 
 
 static int otp_check_err(void)
@@ -259,7 +267,7 @@ static int read_mac(int silent, int mac_no)
 	plc0 = *(otp.base + ocotp_gp1);
 	plc1 = *(otp.base + ocotp_gp2);
 
-	if (!mac0 && !mac1 && !mac && !plc0 && !plc1)
+	if (!mac0 && !mac1 && !mac && !plc0 && ((plc1 & 0xFFFF) == 0))
 		res = 0;
 
 	m1[0] = (mac1 >> 8) & 0xFF;
@@ -311,7 +319,7 @@ static int write_mac(char *mac1_str, char *mac2_str, char *mac3_str)
 	unsigned m2[6] = { 0 };
 	unsigned m3[6] = { 0 };
 
-	if (read_mac(1, 0) && !(common.force == 0)) {
+	if (read_mac(1, 0) && (common.force == 0)) {
 		printf("MACs are already written\n");
 		return -1;
 	}
@@ -493,7 +501,7 @@ static int write_sn(const char *sn, int raw)
 	unsigned sn0 = 0, sn1 = 0, sn2 = 0, sn3 = 0, lock = 0;
 	unsigned buf[16];
 
-	if (read_sn(1, raw) && !(common.force == 0)) {
+	if (read_sn(1, raw) && (common.force == 0)) {
 		printf("S/N already written\n");
 		return -1;
 	}
@@ -549,6 +557,49 @@ static int write_sn(const char *sn, int raw)
 }
 
 
+static int read_hwrev(int silent)
+{
+	uint32_t plc1 = *(otp.base + ocotp_gp2);
+
+	/* NOTE: keeping (hw_rev - 1) in FUSE bits */
+	uint8_t hw_rev = (plc1 >> 24 & 0xff) + 1;
+	if (silent == 0) {
+		printf("%u\n", hw_rev);
+	}
+
+	return hw_rev;
+}
+
+
+static int write_hwrev(uint8_t hw_rev)
+{
+
+	if ((read_hwrev(1) != 1) && (common.force == 0)) {
+		printf("HW rev already written\n");
+		return -1;
+	}
+
+	/* NOTE: no need to read current plc1 word, HW does it automatically */
+	/* NOTE: keeping (hw_rev - 1) in FUSE bits */
+	uint32_t hwrev32 = (uint32_t)(hw_rev - 1) << 24;
+
+	otp_reload();
+
+	int ret = otp_write(OTP_ADDR_PLC_MAC1, hwrev32);
+
+	otp_reload();
+
+	if (ret) {
+		printf("Writing hw rev failed\n");
+	}
+	else {
+		read_hwrev(0);
+	}
+
+	return ret;
+}
+
+
 static void usage(const char *progname)
 {
 	printf("Usage: %s [-b] [-u] [-m MAC1 MAC2 PLC_MAC]\n", progname);
@@ -560,8 +611,12 @@ static void usage(const char *progname)
 	printf("\t-R                       print serial number format raw " SN_FORMAT_RAW "\n");
 	printf("\t-s " SN_FORMAT "   write serial number format\n");
 	printf("\t-S                       print serial number format " SN_FORMAT "\n");
+	printf("\t-e [byte]                write HW revision (0-255)\n");
+	printf("\t-E                       read HW revision\n");
+	printf("\t-X [addr]                read raw 32bit value from OTP [addr]\n");
 	printf("\t-f                       force OTP writing even if already written\n");
 	printf("\t-n                       dry run - perform all checks apart from real OTP writing\n");
+	printf("\t-h                       this help message\n");
 }
 
 
@@ -571,8 +626,10 @@ int main(int argc, char **argv)
 	int raw = 0;
 	char *mac[3] = { 0 };
 	char *sn = NULL;
+	char *endptr;
+	unsigned long hw_rev = 0;
 
-	while ((res = getopt(argc, argv, "r:RSs:buMm:fn")) >= 0) {
+	while ((res = getopt(argc, argv, "r:RSs:buMm:fnX:Ee:h")) >= 0) {
 		switch (res) {
 		case 'b':
 			common.blow_boot = 1;
@@ -629,6 +686,24 @@ int main(int argc, char **argv)
 			raw = 0;
 			common.rw_sn = OTP_OP_READ;
 			break;
+		case 'e':
+			common.rw_revision = OTP_OP_WRITE;
+			hw_rev = strtoul(optarg, &endptr, 0);
+			if ((endptr == optarg) || (*endptr != '\0') || (hw_rev > 255) || (hw_rev == 0)) {
+				printf("%s: invalid HW revision value (%s)\n", argv[0], optarg);
+				return EXIT_FAILURE;
+			}
+			break;
+		case 'E':
+			common.rw_revision = OTP_OP_READ;
+			break;
+		case 'X':
+			common.read_addr = strtoul(optarg, &endptr, 0);
+			if ((endptr == optarg) || (*endptr != '\0') || (common.read_addr > 0x4f)) {
+				printf("%s: invalid OTP address value (%s)\n", argv[0], optarg);
+				return EXIT_FAILURE;
+			}
+			break;
 		case 'f':
 			common.force = 1;
 			break;
@@ -644,7 +719,7 @@ int main(int argc, char **argv)
 		}
 	}
 
-	if (!common.blow_boot && !common.get_uid && !common.rw_mac && !common.rw_sn) {
+	if (!common.blow_boot && !common.get_uid && !common.rw_mac && !common.rw_sn && common.rw_revision == 0 && common.read_addr == READ_ADDR_UNDEFINED) {
 		printf("Nothing to do\n");
 		usage(argv[0]);
 		return EXIT_FAILURE;
@@ -680,6 +755,19 @@ int main(int argc, char **argv)
 
 	if (common.rw_mac == OTP_OP_READ)
 		res |= read_mac(0, common.r_mac_no);
+
+	if (common.rw_revision == OTP_OP_WRITE) {
+		res |= write_hwrev(hw_rev);
+	}
+
+	if (common.rw_revision == OTP_OP_READ) {
+		read_hwrev(0);
+	}
+
+	if (common.read_addr != READ_ADDR_UNDEFINED) {
+		uint32_t val = *(otp.base + ocotp_lock + common.read_addr * 4);
+		printf("[0x%02x]: 0x%02x%02x%02x%02x\n", common.read_addr, (val >> 24) & 0xff, (val >> 16) & 0xff, (val >> 8) & 0xff, val & 0xff);
+	}
 
 	munmap((void *)otp.base, 0x1000);
 	return res == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
