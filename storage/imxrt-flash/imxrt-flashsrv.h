@@ -19,7 +19,12 @@
 #include <sys/msg.h>
 
 
-enum { flashsrv_devctl_properties = 0, flashsrv_devctl_sync, flashsrv_devctl_eraseSector, flashsrv_devctl_erasePartition, flashsrv_devctl_directWrite };
+/* clang-format off */
+
+enum { flashsrv_devctl_properties = 0, flashsrv_devctl_sync, flashsrv_devctl_eraseSector,
+	flashsrv_devctl_erasePartition, flashsrv_devctl_directWrite, flashsrv_devctl_directRead };
+
+/* clang-format on */
 
 
 typedef struct {
@@ -30,16 +35,30 @@ typedef struct {
 
 
 typedef struct {
+	uint32_t size;
+	uint32_t psize;
+	uint32_t ssize;
+	uint32_t offs;
+} flashsrv_properties_t;
+
+
+typedef struct {
 	int err;
 
-	struct {
-		uint32_t size;
-		uint32_t psize;
-		uint32_t ssize;
-		uint32_t offs;
-	} properties;
+	flashsrv_properties_t properties;
 
 } __attribute__((packed)) flash_o_devctl_t;
 
+
+typedef struct {
+	int partID;
+
+	flashsrv_properties_t properties;
+
+	ssize_t (*read)(uint8_t fID, size_t offset, void *data, size_t size);
+	ssize_t (*write)(uint8_t fID, size_t offset, const void *data, size_t size);
+	int (*eraseSector)(uint8_t fID, uint32_t offs);
+	int (*getProperties)(uint8_t, flashsrv_properties_t *p);
+} flashsrv_partitionCtx_t;
 
 #endif
