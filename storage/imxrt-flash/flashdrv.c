@@ -3,7 +3,7 @@
  *
  * i.MX RT Flash driver
  *
- * Copyright 2019-2023 Phoenix Systems
+ * Copyright 2019-2024 Phoenix Systems
  * Author: Hubert Buczynski, Gerard Swiderski
  *
  * This file is part of Phoenix-RTOS.
@@ -96,7 +96,6 @@ static ssize_t bufferSync(flash_context_t *ctx, uint32_t dstAddr, int isLast)
 
 		if (ctx->properties.sector_size <= dstAddr) {
 			ctx->prevAddr = (uint32_t)-1;
-			ctx->syncAddr = (uint32_t)-1;
 		}
 
 		if (isLast != 0) {
@@ -229,7 +228,7 @@ int flash_sync(flash_context_t *ctx)
 		return EOK;
 	}
 
-	if ((ctx->prevAddr == ctx->syncAddr) && (ctx->isDirty == 0)) {
+	if (ctx->isDirty == 0) {
 		return EOK;
 	}
 
@@ -274,7 +273,6 @@ int flash_sync(flash_context_t *ctx)
 	 * to AHB reads during XIP which is cached, and the cache should be invalidated.
 	 */
 
-	ctx->syncAddr = ctx->prevAddr;
 	ctx->isDirty = 0;
 
 	return EOK;
@@ -319,7 +317,6 @@ int flash_init(flash_context_t *ctx)
 	int res = EOK;
 
 	ctx->prevAddr = (uint32_t)-1;
-	ctx->syncAddr = (uint32_t)-1;
 	ctx->isDirty = 0;
 	ctx->buff = NULL;
 
