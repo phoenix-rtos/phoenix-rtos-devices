@@ -41,7 +41,6 @@ typedef struct {
 	time_t timeout;
 
 	uint32_t prevAddr;
-	uint32_t syncAddr;
 
 	uint8_t *buff;
 } flash_context_t;
