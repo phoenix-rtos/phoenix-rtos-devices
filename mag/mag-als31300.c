@@ -71,12 +71,12 @@ static const struct {
 
 
 struct mag_data_s {
-	/* values in microTesla (0.001 miliTesla) */
+	/* values in microTesla (0.001 milliTesla) */
 	int32_t x;
 	int32_t y;
 	int32_t z;
 
-	/* value in miliCelsius */
+	/* value in milliCelsius */
 	int32_t temp;
 };
 
@@ -94,28 +94,38 @@ static int read32(uint8_t addr, uint32_t *valOut)
 }
 
 
+static int read64(uint8_t addr, uint32_t *valOut)
+{
+	uint8_t val[8] = {};
+	if (i2c_regRead(I2C_DEV_ADDR, addr, val, sizeof(val)) < 0) {
+		log("failed to read register 0x%02x", addr);
+		return -1;
+	}
+
+	valOut[0] = (val[0] << 24) | (val[1] << 16) | (val[2] << 8) | val[3];
+	valOut[1] = (val[4] << 24) | (val[5] << 16) | (val[6] << 8) | val[7];
+	return 0;
+}
+
+
 static int getData(struct mag_data_s *data)
 {
 	int16_t rawX, rawY, rawZ, rawTemp;
-	uint32_t reg;
+	uint32_t reg[2];
 
-	if (read32(DATA_REG1, &reg) < 0) {
+	if (read64(DATA_REG1, reg) < 0) {
 		return -1;
 	}
 
-	rawX = (reg >> 20) & 0x0FF0;
-	rawY = (reg >> 12) & 0x0FF0;
-	rawZ = (reg >> 4) & 0x0FF0;
-	rawTemp = (reg & 0x3F) << 6;
+	rawX = (reg[0] >> 20) & 0x0FF0;
+	rawY = (reg[0] >> 12) & 0x0FF0;
+	rawZ = (reg[0] >> 4) & 0x0FF0;
+	rawTemp = (reg[0] & 0x3F) << 6;
 
-	if (read32(DATA_REG2, &reg) < 0) {
-		return -1;
-	}
-
-	rawX |= ((reg >> 16) & 0x0F);
-	rawY |= ((reg >> 12) & 0x0F);
-	rawZ |= ((reg >> 8) & 0x0F);
-	rawTemp |= (reg & 0x3F);
+	rawX |= ((reg[1] >> 16) & 0x0F);
+	rawY |= ((reg[1] >> 12) & 0x0F);
+	rawZ |= ((reg[1] >> 8) & 0x0F);
+	rawTemp |= (reg[1] & 0x3F);
 
 	rawX = (rawX ^ DATA_SIGN_BIT) - DATA_SIGN_BIT;
 	rawY = (rawY ^ DATA_SIGN_BIT) - DATA_SIGN_BIT;
@@ -126,7 +136,7 @@ static int getData(struct mag_data_s *data)
 	data->y = 1000 * (int32_t)rawY * DATA_GAUSS_MULTIPLIER_Y / GAUSS_TO_MILITESLA_DIVIDER;
 	data->z = 1000 * (int32_t)rawZ * DATA_GAUSS_MULTIPLIER_Z / GAUSS_TO_MILITESLA_DIVIDER;
 
-	/* temperature in miliCelsius */
+	/* temperature in milliCelsius */
 	data->temp = 1000 * DATA_TEMP_MULTIPLIER * (rawTemp - DATA_TEMP_SUBTRACTOR) / 4096;
 
 	return 0;
