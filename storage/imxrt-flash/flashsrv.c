@@ -274,6 +274,18 @@ static void flashsrv_devCtl(flash_memory_t *memory, msg_t *msg)
 			odevctl->err = flashsrv_directWrite(memory->fOid.id, idevctl->addr, msg->i.data, msg->i.size);
 			break;
 
+		case flashsrv_devctl_directRead:
+			TRACE("imxrt-flashsrv: flashsrv_devctl_directRead, addr: %u, size: %u, id: %u, port: %u.",
+				idevctl->addr, msg->o.size, idevctl->oid.id, idevctl->oid.port);
+
+			if (idevctl->addr >= memory->ctx.properties.size) {
+				odevctl->err = -EINVAL;
+				break;
+			}
+
+			odevctl->err = flashsrv_directRead(memory->fOid.id, idevctl->addr, msg->o.data, msg->o.size);
+			break;
+
 		default:
 			odevctl->err = -EINVAL;
 			break;
