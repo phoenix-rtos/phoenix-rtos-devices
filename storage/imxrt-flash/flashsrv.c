@@ -46,7 +46,7 @@
 #endif
 
 
-enum { flash_memory_unactive = 0, flash_memory_active = 0xff };
+enum { flashsrv_memory_inactive = 0, flashsrv_memory_active = 0xff };
 
 
 typedef struct {
@@ -73,11 +73,11 @@ typedef struct {
 	uint32_t rawPort;
 
 	handle_t lock;
-} flash_memory_t;
+} flashsrv_memory_t;
 
 
 struct {
-	flash_memory_t flash_memories[FLASH_MEMORIES_NO];
+	flashsrv_memory_t flash_memories[FLASH_MEMORIES_NO];
 	uint32_t flexspi_addresses[FLASH_MEMORIES_NO];
 } flashsrv_common;
 
@@ -85,21 +85,21 @@ struct {
 
 /* Flash functions */
 
-static int flashsrv_getFlashMemory(uint8_t fID, flash_memory_t **pFlashMemory)
+static int flashsrv_getFlashMemory(uint8_t fID, flashsrv_memory_t **pFlashMemory)
 {
-	flash_memory_t *flash_memory;
+	flashsrv_memory_t *mem;
 
 	if (FLASH_MEMORIES_NO <= fID) {
 		return -EINVAL;
 	}
 
-	flash_memory = flashsrv_common.flash_memories + fID;
+	mem = flashsrv_common.flash_memories + fID;
 
-	if (flash_memory->fStatus == flash_memory_unactive) {
+	if (mem->fStatus == flashsrv_memory_inactive) {
 		return -ENODEV;
 	}
 
-	*pFlashMemory = flash_memory;
+	*pFlashMemory = mem;
 
 	return EOK;
 }
@@ -108,25 +108,25 @@ static int flashsrv_getFlashMemory(uint8_t fID, flash_memory_t **pFlashMemory)
 
 static ssize_t flashsrv_bufferedWrite(uint8_t fID, size_t offset, const void *data, size_t size)
 {
-	flash_memory_t *flash_memory;
-	int res = flashsrv_getFlashMemory(fID, &flash_memory);
-	return (res == EOK) ? flash_bufferedWrite(&flash_memory->ctx, offset, data, size) : res;
+	flashsrv_memory_t *mem;
+	int res = flashsrv_getFlashMemory(fID, &mem);
+	return (res == EOK) ? flash_bufferedWrite(&mem->ctx, offset, data, size) : res;
 }
 
 
 static ssize_t flashsrv_bufferedRead(uint8_t fID, size_t offset, void *data, size_t size)
 {
-	flash_memory_t *flash_memory;
-	int res = flashsrv_getFlashMemory(fID, &flash_memory);
-	return (res == EOK) ? flash_bufferedRead(&flash_memory->ctx, offset, data, size) : res;
+	flashsrv_memory_t *mem;
+	int res = flashsrv_getFlashMemory(fID, &mem);
+	return (res == EOK) ? flash_bufferedRead(&mem->ctx, offset, data, size) : res;
 }
 
 
 static ssize_t flashsrv_bufferedSync(uint8_t fID)
 {
-	flash_memory_t *flash_memory;
-	int res = flashsrv_getFlashMemory(fID, &flash_memory);
-	return (res == EOK) ? flash_sync(&flash_memory->ctx) : res;
+	flashsrv_memory_t *mem;
+	int res = flashsrv_getFlashMemory(fID, &mem);
+	return (res == EOK) ? flash_sync(&mem->ctx) : res;
 }
 
 
@@ -134,33 +134,33 @@ static ssize_t flashsrv_bufferedSync(uint8_t fID)
 
 static ssize_t flashsrv_directWrite(uint8_t fID, size_t offset, const void *data, size_t size)
 {
-	flash_memory_t *flash_memory;
-	int res = flashsrv_getFlashMemory(fID, &flash_memory);
-	return (res == EOK) ? flash_directWrite(&flash_memory->ctx, offset, data, size) : res;
+	flashsrv_memory_t *mem;
+	int res = flashsrv_getFlashMemory(fID, &mem);
+	return (res == EOK) ? flash_directWrite(&mem->ctx, offset, data, size) : res;
 }
 
 
 static ssize_t flashsrv_directRead(uint8_t fID, size_t offset, void *data, size_t size)
 {
-	flash_memory_t *flash_memory;
-	int res = flashsrv_getFlashMemory(fID, &flash_memory);
-	return (res == EOK) ? flash_directRead(&flash_memory->ctx, offset, data, size) : res;
+	flashsrv_memory_t *mem;
+	int res = flashsrv_getFlashMemory(fID, &mem);
+	return (res == EOK) ? flash_directRead(&mem->ctx, offset, data, size) : res;
 }
 
 
 static int flashsrv_eraseSector(unsigned char fID, unsigned int offs)
 {
-	flash_memory_t *flash_memory;
-	int res = flashsrv_getFlashMemory(fID, &flash_memory);
-	return (res == EOK) ? flash_sectorErase(&flash_memory->ctx, offs) : res;
+	flashsrv_memory_t *mem;
+	int res = flashsrv_getFlashMemory(fID, &mem);
+	return (res == EOK) ? flash_sectorErase(&mem->ctx, offs) : res;
 }
 
 
 static int flashsrv_chipErase(unsigned char fID)
 {
-	flash_memory_t *flash_memory;
-	int res = flashsrv_getFlashMemory(fID, &flash_memory);
-	return (res == EOK) ? flash_chipErase(&flash_memory->ctx) : res;
+	flashsrv_memory_t *mem;
+	int res = flashsrv_getFlashMemory(fID, &mem);
+	return (res == EOK) ? flash_chipErase(&mem->ctx) : res;
 }
 
 
@@ -214,7 +214,7 @@ static int flashsrv_fsEraseSectorf1(struct _meterfs_devCtx_t *devCtx, off_t offs
 }
 
 
-static void flashsrv_devCtl(flash_memory_t *memory, msg_t *msg)
+static void flashsrv_devCtl(flashsrv_memory_t *memory, msg_t *msg)
 {
 	uint8_t fID;
 	flash_i_devctl_t *idevctl = (flash_i_devctl_t *)msg->i.raw;
@@ -293,7 +293,7 @@ static void flashsrv_devCtl(flash_memory_t *memory, msg_t *msg)
 }
 
 
-static void flashsrv_rawCtl(flash_memory_t *memory, msg_t *msg)
+static void flashsrv_rawCtl(flashsrv_memory_t *memory, msg_t *msg)
 {
 	int i;
 	uint32_t sNb;
@@ -312,7 +312,7 @@ static void flashsrv_rawCtl(flash_memory_t *memory, msg_t *msg)
 		return;
 	}
 
-	if (memory->parts[partID].pStatus == flash_memory_unactive) {
+	if (memory->parts[partID].pStatus == flashsrv_memory_inactive) {
 		odevctl->err = -ENODEV;
 		return;
 	}
@@ -451,14 +451,14 @@ static void flashsrv_meterfsThread(void *arg)
 }
 
 
-static int flashsrv_verifyRawIO(const flash_memory_t *memory, msg_t *msg, size_t *size)
+static int flashsrv_verifyRawIO(const flashsrv_memory_t *memory, msg_t *msg, size_t *size)
 {
 	if (msg->i.io.oid.id >= memory->pCnt) {
 		msg->o.io.err = -EINVAL;
 		return -EINVAL;
 	}
 
-	if (memory->parts[msg->i.io.oid.id].pStatus == flash_memory_unactive) {
+	if (memory->parts[msg->i.io.oid.id].pStatus == flashsrv_memory_inactive) {
 		msg->o.io.err = -ENODEV;
 		return -ENODEV;
 	}
@@ -483,7 +483,7 @@ static void flashsrv_rawThread(void *arg)
 	msg_rid_t rid;
 	uint32_t beginAddr;
 
-	flash_memory_t *memory = (flash_memory_t *)arg;
+	flashsrv_memory_t *memory = (flashsrv_memory_t *)arg;
 
 	for (;;) {
 		if (msgRecv(memory->rawPort, &msg, &rid) < 0) {
@@ -549,7 +549,7 @@ static void flashsrv_devThread(void *arg)
 	msg_t msg;
 	msg_rid_t rid;
 
-	flash_memory_t *memory = (flash_memory_t *)arg;
+	flashsrv_memory_t *memory = (flashsrv_memory_t *)arg;
 
 	for (;;) {
 		if (msgRecv(memory->fOid.port, &msg, &rid) < 0) {
@@ -661,7 +661,7 @@ static int flashsrv_mountPart(flashsrv_partition_t *part)
 
 				beginthread(flashsrv_rawThread, IMXRT_FLASH_PRIO, mem, THREAD_STACKSZ, (void *)&flashsrv_common.flash_memories[part->fID]);
 			}
-			part->pStatus = flash_memory_active;
+			part->pStatus = flashsrv_memory_active;
 			break;
 
 		/* Each meterfs partiton is handled by separete thread */
@@ -687,7 +687,7 @@ static int flashsrv_mountPart(flashsrv_partition_t *part)
 			}
 
 			beginthread(flashsrv_meterfsThread, IMXRT_FLASH_PRIO, mem, METERFS_STACKSZ, (void *)part);
-			part->pStatus = flash_memory_active;
+			part->pStatus = flashsrv_memory_active;
 			break;
 
 		default:
@@ -699,7 +699,7 @@ static int flashsrv_mountPart(flashsrv_partition_t *part)
 }
 
 
-static ptable_t *flashsrv_ptableRead(flash_memory_t *memory)
+static ptable_t *flashsrv_ptableRead(flashsrv_memory_t *memory)
 {
 	ptable_t *ptable;
 	uint32_t offs, count, size;
@@ -751,12 +751,12 @@ static int flashsrv_partsInit(void)
 {
 	int res, i, j;
 
-	flash_memory_t *memory;
+	flashsrv_memory_t *memory;
 	ptable_t *ptable;
 
 	for (i = 0; i < FLASH_MEMORIES_NO; ++i) {
 		memory = flashsrv_common.flash_memories + i;
-		if (memory->fStatus != flash_memory_active) {
+		if (memory->fStatus != flashsrv_memory_active) {
 			continue;
 		}
 
@@ -783,7 +783,7 @@ static int flashsrv_partsInit(void)
 
 			if (flashsrv_mountPart(&memory->parts[j]) < 0) {
 				LOG_ERROR("imxrt-flashsrv: partition %s at flash %d is not mounted.", ptable->parts[j].name, i);
-				memory->parts[j].pStatus = flash_memory_unactive;
+				memory->parts[j].pStatus = flashsrv_memory_inactive;
 				free(memory->parts[j].fsCtx);
 			}
 		}
@@ -804,7 +804,7 @@ static int flashsrv_flashMemoriesInit(void)
 	int i, err = EOK;
 	oid_t odir = { 0 };
 
-	flash_memory_t *memory;
+	flashsrv_memory_t *memory;
 
 	flashsrv_common.flexspi_addresses[0] = FLASH_EXT_DATA_ADDRESS;
 	if (FLASH_MEMORIES_NO > 1) {
@@ -843,10 +843,10 @@ static int flashsrv_flashMemoriesInit(void)
 
 		err = flash_init(&memory->ctx);
 		if (err == EOK) {
-			memory->fStatus = flash_memory_active;
+			memory->fStatus = flashsrv_memory_active;
 		}
 		else {
-			memory->fStatus = flash_memory_unactive;
+			memory->fStatus = flashsrv_memory_inactive;
 			LOG_ERROR("imxrt-flashsrv: %s - has not been initialized correctly, err: %d.", path, err);
 		}
 	}
@@ -888,7 +888,7 @@ int main(void)
 	printf("imxrt-flashsrv: initialized.\n");
 
 	/* flashsrv_devThread handles requests associated with the whole single flash chip */
-	if (FLASH_MEMORIES_NO > 1 && flashsrv_common.flash_memories[1].fStatus == flash_memory_active) {
+	if (FLASH_MEMORIES_NO > 1 && flashsrv_common.flash_memories[1].fStatus == flashsrv_memory_active) {
 		mem = malloc(THREAD_STACKSZ);
 		if (mem == NULL) {
 			LOG_ERROR("imxrt-flashsrv: cannot alloc memory.");
@@ -897,7 +897,7 @@ int main(void)
 		beginthread(flashsrv_devThread, IMXRT_FLASH_PRIO, mem, THREAD_STACKSZ, (void *)&flashsrv_common.flash_memories[0]);
 		flashsrv_devThread(&flashsrv_common.flash_memories[1]);
 	}
-	else if (flashsrv_common.flash_memories[0].fStatus == flash_memory_active) {
+	else if (flashsrv_common.flash_memories[0].fStatus == flashsrv_memory_active) {
 		flashsrv_devThread(&flashsrv_common.flash_memories[0]);
 	}
 	else {
