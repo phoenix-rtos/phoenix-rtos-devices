@@ -36,6 +36,7 @@
 #include "spi.h"
 #include "tty.h"
 #include "uart.h"
+#include "rng.h"
 
 #define THREADS_NO 3
 #define THREADS_PRIORITY 1
@@ -213,6 +214,10 @@ static void handleMsg(msg_t *msg)
 			}
 			break;
 
+		case rng_get:
+			err = rng_read(msg->o.data, msg->o.size);
+			break;
+
 		default:
 			err = -EINVAL;
 	}
@@ -328,6 +333,7 @@ int main(void)
 	flash_init();
 	i2c_init();
 	uart_init();
+	rng_init();
 	libklog_init(log_write);
 
 	/* Do this after klog init to keep shell from overtaking klog */
