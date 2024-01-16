@@ -445,6 +445,7 @@ static int flashsrv_partsInit(storage_t *strg)
 		storage_t *newPart;
 		if (flashsrv_partAdd(strg, &newPart, ptable->parts[i].offset, ptable->parts[i].size, (const char *)ptable->parts[i].name) < 0) {
 			LOG_ERROR("failed to add partition %s", (const char *)ptable->parts[i].name);
+			free(ptable);
 			return -1;
 		}
 	}
