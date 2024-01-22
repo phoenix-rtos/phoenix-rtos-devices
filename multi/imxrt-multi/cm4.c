@@ -316,6 +316,19 @@ static int runCore(unsigned int offset)
 }
 
 
+static int cleanInvalDCache(void *addr, unsigned int sz)
+{
+	platformctl_t pctl;
+
+	pctl.action = pctl_set,
+	pctl.type = pctl_cleanInvalDCache,
+	pctl.cleanInvalDCache.addr = addr;
+	pctl.cleanInvalDCache.sz = sz;
+
+	return platformctl(&pctl);
+}
+
+
 static int loadFromFile(const char *path)
 {
 	unsigned char buff[64]; /* Can't be big due to small multi stacks */
@@ -327,6 +340,8 @@ static int loadFromFile(const char *path)
 	if (f == NULL) {
 		return -ENOENT;
 	}
+
+	cleanInvalDCache((void *)m4_common.m4memory, m4_common.m4memorysz);
 
 	while (total < m4_common.m4memorysz) {
 		r = fread(buff, sizeof(buff), 1, f);
@@ -347,7 +362,8 @@ static int loadFromFile(const char *path)
 		ptr += r;
 		total += r;
 	}
-	/* FIXME: clean & invalidate dcache */
+
+	cleanInvalDCache((void *)m4_common.m4memory, m4_common.m4memorysz);
 
 	fclose(f);
 
@@ -361,8 +377,11 @@ static int loadFromBuff(const void *buff, size_t bufflen)
 		return -EINVAL;
 	}
 
+	cleanInvalDCache((void *)m4_common.m4memory, bufflen);
+
 	memcpy((void *)m4_common.m4memory, buff, bufflen);
-	/* FIXME: clean & invalidate dcache */
+
+	cleanInvalDCache((void *)m4_common.m4memory, bufflen);
 
 	return (int)bufflen;
 }
