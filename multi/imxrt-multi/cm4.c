@@ -308,8 +308,6 @@ static int runCore(unsigned int offset)
 	}
 
 	/* Release the Kraken */
-	*(m4_common.src + src_srmr) |= 0x3u << 10;
-	__asm__ volatile("dmb");
 	*(m4_common.src + src_scr) |= 1;
 
 	return EOK;
