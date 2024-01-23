@@ -32,7 +32,7 @@
 #include <cache.h>
 #include <mtd/mtd.h>
 #include <storage/storage.h>
-#include <libmbr.h>
+#include <mbr.h>
 
 #include "sdcard.h"
 
@@ -406,7 +406,7 @@ static int sdstorage_checkMBR(unsigned int slot, sdcard_partition_t parts[4])
 		return -EIO;
 	}
 
-	if (mbr->magic != MBR_MAGIC) {
+	if (mbr_deserialize(mbr) < 0) {
 		return 0;
 	}
 
