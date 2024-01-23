@@ -5,7 +5,7 @@
 #
 
 NAME := virtio-blk
-LOCAL_SRCS := virtio-blk.c
-LIBS := libvirtio
+LOCAL_SRCS := vblksrv.c vblk.c
+LIBS := libvirtio libmbr libext2 libstorage
 
 include $(binary.mk)
