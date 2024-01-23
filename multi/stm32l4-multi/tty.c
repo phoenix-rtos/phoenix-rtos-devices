@@ -298,6 +298,7 @@ static void tty_irqthread(void *arg)
 {
 	tty_ctx_t *ctx = (tty_ctx_t *)arg;
 	int keptidle = 0;
+	uint8_t mask;
 
 	for (;;) {
 		uint8_t rxbyte;
@@ -309,12 +310,22 @@ static void tty_irqthread(void *arg)
 		}
 		mutexUnlock(ctx->irqlock);
 
+		if ((ctx->ttyCommon.term.c_cflag & CSIZE) == CS7) {
+			mask = 0x7f;
+		}
+		else if ((ctx->ttyCommon.term.c_cflag & CSIZE) == CS6) {
+			mask = 0x3f;
+		}
+		else {
+			mask = 0xff;
+		}
+
 		ctx->data.irq.rxready = 0;
 		dataBarier();
 
 		/* limiting byte count to 8 to avoid starving tx */
 		for (rxcount = 8; (rxcount != 0) && (lf_fifo_pop(&ctx->data.irq.rxFifo, &rxbyte) != 0); rxcount--) {
-			libtty_putchar(&ctx->ttyCommon, rxbyte, NULL);
+			libtty_putchar(&ctx->ttyCommon, rxbyte & mask, NULL);
 		}
 		if (rxcount == 0) {
 			/* aborted due to rxcount limit - setting rxready to skip next condWait */
