@@ -6,4 +6,4 @@
 # Copyright 2019 Phoenix Systems
 #
 
-DEFAULT_COMPONENTS := spike-tty uart16550
+DEFAULT_COMPONENTS := spike-tty uart16550 virtio-blk
