@@ -24,6 +24,10 @@
 
 #include "common.h"
 
+#ifndef CM4_MU_CHANNELS
+#define CM4_MU_CHANNELS 4
+#endif
+
 #ifndef CM4_MU_FIFO_SIZE
 #define CM4_MU_FIFO_SIZE 256
 #endif
@@ -74,7 +78,7 @@ struct {
 			uint8_t busy : 1;
 			uint8_t nonblock : 1;
 		} state;
-	} channel[chanLen];
+	} channel[CM4_MU_CHANNELS];
 
 	handle_t lock;
 } m4_common;
@@ -82,7 +86,7 @@ struct {
 
 static void setTXirq(int channel, int state)
 {
-	if ((channel < 0) || (channel >= chanLen)) {
+	if ((channel < 0) || (channel >= CM4_MU_CHANNELS)) {
 		return;
 	}
 
@@ -91,6 +95,21 @@ static void setTXirq(int channel, int state)
 	}
 	else {
 		*(m4_common.mu + acr) &= ~(1 << (23 - channel));
+	}
+}
+
+
+static void setRXirq(int channel, int state)
+{
+	if ((channel < 0) || (channel >= CM4_MU_CHANNELS)) {
+		return;
+	}
+
+	if (state != 0) {
+		*(m4_common.mu + acr) |= (1 << (27 - channel));
+	}
+	else {
+		*(m4_common.mu + acr) &= ~(1 << (27 - channel));
 	}
 }
 
@@ -171,7 +190,7 @@ static int mu_irqHandler(unsigned int n, void *arg)
 	sr = *(m4_common.mu + asr);
 
 	/* TX */
-	for (chan = 0; chan < chanLen; ++chan) {
+	for (chan = 0; chan < CM4_MU_CHANNELS; ++chan) {
 		if ((sr & (1 << (23 - chan))) != 0) {
 			if (fifo_popPacket(&packet, &m4_common.channel[chan].tx) == 0) {
 				setTXirq(chan, 0);
@@ -183,7 +202,7 @@ static int mu_irqHandler(unsigned int n, void *arg)
 	}
 
 	/* RX */
-	for (chan = 0; chan < chanLen; ++chan) {
+	for (chan = 0; chan < CM4_MU_CHANNELS; ++chan) {
 		if ((sr & (1 << (27 - chan))) != 0) {
 			packet.word = *(m4_common.mu + arr0 + chan);
 			fifo_pushPacket(&packet, &m4_common.channel[chan].rx);
@@ -196,7 +215,7 @@ static int mu_irqHandler(unsigned int n, void *arg)
 
 static ssize_t chanOpen(id_t id, int flags)
 {
-	if ((id < chan0) || (id > chan3)) {
+	if ((id < chan0) || (id >= CM4_MU_CHANNELS)) {
 		return -EINVAL;
 	}
 
@@ -213,7 +232,7 @@ static ssize_t chanOpen(id_t id, int flags)
 
 static ssize_t chanClose(id_t id)
 {
-	if ((id < chan0) || (id > chan3)) {
+	if ((id < chan0) || (id >= CM4_MU_CHANNELS)) {
 		return -EINVAL;
 	}
 
@@ -233,7 +252,7 @@ static ssize_t chanRead(id_t id, void *buff, size_t bufflen)
 	size_t i;
 	fifo_t *fifo;
 
-	if ((id < chan0) || (id > chan3) || (buff == NULL)) {
+	if ((id < chan0) || (id >= CM4_MU_CHANNELS) || (buff == NULL)) {
 		return -EINVAL;
 	}
 
@@ -259,7 +278,7 @@ static ssize_t chanWrite(id_t id, const void *buff, size_t bufflen)
 	size_t i;
 	fifo_t *fifo;
 
-	if ((id < chan0) || (id > chan3) || (buff == NULL)) {
+	if ((id < chan0) || (id >= CM4_MU_CHANNELS) || (buff == NULL)) {
 		return -EINVAL;
 	}
 
@@ -474,5 +493,7 @@ void cm4_init(void)
 
 	interrupt(mu_irq, mu_irqHandler, NULL, 0, NULL);
 
-	*(m4_common.mu + acr) |= 0xf << 24;
+	for (chan = 0; chan < CM4_MU_CHANNELS; ++chan) {
+		setRXirq(chan, 1);
+	}
 }
