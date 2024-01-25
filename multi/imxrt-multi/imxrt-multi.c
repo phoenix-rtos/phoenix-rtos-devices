@@ -581,6 +581,11 @@ extern int fs_init(void);
 #endif
 
 
+#if BUILTIN_POSIXSRV
+extern int posixsrv_start(void);
+#endif
+
+
 int main(void)
 {
 	int i;
@@ -618,6 +623,10 @@ int main(void)
 
 #if CM4
 	cm4_init();
+#endif
+
+#if BUILTIN_POSIXSRV
+	posixsrv_start();
 #endif
 
 #if PSEUDODEV
