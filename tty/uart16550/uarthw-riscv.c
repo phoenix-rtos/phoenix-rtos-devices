@@ -23,24 +23,20 @@
 
 
 typedef struct {
-	uintptr_t base;
+	volatile uint8_t *base;
 	uint8_t irq;
 } uarthw_ctx_t;
 
 
 uint8_t uarthw_read(void *hwctx, unsigned int reg)
 {
-	volatile uintptr_t p = (((uarthw_ctx_t *)hwctx)->base + reg);
-
-	return (*(volatile uint8_t *)p);
+	return *(((uarthw_ctx_t *)hwctx)->base + reg);
 }
 
 
 void uarthw_write(void *hwctx, unsigned int reg, uint8_t val)
 {
-	volatile uint64_t p = (uint64_t)(((uarthw_ctx_t *)hwctx)->base + reg);
-
-	*(volatile uint8_t *)p = val;
+	*(((uarthw_ctx_t *)hwctx)->base + reg) = val;
 }
 
 
@@ -74,7 +70,7 @@ int uarthw_init(unsigned int uartn, void *hwctx, size_t hwctxsz, unsigned int *f
 		return -ENOMEM;
 	}
 
-	((uarthw_ctx_t *)hwctx)->base = (uintptr_t)base;
+	((uarthw_ctx_t *)hwctx)->base = base;
 	((uarthw_ctx_t *)hwctx)->irq = UART16550_IRQ;
 
 	/* Detect device presence */
