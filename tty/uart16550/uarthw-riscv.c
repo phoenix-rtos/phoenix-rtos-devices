@@ -44,7 +44,7 @@ void uarthw_write(void *hwctx, unsigned int reg, uint8_t val)
 
 char *uarthw_dump(void *hwctx, char *s, size_t sz)
 {
-	snprintf(s, sz, "base=%p irq=%u", ((uarthw_ctx_t *)hwctx)->base, ((uarthw_ctx_t *)hwctx)->irq);
+	snprintf(s, sz, "base=%p irq=%u", (void *)((uarthw_ctx_t *)hwctx)->base, ((uarthw_ctx_t *)hwctx)->irq);
 	return s;
 }
 
