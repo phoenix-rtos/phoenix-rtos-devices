@@ -22,14 +22,52 @@
 #include <phoenix/arch/imxrt1170.h>
 #include <board_config.h>
 
+#include <libtty-lf-fifo.h>
+
 #include "common.h"
 
 #ifndef CM4_MU_CHANNELS
 #define CM4_MU_CHANNELS 4
 #endif
 
-#ifndef CM4_MU_FIFO_SIZE
-#define CM4_MU_FIFO_SIZE 256
+#ifndef CM4_MU_0_RX_FIFO_SIZE
+#define CM4_MU_0_RX_FIFO_SIZE 256
+#endif
+#ifndef CM4_MU_1_RX_FIFO_SIZE
+#define CM4_MU_1_RX_FIFO_SIZE 256
+#endif
+#ifndef CM4_MU_2_RX_FIFO_SIZE
+#define CM4_MU_2_RX_FIFO_SIZE 256
+#endif
+#ifndef CM4_MU_3_RX_FIFO_SIZE
+#define CM4_MU_3_RX_FIFO_SIZE 256
+#endif
+
+#ifndef CM4_MU_0_TX_FIFO_SIZE
+#define CM4_MU_0_TX_FIFO_SIZE 256
+#endif
+#ifndef CM4_MU_1_TX_FIFO_SIZE
+#define CM4_MU_1_TX_FIFO_SIZE 256
+#endif
+#ifndef CM4_MU_2_TX_FIFO_SIZE
+#define CM4_MU_2_TX_FIFO_SIZE 256
+#endif
+#ifndef CM4_MU_3_TX_FIFO_SIZE
+#define CM4_MU_3_TX_FIFO_SIZE 256
+#endif
+
+#define CM4_MU_FIFO_SIZE(chan) (CM4_MU_##chan##_RX_FIFO_SIZE + CM4_MU_##chan##_TX_FIFO_SIZE)
+
+#if CM4_MU_CHANNELS == 1
+#define CM4_MU_TOTAL_FIFO_SIZE (CM4_MU_FIFO_SIZE(0))
+#elif CM4_MU_CHANNELS == 2
+#define CM4_MU_TOTAL_FIFO_SIZE (CM4_MU_FIFO_SIZE(0) + CM4_MU_FIFO_SIZE(1))
+#elif CM4_MU_CHANNELS == 3
+#define CM4_MU_TOTAL_FIFO_SIZE (CM4_MU_FIFO_SIZE(0) + CM4_MU_FIFO_SIZE(1) + CM4_MU_FIFO_SIZE(2))
+#elif CM4_MU_CHANNELS == 4
+#define CM4_MU_TOTAL_FIFO_SIZE (CM4_MU_FIFO_SIZE(0) + CM4_MU_FIFO_SIZE(1) + CM4_MU_FIFO_SIZE(2) + CM4_MU_FIFO_SIZE(3))
+#else
+#define CM4_MU_TOTAL_FIFO_SIZE 0
 #endif
 
 #define CM4_MEMORY_START ((void *)0x20200000)
@@ -56,13 +94,6 @@ typedef union {
 } packet_t;
 
 
-typedef struct {
-	unsigned char buff[CM4_MU_FIFO_SIZE];
-	volatile int wptr;
-	volatile int rptr;
-} fifo_t;
-
-
 struct {
 	unsigned int port;
 	volatile void *m4memory;
@@ -72,8 +103,10 @@ struct {
 	volatile uint32_t *mu;
 
 	struct {
-		fifo_t rx;
-		fifo_t tx;
+		lf_fifo_t rx_fifo;
+		lf_fifo_t tx_fifo;
+		handle_t rx_lock;
+		handle_t tx_lock;
 		struct {
 			uint8_t busy : 1;
 			uint8_t nonblock : 1;
@@ -81,7 +114,42 @@ struct {
 	} channel[CM4_MU_CHANNELS];
 
 	handle_t lock;
+	uint8_t data[CM4_MU_TOTAL_FIFO_SIZE];
 } m4_common;
+
+
+static unsigned int fifo_getRXSize(int channel)
+{
+	switch (channel) {
+		case 0:
+			return CM4_MU_0_RX_FIFO_SIZE;
+		case 1:
+			return CM4_MU_1_RX_FIFO_SIZE;
+		case 2:
+			return CM4_MU_2_RX_FIFO_SIZE;
+		case 3:
+			return CM4_MU_3_RX_FIFO_SIZE;
+	}
+
+	return 0;
+}
+
+
+static unsigned int fifo_getTXSize(int channel)
+{
+	switch (channel) {
+		case 0:
+			return CM4_MU_0_TX_FIFO_SIZE;
+		case 1:
+			return CM4_MU_1_TX_FIFO_SIZE;
+		case 2:
+			return CM4_MU_2_TX_FIFO_SIZE;
+		case 3:
+			return CM4_MU_3_TX_FIFO_SIZE;
+	}
+
+	return 0;
+}
 
 
 static void setTXirq(int channel, int state)
@@ -114,25 +182,12 @@ static void setRXirq(int channel, int state)
 }
 
 
-static inline int fifo_pop(unsigned char *byte, fifo_t *fifo)
-{
-	if (fifo->rptr == fifo->wptr) {
-		return 0;
-	}
-
-	*byte = fifo->buff[fifo->rptr];
-	fifo->rptr = (fifo->rptr + 1) % sizeof(fifo->buff);
-
-	return 1;
-}
-
-
-static inline int fifo_popPacket(packet_t *packet, fifo_t *fifo)
+static inline int fifo_popPacket(lf_fifo_t *fifo, packet_t *packet)
 {
 	size_t i;
 
 	for (i = 0; i < sizeof(packet->byte.payload); ++i) {
-		if (!fifo_pop(&packet->byte.payload[i], fifo))
+		if (lf_fifo_pop(fifo, &packet->byte.payload[i]) == 0)
 			break;
 	}
 
@@ -142,22 +197,7 @@ static inline int fifo_popPacket(packet_t *packet, fifo_t *fifo)
 }
 
 
-static inline int fifo_push(unsigned char byte, fifo_t *fifo)
-{
-	int nextptr = (fifo->wptr + 1) % sizeof(fifo->buff);
-
-	if (nextptr == fifo->rptr) {
-		return 0;
-	}
-
-	fifo->buff[fifo->wptr] = byte;
-	fifo->wptr = nextptr;
-
-	return 1;
-}
-
-
-static inline int fifo_pushPacket(packet_t *packet, fifo_t *fifo)
+static inline int fifo_pushPacket(lf_fifo_t *fifo, packet_t *packet)
 {
 	int i, size;
 
@@ -169,7 +209,8 @@ static inline int fifo_pushPacket(packet_t *packet, fifo_t *fifo)
 	}
 
 	for (i = 0; i < size; ++i) {
-		if (fifo_push(packet->byte.payload[i], fifo) == 0) {
+		if (lf_fifo_push(fifo, packet->byte.payload[i]) == 0) {
+			/* overrun */
 			break;
 		}
 	}
@@ -192,7 +233,7 @@ static int mu_irqHandler(unsigned int n, void *arg)
 	/* TX */
 	for (chan = 0; chan < CM4_MU_CHANNELS; ++chan) {
 		if ((sr & (1 << (23 - chan))) != 0) {
-			if (fifo_popPacket(&packet, &m4_common.channel[chan].tx) == 0) {
+			if (fifo_popPacket(&m4_common.channel[chan].tx_fifo, &packet) == 0) {
 				setTXirq(chan, 0);
 			}
 			else {
@@ -205,7 +246,7 @@ static int mu_irqHandler(unsigned int n, void *arg)
 	for (chan = 0; chan < CM4_MU_CHANNELS; ++chan) {
 		if ((sr & (1 << (27 - chan))) != 0) {
 			packet.word = *(m4_common.mu + arr0 + chan);
-			fifo_pushPacket(&packet, &m4_common.channel[chan].rx);
+			fifo_pushPacket(&m4_common.channel[chan].rx_fifo, &packet);
 		}
 	}
 
@@ -219,12 +260,17 @@ static ssize_t chanOpen(id_t id, int flags)
 		return -EINVAL;
 	}
 
+	mutexLock(m4_common.lock);
+
 	if (m4_common.channel[id].state.busy == 1) {
+		mutexUnlock(m4_common.lock);
 		return -EBUSY;
 	}
 
 	m4_common.channel[id].state.busy = 1;
 	m4_common.channel[id].state.nonblock = ((flags & O_NONBLOCK) != 0) ? 1 : 0;
+
+	mutexUnlock(m4_common.lock);
 
 	return EOK;
 }
@@ -236,30 +282,37 @@ static ssize_t chanClose(id_t id)
 		return -EINVAL;
 	}
 
+	mutexLock(m4_common.lock);
+
 	if (m4_common.channel[id].state.busy == 0) {
+		mutexUnlock(m4_common.lock);
 		return -EBADF;
 	}
 
 	m4_common.channel[id].state.busy = 0;
 
+	mutexUnlock(m4_common.lock);
+
 	return EOK;
 }
 
 
-static ssize_t chanRead(id_t id, void *buff, size_t bufflen)
+static ssize_t chanRead(id_t id, unsigned char *buff, size_t bufflen)
 {
-	unsigned char *tbuff = buff;
 	size_t i;
-	fifo_t *fifo;
+	lf_fifo_t *fifo;
 
 	if ((id < chan0) || (id >= CM4_MU_CHANNELS) || (buff == NULL)) {
 		return -EINVAL;
 	}
 
-	fifo = &m4_common.channel[id].rx;
+	/* Enforce SPSC FIFO access by mutex */
+	mutexLock(m4_common.channel[id].rx_lock);
+
+	fifo = &m4_common.channel[id].rx_fifo;
 
 	for (i = 0; i < bufflen; ++i) {
-		if (fifo_pop(&tbuff[i], fifo) == 0) {
+		if (lf_fifo_pop(fifo, &buff[i]) == 0) {
 			break;
 		}
 	}
@@ -268,24 +321,28 @@ static ssize_t chanRead(id_t id, void *buff, size_t bufflen)
 		i = -EAGAIN;
 	}
 
+	mutexUnlock(m4_common.channel[id].rx_lock);
+
 	return (ssize_t)i;
 }
 
 
-static ssize_t chanWrite(id_t id, const void *buff, size_t bufflen)
+static ssize_t chanWrite(id_t id, const unsigned char *buff, size_t bufflen)
 {
-	const unsigned char *tbuff = buff;
 	size_t i;
-	fifo_t *fifo;
+	lf_fifo_t *fifo;
 
 	if ((id < chan0) || (id >= CM4_MU_CHANNELS) || (buff == NULL)) {
 		return -EINVAL;
 	}
 
-	fifo = &m4_common.channel[id].tx;
+	/* Enforce SPSC FIFO access by mutex */
+	mutexLock(m4_common.channel[id].tx_lock);
+
+	fifo = &m4_common.channel[id].tx_fifo;
 
 	for (i = 0; i < bufflen; ++i) {
-		if (fifo_push(tbuff[i], fifo) == 0) {
+		if (lf_fifo_push(fifo, buff[i]) == 0) {
 			break;
 		}
 	}
@@ -297,6 +354,8 @@ static ssize_t chanWrite(id_t id, const void *buff, size_t bufflen)
 	if (i == 0 && m4_common.channel[id].state.nonblock == 1) {
 		i = -EAGAIN;
 	}
+
+	mutexUnlock(m4_common.channel[id].tx_lock);
 
 	return (ssize_t)i;
 }
@@ -409,6 +468,8 @@ static void devctl(msg_t *msg)
 	multi_i_t *iptr = (multi_i_t *)msg->i.raw;
 	multi_o_t *optr = (multi_o_t *)msg->o.raw;
 
+	mutexLock(m4_common.lock);
+
 	switch (iptr->cm4_type) {
 		case CM4_LOAD_BUFF:
 			if ((msg->i.data == NULL) || (msg->i.size == 0)) {
@@ -440,12 +501,13 @@ static void devctl(msg_t *msg)
 			optr->err = -ENOSYS;
 			break;
 	}
+
+	mutexUnlock(m4_common.lock);
 }
 
 
 void cm4_handleMsg(msg_t *msg)
 {
-	mutexLock(m4_common.lock);
 	switch (msg->type) {
 		case mtOpen:
 			msg->o.io.err = chanOpen(msg->i.io.oid.id - id_cm4_0, msg->i.openclose.flags);
@@ -476,12 +538,14 @@ void cm4_handleMsg(msg_t *msg)
 			msg->o.io.err = -EINVAL;
 			break;
 	}
-	mutexUnlock(m4_common.lock);
 }
 
 
 void cm4_init(void)
 {
+	int chan;
+	uint8_t *data;
+
 	/* TODO - get this info from a memory map? */
 	m4_common.m4memory = CM4_MEMORY_START;
 	m4_common.m4memorysz = CM4_MEMORY_SIZE;
@@ -489,7 +553,18 @@ void cm4_init(void)
 	m4_common.src = (void *)0x40c04000;
 	m4_common.mu = (void *)0x40c48000;
 
+	for (chan = 0, data = m4_common.data; chan < CM4_MU_CHANNELS; ++chan) {
+		lf_fifo_init(&m4_common.channel[chan].rx_fifo, data, fifo_getRXSize(chan));
+		data += fifo_getRXSize(chan);
+		lf_fifo_init(&m4_common.channel[chan].tx_fifo, data, fifo_getTXSize(chan));
+		data += fifo_getTXSize(chan);
+	}
+
 	mutexCreate(&m4_common.lock);
+	for (chan = 0; chan < CM4_MU_CHANNELS; ++chan) {
+		mutexCreate(&m4_common.channel[chan].rx_lock);
+		mutexCreate(&m4_common.channel[chan].tx_lock);
+	}
 
 	interrupt(mu_irq, mu_irqHandler, NULL, 0, NULL);
 
