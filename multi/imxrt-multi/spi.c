@@ -188,13 +188,16 @@ static int spi_performTranscation(int spi, unsigned char cs, const uint8_t *txBu
 		else
 			txFifoBytes = MAX_FIFOSZ_BYTES;
 
+		txWordsCnt = (txFifoBytes + WORD_SIZE - 1) / WORD_SIZE;
+		/* Set rx watermark */
+		*(spi_common[spi].base + spi_fcr) = (*(spi_common[spi].base + spi_fcr) & ~(0xf << 16)) | (((txWordsCnt - 1) & 0xf) << 16);
+
 		/* Fill transmit FIFO */
 		spi_txBytes(spi, txBuff, txFifoBytes);
 		txBuff += txFifoBytes;
 		size -= txFifoBytes;
 
 		/* Transfer data into slave */
-		txWordsCnt = *(spi_common[spi].base + spi_fsr) & 0x1f;
 		spi_initTransmition(spi);
 
 		/* RCV data from slave */
