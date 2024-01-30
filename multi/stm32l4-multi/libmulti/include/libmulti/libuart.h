@@ -56,7 +56,7 @@ typedef struct {
 			handle_t rxcondlock;
 			const struct libdma_per *per;
 
-			volatile char *rxbuf;
+			volatile char *volatile rxbuf;
 			volatile size_t rxbufsz;
 			volatile size_t read;
 			volatile size_t rxfifopos;
