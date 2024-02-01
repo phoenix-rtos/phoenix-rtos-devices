@@ -481,18 +481,22 @@ static void libuart_infiniteRxHandler(void *arg, int type)
 	size_t cpysz;
 	char *rxbuf = (char *)ctx->data.dma.rxbuf;
 
-	endPos = (ctx->data.dma.rxfifosz - libdma_leftToRx(ctx->data.dma.per)) % ctx->data.dma.rxfifosz;
+	endPos = ctx->data.dma.rxfifosz - libdma_leftToRx(ctx->data.dma.per);
 
-	/* Check overrun */
 	rxfifopos = ctx->data.dma.rxfifopos;
 	rxfifoprevend = ctx->data.dma.rxfifoprevend;
 
+	/* Check overrun */
 	if (((rxfifoprevend < rxfifopos) && ((rxfifopos < endPos) || (endPos < rxfifoprevend))) ||
 		((rxfifopos <= rxfifoprevend) && ((rxfifopos < endPos) && (endPos < rxfifoprevend)))) {
 		rxfifopos = endPos;
 	}
 
-	infifo = (ctx->data.dma.rxfifosz + endPos - rxfifopos) % ctx->data.dma.rxfifosz;
+	infifo = ctx->data.dma.rxfifosz + endPos - rxfifopos;
+	if (infifo >= ctx->data.dma.rxfifosz) {
+		infifo -= ctx->data.dma.rxfifosz;
+	}
+
 	if (((endPos != rxfifoprevend) && (infifo == 0)) || (ctx->data.dma.rxfifofull != 0)) {
 		ctx->data.dma.rxfifofull = 1;
 		infifo = ctx->data.dma.rxfifosz;
@@ -507,16 +511,17 @@ static void libuart_infiniteRxHandler(void *arg, int type)
 			ctx->data.dma.rxfifofull = 0;
 			cpysz = min(ctx->data.dma.rxfifosz - rxfifopos, torx);
 			memcpy(rxbuf + read, ctx->data.dma.rxfifo + rxfifopos, cpysz);
+			rxfifopos += cpysz;
 			if (torx != cpysz) {
 				memcpy(rxbuf + read + cpysz, ctx->data.dma.rxfifo, torx - cpysz);
+				rxfifopos = torx - cpysz;
 			}
 
-			rxfifopos = (rxfifopos + torx) % ctx->data.dma.rxfifosz;
 			ctx->data.dma.read = read + torx;
 		}
 	}
 
-	ctx->data.dma.rxfifopos = rxfifopos % ctx->data.dma.rxfifosz;
+	ctx->data.dma.rxfifopos = rxfifopos;
 	ctx->data.dma.rxfifoprevend = endPos;
 }
 
