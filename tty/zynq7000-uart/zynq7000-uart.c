@@ -36,7 +36,7 @@
 #include <posix/utils.h>
 
 #include <phoenix/ioctl.h>
-#include <phoenix/arch/zynq7000.h>
+#include <phoenix/arch/armv7a/zynq7000/zynq7000.h>
 
 
 #define UARTS_MAX_CNT 2

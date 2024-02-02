@@ -14,7 +14,7 @@
 #include <errno.h>
 #include <stdint.h>
 #include <sys/platform.h>
-#include <phoenix/arch/imxrt1170.h>
+#include <phoenix/arch/armv7m/imxrt/11xx/imxrt1170.h>
 #include <usbhost.h>
 #include <hcd.h>
 #include <board_config.h>

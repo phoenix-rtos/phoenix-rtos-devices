@@ -24,7 +24,7 @@
 #include <posix/utils.h>
 #include <board_config.h>
 
-#include <phoenix/arch/imxrt.h>
+#include <phoenix/arch/armv7m/imxrt/10xx/imxrt10xx.h>
 
 #include "ad7779.h"
 #include "adc-api-ad7779.h"
