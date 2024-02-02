@@ -17,9 +17,9 @@
 #include <sys/platform.h>
 
 #if defined(__CPU_IMXRT117X)
-#include <phoenix/arch/imxrt1170.h>
+#include <phoenix/arch/armv7m/imxrt/11xx/imxrt1170.h>
 #elif defined(__CPU_IMXRT106X)
-#include <phoenix/arch/imxrt.h>
+#include <phoenix/arch/armv7m/imxrt/10xx/imxrt10xx.h>
 #else
 #error "Unsupported CPU"
 #endif

@@ -19,7 +19,7 @@
 #include <sys/platform.h>
 #include <sys/interrupt.h>
 #include <sys/threads.h>
-#include <phoenix/arch/imxrt1170.h>
+#include <phoenix/arch/armv7m/imxrt/11xx/imxrt1170.h>
 #include <board_config.h>
 
 #include <libtty-lf-fifo.h>

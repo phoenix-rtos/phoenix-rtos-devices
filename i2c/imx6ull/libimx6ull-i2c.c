@@ -22,7 +22,7 @@
 #include <errno.h>
 #include <i2c.h>
 
-#include <phoenix/arch/imx6ull.h>
+#include <phoenix/arch/armv7a/imx6ull/imx6ull.h>
 
 
 /* clang-format off */

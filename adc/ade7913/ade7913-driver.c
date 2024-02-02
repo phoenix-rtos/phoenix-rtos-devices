@@ -24,7 +24,7 @@
 #include <posix/utils.h>
 
 #include <imxrt-multi.h>
-#include <phoenix/arch/imxrt1170.h>
+#include <phoenix/arch/armv7m/imxrt/11xx/imxrt1170.h>
 
 #include <edma.h>
 

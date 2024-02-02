@@ -23,7 +23,7 @@
 #include <sys/minmax.h>
 
 #include <board_config.h>
-#include <phoenix/arch/zynq7000.h>
+#include <phoenix/arch/armv7a/zynq7000/zynq7000.h>
 
 
 /* clang-format off */

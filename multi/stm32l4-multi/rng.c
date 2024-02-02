@@ -18,7 +18,7 @@
 #include <sys/threads.h>
 #include <sys/platform.h>
 #include <sys/types.h>
-#include <phoenix/arch/stm32l4.h>
+#include <phoenix/arch/armv7m/stm32/l4/stm32l4.h>
 
 #include "common.h"
 

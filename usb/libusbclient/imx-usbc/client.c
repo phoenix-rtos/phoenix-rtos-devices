@@ -21,7 +21,7 @@
 #include <sys/mman.h>
 #include <sys/threads.h>
 #include <sys/interrupt.h>
-#include <phoenix/arch/imxrt.h>
+#include <phoenix/arch/armv7m/imxrt/10xx/imxrt10xx.h>
 
 #include "phy.h"
 #include "client.h"

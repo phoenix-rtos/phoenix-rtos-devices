@@ -16,7 +16,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
-#include <phoenix/arch/stm32l4.h>
+#include <phoenix/arch/armv7m/stm32/l4/stm32l4.h>
 #include <sys/platform.h>
 
 

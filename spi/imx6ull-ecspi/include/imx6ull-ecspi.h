@@ -16,7 +16,7 @@
 #include <stdint.h>
 
 #include <sys/threads.h>
-#include <phoenix/arch/imx6ull.h>
+#include <phoenix/arch/armv7a/imx6ull/imx6ull.h>
 
 enum { ecspi1 = 1, ecspi2, ecspi3, ecspi4 };
 

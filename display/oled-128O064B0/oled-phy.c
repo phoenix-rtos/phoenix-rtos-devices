@@ -20,7 +20,7 @@
 
 
 #include <imxrt-multi.h>
-#include <phoenix/arch/imxrt.h>
+#include <phoenix/arch/armv7m/imxrt/10xx/imxrt10xx.h>
 
 
 #define SPI1_PATH         "/dev/spi1"

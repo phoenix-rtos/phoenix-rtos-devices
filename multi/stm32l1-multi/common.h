@@ -16,7 +16,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
-#include <phoenix/arch/stm32l1.h>
+#include <phoenix/arch/armv7m/stm32/l1/stm32l1.h>
 
 #include "config.h"
 

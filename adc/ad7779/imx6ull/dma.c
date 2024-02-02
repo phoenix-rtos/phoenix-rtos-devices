@@ -7,7 +7,7 @@
 #include <sys/types.h>
 #include <sys/interrupt.h>
 
-#include <phoenix/arch/imx6ull.h>
+#include <phoenix/arch/armv7a/imx6ull/imx6ull.h>
 #include <sdma.h>
 
 #include "../ad7779.h"

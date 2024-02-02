@@ -20,7 +20,7 @@
 
 #include <sys/platform.h>
 
-#include <phoenix/arch/zynq7000.h>
+#include <phoenix/arch/armv7a/zynq7000/zynq7000.h>
 #include <board_config.h>
 
 /* This platform has 2 SDIO hosts, but a slot was only implemented on one */

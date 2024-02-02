@@ -15,7 +15,7 @@
 #ifndef _IMXRT1060_H_
 #define _IMXRT1060_H_
 
-#include <phoenix/arch/imxrt.h>
+#include <phoenix/arch/armv7m/imxrt/10xx/imxrt10xx.h>
 #include <sys/platform.h>
 
 #define UART_CLK 80000000

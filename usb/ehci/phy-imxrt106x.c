@@ -15,7 +15,7 @@
  */
 #include <sys/mman.h>
 #include <sys/platform.h>
-#include <phoenix/arch/imxrt.h>
+#include <phoenix/arch/armv7m/imxrt/10xx/imxrt10xx.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <usbhost.h>

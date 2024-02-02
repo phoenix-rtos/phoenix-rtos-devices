@@ -23,7 +23,7 @@
 #include <errno.h>
 #include <i2c.h>
 
-#include <phoenix/arch/zynq7000.h>
+#include <phoenix/arch/armv7a/zynq7000/zynq7000.h>
 #include <board_config.h>
 
 /* I2C registers */

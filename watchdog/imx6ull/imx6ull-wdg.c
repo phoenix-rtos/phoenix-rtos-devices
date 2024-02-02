@@ -21,7 +21,7 @@
 #include <sys/msg.h>
 #include <sys/platform.h>
 #include <sys/threads.h>
-#include <phoenix/arch/imx6ull.h>
+#include <phoenix/arch/armv7a/imx6ull/imx6ull.h>
 #include <posix/utils.h>
 
 #include "watchdog.h"

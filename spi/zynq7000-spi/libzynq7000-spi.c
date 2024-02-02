@@ -22,7 +22,7 @@
 #include <sys/threads.h>
 #include <sys/types.h>
 
-#include <phoenix/arch/zynq7000.h>
+#include <phoenix/arch/armv7a/zynq7000/zynq7000.h>
 #include <board_config.h>
 
 

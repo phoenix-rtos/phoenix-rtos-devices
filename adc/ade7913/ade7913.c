@@ -24,7 +24,7 @@
 #include <imxrt-multi.h>
 
 #ifdef __CPU_IMXRT117X
-#include <phoenix/arch/imxrt1170.h>
+#include <phoenix/arch/armv7m/imxrt/11xx/imxrt1170.h>
 #endif
 
 #include "gpio.h"

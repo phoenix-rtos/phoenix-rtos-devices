@@ -28,7 +28,7 @@
 #include <sys/file.h>
 #include <posix/utils.h>
 
-#include <phoenix/arch/imx6ull.h>
+#include <phoenix/arch/armv7a/imx6ull/imx6ull.h>
 
 #include "sdma-api.h"
 

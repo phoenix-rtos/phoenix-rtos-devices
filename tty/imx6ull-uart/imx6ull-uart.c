@@ -36,7 +36,7 @@
 #include <libtty-lf-fifo.h>
 #include <libklog.h>
 
-#include <phoenix/arch/imx6ull.h>
+#include <phoenix/arch/armv7a/imx6ull/imx6ull.h>
 
 #define KMSG_CTRL_ID 100
 

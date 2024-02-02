@@ -25,7 +25,7 @@
 #include <sys/mman.h>
 #include <sys/interrupt.h>
 #include <sys/platform.h>
-#include <phoenix/arch/imx6ull.h>
+#include <phoenix/arch/armv7a/imx6ull/imx6ull.h>
 
 #include "imx6ull-flashdrv.h"
 
