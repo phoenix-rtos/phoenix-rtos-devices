@@ -3,7 +3,7 @@
  *
  * i.MX RT1170 ADE7913 polyphase ADC driver
  *
- * Copyright 2021-2023 Phoenix Systems
+ * Copyright 2021-2024 Phoenix Systems
  * Author: Marcin Baran, Gerard Swiderski
  *
  * This file is part of Phoenix-RTOS.
@@ -53,11 +53,25 @@
 /* clang-format on */
 
 
+#ifndef ADE7913_DREADY_MUXPIN
 #define ADE7913_DREADY_MUXPIN pctl_mux_gpio_ad_21
 #define ADE7913_DREADY_MUXMOD 11 /* FLEXPWM4 (PWM3_X) */
 #define ADE7913_DREADY_PWMDEV (FLEXPWM_PWM4)
 #define ADE7913_DREADY_PWMPIN (FLEXPWM_PWMX)
 #define ADE7913_DREADY_PWMSM  (FLEXPWM_SM3)
+#endif
+
+
+#ifdef ADE7913_POWERCTRL
+
+#ifndef ADE7913_PWR_MUXPIN
+#define ADE7913_PWR_MUXPIN pctl_mux_gpio_ad_27
+#define ADE7913_PWR_PADPIN pctl_pad_gpio_ad_27
+#define ADE7913_PWR_MUXMOD 10 /* GPIO9_IO26 */
+#define ADE7913_PWR_IO_PIN 26
+#endif
+
+#endif
 
 
 #ifndef ADE7913_PRIO
@@ -132,6 +146,7 @@ struct {
 	uint32_t *buff;
 	volatile uint32_t *spi_ptr;
 	volatile uint32_t *gpio3_ptr;
+	volatile uint32_t *gpio9_ptr;
 	volatile uint32_t *iomux_ptr[4];
 	volatile struct edma_tcd_s *tcd_dready_ptr;
 	volatile struct edma_tcd_s *tcd_spisnd_ptr;
@@ -229,6 +244,72 @@ static int edma_error_handler(unsigned int n, void *arg)
 	}
 
 	return EOK;
+}
+
+
+static int pwr_ctrl(int state)
+{
+#ifdef ADE7913_POWERCTRL
+	if (state != 0) {
+		*(common.gpio9_ptr + gpio_dr) &= ~(1u << (ADE7913_PWR_IO_PIN));
+	}
+	else {
+		*(common.gpio9_ptr + gpio_dr) |= (1u << (ADE7913_PWR_IO_PIN));
+	}
+	return EOK;
+#else
+	return -ENOTSUP;
+#endif
+}
+
+
+static int pwr_init(void)
+{
+#ifdef ADE7913_POWERCTRL
+	int res;
+	platformctl_t pctl = {
+		.action = pctl_set,
+		.type = pctl_iomux,
+		.iomux.mux = ADE7913_PWR_MUXPIN,
+		.iomux.sion = 0,
+		.iomux.mode = ADE7913_PWR_MUXMOD,
+	};
+
+	res = platformctl(&pctl);
+	if (res < 0) {
+		log_error("Unable to set IOMUX");
+		return res;
+	}
+
+	pctl.action = pctl_set;
+	pctl.type = pctl_iopad;
+	pctl.iopad.pus = 0x3;
+	pctl.iopad.pue = 0;
+	pctl.iopad.pke = 1;
+	pctl.iopad.ode = 0;
+	pctl.iopad.dse = 1;
+	pctl.iopad.sre = 0;
+	pctl.iopad.pad = ADE7913_PWR_PADPIN;
+
+	res = platformctl(&pctl);
+	if (res < 0) {
+		log_error("Unable to set IOPAD");
+		return res;
+	}
+
+	*(common.gpio9_ptr + gpio_gdir) |= (1u << (ADE7913_PWR_IO_PIN));
+
+	/* power on ADE7913 */
+	(void)pwr_ctrl(1);
+
+	/* Get time to powerup */
+	usleep(200 * 1000);
+
+	return res;
+#else
+	/* Not supported, pass init */
+	return 0;
+#endif
 }
 
 
@@ -844,6 +925,12 @@ static int dev_ctl(msg_t *msg)
 		case ade7913_dev_ctl__status:
 			return EOK;
 
+		case ade7913_dev_ctl__pwr_on:
+			return pwr_ctrl(1);
+
+		case ade7913_dev_ctl__pwr_off:
+			return pwr_ctrl(0);
+
 		default:
 			log_error("dev_ctl: unknown type (%d)", dev_ctl.type);
 			return -ENOSYS;
@@ -905,6 +992,12 @@ static int init(void)
 		res = dev_init(ADC_DEVICE_FILE_NAME);
 		if (res < 0) {
 			log_error("Device initialization failed");
+			break;
+		}
+
+		res = pwr_init();
+		if (res < 0) {
+			log_error("Failed to initialize GPIO");
 			break;
 		}
 
@@ -977,6 +1070,7 @@ int main(int argc, char **argv)
 
 	common.spi_ptr = (uint32_t *)spi_base[common.spi - 1];
 	common.gpio3_ptr = (uint32_t *)0x40134000;
+	common.gpio9_ptr = (uint32_t *)0x40c64000;
 	common.iomux_ptr[0] = (uint32_t *)0x400e8000 + 4 + pctl_mux_gpio_ad_18;
 	common.iomux_ptr[1] = (uint32_t *)0x400e8000 + 4 + pctl_mux_gpio_ad_19;
 	common.iomux_ptr[2] = (uint32_t *)0x400e8000 + 4 + pctl_mux_gpio_ad_20;

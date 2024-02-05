@@ -3,7 +3,7 @@
  *
  * ADE7913 driver API
  *
- * Copyright 2021, 2023 Phoenix Systems
+ * Copyright 2021-2024 Phoenix Systems
  * Author: Marcin Baran, Gerard Swiderski
  *
  * This file is part of Phoenix-RTOS.
@@ -31,6 +31,8 @@ typedef struct {
 		ade7913_dev_ctl__set_config,
 		ade7913_dev_ctl__get_config,
 		ade7913_dev_ctl__get_buffers,
+		ade7913_dev_ctl__pwr_off,
+		ade7913_dev_ctl__pwr_on,
 	} type;
 
 	union {
