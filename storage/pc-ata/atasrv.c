@@ -46,8 +46,8 @@ enum {
 
 
 /* ATA device access callbacks */
-static ssize_t atasrv_read(id_t id, offs_t offs, char *buff, size_t len);
-static ssize_t atasrv_write(id_t id, offs_t offs, const char *buff, size_t len);
+static ssize_t atasrv_read(id_t id, off_t offs, char *buff, size_t len);
+static ssize_t atasrv_write(id_t id, off_t offs, const char *buff, size_t len);
 
 
 /* Filesystem callbacks types */
@@ -305,7 +305,7 @@ static int atasrv_initpart(atasrv_dev_t *bdev, uint8_t type, uint32_t start, uin
 }
 
 
-static ssize_t atasrv_read(id_t id, offs_t offs, char *buff, size_t len)
+static ssize_t atasrv_read(id_t id, off_t offs, char *buff, size_t len)
 {
 	atasrv_dev_t *sdev;
 	ata_dev_t *dev;
@@ -341,7 +341,7 @@ static ssize_t atasrv_read(id_t id, offs_t offs, char *buff, size_t len)
 }
 
 
-static ssize_t atasrv_write(id_t id, offs_t offs, const char *buff, size_t len)
+static ssize_t atasrv_write(id_t id, off_t offs, const char *buff, size_t len)
 {
 	atasrv_dev_t *sdev;
 	ata_dev_t *dev;

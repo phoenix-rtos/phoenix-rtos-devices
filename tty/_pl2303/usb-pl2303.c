@@ -242,7 +242,7 @@ static usb_drv_t serialDriver = {
 };
 
 
-int usb_serialRead(file_t* file, offs_t offs, char* buff, unsigned int len)
+int usb_serialRead(file_t *file, off_t offs, char *buff, unsigned int len)
 {
     vnode_t* vnode = file->vnode;
 	int rc;
@@ -284,7 +284,7 @@ void usb_serialWriteCallback(usb_urb_t* urb)
 	vm_kfree(urb);
 }
 
-int usb_serialWrite(file_t* file, offs_t offs, char* buff, unsigned int len)
+int usb_serialWrite(file_t *file, off_t offs, char *buff, unsigned int len)
 {
     vnode_t* vnode = file->vnode;
 	int rc;

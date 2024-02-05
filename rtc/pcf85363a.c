@@ -174,7 +174,7 @@ static time_t rtc_time_to_unix(const struct rtc_time *rtc_time)
 }
 
 
-static int dev_read(oid_t *oid, offs_t offs, size_t len, void *data)
+static int dev_read(oid_t *oid, off_t offs, size_t len, void *data)
 {
 	char buf[32];
 	struct rtc_time rtc_time;

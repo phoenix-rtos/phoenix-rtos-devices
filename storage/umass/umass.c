@@ -187,7 +187,7 @@ static int umass_check(umass_dev_t *dev)
 }
 
 
-static int umass_read(umass_dev_t *dev, offs_t offs, char *buf, size_t len)
+static int umass_read(umass_dev_t *dev, off_t offs, char *buf, size_t len)
 {
 	scsi_cdb10_t readcmd = { .opcode = 0x28 };
 	int ret;
@@ -212,7 +212,7 @@ static int umass_read(umass_dev_t *dev, offs_t offs, char *buf, size_t len)
 }
 
 
-static int umass_write(umass_dev_t *dev, offs_t offs, char *buf, size_t len)
+static int umass_write(umass_dev_t *dev, off_t offs, char *buf, size_t len)
 {
 	scsi_cdb10_t writecmd = { .opcode = 0x2a };
 	int ret;
