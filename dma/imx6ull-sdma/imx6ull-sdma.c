@@ -495,7 +495,7 @@ static void sdma_init_channel0(void)
 static int sdma_init(void)
 {
 	int res;
-	unsigned handle;
+	handle_t handle;
 
 	const addr_t sdma_paddr = 0x20ec000;
 	common.regs = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, sdma_paddr);
