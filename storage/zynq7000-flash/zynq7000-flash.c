@@ -38,7 +38,7 @@
 
 /* Operations on flash memory device */
 
-static ssize_t flash_read(oid_t *oid, offs_t offs, void *buff, size_t len)
+static ssize_t flash_read(oid_t *oid, off_t offs, void *buff, size_t len)
 {
 	size_t retlen;
 	ssize_t res = -ENOSYS;
@@ -68,7 +68,7 @@ static ssize_t flash_read(oid_t *oid, offs_t offs, void *buff, size_t len)
 }
 
 
-static ssize_t flash_write(oid_t *oid, offs_t offs, const void *buff, size_t len)
+static ssize_t flash_write(oid_t *oid, off_t offs, const void *buff, size_t len)
 {
 	size_t retlen;
 	ssize_t res = -ENOSYS;
@@ -384,7 +384,7 @@ static int flash_optsParse(int argc, char **argv)
 	int err, c;
 	unsigned int id;
 	oid_t oid;
-	offs_t start;
+	off_t start;
 	size_t size;
 	char *devPath, *arg, *fs;
 

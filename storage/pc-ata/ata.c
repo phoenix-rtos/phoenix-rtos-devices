@@ -297,7 +297,7 @@ static ssize_t _ata_access(ata_dev_t *dev, uint64_t lba, uint16_t sectors, uint8
 }
 
 
-ssize_t _ata_byteAccess(ata_dev_t *dev, offs_t offs, char *buff, size_t len, uint8_t cmd)
+ssize_t _ata_byteAccess(ata_dev_t *dev, off_t offs, char *buff, size_t len, uint8_t cmd)
 {
 	ssize_t ret;
 	ssize_t cnt = 0;
@@ -318,7 +318,7 @@ ssize_t _ata_byteAccess(ata_dev_t *dev, offs_t offs, char *buff, size_t len, uin
 	}
 
 	/* Handle unaligned beginning */
-	offs_t offsMisalign = offs % (offs_t)dev->sectorsz;
+	off_t offsMisalign = offs % (off_t)dev->sectorsz;
 	if (offsMisalign != 0) {
 		size_t chunk = dev->sectorsz - offsMisalign;
 		if (chunk > len) {
@@ -326,14 +326,14 @@ ssize_t _ata_byteAccess(ata_dev_t *dev, offs_t offs, char *buff, size_t len, uin
 		}
 
 		if (rmw != 0) {
-			ret = _ata_access(dev, offs / (offs_t)dev->sectorsz, 1, readCmd, sectorBuff);
+			ret = _ata_access(dev, offs / (off_t)dev->sectorsz, 1, readCmd, sectorBuff);
 			if (ret < 0) {
 				return ret;
 			}
 			memcpy(sectorBuff + offsMisalign, buff, chunk);
 		}
 
-		ret = _ata_access(dev, offs / (offs_t)dev->sectorsz, 1, cmd, sectorBuff);
+		ret = _ata_access(dev, offs / (off_t)dev->sectorsz, 1, cmd, sectorBuff);
 		if (ret < 0) {
 			return ret;
 		}
@@ -351,7 +351,7 @@ ssize_t _ata_byteAccess(ata_dev_t *dev, offs_t offs, char *buff, size_t len, uin
 	/* Handle aligned part */
 	size_t lenAligned = len - (len % (size_t)dev->sectorsz);
 	if (lenAligned > 0) {
-		ret = _ata_access(dev, offs / (offs_t)dev->sectorsz, lenAligned / dev->sectorsz, cmd, (uint8_t *)buff);
+		ret = _ata_access(dev, offs / (off_t)dev->sectorsz, lenAligned / dev->sectorsz, cmd, (uint8_t *)buff);
 		if (ret < 0) {
 			return ret;
 		}
@@ -365,14 +365,14 @@ ssize_t _ata_byteAccess(ata_dev_t *dev, offs_t offs, char *buff, size_t len, uin
 	/* Handle unaligned end */
 	if (len > 0) {
 		if (rmw != 0) {
-			ret = _ata_access(dev, offs / (offs_t)dev->sectorsz, 1, readCmd, sectorBuff);
+			ret = _ata_access(dev, offs / (off_t)dev->sectorsz, 1, readCmd, sectorBuff);
 			if (ret < 0) {
 				return ret;
 			}
 			memcpy(sectorBuff, buff, len);
 		}
 
-		ret = _ata_access(dev, offs / (offs_t)dev->sectorsz, 1, cmd, sectorBuff);
+		ret = _ata_access(dev, offs / (off_t)dev->sectorsz, 1, cmd, sectorBuff);
 		if (ret < 0) {
 			return ret;
 		}
@@ -388,7 +388,7 @@ ssize_t _ata_byteAccess(ata_dev_t *dev, offs_t offs, char *buff, size_t len, uin
 }
 
 
-ssize_t ata_read(ata_dev_t *dev, offs_t offs, char *buff, size_t len)
+ssize_t ata_read(ata_dev_t *dev, off_t offs, char *buff, size_t len)
 {
 	uint8_t cmd;
 	ssize_t ret;
@@ -418,7 +418,7 @@ ssize_t ata_read(ata_dev_t *dev, offs_t offs, char *buff, size_t len)
 }
 
 
-ssize_t ata_write(ata_dev_t *dev, offs_t offs, const char *buff, size_t len)
+ssize_t ata_write(ata_dev_t *dev, off_t offs, const char *buff, size_t len)
 {
 	uint8_t cmd;
 	ssize_t ret;

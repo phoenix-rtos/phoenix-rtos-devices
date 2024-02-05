@@ -36,7 +36,7 @@
 /* Flash server operations */
 
 
-static ssize_t flashsrv_read(storage_t *strg, offs_t offs, void *buf, size_t size)
+static ssize_t flashsrv_read(storage_t *strg, off_t offs, void *buf, size_t size)
 {
 	if ((strg == NULL) || (strg->dev == NULL) || ((offs + size) > strg->size)) {
 		return -EINVAL;
@@ -60,7 +60,7 @@ static ssize_t flashsrv_read(storage_t *strg, offs_t offs, void *buf, size_t siz
 }
 
 
-static ssize_t flashsrv_write(storage_t *strg, offs_t offs, const void *buf, size_t size)
+static ssize_t flashsrv_write(storage_t *strg, off_t offs, const void *buf, size_t size)
 {
 	if ((strg == NULL) || (strg->dev == NULL) || ((offs + size) > strg->size)) {
 		return -EINVAL;

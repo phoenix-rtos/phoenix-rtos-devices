@@ -36,7 +36,7 @@
 /* clang-format on */
 
 
-static ssize_t storage_read(id_t id, offs_t offs, void *buff, size_t len)
+static ssize_t storage_read(id_t id, off_t offs, void *buff, size_t len)
 {
 	ssize_t res = -ENOSYS;
 	storage_t *strg = storage_get(GET_STORAGE_ID(id));
@@ -75,7 +75,7 @@ static ssize_t storage_read(id_t id, offs_t offs, void *buff, size_t len)
 }
 
 
-static ssize_t storage_write(id_t id, offs_t offs, const void *buff, size_t len)
+static ssize_t storage_write(id_t id, off_t offs, const void *buff, size_t len)
 {
 	ssize_t res = -ENOSYS;
 	storage_t *strg = storage_get(GET_STORAGE_ID(id));

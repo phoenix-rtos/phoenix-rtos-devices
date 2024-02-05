@@ -167,11 +167,11 @@ extern ata_common_t ata_common;
 
 
 /* Reads from ATA device */
-extern ssize_t ata_read(ata_dev_t *dev, offs_t offs, char *buff, size_t len);
+extern ssize_t ata_read(ata_dev_t *dev, off_t offs, char *buff, size_t len);
 
 
 /* Writes to ATA device */
-extern ssize_t ata_write(ata_dev_t *dev, offs_t offs, const char *buff, size_t len);
+extern ssize_t ata_write(ata_dev_t *dev, off_t offs, const char *buff, size_t len);
 
 
 /* Initializes ATA devices */

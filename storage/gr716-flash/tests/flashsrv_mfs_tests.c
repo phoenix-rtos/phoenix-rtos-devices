@@ -255,7 +255,7 @@ static int mfs_write(oid_t *oid, void *buff, size_t len)
 }
 
 
-static int mfs_read(oid_t *oid, offs_t offs, void *buff, size_t len)
+static int mfs_read(oid_t *oid, off_t offs, void *buff, size_t len)
 {
 	int err;
 	msg_t msg;
