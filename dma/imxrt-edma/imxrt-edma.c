@@ -201,7 +201,7 @@ int edma_init(int (*error_isr)(unsigned int n, void *arg))
 	}
 
 	/* Install error interrupts handler */
-	unsigned handle;
+	handle_t handle;
 	interrupt(EDMA_ERROR_IRQ, error_isr, NULL, 0, &handle);
 
 	if (init) {
