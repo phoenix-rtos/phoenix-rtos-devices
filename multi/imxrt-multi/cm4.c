@@ -386,6 +386,10 @@ static int runCore(unsigned int offset)
 		return -EIO;
 	}
 
+	/* Disallow CM4 lockup to reset system */
+	*(m4_common.src + src_srmr) |= 0x3u << 6;
+	__asm__ volatile ("dmb");
+
 	/* Release the Kraken */
 	*(m4_common.src + src_scr) |= 1;
 
