@@ -14,6 +14,7 @@
 #include <fcntl.h>
 #include <string.h>
 #include <stdint.h>
+#include <unistd.h>
 #include <sys/msg.h>
 #include <posix/utils.h>
 #include <sys/platform.h>
@@ -463,6 +464,52 @@ static int loadFromBuff(const void *buff, size_t bufflen)
 }
 
 
+static int resetCore(void)
+{
+	int chan;
+	uint8_t *data;
+	platformctl_t pctl;
+
+	/* Empty TX & RX FIFOs */
+
+	for (chan = 0; chan < CM4_MU_CHANNELS; ++chan) {
+		setTXirq(chan, 0);
+		setRXirq(chan, 0);
+	}
+
+	for (chan = 0, data = m4_common.data; chan < CM4_MU_CHANNELS; ++chan) {
+		lf_fifo_init(&m4_common.channel[chan].rx_fifo, data, fifo_getRXSize(chan));
+		data += fifo_getRXSize(chan);
+		lf_fifo_init(&m4_common.channel[chan].tx_fifo, data, fifo_getTXSize(chan));
+		data += fifo_getTXSize(chan);
+	}
+
+	/* Reset MU module (assuming CM4 core has been stopped externally) */
+	*(m4_common.mu + acr) |= 1u << 5;
+	__asm__ volatile ("dmb");
+
+	while ((*(m4_common.mu + asr) & (1u << 7)) != 0) {
+		usleep(1);
+	}
+
+	for (chan = 0; chan < CM4_MU_CHANNELS; ++chan) {
+		setRXirq(chan, 1);
+	}
+
+	/* Reset CM4 core */
+
+	pctl.action = pctl_set;
+	pctl.type = pctl_resetSlice;
+	pctl.resetSlice.index = pctl_resetSliceCM4Core;
+
+	if (platformctl(&pctl) != 0) {
+		return -EIO;
+	}
+
+	return EOK;
+}
+
+
 static void devctl(msg_t *msg)
 {
 	multi_i_t *iptr = (multi_i_t *)msg->i.raw;
@@ -495,6 +542,10 @@ static void devctl(msg_t *msg)
 				break;
 			}
 			optr->err = runCore(*(unsigned int *)msg->i.data);
+			break;
+
+		case CM4_RESET_CORE:
+			optr->err = resetCore();
 			break;
 
 		default:

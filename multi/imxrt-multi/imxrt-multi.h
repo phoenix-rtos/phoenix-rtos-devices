@@ -93,9 +93,10 @@ typedef struct {
 /* Cortex M4 */
 
 
-#define CM4_LOAD_FILE 0
-#define CM4_LOAD_BUFF 1
-#define CM4_RUN_CORE  2
+#define CM4_LOAD_FILE  0
+#define CM4_LOAD_BUFF  1
+#define CM4_RUN_CORE   2
+#define CM4_RESET_CORE 3
 
 
 /* MULTI */
