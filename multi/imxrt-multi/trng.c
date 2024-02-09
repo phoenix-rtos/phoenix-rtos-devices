@@ -12,11 +12,13 @@
  */
 
 #include <errno.h>
-#include <string.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
-#include "trng.h"
 #include "common.h"
+#include "trng.h"
 
 
 enum { mctl = 0, scmisc, pkrrng, pkrmax, sdctl, sblim, frqmin, frqcnt, scmc, scr1c,

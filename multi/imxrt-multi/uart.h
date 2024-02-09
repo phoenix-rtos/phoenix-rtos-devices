@@ -14,6 +14,9 @@
 #ifndef _UART_H_
 #define _UART_H_
 
+#include <stddef.h>
+#include <sys/msg.h>
+
 
 int uart_handleMsg(msg_t *msg, int dev);
 

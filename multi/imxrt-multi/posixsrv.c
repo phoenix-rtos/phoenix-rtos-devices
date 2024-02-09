@@ -11,7 +11,6 @@
  * %LICENSE%
  */
 
-#include <board_config.h>
 #include "config.h"
 
 #if BUILTIN_POSIXSRV

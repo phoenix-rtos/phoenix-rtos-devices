@@ -12,21 +12,17 @@
  */
 
 
-#include <string.h>
-#include <stdint.h>
-#include <stdio.h>
 #include <errno.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <sys/threads.h>
 #include <sys/file.h>
-#include <sys/msg.h>
-#include <sys/pwman.h>
 #include <sys/interrupt.h>
-#include <sys/platform.h>
+#include <sys/ioctl.h>
+#include <sys/msg.h>
+#include <sys/threads.h>
 
 #include <libtty.h>
-#include <board_config.h>
 
 #include "common.h"
 #include "uart.h"
