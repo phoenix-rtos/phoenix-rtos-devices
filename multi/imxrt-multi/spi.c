@@ -466,116 +466,140 @@ static void spi_initPins(void)
 		int muxes[7];
 	} info[] = {
 #if SPI1
-		{ 0,
-		{ PIN2MUX(SPI1_SCK), PIN2MUX(SPI1_SD0), PIN2MUX(SPI1_SDI),
-#ifdef SPI1_PCS0
-		PIN2MUX(SPI1_PCS0),
+		{
+			0,
+			{
+				PIN2MUX(SPI1_SCK),
+				PIN2MUX(SPI1_SD0),
+				PIN2MUX(SPI1_SDI),
+#if defined(SPI1_PCS0) && !ISEMPTY(SPI1_PCS0)
+				PIN2MUX(SPI1_PCS0),
 #endif
-#ifdef SPI1_PCS1
-		PIN2MUX(SPI1_PCS1),
+#if defined(SPI1_PCS1) && !ISEMPTY(SPI1_PCS1)
+				PIN2MUX(SPI1_PCS1),
 #endif
-#ifdef SPI1_PCS2
-		PIN2MUX(SPI1_PCS2),
+#if defined(SPI1_PCS2) && !ISEMPTY(SPI1_PCS2)
+				PIN2MUX(SPI1_PCS2),
 #endif
-#ifdef SPI1_PCS3
-		PIN2MUX(SPI1_PCS3),
+#if defined(SPI1_PCS3) && !ISEMPTY(SPI1_PCS3)
+				PIN2MUX(SPI1_PCS3),
 #endif
-		},
+			},
 		},
 #endif
 
 #if SPI2
-		{ 1,
-		{ PIN2MUX(SPI2_SCK), PIN2MUX(SPI2_SD0), PIN2MUX(SPI2_SDI),
-#ifdef SPI2_PCS0
-		PIN2MUX(SPI2_PCS0),
+		{
+			1,
+			{
+				PIN2MUX(SPI2_SCK),
+				PIN2MUX(SPI2_SD0),
+				PIN2MUX(SPI2_SDI),
+#if defined(SPI2_PCS0) && !ISEMPTY(SPI2_PCS0)
+				PIN2MUX(SPI2_PCS0),
 #endif
-#ifdef SPI2_PCS1
-		PIN2MUX(SPI2_PCS1),
+#if defined(SPI2_PCS1) && !ISEMPTY(SPI2_PCS1)
+				PIN2MUX(SPI2_PCS1),
 #endif
-#ifdef SPI2_PCS2
-		PIN2MUX(SPI2_PCS2),
+#if defined(SPI2_PCS2) && !ISEMPTY(SPI2_PCS2)
+				PIN2MUX(SPI2_PCS2),
 #endif
-#ifdef SPI2_PCS3
-		PIN2MUX(SPI2_PCS3),
+#if defined(SPI2_PCS3) && !ISEMPTY(SPI2_PCS3)
+				PIN2MUX(SPI2_PCS3),
 #endif
-		},
+			},
 		},
 #endif
 
 #if SPI3
-		{ 2,
-		{ PIN2MUX(SPI3_SCK), PIN2MUX(SPI3_SD0), PIN2MUX(SPI3_SDI),
-#ifdef SPI3_PCS0
-		PIN2MUX(SPI3_PCS0),
+		{
+			2,
+			{
+				PIN2MUX(SPI3_SCK),
+				PIN2MUX(SPI3_SD0),
+				PIN2MUX(SPI3_SDI),
+#if defined(SPI3_PCS0) && !ISEMPTY(SPI3_PCS0)
+				PIN2MUX(SPI3_PCS0),
 #endif
-#ifdef SPI3_PCS1
-		PIN2MUX(SPI3_PCS1),
+#if defined(SPI3_PCS1) && !ISEMPTY(SPI3_PCS1)
+				PIN2MUX(SPI3_PCS1),
 #endif
-#ifdef SPI3_PCS2
-		PIN2MUX(SPI3_PCS2),
+#if defined(SPI3_PCS2) && !ISEMPTY(SPI3_PCS2)
+				PIN2MUX(SPI3_PCS2),
 #endif
-#ifdef SPI3_PCS3
-		PIN2MUX(SPI3_PCS3),
+#if defined(SPI3_PCS3) && !ISEMPTY(SPI3_PCS3)
+				PIN2MUX(SPI3_PCS3),
 #endif
-		},
+			},
 		},
 #endif
 
 #if SPI4
-		{ 3,
-		{ PIN2MUX(SPI4_SCK), PIN2MUX(SPI4_SD0), PIN2MUX(SPI4_SDI),
-#ifdef SPI4_PCS0
-		PIN2MUX(SPI4_PCS0),
+		{
+			3,
+			{
+				PIN2MUX(SPI4_SCK),
+				PIN2MUX(SPI4_SD0),
+				PIN2MUX(SPI4_SDI),
+#if defined(SPI4_PCS0) && !ISEMPTY(SPI4_PCS0)
+				PIN2MUX(SPI4_PCS0),
 #endif
-#ifdef SPI4_PCS1
-		PIN2MUX(SPI4_PCS1),
+#if defined(SPI4_PCS1) && !ISEMPTY(SPI4_PCS1)
+				PIN2MUX(SPI4_PCS1),
 #endif
-#ifdef SPI4_PCS2
-		PIN2MUX(SPI4_PCS2),
+#if defined(SPI4_PCS2) && !ISEMPTY(SPI4_PCS2)
+				PIN2MUX(SPI4_PCS2),
 #endif
-#ifdef SPI4_PCS3
-		PIN2MUX(SPI4_PCS3),
+#if defined(SPI4_PCS3) && !ISEMPTY(SPI4_PCS3)
+				PIN2MUX(SPI4_PCS3),
 #endif
-		},
+			},
 		},
 #endif
 
 #if SPI5
-		{ 4,
-		{ PIN2MUX(SPI5_SCK), PIN2MUX(SPI5_SD0), PIN2MUX(SPI5_SDI),
-#ifdef SPI5_PCS0
-		PIN2MUX(SPI5_PCS0),
+		{
+			4,
+			{
+				PIN2MUX(SPI5_SCK),
+				PIN2MUX(SPI5_SD0),
+				PIN2MUX(SPI5_SDI),
+#if defined(SPI5_PCS0) && !ISEMPTY(SPI5_PCS0)
+				PIN2MUX(SPI5_PCS0),
 #endif
-#ifdef SPI5_PCS1
-		PIN2MUX(SPI5_PCS1),
+#if defined(SPI5_PCS1) && !ISEMPTY(SPI5_PCS1)
+				PIN2MUX(SPI5_PCS1),
 #endif
-#ifdef SPI5_PCS2
-		PIN2MUX(SPI5_PCS2),
+#if defined(SPI5_PCS2) && !ISEMPTY(SPI5_PCS2)
+				PIN2MUX(SPI5_PCS2),
 #endif
-#ifdef SPI5_PCS3
-		PIN2MUX(SPI5_PCS3),
+#if defined(SPI5_PCS3) && !ISEMPTY(SPI5_PCS3)
+				PIN2MUX(SPI5_PCS3),
 #endif
-		},
+			},
 		},
 #endif
 
 #if SPI6
-		{ 5,
-		{ PIN2MUX(SPI6_SCK), PIN2MUX(SPI6_SD0), PIN2MUX(SPI6_SDI),
-#ifdef SPI6_PCS0
-		PIN2MUX(SPI6_PCS0),
+		{
+			5,
+			{
+				PIN2MUX(SPI6_SCK),
+				PIN2MUX(SPI6_SD0),
+				PIN2MUX(SPI6_SDI),
+#if defined(SPI6_PCS0) && !ISEMPTY(SPI6_PCS0)
+				PIN2MUX(SPI6_PCS0),
 #endif
-#ifdef SPI6_PCS1
-		PIN2MUX(SPI6_PCS1),
+#if defined(SPI6_PCS1) && !ISEMPTY(SPI6_PCS1)
+				PIN2MUX(SPI6_PCS1),
 #endif
-#ifdef SPI6_PCS2
-		PIN2MUX(SPI6_PCS2),
+#if defined(SPI6_PCS2) && !ISEMPTY(SPI6_PCS2)
+				PIN2MUX(SPI6_PCS2),
 #endif
-#ifdef SPI6_PCS3
-		PIN2MUX(SPI6_PCS3),
+#if defined(SPI6_PCS3) && !ISEMPTY(SPI6_PCS3)
+				PIN2MUX(SPI6_PCS3),
 #endif
-		},
+			},
 		},
 #endif
 
@@ -692,65 +716,73 @@ static void spi_initPins(void)
 	int i, isel, val;
 	static const int muxes[] = {
 #if SPI1
-		PIN2MUX(SPI1_SCK), PIN2MUX(SPI1_SD0), PIN2MUX(SPI1_SDI),
-#ifdef SPI1_PCS0
+		PIN2MUX(SPI1_SCK),
+		PIN2MUX(SPI1_SD0),
+		PIN2MUX(SPI1_SDI),
+#if defined(SPI1_PCS0) && !ISEMPTY(SPI1_PCS0)
 		PIN2MUX(SPI1_PCS0),
 #endif
-#ifdef SPI1_PCS1
+#if defined(SPI1_PCS1) && !ISEMPTY(SPI1_PCS1)
 		PIN2MUX(SPI1_PCS1),
 #endif
-#ifdef SPI1_PCS2
+#if defined(SPI1_PCS2) && !ISEMPTY(SPI1_PCS2)
 		PIN2MUX(SPI1_PCS2),
 #endif
-#ifdef SPI1_PCS3
+#if defined(SPI1_PCS3) && !ISEMPTY(SPI1_PCS3)
 		PIN2MUX(SPI1_PCS3),
 #endif
 #endif
 
 #if SPI2
-		PIN2MUX(SPI2_SCK), PIN2MUX(SPI2_SD0), PIN2MUX(SPI2_SDI),
-#ifdef SPI2_PCS0
+		PIN2MUX(SPI2_SCK),
+		PIN2MUX(SPI2_SD0),
+		PIN2MUX(SPI2_SDI),
+#if defined(SPI2_PCS0) && !ISEMPTY(SPI2_PCS0)
 		PIN2MUX(SPI2_PCS0),
 #endif
-#ifdef SPI2_PCS1
+#if defined(SPI2_PCS1) && !ISEMPTY(SPI2_PCS1)
 		PIN2MUX(SPI2_PCS1),
 #endif
-#ifdef SPI2_PCS2
+#if defined(SPI2_PCS2) && !ISEMPTY(SPI2_PCS2)
 		PIN2MUX(SPI2_PCS2),
 #endif
-#ifdef SPI2_PCS3
+#if defined(SPI2_PCS3) && !ISEMPTY(SPI2_PCS3)
 		PIN2MUX(SPI2_PCS3),
 #endif
 #endif
 
 #if SPI3
-		PIN2MUX(SPI3_SCK), PIN2MUX(SPI3_SD0), PIN2MUX(SPI3_SDI),
-#ifdef SPI3_PCS0
+		PIN2MUX(SPI3_SCK),
+		PIN2MUX(SPI3_SD0),
+		PIN2MUX(SPI3_SDI),
+#if defined(SPI3_PCS0) && !ISEMPTY(SPI3_PCS0)
 		PIN2MUX(SPI3_PCS0),
 #endif
-#ifdef SPI3_PCS1
+#if defined(SPI3_PCS1) && !ISEMPTY(SPI3_PCS1)
 		PIN2MUX(SPI3_PCS1),
 #endif
-#ifdef SPI3_PCS2
+#if defined(SPI3_PCS2) && !ISEMPTY(SPI3_PCS2)
 		PIN2MUX(SPI3_PCS2),
 #endif
-#ifdef SPI3_PCS3
+#if defined(SPI3_PCS3) && !ISEMPTY(SPI3_PCS3)
 		PIN2MUX(SPI3_PCS3),
 #endif
 #endif
 
 #if SPI4
-		PIN2MUX(SPI4_SCK), PIN2MUX(SPI4_SD0), PIN2MUX(SPI4_SDI),
-#ifdef SPI4_PCS0
+		PIN2MUX(SPI4_SCK),
+		PIN2MUX(SPI4_SD0),
+		PIN2MUX(SPI4_SDI),
+#if defined(SPI4_PCS0) && !ISEMPTY(SPI4_PCS0)
 		PIN2MUX(SPI4_PCS0),
 #endif
-#ifdef SPI4_PCS1
+#if defined(SPI4_PCS1) && !ISEMPTY(SPI4_PCS1)
 		PIN2MUX(SPI4_PCS1),
 #endif
-#ifdef SPI4_PCS2
+#if defined(SPI4_PCS2) && !ISEMPTY(SPI4_PCS2)
 		PIN2MUX(SPI4_PCS2),
 #endif
-#ifdef SPI4_PCS3
+#if defined(SPI4_PCS3) && !ISEMPTY(SPI4_PCS3)
 		PIN2MUX(SPI4_PCS3),
 #endif
 #endif
