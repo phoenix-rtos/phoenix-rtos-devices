@@ -306,6 +306,11 @@ extern int fs_init(void);
 #endif
 
 
+#if BUILTIN_POSIXSRV
+extern int posixsrv_start(void);
+#endif
+
+
 int main(void)
 {
 	int i;
@@ -335,6 +340,10 @@ int main(void)
 	uart_init();
 	rng_init();
 	libklog_init(log_write);
+
+#if BUILTIN_POSIXSRV
+	posixsrv_start();
+#endif
 
 	/* Do this after klog init to keep shell from overtaking klog */
 
