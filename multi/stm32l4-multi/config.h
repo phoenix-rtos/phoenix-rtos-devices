@@ -253,4 +253,10 @@
 #define BUILTIN_DUMMYFS 1
 #endif
 
+/* libposixsrv (disabled by default) */
+#ifndef BUILTIN_POSIXSRV
+#define BUILTIN_POSIXSRV 0
+#endif
+
+
 #endif
