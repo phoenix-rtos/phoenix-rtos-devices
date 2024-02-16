@@ -3,7 +3,7 @@
  *
  * GRLIB UART driver
  *
- * Copyright 2023 Phoenix Systems
+ * Copyright 2023, 2024 Phoenix Systems
  * Author: Lukasz Leczkowski
  *
  * This file is part of Phoenix-RTOS.
@@ -14,8 +14,10 @@
 #include <errno.h>
 
 #include <board_config.h>
+#include <endian.h>
 #include <libtty.h>
-#include <libklog.h>
+#include <stdlib.h>
+#include <stdatomic.h>
 
 #include <sys/debug.h>
 #include <sys/file.h>
@@ -23,6 +25,7 @@
 #include <sys/interrupt.h>
 #include <sys/platform.h>
 #include <sys/threads.h>
+#include <sys/time.h>
 #include <posix/utils.h>
 
 #include <phoenix/ioctl.h>
@@ -37,8 +40,16 @@
 
 #include <phoenix/arch/sparcv8leon3/sparcv8leon3.h>
 
+#include <grdmac2.h>
+
 #include "uart.h"
 #include "grlib-multi.h"
+
+
+#if !defined(DMA_MAX_CNT) || (UART0_DMA + UART1_DMA + UART2_DMA + UART3_DMA + UART4_DMA + UART5_DMA) > DMA_MAX_CNT
+#error "Unsupported DMA configuration"
+#endif
+
 
 #define UART_STACKSZ (4096)
 
@@ -48,6 +59,13 @@
 #define UART_CTRL   2
 #define UART_SCALER 3
 #define UART_DEBUG  4
+
+/* Byte offset of LSB of UART_DATA register */
+#if __BYTE_ORDER == __BIG_ENDIAN
+#define UART_DATA_OFFS 3
+#elif __BYTE_ORDER == __LITTLE_ENDIAN
+#define UART_DATA_OFFS 0
+#endif
 
 /* UART control bits */
 #define STOP_BITS   (1 << 15)
@@ -70,6 +88,9 @@
 
 #define UART_CLK SYSCLK_FREQ
 
+#define DMA_RECEIVE_SIZE    64 /* Should be a power of 2 for modulo operation */
+#define DMA_RECEIVE_IRQSIZE 16
+
 
 typedef struct {
 	volatile uint32_t *vbase;
@@ -80,8 +101,21 @@ typedef struct {
 	handle_t lock;
 	libtty_common_t tty;
 
+	/* DMA */
+	grdma_ctx_t *dmaCtx;
+	volatile unsigned char *dmaRxBuf;
+	volatile atomic_size_t nextPos;
+	volatile atomic_size_t irqCnt;
+	size_t lastPos;
+
 	uint8_t stack[UART_STACKSZ] __attribute__((aligned(8)));
 } uart_t;
+
+
+typedef struct {
+	grdma_condDescr_t condDescr;
+	grdma_dataDescr_t dataDescr;
+} __attribute__((packed, aligned(4))) uart_dmaDescr_t;
 
 
 static struct {
@@ -90,13 +124,14 @@ static struct {
 	uint8_t txPin;
 	uint8_t rxPin;
 	uint8_t active;
+	uint8_t useDma;
 } info[] = {
-	{ .txPin = UART0_TX, .rxPin = UART0_RX, .active = UART0_ACTIVE },
-	{ .txPin = UART1_TX, .rxPin = UART1_RX, .active = UART1_ACTIVE },
-	{ .txPin = UART2_TX, .rxPin = UART2_RX, .active = UART2_ACTIVE },
-	{ .txPin = UART3_TX, .rxPin = UART3_RX, .active = UART3_ACTIVE },
-	{ .txPin = UART4_TX, .rxPin = UART4_RX, .active = UART4_ACTIVE },
-	{ .txPin = UART5_TX, .rxPin = UART5_RX, .active = UART5_ACTIVE }
+	{ .txPin = UART0_TX, .rxPin = UART0_RX, .active = UART0_ACTIVE, .useDma = UART0_DMA },
+	{ .txPin = UART1_TX, .rxPin = UART1_RX, .active = UART1_ACTIVE, .useDma = UART1_DMA },
+	{ .txPin = UART2_TX, .rxPin = UART2_RX, .active = UART2_ACTIVE, .useDma = UART2_DMA },
+	{ .txPin = UART3_TX, .rxPin = UART3_RX, .active = UART3_ACTIVE, .useDma = UART3_DMA },
+	{ .txPin = UART4_TX, .rxPin = UART4_RX, .active = UART4_ACTIVE, .useDma = UART4_DMA },
+	{ .txPin = UART5_TX, .rxPin = UART5_RX, .active = UART5_ACTIVE, .useDma = UART5_DMA }
 };
 
 
@@ -122,42 +157,137 @@ static int uart_interrupt(unsigned int n, void *arg)
 }
 
 
+static int uart_dmaInterrupt(unsigned int n, void *arg)
+{
+	uart_t *uart = (uart_t *)arg;
+	uart_dmaDescr_t *done = &((uart_dmaDescr_t *)uart->dmaCtx->descr)[uart->nextPos];
+	(void)n;
+
+	uart->nextPos = (uart->nextPos + DMA_RECEIVE_IRQSIZE) % DMA_RECEIVE_SIZE;
+
+	for (size_t i = 0; i < DMA_RECEIVE_IRQSIZE; i++) {
+		/* Clear descriptor statuses */
+		done[i].condDescr.sts = 0;
+		done[i].dataDescr.sts = 0;
+	}
+
+	uart->irqCnt = 1 + (uart->irqCnt % 4);
+
+	return 1;
+}
+
+
+static size_t uart_dmaGetPos(const uart_t *uart)
+{
+	uart_dmaDescr_t *done = (uart_dmaDescr_t *)uart->dmaCtx->descr;
+	const size_t pos = uart->nextPos;
+
+	for (size_t i = 0; i < (uart->irqCnt * DMA_RECEIVE_IRQSIZE); i++) {
+		size_t next = (pos + i) % DMA_RECEIVE_SIZE;
+		if ((done[next].dataDescr.sts & 0x1) == 0) {
+			return next;
+		}
+	}
+
+	return pos;
+}
+
+
 static void uart_intThread(void *arg)
 {
 	uart_t *uart = (uart_t *)arg;
-	int wake;
 
 	mutexLock(uart->lock);
 
 	for (;;) {
-		while (libtty_txready(&uart->tty) == 0 && (*(uart->vbase + UART_STATUS) & DATA_READY) == 0) {
+		while ((libtty_txready(&uart->tty) == 0) && ((*(uart->vbase + UART_STATUS) & DATA_READY) == 0)) {
 			condWait(uart->cond, uart->lock, 0);
 		}
 
-		/* Receive data until RX FIFO is not empty */
-		while ((*(uart->vbase + UART_STATUS) & DATA_READY) != 0) {
-			libtty_putchar(&uart->tty, (*(uart->vbase + UART_DATA) & 0xff), NULL);
+		int wake = 0;
+		if ((*(uart->vbase + UART_STATUS) & DATA_READY) != 0) {
+			int wakehelper;
+			libtty_putchar_lock(&uart->tty);
+			do {
+				libtty_putchar_unlocked(&uart->tty, (*(uart->vbase + UART_DATA) & 0xff), &wakehelper);
+				wake |= wakehelper;
+			} while ((*(uart->vbase + UART_STATUS) & DATA_READY) != 0);
+			libtty_putchar_unlock(&uart->tty);
+
+			if (wake != 0) {
+				libtty_wake_reader(&uart->tty);
+			}
 		}
 
 		/* Transmit data until TX TTY buffer is empty or TX FIFO is full */
-		wake = 0;
-		while (libtty_txready(&uart->tty) != 0 && (*(uart->vbase + UART_STATUS) & TX_FIFO_FULL) == 0) {
+		while ((libtty_txready(&uart->tty) != 0) && ((*(uart->vbase + UART_STATUS) & TX_FIFO_FULL) == 0)) {
 			*(uart->vbase + UART_DATA) = libtty_popchar(&uart->tty);
 			wake = 1;
 		}
 
-		if (wake == 1) {
+		if (wake != 0) {
 			libtty_wake_writer(&uart->tty);
 		}
 
-		/* If RX int is disabled */
 		if ((*(uart->vbase + UART_CTRL) & RX_INT) == 0) {
-			/* Enable RX int */
 			*(uart->vbase + UART_CTRL) |= RX_INT;
 		}
 	}
 
 	mutexUnlock(uart->lock);
+}
+
+
+static void uart_dmaThread(void *arg)
+{
+	uart_t *uart = (uart_t *)arg;
+
+	mutexLock(uart->lock);
+
+	for (;;) {
+		size_t pos = uart_dmaGetPos(uart);
+		while ((libtty_txready(&uart->tty) == 0) && (uart->lastPos == pos)) {
+			(void)condWait(uart->cond, uart->lock, 50000);
+			pos = uart_dmaGetPos(uart);
+		}
+
+		int wake = 0;
+		if (uart->lastPos != pos) {
+			libtty_putchar_lock(&uart->tty);
+			do {
+				int wakeHelper;
+				libtty_putchar_unlocked(&uart->tty, uart->dmaRxBuf[uart->lastPos], &wakeHelper);
+				uart->lastPos = (uart->lastPos + 1) % DMA_RECEIVE_SIZE;
+				wake |= wakeHelper;
+			} while (uart->lastPos != pos);
+
+			/* Unroll one loop to speed up RX */
+			pos = uart_dmaGetPos(uart);
+			if (uart->lastPos != pos) {
+				do {
+					int wakeHelper;
+					libtty_putchar_unlocked(&uart->tty, uart->dmaRxBuf[uart->lastPos], &wakeHelper);
+					uart->lastPos = (uart->lastPos + 1) % DMA_RECEIVE_SIZE;
+					wake |= wakeHelper;
+				} while (uart->lastPos != pos);
+			}
+			libtty_putchar_unlock(&uart->tty);
+
+			if (wake != 0) {
+				libtty_wake_reader(&uart->tty);
+			}
+		}
+
+		wake = 0;
+		while ((libtty_txready(&uart->tty) != 0) && ((*(uart->vbase + UART_STATUS) & TX_FIFO_FULL) == 0)) {
+			*(uart->vbase + UART_DATA) = libtty_popchar(&uart->tty);
+			wake = 1;
+		}
+
+		if (wake != 0) {
+			libtty_wake_writer(&uart->tty);
+		}
+	}
 }
 
 
@@ -246,6 +376,77 @@ static int uart_cguInit(unsigned int n)
 }
 
 
+static int uart_dmaSetup(uart_t *uart)
+{
+	*(uart->vbase + UART_CTRL) = RX_EN | TX_EN;
+
+	grdma_ctx_t *ctx = grdma_init(0);
+	if (ctx == NULL) {
+		return -1;
+	}
+
+	if (grdma_descrAlloc(ctx, (sizeof(grdma_condDescr_t) + sizeof(grdma_dataDescr_t)) * DMA_RECEIVE_SIZE) < 0) {
+		grdma_destroy(ctx);
+		return -1;
+	}
+
+	uart->dmaRxBuf = malloc(DMA_RECEIVE_SIZE * sizeof(unsigned char));
+
+	if (uart->dmaRxBuf == NULL) {
+		grdma_destroy(ctx);
+		return -1;
+	}
+
+	uart->dmaCtx = ctx;
+	uart->nextPos = 0;
+	uart->lastPos = 0;
+	uart->irqCnt = 1;
+
+	uart_dmaDescr_t *descr = ctx->descr;
+
+	for (size_t i = 0; i < DMA_RECEIVE_SIZE; i++) {
+		descr[i].condDescr.ctrl = GRDMA_COND_EN | GRDMA_DESC_TYPE(1) | GRDMA_COND_INTRV(0xff) | GRDMA_COND_CNT(0xff) | GRDMA_COND_WB;
+		descr[i].condDescr.next = (uintptr_t)&descr[i].dataDescr & ~0x1;
+		descr[i].condDescr.nextFail = (uintptr_t)&descr[i].condDescr & ~0x1;
+		descr[i].condDescr.poll = (uintptr_t)(uart->vbase + UART_STATUS);
+		descr[i].condDescr.expData = DATA_READY;
+		descr[i].condDescr.mask = DATA_READY;
+		descr[i].condDescr.sts = 0;
+
+		descr[i].dataDescr.ctrl = GRDMA_DATA_EN | GRDMA_DESC_TYPE(0) | GRDMA_DATA_SF | GRDMA_DATA_SZ(1) | GRDMA_DATA_WB;
+		if ((i % DMA_RECEIVE_IRQSIZE) == (DMA_RECEIVE_IRQSIZE - 1)) {
+			descr[i].dataDescr.ctrl |= GRDMA_DATA_IE;
+		}
+		if (i == DMA_RECEIVE_SIZE - 1) {
+			descr[i].dataDescr.next = (uintptr_t)ctx->descr & ~0x1;
+		}
+		else {
+			descr[i].dataDescr.next = (uintptr_t)&descr[i + 1] & ~0x1;
+		}
+		descr[i].dataDescr.dest = (uintptr_t)&uart->dmaRxBuf[i];
+		descr[i].dataDescr.src = ((uintptr_t)(uart->vbase + UART_DATA)) + UART_DATA_OFFS;
+		descr[i].dataDescr.sts = 0;
+	}
+
+	interrupt(ctx->irq, uart_dmaInterrupt, uart, uart->cond, &uart->inth);
+
+	grdma_setup(ctx, ctx->descr);
+	grdma_start(ctx);
+
+	return 0;
+}
+
+
+static int uart_irqSetup(unsigned int n, uart_t *uart)
+{
+	*(uart->vbase + UART_CTRL) = RX_INT | RX_EN | TX_EN;
+
+	interrupt(info[n].irq, uart_interrupt, uart, uart->cond, &uart->inth);
+
+	return 0;
+}
+
+
 static int uart_setup(unsigned int n, speed_t baud, int raw)
 {
 	libtty_callbacks_t callbacks;
@@ -317,7 +518,7 @@ static int uart_setup(unsigned int n, speed_t baud, int raw)
 	*(uart->vbase + UART_SCALER) = 0;
 
 	/* Clear UART FIFO */
-	while ((*(uart->vbase + UART_STATUS) & (1 << 0)) != 0) {
+	while ((*(uart->vbase + UART_STATUS) & DATA_READY) != 0) {
 		(void)*(uart->vbase + UART_DATA);
 	}
 
@@ -326,12 +527,21 @@ static int uart_setup(unsigned int n, speed_t baud, int raw)
 
 	uart->tty.term.c_ispeed = uart->tty.term.c_ospeed = baud;
 	uart_setBaudrate(uart, baud);
-	*(uart->vbase + UART_CTRL) = RX_INT | RX_EN | TX_EN;
 
-	beginthread(uart_intThread, 2, &uart->stack, sizeof(uart->stack), (void *)uart);
-	interrupt(info[n].irq, uart_interrupt, uart, uart->cond, &uart->inth);
+	if (info[n].useDma == 1) {
+		if (uart_dmaSetup(uart) == 0) {
+			beginthread(uart_dmaThread, 1, &uart->stack, sizeof(uart->stack), (void *)uart);
+			return 0;
+		}
+	}
+	else {
+		if (uart_irqSetup(n, uart) == 0) {
+			beginthread(uart_intThread, 2, &uart->stack, sizeof(uart->stack), (void *)uart);
+			return 0;
+		}
+	}
 
-	return EOK;
+	return -1;
 }
 
 
