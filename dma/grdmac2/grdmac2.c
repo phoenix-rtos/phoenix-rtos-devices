@@ -42,27 +42,27 @@
 
 void grdma_setup(grdma_ctx_t *ctx, void *first)
 {
-	ctx->base[GRDMAC2_CTRL] = CTRL_RST;
-	ctx->base[GRDMAC2_TIMER] = 0xffffffff;
-	ctx->base[GRDMAC2_FIRST] = (uintptr_t)first;
+	*(ctx->base + GRDMAC2_CTRL) = CTRL_RST;
+	*(ctx->base + GRDMAC2_TIMER) = 0xffffffff;
+	*(ctx->base + GRDMAC2_FIRST) = (uintptr_t)first;
 }
 
 
 void grdma_start(grdma_ctx_t *ctx)
 {
-	ctx->base[GRDMAC2_CTRL] = CTRL_EN | CTRL_IE;
+	*(ctx->base + GRDMAC2_CTRL) = CTRL_EN | CTRL_IE;
 }
 
 
 void grdma_restart(grdma_ctx_t *ctx)
 {
-	ctx->base[GRDMAC2_CTRL] |= CTRL_RT;
+	*(ctx->base + GRDMAC2_CTRL) |= CTRL_RT;
 }
 
 
 bool grdma_finished(grdma_ctx_t *ctx)
 {
-	return (ctx->base[GRDMAC2_STS] & 0x1) != 0;
+	return (*(ctx->base + GRDMAC2_STS) & 0x1) != 0;
 }
 
 
