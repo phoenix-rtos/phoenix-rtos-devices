@@ -1,3 +1,4 @@
+#include <unistd.h>
 #include <sys/mman.h>
 #include <sys/platform.h>
 
@@ -8,6 +9,7 @@
 #define SAI_RCR3_RCE_BIT  (1 << 16)
 #define SAI_RCSR_RE_BIT   (1 << 31)
 #define SAI_RCSR_SR_BIT   (1 << 24)
+#define SAI_RCSR_FR_BIT   (1 << 25)
 #define SAI_RCSR_FRDE_BIT (1 << 0)
 
 typedef volatile struct {
@@ -108,22 +110,29 @@ int sai_init(void)
 	sai_common.reg->RCR1 = sai_common.watermark;
 	sai_common.reg->RCR2 = 0x0; /* External bit clock (slave mode) */
 	sai_common.reg->RCR3 |= SAI_RCR3_RCE_BIT;
-	sai_common.reg->RCR4 = 0x00070018;         /* FRSZ=7, SYWD=0, MF=1, FSE=1, FSP=0, FSD=0 */
-	sai_common.reg->RCR5 = 0x1f1f1f00;         /* WNW=31, WOW=31, FBT=31 */
-	sai_common.reg->RMR = 0x0;                 /* No words masked */
-	sai_common.reg->RCSR |= SAI_RCSR_FRDE_BIT; /* FIFO Request DMA Enable */
+	sai_common.reg->RCR4 = 0x00070018; /* FRSZ=7, SYWD=0, MF=1, FSE=1, FSP=0, FSD=0 */
+	sai_common.reg->RCR5 = 0x1f1f1f00; /* WNW=31, WOW=31, FBT=31 */
+	sai_common.reg->RMR = 0x0;         /* No words masked */
 
 	return 0;
 }
 
 void sai_rx_enable(void)
 {
-	sai_common.reg->RCSR |= SAI_RCSR_RE_BIT;
+	sai_common.reg->RCSR |= SAI_RCSR_RE_BIT | SAI_RCSR_FRDE_BIT;
 }
 
 void sai_rx_disable(void)
 {
-	sai_common.reg->RCSR &= ~(SAI_RCSR_RE_BIT);
+	sai_common.reg->RCSR &= ~(SAI_RCSR_RE_BIT | SAI_RCSR_FRDE_BIT);
+
+	/* Wait until the end of current frame */
+	while ((sai_common.reg->RCSR & SAI_RCSR_RE_BIT) != 0) {
+		usleep(1);
+	}
+
+	/* Reset RX FIFO */
+	sai_common.reg->RCSR |= SAI_RCSR_FR_BIT;
 }
 
 addr_t sai_fifo_rx_ptr(void)

@@ -179,18 +179,22 @@ static int dev_ctl(msg_t *msg)
 	switch (dev_ctl.type) {
 		case adc_dev_ctl__enable:
 			ad7779_common.enabled = 1;
-			sai_rx_enable();
 			dma_enable();
+			sai_rx_enable();
 			return EOK;
 
 		case adc_dev_ctl__disable:
 			/* NOTE: it's not guaranteed that dma_read() would ever finish (read_thr may be blocked until next enable or timeout) */
-			dma_disable();
 			sai_rx_disable();
+			dma_disable();
 			ad7779_common.enabled = 0;
 			return EOK;
 
 		case adc_dev_ctl__reset:
+			res = dma_reset();
+			if (res != AD7779_OK) {
+				return res;
+			}
 			return ad7779_init(dev_ctl.reset_hard);
 
 		case adc_dev_ctl__status:

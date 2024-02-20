@@ -21,6 +21,9 @@
 int dma_init(size_t size, size_t count, addr_t *phys_addr);
 
 
+int dma_reset(void);
+
+
 void dma_free(void);
 
 

@@ -219,3 +219,10 @@ int dma_init(size_t size, size_t count, addr_t *phys_addr)
 
 	return res;
 }
+
+
+int dma_reset(void)
+{
+	/* TODO */
+	return EOK;
+}
