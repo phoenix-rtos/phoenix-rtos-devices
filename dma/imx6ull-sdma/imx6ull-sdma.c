@@ -585,6 +585,13 @@ static int sdma_channel_configure(uint8_t channel_id, sdma_channel_config_t *cfg
 		return -1;
 	}
 
+	/* Clear sticky conditional variable and reset counters - dev_read() should
+	   count interrupts from 0 after reconfiguring SDMA. */
+	condWait(common.channel[channel_id].intr_cond, common.lock, 1);
+	common.channel[channel_id].intr_cnt = 0;
+	common.channel[channel_id].read_cnt = 0;
+	common.channel[channel_id].missed_intr_cnt = 0;
+
 	return 0;
 }
 
