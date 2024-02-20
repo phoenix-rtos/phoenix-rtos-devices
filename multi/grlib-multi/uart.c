@@ -606,6 +606,7 @@ int uart_createDevs(oid_t *oid)
 			return -1;
 		}
 
+		oid->id = id_uart0 + i;
 		if (create_dev(oid, buf) < 0) {
 			return -1;
 		}
