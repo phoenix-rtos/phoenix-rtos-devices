@@ -28,6 +28,8 @@
 #include <sys/threads.h>
 #include <posix/utils.h>
 
+#include <phoenix/ioctl.h>
+
 #if PSEUDODEV
 #include <pseudodev.h>
 #endif
@@ -97,6 +99,7 @@ static int multi_createDevs(void)
 	}
 
 	for (int i = 0; pseudo_devs[i] != NULL; i++) {
+		multi_common.multiOid.id = id_pseudoNull + i;
 		if (create_dev(&multi_common.multiOid, pseudo_devs[i]) < 0) {
 			LOG_ERROR("Failed to create %s device file", pseudo_devs[i]);
 			return -1;
@@ -238,7 +241,14 @@ static void multi_thread(void *arg)
 
 static void uart_dispatchMsg(msg_t *msg)
 {
-	id_t id = multi_getId(msg);
+	id_t id;
+
+	if (msg->type == mtDevCtl) {
+		id = ((ioctl_in_t *)msg->i.raw)->id;
+	}
+	else {
+		id = multi_getId(msg);
+	}
 
 	switch (id) {
 		case id_console:
