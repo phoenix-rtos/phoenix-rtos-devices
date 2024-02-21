@@ -35,7 +35,7 @@ static const struct {
 	const char manufacturer[16];
 } __attribute__((packed)) ehci_descs = {
 	{
-		.bLength = 18,
+		.bLength = sizeof(ehci_descs.dev),
 		.bcdUSB = 0x0200,
 		.bDeviceClass = USB_CLASS_HUB,
 		.bDeviceSubClass = 0,
@@ -50,9 +50,9 @@ static const struct {
 		.bNumConfigurations = 1,
 	},
 	{
-		.bLength = 9,
+		.bLength = sizeof(ehci_descs.cfg),
 		.bDescriptorType = USB_DESC_CONFIG,
-		.wTotalLength = 40,
+		.wTotalLength = sizeof(ehci_descs.cfg) + sizeof(ehci_descs.iface) + sizeof(ehci_descs.ep),
 		.bNumInterfaces = 1,
 		.bConfigurationValue = 1,
 		.iConfiguration = 0,
@@ -60,8 +60,8 @@ static const struct {
 		.bMaxPower = 0,
 	},
 	{
-		.bLength = 9,
-		.bDescriptorType = USB_DESC_CONFIG,
+		.bLength = sizeof(ehci_descs.iface),
+		.bDescriptorType = USB_DESC_INTERFACE,
 		.bInterfaceNumber = 0,
 		.bAlternateSetting = 0,
 		.bNumEndpoints = 1,
@@ -71,7 +71,7 @@ static const struct {
 		.iInterface = 0,
 	},
 	{
-		.bLength = 7,
+		.bLength = sizeof(ehci_descs.ep),
 		.bDescriptorType = USB_DESC_ENDPOINT,
 		.bEndpointAddress = USB_ENDPT_DIR_IN | (1 << 7),
 		.bmAttributes = USB_ENDPT_TYPE_INTR,
@@ -290,11 +290,11 @@ static int ehci_getDesc(usb_dev_t *hub, int type, int index, char *buf, size_t s
 
 	switch (type) {
 		case USB_DESC_DEVICE:
-			bytes = min(size, sizeof(ehci_descs.dev));
+			bytes = min(size, ehci_descs.dev.bLength);
 			memcpy(buf, &ehci_descs.dev, bytes);
 			break;
 		case USB_DESC_CONFIG:
-			bytes = min(size, sizeof(ehci_descs.dev) + sizeof(ehci_descs.iface) + sizeof(ehci_descs.ep));
+			bytes = min(size, ehci_descs.cfg.wTotalLength);
 			memcpy(buf, &ehci_descs.cfg, bytes);
 			break;
 		case USB_DESC_STRING:
