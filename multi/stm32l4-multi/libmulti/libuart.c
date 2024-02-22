@@ -19,6 +19,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <stdbool.h>
 #include <sys/pwman.h>
 #include <sys/interrupt.h>
 #include <sys/minmax.h>
@@ -471,25 +472,32 @@ int libuart_read(libuart_ctx *ctx, void *buff, unsigned int count, char mode, un
 static void libuart_infiniteRxHandler(void *arg, int type)
 {
 	libuart_ctx *ctx = arg;
-	size_t endPos;
 	size_t read;
-	size_t rxfifopos;
-	size_t rxfifoprevend;
 	size_t rxbufsz;
 	size_t torx;
 	size_t infifo;
 	size_t cpysz;
-	char *rxbuf = (char *)ctx->data.dma.rxbuf;
+	volatile char *rxbuf = ctx->data.dma.rxbuf;
 
-	endPos = ctx->data.dma.rxfifosz - libdma_leftToRx(ctx->data.dma.per);
+	size_t rxfifopos = ctx->data.dma.rxfifopos;
+	size_t rxfifoprevend = ctx->data.dma.rxfifoprevend;
+	size_t endPos = ctx->data.dma.rxfifosz - libdma_leftToRx(ctx->data.dma.per);
 
-	rxfifopos = ctx->data.dma.rxfifopos;
-	rxfifoprevend = ctx->data.dma.rxfifoprevend;
-
+	bool overrun = false;
 	/* Check overrun */
 	if (((rxfifoprevend < rxfifopos) && ((rxfifopos < endPos) || (endPos < rxfifoprevend))) ||
 		((rxfifopos <= rxfifoprevend) && ((rxfifopos < endPos) && (endPos < rxfifoprevend)))) {
 		rxfifopos = endPos;
+		overrun = true;
+	}
+
+	if (rxbuf == NULL) {
+		if (overrun && (rxfifopos == endPos)) {
+			ctx->data.dma.rxfifofull = 1;
+		}
+		ctx->data.dma.rxfifopos = rxfifopos;
+		ctx->data.dma.rxfifoprevend = endPos;
+		return;
 	}
 
 	infifo = ctx->data.dma.rxfifosz + endPos - rxfifopos;
@@ -502,23 +510,25 @@ static void libuart_infiniteRxHandler(void *arg, int type)
 		infifo = ctx->data.dma.rxfifosz;
 	}
 
-	if (rxbuf != NULL) {
-		rxbufsz = ctx->data.dma.rxbufsz;
-		read = ctx->data.dma.read;
+	rxbufsz = ctx->data.dma.rxbufsz;
+	read = ctx->data.dma.read;
 
-		torx = min(rxbufsz - read, infifo);
-		if (torx != 0) {
-			ctx->data.dma.rxfifofull = 0;
-			cpysz = min(ctx->data.dma.rxfifosz - rxfifopos, torx);
-			memcpy(rxbuf + read, ctx->data.dma.rxfifo + rxfifopos, cpysz);
-			rxfifopos += cpysz;
-			if (torx != cpysz) {
-				memcpy(rxbuf + read + cpysz, ctx->data.dma.rxfifo, torx - cpysz);
-				rxfifopos = torx - cpysz;
-			}
-
-			ctx->data.dma.read = read + torx;
+	torx = min(rxbufsz - read, infifo);
+	if (torx != 0) {
+		ctx->data.dma.rxfifofull = 0;
+		cpysz = min(ctx->data.dma.rxfifosz - rxfifopos, torx);
+		for (size_t i = 0; i < cpysz; i++) {
+			rxbuf[read + i] = ctx->data.dma.rxfifo[rxfifopos + i];
 		}
+		rxfifopos += cpysz;
+		if (torx != cpysz) {
+			for (size_t i = 0; i < torx - cpysz; i++) {
+				rxbuf[read + cpysz + i] = ctx->data.dma.rxfifo[i];
+			}
+			rxfifopos = torx - cpysz;
+		}
+
+		ctx->data.dma.read = read + torx;
 	}
 
 	ctx->data.dma.rxfifopos = rxfifopos;
@@ -544,9 +554,13 @@ static int uart_irqDMA(unsigned int n, void *arg)
 		return -1;
 	}
 
-	read = libdma_leftToRx(ctx->data.dma.per);
+	/* Check if we have data to read */
+	read = 2 * ctx->data.dma.rxfifosz - libdma_leftToRx(ctx->data.dma.per) - ctx->data.dma.rxfifopos;
+	if (read >= ctx->data.dma.rxfifosz) {
+		read -= ctx->data.dma.rxfifosz;
+	}
 
-	if (read != 0) {
+	if ((read != 0) || (ctx->data.dma.rxfifofull == 1)) {
 		libuart_infiniteRxHandler(ctx, -read);
 	}
 
