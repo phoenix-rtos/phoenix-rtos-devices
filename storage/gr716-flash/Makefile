@@ -13,6 +13,6 @@ NAME := gr716-flash
 LOCAL_SRCS := flashsrv.c
 LOCAL_HEADERS := gr716-flashsrv.h
 DEP_LIBS := libflashdrv-gr716
-LIBS := libmeterfs libptable
+LIBS := libmeterfs libptable libtinyaes
 
 include $(binary.mk)
