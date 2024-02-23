@@ -15,7 +15,7 @@ include $(static-lib.mk)
 NAME := imx6ull-flashnor
 LOCAL_SRCS := flashnor-srv.c
 DEP_LIBS := libflashnordrv-imx6ull libimx6ull-ecspi libimx6ull-qspi
-LIBS := libmeterfs-storage libmeterfs libstorage libjffs2 libmtd
+LIBS := libmeterfs-storage libmeterfs libstorage libjffs2 libmtd libtinyaes
 LOCAL_INSTALL_PATH := /sbin
 
 include $(binary.mk)

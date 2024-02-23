@@ -16,6 +16,6 @@ NAME := imxrt-flash
 LOCAL_SRCS := flashsrv.c
 LOCAL_HEADERS := imxrt-flashsrv.h
 DEP_LIBS := libflashdrv-imxrt
-LIBS := libmeterfs libptable
+LIBS := libmeterfs libptable libtinyaes
 
 include $(binary.mk)
