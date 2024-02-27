@@ -189,6 +189,50 @@ int ad7779_set_mode(ad7779_mode_t mode)
 		return ad7779_set_clear_bits(AD7779_GENERAL_USER_CONFIG_1, 0, POWERMODE_BIT);
 }
 
+int ad7779_get_dout_drive_str(uint8_t *str)
+{
+	int res;
+	uint8_t reg;
+
+	if (str == NULL) {
+		return AD7779_ARG_ERROR;
+	}
+
+	res = ad7779_read_reg(AD7779_GENERAL_USER_CONFIG_2, &reg);
+	if (res != AD7779_OK) {
+		return res;
+	}
+
+	*str = (reg >> 1) & 0x3;
+
+	return AD7779_OK;
+}
+
+int ad7779_set_dout_drive_str(uint8_t str)
+{
+	int res;
+	uint8_t reg;
+
+	if (str > ad7779_dout_drive_str__extra_strong) {
+		return AD7779_ARG_ERROR;
+	}
+
+	res = ad7779_read_reg(AD7779_GENERAL_USER_CONFIG_2, &reg);
+	if (res != AD7779_OK) {
+		return res;
+	}
+
+	reg &= ~(0x3 << 1);
+	reg |= (str & 0x3) << 1;
+
+	res = ad7779_write_reg(AD7779_GENERAL_USER_CONFIG_2, reg);
+	if (res < 0) {
+		return res;
+	}
+
+	return AD7779_OK;
+}
+
 int ad7779_get_sampling_rate(uint32_t *fs)
 {
 	int res;

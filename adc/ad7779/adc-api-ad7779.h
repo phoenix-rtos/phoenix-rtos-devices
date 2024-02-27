@@ -37,7 +37,9 @@ typedef enum {
 	adc_dev_ctl__set_channel_calib,
 	adc_dev_ctl__get_channel_calib,
 	adc_dev_ctl__set_channel_config,
-	adc_dev_ctl__get_channel_config
+	adc_dev_ctl__get_channel_config,
+	adc_dev_ctl__set_dout_drive_str,
+	adc_dev_ctl__get_dout_drive_str
 } adc_dev_ctl_type_t;
 
 typedef struct {
@@ -93,6 +95,9 @@ typedef struct {
 			unsigned meter_rx_mode: 1;
 			unsigned ref_monitor_mode: 1;
 		} ch_config;
+
+		/* DOUT pin drive strength */
+		uint8_t dout_drive_str;
 	};
 } adc_dev_ctl_t;
 
