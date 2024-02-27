@@ -341,6 +341,27 @@ static int dev_ctl(msg_t *msg)
 			memcpy(msg->o.raw, &dev_ctl, sizeof(adc_dev_ctl_t));
 			return EOK;
 
+		case adc_dev_ctl__set_dout_drive_str:
+			res = ad7779_set_dout_drive_str(dev_ctl.dout_drive_str);
+			if (res == AD7779_ARG_ERROR) {
+				return -EINVAL;
+			}
+			if (res != AD7779_OK) {
+				return -EIO;
+			}
+			return EOK;
+
+		case adc_dev_ctl__get_dout_drive_str:
+			res = ad7779_get_dout_drive_str(&dev_ctl.dout_drive_str);
+			if (res == AD7779_ARG_ERROR) {
+				return -EINVAL;
+			}
+			if (res != AD7779_OK) {
+				return -EIO;
+			}
+			memcpy(msg->o.raw, &dev_ctl, sizeof(adc_dev_ctl_t));
+			return EOK;
+
 		default:
 			log_error("dev_ctl: unknown type (%d)", dev_ctl.type);
 			return -ENOSYS;

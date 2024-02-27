@@ -62,12 +62,22 @@ typedef enum {
 	ad7779_mode__high_resolution,
 } ad7779_mode_t;
 
+typedef enum {
+	ad7779_dout_drive_str__nominal = 0,
+	ad7779_dout_drive_str__strong,
+	ad7779_dout_drive_str__weak,
+	ad7779_dout_drive_str__extra_strong
+} ad7779_dout_drive_str_t;
+
 int ad7779_init(int hard);
 
 int ad7779_set_adc_mux(ad7779_ref_t ref, ad7779_meter_t meter);
 
 int ad7779_get_mode(ad7779_mode_t *mode);
 int ad7779_set_mode(ad7779_mode_t mode);
+
+int ad7779_get_dout_drive_str(uint8_t *str);
+int ad7779_set_dout_drive_str(uint8_t str);
 
 int ad7779_get_sampling_rate(uint32_t *fs);
 int ad7779_set_sampling_rate(uint32_t fs);
