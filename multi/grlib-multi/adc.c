@@ -20,14 +20,6 @@
 #include <sys/threads.h>
 #include <posix/utils.h>
 
-#if defined(__CPU_GR716)
-#include <phoenix/arch/sparcv8leon3/gr716/gr716.h>
-#elif defined(__CPU_GR712RC)
-#include <phoenix/arch/sparcv8leon3/gr712rc/gr712rc.h>
-#else
-#error "Unsupported target"
-#endif
-
 #include <phoenix/arch/sparcv8leon3/sparcv8leon3.h>
 
 #include "adc.h"
