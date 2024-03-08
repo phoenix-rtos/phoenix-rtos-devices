@@ -10,6 +10,6 @@ NAME := stm32l4-multi
 SRCS := $(wildcard $(LOCAL_PATH)*.c)
 LOCAL_HEADERS := stm32l4-multi.h
 DEP_LIBS := libstm32l4-multi libtty libklog
-LIBS := libdummyfs libklog libposixsrv
+LIBS := libdummyfs libklog libposixsrv libmeterfs
 
 include $(binary.mk)
