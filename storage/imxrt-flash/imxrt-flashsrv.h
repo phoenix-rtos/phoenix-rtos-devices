@@ -29,7 +29,6 @@ enum { flashsrv_devctl_properties = 0, flashsrv_devctl_sync, flashsrv_devctl_era
 
 typedef struct {
 	int type;
-	oid_t oid;
 	uint32_t addr;
 } __attribute__((packed)) flash_i_devctl_t;
 
@@ -43,10 +42,7 @@ typedef struct {
 
 
 typedef struct {
-	int err;
-
 	flashsrv_properties_t properties;
-
 } __attribute__((packed)) flash_o_devctl_t;
 
 

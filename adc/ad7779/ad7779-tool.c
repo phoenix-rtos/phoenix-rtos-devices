@@ -63,6 +63,7 @@ static int adc_get(uint32_t port, adc_dev_ctl_type_t type, adc_dev_ctl_t *ioctl_
 {
 	msg_t msg = {
 		.type = mtDevCtl,
+		.oid.port = port,
 	};
 
 	adc_dev_ctl_t ioctl = {
@@ -71,8 +72,8 @@ static int adc_get(uint32_t port, adc_dev_ctl_type_t type, adc_dev_ctl_t *ioctl_
 
 	memcpy(msg.o.raw, &ioctl, sizeof(adc_dev_ctl_t));
 	int res = msgSend(port, &msg);
-	if ((res < 0) || (msg.o.io.err != 0)) {
-		printf("failed to process req type %u sample rate %d, %d\n", type, res, msg.o.io.err);
+	if ((res < 0) || (msg.o.err != 0)) {
+		printf("failed to process req type %u sample rate %d, %d\n", type, res, msg.o.err);
 		return -1;
 	}
 
@@ -85,6 +86,7 @@ static int adc_getChConfig(uint32_t port, uint32_t channel, adc_dev_ctl_t *ioctl
 {
 	msg_t msg = {
 		.type = mtDevCtl,
+		.oid.port = port,
 	};
 
 	adc_dev_ctl_t ioctl = {
@@ -94,8 +96,8 @@ static int adc_getChConfig(uint32_t port, uint32_t channel, adc_dev_ctl_t *ioctl
 
 	memcpy(msg.o.raw, &ioctl, sizeof(adc_dev_ctl_t));
 	int res = msgSend(port, &msg);
-	if ((res < 0) || (msg.o.io.err != 0)) {
-		printf("failed to process req type %u sample rate %d, %d\n", ioctl.type, res, msg.o.io.err);
+	if ((res < 0) || (msg.o.err != 0)) {
+		printf("failed to process req type %u sample rate %d, %d\n", ioctl.type, res, msg.o.err);
 		return -1;
 	}
 
@@ -179,12 +181,13 @@ static int adc_reset(uint32_t port)
 	adc_dev_ctl_t ioctl = { 0 };
 
 	msg.type = mtDevCtl;
+	msg.oid.port = port;
 	ioctl.type = adc_dev_ctl__disable;
 	memcpy(msg.o.raw, &ioctl, sizeof(adc_dev_ctl_t));
 
 	log_verbose("disable\n");
-	if ((msgSend(port, &msg) < 0) || (msg.o.io.err != 0)) {
-		printf("sample: failed to disable adc device: %d\n", msg.o.io.err);
+	if ((msgSend(port, &msg) < 0) || (msg.o.err != 0)) {
+		printf("sample: failed to disable adc device: %d\n", msg.o.err);
 		return 1;
 	}
 
@@ -194,8 +197,8 @@ static int adc_reset(uint32_t port)
 	memcpy(msg.o.raw, &ioctl, sizeof(adc_dev_ctl_t));
 
 	log_verbose("reset\n");
-	if ((msgSend(port, &msg) < 0) || (msg.o.io.err != 0)) {
-		printf("sample: failed to reset adc device: %d\n", msg.o.io.err);
+	if ((msgSend(port, &msg) < 0) || (msg.o.err != 0)) {
+		printf("sample: failed to reset adc device: %d\n", msg.o.err);
 		return 1;
 	}
 
@@ -206,8 +209,8 @@ static int adc_reset(uint32_t port)
 	memcpy(msg.o.raw, &ioctl, sizeof(adc_dev_ctl_t));
 
 	log_verbose("set_config\n");
-	if ((msgSend(port, &msg) < 0) || (msg.o.io.err != 0)) {
-		printf("sample: failed to set sample rate: %d\n", msg.o.io.err);
+	if ((msgSend(port, &msg) < 0) || (msg.o.err != 0)) {
+		printf("sample: failed to set sample rate: %d\n", msg.o.err);
 		return 1;
 	}
 
@@ -225,8 +228,8 @@ static int adc_reset(uint32_t port)
 		ioctl.gain.val = adc_gain[i];
 		log_verbose("set_channel_gain ch=%u\n", i);
 		memcpy(msg.o.raw, &ioctl, sizeof(adc_dev_ctl_t));
-		if ((msgSend(port, &msg) < 0) || (msg.o.io.err != 0)) {
-			printf("sample: failed to set channel %d gain: %d\n", i, msg.o.io.err);
+		if ((msgSend(port, &msg) < 0) || (msg.o.err != 0)) {
+			printf("sample: failed to set channel %d gain: %d\n", i, msg.o.err);
 			return 1;
 		}
 	}
@@ -236,8 +239,8 @@ static int adc_reset(uint32_t port)
 	memcpy(msg.o.raw, &ioctl, sizeof(adc_dev_ctl_t));
 
 	log_verbose("enable\n");
-	if ((msgSend(port, &msg) < 0) || (msg.o.io.err != 0)) {
-		printf("sample: failed to enable adc: %d\n", msg.o.io.err);
+	if ((msgSend(port, &msg) < 0) || (msg.o.err != 0)) {
+		printf("sample: failed to enable adc: %d\n", msg.o.err);
 		return 1;
 	}
 
@@ -251,11 +254,12 @@ static uint32_t read_intr(uint32_t port)
 	uint32_t intr = 0;
 
 	msg.type = mtRead;
+	msg.oid.port = port;
 	msg.o.size = sizeof(uint32_t);
 	msg.o.data = &intr;
 
-	if ((msgSend(port, &msg) < 0) || (msg.o.io.err != 0)) {
-		printf("MSG failed to read adc intr: %s", strerror(msg.o.io.err));
+	if ((msgSend(port, &msg) < 0) || (msg.o.err != 0)) {
+		printf("MSG failed to read adc intr: %s", strerror(msg.o.err));
 	}
 
 	return intr;

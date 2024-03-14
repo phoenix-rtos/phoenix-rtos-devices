@@ -33,14 +33,12 @@ enum {
 typedef union {
 	struct {
 		unsigned int type; /* Devctl type */
-		oid_t oid;         /* Devctl oid (pin/port/dir) */
 		uint32_t val;      /* Pin state(s) */
 		uint32_t mask;     /* Pin mask */
 	} i;
 
 	struct {
 		uint32_t val; /* Returned value */
-		int err;      /* Error */
 	} o;
 } __attribute__((packed)) gpio_devctl_t;
 

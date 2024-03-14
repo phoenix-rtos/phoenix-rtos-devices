@@ -152,9 +152,10 @@ static void handleMsg(msg_t *msg)
 
 		default:
 			err = -EINVAL;
+			break;
 	}
 
-	omsg->err = err;
+	msg->o.err = err;
 }
 
 
@@ -170,31 +171,23 @@ static void thread(void *arg)
 		switch (msg.type) {
 			case mtOpen:
 			case mtClose:
-				msg.o.io.err = EOK;
+				msg.o.err = EOK;
 				break;
 
 			case mtRead:
-				msg.o.io.err = uart_read(UART_CONSOLE + usart1 - 1, msg.o.data, msg.o.size, uart_mnormal, 0);
+				msg.o.err = uart_read(UART_CONSOLE + usart1 - 1, msg.o.data, msg.o.size, uart_mnormal, 0);
 				break;
 
 			case mtWrite:
-				msg.o.io.err = uart_write(UART_CONSOLE + usart1 - 1, msg.i.data, msg.i.size);
+				msg.o.err = uart_write(UART_CONSOLE + usart1 - 1, msg.i.data, msg.i.size);
 				break;
 
 			case mtDevCtl:
 				handleMsg(&msg);
 				break;
 
-			case mtCreate:
-				msg.o.create.err = -EINVAL;
-				break;
-
-			case mtLookup:
-				msg.o.lookup.err = -EINVAL;
-				break;
-
 			default:
-				msg.o.io.err = -EINVAL;
+				msg.o.err = -ENOSYS;
 				break;
 		}
 

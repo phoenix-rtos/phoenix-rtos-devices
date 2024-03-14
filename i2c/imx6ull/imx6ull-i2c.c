@@ -63,19 +63,18 @@ static void thread(void *arg)
 		switch (msg.type) {
 			case mtOpen:
 			case mtClose:
-				msg.o.io.err = EOK;
+				msg.o.err = EOK;
 				break;
 			case mtRead:
 			case mtWrite:
-				msg.o.io.err = -EINVAL;
+				msg.o.err = -EINVAL;
 				break;
-			case mtDevCtl: {
-				i2c_devctl_t *out = (i2c_devctl_t *)msg.o.raw;
-				out->o.err = dev_ctl(&msg);
+			case mtDevCtl:
+				msg.o.err = dev_ctl(&msg);
 				break;
-			}
+
 			default:
-				msg.o.io.err = -EINVAL;
+				msg.o.err = -ENOSYS;
 				break;
 		}
 

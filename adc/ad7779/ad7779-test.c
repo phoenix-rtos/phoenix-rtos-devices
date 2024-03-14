@@ -42,12 +42,12 @@ static int adc_send_msg(oid_t adc_dev, adc_dev_ctl_t* ctl)
 {
 	msg_t msg;
 	msg.type = mtDevCtl;
+	msg.oid = adc_dev;
 	memcpy(msg.o.raw, ctl, sizeof(adc_dev_ctl_t));
 
 	int res;
-	if ((res = msgSend(adc_dev.port, &msg)) < 0 || msg.o.io.err != EOK) {
-		printf("adc command error from %s (res=%d, err=%d)\n",
-			ADC_DRIVER, res, msg.o.io.err);
+	if ((res = msgSend(adc_dev.port, &msg)) < 0 || (msg.o.err != EOK)) {
+		printf("adc command error from %s (res=%d, err=%d)\n", ADC_DRIVER, res, msg.o.err);
 		return res;
 	}
 

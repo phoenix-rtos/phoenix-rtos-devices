@@ -18,12 +18,14 @@
 #include "trng.h"
 #include "common.h"
 
+/* clang-format off */
 
 enum { mctl = 0, scmisc, pkrrng, pkrmax, sdctl, sblim, frqmin, frqcnt, scmc, scr1c,
 	scr2c, scr3c, scr4c, scr5c, scr6c, status, ent, pkrcnt10 = 32, pkrcnt32,
 	pkrcnt54, pkrcnt76, pkrcnt98, pkrcntba, pkrcntdc, pkrcntfe, sec_cfg, int_ctrl,
 	int_mask, int_status, reserved_0, vid1 = 60, vid2 };
 
+/* clang-format on */
 
 #define TRNG_MCTL_RST  0x40
 #define TRNG_MCTL_VAL  0x400
@@ -90,16 +92,15 @@ int trng_handleMsg(msg_t *msg)
 	switch (msg->type) {
 		case mtOpen:
 		case mtClose:
-			msg->o.io.err = EOK;
+			msg->o.err = EOK;
 			break;
 		case mtRead:
-			msg->o.io.err = trng_read(msg->o.data, msg->o.size);
+			msg->o.err = trng_read(msg->o.data, msg->o.size);
 			break;
-		case mtGetAttr:
-			msg->o.attr.err = -EINVAL;
-			break;
+
 		default:
-			msg->o.io.err = -EINVAL;
+			msg->o.err = -ENOSYS;
+			break;
 	}
 
 	return EOK;

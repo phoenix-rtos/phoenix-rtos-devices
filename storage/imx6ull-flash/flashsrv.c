@@ -101,7 +101,7 @@ static int flashsrv_devfsSymlink(const char *name, const char *target)
 
 	msg.type = mtCreate;
 
-	memcpy(&msg.i.create.dir, &dir, sizeof(oid_t));
+	msg.oid = dir;
 	msg.i.create.type = otSymlink;
 	/* POSIX: symlink file permissions are undefined, use sane default */
 	msg.i.create.mode = S_IFLNK | ACCESSPERMS;
@@ -121,7 +121,7 @@ static int flashsrv_devfsSymlink(const char *name, const char *target)
 	ret = msgSend(dir.port, &msg);
 	free(msg.i.data);
 
-	return ret != EOK ? -EIO : msg.o.create.err;
+	return (ret != EOK) ? -EIO : msg.o.err;
 }
 
 
@@ -238,11 +238,11 @@ static int flashsrv_devInfo(flash_o_devctl_t *odevctl)
 }
 
 
-static int flashsrv_devErase(const flash_i_devctl_t *idevctl)
+static int flashsrv_devErase(id_t id, const flash_i_devctl_t *idevctl)
 {
 	size_t offs = idevctl->erase.address;
 	size_t size = idevctl->erase.size;
-	storage_t *strg = storage_get(idevctl->badblock.oid.id);
+	storage_t *strg = storage_get(id);
 
 	TRACE("DevErase: off:%zu, size: %zu", offs, size);
 
@@ -261,9 +261,9 @@ static int flashsrv_devErase(const flash_i_devctl_t *idevctl)
 }
 
 
-static int flashsrv_devReadMeta(flash_i_devctl_t *idevctl, void *data)
+static int flashsrv_devReadMeta(id_t id, flash_i_devctl_t *idevctl, void *data)
 {
-	storage_t *strg = storage_get(idevctl->read.oid.id);
+	storage_t *strg = storage_get(id);
 	off_t offs = idevctl->read.address;
 	size_t retlen, size = idevctl->read.size;
 	int res;
@@ -284,13 +284,13 @@ static int flashsrv_devReadMeta(flash_i_devctl_t *idevctl, void *data)
 }
 
 
-static int flashsrv_devWriteMeta(flash_i_devctl_t *idevctl, void *data)
+static int flashsrv_devWriteMeta(id_t id, flash_i_devctl_t *idevctl, void *data)
 {
 	int res;
 	size_t retlen;
 	off_t offs = idevctl->write.address;
 	size_t size = idevctl->write.size;
-	storage_t *strg = storage_get(idevctl->write.oid.id);
+	storage_t *strg = storage_get(id);
 
 	TRACE("META write off: %lld, size: %d, ptr: %p", offs, size, data);
 
@@ -308,14 +308,14 @@ static int flashsrv_devWriteMeta(flash_i_devctl_t *idevctl, void *data)
 }
 
 
-static ssize_t flashsrv_devWriteRaw(flash_i_devctl_t *idevctl, char *data)
+static ssize_t flashsrv_devWriteRaw(id_t id, flash_i_devctl_t *idevctl, char *data)
 {
 	int res = EOK;
 	size_t rawPagesz, rawEraseBlockSz, rawPartsz, tempsz = 0;
 
 	size_t rawsz = idevctl->write.size;
 	size_t rawoffs = idevctl->write.address;
-	storage_t *strg = storage_get(idevctl->badblock.oid.id);
+	storage_t *strg = storage_get(id);
 
 	TRACE("RAW write off: %d, size: %d, ptr: %p", rawoffs, rawsz, data);
 
@@ -355,11 +355,11 @@ static ssize_t flashsrv_devWriteRaw(flash_i_devctl_t *idevctl, char *data)
 }
 
 
-static int flashsrv_devReadRaw(flash_i_devctl_t *idevctl, char *data)
+static int flashsrv_devReadRaw(id_t id, flash_i_devctl_t *idevctl, char *data)
 {
 	int res = EOK;
 	size_t rawPagesz, rawEraseBlockSz, rawPartsz, tempsz = 0;
-	storage_t *strg = storage_get(idevctl->badblock.oid.id);
+	storage_t *strg = storage_get(id);
 
 	size_t rawsz = idevctl->read.size;
 	size_t rawoffs = idevctl->read.address;
@@ -399,10 +399,10 @@ static int flashsrv_devReadRaw(flash_i_devctl_t *idevctl, char *data)
 }
 
 
-static int flashsrv_devIsbad(const flash_i_devctl_t *idevctl)
+static int flashsrv_devIsbad(id_t id, const flash_i_devctl_t *idevctl)
 {
 	size_t addr = idevctl->badblock.address;
-	storage_t *strg = storage_get(idevctl->badblock.oid.id);
+	storage_t *strg = storage_get(id);
 
 	TRACE("DevIsbad: off:%zu", addr);
 
@@ -415,10 +415,10 @@ static int flashsrv_devIsbad(const flash_i_devctl_t *idevctl)
 }
 
 
-static int flashsrv_devMarkbad(const flash_i_devctl_t *idevctl)
+static int flashsrv_devMarkbad(id_t id, const flash_i_devctl_t *idevctl)
 {
 	size_t addr = idevctl->badblock.address;
-	storage_t *strg = storage_get(idevctl->badblock.oid.id);
+	storage_t *strg = storage_get(id);
 
 	TRACE("DevMarkbad: off:%zu", addr);
 
@@ -431,10 +431,10 @@ static int flashsrv_devMarkbad(const flash_i_devctl_t *idevctl)
 }
 
 
-static int flashsrv_devMaxBitflips(const flash_i_devctl_t *idevctl)
+static int flashsrv_devMaxBitflips(id_t id, const flash_i_devctl_t *idevctl)
 {
 	size_t addr = idevctl->maxbitflips.address;
-	storage_t *strg = storage_get(idevctl->maxbitflips.oid.id);
+	storage_t *strg = storage_get(id);
 
 	if (strg == NULL || strg->dev == NULL || strg->dev->ctx == NULL || strg->dev->mtd == NULL || strg->dev->mtd->ops == NULL ||
 			strg->dev->mtd->ops->block_maxBitflips == NULL || addr >= strg->size) {
@@ -445,9 +445,9 @@ static int flashsrv_devMaxBitflips(const flash_i_devctl_t *idevctl)
 }
 
 
-static int flashsrv_devPtableRead(const flash_i_devctl_t *idevctl, ptable_t *ptable)
+static int flashsrv_devPtableRead(id_t id, const flash_i_devctl_t *idevctl, ptable_t *ptable)
 {
-	storage_t *strg = storage_get(idevctl->ptable.oid.id);
+	storage_t *strg = storage_get(id);
 
 	/* Only whole NAND device (/dev/mtd0) may access partition table */
 	if ((strg == NULL) || (strg->parent != NULL)) {
@@ -458,9 +458,9 @@ static int flashsrv_devPtableRead(const flash_i_devctl_t *idevctl, ptable_t *pta
 }
 
 
-static int flashsrv_devPtableWrite(const flash_i_devctl_t *idevctl, const ptable_t *ptable)
+static int flashsrv_devPtableWrite(id_t id, const flash_i_devctl_t *idevctl, const ptable_t *ptable)
 {
-	storage_t *strg = storage_get(idevctl->ptable.oid.id);
+	storage_t *strg = storage_get(id);
 
 	/* Only whole NAND device (/dev/mtd0) may access partition table */
 	if ((strg == NULL) || (strg->parent != NULL)) {
@@ -557,51 +557,51 @@ static void flashsrv_devCtrl(msg_t *msg)
 
 	switch (idevctl->type) {
 		case flashsrv_devctl_info:
-			odevctl->err = flashsrv_devInfo(odevctl);
+			msg->o.err = flashsrv_devInfo(odevctl);
 			break;
 
 		case flashsrv_devctl_erase:
-			odevctl->err = flashsrv_devErase(idevctl);
+			msg->o.err = flashsrv_devErase(msg->oid.id, idevctl);
 			break;
 
 		case flashsrv_devctl_writeraw:
-			odevctl->err = flashsrv_devWriteRaw(idevctl, msg->i.data);
+			msg->o.err = flashsrv_devWriteRaw(msg->oid.id, idevctl, msg->i.data);
 			break;
 
 		case flashsrv_devctl_writemeta:
-			odevctl->err = flashsrv_devWriteMeta(idevctl, msg->i.data);
+			msg->o.err = flashsrv_devWriteMeta(msg->oid.id, idevctl, msg->i.data);
 			break;
 
 		case flashsrv_devctl_readraw:
-			odevctl->err = flashsrv_devReadRaw(idevctl, msg->o.data);
+			msg->o.err = flashsrv_devReadRaw(msg->oid.id, idevctl, msg->o.data);
 			break;
 
 		case flashsrv_devctl_readmeta:
-			odevctl->err = flashsrv_devReadMeta(idevctl, msg->o.data);
+			msg->o.err = flashsrv_devReadMeta(msg->oid.id, idevctl, msg->o.data);
 			break;
 
 		case flashsrv_devctl_isbad:
-			odevctl->err = flashsrv_devIsbad(idevctl);
+			msg->o.err = flashsrv_devIsbad(msg->oid.id, idevctl);
 			break;
 
 		case flashsrv_devctl_markbad:
-			odevctl->err = flashsrv_devMarkbad(idevctl);
+			msg->o.err = flashsrv_devMarkbad(msg->oid.id, idevctl);
 			break;
 
 		case flashsrv_devctl_maxbitflips:
-			odevctl->err = flashsrv_devMaxBitflips(idevctl);
+			msg->o.err = flashsrv_devMaxBitflips(msg->oid.id, idevctl);
 			break;
 
 		case flashsrv_devctl_readptable:
-			odevctl->err = flashsrv_devPtableRead(idevctl, msg->o.data);
+			msg->o.err = flashsrv_devPtableRead(msg->oid.id, idevctl, msg->o.data);
 			break;
 
 		case flashsrv_devctl_writeptable:
-			odevctl->err = flashsrv_devPtableWrite(idevctl, msg->i.data);
+			msg->o.err = flashsrv_devPtableWrite(msg->oid.id, idevctl, msg->i.data);
 			break;
 
 		default:
-			odevctl->err = -EINVAL;
+			msg->o.err = -EINVAL;
 			break;
 	}
 }
@@ -616,39 +616,39 @@ static void flashsrv_msgHandler(void *arg, msg_t *msg)
 		case mtOpen:
 		case mtClose:
 			TRACE("DEV mtOpen");
-			msg->o.io.err = EOK;
+			msg->o.err = EOK;
 			break;
 
 		case mtRead:
-			TRACE("DEV read - id: %llu, size: %d, off: %llu ", msg->i.io.oid.id, msg->o.size, msg->i.io.offs);
-			msg->o.io.err = flashsrv_read(&msg->i.io.oid, msg->i.io.offs, msg->o.data, msg->o.size);
+			TRACE("DEV read - id: %llu, size: %d, off: %llu ", msg->oid.id, msg->o.size, msg->i.io.offs);
+			msg->o.err = flashsrv_read(&msg->oid, msg->i.io.offs, msg->o.data, msg->o.size);
 
 			break;
 
 		case mtWrite:
-			TRACE("DEV write - id: %llu, size: %d, off: %llu", msg->i.io.oid.id, msg->i.size, msg->i.io.offs);
-			msg->o.io.err = flashsrv_write(&msg->i.io.oid, msg->i.io.offs, msg->i.data, msg->i.size ? msg->i.size : msg->i.io.len);
+			TRACE("DEV write - id: %llu, size: %d, off: %llu", msg->oid.id, msg->i.size, msg->i.io.offs);
+			msg->o.err = flashsrv_write(&msg->oid, msg->i.io.offs, msg->i.data, msg->i.size ? msg->i.size : msg->i.io.len);
 			break;
 
 		case mtMount:
 			imnt = (mount_i_msg_t *)msg->i.raw;
 			omnt = (mount_o_msg_t *)msg->o.raw;
 			TRACE("DEV mount - fs: %s", imnt->fstype);
-			omnt->err = storage_mountfs(storage_get(imnt->dev.id), imnt->fstype, msg->i.data, imnt->mode, &imnt->mnt, &omnt->oid);
+			msg->o.err = storage_mountfs(storage_get(msg->oid.id), imnt->fstype, msg->i.data, imnt->mode, &imnt->mnt, &omnt->oid);
 			break;
 
 		case mtUmount:
-			msg->o.io.err = storage_umountfs(storage_get(((oid_t *)msg->i.data)->id));
+			msg->o.err = storage_umountfs(storage_get(msg->oid.id));
 			break;
 
 		case mtMountPoint:
 			omnt = (mount_o_msg_t *)msg->o.raw;
-			omnt->err = storage_mountpoint(storage_get(((oid_t *)msg->i.data)->id), &omnt->oid);
+			msg->o.err = storage_mountpoint(storage_get(msg->oid.id), &omnt->oid);
 			break;
 
 		case mtGetAttr:
-			TRACE("DEV mtgetAttr - id: %llu", msg->i.attr.oid.id);
-			msg->o.attr.err = flashsrv_fileAttrGet(&msg->i.attr.oid, msg->i.attr.type, &msg->o.attr.val);
+			TRACE("DEV mtgetAttr - id: %llu", msg->oid.id);
+			msg->o.err = flashsrv_fileAttrGet(&msg->oid, msg->i.attr.type, &msg->o.attr.val);
 			break;
 
 		case mtSync:
@@ -662,8 +662,8 @@ static void flashsrv_msgHandler(void *arg, msg_t *msg)
 			break;
 
 		default:
-			TRACE("DEV MSG Handler error");
-			msg->o.io.err = -EINVAL;
+			TRACE("DEV Invalid message type");
+			msg->o.err = -ENOSYS;
 			break;
 	}
 }

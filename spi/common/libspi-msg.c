@@ -36,9 +36,10 @@ int spimsg_xfer(const spimsg_ctx_t *ctx, const void *out, size_t olen, void *in,
 	msg.i.size = 0;
 	msg.o.data = NULL;
 	msg.o.size = 0;
+	msg.oid = ctx->oid;
 
-	idevctl->u.i.type = spi_devctl_xfer;
-	idevctl->u.i.ctx = *ctx;
+	idevctl->i.type = spi_devctl_xfer;
+	idevctl->i.ctx = *ctx;
 
 	/* Pack msg to the raw fields */
 	if (olen <= (sizeof(msg.i.raw) - sizeof(spi_devctl_t))) {
@@ -48,7 +49,7 @@ int spimsg_xfer(const spimsg_ctx_t *ctx, const void *out, size_t olen, void *in,
 		msg.i.data = (void *)out; /* FIXME msg.i.data should be const */
 		msg.i.size = olen;
 	}
-	idevctl->u.i.xfer.isize = olen;
+	idevctl->i.xfer.isize = olen;
 
 	if (ilen <= (sizeof(msg.o.raw) - sizeof(spi_devctl_t))) {
 		needscopy = 1;
@@ -57,9 +58,9 @@ int spimsg_xfer(const spimsg_ctx_t *ctx, const void *out, size_t olen, void *in,
 		msg.o.data = in;
 		msg.o.size = ilen;
 	}
-	idevctl->u.i.xfer.osize = ilen;
+	idevctl->i.xfer.osize = ilen;
 
-	idevctl->u.i.xfer.iskip = iskip;
+	idevctl->i.xfer.iskip = iskip;
 
 	err = msgSend(ctx->oid.port, &msg);
 	if (err < 0) {
@@ -70,7 +71,7 @@ int spimsg_xfer(const spimsg_ctx_t *ctx, const void *out, size_t olen, void *in,
 		memcpy(in, odevctl->payload, ilen);
 	}
 
-	return odevctl->u.o.err;
+	return msg.o.err;
 }
 
 

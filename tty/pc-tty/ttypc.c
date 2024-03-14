@@ -40,7 +40,7 @@ ttypc_t ttypc_common;
 
 static void ttypc_poolthr(void *arg)
 {
-	ttypc_t* ttypc = (ttypc_t *)arg;
+	ttypc_t *ttypc = (ttypc_t *)arg;
 	const void *idata, *odata;
 	unsigned long req;
 	msg_rid_t rid;
@@ -58,46 +58,51 @@ static void ttypc_poolthr(void *arg)
 		}
 
 		switch (msg.type) {
-		case mtOpen:
-			break;
-
-		case mtRead:
-			if (msg.i.io.oid.id < NVTS)
-				msg.o.io.err = ttypc_vt_read(ttypc->vts + msg.i.io.oid.id, msg.i.io.mode, msg.o.data, msg.o.size);
-			else
-				msg.o.io.err = -EINVAL;
-			break;
-
-		case mtWrite:
-			if (msg.i.io.oid.id < NVTS)
-				msg.o.io.err = ttypc_vt_write(ttypc->vts + msg.i.io.oid.id, msg.i.io.mode, msg.i.data, msg.i.size);
-			else
-				msg.o.io.err = -EINVAL;
-			break;
-
-		case mtClose:
-			break;
-
-		case mtGetAttr:
-			if ((msg.i.attr.type != atPollStatus) || (msg.i.attr.oid.id >= NVTS)) {
-				msg.o.attr.err = -EINVAL;
+			case mtOpen:
+				msg.o.err = EOK;
 				break;
-			}
-			msg.o.attr.val = ttypc_vt_pollstatus(ttypc->vts + msg.i.attr.oid.id);
-			msg.o.attr.err = EOK;
-			break;
 
-		case mtDevCtl:
-			idata = ioctl_unpack(&msg, &req, &id);
-			if (id < NVTS) {
-				err = ttypc_vt_ioctl(ttypc->vts + id, ioctl_getSenderPid(&msg), req, idata, &odata);
-			}
-			else {
-				odata = NULL;
-				err = -EINVAL;
-			}
-			ioctl_setResponse(&msg, req, err, odata);
-			break;
+			case mtRead:
+				if (msg.oid.id < NVTS)
+					msg.o.err = ttypc_vt_read(ttypc->vts + msg.oid.id, msg.i.io.mode, msg.o.data, msg.o.size);
+				else
+					msg.o.err = -EINVAL;
+				break;
+
+			case mtWrite:
+				if (msg.oid.id < NVTS)
+					msg.o.err = ttypc_vt_write(ttypc->vts + msg.oid.id, msg.i.io.mode, msg.i.data, msg.i.size);
+				else
+					msg.o.err = -EINVAL;
+				break;
+
+			case mtClose:
+				break;
+
+			case mtGetAttr:
+				if ((msg.i.attr.type != atPollStatus) || (msg.oid.id >= NVTS)) {
+					msg.o.err = -EINVAL;
+					break;
+				}
+				msg.o.attr.val = ttypc_vt_pollstatus(ttypc->vts + msg.oid.id);
+				msg.o.err = EOK;
+				break;
+
+			case mtDevCtl:
+				idata = ioctl_unpack(&msg, &req, &id);
+				if (id < NVTS) {
+					err = ttypc_vt_ioctl(ttypc->vts + id, ioctl_getSenderPid(&msg), req, idata, &odata);
+				}
+				else {
+					odata = NULL;
+					err = -EINVAL;
+				}
+				ioctl_setResponse(&msg, req, err, odata);
+				break;
+
+			default:
+				msg.o.err = -ENOSYS;
+				break;
 		}
 
 		msgRespond(ttypc->port, &msg, rid);
@@ -186,7 +191,6 @@ int main(void)
 		if (create_dev(&oid, path) < 0) {
 			fprintf(stderr, "pc-tty: failed to register device %s\n", path);
 		}
-
 	}
 
 	ttypc_poolthr(&ttypc_common);

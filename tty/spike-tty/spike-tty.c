@@ -120,38 +120,50 @@ static void poolthr(void *arg)
 		switch (msg.type) {
 			case mtOpen:
 			case mtClose:
-				if ((spiketty = spiketty_get(&msg.i.io.oid)) == NULL) {
-					msg.o.io.err = -EINVAL;
+				spiketty = spiketty_get(&msg.oid);
+				if (spiketty == NULL) {
+					msg.o.err = -EINVAL;
 					break;
 				}
-				msg.o.io.err = EOK;
+				msg.o.err = EOK;
 				break;
 
 			case mtRead:
-				if ((spiketty = spiketty_get(&msg.i.io.oid)) == NULL)
-					msg.o.io.err = -EINVAL;
-				else
-					msg.o.io.err = libtty_read(&spiketty->tty, msg.o.data, msg.o.size, msg.i.io.mode);
+				spiketty = spiketty_get(&msg.oid);
+				if (spiketty == NULL) {
+					msg.o.err = -EINVAL;
+				}
+				else {
+					msg.o.err = libtty_read(&spiketty->tty, msg.o.data, msg.o.size, msg.i.io.mode);
+				}
 				break;
 
 			case mtWrite:
-				if ((spiketty = spiketty_get(&msg.i.io.oid)) == NULL)
-					msg.o.io.err = -EINVAL;
-				else
-					msg.o.io.err = libtty_write(&spiketty->tty, msg.i.data, msg.i.size, msg.i.io.mode);
+				spiketty = spiketty_get(&msg.oid);
+				if (spiketty == NULL) {
+					msg.o.err = -EINVAL;
+				}
+				else {
+					msg.o.err = libtty_write(&spiketty->tty, msg.i.data, msg.i.size, msg.i.io.mode);
+				}
 				break;
 
 			case mtGetAttr:
-				if ((msg.i.attr.type != atPollStatus) || ((spiketty = spiketty_get(&msg.i.attr.oid)) == NULL)) {
-					msg.o.attr.err = -EINVAL;
+				spiketty = spiketty_get(&msg.oid);
+				if ((msg.i.attr.type != atPollStatus) || (spiketty == NULL)) {
+					msg.o.err = -EINVAL;
 					break;
 				}
 				msg.o.attr.val = libtty_poll_status(&spiketty->tty);
-				msg.o.attr.err = EOK;
+				msg.o.err = EOK;
 				break;
 
 			case mtDevCtl:
 				spiketty_ioctl(port, &msg);
+				break;
+
+			default:
+				msg.o.err = -ENOSYS;
 				break;
 		}
 

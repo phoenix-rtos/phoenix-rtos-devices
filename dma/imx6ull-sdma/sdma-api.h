@@ -126,7 +126,6 @@ typedef enum {
 
 typedef struct {
 	sdma_dev_ctl_type_t type;
-	oid_t oid;
 
 	union {
 		/* mem read/write */

@@ -46,16 +46,15 @@ static int test_spiConfig(oid_t dir)
 {
 	msg_t msg;
 	multi_i_t *idevctl = NULL;
-	multi_o_t *odevctl = NULL;
 
 	msg.type = mtDevCtl;
 	msg.i.data = NULL;
 	msg.i.size = 0;
 	msg.o.data = NULL;
 	msg.o.size = 0;
+	msg.oid = dir;
 
 	idevctl = (multi_i_t *)msg.i.raw;
-	idevctl->id = dir.id;
 	idevctl->spi.type = spi_config;
 	idevctl->spi.config.cs = 0;
 	idevctl->spi.config.endian = spi_msb;
@@ -63,13 +62,12 @@ static int test_spiConfig(oid_t dir)
 	idevctl->spi.config.prescaler = 2;
 	idevctl->spi.config.sckDiv = 64;
 
-	odevctl = (multi_o_t *)msg.o.raw;
-
 	if (msgSend(dir.port, &msg) < 0)
 		return -1;
 
-	if (odevctl->err < 0)
+	if (msg.o.err < 0) {
 		return -1;
+	}
 
 	return EOK;
 }
@@ -79,29 +77,27 @@ static int test_spiTransmit(oid_t dir, uint8_t *tx, uint8_t *rx, int sz)
 {
 	msg_t msg;
 	multi_i_t *idevctl = NULL;
-	multi_o_t *odevctl = NULL;
 
 	msg.type = mtDevCtl;
 	msg.i.data = tx;
 	msg.i.size = sz;
 	msg.o.data = rx;
 	msg.o.size = 0;
+	msg.oid = dir;
 
 	idevctl = (multi_i_t *)msg.i.raw;
-	idevctl->id = dir.id;
 	idevctl->spi.type = spi_transaction;
 	idevctl->spi.transaction.frameSize = sz;
 	idevctl->spi.transaction.cs = 0;
 
-	odevctl = (multi_o_t *)msg.o.raw;
-
 	if (msgSend(dir.port, &msg) < 0)
 		return -1;
 
-	if (odevctl->err < 0)
+	if (msg.o.err < 0) {
 		return -1;
+	}
 
-	return odevctl->err;
+	return msg.o.err;
 }
 
 

@@ -103,19 +103,15 @@ typedef struct {
 
 
 typedef struct {
-	id_t id;
-
 	union {
 		gpio_t gpio;
 		spi_t spi;
 		int cm4_type;
 	};
-
 } multi_i_t;
 
 
 typedef struct {
-	int err;
 	unsigned int val;
 } multi_o_t;
 

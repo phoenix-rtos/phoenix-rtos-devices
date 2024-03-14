@@ -35,8 +35,9 @@ static int lpspi_config(oid_t *device, int spi)
 	msg.i.size = 0;
 	msg.o.data = NULL;
 	msg.o.size = 0;
+	msg.oid.id = id_spi1 + spi;
+	msg.oid.port = device->port;
 
-	imsg->id = id_spi1 + spi;
 	imsg->spi.type = spi_config;
 	imsg->spi.config.cs = 0;
 	imsg->spi.config.mode = spi_mode_3;

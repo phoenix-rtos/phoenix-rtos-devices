@@ -517,43 +517,42 @@ static int resetCore(void)
 static void devctl(msg_t *msg)
 {
 	multi_i_t *iptr = (multi_i_t *)msg->i.raw;
-	multi_o_t *optr = (multi_o_t *)msg->o.raw;
 
 	mutexLock(m4_common.lock);
 
 	switch (iptr->cm4_type) {
 		case CM4_LOAD_BUFF:
 			if ((msg->i.data == NULL) || (msg->i.size == 0)) {
-				optr->err = -EINVAL;
+				msg->o.err = -EINVAL;
 				break;
 			}
 
-			optr->err = loadFromBuff(msg->i.data, msg->i.size);
+			msg->o.err = loadFromBuff(msg->i.data, msg->i.size);
 			break;
 
 		case CM4_LOAD_FILE:
 			if ((msg->i.data == NULL) || (msg->i.size == 0)) {
-				optr->err = -EINVAL;
+				msg->o.err = -EINVAL;
 				break;
 			}
 
-			optr->err = loadFromFile(msg->i.data);
+			msg->o.err = loadFromFile(msg->i.data);
 			break;
 
 		case CM4_RUN_CORE:
 			if ((msg->i.data == NULL) || (msg->i.size != sizeof(unsigned int))) {
-				optr->err = -EINVAL;
+				msg->o.err = -EINVAL;
 				break;
 			}
-			optr->err = runCore(*(unsigned int *)msg->i.data);
+			msg->o.err = runCore(*(unsigned int *)msg->i.data);
 			break;
 
 		case CM4_RESET_CORE:
-			optr->err = resetCore();
+			msg->o.err = resetCore();
 			break;
 
 		default:
-			optr->err = -ENOSYS;
+			msg->o.err = -ENOSYS;
 			break;
 	}
 
@@ -565,24 +564,19 @@ void cm4_handleMsg(msg_t *msg)
 {
 	switch (msg->type) {
 		case mtOpen:
-			msg->o.io.err = chanOpen(msg->i.io.oid.id - id_cm4_0, msg->i.openclose.flags);
+			msg->o.err = chanOpen(msg->oid.id - id_cm4_0, msg->i.openclose.flags);
 			break;
 
 		case mtClose:
-			msg->o.io.err = chanClose(msg->i.io.oid.id - id_cm4_0);
+			msg->o.err = chanClose(msg->oid.id - id_cm4_0);
 			break;
 
 		case mtRead:
-			msg->o.io.err = chanRead(msg->i.io.oid.id - id_cm4_0, msg->o.data, msg->o.size);
+			msg->o.err = chanRead(msg->oid.id - id_cm4_0, msg->o.data, msg->o.size);
 			break;
 
 		case mtWrite:
-			msg->o.io.err = chanWrite(msg->i.io.oid.id - id_cm4_0, msg->i.data, msg->i.size);
-			break;
-
-		case mtGetAttr:
-		case mtSetAttr:
-			msg->o.attr.err = -ENOSYS;
+			msg->o.err = chanWrite(msg->oid.id - id_cm4_0, msg->i.data, msg->i.size);
 			break;
 
 		case mtDevCtl:
@@ -590,7 +584,7 @@ void cm4_handleMsg(msg_t *msg)
 			break;
 
 		default:
-			msg->o.io.err = -EINVAL;
+			msg->o.err = -ENOSYS;
 			break;
 	}
 }

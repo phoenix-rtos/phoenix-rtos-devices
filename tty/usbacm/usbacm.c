@@ -557,23 +557,15 @@ static void usbacm_msgthr(void *arg)
 
 		/* Ignore this msg, as it might have been sent by us after deletion event */
 		if (msg.type == mtUnlink) {
-			msg.o.io.err = EOK;
+			msg.o.err = EOK;
 			msgRespond(usbacm_common.msgport, &msg, rid);
 			continue;
 		}
 
-		if (msg.type == mtGetAttr) {
-			id = msg.i.attr.oid.id;
-		}
-		else if ((msg.type == mtOpen) || (msg.type == mtClose)) {
-			id = msg.i.openclose.oid.id;
-		}
-		else {
-			id = msg.i.io.oid.id;
-		}
+		id = msg.oid.id;
 
 		if ((dev = usbacm_get(id)) == NULL) {
-			msg.o.io.err = -ENOENT;
+			msg.o.err = -ENOENT;
 			msgRespond(usbacm_common.msgport, &msg, rid);
 			continue;
 		}
@@ -581,7 +573,7 @@ static void usbacm_msgthr(void *arg)
 		/* A device can be opened only by one process */
 		/* FIXME: allow mtClose with different PID (files closing on process exit have invalid PID value as of 2023-10-23) */
 		if (((msg.type != mtOpen) && (msg.type != mtClose)) && (msg.pid != dev->clientpid)) {
-			msg.o.io.err = -EBUSY;
+			msg.o.err = -EBUSY;
 			msgRespond(usbacm_common.msgport, &msg, rid);
 			continue;
 		}
@@ -589,7 +581,7 @@ static void usbacm_msgthr(void *arg)
 		switch (msg.type) {
 			case mtOpen:
 				mutexLock(usbacm_common.lock);
-				msg.o.io.err = _usbacm_open(dev, msg.i.openclose.flags, msg.pid);
+				msg.o.err = _usbacm_open(dev, msg.i.openclose.flags, msg.pid);
 				mutexUnlock(usbacm_common.lock);
 				break;
 
@@ -597,18 +589,20 @@ static void usbacm_msgthr(void *arg)
 				mutexLock(usbacm_common.lock);
 				_usbacm_close(dev);
 				mutexUnlock(usbacm_common.lock);
-				msg.o.io.err = EOK;
+				msg.o.err = EOK;
 				break;
 
 			case mtRead:
-				if ((msg.o.io.err = usbacm_read(dev, msg.o.data, msg.o.size)) == 0) {
-					if (msg.i.io.mode & O_NONBLOCK)
-						msg.o.io.err = -EWOULDBLOCK;
+				msg.o.err = usbacm_read(dev, msg.o.data, msg.o.size);
+				if (msg.o.err == 0) {
+					if (msg.i.io.mode & O_NONBLOCK) {
+						msg.o.err = -EWOULDBLOCK;
+					}
 				}
 				break;
 
 			case mtWrite:
-				msg.o.io.err = usbacm_write(dev, msg.i.data, msg.i.size);
+				msg.o.err = usbacm_write(dev, msg.i.data, msg.i.size);
 				break;
 
 			case mtGetAttr:
@@ -617,14 +611,15 @@ static void usbacm_msgthr(void *arg)
 					if (((dev->flags & O_NONBLOCK) != 0) && fifo_is_empty(dev->fifo)) {
 						msg.o.attr.val |= POLLIN;
 					}
-					msg.o.attr.err = EOK;
-					break;
+					msg.o.err = EOK;
 				}
 				else {
-					msg.o.attr.err = -EINVAL;
+					msg.o.err = -EINVAL;
 				}
+				break;
 			default:
-				msg.o.io.err = -EINVAL;
+				msg.o.err = -ENOSYS;
+				break;
 		}
 		usbacm_put(dev);
 		msgRespond(usbacm_common.msgport, &msg, rid);

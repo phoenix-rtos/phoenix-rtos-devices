@@ -26,10 +26,11 @@ void gpio_setPin(oid_t *device, int gpio, int pin, int state)
 	msg.i.size = 0;
 	msg.o.data = NULL;
 	msg.o.size = 0;
+	msg.oid.id = gpio;
+	msg.oid.port = device->port;
 
 	imsg = (multi_i_t *)msg.i.raw;
 
-	imsg->id = gpio;
 	imsg->gpio.type = gpio_set_port;
 	imsg->gpio.port.val = !!state << pin;
 	imsg->gpio.port.mask = 1 << pin;
@@ -48,10 +49,11 @@ void gpio_setDir(oid_t *device, int gpio, int pin, int dir)
 	msg.i.size = 0;
 	msg.o.data = NULL;
 	msg.o.size = 0;
+	msg.oid.id = gpio;
+	msg.oid.port = device->port;
 
 	imsg = (multi_i_t *)msg.i.raw;
 
-	imsg->id = gpio;
 	imsg->gpio.type = gpio_set_dir;
 	imsg->gpio.dir.val = !!dir << pin;
 	imsg->gpio.dir.mask = 1 << pin;

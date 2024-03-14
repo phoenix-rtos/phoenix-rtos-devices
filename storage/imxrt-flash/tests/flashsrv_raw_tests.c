@@ -33,7 +33,7 @@ static int write2Flash(oid_t oid, uint32_t paddr, void *data, int size)
 	int err = EOK;
 
 	msg.type = mtWrite;
-	msg.i.io.oid = oid;
+	msg.oid = oid;
 	msg.i.io.offs = paddr;
 	msg.i.data = data;
 	msg.i.size = size;
@@ -43,7 +43,7 @@ static int write2Flash(oid_t oid, uint32_t paddr, void *data, int size)
 	if ((err = msgSend(oid.port, &msg)) != 0 )
 		LOG_ERROR("Cannot send msg.");
 
-	if ((err = msg.o.io.err) < size)
+	if ((err = msg.o.err) < size)
 		LOG_ERROR("Cannot write data to flash, err: %d.");
 
 	return err;
@@ -56,7 +56,7 @@ static int readFromFlash(oid_t oid, uint32_t paddr, void *data, int size)
 	int err = EOK;
 
 	msg.type = mtRead;
-	msg.i.io.oid = oid;
+	msg.oid = oid;
 	msg.i.io.offs = paddr;
 	msg.i.data = NULL;
 	msg.i.size = 0;
@@ -66,7 +66,7 @@ static int readFromFlash(oid_t oid, uint32_t paddr, void *data, int size)
 	if ((err = msgSend(oid.port, &msg)) != 0 )
 		LOG_ERROR("Cannot send msg.");
 
-	if ((err = msg.o.io.err) < size)
+	if ((err = msg.o.err) < size)
 		LOG_ERROR("Cannot read data from flash, err: %d.");
 
 	return err;
@@ -78,24 +78,21 @@ static int syncFlash(oid_t oid)
 	msg_t msg;
 	int err = EOK;
 	flash_i_devctl_t *idevctl = NULL;
-	flash_o_devctl_t *odevctl = NULL;
 
 	msg.type = mtDevCtl;
 	msg.i.data = NULL;
 	msg.i.size = 0;
 	msg.o.data = NULL;
 	msg.o.size = 0;
+	msg.oid = oid;
 
 	idevctl = (flash_i_devctl_t *)msg.i.raw;
 	idevctl->type = flashsrv_devctl_sync;
-	idevctl->oid = oid;
-
-	odevctl = (flash_o_devctl_t *)msg.o.raw;
 
 	if ((err = msgSend(oid.port, &msg)) != 0 )
 		LOG_ERROR("Cannot send msg.");
 
-	if ((err = odevctl->err) < 0)
+	if ((err = msg.o.err) < 0)
 		LOG_ERROR("Cannot sync flash, err: (%s).", strerror(err));
 
 	return err;
@@ -107,25 +104,22 @@ static int eraseSector(oid_t oid, uint32_t addr)
 	msg_t msg;
 	int err = EOK;
 	flash_i_devctl_t *idevctl = NULL;
-	flash_o_devctl_t *odevctl = NULL;
 
 	msg.type = mtDevCtl;
 	msg.i.data = NULL;
 	msg.i.size = 0;
 	msg.o.data = NULL;
 	msg.o.size = 0;
+	msg.oid = oid;
 
 	idevctl = (flash_i_devctl_t *)msg.i.raw;
 	idevctl->type = flashsrv_devctl_eraseSector;
-	idevctl->oid = oid;
 	idevctl->addr = addr;
-
-	odevctl = (flash_o_devctl_t *)msg.o.raw;
 
 	if ((err = msgSend(oid.port, &msg)) != 0 )
 		LOG_ERROR("Cannot send msg.");
 
-	if ((err = odevctl->err) < 0)
+	if ((err = msg.o.err) < 0)
 		LOG_ERROR("Cannot erase sector, err: (%s).", strerror(err));
 
 	return err;
@@ -137,24 +131,21 @@ static int erasePartition(oid_t oid)
 	msg_t msg;
 	int err = EOK;
 	flash_i_devctl_t *idevctl = NULL;
-	flash_o_devctl_t *odevctl = NULL;
 
 	msg.type = mtDevCtl;
 	msg.i.data = NULL;
 	msg.i.size = 0;
 	msg.o.data = NULL;
 	msg.o.size = 0;
+	msg.oid = oid;
 
 	idevctl = (flash_i_devctl_t *)msg.i.raw;
 	idevctl->type = flashsrv_devctl_erasePartition;
-	idevctl->oid = oid;
-
-	odevctl = (flash_o_devctl_t *)msg.o.raw;
 
 	if ((err = msgSend(oid.port, &msg)) != 0 )
 		LOG_ERROR("Cannot send msg.");
 
-	if ((err = odevctl->err) < 0)
+	if ((err = msg.o.err) < 0)
 		LOG_ERROR("Cannot erase partition, err: (%s).", strerror(err));
 
 	return err;
@@ -173,17 +164,17 @@ static int getProperties(oid_t oid, flash_o_devctl_t *odevctl)
 	msg.i.size = 0;
 	msg.o.data = NULL;
 	msg.o.size = 0;
+	msg.oid = oid;
 
 	i = (flash_i_devctl_t *)msg.i.raw;
 	i->type = flashsrv_devctl_properties;
-	i->oid = oid;
 
 	o = (flash_o_devctl_t *)msg.o.raw;
 
 	if ((err = msgSend(oid.port, &msg)) != 0 )
 		LOG_ERROR("Cannot send msg.");
 
-	if ((err = o->err) < 0)
+	if ((err = msg.o.err) < 0)
 		LOG_ERROR("Cannot get properties, err: (%s).", strerror(err));
 
 	odevctl->properties.size = o->properties.size;

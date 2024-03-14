@@ -223,73 +223,73 @@ static void flashsrv_devCtl(flashsrv_memory_t *memory, msg_t *msg)
 	flash_o_devctl_t *odevctl = (flash_o_devctl_t *)msg->o.raw;
 
 	if (memory == NULL) {
-		odevctl->err = -EINVAL;
+		msg->o.err = -EINVAL;
 		return;
 	}
 
-	fID = idevctl->oid.id;
+	fID = msg->oid.id;
 	if (fID >= FLASH_MEMORIES_NO) {
-		odevctl->err = -EINVAL;
+		msg->o.err = -EINVAL;
 		return;
 	}
 
 	switch (idevctl->type) {
 		case flashsrv_devctl_properties:
-			TRACE("imxrt-flashsrv: flashsrv_devctl_properties, id: %u, port: %u.", idevctl->oid.id, idevctl->oid.port);
+			TRACE("imxrt-flashsrv: flashsrv_devctl_properties, id: %u, port: %u.", msg->oid.id, msg->oid.port);
 			odevctl->properties.size = memory->ctx.properties.size;
 			odevctl->properties.psize = memory->ctx.properties.page_size;
 			odevctl->properties.ssize = memory->ctx.properties.sector_size;
 			odevctl->properties.offs = 0;
-			odevctl->err = EOK;
+			msg->o.err = EOK;
 			break;
 
 		case flashsrv_devctl_sync:
-			TRACE("imxrt-flashsrv: flashsrv_devctl_sync, id: %u, port: %u.", idevctl->oid.id, idevctl->oid.port);
-			odevctl->err = flash_sync(&memory->ctx);
+			TRACE("imxrt-flashsrv: flashsrv_devctl_sync, id: %u, port: %u.", msg->oid.id, msg->oid.port);
+			msg->o.err = flash_sync(&memory->ctx);
 			break;
 
 		case flashsrv_devctl_eraseSector:
-			TRACE("imxrt-flashsrv: flashsrv_devctl_eraseSector - addr: %u, id: %u, port: %u.", idevctl->addr, idevctl->oid.id, idevctl->oid.port);
+			TRACE("imxrt-flashsrv: flashsrv_devctl_eraseSector - addr: %u, id: %u, port: %u.", idevctl->addr, msg->oid.id, msg->oid.port);
 			if (idevctl->addr >= memory->ctx.properties.size) {
-				odevctl->err = -EINVAL;
+				msg->o.err = -EINVAL;
 				break;
 			}
 			flashsrv_eraseSector(memory->fOid.id, idevctl->addr);
-			odevctl->err = EOK;
+			msg->o.err = EOK;
 			break;
 
 		case flashsrv_devctl_erasePartition:
-			TRACE("imxrt-flashsrv: flashsrv_devctl_eraseChip, id: %u, port: %u.", idevctl->oid.id, idevctl->oid.port);
+			TRACE("imxrt-flashsrv: flashsrv_devctl_eraseChip, id: %u, port: %u.", msg->oid.id, msg->oid.port);
 			flashsrv_chipErase(memory->fOid.id);
-			odevctl->err = EOK;
+			msg->o.err = EOK;
 			break;
 
 		case flashsrv_devctl_directWrite:
 			TRACE("imxrt-flashsrv: flashsrv_devctl_directWrite, addr: %u, size: %u, id: %u, port: %u.",
-				idevctl->addr, msg->i.size, idevctl->oid.id, idevctl->oid.port);
+				idevctl->addr, msg->i.size, msg->oid.id, msg->oid.port);
 
 			if (idevctl->addr >= memory->ctx.properties.size) {
-				odevctl->err = -EINVAL;
+				msg->o.err = -EINVAL;
 				break;
 			}
 
-			odevctl->err = flashsrv_directWrite(memory->fOid.id, idevctl->addr, msg->i.data, msg->i.size);
+			msg->o.err = flashsrv_directWrite(memory->fOid.id, idevctl->addr, msg->i.data, msg->i.size);
 			break;
 
 		case flashsrv_devctl_directRead:
 			TRACE("imxrt-flashsrv: flashsrv_devctl_directRead, addr: %u, size: %u, id: %u, port: %u.",
-				idevctl->addr, msg->o.size, idevctl->oid.id, idevctl->oid.port);
+				idevctl->addr, msg->o.size, msg->oid.id, msg->oid.port);
 
 			if (idevctl->addr >= memory->ctx.properties.size) {
-				odevctl->err = -EINVAL;
+				msg->o.err = -EINVAL;
 				break;
 			}
 
-			odevctl->err = flashsrv_directRead(memory->fOid.id, idevctl->addr, msg->o.data, msg->o.size);
+			msg->o.err = flashsrv_directRead(memory->fOid.id, idevctl->addr, msg->o.data, msg->o.size);
 			break;
 
 		default:
-			odevctl->err = -EINVAL;
+			msg->o.err = -EINVAL;
 			break;
 	}
 }
@@ -304,86 +304,86 @@ static void flashsrv_rawCtl(flashsrv_memory_t *memory, msg_t *msg)
 	flash_o_devctl_t *odevctl = (flash_o_devctl_t *)msg->o.raw;
 
 	if (memory == NULL) {
-		odevctl->err = -EINVAL;
+		msg->o.err = -EINVAL;
 		return;
 	}
 
-	partID = idevctl->oid.id;
+	partID = msg->oid.id;
 	if (partID >= memory->pCnt) {
-		odevctl->err = -EINVAL;
+		msg->o.err = -EINVAL;
 		return;
 	}
 
 	if (memory->parts[partID].pStatus == flashsrv_memory_inactive) {
-		odevctl->err = -ENODEV;
+		msg->o.err = -ENODEV;
 		return;
 	}
 
 	switch (idevctl->type) {
 		case flashsrv_devctl_properties:
-			TRACE("imxrt-flashsrv: flashsrv_devctl_properties, id: %u, port: %u.", partID, idevctl->oid.port);
+			TRACE("imxrt-flashsrv: flashsrv_devctl_properties, id: %u, port: %u.", partID, msg->oid.port);
 			odevctl->properties.size = memory->parts[partID].pHeader->size;
 			odevctl->properties.psize = memory->ctx.properties.page_size;
 			odevctl->properties.ssize = memory->ctx.properties.sector_size;
 			odevctl->properties.offs = memory->parts[partID].pHeader->offset;
-			odevctl->err = EOK;
+			msg->o.err = EOK;
 			break;
 
 		case flashsrv_devctl_sync:
-			TRACE("imxrt-flashsrv: flashsrv_devctl_sync, id: %u, port: %u.", idevctl->oid.id, idevctl->oid.port);
-			odevctl->err = flash_sync(&memory->ctx);
+			TRACE("imxrt-flashsrv: flashsrv_devctl_sync, id: %u, port: %u.", msg->oid.id, msg->oid.port);
+			msg->o.err = flash_sync(&memory->ctx);
 			break;
 
 		case flashsrv_devctl_eraseSector:
 			TRACE("imxrt-flashsrv: flashsrv_devctl_eraseSector - addr: %u, id: %u, port: %u.",
-				idevctl->addr + memory->parts[partID].pHeader->offset, partID, idevctl->oid.port);
+				idevctl->addr + memory->parts[partID].pHeader->offset, partID, msg->oid.port);
 
-			if (idevctl->addr >= memory->parts[idevctl->oid.id].pHeader->size) {
-				odevctl->err = -EINVAL;
+			if (idevctl->addr >= memory->parts[msg->oid.id].pHeader->size) {
+				msg->o.err = -EINVAL;
 				break;
 			}
 
 			flashsrv_eraseSector(memory->fOid.id, memory->parts[partID].pHeader->offset + idevctl->addr);
-			odevctl->err = EOK;
+			msg->o.err = EOK;
 			break;
 
 		case flashsrv_devctl_erasePartition:
-			TRACE("imxrt-flashsrv: flashsrv_devctl_erasePartition, id: %u, port: %u.", idevctl->oid.id, idevctl->oid.port);
+			TRACE("imxrt-flashsrv: flashsrv_devctl_erasePartition, id: %u, port: %u.", msg->oid.id, msg->oid.port);
 			sNb = memory->parts[partID].pHeader->size / memory->ctx.properties.sector_size;
 
 			for (i = 0; i < sNb; ++i) {
 				flashsrv_eraseSector(memory->fOid.id, memory->parts[partID].pHeader->offset + i * memory->ctx.properties.sector_size);
 			}
 
-			odevctl->err = EOK;
+			msg->o.err = EOK;
 			break;
 
 		case flashsrv_devctl_directWrite:
 			TRACE("imxrt-flashsrv: flashsrv_devctl_directWrite, addr: %u, size: %u, id: %u, port: %u.",
-				idevctl->addr + memory->parts[partID].pHeader->offset, msg->i.size, idevctl->oid.id, idevctl->oid.port);
+				idevctl->addr + memory->parts[partID].pHeader->offset, msg->i.size, msg->oid.id, msg->oid.port);
 
-			if (idevctl->addr >= memory->parts[idevctl->oid.id].pHeader->size) {
-				odevctl->err = -EINVAL;
+			if (idevctl->addr >= memory->parts[msg->oid.id].pHeader->size) {
+				msg->o.err = -EINVAL;
 				break;
 			}
 
-			odevctl->err = flashsrv_directWrite(memory->fOid.id, memory->parts[partID].pHeader->offset + idevctl->addr, msg->i.data, msg->i.size);
+			msg->o.err = flashsrv_directWrite(memory->fOid.id, memory->parts[partID].pHeader->offset + idevctl->addr, msg->i.data, msg->i.size);
 			break;
 
 		case flashsrv_devctl_directRead:
 			TRACE("imxrt-flashsrv: flashsrv_devctl_directRead, addr: %u, size: %u, id: %u, port: %u.",
-				idevctl->addr + memory->parts[partID].pHeader->offset, msg->o.size, idevctl->oid.id, idevctl->oid.port);
+				idevctl->addr + memory->parts[partID].pHeader->offset, msg->o.size, msg->oid.id, msg->oid.port);
 
-			if (idevctl->addr >= memory->parts[idevctl->oid.id].pHeader->size) {
-				odevctl->err = -EINVAL;
+			if (idevctl->addr >= memory->parts[msg->oid.id].pHeader->size) {
+				msg->o.err = -EINVAL;
 				break;
 			}
 
-			odevctl->err = flashsrv_directRead(memory->fOid.id, memory->parts[partID].pHeader->offset + idevctl->addr, msg->o.data, msg->o.size);
+			msg->o.err = flashsrv_directRead(memory->fOid.id, memory->parts[partID].pHeader->offset + idevctl->addr, msg->o.data, msg->o.size);
 			break;
 
 		default:
-			odevctl->err = -EINVAL;
+			msg->o.err = -EINVAL;
 			break;
 	}
 }
@@ -411,38 +411,38 @@ static void flashsrv_meterfsThread(void *arg)
 		switch (msg.type) {
 			case mtRead:
 				flashsrv_common.flash_memories[part->fID].currPart = part->oid.id;
-				msg.o.io.err = meterfs_readFile(msg.i.io.oid.id, msg.i.io.offs, msg.o.data, msg.o.size, (meterfs_ctx_t *)part->fsCtx);
+				msg.o.err = meterfs_readFile(msg.oid.id, msg.i.io.offs, msg.o.data, msg.o.size, (meterfs_ctx_t *)part->fsCtx);
 				break;
 
 			case mtWrite:
 				flashsrv_common.flash_memories[part->fID].currPart = part->oid.id;
-				msg.o.io.err = meterfs_writeFile(msg.i.io.oid.id, msg.i.data, msg.i.size, (meterfs_ctx_t *)part->fsCtx);
+				msg.o.err = meterfs_writeFile(msg.oid.id, msg.i.data, msg.i.size, (meterfs_ctx_t *)part->fsCtx);
 				break;
 
 			case mtLookup:
 				flashsrv_common.flash_memories[part->fID].currPart = part->oid.id;
-				msg.o.lookup.err = meterfs_lookup(msg.i.data, &msg.o.lookup.fil.id, (meterfs_ctx_t *)part->fsCtx);
+				msg.o.err = meterfs_lookup(msg.i.data, &msg.o.lookup.fil.id, (meterfs_ctx_t *)part->fsCtx);
 				msg.o.lookup.fil.port = part->oid.port;
 				memcpy(&msg.o.lookup.dev, &msg.o.lookup.fil, sizeof(oid_t));
 				break;
 
 			case mtOpen:
 				flashsrv_common.flash_memories[part->fID].currPart = part->oid.id;
-				msg.o.io.err = meterfs_open(msg.i.openclose.oid.id, (meterfs_ctx_t *)part->fsCtx);
+				msg.o.err = meterfs_open(msg.oid.id, (meterfs_ctx_t *)part->fsCtx);
 				break;
 
 			case mtClose:
 				flashsrv_common.flash_memories[part->fID].currPart = part->oid.id;
-				msg.o.io.err = meterfs_close(msg.i.openclose.oid.id, (meterfs_ctx_t *)part->fsCtx);
+				msg.o.err = meterfs_close(msg.oid.id, (meterfs_ctx_t *)part->fsCtx);
 				break;
 
 			case mtDevCtl:
 				flashsrv_common.flash_memories[part->fID].currPart = part->oid.id;
-				odevctl->err = meterfs_devctl(idevctl, odevctl, (meterfs_ctx_t *)part->fsCtx);
+				msg.o.err = meterfs_devctl(idevctl, odevctl, (meterfs_ctx_t *)part->fsCtx);
 				break;
 
 			default:
-				msg.o.io.err = -EINVAL;
+				msg.o.err = -ENOSYS;
 				break;
 		}
 
@@ -455,23 +455,23 @@ static void flashsrv_meterfsThread(void *arg)
 
 static int flashsrv_verifyRawIO(const flashsrv_memory_t *memory, msg_t *msg, size_t *size)
 {
-	if (msg->i.io.oid.id >= memory->pCnt) {
-		msg->o.io.err = -EINVAL;
+	if (msg->oid.id >= memory->pCnt) {
+		msg->o.err = -EINVAL;
 		return -EINVAL;
 	}
 
-	if (memory->parts[msg->i.io.oid.id].pStatus == flashsrv_memory_inactive) {
-		msg->o.io.err = -ENODEV;
+	if (memory->parts[msg->oid.id].pStatus == flashsrv_memory_inactive) {
+		msg->o.err = -ENODEV;
 		return -ENODEV;
 	}
 
-	if (memory->parts[msg->i.io.oid.id].pHeader->size <= msg->i.io.offs) {
-		msg->o.io.err = -EINVAL;
+	if (memory->parts[msg->oid.id].pHeader->size <= msg->i.io.offs) {
+		msg->o.err = -EINVAL;
 		return -EINVAL;
 	}
 
-	if (memory->parts[msg->i.io.oid.id].pHeader->size < (msg->i.io.offs + *size)) {
-		*size = memory->parts[msg->i.io.oid.id].pHeader->size - msg->i.io.offs;
+	if (memory->parts[msg->oid.id].pHeader->size < (msg->i.io.offs + *size)) {
+		*size = memory->parts[msg->oid.id].pHeader->size - msg->i.io.offs;
 	}
 
 	return EOK;
@@ -498,22 +498,22 @@ static void flashsrv_rawThread(void *arg)
 			case mtRead:
 				res = flashsrv_verifyRawIO(memory, &msg, &msg.o.size);
 				if (res == EOK) {
-					beginAddr = memory->parts[msg.i.io.oid.id].pHeader->offset;
-					msg.o.io.err = flashsrv_bufferedRead(memory->fOid.id, beginAddr + msg.i.io.offs, msg.o.data, msg.o.size);
+					beginAddr = memory->parts[msg.oid.id].pHeader->offset;
+					msg.o.err = flashsrv_bufferedRead(memory->fOid.id, beginAddr + msg.i.io.offs, msg.o.data, msg.o.size);
 				}
 				else {
-					msg.o.io.err = res;
+					msg.o.err = res;
 				}
 				break;
 
 			case mtWrite:
 				res = flashsrv_verifyRawIO(memory, &msg, &msg.i.size);
 				if (res == EOK) {
-					beginAddr = memory->parts[msg.i.io.oid.id].pHeader->offset;
-					msg.o.io.err = flashsrv_bufferedWrite(memory->fOid.id, beginAddr + msg.i.io.offs, msg.i.data, msg.i.size);
+					beginAddr = memory->parts[msg.oid.id].pHeader->offset;
+					msg.o.err = flashsrv_bufferedWrite(memory->fOid.id, beginAddr + msg.i.io.offs, msg.i.data, msg.i.size);
 				}
 				else {
-					msg.o.io.err = res;
+					msg.o.err = res;
 				}
 				break;
 
@@ -522,20 +522,20 @@ static void flashsrv_rawThread(void *arg)
 				break;
 
 			case mtOpen:
-				msg.o.io.err = EOK;
+				msg.o.err = EOK;
 				break;
 
 			case mtClose:
 				(void)flashsrv_bufferedSync(memory->fOid.id);
-				msg.o.io.err = EOK;
+				msg.o.err = EOK;
 				break;
 
 			case mtSync:
-				msg.o.io.err = flashsrv_bufferedSync(memory->fOid.id);
+				msg.o.err = flashsrv_bufferedSync(memory->fOid.id);
 				break;
 
 			default:
-				msg.o.io.err = -ENOSYS;
+				msg.o.err = -ENOSYS;
 				break;
 		}
 
@@ -562,11 +562,11 @@ static void flashsrv_devThread(void *arg)
 
 		switch (msg.type) {
 			case mtRead:
-				msg.o.io.err = flashsrv_bufferedRead(memory->fOid.id, msg.i.io.offs, msg.o.data, msg.o.size);
+				msg.o.err = flashsrv_bufferedRead(memory->fOid.id, msg.i.io.offs, msg.o.data, msg.o.size);
 				break;
 
 			case mtWrite:
-				msg.o.io.err = flashsrv_bufferedWrite(memory->fOid.id, msg.i.io.offs, msg.i.data, msg.i.size);
+				msg.o.err = flashsrv_bufferedWrite(memory->fOid.id, msg.i.io.offs, msg.i.data, msg.i.size);
 				break;
 
 			case mtDevCtl:
@@ -575,15 +575,15 @@ static void flashsrv_devThread(void *arg)
 
 			case mtOpen:
 			case mtClose:
-				msg.o.io.err = EOK;
+				msg.o.err = EOK;
 				break;
 
 			case mtSync:
-				msg.o.io.err = flashsrv_bufferedSync(memory->fOid.id);
+				msg.o.err = flashsrv_bufferedSync(memory->fOid.id);
 				break;
 
 			default:
-				msg.o.io.err = -ENOSYS;
+				msg.o.err = -ENOSYS;
 				break;
 		}
 

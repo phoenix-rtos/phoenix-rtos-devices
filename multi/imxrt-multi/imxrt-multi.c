@@ -56,60 +56,6 @@ struct {
 } common;
 
 
-static id_t multi_getID(msg_t *msg)
-{
-	id_t id = 0;
-
-	switch (msg->type) {
-		case mtOpen:
-		case mtClose:
-		case mtRead:
-		case mtWrite:
-			id = msg->i.io.oid.id;
-			break;
-
-		case mtGetAttr:
-		case mtSetAttr:
-			id = msg->i.attr.oid.id;
-			break;
-
-		default:
-			break;
-	}
-
-	return id;
-}
-
-
-static void multi_handleError(msg_t *msg, int err)
-{
-	multi_o_t *omsg = (multi_o_t *)msg->o.raw;
-
-	switch (msg->type) {
-		case mtSetAttr:
-		case mtGetAttr:
-			msg->o.attr.err = err;
-			break;
-
-		case mtCreate:
-			msg->o.create.err = err;
-			break;
-
-		case mtLookup:
-			msg->o.lookup.err = err;
-			break;
-
-		case mtDevCtl:
-			omsg->err = err;
-			break;
-
-		default:
-			msg->o.io.err = err;
-			break;
-	}
-}
-
-
 #if PSEUDODEV
 static inline int multi2pseudo(id_t id)
 {
@@ -130,16 +76,7 @@ static inline int multi2pseudo(id_t id)
 
 static void multi_dispatchMsg(msg_t *msg)
 {
-	id_t id;
-	multi_i_t *imsg;
-
-	if (msg->type == mtDevCtl) {
-		imsg = (multi_i_t *)msg->i.raw;
-		id = imsg->id;
-	}
-	else {
-		id = multi_getID(msg);
-	}
+	id_t id = msg->oid.id;
 
 	switch (id) {
 		case id_gpio1:
@@ -199,13 +136,13 @@ static void multi_dispatchMsg(msg_t *msg)
 		case id_pseudoFull:
 		case id_pseudoRandom:
 			if (pseudo_handleMsg(msg, multi2pseudo(id)) < 0) {
-				multi_handleError(msg, -EPERM);
+				msg->o.err = -EPERM;
 			}
 			break;
 #endif
 
 		default:
-			multi_handleError(msg, -ENODEV);
+			msg->o.err = -ENODEV;
 			break;
 	}
 }
@@ -213,16 +150,7 @@ static void multi_dispatchMsg(msg_t *msg)
 
 static void uart_dispatchMsg(msg_t *msg)
 {
-	id_t id;
-	ioctl_in_t *ioctl;
-
-	if (msg->type == mtDevCtl) {
-		ioctl = (ioctl_in_t *)msg->i.raw;
-		id = ioctl->id;
-	}
-	else {
-		id = multi_getID(msg);
-	}
+	id_t id = msg->oid.id;
 
 	switch (id) {
 		case id_console:
@@ -252,7 +180,7 @@ static int mkFile(oid_t *dir, id_t id, char *name, uint32_t port)
 	msg_t msg;
 
 	msg.type = mtCreate;
-	msg.i.create.dir = *dir;
+	msg.oid = *dir;
 	msg.i.create.type = otDev;
 	msg.i.create.mode = DEFFILEMODE;
 	msg.i.create.dev.port = port;
@@ -262,7 +190,7 @@ static int mkFile(oid_t *dir, id_t id, char *name, uint32_t port)
 	msg.o.data = NULL;
 	msg.o.size = 0;
 
-	if (msgSend(dir->port, &msg) < 0 || msg.o.create.err != EOK) {
+	if ((msgSend(dir->port, &msg) < 0) || (msg.o.err != EOK)) {
 		return -1;
 	}
 
@@ -509,9 +437,6 @@ static void multi_thread(void *arg)
 				break;
 
 			case mtCreate:
-				msg.o.create.err = -ENOSYS;
-				break;
-
 			case mtTruncate:
 			case mtDestroy:
 			case mtLookup:
@@ -519,7 +444,7 @@ static void multi_thread(void *arg)
 			case mtUnlink:
 			case mtReaddir:
 			default:
-				msg.o.io.err = -ENOSYS;
+				msg.o.err = -ENOSYS;
 				break;
 		}
 
@@ -553,13 +478,10 @@ static void uart_thread(void *arg)
 
 			case mtOpen:
 			case mtClose:
-				msg.o.io.err = EOK;
+				msg.o.err = EOK;
 				break;
 
 			case mtCreate:
-				msg.o.create.err = -ENOSYS;
-				break;
-
 			case mtTruncate:
 			case mtDestroy:
 			case mtLookup:
@@ -567,7 +489,7 @@ static void uart_thread(void *arg)
 			case mtUnlink:
 			case mtReaddir:
 			default:
-				msg.o.io.err = -ENOSYS;
+				msg.o.err = -ENOSYS;
 				break;
 		}
 

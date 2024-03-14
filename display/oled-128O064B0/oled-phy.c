@@ -58,7 +58,6 @@ static int oledphy_transmitSPI(uint8_t *data, uint8_t size)
 
 	msg_t msg;
 	multi_i_t *idevctl = NULL;
-	multi_o_t *odevctl = NULL;
 
 	oledphy_common.txBuff = data;
 
@@ -67,22 +66,21 @@ static int oledphy_transmitSPI(uint8_t *data, uint8_t size)
 	msg.i.size = 1;
 	msg.o.data = oledphy_common.rxBuff;
 	msg.o.size = 0;
+	msg.oid = oledphy_common.spiOid;
 
 	idevctl = (multi_i_t *)msg.i.raw;
-	idevctl->id = oledphy_common.spiOid.id;
 	idevctl->spi.type = spi_transaction;
 	idevctl->spi.transaction.frameSize = size;
 	idevctl->spi.transaction.cs = 0;
 
-	odevctl = (multi_o_t *)msg.o.raw;
-
 	if (msgSend(oledphy_common.spiOid.port, &msg) < 0)
 		return -1;
 
-	if (odevctl->err < 0)
+	if (msg.o.err < 0) {
 		return -1;
+	}
 
-	return odevctl->err;
+	return msg.o.err;
 }
 
 
@@ -97,10 +95,11 @@ static int oledphy_gpioSetPin(int gpio, int pin, int state)
 	msg.i.size = 0;
 	msg.o.data = NULL;
 	msg.o.size = 0;
+	msg.oid.id = gpio;
+	msg.oid.port = oledphy_common.gpioOid.port;
 
 	imsg = (multi_i_t *)msg.i.raw;
 
-	imsg->id = gpio;
 	imsg->gpio.type = gpio_set_port;
 	imsg->gpio.port.val = !!state << pin;
 	imsg->gpio.port.mask = 1 << pin;
@@ -123,10 +122,11 @@ static int oledphy_gpioSetDir(int gpio, int pin, int dir)
 	msg.i.size = 0;
 	msg.o.data = NULL;
 	msg.o.size = 0;
+	msg.oid.id = gpio;
+	msg.oid.port = oledphy_common.gpioOid.port;
 
 	imsg = (multi_i_t *)msg.i.raw;
 
-	imsg->id = gpio;
 	imsg->gpio.type = gpio_set_dir;
 	imsg->gpio.dir.val = !!dir << pin;
 	imsg->gpio.dir.mask = 1 << pin;
@@ -185,16 +185,15 @@ static int oledphy_initSPI(void)
 
 	msg_t msg;
 	multi_i_t *idevctl = NULL;
-	multi_o_t *odevctl = NULL;
 
 	msg.type = mtDevCtl;
 	msg.i.data = NULL;
 	msg.i.size = 0;
 	msg.o.data = NULL;
 	msg.o.size = 0;
+	msg.oid = oledphy_common.spiOid;
 
 	idevctl = (multi_i_t *)msg.i.raw;
-	idevctl->id = oledphy_common.spiOid.id;
 	idevctl->spi.type = spi_config;
 	idevctl->spi.config.cs = 0;
 	idevctl->spi.config.endian = spi_msb;
@@ -202,13 +201,12 @@ static int oledphy_initSPI(void)
 	idevctl->spi.config.prescaler = 1;
 	idevctl->spi.config.sckDiv = 1;
 
-	odevctl = (multi_o_t *)msg.o.raw;
-
 	if (msgSend(oledphy_common.spiOid.port, &msg) < 0)
 		return -1;
 
-	if (odevctl->err < 0)
+	if (msg.o.err < 0) {
 		return -1;
+	}
 
 	return EOK;
 }

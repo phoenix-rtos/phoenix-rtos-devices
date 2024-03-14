@@ -124,29 +124,29 @@ int libklog_ctrlHandle(uint32_t port, msg_t *msg, msg_rid_t rid)
 	switch (msg->type) {
 		case mtOpen:
 		case mtClose:
-			if (msg->i.openclose.oid.id == libklog_common.ctrl.id) {
-				msg->o.io.err = 0;
+			if (msg->oid.id == libklog_common.ctrl.id) {
+				msg->o.err = 0;
 				handled = 1;
 			}
 			break;
 
 		case mtRead:
-			if (msg->i.io.oid.id == libklog_common.ctrl.id) {
+			if (msg->oid.id == libklog_common.ctrl.id) {
 				if ((msg->o.size != 0) && (msg->o.data != NULL)) {
 					strncpy(msg->o.data, (libklog_common.enabled != 0) ? "1" : "0", msg->o.size);
-					msg->o.io.err = (msg->o.size > 1) ? 2 : 1;
+					msg->o.err = (msg->o.size > 1) ? 2 : 1;
 				}
 				else {
-					msg->o.io.err = -EINVAL;
+					msg->o.err = -EINVAL;
 				}
 				handled = 1;
 			}
 			break;
 
 		case mtWrite:
-			if (msg->i.io.oid.id == libklog_common.ctrl.id) {
+			if (msg->oid.id == libklog_common.ctrl.id) {
 				if ((msg->i.size != 0) && (msg->i.data != NULL)) {
-					switch (((char *)msg->i.data)[0]) {
+					switch (((const char *)msg->i.data)[0]) {
 						case '0':
 							libklog_common.enabled = 0;
 							break;
@@ -159,23 +159,23 @@ int libklog_ctrlHandle(uint32_t port, msg_t *msg, msg_rid_t rid)
 						default:
 							break;
 					}
-					msg->o.io.err = msg->i.size;
+					msg->o.err = msg->i.size;
 				}
 				else {
-					msg->o.io.err = -EINVAL;
+					msg->o.err = -EINVAL;
 				}
 				handled = 1;
 			}
 			break;
 
 		case mtGetAttr:
-			if (msg->i.attr.oid.id == libklog_common.ctrl.id) {
+			if (msg->oid.id == libklog_common.ctrl.id) {
 				if (msg->i.attr.type == atPollStatus) {
 					msg->o.attr.val = POLLIN | POLLRDNORM | POLLOUT | POLLWRNORM;
-					msg->o.attr.err = 0;
+					msg->o.err = 0;
 				}
 				else {
-					msg->o.attr.err = -EINVAL;
+					msg->o.err = -EINVAL;
 				}
 				handled = 1;
 			}

@@ -63,22 +63,22 @@ static void thread(void *arg)
 		switch (msg.type) {
 			case mtOpen:
 			case mtClose:
-				msg.o.io.err = EOK;
+				msg.o.err = EOK;
 				break;
 			case mtWrite:
-				msg.o.io.err = -EINVAL;
+				msg.o.err = -EINVAL;
 				break;
 			case mtRead:
 				/* don't support partial reads, signal EOF */
 				if (msg.i.io.offs > 0) {
-					msg.o.io.err = 0; /* EOF */
+					msg.o.err = 0; /* EOF */
 				}
 				else {
-					msg.o.io.err = snprintf(msg.o.data, msg.o.size, "%d\n", getTemp());
+					msg.o.err = snprintf(msg.o.data, msg.o.size, "%d\n", getTemp());
 				}
 				break;
 			default:
-				msg.o.io.err = -EINVAL;
+				msg.o.err = -ENOSYS;
 				break;
 		}
 

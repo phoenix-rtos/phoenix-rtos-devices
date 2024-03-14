@@ -51,7 +51,6 @@ int i2c_busWrite(uint8_t dev_addr, const uint8_t *data, uint32_t len)
 	msg_t msg;
 	int res;
 	i2c_devctl_t *in = (i2c_devctl_t *)msg.i.raw;
-	i2c_devctl_t *out = (i2c_devctl_t *)msg.o.raw;
 
 	if (!common.initialized)
 		return -EIO;
@@ -62,6 +61,7 @@ int i2c_busWrite(uint8_t dev_addr, const uint8_t *data, uint32_t len)
 	msg.i.size = len;
 	msg.o.data = NULL;
 	msg.o.size = 0;
+	msg.oid.port = common.i2c_oid.port;
 
 	in->i.type = i2c_devctl_bus_write;
 	in->i.dev_addr = dev_addr;
@@ -69,7 +69,7 @@ int i2c_busWrite(uint8_t dev_addr, const uint8_t *data, uint32_t len)
 	if ((res = msgSend(common.i2c_oid.port, &msg)) < 0)
 		return res;
 
-	return out->o.err;
+	return msg.o.err;
 }
 
 
@@ -79,7 +79,6 @@ int i2c_busRead(uint8_t dev_addr, uint8_t *data_out, uint32_t len)
 	msg_t msg;
 	int res;
 	i2c_devctl_t *in = (i2c_devctl_t *)msg.i.raw;
-	i2c_devctl_t *out = (i2c_devctl_t *)msg.o.raw;
 
 	if (!common.initialized)
 		return -EIO;
@@ -90,6 +89,7 @@ int i2c_busRead(uint8_t dev_addr, uint8_t *data_out, uint32_t len)
 	msg.i.size = 0;
 	msg.o.data = data_out;
 	msg.o.size = len;
+	msg.oid.port = common.i2c_oid.port;
 
 	in->i.type = i2c_devctl_bus_read;
 	in->i.dev_addr = dev_addr;
@@ -97,7 +97,7 @@ int i2c_busRead(uint8_t dev_addr, uint8_t *data_out, uint32_t len)
 	if ((res = msgSend(common.i2c_oid.port, &msg)) < 0)
 		return res;
 
-	return out->o.err;
+	return msg.o.err;
 }
 
 
@@ -107,7 +107,6 @@ int i2c_regRead(uint8_t dev_addr, uint8_t reg_addr, uint8_t *data_out, uint32_t 
 	msg_t msg;
 	int res;
 	i2c_devctl_t *in = (i2c_devctl_t *)msg.i.raw;
-	i2c_devctl_t *out = (i2c_devctl_t *)msg.o.raw;
 
 	if (!common.initialized)
 		return -EIO;
@@ -118,6 +117,7 @@ int i2c_regRead(uint8_t dev_addr, uint8_t reg_addr, uint8_t *data_out, uint32_t 
 	msg.i.size = 0;
 	msg.o.data = data_out;
 	msg.o.size = len;
+	msg.oid.port = common.i2c_oid.port;
 
 	in->i.type = i2c_devctl_reg_read;
 	in->i.dev_addr = dev_addr;
@@ -126,5 +126,5 @@ int i2c_regRead(uint8_t dev_addr, uint8_t reg_addr, uint8_t *data_out, uint32_t 
 	if ((res = msgSend(common.i2c_oid.port, &msg)) < 0)
 		return res;
 
-	return out->o.err;
+	return msg.o.err;
 }

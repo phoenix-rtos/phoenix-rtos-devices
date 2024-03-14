@@ -685,7 +685,8 @@ static int dev_ctl(msg_t *msg)
 
 	memcpy(&dev_ctl, msg->o.raw, sizeof(sdma_dev_ctl_t));
 
-	if ((channel = oid_to_channel(&dev_ctl.oid)) < 0) {
+	channel = oid_to_channel(&msg->oid);
+	if (channel < 0) {
 		log_error("dev_ctl: failed to get channel corresponding to this oid");
 		return -EIO;
 	}
@@ -765,25 +766,29 @@ static void worker_thread(void *arg)
 
 		switch (msg.type) {
 			case mtOpen:
-				msg.o.io.err = dev_open(&msg.i.openclose.oid, msg.i.openclose.flags);
+				msg.o.err = dev_open(&msg.oid, msg.i.openclose.flags);
 				break;
 
 			case mtClose:
-				msg.o.io.err = dev_close(&msg.i.openclose.oid, msg.i.openclose.flags);
+				msg.o.err = dev_close(&msg.oid, msg.i.openclose.flags);
 				break;
 
 			case mtRead:
-				msg.o.io.err = dev_read(&msg.i.io.oid, msg.o.data, msg.o.size);
+				msg.o.err = dev_read(&msg.oid, msg.o.data, msg.o.size);
 				break;
 
 			case mtWrite:
-				msg.o.io.err = -ENOSYS;
+				msg.o.err = -ENOSYS;
 				break;
 
 			case mtDevCtl:
 				mutexLock(common.lock);
-				msg.o.io.err = dev_ctl(&msg);
+				msg.o.err = dev_ctl(&msg);
 				mutexUnlock(common.lock);
+				break;
+
+			default:
+				msg.o.err = -ENOSYS;
 				break;
 		}
 

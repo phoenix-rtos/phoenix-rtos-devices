@@ -128,45 +128,45 @@ static void vblk_msgHandler(void *arg, msg_t *msg)
 	switch (msg->type) {
 		case mtOpen:
 		case mtClose:
-			strg = storage_get(msg->i.openclose.oid.id);
-			msg->o.io.err = (strg == NULL) ? -EINVAL : EOK;
+			strg = storage_get(msg->oid.id);
+			msg->o.err = (strg == NULL) ? -EINVAL : EOK;
 			break;
 
 		case mtRead:
-			strg = storage_get(msg->i.io.oid.id);
-			msg->o.io.err = vblksrv_read(strg, msg->i.io.offs, msg->o.data, msg->o.size);
+			strg = storage_get(msg->oid.id);
+			msg->o.err = vblksrv_read(strg, msg->i.io.offs, msg->o.data, msg->o.size);
 			break;
 
 		case mtWrite:
-			strg = storage_get(msg->i.io.oid.id);
-			msg->o.io.err = vblksrv_write(strg, msg->i.io.offs, msg->i.data, msg->i.size);
+			strg = storage_get(msg->oid.id);
+			msg->o.err = vblksrv_write(strg, msg->i.io.offs, msg->i.data, msg->i.size);
 			break;
 
 		case mtSync:
-			msg->o.io.err = -ENOSYS;
+			msg->o.err = -ENOSYS;
 			break;
 
 		case mtGetAttr:
-			strg = storage_get(msg->i.attr.oid.id);
-			msg->o.attr.err = vblksrv_getAttr(strg, msg->i.attr.type, &msg->o.attr.val);
+			strg = storage_get(msg->oid.id);
+			msg->o.err = vblksrv_getAttr(strg, msg->i.attr.type, &msg->o.attr.val);
 			break;
 
 		case mtMount:
-			strg = storage_get(imnt->dev.id);
-			omnt->err = storage_mountfs(strg, imnt->fstype, msg->i.data, imnt->mode, &imnt->mnt, &omnt->oid);
+			strg = storage_get(msg->oid.id);
+			msg->o.err = storage_mountfs(strg, imnt->fstype, msg->i.data, imnt->mode, &imnt->mnt, &omnt->oid);
 
 		case mtUmount:
-			strg = storage_get(((oid_t *)msg->i.data)->id);
-			omnt->err = storage_umountfs(strg);
+			strg = storage_get(msg->oid.id);
+			msg->o.err = storage_umountfs(strg);
 			break;
 
 		case mtMountPoint:
-			strg = storage_get(((oid_t *)msg->i.data)->id);
-			omnt->err = storage_mountpoint(strg, &omnt->oid);
+			strg = storage_get(msg->oid.id);
+			msg->o.err = storage_mountpoint(strg, &omnt->oid);
 			break;
 
 		default:
-			msg->o.io.err = -EINVAL;
+			msg->o.err = -ENOSYS;
 			break;
 	}
 }

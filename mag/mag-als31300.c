@@ -256,30 +256,30 @@ static void msgLoop(uint32_t port)
 		switch (msg.type) {
 			case mtOpen: /* fallthrough */
 			case mtClose:
-				msg.o.io.err = EOK;
+				msg.o.err = EOK;
 				break;
 			case mtWrite:
 				/* TODO: support setting interrupt thresholds? */
-				msg.o.io.err = -EINVAL;
+				msg.o.err = -ENOSYS;
 				break;
 			case mtRead:
 				/* don't support partial reads, signal EOF */
 				if (msg.i.io.offs > 0) {
-					msg.o.io.err = 0; /* EOF */
+					msg.o.err = 0; /* EOF */
 				}
 				else {
-					msg.o.io.err = handleRead(msg.i.io.oid.id, msg.o.data, msg.o.size);
+					msg.o.err = handleRead(msg.oid.id, msg.o.data, msg.o.size);
 				}
 				break;
 
 			case mtUnlink:
 				/* somebody is deleting our device files - exit */
-				msg.o.io.err = EOK;
+				msg.o.err = EOK;
 				running = false;
 				break;
 
 			default:
-				msg.o.io.err = -EINVAL;
+				msg.o.err = -ENOSYS;
 				break;
 		}
 

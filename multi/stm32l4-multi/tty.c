@@ -532,41 +532,41 @@ static void tty_thread(void *arg)
 		switch (msg.type) {
 			case mtOpen:
 			case mtClose:
-				ctx = tty_getCtx(msg.i.io.oid.id);
+				ctx = tty_getCtx(msg.oid.id);
 				if (ctx == NULL) {
-					msg.o.io.err = -EINVAL;
+					msg.o.err = -EINVAL;
 					break;
 				}
 
-				msg.o.io.err = EOK;
+				msg.o.err = EOK;
 				break;
 
 			case mtWrite:
-				ctx = tty_getCtx(msg.i.io.oid.id);
+				ctx = tty_getCtx(msg.oid.id);
 				if (ctx == NULL) {
-					msg.o.io.err = -EINVAL;
+					msg.o.err = -EINVAL;
 					break;
 				}
-				msg.o.io.err = libtty_write(&ctx->ttyCommon, msg.i.data, msg.i.size, msg.i.io.mode);
+				msg.o.err = libtty_write(&ctx->ttyCommon, msg.i.data, msg.i.size, msg.i.io.mode);
 				break;
 
 			case mtRead:
-				ctx = tty_getCtx(msg.i.io.oid.id);
+				ctx = tty_getCtx(msg.oid.id);
 				if (ctx == NULL) {
-					msg.o.io.err = -EINVAL;
+					msg.o.err = -EINVAL;
 					break;
 				}
-				msg.o.io.err = libtty_read(&ctx->ttyCommon, msg.o.data, msg.o.size, msg.i.io.mode);
+				msg.o.err = libtty_read(&ctx->ttyCommon, msg.o.data, msg.o.size, msg.i.io.mode);
 				break;
 
 			case mtGetAttr:
-				ctx = tty_getCtx(msg.i.attr.oid.id);
+				ctx = tty_getCtx(msg.oid.id);
 				if ((msg.i.attr.type != atPollStatus) || (ctx == NULL)) {
-					msg.o.attr.err = -EINVAL;
+					msg.o.err = -EINVAL;
 					break;
 				}
 				msg.o.attr.val = libtty_poll_status(&ctx->ttyCommon);
-				msg.o.attr.err = EOK;
+				msg.o.err = EOK;
 				break;
 
 			case mtDevCtl:
@@ -580,6 +580,10 @@ static void tty_thread(void *arg)
 					err = libtty_ioctl(&ctx->ttyCommon, pid, request, in_data, &out_data);
 				}
 				ioctl_setResponse(&msg, request, err, out_data);
+				break;
+
+			default:
+				msg.o.err = -ENOSYS;
 				break;
 		}
 
