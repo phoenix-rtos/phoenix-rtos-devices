@@ -220,9 +220,10 @@ static void handleMsg(msg_t *msg)
 
 		default:
 			err = -EINVAL;
+			break;
 	}
 
-	omsg->err = err;
+	msg->o.err = err;
 }
 
 
@@ -260,31 +261,23 @@ static void thread(void *arg)
 		switch (msg.type) {
 			case mtOpen:
 			case mtClose:
-				msg.o.io.err = EOK;
+				msg.o.err = EOK;
 				break;
 
 			case mtRead:
-				msg.o.io.err = console_read(msg.o.data, msg.o.size, msg.i.io.mode);
+				msg.o.err = console_read(msg.o.data, msg.o.size, msg.i.io.mode);
 				break;
 
 			case mtWrite:
-				msg.o.io.err = console_write(msg.i.data, msg.i.size, msg.i.io.mode);
+				msg.o.err = console_write(msg.i.data, msg.i.size, msg.i.io.mode);
 				break;
 
 			case mtDevCtl:
 				handleMsg(&msg);
 				break;
 
-			case mtCreate:
-				msg.o.create.err = -EINVAL;
-				break;
-
-			case mtLookup:
-				msg.o.lookup.err = -EINVAL;
-				break;
-
 			default:
-				msg.o.io.err = -EINVAL;
+				msg.o.err = -ENOSYS;
 				break;
 		}
 

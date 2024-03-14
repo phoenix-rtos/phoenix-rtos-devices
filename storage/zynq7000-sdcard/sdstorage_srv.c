@@ -170,40 +170,40 @@ static void sdcard_msgHandler(void *arg, msg_t *msg)
 	switch (msg->type) {
 		case mtOpen:
 		case mtClose:
-			strg = storage_get(GET_STORAGE_ID(msg->i.openclose.oid.id));
-			msg->o.io.err = (strg == NULL) ? -EINVAL : EOK;
+			strg = storage_get(GET_STORAGE_ID(msg->oid.id));
+			msg->o.err = (strg == NULL) ? -EINVAL : EOK;
 			break;
 
 		case mtRead:
-			msg->o.io.err = storage_read(msg->i.io.oid.id, msg->i.io.offs, msg->o.data, msg->o.size);
+			msg->o.err = storage_read(msg->oid.id, msg->i.io.offs, msg->o.data, msg->o.size);
 			break;
 
 		case mtWrite:
-			msg->o.io.err = storage_write(msg->i.io.oid.id, msg->i.io.offs, msg->i.data, msg->i.size);
+			msg->o.err = storage_write(msg->oid.id, msg->i.io.offs, msg->i.data, msg->i.size);
 			break;
 
 		case mtSync:
-			msg->o.io.err = storage_sync(msg->i.io.oid.id);
+			msg->o.err = storage_sync(msg->oid.id);
 			break;
 
 		case mtGetAttr:
-			msg->o.attr.err = storage_getAttr(msg->i.attr.oid.id, msg->i.attr.type, &msg->o.attr.val);
+			msg->o.err = storage_getAttr(msg->oid.id, msg->i.attr.type, &msg->o.attr.val);
 			break;
 
 		case mtMount:
-			omnt->err = storage_mountfs(storage_get(GET_STORAGE_ID(imnt->dev.id)), imnt->fstype, msg->i.data, imnt->mode, &imnt->mnt, &omnt->oid);
+			msg->o.err = storage_mountfs(storage_get(GET_STORAGE_ID(msg->oid.id)), imnt->fstype, msg->i.data, imnt->mode, &imnt->mnt, &omnt->oid);
 			break;
 
 		case mtUmount:
-			msg->o.io.err = storage_umountfs(storage_get(GET_STORAGE_ID(((oid_t *)msg->i.data)->id)));
+			msg->o.err = storage_umountfs(storage_get(GET_STORAGE_ID(msg->oid.id)));
 			break;
 
 		case mtMountPoint:
-			omnt->err = storage_mountpoint(storage_get(GET_STORAGE_ID(((oid_t *)msg->i.data)->id)), &omnt->oid);
+			msg->o.err = storage_mountpoint(storage_get(GET_STORAGE_ID(msg->oid.id)), &omnt->oid);
 			break;
 
 		default:
-			msg->o.io.err = -EINVAL;
+			msg->o.err = -ENOSYS;
 			break;
 	}
 }

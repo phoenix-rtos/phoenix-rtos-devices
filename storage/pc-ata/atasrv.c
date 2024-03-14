@@ -457,47 +457,46 @@ static void atasrv_msgloop(void *arg)
 			continue;
 
 		switch (msg.type) {
-		case mtMount:
-			imnt = (mount_i_msg_t *)msg.i.raw;
-			omnt = (mount_o_msg_t *)msg.o.raw;
-			omnt->err = atasrv_mount(imnt->dev.id, imnt->fstype, &omnt->oid);
-			break;
+			case mtMount:
+				imnt = (mount_i_msg_t *)msg.i.raw;
+				omnt = (mount_o_msg_t *)msg.o.raw;
+				msg.o.err = atasrv_mount(msg.oid.id, imnt->fstype, &omnt->oid);
+				break;
 
-		case mtUmount:
-			/* TODO: add umount() support, return -ENOTSUP for now */
-			msg.o.io.err = -ENOTSUP;
-			break;
+			case mtUmount:
+				/* TODO: add umount() support, return -ENOTSUP for now */
+				msg.o.err = -ENOTSUP;
+				break;
 
-		case mtMountPoint:
-			omnt = (mount_o_msg_t *)msg.o.raw;
-			/* TODO: get mountpoint, return -ENOTSUP for now */
-			omnt->err = -ENOTSUP;
-			break;
+			case mtMountPoint:
+				/* TODO: get mountpoint, return -ENOTSUP for now */
+				msg.o.err = -ENOTSUP;
+				break;
 
-		case mtOpen:
-		case mtClose:
-			msg.o.io.err = EOK;
-			break;
+			case mtOpen:
+			case mtClose:
+				msg.o.err = EOK;
+				break;
 
-		case mtSync:
-			msg.o.io.err = -ENOSYS;
-			break;
+			case mtSync:
+				msg.o.err = -ENOSYS;
+				break;
 
-		case mtRead:
-			msg.o.io.err = atasrv_read(msg.i.io.oid.id, msg.i.io.offs, msg.o.data, msg.o.size);
-			break;
+			case mtRead:
+				msg.o.err = atasrv_read(msg.oid.id, msg.i.io.offs, msg.o.data, msg.o.size);
+				break;
 
-		case mtWrite:
-			msg.o.io.err = atasrv_write(msg.i.io.oid.id, msg.i.io.offs, msg.i.data, msg.i.size);
-			break;
+			case mtWrite:
+				msg.o.err = atasrv_write(msg.oid.id, msg.i.io.offs, msg.i.data, msg.i.size);
+				break;
 
-		case mtGetAttr:
-			msg.o.attr.err = atasrv_getattr(msg.i.attr.oid.id, msg.i.attr.type, &msg.o.attr.val);
-			break;
+			case mtGetAttr:
+				msg.o.err = atasrv_getattr(msg.oid.id, msg.i.attr.type, &msg.o.attr.val);
+				break;
 
-		default:
-			msg.o.io.err = -EINVAL;
-			break;
+			default:
+				msg.o.err = -ENOSYS;
+				break;
 		}
 
 		msgRespond(port, &msg, rid);

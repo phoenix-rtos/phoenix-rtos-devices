@@ -111,19 +111,19 @@ int pseudo_handleMsg(msg_t *msg, int id)
 {
 	switch (msg->type) {
 		case mtOpen:
-			msg->o.io.err = pseudo_open(id, msg->i.openclose.flags);
+			msg->o.err = pseudo_open(id, msg->i.openclose.flags);
 			return 0;
 
 		case mtClose:
-			msg->o.io.err = pseudo_close(id);
+			msg->o.err = pseudo_close(id);
 			return 0;
 
 		case mtRead:
-			msg->o.io.err = pseudo_read(id, msg->o.data, msg->o.size);
+			msg->o.err = pseudo_read(id, msg->o.data, msg->o.size);
 			return 0;
 
 		case mtWrite:
-			msg->o.io.err = pseudo_write(id, msg->i.data, msg->i.size);
+			msg->o.err = pseudo_write(id, msg->i.data, msg->i.size);
 			return 0;
 
 		default:

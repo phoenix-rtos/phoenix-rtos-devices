@@ -1080,7 +1080,6 @@ int test_erase(const char *path, size_t offset, size_t size)
 	msg_t msg;
 	oid_t oid;
 	flash_i_devctl_t *idevctl = NULL;
-	flash_o_devctl_t *odevctl = NULL;
 
 	msg.type = mtDevCtl;
 	msg.i.data = NULL;
@@ -1095,8 +1094,9 @@ int test_erase(const char *path, size_t offset, size_t size)
 		return -1;
 	}
 
+	msg.oid = oid;
+
 	idevctl->type = flashsrv_devctl_erase;
-	idevctl->erase.oid = oid;
 	idevctl->erase.size = size;
 	idevctl->erase.address = offset;
 
@@ -1105,10 +1105,8 @@ int test_erase(const char *path, size_t offset, size_t size)
 		return -1;
 	}
 
-	odevctl = (flash_o_devctl_t *)msg.o.raw;
-
-	if (odevctl->err < 0) {
-		printf("Err: %d.\n", odevctl->err);
+	if (msg.o.err < 0) {
+		printf("Err: %d.\n", msg.o.err);
 		return -1;
 	}
 

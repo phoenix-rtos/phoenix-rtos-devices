@@ -147,16 +147,15 @@ static void adc_configure(int dev, adc_config_t *config)
 static void adc_handleDevCtl(msg_t *msg, int dev)
 {
 	multi_i_t *idevctl = (multi_i_t *)msg->i.raw;
-	multi_o_t *odevctl = (multi_o_t *)msg->o.raw;
 
 	switch (idevctl->adc.type) {
 		case adc_config:
 			adc_configure(dev, &idevctl->adc.config);
-			odevctl->err = EOK;
+			msg->o.err = EOK;
 			break;
 
 		default:
-			odevctl->err = -EINVAL;
+			msg->o.err = -EINVAL;
 			break;
 	}
 }
@@ -186,12 +185,7 @@ void adc_handleMsg(msg_t *msg, int dev)
 	dev -= id_adc0;
 
 	if ((dev < 0) || (dev >= ADC_CNT) || (adc_info[dev].active == 0)) {
-		if (msg->type == mtDevCtl) {
-			((multi_o_t *)msg->o.raw)->err = -EINVAL;
-		}
-		else {
-			msg->o.io.err = -EINVAL;
-		}
+		msg->o.err = -EINVAL;
 		return;
 	}
 
@@ -199,16 +193,16 @@ void adc_handleMsg(msg_t *msg, int dev)
 		case mtOpen:
 		case mtClose:
 		case mtWrite:
-			msg->o.io.err = EOK;
+			msg->o.err = EOK;
 			break;
 
 		case mtRead:
 			if (msg->o.size != sizeof(uint32_t)) {
-				msg->o.io.err = -EINVAL;
+				msg->o.err = -EINVAL;
 				break;
 			}
 			adc_convert(dev, (uint32_t *)msg->o.data);
-			msg->o.io.err = EOK;
+			msg->o.err = EOK;
 			break;
 
 		case mtDevCtl:
@@ -216,7 +210,7 @@ void adc_handleMsg(msg_t *msg, int dev)
 			break;
 
 		default:
-			msg->o.io.err = -EINVAL;
+			msg->o.err = -ENOSYS;
 			break;
 	}
 }

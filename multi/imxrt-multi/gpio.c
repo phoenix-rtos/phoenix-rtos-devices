@@ -28,11 +28,12 @@
 #include "common.h"
 #include "gpio.h"
 
-
+/* clang-format off */
 
 enum { gpio_dr = 0, gpio_gdir, gpio_psr, gpio_icr1, gpio_icr2, gpio_imr,
 	gpio_isr, gpio_edge_sel, gpio_dr_set, gpio_dr_clear, gpio_dr_toggle };
 
+/* clang-format on */
 
 struct {
 	volatile uint32_t *base[GPIO_PORTS];
@@ -47,10 +48,10 @@ static void gpio_handleDevCtl(msg_t *msg, int port)
 	multi_i_t *imsg = (multi_i_t *)msg->i.raw;
 	multi_o_t *omsg = (multi_o_t *)msg->o.raw;
 
-	omsg->err = EOK;
+	msg->o.err = EOK;
 
 	switch (imsg->gpio.type) {
-		case gpio_set_port :
+		case gpio_set_port:
 			/* DR_SET & DR_CLEAR registers are not functional */
 			set = imsg->gpio.port.val & imsg->gpio.port.mask;
 			clr = ~imsg->gpio.port.val & imsg->gpio.port.mask;
@@ -61,11 +62,11 @@ static void gpio_handleDevCtl(msg_t *msg, int port)
 			mutexUnlock(gpio_common.lock);
 			break;
 
-		case gpio_get_port :
+		case gpio_get_port:
 			omsg->val = *(gpio_common.base[port] + gpio_dr);
 			break;
 
-		case gpio_set_dir :
+		case gpio_set_dir:
 			set = imsg->gpio.dir.val & imsg->gpio.dir.mask;
 			clr = ~imsg->gpio.dir.val & imsg->gpio.dir.mask;
 
@@ -75,12 +76,12 @@ static void gpio_handleDevCtl(msg_t *msg, int port)
 			mutexUnlock(gpio_common.lock);
 			break;
 
-		case gpio_get_dir :
+		case gpio_get_dir:
 			omsg->val = *(gpio_common.base[port] + gpio_gdir);
 			break;
 
 		default:
-			omsg->err = -ENOSYS;
+			msg->o.err = -ENOSYS;
 			break;
 	}
 }
@@ -100,7 +101,7 @@ int gpio_handleMsg(msg_t *msg, int dev)
 		case mtClose:
 		case mtWrite:
 		case mtRead:
-			msg->o.io.err = EOK;
+			msg->o.err = EOK;
 			break;
 
 		case mtDevCtl:
@@ -108,7 +109,7 @@ int gpio_handleMsg(msg_t *msg, int dev)
 			break;
 
 		default:
-			msg->o.io.err = -ENOSYS;
+			msg->o.err = -ENOSYS;
 			break;
 	}
 

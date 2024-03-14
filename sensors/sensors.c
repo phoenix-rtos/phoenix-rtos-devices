@@ -298,15 +298,15 @@ static void sensors_msgThread(void)
 
 		switch (msg.type) {
 			case mtOpen:
-				msg.o.io.err = sensors_open();
+				msg.o.err = sensors_open();
 				break;
 
 			case mtClose:
-				msg.o.io.err = sensors_close(CLIENT_GET_ID(msg.i.openclose.oid.id));
+				msg.o.err = sensors_close(CLIENT_GET_ID(msg.oid.id));
 				break;
 
 			case mtRead:
-				msg.o.io.err = sensors_read(msg.o.data, msg.o.size, CLIENT_GET_ID(msg.i.io.oid.id));
+				msg.o.err = sensors_read(msg.o.data, msg.o.size, CLIENT_GET_ID(msg.oid.id));
 				break;
 
 			case mtDevCtl:
@@ -314,7 +314,7 @@ static void sensors_msgThread(void)
 				break;
 
 			default:
-				msg.o.io.err = -EINVAL;
+				msg.o.err = -ENOSYS;
 				break;
 		}
 

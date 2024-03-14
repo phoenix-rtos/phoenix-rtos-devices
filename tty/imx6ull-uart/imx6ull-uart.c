@@ -268,24 +268,24 @@ static void uart_thr(void *arg)
 
 		switch (msg.type) {
 			case mtOpen:
-				msg.o.io.err = uart_open(msg.i.openclose.flags);
+				msg.o.err = uart_open(msg.i.openclose.flags);
 				break;
 			case mtClose:
-				msg.o.io.err = uart_close(msg.i.openclose.oid.id);
+				msg.o.err = uart_close(msg.oid.id);
 				break;
 			case mtWrite:
-				msg.o.io.err = libtty_write(&uart.tty_common, msg.i.data, msg.i.size, msg.i.io.mode);
+				msg.o.err = libtty_write(&uart.tty_common, msg.i.data, msg.i.size, msg.i.io.mode);
 				break;
 			case mtRead:
-				msg.o.io.err = libtty_read(&uart.tty_common, msg.o.data, msg.o.size, msg.i.io.mode);
+				msg.o.err = libtty_read(&uart.tty_common, msg.o.data, msg.o.size, msg.i.io.mode);
 				break;
 			case mtGetAttr:
 				if (msg.i.attr.type != atPollStatus) {
-					msg.o.attr.err = -EINVAL;
+					msg.o.err = -EINVAL;
 					break;
 				}
 				msg.o.attr.val = libtty_poll_status(&uart.tty_common);
-				msg.o.attr.err = EOK;
+				msg.o.err = EOK;
 				break;
 			case mtDevCtl: { /* ioctl */
 				unsigned long request;
@@ -298,6 +298,10 @@ static void uart_thr(void *arg)
 
 				break;
 			}
+
+			default:
+				msg.o.err = -ENOSYS;
+				break;
 		}
 
 		msgRespond(port, &msg, rid);

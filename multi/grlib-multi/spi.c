@@ -243,7 +243,6 @@ static int spi_xfer(int dev, uint8_t slavemsk, const uint8_t *txBuff, uint8_t *r
 static void spi_handleDevCtl(msg_t *msg, int dev)
 {
 	multi_i_t *idevctl = (multi_i_t *)msg->i.raw;
-	multi_o_t *odevctl = (multi_o_t *)msg->o.raw;
 
 	const uint8_t *txBuff = (const uint8_t *)msg->i.data;
 	uint8_t *rxBuff = (uint8_t *)msg->o.data;
@@ -251,25 +250,25 @@ static void spi_handleDevCtl(msg_t *msg, int dev)
 	dev -= id_spi0;
 
 	if ((dev >= SPI_CNT) || (dev < 0)) {
-		odevctl->err = -EINVAL;
+		msg->o.err = -EINVAL;
 		return;
 	}
 
 	switch (idevctl->spi.type) {
 		case spi_setPins:
-			odevctl->err = spi_initPins(&idevctl->spi.pins);
+			msg->o.err = spi_initPins(&idevctl->spi.pins);
 			break;
 
 		case spi_config:
-			odevctl->err = spi_configure(dev, &idevctl->spi.config);
+			msg->o.err = spi_configure(dev, &idevctl->spi.config);
 			break;
 
 		case spi_transaction:
-			odevctl->err = spi_xfer(dev, idevctl->spi.transaction.slaveMsk, txBuff, rxBuff, idevctl->spi.transaction.len);
+			msg->o.err = spi_xfer(dev, idevctl->spi.transaction.slaveMsk, txBuff, rxBuff, idevctl->spi.transaction.len);
 			break;
 
 		default:
-			odevctl->err = -ENOSYS;
+			msg->o.err = -EINVAL;
 			break;
 	}
 }
@@ -300,7 +299,7 @@ void spi_handleMsg(msg_t *msg, int dev)
 	switch (msg->type) {
 		case mtWrite:
 		case mtRead:
-			msg->o.io.err = EOK;
+			msg->o.err = EOK;
 			break;
 
 		case mtDevCtl:
@@ -308,7 +307,7 @@ void spi_handleMsg(msg_t *msg, int dev)
 			break;
 
 		default:
-			msg->o.io.err = -EINVAL;
+			msg->o.err = -ENOSYS;
 			break;
 	}
 }

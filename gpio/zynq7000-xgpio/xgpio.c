@@ -189,11 +189,11 @@ static void gpio_thread(void *arg)
 		switch (msg.type) {
 			case mtOpen:
 			case mtClose:
-				msg.o.io.err = 0;
+				msg.o.err = 0;
 				break;
 
 			case mtRead:
-				gpio_decodeOid(&info, &msg.i.io.oid);
+				gpio_decodeOid(&info, &msg.oid);
 
 				if (info.isDir != 0) {
 					ret = gpio_readDir(info.channel, &val);
@@ -206,37 +206,37 @@ static void gpio_thread(void *arg)
 				}
 
 				if (ret < 0) {
-					msg.o.io.err = ret;
+					msg.o.err = ret;
 				}
 				else if (msg.o.data == NULL || msg.o.size == 0) {
-					msg.o.io.err = 0;
+					msg.o.err = 0;
 				}
 				else {
 					ret = sprintf(buff, "%u\n", val);
 					++ret;
 					if (ret <= msg.i.io.offs) {
 						/* EOF */
-						msg.o.io.err = 0;
+						msg.o.err = 0;
 					}
 					else {
 						strncpy(msg.o.data, buff + msg.i.io.offs, msg.o.size);
 						((char *)msg.o.data)[msg.o.size - 1] = '\0';
 						ret -= msg.i.io.offs;
-						msg.o.io.err = (ret < (int)msg.o.size) ? ret : msg.o.size;
+						msg.o.err = (ret < (int)msg.o.size) ? ret : msg.o.size;
 					}
 				}
 				break;
 
 			case mtWrite:
 				if (msg.i.data == NULL || msg.i.size == 0) {
-					msg.o.io.err = 0;
+					msg.o.err = 0;
 				}
 				else {
 					strncpy(buff, msg.i.data, msg.i.size < sizeof(buff) ? msg.i.size : sizeof(buff));
 					buff[sizeof(buff) - 1] = '\0';
 					val = (uint32_t)strtoul(buff, NULL, 0);
 
-					gpio_decodeOid(&info, &msg.i.io.oid);
+					gpio_decodeOid(&info, &msg.oid);
 
 					if (info.isDir != 0) {
 						ret = gpio_writeDir(info.channel, val);
@@ -249,21 +249,16 @@ static void gpio_thread(void *arg)
 					}
 
 					if (ret < 0) {
-						msg.o.io.err = ret;
+						msg.o.err = ret;
 					}
 					else {
-						msg.o.io.err = (int)msg.i.size;
+						msg.o.err = (int)msg.i.size;
 					}
 				}
 				break;
 
-			case mtSetAttr:
-			case mtGetAttr:
-				msg.o.attr.err = -ENOSYS;
-				break;
-
 			default:
-				msg.o.io.err = -ENOSYS;
+				msg.o.err = -ENOSYS;
 				break;
 		}
 

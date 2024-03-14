@@ -52,20 +52,20 @@ static void flashnor_msgloop(void *arg, msg_t *msg)
 		case mtMount:
 			imnt = (mount_i_msg_t *)msg->i.raw;
 			omnt = (mount_o_msg_t *)msg->o.raw;
-			omnt->err = storage_mountfs(storage_get(imnt->dev.id), imnt->fstype, msg->i.data, imnt->mode, &imnt->mnt, &omnt->oid);
+			msg->o.err = storage_mountfs(storage_get(msg->oid.id), imnt->fstype, msg->i.data, imnt->mode, &imnt->mnt, &omnt->oid);
 			break;
 
 		case mtUmount:
-			msg->o.io.err = storage_umountfs(storage_get(((oid_t *)msg->i.data)->id));
+			msg->o.err = storage_umountfs(storage_get(msg->oid.id));
 			break;
 
 		case mtMountPoint:
 			omnt = (mount_o_msg_t *)msg->o.raw;
-			omnt->err = storage_mountpoint(storage_get(((oid_t *)msg->i.data)->id), &omnt->oid);
+			msg->o.err = storage_mountpoint(storage_get(msg->oid.id), &omnt->oid);
 			break;
 
 		default:
-			msg->o.io.err = -EINVAL;
+			msg->o.err = -ENOSYS;
 			break;
 	}
 }

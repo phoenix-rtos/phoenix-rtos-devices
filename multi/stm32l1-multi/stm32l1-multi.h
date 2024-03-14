@@ -235,8 +235,6 @@ typedef struct {
 
 
 typedef struct {
-	int err;
-
 	union {
 		unsigned short adc_val;
 		rtctimestamp_t rtc_timestamp;

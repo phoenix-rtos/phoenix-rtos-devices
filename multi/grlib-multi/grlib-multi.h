@@ -211,8 +211,6 @@ typedef struct {
 
 
 typedef struct {
-	id_t id;
-
 	union {
 		gpio_t gpio;
 		spi_t spi;
@@ -223,7 +221,6 @@ typedef struct {
 
 
 typedef struct {
-	int err;
 	unsigned int val;
 } multi_o_t;
 

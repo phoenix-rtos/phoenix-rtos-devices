@@ -284,20 +284,20 @@ int uart_handleMsg(msg_t *msg, int dev)
 
 	switch (msg->type) {
 		case mtWrite:
-			msg->o.io.err = libtty_write(&uart->tty_common, msg->i.data, msg->i.size, msg->i.io.mode);
+			msg->o.err = libtty_write(&uart->tty_common, msg->i.data, msg->i.size, msg->i.io.mode);
 			break;
 
 		case mtRead:
-			msg->o.io.err = libtty_read(&uart->tty_common, msg->o.data, msg->o.size, msg->i.io.mode);
+			msg->o.err = libtty_read(&uart->tty_common, msg->o.data, msg->o.size, msg->i.io.mode);
 			break;
 
 		case mtGetAttr:
 			if (msg->i.attr.type != atPollStatus) {
-				msg->o.attr.err = -EINVAL;
+				msg->o.err = -ENOSYS;
 				break;
 			}
 			msg->o.attr.val = libtty_poll_status(&uart->tty_common);
-			msg->o.attr.err = EOK;
+			msg->o.err = EOK;
 			break;
 
 		case mtDevCtl:
@@ -305,6 +305,10 @@ int uart_handleMsg(msg_t *msg, int dev)
 			pid = ioctl_getSenderPid(msg);
 			err = libtty_ioctl(&uart->tty_common, pid, request, in_data, &out_data);
 			ioctl_setResponse(msg, request, err, out_data);
+			break;
+
+		default:
+			msg->o.err = -ENOSYS;
 			break;
 	}
 

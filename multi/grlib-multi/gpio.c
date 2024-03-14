@@ -145,23 +145,23 @@ static void gpio_handleDevCtl(msg_t *msg, int port)
 
 	switch (idevctl->gpio.type) {
 		case gpio_setPort:
-			odevctl->err = gpio_setPortVal(port, idevctl->gpio.port.mask, idevctl->gpio.port.val);
+			msg->o.err = gpio_setPortVal(port, idevctl->gpio.port.mask, idevctl->gpio.port.val);
 			break;
 
 		case gpio_getPort:
-			odevctl->err = gpio_getPortVal(port, &odevctl->val);
+			msg->o.err = gpio_getPortVal(port, &odevctl->val);
 			break;
 
 		case gpio_setDir:
-			odevctl->err = gpio_setPortDir(port, idevctl->gpio.dir.mask, idevctl->gpio.dir.val);
+			msg->o.err = gpio_setPortDir(port, idevctl->gpio.dir.mask, idevctl->gpio.dir.val);
 			break;
 
 		case gpio_getDir:
-			odevctl->err = gpio_getPortDir(port, &odevctl->val);
+			msg->o.err = gpio_getPortDir(port, &odevctl->val);
 			break;
 
 		default:
-			odevctl->err = -EINVAL;
+			msg->o.err = -EINVAL;
 			break;
 	}
 }
@@ -178,7 +178,7 @@ void gpio_handleMsg(msg_t *msg, int dev)
 	switch (msg->type) {
 		case mtWrite:
 		case mtRead:
-			msg->o.io.err = EOK;
+			msg->o.err = EOK;
 			break;
 
 		case mtDevCtl:
@@ -186,7 +186,7 @@ void gpio_handleMsg(msg_t *msg, int dev)
 			break;
 
 		default:
-			msg->o.io.err = -ENOSYS;
+			msg->o.err = -ENOSYS;
 			break;
 	}
 }

@@ -71,60 +71,73 @@ static void msgthr(void *ctx)
 		switch (msg.type) {
 
 			case mtOpen:
-				msg.o.io.err = dummyfs_open(ctx, &msg.i.openclose.oid);
+				msg.o.err = dummyfs_open(ctx, &msg.oid);
 				break;
 
 			case mtClose:
-				msg.o.io.err = dummyfs_close(ctx, &msg.i.openclose.oid);
+				msg.o.err = dummyfs_close(ctx, &msg.oid);
 				break;
 
 			case mtRead:
-				msg.o.io.err = dummyfs_read(ctx, &msg.i.io.oid, msg.i.io.offs, msg.o.data, msg.o.size);
+				msg.o.err = dummyfs_read(ctx, &msg.oid, msg.i.io.offs, msg.o.data, msg.o.size);
 				break;
 
 			case mtWrite:
-				msg.o.io.err = dummyfs_write(ctx, &msg.i.io.oid, msg.i.io.offs, msg.i.data, msg.i.size);
+				msg.o.err = dummyfs_write(ctx, &msg.oid, msg.i.io.offs, msg.i.data, msg.i.size);
 				break;
 
 			case mtTruncate:
-				msg.o.io.err = dummyfs_truncate(ctx, &msg.i.io.oid, msg.i.io.len);
+				msg.o.err = dummyfs_truncate(ctx, &msg.oid, msg.i.io.len);
 				break;
 
 			case mtDevCtl:
-				msg.o.io.err = -EINVAL;
+				msg.o.err = -ENOSYS;
 				break;
 
 			case mtCreate:
-				msg.o.create.err = dummyfs_create(ctx, &msg.i.create.dir, msg.i.data, &msg.o.create.oid, msg.i.create.mode, msg.i.create.type, &msg.i.create.dev);
+				msg.o.err = dummyfs_create(ctx, &msg.oid, msg.i.data, &msg.o.create.oid, msg.i.create.mode, msg.i.create.type, &msg.i.create.dev);
 				break;
 
 			case mtDestroy:
-				msg.o.io.err = dummyfs_destroy(ctx, &msg.i.destroy.oid);
+				msg.o.err = dummyfs_destroy(ctx, &msg.oid);
 				break;
 
 			case mtSetAttr:
-				msg.o.attr.err = dummyfs_setattr(ctx, &msg.i.attr.oid, msg.i.attr.type, msg.i.attr.val, msg.i.data, msg.i.size);
+				msg.o.err = dummyfs_setattr(ctx, &msg.oid, msg.i.attr.type, msg.i.attr.val, msg.i.data, msg.i.size);
 				break;
 
 			case mtGetAttr:
-				msg.o.attr.err = dummyfs_getattr(ctx, &msg.i.attr.oid, msg.i.attr.type, &msg.o.attr.val);
+				msg.o.err = dummyfs_getattr(ctx, &msg.oid, msg.i.attr.type, &msg.o.attr.val);
 				break;
 
+			case mtGetAttrAll: {
+				struct _attrAll *attrs = msg.o.data;
+				if ((attrs == NULL) || (msg.o.size < sizeof(struct _attrAll))) {
+					msg.o.err = -EINVAL;
+					break;
+				}
+				msg.o.err = dummyfs_getattrAll(ctx, &msg.oid, attrs);
+				break;
+			}
+
 			case mtLookup:
-				msg.o.lookup.err = dummyfs_lookup(ctx, &msg.i.lookup.dir, msg.i.data, &msg.o.lookup.fil, &msg.o.lookup.dev);
+				msg.o.err = dummyfs_lookup(ctx, &msg.oid, msg.i.data, &msg.o.lookup.fil, &msg.o.lookup.dev);
 				break;
 
 			case mtLink:
-				msg.o.io.err = dummyfs_link(ctx, &msg.i.ln.dir, msg.i.data, &msg.i.ln.oid);
+				msg.o.err = dummyfs_link(ctx, &msg.oid, msg.i.data, &msg.i.ln.oid);
 				break;
 
 			case mtUnlink:
-				msg.o.io.err = dummyfs_unlink(ctx, &msg.i.ln.dir, msg.i.data);
+				msg.o.err = dummyfs_unlink(ctx, &msg.oid, msg.i.data);
 				break;
 
 			case mtReaddir:
-				msg.o.io.err = dummyfs_readdir(ctx, &msg.i.readdir.dir, msg.i.readdir.offs,
-					msg.o.data, msg.o.size);
+				msg.o.err = dummyfs_readdir(ctx, &msg.oid, msg.i.readdir.offs, msg.o.data, msg.o.size);
+				break;
+
+			default:
+				msg.o.err = -EINVAL;
 				break;
 		}
 		msgRespond(fs_common.port, &msg, rid);

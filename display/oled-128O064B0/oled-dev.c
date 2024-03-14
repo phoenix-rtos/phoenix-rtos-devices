@@ -59,7 +59,7 @@ int dev_init(void)
 	}
 
 	msg.type = mtCreate;
-	msg.i.create.dir = dir;
+	msg.oid = dir;
 	msg.i.create.type = otDev;
 	msg.i.create.mode = 0;
 	msg.i.create.dev.port = dev_common.port;
@@ -69,14 +69,14 @@ int dev_init(void)
 	msg.o.data = NULL;
 	msg.o.size = 0;
 
-	if (msgSend(dir.port, &msg) < 0 || msg.o.create.err != EOK) {
+	if (msgSend(dir.port, &msg) < 0 || msg.o.err != EOK) {
 		return - 1;
 	}
 
 	return 0;
 }
 
-static int dev_write(oled_write_t *cmd)
+static int dev_write(const oled_write_t *cmd)
 {
 	switch(cmd->type) {
 		case oled_write__rect:
@@ -118,26 +118,27 @@ void msg_loop(void)
 			case mtOpen:
 			case mtClose:
 			case mtTruncate:
-				msg.o.io.err = EOK;
+				msg.o.err = EOK;
 				break;
 			case mtRead:
 				if (msg.o.data != NULL && msg.o.size >= sizeof(char)) {
-					msg.o.io.err = EOK;
+					msg.o.err = EOK;
 				}
 				else {
-					msg.o.io.err = -EINVAL;
+					msg.o.err = -EINVAL;
 				}
 				break;
 			case mtWrite:
 				if (msg.i.data != NULL && msg.i.size == sizeof(oled_write_t *)) {
-					msg.o.io.err = dev_write((oled_write_t *)msg.i.data);
+					msg.o.err = dev_write((const oled_write_t *)msg.i.data);
 				}
 				else {
-					msg.o.io.err = EOK;
+					msg.o.err = EOK;
 				}
 				break;
 			default:
-				msg.o.io.err = -EINVAL;
+				msg.o.err = -ENOSYS;
+				break;
 		}
 		msgRespond(dev_common.port, &msg, rid);
 	}

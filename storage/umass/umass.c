@@ -268,7 +268,6 @@ static void umass_msgthr(void *arg)
 {
 	umass_dev_t *dev;
 	msg_rid_t rid;
-	int id;
 	msg_t msg;
 
 	for (;;) {
@@ -277,22 +276,17 @@ static void umass_msgthr(void *arg)
 
 		/* Ignore this msg, as it might have been sent by us after deletion event */
 		if (msg.type == mtUnlink) {
-			msg.o.io.err = EOK;
+			msg.o.err = EOK;
 			msgRespond(umass_common.msgport, &msg, rid);
 			continue;
 		}
 
-		if (msg.type == mtGetAttr)
-			id = msg.i.attr.oid.id;
-		else
-			id = msg.i.io.oid.id;
-
 		mutexLock(umass_common.lock);
-		dev = umass_devFind(id);
+		dev = umass_devFind(msg.oid.id);
 		mutexUnlock(umass_common.lock);
 
 		if (dev == NULL) {
-			msg.o.io.err = -ENOENT;
+			msg.o.err = -ENOENT;
 			msgRespond(umass_common.msgport, &msg, rid);
 			continue;
 		}
@@ -300,23 +294,24 @@ static void umass_msgthr(void *arg)
 		switch (msg.type) {
 			case mtOpen:
 			case mtClose:
-				msg.o.io.err = EOK;
+				msg.o.err = EOK;
 				break;
 
 			case mtRead:
-				msg.o.io.err = umass_read(dev, msg.i.io.offs, msg.o.data, msg.o.size);
+				msg.o.err = umass_read(dev, msg.i.io.offs, msg.o.data, msg.o.size);
 				break;
 
 			case mtWrite:
-				msg.o.io.err = umass_write(dev, msg.i.io.offs, msg.i.data, msg.i.size);
+				msg.o.err = umass_write(dev, msg.i.io.offs, msg.i.data, msg.i.size);
 				break;
 
 			case mtGetAttr:
-				msg.o.attr.err = umass_getattr(dev, msg.i.attr.type, &msg.o.attr.val);
+				msg.o.err = umass_getattr(dev, msg.i.attr.type, &msg.o.attr.val);
 				break;
 
 			default:
-				msg.o.io.err = -EINVAL;
+				msg.o.err = -ENOSYS;
+				break;
 		}
 
 		msgRespond(umass_common.msgport, &msg, rid);

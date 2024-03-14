@@ -115,13 +115,13 @@ static void flashsrv_devCtl(flash_memory_t *memory, msg_t *msg)
 	flash_o_devctl_t *odevctl = (flash_o_devctl_t *)msg->o.raw;
 
 	if (memory == NULL) {
-		odevctl->err = -EINVAL;
+		msg->o.err = -EINVAL;
 		return;
 	}
 
-	fID = idevctl->oid.id;
+	fID = msg->oid.id;
 	if (fID >= FLASH_NO) {
-		odevctl->err = -EINVAL;
+		msg->o.err = -EINVAL;
 		return;
 	}
 
@@ -131,35 +131,35 @@ static void flashsrv_devCtl(flash_memory_t *memory, msg_t *msg)
 			odevctl->properties.psize = memory->ctx.properties->pageSz;
 			odevctl->properties.ssize = memory->ctx.properties->sectorSz;
 			odevctl->properties.offs = 0;
-			odevctl->err = EOK;
+			msg->o.err = EOK;
 			break;
 
 		case flashsrv_devctl_sync:
-			odevctl->err = flash_sync(&memory->ctx);
+			msg->o.err = flash_sync(&memory->ctx);
 			break;
 
 		case flashsrv_devctl_eraseSector:
 			if (idevctl->addr >= memory->ctx.properties->totalSz) {
-				odevctl->err = -EINVAL;
+				msg->o.err = -EINVAL;
 				break;
 			}
-			odevctl->err = flash_sectorErase(&memory->ctx, idevctl->addr);
+			msg->o.err = flash_sectorErase(&memory->ctx, idevctl->addr);
 			break;
 
 		case flashsrv_devctl_erasePartition:
-			odevctl->err = flash_chipErase(&memory->ctx);
+			msg->o.err = flash_chipErase(&memory->ctx);
 			break;
 
 		case flashsrv_devctl_directWrite:
 			if (idevctl->addr >= memory->ctx.properties->totalSz) {
-				odevctl->err = -EINVAL;
+				msg->o.err = -EINVAL;
 				break;
 			}
-			odevctl->err = flash_directWrite(&memory->ctx, idevctl->addr, msg->i.data, msg->i.size);
+			msg->o.err = flash_directWrite(&memory->ctx, idevctl->addr, msg->i.data, msg->i.size);
 			break;
 
 		default:
-			odevctl->err = -EINVAL;
+			msg->o.err = -EINVAL;
 			break;
 	}
 }
@@ -175,13 +175,13 @@ static void flashsrv_rawCtl(flash_memory_t *memory, msg_t *msg)
 
 
 	if (memory == NULL) {
-		odevctl->err = -EINVAL;
+		msg->o.err = -EINVAL;
 		return;
 	}
 
-	partID = idevctl->oid.id;
+	partID = msg->oid.id;
 	if (partID >= memory->pCnt) {
-		odevctl->err = -EINVAL;
+		msg->o.err = -EINVAL;
 		return;
 	}
 
@@ -191,20 +191,20 @@ static void flashsrv_rawCtl(flash_memory_t *memory, msg_t *msg)
 			odevctl->properties.psize = memory->ctx.properties->pageSz;
 			odevctl->properties.ssize = memory->ctx.properties->sectorSz;
 			odevctl->properties.offs = memory->parts[partID].pHeader->offset;
-			odevctl->err = EOK;
+			msg->o.err = EOK;
 			break;
 
 		case flashsrv_devctl_sync:
-			odevctl->err = flash_sync(&memory->ctx);
+			msg->o.err = flash_sync(&memory->ctx);
 			break;
 
 		case flashsrv_devctl_eraseSector:
 			if (idevctl->addr > memory->parts[partID].pHeader->size) {
-				odevctl->err = -EINVAL;
+				msg->o.err = -EINVAL;
 				break;
 			}
 
-			odevctl->err = flash_sectorErase(&memory->ctx, memory->parts[partID].pHeader->offset + idevctl->addr);
+			msg->o.err = flash_sectorErase(&memory->ctx, memory->parts[partID].pHeader->offset + idevctl->addr);
 			break;
 
 		case flashsrv_devctl_erasePartition:
@@ -216,21 +216,21 @@ static void flashsrv_rawCtl(flash_memory_t *memory, msg_t *msg)
 					break;
 				}
 			}
-			odevctl->err = err;
+			msg->o.err = err;
 			break;
 
 		case flashsrv_devctl_directWrite:
 			if (idevctl->addr > memory->parts[partID].pHeader->size) {
-				odevctl->err = -EINVAL;
+				msg->o.err = -EINVAL;
 				break;
 			}
 
-			odevctl->err = flash_directWrite(&memory->ctx, memory->parts[partID].pHeader->offset + idevctl->addr, msg->i.data, msg->i.size);
+			msg->o.err = flash_directWrite(&memory->ctx, memory->parts[partID].pHeader->offset + idevctl->addr, msg->i.data, msg->i.size);
 			break;
 
 
 		default:
-			odevctl->err = -EINVAL;
+			msg->o.err = -EINVAL;
 			break;
 	}
 }
@@ -257,21 +257,21 @@ static void flashsrv_meterfsThread(void *arg)
 			case mtRead:
 				mutexLock(flashsrv_common.flash_memories[part->fID].lock);
 				flashsrv_common.flash_memories[part->fID].currPart = part->oid.id;
-				msg.o.io.err = meterfs_readFile(msg.i.io.oid.id, msg.i.io.offs, msg.o.data, msg.o.size, (meterfs_ctx_t *)part->fsCtx);
+				msg.o.err = meterfs_readFile(msg.oid.id, msg.i.io.offs, msg.o.data, msg.o.size, (meterfs_ctx_t *)part->fsCtx);
 				mutexUnlock(flashsrv_common.flash_memories[part->fID].lock);
 				break;
 
 			case mtWrite:
 				mutexLock(flashsrv_common.flash_memories[part->fID].lock);
 				flashsrv_common.flash_memories[part->fID].currPart = part->oid.id;
-				msg.o.io.err = meterfs_writeFile(msg.i.io.oid.id, msg.i.data, msg.i.size, (meterfs_ctx_t *)part->fsCtx);
+				msg.o.err = meterfs_writeFile(msg.oid.id, msg.i.data, msg.i.size, (meterfs_ctx_t *)part->fsCtx);
 				mutexUnlock(flashsrv_common.flash_memories[part->fID].lock);
 				break;
 
 			case mtLookup:
 				mutexLock(flashsrv_common.flash_memories[part->fID].lock);
 				flashsrv_common.flash_memories[part->fID].currPart = part->oid.id;
-				msg.o.lookup.err = meterfs_lookup(msg.i.data, &msg.o.lookup.fil.id, (meterfs_ctx_t *)part->fsCtx);
+				msg.o.err = meterfs_lookup(msg.i.data, &msg.o.lookup.fil.id, (meterfs_ctx_t *)part->fsCtx);
 				msg.o.lookup.fil.port = part->oid.port;
 				mutexUnlock(flashsrv_common.flash_memories[part->fID].lock);
 				(void)memcpy(&msg.o.lookup.dev, &msg.o.lookup.fil, sizeof(oid_t));
@@ -280,26 +280,26 @@ static void flashsrv_meterfsThread(void *arg)
 			case mtOpen:
 				mutexLock(flashsrv_common.flash_memories[part->fID].lock);
 				flashsrv_common.flash_memories[part->fID].currPart = part->oid.id;
-				msg.o.io.err = meterfs_open(msg.i.openclose.oid.id, (meterfs_ctx_t *)part->fsCtx);
+				msg.o.err = meterfs_open(msg.oid.id, (meterfs_ctx_t *)part->fsCtx);
 				mutexUnlock(flashsrv_common.flash_memories[part->fID].lock);
 				break;
 
 			case mtClose:
 				mutexLock(flashsrv_common.flash_memories[part->fID].lock);
 				flashsrv_common.flash_memories[part->fID].currPart = part->oid.id;
-				msg.o.io.err = meterfs_close(msg.i.openclose.oid.id, (meterfs_ctx_t *)part->fsCtx);
+				msg.o.err = meterfs_close(msg.oid.id, (meterfs_ctx_t *)part->fsCtx);
 				mutexUnlock(flashsrv_common.flash_memories[part->fID].lock);
 				break;
 
 			case mtDevCtl:
 				mutexLock(flashsrv_common.flash_memories[part->fID].lock);
 				flashsrv_common.flash_memories[part->fID].currPart = part->oid.id;
-				odevctl->err = meterfs_devctl(idevctl, odevctl, (meterfs_ctx_t *)part->fsCtx);
+				msg.o.err = meterfs_devctl(idevctl, odevctl, (meterfs_ctx_t *)part->fsCtx);
 				mutexUnlock(flashsrv_common.flash_memories[part->fID].lock);
 				break;
 
 			default:
-				msg.o.io.err = -EINVAL;
+				msg.o.err = -ENOSYS;
 				break;
 		}
 		msgRespond(part->oid.port, &msg, rid);
@@ -309,18 +309,18 @@ static void flashsrv_meterfsThread(void *arg)
 
 static int flashsrv_verifyRawIO(const flash_memory_t *memory, msg_t *msg, size_t *size)
 {
-	if (msg->i.io.oid.id >= memory->pCnt) {
-		msg->o.io.err = -EINVAL;
+	if (msg->oid.id >= memory->pCnt) {
+		msg->o.err = -EINVAL;
 		return -EINVAL;
 	}
 
-	if (memory->parts[msg->i.io.oid.id].pHeader->size <= msg->i.io.offs) {
-		msg->o.io.err = -EINVAL;
+	if (memory->parts[msg->oid.id].pHeader->size <= msg->i.io.offs) {
+		msg->o.err = -EINVAL;
 		return -EINVAL;
 	}
 
-	if (memory->parts[msg->i.io.oid.id].pHeader->size < (msg->i.io.offs + *size)) {
-		*size = memory->parts[msg->i.io.oid.id].pHeader->size - msg->i.io.offs;
+	if (memory->parts[msg->oid.id].pHeader->size < (msg->i.io.offs + *size)) {
+		*size = memory->parts[msg->oid.id].pHeader->size - msg->i.io.offs;
 	}
 
 	return EOK;
@@ -342,25 +342,25 @@ static void flashsrv_rawThread(void *arg)
 		switch (msg.type) {
 			case mtRead:
 				if (flashsrv_verifyRawIO(memory, &msg, &msg.o.size) < 0) {
-					msg.o.io.err = -EINVAL;
+					msg.o.err = -EINVAL;
 					break;
 				}
 
-				startAddr = memory->parts[msg.i.io.oid.id].pHeader->offset;
+				startAddr = memory->parts[msg.oid.id].pHeader->offset;
 				mutexLock(memory->lock);
-				msg.o.io.err = flash_readData(&memory->ctx, startAddr + msg.i.io.offs, msg.o.data, msg.o.size);
+				msg.o.err = flash_readData(&memory->ctx, startAddr + msg.i.io.offs, msg.o.data, msg.o.size);
 				mutexUnlock(memory->lock);
 				break;
 
 			case mtWrite:
 				if (flashsrv_verifyRawIO(memory, &msg, &msg.o.size) < 0) {
-					msg.o.io.err = -EINVAL;
+					msg.o.err = -EINVAL;
 					break;
 				}
 
-				startAddr = memory->parts[msg.i.io.oid.id].pHeader->offset;
+				startAddr = memory->parts[msg.oid.id].pHeader->offset;
 				mutexLock(memory->lock);
-				msg.o.io.err = flash_bufferedWrite(&memory->ctx, startAddr + msg.i.io.offs, msg.i.data, msg.i.size);
+				msg.o.err = flash_bufferedWrite(&memory->ctx, startAddr + msg.i.io.offs, msg.i.data, msg.i.size);
 				mutexUnlock(memory->lock);
 				break;
 
@@ -371,24 +371,24 @@ static void flashsrv_rawThread(void *arg)
 				break;
 
 			case mtOpen:
-				msg.o.io.err = EOK;
+				msg.o.err = EOK;
 				break;
 
 			case mtClose:
 				mutexLock(memory->lock);
 				(void)flash_sync(&memory->ctx);
 				mutexUnlock(memory->lock);
-				msg.o.io.err = EOK;
+				msg.o.err = EOK;
 				break;
 
 			case mtSync:
 				mutexLock(memory->lock);
-				msg.o.io.err = flash_sync(&memory->ctx);
+				msg.o.err = flash_sync(&memory->ctx);
 				mutexUnlock(memory->lock);
 				break;
 
 			default:
-				msg.o.io.err = -ENOSYS;
+				msg.o.err = -ENOSYS;
 				break;
 		}
 		msgRespond(memory->rawPort, &msg, rid);
@@ -409,13 +409,13 @@ static void flashsrv_devThread(void *arg)
 		switch (msg.type) {
 			case mtRead:
 				mutexLock(memory->lock);
-				msg.o.io.err = flash_readData(&memory->ctx, msg.i.io.offs, msg.o.data, msg.o.size);
+				msg.o.err = flash_readData(&memory->ctx, msg.i.io.offs, msg.o.data, msg.o.size);
 				mutexUnlock(memory->lock);
 				break;
 
 			case mtWrite:
 				mutexLock(memory->lock);
-				msg.o.io.err = flash_bufferedWrite(&memory->ctx, msg.i.io.offs, msg.i.data, msg.i.size);
+				msg.o.err = flash_bufferedWrite(&memory->ctx, msg.i.io.offs, msg.i.data, msg.i.size);
 				mutexUnlock(memory->lock);
 				break;
 
@@ -427,11 +427,11 @@ static void flashsrv_devThread(void *arg)
 
 			case mtOpen:
 			case mtClose:
-				msg.o.io.err = EOK;
+				msg.o.err = EOK;
 				break;
 
 			default:
-				msg.o.io.err = -ENOSYS;
+				msg.o.err = -ENOSYS;
 				break;
 		}
 		msgRespond(memory->fOid.port, &msg, rid);

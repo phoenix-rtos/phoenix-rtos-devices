@@ -130,53 +130,53 @@ static void flashsrv_msgHandler(void *arg, msg_t *msg)
 	switch (msg->type) {
 		case mtOpen:
 		case mtClose:
-			strg = storage_get(msg->i.openclose.oid.id);
-			msg->o.io.err = (strg == NULL) ? -EINVAL : EOK;
-			TRACE("mtOpen/mtClose: %d", msg->o.io.err);
+			strg = storage_get(msg->oid.id);
+			msg->o.err = (strg == NULL) ? -EINVAL : EOK;
+			TRACE("mtOpen/mtClose: %d", msg->o.err);
 			break;
 
 		case mtRead:
-			strg = storage_get(msg->i.io.oid.id);
-			TRACE("mtRead: id: %u, size: %d, off: %llu", msg->i.io.oid.id, msg->o.size, msg->i.io.offs);
-			msg->o.io.err = flashsrv_read(strg, msg->i.io.offs, msg->o.data, msg->o.size);
+			strg = storage_get(msg->oid.id);
+			TRACE("mtRead: id: %u, size: %d, off: %llu", msg->oid.id, msg->o.size, msg->i.io.offs);
+			msg->o.err = flashsrv_read(strg, msg->i.io.offs, msg->o.data, msg->o.size);
 			break;
 
 		case mtWrite:
-			strg = storage_get(msg->i.io.oid.id);
-			TRACE("mtWrite: id: %u, size: %d, off: %llu", msg->i.io.oid.id, msg->o.size, msg->i.io.offs);
-			msg->o.io.err = flashsrv_write(strg, msg->i.io.offs, msg->o.data, msg->o.size);
+			strg = storage_get(msg->oid.id);
+			TRACE("mtWrite: id: %u, size: %d, off: %llu", msg->oid.id, msg->o.size, msg->i.io.offs);
+			msg->o.err = flashsrv_write(strg, msg->i.io.offs, msg->o.data, msg->o.size);
 			break;
 
 		case mtSync:
-			strg = storage_get(msg->i.io.oid.id);
-			TRACE("mtSync: id: %u", msg->i.io.oid.id);
-			msg->o.io.err = flashsrv_sync(strg);
+			strg = storage_get(msg->oid.id);
+			TRACE("mtSync: id: %u", msg->oid.id);
+			msg->o.err = flashsrv_sync(strg);
 			break;
 
 		case mtGetAttr:
-			strg = storage_get(msg->i.attr.oid.id);
-			TRACE("mtGetAttr: id: %u, type: %d", msg->i.attr.oid.id, msg->i.attr.type);
-			msg->o.attr.err = flashsrv_getAttr(strg, msg->i.attr.type, &msg->o.attr.val);
+			strg = storage_get(msg->oid.id);
+			TRACE("mtGetAttr: id: %u, type: %d", msg->oid.id, msg->i.attr.type);
+			msg->o.err = flashsrv_getAttr(strg, msg->i.attr.type, &msg->o.attr.val);
 			break;
 
 		case mtMount:
-			TRACE("mtMount: id: %u, fstype: %s, mode: %ld", imnt->dev.id, imnt->fstype, imnt->mode);
-			omnt->err = storage_mountfs(storage_get(imnt->dev.id), imnt->fstype, msg->i.data, imnt->mode, &imnt->mnt, &omnt->oid);
+			TRACE("mtMount: id: %u, fstype: %s, mode: %ld", msg->oid.id, imnt->fstype, imnt->mode);
+			msg->o.err = storage_mountfs(storage_get(msg->oid.id), imnt->fstype, msg->i.data, imnt->mode, &imnt->mnt, &omnt->oid);
 			break;
 
 		case mtUmount:
-			TRACE("mtUmount: id: %u", ((oid_t *)msg->i.data)->id);
-			omnt->err = storage_umountfs(storage_get(((oid_t *)msg->i.data)->id));
+			TRACE("mtUmount: id: %u", msg->oid.id);
+			msg->o.err = storage_umountfs(storage_get(msg->oid.id));
 			break;
 
 		case mtMountPoint:
-			TRACE("mtMountPoint: id: %u", ((oid_t *)msg->i.data)->id);
-			omnt->err = storage_mountpoint(storage_get(((oid_t *)msg->i.data)->id), &omnt->oid);
+			TRACE("mtMountPoint: id: %u", msg->oid.id);
+			msg->o.err = storage_mountpoint(storage_get(msg->oid.id), &omnt->oid);
 			break;
 
 		default:
 			TRACE("unknown: %d", msg->type);
-			msg->o.io.err = -EINVAL;
+			msg->o.err = -ENOSYS;
 			break;
 	}
 }

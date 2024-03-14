@@ -44,35 +44,35 @@ static void spisrv_devctl(msg_t *msg)
 {
 	spi_devctl_t *in = (spi_devctl_t *)msg->i.raw;
 	spi_devctl_t *out = (spi_devctl_t *)msg->o.raw;
-	void *idata = msg->i.data;
+	const void *idata = msg->i.data;
 	void *odata = msg->o.data;
 
-	switch (in->u.i.type) {
+	switch (in->i.type) {
 		case spi_devctl_xfer:
-			out->u.o.err = spi_setMode(spisrv_common.dev, in->u.i.ctx.mode);
-			if (out->u.o.err < 0) {
+			msg->o.err = spi_setMode(spisrv_common.dev, in->i.ctx.mode);
+			if (msg->o.err < 0) {
 				break;
 			}
 
-			out->u.o.err = spi_setSpeed(spisrv_common.dev, in->u.i.ctx.speed);
-			if (out->u.o.err < 0) {
+			msg->o.err = spi_setSpeed(spisrv_common.dev, in->i.ctx.speed);
+			if (msg->o.err < 0) {
 				break;
 			}
 
 			/* Unpack msg */
-			if ((in->u.i.xfer.isize != 0) && (msg->i.data == NULL)) {
+			if ((in->i.xfer.isize != 0) && (msg->i.data == NULL)) {
 				idata = in->payload;
 			}
 
-			if ((in->u.i.xfer.osize != 0) && (msg->o.data == NULL)) {
+			if ((in->i.xfer.osize != 0) && (msg->o.data == NULL)) {
 				odata = out->payload;
 			}
 
-			out->u.o.err = spi_xfer(spisrv_common.dev, in->u.i.ctx.oid.id, idata, in->u.i.xfer.isize, odata, in->u.i.xfer.osize, in->u.i.xfer.iskip);
+			msg->o.err = spi_xfer(spisrv_common.dev, in->i.ctx.oid.id, idata, in->i.xfer.isize, odata, in->i.xfer.osize, in->i.xfer.iskip);
 			break;
 
 		default:
-			out->u.o.err = -EINVAL;
+			msg->o.err = -EINVAL;
 			break;
 	}
 }
@@ -98,7 +98,7 @@ static void spisrv_msgthr(void *arg)
 		switch (msg.type) {
 			case mtOpen:
 			case mtClose:
-				msg.o.io.err = EOK;
+				msg.o.err = EOK;
 				break;
 
 			case mtDevCtl:
@@ -106,7 +106,7 @@ static void spisrv_msgthr(void *arg)
 				break;
 
 			default:
-				msg.o.io.err = -EINVAL;
+				msg.o.err = -ENOSYS;
 				break;
 		}
 

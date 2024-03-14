@@ -124,19 +124,21 @@ void wdog_handle(void)
 		if (msgRecv(wdog.port, &msg, &rid) < 0)
 			continue;
 
-		msg.o.io.err = -ENOSYS;
-
 		switch (msg.type) {
 			case mtOpen:
 			case mtClose:
-				msg.o.io.err = EOK;
+				msg.o.err = EOK;
 				break;
 			case mtWrite:
 				wdog_kick();
-				msg.o.io.err = msg.i.size;
+				msg.o.err = msg.i.size;
 				break;
 			case mtDevCtl:
 				op_ioctl(&msg);
+				break;
+
+			default:
+				msg.o.err = -ENOSYS;
 				break;
 		}
 

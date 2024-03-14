@@ -45,40 +45,41 @@ static void gpiosrv_devctl(msg_t *msg)
 {
 	gpio_devctl_t *in = (gpio_devctl_t *)msg->i.raw;
 	gpio_devctl_t *out = (gpio_devctl_t *)msg->o.raw;
-	unsigned int bank = (in->i.oid.id & GPIO_BANK) ? 1 : 0;
-	unsigned int pin = in->i.oid.id & GPIO_PIN;
+	unsigned int bank = (msg->oid.id & GPIO_BANK) ? 1 : 0;
+	unsigned int pin = msg->oid.id & GPIO_PIN;
 	uint32_t val;
 
 	switch (in->i.type) {
 		case gpio_devctl_read_pin:
-			out->o.err = gpio_readPin(bank, pin, &val);
+			msg->o.err = gpio_readPin(bank, pin, &val);
 			out->o.val = val;
 			break;
 
 		case gpio_devctl_write_pin:
-			out->o.err = gpio_writePin(bank, pin, in->i.val);
+			msg->o.err = gpio_writePin(bank, pin, in->i.val);
 			break;
 
 		case gpio_devctl_read_port:
-			out->o.err = gpio_readPort(bank, &val);
+			msg->o.err = gpio_readPort(bank, &val);
 			out->o.val = val;
 			break;
 
 		case gpio_devctl_write_port:
-			out->o.err = gpio_writePort(bank, in->i.val, in->i.mask);
+			msg->o.err = gpio_writePort(bank, in->i.val, in->i.mask);
 			break;
 
 		case gpio_devctl_read_dir:
-			out->o.err = gpio_readDir(bank, &val);
+			msg->o.err = gpio_readDir(bank, &val);
 			out->o.val = val;
 			break;
 
 		case gpio_devctl_write_dir:
-			out->o.err = gpio_writeDir(bank, in->i.val, in->i.mask);
+			msg->o.err = gpio_writeDir(bank, in->i.val, in->i.mask);
 			break;
 
 		default:
-			out->o.err = -ENOSYS;
+			msg->o.err = -ENOSYS;
+			break;
 	}
 }
 
@@ -105,7 +106,7 @@ static void gpiosrv_msgthr(void *arg)
 		switch (msg.type) {
 			case mtOpen:
 			case mtClose:
-				msg.o.io.err = EOK;
+				msg.o.err = EOK;
 				break;
 
 			case mtDevCtl:
@@ -113,13 +114,13 @@ static void gpiosrv_msgthr(void *arg)
 				break;
 
 			case mtRead:
-				bank = (msg.i.io.oid.id & GPIO_BANK) ? 1 : 0;
-				pin = msg.i.io.oid.id & GPIO_PIN;
+				bank = (msg.oid.id & GPIO_BANK) ? 1 : 0;
+				pin = msg.oid.id & GPIO_PIN;
 
-				if (msg.i.io.oid.id & GPIO_PORT) {
+				if (msg.oid.id & GPIO_PORT) {
 					err = gpio_readPort(bank, &val);
 				}
-				else if (msg.i.io.oid.id & GPIO_DIR) {
+				else if (msg.oid.id & GPIO_DIR) {
 					err = gpio_readDir(bank, &val);
 				}
 				else {
@@ -127,15 +128,15 @@ static void gpiosrv_msgthr(void *arg)
 				}
 
 				if (err < 0) {
-					msg.o.io.err = err;
+					msg.o.err = err;
 				}
 				else if ((msg.o.data == NULL) || (msg.o.size == 0)) {
-					msg.o.io.err = 0;
+					msg.o.err = 0;
 				}
 				else {
 					err = sprintf(buff, "%u\n", val) + 1;
 					if (err <= msg.i.io.offs) {
-						msg.o.io.err = 0;
+						msg.o.err = 0;
 					}
 					else {
 						err -= msg.i.io.offs;
@@ -144,17 +145,17 @@ static void gpiosrv_msgthr(void *arg)
 						}
 						buff[msg.i.io.offs + err - 1] = '\0';
 						strncpy(msg.o.data, buff + msg.i.io.offs, err);
-						msg.o.io.err = err;
+						msg.o.err = err;
 					}
 				}
 				break;
 
 			case mtWrite:
-				bank = (msg.i.io.oid.id & GPIO_BANK) ? 1 : 0;
-				pin = msg.i.io.oid.id & GPIO_PIN;
+				bank = (msg.oid.id & GPIO_BANK) ? 1 : 0;
+				pin = msg.oid.id & GPIO_PIN;
 
 				if ((msg.i.data == NULL) || (msg.i.size == 0)) {
-					msg.o.io.err = 0;
+					msg.o.err = 0;
 				}
 				else {
 					err = sizeof(buff);
@@ -165,26 +166,21 @@ static void gpiosrv_msgthr(void *arg)
 					buff[err - 1] = '\0';
 					val = strtoul(buff, NULL, 0);
 
-					if (msg.i.io.oid.id & GPIO_PORT) {
+					if (msg.oid.id & GPIO_PORT) {
 						err = gpio_writePort(bank, val, 0xffffffff);
 					}
-					else if (msg.i.io.oid.id & GPIO_DIR) {
+					else if (msg.oid.id & GPIO_DIR) {
 						err = gpio_writeDir(bank, val, 0xffffffff);
 					}
 					else {
 						err = gpio_writePin(bank, pin, val);
 					}
-					msg.o.io.err = (err < 0) ? err : msg.i.size;
+					msg.o.err = (err < 0) ? err : msg.i.size;
 				}
 				break;
 
-			case mtGetAttr:
-			case mtSetAttr:
-				msg.o.attr.err = -ENOSYS;
-				break;
-
 			default:
-				msg.o.io.err = -ENOSYS;
+				msg.o.err = -ENOSYS;
 				break;
 		}
 

@@ -407,8 +407,9 @@ static int spi_init(oid_t *device, int spi)
 	msg.i.size = 0;
 	msg.o.data = NULL;
 	msg.o.size = 0;
+	msg.oid.id = id_spi1 + spi;
+	msg.oid.port = device->port;
 
-	imsg->id = id_spi1 + spi;
 	imsg->spi.type = spi_config;
 	imsg->spi.config.cs = 0;
 	imsg->spi.config.mode = spi_mode_3;
@@ -957,23 +958,27 @@ static int msg_loop(void)
 
 		switch (msg.type) {
 			case mtOpen:
-				msg.o.io.err = EOK;
+				msg.o.err = EOK;
 				break;
 
 			case mtClose:
-				msg.o.io.err = EOK;
+				msg.o.err = EOK;
 				break;
 
 			case mtRead:
-				msg.o.io.err = dev_read(msg.o.data, msg.o.size);
+				msg.o.err = dev_read(msg.o.data, msg.o.size);
 				break;
 
 			case mtWrite:
-				msg.o.io.err = -ENOSYS;
+				msg.o.err = -ENOSYS;
 				break;
 
 			case mtDevCtl:
-				msg.o.io.err = dev_ctl(&msg);
+				msg.o.err = dev_ctl(&msg);
+				break;
+
+			default:
+				msg.o.err = -ENOSYS;
 				break;
 		}
 

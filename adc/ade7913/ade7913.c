@@ -72,22 +72,21 @@ static int lpspi_transaction(oid_t *device, int cs,
 {
 	msg_t msg;
 	multi_i_t *imsg = (multi_i_t *)msg.i.raw;
-	multi_o_t *omsg = (multi_o_t *)msg.o.raw;
 
 	msg.type = mtDevCtl;
 	msg.i.data = buff;
 	msg.i.size = size;
 	msg.o.data = buff;
 	msg.o.size = size;
+	msg.oid = *device;
 
-	imsg->id = device->id;
 	imsg->spi.type = spi_transaction;
 	imsg->spi.transaction.cs = cs;
 	imsg->spi.transaction.frameSize = size;
 
 	msgSend(device->port, &msg);
 
-	return omsg->err;
+	return msg.o.err;
 }
 
 

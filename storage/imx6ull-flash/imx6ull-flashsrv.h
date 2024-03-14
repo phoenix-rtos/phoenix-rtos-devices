@@ -42,47 +42,36 @@ typedef struct {
 	union {
 		/* erase: automatically skips bad blocks, returns erased blocks count */
 		struct {
-			oid_t oid;
 			size_t address; /* multiply of erasesz */
 			size_t size;    /* multiply of erasesz, 0 == full partition / device */
 		} erase;
 
 		/* writeraw, writemeta */
 		struct {
-			oid_t oid;
 			uint32_t address;
 			size_t size;
 		} write;
 
 		/* readraw, readmeta */
 		struct {
-			oid_t oid;
 			uint32_t address; /* multiply of (writesz + metasz) or oobsz */
 			size_t size;      /* multiply of (writesz + metasz) or oobsz */
 		} read;
 
 		/* isbad, markbad */
 		struct {
-			oid_t oid;
 			uint32_t address; /* multiply of erasesz */
 		} badblock;
 
 		/* maxbitflips */
 		struct {
-			oid_t oid;
 			uint32_t address; /* multiply of erasesz */
 		} maxbitflips;
-
-		/* ptable */
-		struct {
-			oid_t oid;
-		} ptable;
 	};
 } __attribute__((packed)) flash_i_devctl_t;
 
 
 typedef struct {
-	int err;
 	flashsrv_info_t info; /* valid only for flashsrv_devctl_info */
 } __attribute__((packed)) flash_o_devctl_t;
 

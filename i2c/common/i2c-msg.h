@@ -11,16 +11,11 @@ enum {
 };
 
 typedef struct {
-	union {
-		struct {
-			unsigned int type;
-			uint8_t dev_addr;
-			uint8_t reg_addr;
-		} i;
-		struct {
-			int err;
-		} o;
-	};
+	struct {
+		unsigned int type;
+		uint8_t dev_addr;
+		uint8_t reg_addr;
+	} i;
 } __attribute__((packed)) i2c_devctl_t;
 
 #endif /* _PHOENIX_I2C_MSG_H */

@@ -181,36 +181,34 @@ void thread(void *arg)
 		if (msgRecv(common.port, &msg, &rid) < 0)
 			continue;
 
-		msg.o.io.err = -EINVAL;
-
 		switch (msg.type) {
 			case mtOpen:
 			case mtClose:
-				msg.o.io.err = msg.i.openclose.oid.id < gpio1 || msg.i.openclose.oid.id > dir5 ? -ENOENT : EOK;
+				msg.o.err = (msg.oid.id < gpio1) || (msg.oid.id > dir5) ? -ENOENT : EOK;
 				break;
 
 			case mtRead:
 				if (msg.o.data != NULL && msg.o.size >= sizeof(uint32_t)) {
-					d = msg.i.io.oid.id;
+					d = msg.oid.id;
 					/* NOTE: ignoring msg.i.io.offs to allow repetetive reads without seek / reopen */
 
 					if (d >= gpio1 && d <= gpio5) {
-						msg.o.io.err = gpioread(d, &val);
+						msg.o.err = gpioread(d, &val);
 						memcpy(msg.o.data, &val, sizeof(uint32_t));
 					}
 					else if (d >= dir1 && d <= dir5) {
-						msg.o.io.err = gpiogetdir(d, &val);
+						msg.o.err = gpiogetdir(d, &val);
 						memcpy(msg.o.data, &val, sizeof(uint32_t));
 					}
 
-					if (msg.o.io.err == EOK)
-						msg.o.io.err = sizeof(uint32_t);
+					if (msg.o.err == EOK)
+						msg.o.err = sizeof(uint32_t);
 				}
 				break;
 
 			case mtWrite:
 				if (msg.i.data != NULL && msg.i.size >= 2) {
-					uint8_t *data = (uint8_t *)msg.i.data;
+					const uint8_t *data = msg.i.data;
 
 					/* NOTE: ignoring msg.i.io.offs to allow repetetive writes without seek / reopen */
 
@@ -238,16 +236,20 @@ void thread(void *arg)
 							mask = (uint32_t)-1;
 					}
 
-					d = msg.i.io.oid.id;
+					d = msg.oid.id;
 
 					if (d >= gpio1 && d <= gpio5)
-						msg.o.io.err = gpiowrite(d, val, mask);
+						msg.o.err = gpiowrite(d, val, mask);
 					else if (d >= dir1 && d <= dir5)
-						msg.o.io.err = gpiosetdir(d, val, mask);
+						msg.o.err = gpiosetdir(d, val, mask);
 
-					if (msg.o.io.err == EOK)
-						msg.o.io.err = msg.i.size;
+					if (msg.o.err == EOK)
+						msg.o.err = msg.i.size;
 				}
+				break;
+
+			default:
+				msg.o.err = -ENOSYS;
 				break;
 		}
 

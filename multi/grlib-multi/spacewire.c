@@ -581,25 +581,23 @@ static void spw_handleDevCtl(msg_t *msg, int dev)
 
 	switch (idevctl->spw.type) {
 		case spw_config:
-			odevctl->err = spw_configure(spw, &idevctl->spw.task.config);
+			msg->o.err = spw_configure(spw, &idevctl->spw.task.config);
 			break;
 
 		case spw_rxConfig:
-			odevctl->err = spw_rxConfigure(spw, &odevctl->val, idevctl->spw.task.rxConfig.nPackets);
+			msg->o.err = spw_rxConfigure(spw, &odevctl->val, idevctl->spw.task.rxConfig.nPackets);
 			break;
 
 		case spw_rx:
-			odevctl->err = spw_rxRead(
-				spw, idevctl->spw.task.rx.firstDesc, msg->o.data, msg->o.size, idevctl->spw.task.rx.nPackets);
+			msg->o.err = spw_rxRead(spw, idevctl->spw.task.rx.firstDesc, msg->o.data, msg->o.size, idevctl->spw.task.rx.nPackets);
 			break;
 
 		case spw_tx:
-			odevctl->err = spw_transmit(
-				spw, msg->i.data, msg->i.size, idevctl->spw.task.tx.nPackets, idevctl->spw.task.tx.async);
+			msg->o.err = spw_transmit(spw, msg->i.data, msg->i.size, idevctl->spw.task.tx.nPackets, idevctl->spw.task.tx.async);
 			break;
 
 		default:
-			odevctl->err = -EINVAL;
+			msg->o.err = -EINVAL;
 			break;
 	}
 }
@@ -614,7 +612,7 @@ void spw_handleMsg(msg_t *msg, int dev)
 			break;
 
 		default:
-			msg->o.io.err = -EINVAL;
+			msg->o.err = -ENOSYS;
 			break;
 	}
 }

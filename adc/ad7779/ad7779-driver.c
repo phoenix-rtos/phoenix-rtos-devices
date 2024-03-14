@@ -395,7 +395,7 @@ static void read_thr(void *arg)
 		for (int i = 0; i < MAX_PENDING_REQS; ++i) {
 			async_req_t *req = &ad7779_common.async.pending[i];
 			if (req->state == stPendingRead) {
-				req->msg.o.io.err = ret;
+				req->msg.o.err = ret;
 				if ((req->msg.o.data != NULL) && (ret == EOK)) {
 					memcpy(req->msg.o.data, &data, READ_SIZE);
 				}
@@ -434,28 +434,28 @@ static void msg_loop(void)
 
 		switch (msg->type) {
 			case mtOpen:
-				msg->o.io.err = dev_open(&msg->i.openclose.oid, msg->i.openclose.flags);
+				msg->o.err = dev_open(&msg->oid, msg->i.openclose.flags);
 				break;
 
 			case mtClose:
-				msg->o.io.err = dev_close(&msg->i.openclose.oid, msg->i.openclose.flags);
+				msg->o.err = dev_close(&msg->oid, msg->i.openclose.flags);
 				break;
 
 			case mtRead:
 				/* FIXME: read should return number of bytes read (now returns 0 on success */
-				msg->o.io.err = dev_read(req, &respond);
+				msg->o.err = dev_read(req, &respond);
 				break;
 
 			case mtWrite:
-				msg->o.io.err = -ENOSYS;
+				msg->o.err = -ENOSYS;
 				break;
 
 			case mtDevCtl:
-				msg->o.io.err = dev_ctl(msg);
+				msg->o.err = dev_ctl(msg);
 				break;
 
 			default:
-				msg->o.io.err = -ENOSYS;
+				msg->o.err = -ENOSYS;
 				break;
 		}
 

@@ -289,7 +289,6 @@ static int spi_configure(uint32_t spi, uint32_t bdiv, uint32_t prescaler, uint32
 static void spi_handleDevCtl(msg_t *msg, int dev)
 {
 	multi_i_t *idevctl = (multi_i_t *)msg->i.raw;
-	multi_o_t *odevctl = (multi_o_t *)msg->o.raw;
 
 	dev -= id_spi1;
 
@@ -298,15 +297,15 @@ static void spi_handleDevCtl(msg_t *msg, int dev)
 
 	switch (idevctl->spi.type) {
 		case spi_config:
-			odevctl->err = spi_configure(dev, idevctl->spi.config.sckDiv, idevctl->spi.config.prescaler, idevctl->spi.config.endian, idevctl->spi.config.mode, idevctl->spi.config.cs);
+			msg->o.err = spi_configure(dev, idevctl->spi.config.sckDiv, idevctl->spi.config.prescaler, idevctl->spi.config.endian, idevctl->spi.config.mode, idevctl->spi.config.cs);
 			break;
 
 		case spi_transaction:
-			odevctl->err = spi_performTranscation(dev, idevctl->spi.transaction.cs, txBuff, rxBuff, idevctl->spi.transaction.frameSize);
+			msg->o.err = spi_performTranscation(dev, idevctl->spi.transaction.cs, txBuff, rxBuff, idevctl->spi.transaction.frameSize);
 			break;
 
 		default:
-			odevctl->err = -ENOSYS;
+			msg->o.err = -ENOSYS;
 			break;
 	}
 }
@@ -321,11 +320,15 @@ int spi_handleMsg(msg_t *msg, int dev)
 		case mtClose:
 		case mtWrite:
 		case mtRead:
-			msg->o.io.err = EOK;
+			msg->o.err = EOK;
 			break;
 
 		case mtDevCtl:
 			spi_handleDevCtl(msg, dev);
+			break;
+
+		default:
+			msg->o.err = -ENOSYS;
 			break;
 	}
 

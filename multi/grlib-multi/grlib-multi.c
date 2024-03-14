@@ -110,25 +110,6 @@ static int multi_createDevs(void)
 }
 
 
-static id_t multi_getId(msg_t *msg)
-{
-	id_t id = 0;
-
-	switch (msg->type) {
-		case mtDevCtl:
-			id = ((multi_i_t *)msg->i.raw)->id;
-			break;
-		case mtRead:
-		case mtWrite:
-			id = msg->i.io.oid.id;
-			break;
-		default:
-			break;
-	}
-
-	return id;
-}
-
 #if PSEUDODEV
 static inline int multi2pseudo(id_t id)
 {
@@ -149,7 +130,7 @@ static inline int multi2pseudo(id_t id)
 
 static void multi_dispatchMsg(msg_t *msg)
 {
-	id_t id = multi_getId(msg);
+	id_t id = msg->oid.id;
 
 	switch (id) {
 		case id_gpio0:
@@ -179,13 +160,13 @@ static void multi_dispatchMsg(msg_t *msg)
 		case id_pseudoFull:
 		case id_pseudoRandom:
 			if (pseudo_handleMsg(msg, multi2pseudo(id)) < 0) {
-				msg->o.io.err = -EPERM;
+				msg->o.err = -EPERM;
 			}
 			break;
 #endif
 
 		default:
-			msg->o.io.err = -EINVAL;
+			msg->o.err = -EINVAL;
 			break;
 	}
 }
@@ -211,26 +192,11 @@ static void multi_thread(void *arg)
 
 			case mtOpen:
 			case mtClose:
-			case mtUnlink:
-			case mtLink:
-				msg.o.io.err = EOK;
+				msg.o.err = EOK;
 				break;
 
-			case mtCreate:
-				msg.o.create.err = -ENOSYS;
-				break;
-
-			case mtSetAttr:
-			case mtGetAttr:
-				msg.o.attr.err = -ENOSYS;
-				break;
-
-			case mtTruncate:
-			case mtDestroy:
-			case mtLookup:
-			case mtReaddir:
 			default:
-				msg.o.io.err = -ENOSYS;
+				msg.o.err = -ENOSYS;
 				break;
 		}
 
@@ -241,14 +207,7 @@ static void multi_thread(void *arg)
 
 static void uart_dispatchMsg(msg_t *msg)
 {
-	id_t id;
-
-	if (msg->type == mtDevCtl) {
-		id = ((ioctl_in_t *)msg->i.raw)->id;
-	}
-	else {
-		id = multi_getId(msg);
-	}
+	id_t id = msg->oid.id;
 
 	switch (id) {
 		case id_console:
@@ -265,7 +224,7 @@ static void uart_dispatchMsg(msg_t *msg)
 			break;
 
 		default:
-			msg->o.io.err = -EINVAL;
+			msg->o.err = -EINVAL;
 			break;
 	}
 }
@@ -298,21 +257,11 @@ static void uart_thread(void *arg)
 
 			case mtOpen:
 			case mtClose:
-				msg.o.io.err = EOK;
+				msg.o.err = EOK;
 				break;
 
-			case mtCreate:
-				msg.o.create.err = -ENOSYS;
-				break;
-
-			case mtTruncate:
-			case mtDestroy:
-			case mtLookup:
-			case mtLink:
-			case mtUnlink:
-			case mtReaddir:
 			default:
-				msg.o.io.err = -ENOSYS;
+				msg.o.err = -ENOSYS;
 				break;
 		}
 
@@ -323,7 +272,7 @@ static void uart_thread(void *arg)
 
 static void spw_dispatchMsg(msg_t *msg)
 {
-	id_t id = multi_getId(msg);
+	id_t id = msg->oid.id;
 
 	switch (id) {
 		case id_spw0:
@@ -336,7 +285,7 @@ static void spw_dispatchMsg(msg_t *msg)
 			break;
 
 		default:
-			msg->o.io.err = -EINVAL;
+			msg->o.err = -EINVAL;
 			break;
 	}
 }
@@ -358,29 +307,15 @@ static void spw_thread(void *arg)
 				spw_dispatchMsg(&msg);
 				break;
 
-			case mtGetAttr:
-			case mtSetAttr:
-				msg.o.attr.err = -ENOSYS;
-				break;
 			case mtRead:
 			case mtWrite:
 			case mtOpen:
 			case mtClose:
-				msg.o.io.err = EOK;
+				msg.o.err = EOK;
 				break;
 
-			case mtCreate:
-				msg.o.create.err = -ENOSYS;
-				break;
-
-			case mtTruncate:
-			case mtDestroy:
-			case mtLookup:
-			case mtLink:
-			case mtUnlink:
-			case mtReaddir:
 			default:
-				msg.o.io.err = -ENOSYS;
+				msg.o.err = -ENOSYS;
 				break;
 		}
 

@@ -582,7 +582,7 @@ static int sdstorage_freeStorage(storage_t *strg)
 			msg_t msg = { 0 };
 			msg.type = mtSetAttr;
 			msg.i.attr.type = atDev;
-			msg.i.attr.oid = *strg->fs->mnt;
+			msg.oid = *strg->fs->mnt;
 			msg.i.data = strg->fs->mnt;
 			msg.i.size = sizeof(*strg->fs->mnt);
 

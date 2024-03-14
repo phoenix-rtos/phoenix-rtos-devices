@@ -40,10 +40,11 @@ int i2c_handleMsg(msg_t *msg, int dev)
 	switch (msg->type) {
 		case mtOpen:
 		case mtClose:
-			msg->o.io.err = EOK;
+			msg->o.err = EOK;
 			break;
 		default:
-			msg->o.io.err = -EINVAL;
+			msg->o.err = -ENOSYS;
+			break;
 	}
 
 	return EOK;

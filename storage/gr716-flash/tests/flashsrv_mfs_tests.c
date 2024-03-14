@@ -35,13 +35,13 @@ static int mfs_allocate(oid_t oid, const char *name, size_t sectors, size_t file
 	int err;
 	msg_t msg;
 	meterfs_i_devctl_t *i = (meterfs_i_devctl_t *)msg.i.raw;
-	meterfs_o_devctl_t *o = (meterfs_o_devctl_t *)msg.o.raw;
 
 	msg.type = mtDevCtl;
 	msg.i.data = NULL;
 	msg.i.size = 0;
 	msg.o.data = NULL;
 	msg.o.size = 0;
+	msg.oid = oid;
 
 	i->type = meterfs_allocate;
 	strncpy(i->allocate.name, name, sizeof(i->allocate.name) - 1);
@@ -53,7 +53,7 @@ static int mfs_allocate(oid_t oid, const char *name, size_t sectors, size_t file
 		LOG_ERROR("Cannot send msg.\n");
 	}
 
-	if ((err = o->err) < 0) {
+	if ((err = msg.o.err) < 0) {
 		LOG_ERROR("Cannot allocate file %s, error: (%s).", name, strerror(err));
 	}
 
@@ -67,7 +67,7 @@ static int mfs_lookup(const char *file, oid_t *poid, oid_t *foid)
 	msg_t msg;
 
 	msg.type = mtLookup;
-	msg.i.io.oid = *poid;
+	msg.oid = *poid;
 	msg.i.data = (void *)file;
 
 	if ((err = msgSend(poid->port, &msg)) != 0) {
@@ -75,7 +75,8 @@ static int mfs_lookup(const char *file, oid_t *poid, oid_t *foid)
 		return err;
 	}
 
-	if ((err = msg.o.lookup.err) < 0) {
+	err = msg.o.err;
+	if (err < 0) {
 		LOG_ERROR("Cannot lookup file, error: (%s).", strerror(err));
 		return err;
 	}
@@ -98,7 +99,7 @@ static int mfs_open(const char *file, oid_t *oid, oid_t *foid)
 	}
 
 	msg.type = mtOpen;
-	msg.i.openclose.oid = *foid;
+	msg.oid = *foid;
 	msg.i.openclose.flags = 0;
 	msg.i.data = NULL;
 	msg.i.size = 0;
@@ -109,7 +110,8 @@ static int mfs_open(const char *file, oid_t *oid, oid_t *foid)
 		LOG_ERROR("Cannot send msg.\n");
 	}
 
-	if ((err = msg.o.io.err) < 0) {
+	err = msg.o.err;
+	if (err < 0) {
 		LOG_ERROR("Cannot open %s, error: (%s).", file, strerror(err));
 	}
 
@@ -123,7 +125,7 @@ static int mfs_close(oid_t *oid)
 	msg_t msg;
 
 	msg.type = mtClose;
-	msg.i.openclose.oid = *oid;
+	msg.oid = *oid;
 	msg.i.openclose.flags = 0;
 	msg.i.data = NULL;
 	msg.i.size = 0;
@@ -134,7 +136,8 @@ static int mfs_close(oid_t *oid)
 		LOG_ERROR("Cannot send msg.\n");
 	}
 
-	if ((err = msg.o.io.err) < 0) {
+	err = msg.o.err;
+	if (err < 0) {
 		LOG_ERROR("Cannot close file, error: (%s).", strerror(err));
 	}
 
@@ -154,6 +157,7 @@ static int mfs_fileInfo(oid_t *oid, struct _info *info)
 	msg.i.size = 0;
 	msg.o.data = NULL;
 	msg.o.size = 0;
+	msg.oid = *oid;
 	i->type = meterfs_info;
 	i->id = oid->id;
 
@@ -165,7 +169,7 @@ static int mfs_fileInfo(oid_t *oid, struct _info *info)
 		memcpy(info, &o->info, sizeof(*info));
 	}
 
-	if ((err = o->err) < 0) {
+	if ((err = msg.o.err) < 0) {
 		LOG_ERROR("Cannot get file info, error: (%s).", strerror(err));
 	}
 
@@ -178,13 +182,13 @@ static int mfs_resizeFile(oid_t *oid, size_t filesz, size_t recordsz)
 	int err;
 	msg_t msg;
 	meterfs_i_devctl_t *i = (meterfs_i_devctl_t *)msg.i.raw;
-	meterfs_o_devctl_t *o = (meterfs_o_devctl_t *)msg.o.raw;
 
 	msg.type = mtDevCtl;
 	msg.i.data = NULL;
 	msg.i.size = 0;
 	msg.o.data = NULL;
 	msg.o.size = 0;
+	msg.oid = *oid;
 	i->type = meterfs_resize;
 	i->resize.id = oid->id;
 	i->resize.filesz = filesz;
@@ -194,7 +198,7 @@ static int mfs_resizeFile(oid_t *oid, size_t filesz, size_t recordsz)
 		LOG_ERROR("Cannot send msg.\n");
 	}
 
-	if ((err = o->err) < 0) {
+	if ((err = msg.o.err) < 0) {
 		LOG_ERROR("Cannot get file info, error: (%s).", strerror(err));
 	}
 
@@ -206,7 +210,6 @@ static int mfs_partitionErase(oid_t oid)
 {
 	msg_t msg;
 	meterfs_i_devctl_t *i = (meterfs_i_devctl_t *)msg.i.raw;
-	meterfs_o_devctl_t *o = (meterfs_o_devctl_t *)msg.o.raw;
 	int err;
 
 	msg.type = mtDevCtl;
@@ -214,13 +217,14 @@ static int mfs_partitionErase(oid_t oid)
 	msg.i.size = 0;
 	msg.o.data = NULL;
 	msg.o.size = 0;
+	msg.oid = oid;
 	i->type = meterfs_chiperase;
 
 	if ((err = msgSend(oid.port, &msg)) != 0) {
 		LOG_ERROR("Cannot send msg.\n");
 	}
 
-	if ((err = o->err) < 0) {
+	if ((err = msg.o.err) < 0) {
 		LOG_ERROR("Cannot erase partition, error: (%s).", strerror(err));
 	}
 
@@ -234,7 +238,7 @@ static int mfs_write(oid_t *oid, void *buff, size_t len)
 	msg_t msg;
 
 	msg.type = mtWrite;
-	msg.i.io.oid = *oid;
+	msg.oid = *oid;
 	msg.i.io.offs = 0;
 	msg.i.io.len = len;
 	msg.i.io.mode = 0;
@@ -247,7 +251,8 @@ static int mfs_write(oid_t *oid, void *buff, size_t len)
 		LOG_ERROR("Cannot send msg.\n");
 	}
 
-	if ((err = msg.o.io.err) < 0) {
+	err = msg.o.err;
+	if (err < 0) {
 		LOG_ERROR("Cannot write data to file, error: (%s).", strerror(err));
 	}
 
@@ -261,7 +266,7 @@ static int mfs_read(oid_t *oid, off_t offs, void *buff, size_t len)
 	msg_t msg;
 
 	msg.type = mtRead;
-	msg.i.io.oid = *oid;
+	msg.oid = *oid;
 	msg.i.io.offs = offs;
 	msg.i.io.len = len;
 	msg.i.io.mode = 0;
@@ -274,7 +279,8 @@ static int mfs_read(oid_t *oid, off_t offs, void *buff, size_t len)
 		LOG_ERROR("Cannot send msg.\n");
 	}
 
-	if ((err = msg.o.io.err) < 0) {
+	err = msg.o.err;
+	if (err < 0) {
 		LOG_ERROR("Cannot read data from file, error: (%s).", strerror(err));
 	}
 

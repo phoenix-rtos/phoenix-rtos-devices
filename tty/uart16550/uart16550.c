@@ -209,42 +209,50 @@ static void poolthr(void *arg)
 		switch (msg.type) {
 			case mtOpen:
 			case mtClose:
-				if ((uart = uart_get(&msg.i.io.oid)) == NULL) {
-					msg.o.io.err = -EINVAL;
+				uart = uart_get(&msg.oid);
+				if (uart == NULL) {
+					msg.o.err = -EINVAL;
 					break;
 				}
-				msg.o.io.err = EOK;
+				msg.o.err = EOK;
 				break;
 
 			case mtRead:
-				if ((uart = uart_get(&msg.i.io.oid)) == NULL) {
-					msg.o.io.err = -EINVAL;
+				uart = uart_get(&msg.oid);
+				if (uart == NULL) {
+					msg.o.err = -EINVAL;
 				}
 				else {
-					msg.o.io.err = libtty_read(&uart->tty, msg.o.data, msg.o.size, msg.i.io.mode);
+					msg.o.err = libtty_read(&uart->tty, msg.o.data, msg.o.size, msg.i.io.mode);
 				}
 				break;
 
 			case mtWrite:
-				if ((uart = uart_get(&msg.i.io.oid)) == NULL) {
-					msg.o.io.err = -EINVAL;
+				uart = uart_get(&msg.oid);
+				if (uart == NULL) {
+					msg.o.err = -EINVAL;
 				}
 				else {
-					msg.o.io.err = libtty_write(&uart->tty, msg.i.data, msg.i.size, msg.i.io.mode);
+					msg.o.err = libtty_write(&uart->tty, msg.i.data, msg.i.size, msg.i.io.mode);
 				}
 				break;
 
 			case mtGetAttr:
-				if ((msg.i.attr.type != atPollStatus) || ((uart = uart_get(&msg.i.attr.oid)) == NULL)) {
-					msg.o.attr.val = -EINVAL;
+				uart = uart_get(&msg.oid);
+				if ((msg.i.attr.type != atPollStatus) || (uart == NULL)) {
+					msg.o.err = -EINVAL;
 					break;
 				}
 				msg.o.attr.val = libtty_poll_status(&uart->tty);
-				msg.o.attr.err = EOK;
+				msg.o.err = EOK;
 				break;
 
 			case mtDevCtl:
 				uart_ioctl(port, &msg);
+				break;
+
+			default:
+				msg.o.err = -ENOSYS;
 				break;
 		}
 

@@ -236,19 +236,19 @@ static void thread(void *arg)
 		switch (msg.type) {
 			case mtOpen:
 			case mtClose:
-				msg.o.io.err = EOK;
+				msg.o.err = EOK;
 				break;
 			case mtWrite:
-				msg.o.io.err = -EINVAL;
+				msg.o.err = -EINVAL;
 				break;
 			case mtRead:
-				msg.o.io.err = dev_read(&msg.i.io.oid, msg.i.io.offs, msg.o.size, msg.o.data);
+				msg.o.err = dev_read(&msg.oid, msg.i.io.offs, msg.o.size, msg.o.data);
 				break;
 			case mtDevCtl:
 				dev_ctl(&msg);
 				break;
 			default:
-				msg.o.io.err = -EINVAL;
+				msg.o.err = -ENOSYS;
 				break;
 		}
 

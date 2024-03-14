@@ -75,11 +75,14 @@ static struct {
 	uint8_t stack[_PAGE_SIZE] __attribute__((aligned(8)));
 } uart_common;
 
+/* clang-format off */
 
 enum {
 	cr = 0, mr, ier, idr, imr, isr, baudgen, rxtout, rxwm, modemcr, modemsr, sr, fifo,
 	baud_rate_divider_reg0, flow_delay_reg0, tx_fifo_trigger_level0,
 };
+
+/* clang-format on */
 
 
 static int uart_interrupt(unsigned int n, void *arg)
@@ -267,31 +270,34 @@ static void uart_dispatchMsg(void *arg)
 
 		switch (msg.type) {
 			case mtOpen:
-				break;
-
 			case mtClose:
+				msg.o.err = EOK;
 				break;
 
 			case mtWrite:
-				msg.o.io.err = libtty_write(&uart_common.uart.tty, msg.i.data, msg.i.size, msg.i.io.mode);
+				msg.o.err = libtty_write(&uart_common.uart.tty, msg.i.data, msg.i.size, msg.i.io.mode);
 				break;
 
 			case mtRead:
-				msg.o.io.err = libtty_read(&uart_common.uart.tty, msg.o.data, msg.o.size, msg.i.io.mode);
+				msg.o.err = libtty_read(&uart_common.uart.tty, msg.o.data, msg.o.size, msg.i.io.mode);
 				break;
 
 			case mtGetAttr:
 				if (msg.i.attr.type == atPollStatus) {
 					msg.o.attr.val = libtty_poll_status(&uart_common.uart.tty);
-					msg.o.attr.err = EOK;
+					msg.o.err = EOK;
 					break;
 				}
 
-				msg.o.attr.err = -EINVAL;
+				msg.o.err = -ENOSYS;
 				break;
 
 			case mtDevCtl:
 				uart_ioctl(port, &msg);
+				break;
+
+			default:
+				msg.o.err = -ENOSYS;
 				break;
 		}
 

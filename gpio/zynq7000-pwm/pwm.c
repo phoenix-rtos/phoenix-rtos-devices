@@ -89,58 +89,58 @@ static void pwm_thread(void *arg)
 		switch (msg.type) {
 			case mtOpen:
 			case mtClose:
-				if (msg.i.io.oid.id >= PWM_NCHAN) {
-					msg.o.io.err = -ENOENT;
+				if (msg.oid.id >= PWM_NCHAN) {
+					msg.o.err = -ENOENT;
 				}
 				else {
-					msg.o.io.err = 0;
+					msg.o.err = 0;
 				}
 				break;
 
 			case mtRead:
-				if (msg.i.io.oid.id >= PWM_NCHAN) {
-					msg.o.io.err = -ENOENT;
+				if (msg.oid.id >= PWM_NCHAN) {
+					msg.o.err = -ENOENT;
 				}
 				else {
-					pwm_read(&pwm_common.channel[msg.i.io.oid.id], &val);
+					pwm_read(&pwm_common.channel[msg.oid.id], &val);
 					ret = sprintf(buff, "%u\n", val);
 
 					if (ret < msg.i.io.offs) {
 						/* EOF */
-						msg.o.io.err = 0;
+						msg.o.err = 0;
 					}
 					else {
 						strncpy(msg.o.data, buff + msg.i.io.offs, msg.o.size);
 						((char *)msg.o.data)[msg.o.size - 1] = '\0';
-						msg.o.io.err = ((ret + 1) < (int)msg.o.size) ? ret + 1 : msg.o.size;
+						msg.o.err = ((ret + 1) < (int)msg.o.size) ? ret + 1 : msg.o.size;
 					}
 				}
 				break;
 
 			case mtWrite:
-				if (msg.i.io.oid.id >= PWM_NCHAN) {
-					msg.o.io.err = -ENOENT;
+				if (msg.oid.id >= PWM_NCHAN) {
+					msg.o.err = -ENOENT;
 				}
 				else if (msg.i.data == NULL || msg.i.size == 0) {
-					msg.o.io.err = -EINVAL;
+					msg.o.err = -EINVAL;
 				}
 				else {
 					strncpy(buff, msg.i.data, msg.i.size < sizeof(buff) ? msg.i.size : sizeof(buff));
 					buff[sizeof(buff) - 1] = '\0';
 					val = (uint32_t)strtoul(buff, NULL, 0);
-					pwm_write(&pwm_common.channel[msg.i.io.oid.id], val);
-					msg.o.io.err = (int)msg.i.size;
+					pwm_write(&pwm_common.channel[msg.oid.id], val);
+					msg.o.err = (int)msg.i.size;
 				}
 				break;
 
 			case mtSetAttr:
-				msg.o.attr.err = -ENOSYS;
+				msg.o.err = -ENOSYS;
 				break;
 
 
 			case mtGetAttr:
 				msg.o.attr.val = sizeof(buff);
-				msg.o.attr.err = EOK;
+				msg.o.err = EOK;
 				break;
 
 			case mtDevCtl:
@@ -167,7 +167,7 @@ static void pwm_thread(void *arg)
 				break;
 
 			default:
-				msg.o.io.err = -ENOSYS;
+				msg.o.err = -ENOSYS;
 				break;
 		}
 
