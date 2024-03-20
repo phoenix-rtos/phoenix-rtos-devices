@@ -26,6 +26,7 @@
 #include <sys/platform.h>
 
 #include <libtty.h>
+#include <libtty-lf-fifo.h>
 #include <board_config.h>
 
 #include "common.h"
@@ -51,6 +52,10 @@
 #define UART_BUFSIZE 512
 #endif
 
+#ifndef UART_RXFIFOSIZE
+#define UART_RXFIFOSIZE 128
+#endif
+
 
 typedef struct uart_s {
 	char stack[1024] __attribute__ ((aligned(8)));
@@ -67,6 +72,17 @@ typedef struct uart_s {
 	size_t txFifoSz;
 
 	libtty_common_t tty_common;
+
+	/* fifo between irq and thread */
+	lf_fifo_t rxFifoCtx;
+	uint8_t rxFifoData[UART_RXFIFOSIZE];
+
+	/* statistics */
+	struct {
+		/* NOTE: to read statistics use debugger */
+		size_t hw_overrunCntr;
+		size_t sw_overrunCntr;
+	} stat;
 } uart_t;
 
 
@@ -85,26 +101,6 @@ static const int uartPos[] = { UART1_POS, UART2_POS, UART3_POS, UART4_POS, UART5
 enum { veridr = 0, paramr, globalr, pincfgr, baudr, statr, ctrlr, datar, matchr, modirr, fifor, waterr };
 
 
-static int uart_handleIntr(unsigned int n, void *arg)
-{
-	uint32_t flags;
-	uart_t *uart = (uart_t *)arg;
-
-	*(uart->base + ctrlr) &= ~((1 << 27) | (1 << 26) | (1 << 25) | (1 << 23) | (1 << 21));
-
-	/* Error flags: parity, framing, noise, overrun */
-	flags = *(uart->base + statr) & (0xf << 16);
-
-	/* RX overrun: invalidate fifo */
-	if (flags & (1 << 19))
-		*(uart->base + fifor) |= 1 << 14;
-
-	*(uart->base + statr) |= flags;
-
-	return 1;
-}
-
-
 static inline int uart_getRXcount(uart_t *uart)
 {
 	return (*(uart->base + waterr) >> 24) & 0xff;
@@ -117,20 +113,53 @@ static inline int uart_getTXcount(uart_t *uart)
 }
 
 
+static int uart_handleIntr(unsigned int n, void *arg)
+{
+	uart_t *uart = (uart_t *)arg;
+	uint32_t status = *(uart->base + statr);
+
+	/* Disable interrupts, enabled in uart_intrThread */
+	*(uart->base + ctrlr) &= ~((1 << 27) | (1 << 26) | (1 << 25) | (1 << 23) | (1 << 21));
+
+	/* check for RX overrun */
+	if ((status & (1uL << 19u)) != 0u) {
+		/* invalidate fifo */
+		*(uart->base + fifor) |= 1uL << 14u;
+		uart->stat.hw_overrunCntr++;
+	}
+
+	/* Process received data */
+	while (uart_getRXcount(uart) != 0) {
+		uint8_t data = *(uart->base + datar);
+		if (lf_fifo_push(&uart->rxFifoCtx, data) == 0) {
+			uart->stat.sw_overrunCntr++;
+		}
+	}
+
+	/* Clear errors: parity, framing, noise, overrun and idle flag */
+	*(uart->base + statr) = (status & (0x1fuL << 16));
+
+	return 1;
+}
+
+
 static void uart_intrThread(void *arg)
 {
 	uart_t *uart = (uart_t *)arg;
 	uint8_t mask;
+	uint8_t c;
 
 	for (;;) {
 		/* wait for character or transmit data */
 		mutexLock(uart->lock);
-		while (!uart_getRXcount(uart)) { /* nothing to RX */
+		while (lf_fifo_empty(&uart->rxFifoCtx) != 0) { /* nothing to RX */
 			if (libtty_txready(&uart->tty_common)) { /* something to TX */
-				if (uart_getTXcount(uart) < uart->txFifoSz) /* TX ready */
+				if (uart_getTXcount(uart) < uart->txFifoSz) { /* TX ready */
 					break;
-				else
+				}
+				else {
 					*(uart->base + ctrlr) |= 1 << 23;
+				}
 			}
 
 			*(uart->base + ctrlr) |= (1 << 27) | (1 << 26) | (1 << 25) | (1 << 21);
@@ -148,12 +177,14 @@ static void uart_intrThread(void *arg)
 		mutexUnlock(uart->lock);
 
 		/* RX */
-		while (uart_getRXcount(uart))
-			libtty_putchar(&uart->tty_common, *(uart->base + datar) & mask, NULL);
+		while (lf_fifo_pop(&uart->rxFifoCtx, &c) != 0) {
+			libtty_putchar(&uart->tty_common, c & mask, NULL);
+		}
 
 		/* TX */
-		while (libtty_txready(&uart->tty_common) && uart_getTXcount(uart) < uart->txFifoSz)
+		while (libtty_txready(&uart->tty_common) && uart_getTXcount(uart) < uart->txFifoSz) {
 			*(uart->base + datar) = libtty_getchar(&uart->tty_common, NULL);
+		}
 	}
 }
 
@@ -702,6 +733,8 @@ int uart_init(void)
 		{ UART12_BASE, UART12_CLK, UART12_IRQ }
 	};
 
+	memset(&uart_common, 0, sizeof(uart_common));
+
 	uart_initPins();
 
 	const uint32_t default_baud[] = { UART_BAUDRATES };
@@ -712,6 +745,7 @@ int uart_init(void)
 
 		uart = &uart_common.uarts[i++];
 		uart->base = info[dev].base;
+		uart->dev_no = dev;
 
 #ifdef __CPU_IMXRT117X
 		common_setClock(info[dev].dev, -1, -1, -1, -1, 1);
@@ -728,6 +762,8 @@ int uart_init(void)
 
 		if (libtty_init(&uart->tty_common, &callbacks, UART_BUFSIZE, libtty_int_to_baudrate(default_baud[dev])) < 0)
 			return -1;
+
+		lf_fifo_init(&uart->rxFifoCtx, uart->rxFifoData, sizeof(uart->rxFifoData));
 
 		/* Wait for kernel to stop sending data over uart */
 		while (*(uart->base + waterr) & 0x700)
