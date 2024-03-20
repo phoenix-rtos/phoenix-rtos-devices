@@ -72,7 +72,6 @@ typedef struct uart_s {
 
 struct {
 	uart_t uarts[UART_CNT];
-	unsigned int port;
 } uart_common;
 
 
@@ -715,7 +714,7 @@ int uart_init(void)
 		uart->base = info[dev].base;
 
 #ifdef __CPU_IMXRT117X
-		common_setClock(info[dev].dev, 0, 0, 0, 0, 1);
+		common_setClock(info[dev].dev, -1, -1, -1, -1, 1);
 #else
 		common_setClock(info[dev].dev, clk_state_run);
 #endif
