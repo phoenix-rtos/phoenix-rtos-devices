@@ -32,8 +32,16 @@
 
 /* UART */
 
+#ifndef UART_BUFSIZE
+#define UART_BUFSIZE 512
+#endif
+
 #ifndef UART1
 #define UART1 1
+#endif
+
+#ifndef UART1_BUFSIZE
+#define UART1_BUFSIZE UART_BUFSIZE
 #endif
 
 #ifndef UART1_HW_FLOWCTRL
@@ -48,6 +56,10 @@
 #define UART2 0
 #endif
 
+#ifndef UART2_BUFSIZE
+#define UART2_BUFSIZE UART_BUFSIZE
+#endif
+
 #ifndef UART2_HW_FLOWCTRL
 #define UART2_HW_FLOWCTRL 0
 #endif
@@ -58,6 +70,10 @@
 
 #ifndef UART3
 #define UART3 0
+#endif
+
+#ifndef UART3_BUFSIZE
+#define UART3_BUFSIZE UART_BUFSIZE
 #endif
 
 #ifndef UART3_HW_FLOWCTRL
@@ -72,6 +88,10 @@
 #define UART4 0
 #endif
 
+#ifndef UART4_BUFSIZE
+#define UART4_BUFSIZE UART_BUFSIZE
+#endif
+
 #ifndef UART4_HW_FLOWCTRL
 #define UART4_HW_FLOWCTRL 0
 #endif
@@ -82,6 +102,10 @@
 
 #ifndef UART5
 #define UART5 0
+#endif
+
+#ifndef UART5_BUFSIZE
+#define UART5_BUFSIZE UART_BUFSIZE
 #endif
 
 #ifndef UART5_HW_FLOWCTRL
@@ -96,6 +120,10 @@
 #define UART6 0
 #endif
 
+#ifndef UART6_BUFSIZE
+#define UART6_BUFSIZE UART_BUFSIZE
+#endif
+
 #ifndef UART6_HW_FLOWCTRL
 #define UART6_HW_FLOWCTRL 0
 #endif
@@ -108,6 +136,10 @@
 #define UART7 0
 #endif
 
+#ifndef UART7_BUFSIZE
+#define UART7_BUFSIZE UART_BUFSIZE
+#endif
+
 #ifndef UART7_HW_FLOWCTRL
 #define UART7_HW_FLOWCTRL 0
 #endif
@@ -118,6 +150,10 @@
 
 #ifndef UART8
 #define UART8 0
+#endif
+
+#ifndef UART8_BUFSIZE
+#define UART8_BUFSIZE UART_BUFSIZE
 #endif
 
 #ifndef UART8_HW_FLOWCTRL
@@ -134,6 +170,10 @@
 #define UART9 0
 #endif
 
+#ifndef UART9_BUFSIZE
+#define UART9_BUFSIZE UART_BUFSIZE
+#endif
+
 #ifndef UART9_HW_FLOWCTRL
 #define UART9_HW_FLOWCTRL 0
 #endif
@@ -144,6 +184,10 @@
 
 #ifndef UART10
 #define UART10 0
+#endif
+
+#ifndef UART10_BUFSIZE
+#define UART10_BUFSIZE UART_BUFSIZE
 #endif
 
 #ifndef UART10_HW_FLOWCTRL
@@ -158,6 +202,10 @@
 #define UART11 1
 #endif
 
+#ifndef UART11_BUFSIZE
+#define UART11_BUFSIZE UART_BUFSIZE
+#endif
+
 #ifndef UART11_HW_FLOWCTRL
 #define UART11_HW_FLOWCTRL 0
 #endif
@@ -170,6 +218,10 @@
 #define UART12 0
 #endif
 
+#ifndef UART12_BUFSIZE
+#define UART12_BUFSIZE UART_BUFSIZE
+#endif
+
 #ifndef UART12_HW_FLOWCTRL
 #define UART12_HW_FLOWCTRL 0
 #endif
@@ -180,15 +232,19 @@
 
 #else
 #define UART9 0
+#define UART9_BUFSIZE      0
 #define UART9_HW_FLOWCTRL 0
 #define UART9_BAUDRATE 0
 #define UART10 0
+#define UART10_BUFSIZE     0
 #define UART10_HW_FLOWCTRL 0
 #define UART10_BAUDRATE 0
 #define UART11 0
+#define UART11_BUFSIZE     0
 #define UART11_HW_FLOWCTRL 0
 #define UART11_BAUDRATE 0
 #define UART12 0
+#define UART12_BUFSIZE     0
 #define UART12_HW_FLOWCTRL 0
 #define UART12_BAUDRATE 0
 #endif
@@ -208,6 +264,20 @@
 	UART10_BAUDRATE, \
 	UART11_BAUDRATE, \
 	UART12_BAUDRATE
+
+#define UART_BUFSIZES \
+	UART1_BUFSIZE, \
+	UART2_BUFSIZE, \
+	UART3_BUFSIZE, \
+	UART4_BUFSIZE, \
+	UART5_BUFSIZE, \
+	UART6_BUFSIZE, \
+	UART7_BUFSIZE, \
+	UART8_BUFSIZE, \
+	UART9_BUFSIZE, \
+	UART10_BUFSIZE, \
+	UART11_BUFSIZE, \
+	UART12_BUFSIZE
 
 /* clang-format on */
 
