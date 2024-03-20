@@ -193,9 +193,11 @@
 #define UART12_BAUDRATE 0
 #endif
 
+/* clang-format off */
+
 #define UART_BAUDRATES \
 	UART1_BAUDRATE, \
-	UART3_BAUDRATE, \
+	UART2_BAUDRATE, \
 	UART3_BAUDRATE, \
 	UART4_BAUDRATE, \
 	UART5_BAUDRATE, \
@@ -206,6 +208,8 @@
 	UART10_BAUDRATE, \
 	UART11_BAUDRATE, \
 	UART12_BAUDRATE
+
+/* clang-format on */
 
 #ifndef UART_CONSOLE
 #if defined(__CPU_IMXRT105X)
