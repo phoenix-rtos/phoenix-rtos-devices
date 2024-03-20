@@ -48,9 +48,6 @@
 
 #define UART_CNT (UART1 + UART2 + UART3 + UART4 + UART5 + UART6 + UART7 + UART8 + UART9 + UART10 + UART11 + UART12)
 
-#ifndef UART_BUFSIZE
-#define UART_BUFSIZE 512
-#endif
 
 #ifndef UART_RXFIFOSIZE
 #define UART_RXFIFOSIZE 128
@@ -738,6 +735,7 @@ int uart_init(void)
 	uart_initPins();
 
 	const uint32_t default_baud[] = { UART_BAUDRATES };
+	const uint32_t tty_bufsz[] = { UART_BUFSIZES };
 
 	for (i = 0, dev = 0; dev < sizeof(uartConfig) / sizeof(uartConfig[0]); ++dev) {
 		if (!uartConfig[dev])
@@ -760,8 +758,9 @@ int uart_init(void)
 		callbacks.set_cflag = set_cflag;
 		callbacks.signal_txready = signal_txready;
 
-		if (libtty_init(&uart->tty_common, &callbacks, UART_BUFSIZE, libtty_int_to_baudrate(default_baud[dev])) < 0)
+		if (libtty_init(&uart->tty_common, &callbacks, tty_bufsz[dev], libtty_int_to_baudrate(default_baud[dev])) < 0) {
 			return -1;
+		}
 
 		lf_fifo_init(&uart->rxFifoCtx, uart->rxFifoData, sizeof(uart->rxFifoData));
 
