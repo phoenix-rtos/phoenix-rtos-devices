@@ -75,7 +75,7 @@ ssize_t i2c_readReg(int i2c, unsigned char addr, unsigned char reg, void *buff, 
 }
 
 
-ssize_t i2c_write(int i2c, unsigned char addr, void *buff, size_t len)
+ssize_t i2c_write(int i2c, unsigned char addr, const void *buff, size_t len)
 {
 	ssize_t ret;
 
@@ -90,7 +90,7 @@ ssize_t i2c_write(int i2c, unsigned char addr, void *buff, size_t len)
 }
 
 
-ssize_t i2c_writeReg(int i2c, unsigned char addr, unsigned char reg, void *buff, size_t len)
+ssize_t i2c_writeReg(int i2c, unsigned char addr, unsigned char reg, const void *buff, size_t len)
 {
 	ssize_t ret;
 

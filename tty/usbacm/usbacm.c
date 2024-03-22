@@ -154,7 +154,7 @@ static int _usbacm_rxStop(usbacm_dev_t *dev)
 }
 
 
-static void usbacm_fifoPush(usbacm_dev_t *dev, char *data, size_t size)
+static void usbacm_fifoPush(usbacm_dev_t *dev, const char *data, size_t size)
 {
 	unsigned i;
 
@@ -260,7 +260,7 @@ static void usbacm_put(usbacm_dev_t *dev)
 }
 
 
-static void usbacm_handleCompletion(usb_completion_t *c, char *data, size_t len)
+static void usbacm_handleCompletion(usb_completion_t *c, const char *data, size_t len)
 {
 	usbacm_dev_t *dev;
 	size_t bytes;
@@ -395,7 +395,7 @@ static int usbacm_read(usbacm_dev_t *dev, char *data, size_t len)
 }
 
 
-static int usbacm_write(usbacm_dev_t *dev, char *data, size_t len)
+static int usbacm_write(usbacm_dev_t *dev, const char *data, size_t len)
 {
 	int ret = 0;
 
