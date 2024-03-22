@@ -87,7 +87,7 @@ static void _spi_readwrite_dma(int spi, unsigned char *ibuff, unsigned char *obu
 }
 
 
-int spi_transaction(int spi, int dir, unsigned char cmd, unsigned int addr, unsigned char flags, unsigned char *ibuff, unsigned char *obuff, size_t bufflen)
+int spi_transaction(int spi, int dir, unsigned char cmd, unsigned int addr, unsigned char flags, const unsigned char *ibuff, unsigned char *obuff, size_t bufflen)
 {
 	int i;
 	unsigned int addrsz;

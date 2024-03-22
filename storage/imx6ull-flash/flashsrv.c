@@ -93,6 +93,7 @@ static int flashsrv_devfsSymlink(const char *name, const char *target)
 	msg_t msg = { 0 };
 	int len1, len2;
 	int ret;
+	void *idata;
 
 	ret = lookup("devfs", NULL, &dir);
 	if (ret < 0) {
@@ -110,16 +111,18 @@ static int flashsrv_devfsSymlink(const char *name, const char *target)
 	len2 = strlen(target);
 
 	msg.i.size = len1 + len2 + 2;
-	msg.i.data = calloc(1, msg.i.size);
-	if (msg.i.data == NULL) {
+	idata = calloc(1, msg.i.size);
+	if (idata == NULL) {
 		return -ENOMEM;
 	}
 
-	memcpy(msg.i.data, name, len1);
-	memcpy(msg.i.data + len1 + 1, target, len2);
+	memcpy(idata, name, len1);
+	memcpy(idata + len1 + 1, target, len2);
+
+	msg.i.data = idata;
 
 	ret = msgSend(dir.port, &msg);
-	free(msg.i.data);
+	free(idata);
 
 	return (ret != EOK) ? -EIO : msg.o.err;
 }
@@ -284,7 +287,7 @@ static int flashsrv_devReadMeta(id_t id, flash_i_devctl_t *idevctl, void *data)
 }
 
 
-static int flashsrv_devWriteMeta(id_t id, flash_i_devctl_t *idevctl, void *data)
+static int flashsrv_devWriteMeta(id_t id, flash_i_devctl_t *idevctl, const void *data)
 {
 	int res;
 	size_t retlen;
@@ -308,7 +311,7 @@ static int flashsrv_devWriteMeta(id_t id, flash_i_devctl_t *idevctl, void *data)
 }
 
 
-static ssize_t flashsrv_devWriteRaw(id_t id, flash_i_devctl_t *idevctl, char *data)
+static ssize_t flashsrv_devWriteRaw(id_t id, flash_i_devctl_t *idevctl, const char *data)
 {
 	int res = EOK;
 	size_t rawPagesz, rawEraseBlockSz, rawPartsz, tempsz = 0;
@@ -496,7 +499,7 @@ static ssize_t flashsrv_read(oid_t *oid, size_t offs, char *data, size_t size)
 }
 
 
-static ssize_t flashsrv_write(oid_t *oid, size_t offs, char *data, size_t size)
+static ssize_t flashsrv_write(oid_t *oid, size_t offs, const char *data, size_t size)
 {
 	int res;
 	size_t retlen;
