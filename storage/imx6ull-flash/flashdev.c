@@ -32,6 +32,9 @@
 
 #define CHUNK_IS_META(chunkidx) ((chunkidx) == 0)
 
+#define BLK_CACHE_SECNUM 16 /* Maximum number of cached sectors in a region */
+#define LIBCACHE_POLICY  LIBCACHE_WRITE_THROUGH
+
 
 /* Auxiliary functions */
 static inline int chunk_is_uncorrectable(unsigned int chunkidx, unsigned int flips)
@@ -247,6 +250,220 @@ static int _flashmtd_checkECC(struct _storage_t *strg, uint32_t pageaddr, int nc
 }
 
 
+static int _flashmtd_read(struct _storage_t *strg, off_t offs, void *data, size_t len, size_t *retlen)
+{
+	uint32_t paddr;
+	int err, ret = EOK;
+	size_t tempsz = 0, chunksz;
+	flashdrv_meta_t *meta = strg->dev->ctx->metabuf;
+	const int nchunks = sizeof(meta->errors) / sizeof(meta->errors[0]);
+
+	paddr = offs / strg->dev->mtd->writesz;
+	offs %= strg->dev->mtd->writesz;
+
+	while (tempsz < len) {
+		/* TODO: should we skip badblocks ? */
+		err = flashdrv_read(strg->dev->ctx->dma, paddr, strg->dev->ctx->databuf, meta);
+		if (err < 0) {
+			ret = -EIO;
+			break;
+		}
+
+		err = _flashmtd_checkECC(strg, paddr, nchunks);
+		if (err == -EBADMSG) {
+			/* Continue reading, let the client handle -EBADMSG */
+			ret = -EBADMSG;
+		}
+		else if (err == -EUCLEAN && ret != -EBADMSG) {
+			/* Not a critical error, continue reading, return -EUCLEAN, but don't overwrite -EBADMSG */
+			ret = -EUCLEAN;
+		}
+		else if (err < 0) {
+			ret = err;
+			break;
+		}
+
+		chunksz = min(len - tempsz, strg->dev->mtd->writesz - offs);
+		memcpy((unsigned char *)data + tempsz, (unsigned char *)strg->dev->ctx->databuf + offs, chunksz);
+		offs = 0;
+		tempsz += chunksz;
+		paddr++;
+	}
+	*retlen = tempsz;
+
+	return ret;
+}
+
+
+static int _flashmtd_write(struct _storage_t *strg, off_t offs, const void *data, size_t len, size_t *retlen)
+{
+	ssize_t res = 0;
+	blkcnt_t pageID;
+	size_t tempsz = 0;
+
+	while (tempsz < len) {
+		/* TODO: should we skip badblocks ? */
+		memcpy(strg->dev->ctx->databuf, (unsigned char *)data + tempsz, strg->dev->mtd->writesz);
+
+		pageID = offs / strg->dev->mtd->writesz;
+		res = flashdrv_write(strg->dev->ctx->dma, pageID, strg->dev->ctx->databuf, NULL);
+		if (res < 0) {
+			res = -EIO;
+			break;
+		}
+
+		tempsz += strg->dev->mtd->writesz;
+		offs += strg->dev->mtd->writesz;
+	}
+	*retlen = tempsz;
+
+	return (res < 0) ? res : EOK;
+}
+
+
+static ssize_t _flashmtd_readCb(uint64_t offs, void *buff, size_t len, cache_devCtx_t *ctx)
+{
+	storage_t *strg = ctx->strg;
+	size_t retlen;
+	ssize_t ret;
+
+	offs += strg->start;
+
+	ret = _flashmtd_read(strg, offs, buff, len, &retlen);
+	if (ret < 0) {
+		return ret;
+	}
+
+	return (ssize_t)retlen;
+}
+
+
+static ssize_t _flashmtd_writeCb(uint64_t offs, const void *buff, size_t len, cache_devCtx_t *ctx)
+{
+	storage_t *strg = ctx->strg;
+	size_t retlen;
+	ssize_t ret;
+
+	offs += strg->start;
+
+	if ((offs % strg->dev->mtd->writesz) != 0 || (len % strg->dev->mtd->writesz) != 0) {
+		return -EINVAL;
+	}
+
+	ret = _flashmtd_write(strg, offs, buff, len, &retlen);
+	if (ret < 0) {
+		return ret;
+	}
+
+	return (ssize_t)retlen;
+}
+
+
+static int _flashmtd_metaread(struct _storage_t *strg, off_t offs, void *data, size_t len, size_t *retlen)
+{
+	int ret = EOK;
+	size_t tempsz = 0;
+	uint32_t paddr = offs / strg->dev->mtd->writesz;
+	flashdrv_meta_t *meta = strg->dev->ctx->metabuf;
+
+	while (tempsz < len) {
+		/* TODO: should we skip badblocks ? */
+		int err = flashdrv_read(strg->dev->ctx->dma, paddr, NULL, meta);
+		if (err < 0) {
+			ret = -EIO;
+			break;
+		}
+
+		/* Check only metadata chunk (DATA0) */
+		err = _flashmtd_checkECC(strg, paddr, 1);
+		if (err == -EBADMSG) {
+			/* Continue reading, let the client handle -EBADMSG */
+			ret = -EBADMSG;
+		}
+		else if (err == -EUCLEAN && ret != -EBADMSG) {
+			/* Not a critical error, continue reading, return -EUCLEAN, but don't overwrite -EBADMSG */
+			ret = -EUCLEAN;
+		}
+		else if (err < 0) {
+			ret = err;
+			break;
+		}
+
+		size_t chunksz = min(len - tempsz, strg->dev->mtd->oobSize);
+		memcpy((unsigned char *)data + tempsz, meta->metadata, chunksz);
+		tempsz += chunksz;
+		paddr++;
+	}
+	*retlen = tempsz;
+
+	return ret;
+}
+
+
+static int _flashmtd_metawrite(struct _storage_t *strg, off_t offs, const void *data, size_t len, size_t *retlen)
+{
+	int res = EOK;
+	size_t tempsz = 0;
+
+	while (tempsz < len) {
+		size_t chunksz = len > strg->dev->mtd->oobSize ? strg->dev->mtd->oobSize : len;
+		memset(strg->dev->ctx->metabuf, 0xff, strg->dev->mtd->oobSize);
+		memcpy(strg->dev->ctx->metabuf, (unsigned char *)data + tempsz, chunksz);
+
+		res = flashdrv_write(strg->dev->ctx->dma, offs / strg->dev->mtd->writesz, NULL, strg->dev->ctx->metabuf);
+		if (res < 0) {
+			res = -EIO;
+			break;
+		}
+
+		tempsz += chunksz;
+		offs += strg->dev->mtd->writesz;
+	}
+	*retlen = tempsz;
+
+	return res < 0 ? res : EOK;
+}
+
+
+static ssize_t _flashmtd_metareadCb(uint64_t offs, void *buff, size_t len, cache_devCtx_t *ctx)
+{
+	storage_t *strg = ctx->strg;
+	size_t retlen;
+
+	offs += strg->start;
+
+	if ((offs % strg->dev->mtd->writesz) != 0) {
+		return -EINVAL;
+	}
+
+	ssize_t ret = _flashmtd_metaread(strg, offs, buff, len, &retlen);
+	if (ret < 0) {
+		return ret;
+	}
+
+	return (ssize_t)retlen;
+}
+
+
+static ssize_t _flashmtd_metawriteCb(uint64_t offs, const void *buff, size_t len, cache_devCtx_t *ctx)
+{
+	storage_t *strg = ctx->strg;
+	size_t retlen;
+
+	offs += strg->start;
+
+	if ((offs % strg->dev->mtd->writesz) != 0) {
+		return -EINVAL;
+	}
+
+	ssize_t ret = _flashmtd_metawrite(strg, offs, buff, len, &retlen);
+	if (ret < 0) {
+		return ret;
+	}
+
+	return (ssize_t)retlen;
+}
+
 /* MTD interface */
 
 static int flashmtd_erase(struct _storage_t *strg, off_t offs, size_t size)
@@ -287,6 +504,9 @@ static int flashmtd_erase(struct _storage_t *strg, off_t offs, size_t size)
 			++erased;
 		}
 	}
+	off_t start = offs - strg->start;
+	off_t end = start + size;
+	(void)cache_invalidate(strg->dev->ctx->dcache, start, end);
 	mutexUnlock(strg->dev->ctx->lock);
 
 	return erased;
@@ -295,46 +515,16 @@ static int flashmtd_erase(struct _storage_t *strg, off_t offs, size_t size)
 
 static int flashmtd_read(struct _storage_t *strg, off_t offs, void *data, size_t len, size_t *retlen)
 {
-	uint32_t paddr;
-	int err, ret = EOK;
-	size_t tempsz = 0, chunksz;
-	flashdrv_meta_t *meta = strg->dev->ctx->metabuf;
-	const int nchunks = sizeof(meta->errors) / sizeof(meta->errors[0]);
-
-	paddr = offs / strg->dev->mtd->writesz;
-	offs %= strg->dev->mtd->writesz;
-
 	mutexLock(strg->dev->ctx->lock);
-	while (tempsz < len) {
-		/* TODO: should we skip badblocks ? */
-		err = flashdrv_read(strg->dev->ctx->dma, paddr, strg->dev->ctx->databuf, meta);
-		if (err < 0) {
-			ret = -EIO;
-			break;
-		}
 
-		err = _flashmtd_checkECC(strg, paddr, nchunks);
-		if (err == -EBADMSG) {
-			/* Continue reading, let the client handle -EBADMSG */
-			ret = -EBADMSG;
-		}
-		else if (err == -EUCLEAN && ret != -EBADMSG) {
-			/* Not a critical error, continue reading, return -EUCLEAN, but don't overwrite -EBADMSG */
-			ret = -EUCLEAN;
-		}
-		else if (err < 0) {
-			ret = err;
-			break;
-		}
+	off_t start = offs - strg->start;
+	int ret = cache_read(strg->dev->ctx->dcache, start, data, len);
 
-		chunksz = min(len - tempsz, strg->dev->mtd->writesz - offs);
-		memcpy((unsigned char *)data + tempsz, (unsigned char *)strg->dev->ctx->databuf + offs, chunksz);
-		offs = 0;
-		tempsz += chunksz;
-		paddr++;
-	}
-	*retlen = tempsz;
 	mutexUnlock(strg->dev->ctx->lock);
+	if (ret >= 0) {
+		*retlen = len;
+		return EOK;
+	}
 
 	return ret;
 }
@@ -342,79 +532,41 @@ static int flashmtd_read(struct _storage_t *strg, off_t offs, void *data, size_t
 
 static int flashmtd_write(struct _storage_t *strg, off_t offs, const void *data, size_t len, size_t *retlen)
 {
-	ssize_t res = 0;
-	blkcnt_t pageID;
-	size_t tempsz = 0;
-
 	if ((offs % strg->dev->mtd->writesz) != 0 || (len % strg->dev->mtd->writesz) != 0) {
 		return -EINVAL;
 	}
 
 	mutexLock(strg->dev->ctx->lock);
-	while (tempsz < len) {
-		/* TODO: should we skip badblocks ? */
-		memcpy(strg->dev->ctx->databuf, (unsigned char *)data + tempsz, strg->dev->mtd->writesz);
 
-		pageID = offs / strg->dev->mtd->writesz;
-		res = flashdrv_write(strg->dev->ctx->dma, pageID, strg->dev->ctx->databuf, NULL);
-		if (res < 0) {
-			res = -EIO;
-			break;
-		}
+	off_t start = offs - strg->start;
+	ssize_t ret = cache_write(strg->dev->ctx->dcache, start, data, len, LIBCACHE_POLICY);
 
-		tempsz += strg->dev->mtd->writesz;
-		offs += strg->dev->mtd->writesz;
-	}
-	*retlen = tempsz;
 	mutexUnlock(strg->dev->ctx->lock);
 
-	return res < 0 ? res : EOK;
+	if (ret >= 0) {
+		*retlen = len;
+		return EOK;
+	}
+
+	return ret;
 }
 
 
 static int flashmtd_metaRead(struct _storage_t *strg, off_t offs, void *data, size_t len, size_t *retlen)
 {
-	uint32_t paddr;
-	int err, ret = EOK;
-	size_t tempsz = 0, chunksz;
-	flashdrv_meta_t *meta = strg->dev->ctx->metabuf;
-
 	if ((offs % strg->dev->mtd->writesz) != 0) {
 		return -EINVAL;
 	}
-	paddr = offs / strg->dev->mtd->writesz;
 
 	mutexLock(strg->dev->ctx->lock);
-	while (tempsz < len) {
-		/* TODO: should we skip badblocks ? */
-		err = flashdrv_read(strg->dev->ctx->dma, paddr, NULL, meta);
-		if (err < 0) {
-			ret = -EIO;
-			break;
-		}
-
-		/* Check only metadata chunk (DATA0) */
-		err = _flashmtd_checkECC(strg, paddr, 1);
-		if (err == -EBADMSG) {
-			/* Continue reading, let the client handle -EBADMSG */
-			ret = -EBADMSG;
-		}
-		else if (err == -EUCLEAN && ret != -EBADMSG) {
-			/* Not a critical error, continue reading, return -EUCLEAN, but don't overwrite -EBADMSG */
-			ret = -EUCLEAN;
-		}
-		else if (err < 0) {
-			ret = err;
-			break;
-		}
-
-		chunksz = min(len - tempsz, strg->dev->mtd->oobSize);
-		memcpy((unsigned char *)data + tempsz, meta->metadata, chunksz);
-		tempsz += chunksz;
-		paddr++;
-	}
-	*retlen = tempsz;
+	off_t start = offs - strg->start;
+	int ret = cache_read(strg->dev->ctx->metacache, start, data, len);
 	mutexUnlock(strg->dev->ctx->lock);
+
+	if (ret >= 0) {
+		*retlen = len;
+		return EOK;
+	}
 
 	return ret;
 }
@@ -422,32 +574,21 @@ static int flashmtd_metaRead(struct _storage_t *strg, off_t offs, void *data, si
 
 static int flashmtd_metaWrite(struct _storage_t *strg, off_t offs, const void *data, size_t len, size_t *retlen)
 {
-	int res = EOK;
-	size_t tempsz = 0, chunksz;
-
 	if ((offs % strg->dev->mtd->writesz) != 0) {
 		return -EINVAL;
 	}
 
 	mutexLock(strg->dev->ctx->lock);
-	while (tempsz < len) {
-		chunksz = len > strg->dev->mtd->oobSize ? strg->dev->mtd->oobSize : len;
-		memset(strg->dev->ctx->metabuf, 0xff, strg->dev->mtd->oobSize);
-		memcpy(strg->dev->ctx->metabuf, (unsigned char *)data + tempsz, chunksz);
-
-		res = flashdrv_write(strg->dev->ctx->dma, offs / strg->dev->mtd->writesz, NULL, strg->dev->ctx->metabuf);
-		if (res < 0) {
-			res = -EIO;
-			break;
-		}
-
-		tempsz += chunksz;
-		offs += strg->dev->mtd->writesz;
-	}
-	*retlen = tempsz;
+	off_t start = offs - strg->start;
+	int ret = cache_write(strg->dev->ctx->metacache, start, data, len, LIBCACHE_POLICY);
 	mutexUnlock(strg->dev->ctx->lock);
 
-	return res < 0 ? res : EOK;
+	if (ret >= 0) {
+		*retlen = len;
+		return EOK;
+	}
+
+	return ret;
 }
 
 
@@ -559,6 +700,8 @@ static const storage_mtdops_t mtdOps = {
 int flashdev_done(storage_t *strg)
 {
 	/* Free device context */
+	cache_deinit(strg->dev->ctx->metacache);
+	cache_deinit(strg->dev->ctx->dcache);
 	munmap(strg->dev->ctx->metabuf, strg->dev->mtd->writesz);
 	munmap(strg->dev->ctx->databuf, 2 * strg->dev->mtd->writesz);
 	flashdrv_dmadestroy(strg->dev->ctx->dma);
@@ -656,6 +799,43 @@ int flashdev_init(storage_t *strg)
 
 	/* NAND does not support block device yet */
 	strg->dev->blk = NULL;
+
+	cache_ops_t cacheOps = {
+		.readCb = _flashmtd_readCb,
+		.writeCb = _flashmtd_writeCb,
+		.ctx = &strg->dev->ctx->dcacheCtx
+	};
+	strg->dev->ctx->dcache = cache_init(strg->size, info->writesz, BLK_CACHE_SECNUM, &cacheOps);
+	if (strg->dev->ctx->dcache == NULL) {
+		free(strg->dev->mtd);
+		resourceDestroy(strg->dev->ctx->lock);
+		munmap(strg->dev->ctx->metabuf, info->writesz);
+		munmap(strg->dev->ctx->databuf, 2 * info->writesz);
+		flashdrv_dmadestroy(strg->dev->ctx->dma);
+		free(strg->dev->ctx);
+		free(strg->dev);
+		return -ENOMEM;
+	}
+	strg->dev->ctx->dcacheCtx.strg = strg;
+
+	cacheOps.readCb = _flashmtd_metareadCb;
+	cacheOps.writeCb = _flashmtd_metawriteCb;
+	cacheOps.ctx = &strg->dev->ctx->metacacheCtx;
+
+	strg->dev->ctx->metacache = cache_init(strg->size, info->metasz, BLK_CACHE_SECNUM, &cacheOps);
+	if (strg->dev->ctx->metacache == NULL) {
+		cache_deinit(strg->dev->ctx->dcache);
+		free(strg->dev->mtd);
+		resourceDestroy(strg->dev->ctx->lock);
+		munmap(strg->dev->ctx->metabuf, info->writesz);
+		munmap(strg->dev->ctx->databuf, 2 * info->writesz);
+		flashdrv_dmadestroy(strg->dev->ctx->dma);
+		free(strg->dev->ctx);
+		free(strg->dev);
+		return -ENOMEM;
+	}
+
+	strg->dev->ctx->metacacheCtx.strg = strg;
 
 	return EOK;
 }
