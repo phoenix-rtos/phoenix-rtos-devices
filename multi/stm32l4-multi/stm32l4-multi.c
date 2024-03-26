@@ -17,8 +17,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <unistd.h>
 #include <sys/threads.h>
 #include <sys/msg.h>
+#include <sys/file.h>
 #include <sys/pwman.h>
 
 #include <libklog.h>
@@ -29,6 +31,7 @@
 #include "adc.h"
 #include "exti.h"
 #include "flash.h"
+#include "fs.h"
 #include "gpio.h"
 #include "i2c.h"
 #include "rcc.h"
@@ -294,9 +297,28 @@ static void log_write(const char *buff, size_t len)
 }
 
 
-#if BUILTIN_DUMMYFS
-extern int fs_init(void);
-#endif
+static int bind(oid_t *sourceOid, const char *target)
+{
+	msg_t msg;
+	oid_t targetOid;
+	int err = lookup(target, NULL, &targetOid);
+	if (err < 0) {
+		return -ENOENT;
+	}
+
+	msg.type = mtSetAttr;
+	msg.oid = targetOid;
+	msg.i.attr.type = atDev;
+	msg.i.data = sourceOid;
+	msg.i.size = sizeof(oid_t);
+
+	err = msgSend(targetOid.port, &msg);
+	if (err < 0) {
+		return err;
+	}
+
+	return msg.o.err;
+}
 
 
 #if BUILTIN_POSIXSRV
@@ -304,7 +326,7 @@ extern int posixsrv_start(void);
 #endif
 
 
-int main(void)
+int main(int argc, char *argv[])
 {
 	int i;
 	oid_t oid;
@@ -313,7 +335,8 @@ int main(void)
 	portCreate(&common.port);
 
 #if BUILTIN_DUMMYFS
-	fs_init();
+	oid_t dummyfsOid;
+	fs_init(DUMMYFS_AS_ROOT, &dummyfsOid);
 #else
 	/* Wait for the filesystem */
 	while (lookup("/", NULL, &oid) < 0) {
@@ -329,6 +352,23 @@ int main(void)
 	adc_init();
 	rtc_init();
 	flash_init();
+
+#if BUILTIN_FLASH_SERVER
+	flashsrv_main(argc, argv, DUMMYFS_AS_ROOT == 0);
+#endif
+
+#if BUILTIN_DUMMYFS
+	if (DUMMYFS_AS_ROOT == 0) {
+		while (lookup("/", NULL, &oid) < 0) {
+			usleep(10 * 1000);
+		}
+
+		bind(&dummyfsOid, "/dev");
+	}
+#else
+	(void)bind; /* Function is unused in this case */
+#endif
+
 	i2c_init();
 	uart_init();
 	rng_init();
