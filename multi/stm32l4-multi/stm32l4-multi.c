@@ -20,6 +20,7 @@
 #include <sys/threads.h>
 #include <sys/msg.h>
 #include <sys/pwman.h>
+#include <posix/utils.h>
 
 #include <libklog.h>
 
@@ -344,7 +345,10 @@ int main(void)
 	tty_createDev();
 #endif
 
-	portRegister(common.port, "/multi", &oid);
+	oid.port = common.port;
+	oid.id = 0;
+
+	create_dev(&oid, "multi");
 
 	printf("multidrv: Started\n");
 
