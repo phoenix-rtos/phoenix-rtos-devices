@@ -29,7 +29,6 @@
 
 #include <phoenix/ioctl.h>
 #include <posix/utils.h>
-#include <board_config.h>
 
 #include "common.h"
 
@@ -165,11 +164,20 @@ static void uart_dispatchMsg(msg_t *msg)
 		case id_uart6:
 		case id_uart7:
 		case id_uart8:
+			uart_handleMsg(msg, id);
+			break;
+
+#ifdef __CPU_IMXRT117X
 		case id_uart9:
 		case id_uart10:
 		case id_uart11:
 		case id_uart12:
 			uart_handleMsg(msg, id);
+			break;
+#endif
+
+		default:
+			multi_handleError(msg, -ENODEV);
 			break;
 	}
 }
@@ -286,6 +294,8 @@ static int createDevFiles(void)
 	}
 #endif
 
+#ifdef __CPU_IMXRT117X
+
 #if UART9
 	if (mkFile(&dir, id_uart9, "uart9", common.uart_port) < 0) {
 		return -1;
@@ -308,6 +318,8 @@ static int createDevFiles(void)
 	if (mkFile(&dir, id_uart12, "uart12", common.uart_port) < 0) {
 		return -1;
 	}
+#endif
+
 #endif
 
 	/* GPIOs */

@@ -14,6 +14,8 @@
 #ifndef _I2C_H_
 #define _I2C_H_
 
+#include <sys/msg.h>
+
 
 int i2c_handleMsg(msg_t *msg, int dev);
 

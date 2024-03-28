@@ -12,11 +12,13 @@
  */
 
 #include <errno.h>
-#include <string.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
-#include "trng.h"
 #include "common.h"
+#include "trng.h"
 
 /* clang-format off */
 

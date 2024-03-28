@@ -13,19 +13,18 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <string.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <unistd.h>
 #include <sys/msg.h>
-#include <posix/utils.h>
 #include <sys/platform.h>
 #include <sys/interrupt.h>
 #include <sys/threads.h>
-#include <phoenix/arch/armv7m/imxrt/11xx/imxrt1170.h>
-#include <board_config.h>
 
 #include <libtty-lf-fifo.h>
 
 #include "common.h"
+#include "cm4.h"
 
 #ifndef CM4_MU_CHANNELS
 #define CM4_MU_CHANNELS 4

@@ -11,11 +11,12 @@
  * %LICENSE%
  */
 
-#include <sys/msg.h>
 #include <errno.h>
+#include <stdint.h>
+#include <sys/msg.h>
 
 #include "common.h"
-#include "gpio.h"
+#include "i2c.h"
 
 #define I2C1_POS 0
 #define I2C2_POS (I2C1_POS + I2C1)

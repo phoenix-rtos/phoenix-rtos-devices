@@ -12,18 +12,11 @@
  */
 
 
-#include <string.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <errno.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <sys/threads.h>
-#include <sys/file.h>
 #include <sys/msg.h>
-#include <sys/pwman.h>
-#include <sys/interrupt.h>
 #include <sys/platform.h>
+#include <sys/threads.h>
 
 #include "common.h"
 #include "gpio.h"

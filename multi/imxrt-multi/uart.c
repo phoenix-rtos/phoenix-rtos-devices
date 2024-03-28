@@ -12,21 +12,17 @@
  */
 
 
-#include <string.h>
-#include <stdint.h>
-#include <stdio.h>
 #include <errno.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <sys/threads.h>
 #include <sys/file.h>
-#include <sys/msg.h>
-#include <sys/pwman.h>
 #include <sys/interrupt.h>
-#include <sys/platform.h>
+#include <sys/ioctl.h>
+#include <sys/msg.h>
+#include <sys/threads.h>
 
 #include <libtty.h>
-#include <board_config.h>
 
 #include "common.h"
 #include "uart.h"
@@ -454,6 +450,7 @@ static int uart_getIsel(int uart, int mux, int *isel, int *val)
 	return 0;
 }
 
+/* TODO: Support optional muxes/pads (RTS/CTS) */
 
 static void uart_initPins(void)
 {
@@ -610,52 +607,84 @@ static void uart_initPins(void)
 	int i, isel, val;
 	static const int muxes[] = {
 #if UART1
-		PIN2MUX(UART1_TX_PIN), PIN2MUX(UART1_RX_PIN),
+		PIN2MUX(UART1_TX_PIN),
+		PIN2MUX(UART1_RX_PIN),
+#if defined(UART1_RTS_PIN) && !ISEMPTY(UART1_RTS_PIN)
+		PIN2MUX(UART1_RTS_PIN),
 #endif
-#if UART1_HW_FLOWCTRL
-		PIN2MUX(UART1_RTS_PIN), PIN2MUX(UART1_CTS_PIN),
+#if defined(UART1_CTS_PIN) && !ISEMPTY(UART1_CTS_PIN)
+		PIN2MUX(UART1_CTS_PIN),
+#endif
 #endif
 #if UART2
-		PIN2MUX(UART2_TX_PIN), PIN2MUX(UART2_RX_PIN),
+		PIN2MUX(UART2_TX_PIN),
+		PIN2MUX(UART2_RX_PIN),
+#if defined(UART2_RTS_PIN) && !ISEMPTY(UART2_RTS_PIN)
+		PIN2MUX(UART2_RTS_PIN),
 #endif
-#if UART2_HW_FLOWCTRL
-		PIN2MUX(UART2_RTS_PIN), PIN2MUX(UART2_CTS_PIN),
+#if defined(UART2_CTS_PIN) && !ISEMPTY(UART2_CTS_PIN)
+		PIN2MUX(UART2_CTS_PIN),
+#endif
 #endif
 #if UART3
-		PIN2MUX(UART3_TX_PIN), PIN2MUX(UART3_RX_PIN),
+		PIN2MUX(UART3_TX_PIN),
+		PIN2MUX(UART3_RX_PIN),
+#if defined(UART3_RTS_PIN) && !ISEMPTY(UART3_RTS_PIN)
+		PIN2MUX(UART3_RTS_PIN),
 #endif
-#if UART3_HW_FLOWCTRL
-		PIN2MUX(UART3_RTS_PIN), PIN2MUX(UART3_CTS_PIN),
+#if defined(UART3_CTS_PIN) && !ISEMPTY(UART3_CTS_PIN)
+		PIN2MUX(UART3_CTS_PIN),
+#endif
 #endif
 #if UART4
-		PIN2MUX(UART4_TX_PIN), PIN2MUX(UART4_RX_PIN),
+		PIN2MUX(UART4_TX_PIN),
+		PIN2MUX(UART4_RX_PIN),
+#if defined(UART4_RTS_PIN) && !ISEMPTY(UART4_RTS_PIN)
+		PIN2MUX(UART4_RTS_PIN),
 #endif
-#if UART4_HW_FLOWCTRL
-		PIN2MUX(UART4_RTS_PIN), PIN2MUX(UART4_CTS_PIN),
+#if defined(UART4_CTS_PIN) && !ISEMPTY(UART4_CTS_PIN)
+		PIN2MUX(UART4_CTS_PIN),
+#endif
 #endif
 #if UART5
-		PIN2MUX(UART5_TX_PIN), PIN2MUX(UART5_RX_PIN),
+		PIN2MUX(UART5_TX_PIN),
+		PIN2MUX(UART5_RX_PIN),
+#if defined(UART5_RTS_PIN) && !ISEMPTY(UART5_RTS_PIN)
+		PIN2MUX(UART5_RTS_PIN),
 #endif
-#if UART5_HW_FLOWCTRL
-		PIN2MUX(UART5_RTS_PIN), PIN2MUX(UART5_CTS_PIN),
+#if defined(UART5_CTS_PIN) && !ISEMPTY(UART5_CTS_PIN)
+		PIN2MUX(UART5_CTS_PIN),
+#endif
 #endif
 #if UART6
-		PIN2MUX(UART6_TX_PIN), PIN2MUX(UART6_RX_PIN),
+		PIN2MUX(UART6_TX_PIN),
+		PIN2MUX(UART6_RX_PIN),
+#if defined(UART6_RTS_PIN) && !ISEMPTY(UART6_RTS_PIN)
+		PIN2MUX(UART6_RTS_PIN),
 #endif
-#if UART6_HW_FLOWCTRL
-		PIN2MUX(UART6_RTS_PIN), PIN2MUX(UART6_CTS_PIN),
+#if defined(UART6_CTS_PIN) && !ISEMPTY(UART6_CTS_PIN)
+		PIN2MUX(UART6_CTS_PIN),
+#endif
 #endif
 #if UART7
-		PIN2MUX(UART7_TX_PIN), PIN2MUX(UART7_RX_PIN),
+		PIN2MUX(UART7_TX_PIN),
+		PIN2MUX(UART7_RX_PIN),
+#if defined(UART7_RTS_PIN) && !ISEMPTY(UART7_RTS_PIN)
+		PIN2MUX(UART7_RTS_PIN),
 #endif
-#if UART7_HW_FLOWCTRL
-		PIN2MUX(UART7_RTS_PIN), PIN2MUX(UART7_CTS_PIN),
+#if defined(UART7_CTS_PIN) && !ISEMPTY(UART7_CTS_PIN)
+		PIN2MUX(UART7_CTS_PIN),
+#endif
 #endif
 #if UART8
-		PIN2MUX(UART8_TX_PIN), PIN2MUX(UART8_RX_PIN),
+		PIN2MUX(UART8_TX_PIN),
+		PIN2MUX(UART8_RX_PIN),
+#if defined(UART8_RTS_PIN) && !ISEMPTY(UART8_RTS_PIN)
+		PIN2MUX(UART8_RTS_PIN),
 #endif
-#if UART8_HW_FLOWCTRL
-		PIN2MUX(UART8_RTS_PIN), PIN2MUX(UART8_CTS_PIN),
+#if defined(UART8_CTS_PIN) && !ISEMPTY(UART8_CTS_PIN)
+		PIN2MUX(UART8_CTS_PIN),
+#endif
 #endif
 	};
 

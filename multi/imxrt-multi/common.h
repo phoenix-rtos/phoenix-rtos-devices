@@ -17,11 +17,8 @@
 #include <arch.h>
 
 #include "config.h"
+#include "helpers.h"
 #include "imxrt-multi.h"
-
-#define CONCATENATE(x, y) x##y
-#define PIN2MUX(x) CONCATENATE(pctl_mux_gpio_, x)
-#define PIN2PAD(x) CONCATENATE(pctl_pad_gpio_, x)
 
 
 extern unsigned int multi_port;
