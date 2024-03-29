@@ -673,12 +673,15 @@ static int flashsrv_mountPart(flashsrv_partition_t *part)
 				return res;
 			}
 
-			portCreate(&part->oid.port);
-			portRegister(part->oid.port, path, NULL);
+			res = portCreate(&part->oid.port);
+			if (res < 0) {
+				LOG_ERROR("imxrt-flashsrv: portCreate %s - err: %d", path, res);
+				return res;
+			}
 
 			res = create_dev(&part->oid, path);
 			if (res < 0) {
-				LOG_ERROR("imxrt-flashsrv: create %s - err: %d", path, res);
+				LOG_ERROR("imxrt-flashsrv: create_dev %s - err: %d", path, res);
 				return res;
 			}
 
@@ -826,18 +829,27 @@ static int flashsrv_flashMemoriesInit(void)
 			return -ENOENT;
 		}
 
-		portCreate(&memory->fOid.port);
-		portCreate(&memory->rawPort);
+		snprintf(path, sizeof(path), "/dev/flash%d", memory->fOid.id);
+
+		err = portCreate(&memory->fOid.port);
+		if (err < 0) {
+			LOG_ERROR("imxrt-flashsrv: portCreate %s - err: %d", path, err);
+			return err;
+		}
+
+		err = portCreate(&memory->rawPort);
+		if (err < 0) {
+			LOG_ERROR("imxrt-flashsrv: portCreate %s.raw - err: %d", path, err);
+			return err;
+		}
 
 		memory->fOid.id = i;
 		memory->rawActive = 0;
 		memory->pCnt = 0;
 
-		snprintf(path, sizeof(path), "/dev/flash%d", memory->fOid.id);
-
 		err = create_dev(&memory->fOid, path);
 		if (err < 0) {
-			LOG_ERROR("imxrt-flashsrv: create %s - err: %d", path, err);
+			LOG_ERROR("imxrt-flashsrv: create_dev %s - err: %d", path, err);
 			return err;
 		}
 
