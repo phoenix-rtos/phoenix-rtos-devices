@@ -32,6 +32,9 @@
 
 #define CHUNK_IS_META(chunkidx) ((chunkidx) == 0)
 
+#define BLK_CACHE_SECNUM 1024 /* Maximum number of cached sectors in a region */
+#define LIBCACHE_POLICY  LIBCACHE_WRITE_THROUGH
+
 
 /* Auxiliary functions */
 static inline int chunk_is_uncorrectable(unsigned int chunkidx, unsigned int flips)
@@ -247,53 +250,7 @@ static int _flashmtd_checkECC(struct _storage_t *strg, uint32_t pageaddr, int nc
 }
 
 
-/* MTD interface */
-
-static int flashmtd_erase(struct _storage_t *strg, off_t offs, size_t size)
-{
-	int res;
-	uint32_t pageID;
-	uint32_t eb, startBlock, endBlock, erased = 0; /* values in erase block units */
-	unsigned int pagesPerBlock;
-
-	if ((offs % strg->dev->mtd->erasesz) != 0 || (size % strg->dev->mtd->erasesz) != 0) {
-		return -EINVAL;
-	}
-
-	startBlock = offs / strg->dev->mtd->erasesz;
-	endBlock = (offs + size) / strg->dev->mtd->erasesz;
-	pagesPerBlock = strg->dev->mtd->erasesz / strg->dev->mtd->writesz;
-
-	mutexLock(strg->dev->ctx->lock);
-	for (eb = startBlock; eb < endBlock; ++eb) {
-		pageID = eb * pagesPerBlock;
-
-		res = flashdrv_isbad(strg->dev->ctx->dma, pageID);
-		if (res != 0) {
-			printf("flashmtd_erase: skipping bad block: %u\n", eb);
-			continue;
-		}
-
-		res = flashdrv_erase(strg->dev->ctx->dma, pageID);
-		if (res < 0) {
-			printf("flashmtd_erase: error while erasing block: %u - marking as badblock\n", eb);
-			res = flashdrv_markbad(strg->dev->ctx->dma, pageID);
-			if (res < 0) {
-				mutexUnlock(strg->dev->ctx->lock);
-				return res; /* can't mark as badblock, urecoverable error */
-			}
-		}
-		else {
-			++erased;
-		}
-	}
-	mutexUnlock(strg->dev->ctx->lock);
-
-	return erased;
-}
-
-
-static int flashmtd_read(struct _storage_t *strg, off_t offs, void *data, size_t len, size_t *retlen)
+static int _flashmtd_read(struct _storage_t *strg, off_t offs, void *data, size_t len, size_t *retlen)
 {
 	uint32_t paddr;
 	int err, ret = EOK;
@@ -304,7 +261,6 @@ static int flashmtd_read(struct _storage_t *strg, off_t offs, void *data, size_t
 	paddr = offs / strg->dev->mtd->writesz;
 	offs %= strg->dev->mtd->writesz;
 
-	mutexLock(strg->dev->ctx->lock);
 	while (tempsz < len) {
 		/* TODO: should we skip badblocks ? */
 		err = flashdrv_read(strg->dev->ctx->dma, paddr, strg->dev->ctx->databuf, meta);
@@ -334,23 +290,17 @@ static int flashmtd_read(struct _storage_t *strg, off_t offs, void *data, size_t
 		paddr++;
 	}
 	*retlen = tempsz;
-	mutexUnlock(strg->dev->ctx->lock);
 
 	return ret;
 }
 
 
-static int flashmtd_write(struct _storage_t *strg, off_t offs, const void *data, size_t len, size_t *retlen)
+static int _flashmtd_write(struct _storage_t *strg, off_t offs, const void *data, size_t len, size_t *retlen)
 {
 	ssize_t res = 0;
 	blkcnt_t pageID;
 	size_t tempsz = 0;
 
-	if ((offs % strg->dev->mtd->writesz) != 0 || (len % strg->dev->mtd->writesz) != 0) {
-		return -EINVAL;
-	}
-
-	mutexLock(strg->dev->ctx->lock);
 	while (tempsz < len) {
 		/* TODO: should we skip badblocks ? */
 		memcpy(strg->dev->ctx->databuf, (unsigned char *)data + tempsz, strg->dev->mtd->writesz);
@@ -366,9 +316,46 @@ static int flashmtd_write(struct _storage_t *strg, off_t offs, const void *data,
 		offs += strg->dev->mtd->writesz;
 	}
 	*retlen = tempsz;
-	mutexUnlock(strg->dev->ctx->lock);
 
-	return res < 0 ? res : EOK;
+	return (res < 0) ? res : EOK;
+}
+
+
+static ssize_t _flashmtd_readCb(uint64_t offs, void *buff, size_t len, cache_devCtx_t *ctx)
+{
+	storage_t *strg = ctx->strg;
+	size_t retlen;
+	ssize_t ret;
+
+	offs += strg->start;
+
+	ret = _flashmtd_read(strg, offs, buff, len, &retlen);
+	if (ret < 0) {
+		return ret;
+	}
+
+	return (ssize_t)retlen;
+}
+
+
+static ssize_t _flashmtd_writeCb(uint64_t offs, const void *buff, size_t len, cache_devCtx_t *ctx)
+{
+	storage_t *strg = ctx->strg;
+	size_t retlen;
+	ssize_t ret;
+
+	offs += strg->start;
+
+	if ((offs % strg->dev->mtd->writesz) != 0 || (len % strg->dev->mtd->writesz) != 0) {
+		return -EINVAL;
+	}
+
+	ret = _flashmtd_write(strg, offs, buff, len, &retlen);
+	if (ret < 0) {
+		return ret;
+	}
+
+	return (ssize_t)retlen;
 }
 
 
@@ -448,6 +435,94 @@ static int flashmtd_metaWrite(struct _storage_t *strg, off_t offs, const void *d
 	mutexUnlock(strg->dev->ctx->lock);
 
 	return res < 0 ? res : EOK;
+}
+
+
+/* MTD interface */
+
+static int flashmtd_erase(struct _storage_t *strg, off_t offs, size_t size)
+{
+	int res;
+	uint32_t pageID;
+	uint32_t eb, startBlock, endBlock, erased = 0; /* values in erase block units */
+	unsigned int pagesPerBlock;
+
+	if ((offs % strg->dev->mtd->erasesz) != 0 || (size % strg->dev->mtd->erasesz) != 0) {
+		return -EINVAL;
+	}
+
+	startBlock = offs / strg->dev->mtd->erasesz;
+	endBlock = (offs + size) / strg->dev->mtd->erasesz;
+	pagesPerBlock = strg->dev->mtd->erasesz / strg->dev->mtd->writesz;
+
+	mutexLock(strg->dev->ctx->lock);
+	for (eb = startBlock; eb < endBlock; ++eb) {
+		pageID = eb * pagesPerBlock;
+
+		res = flashdrv_isbad(strg->dev->ctx->dma, pageID);
+		if (res != 0) {
+			printf("flashmtd_erase: skipping bad block: %u\n", eb);
+			continue;
+		}
+
+		res = flashdrv_erase(strg->dev->ctx->dma, pageID);
+		if (res < 0) {
+			printf("flashmtd_erase: error while erasing block: %u - marking as badblock\n", eb);
+			res = flashdrv_markbad(strg->dev->ctx->dma, pageID);
+			if (res < 0) {
+				mutexUnlock(strg->dev->ctx->lock);
+				return res; /* can't mark as badblock, urecoverable error */
+			}
+		}
+		else {
+			++erased;
+		}
+	}
+	off_t start = offs - strg->start;
+	off_t end = start + size;
+	(void)cache_invalidate(strg->dev->ctx->dcache, start, end);
+	mutexUnlock(strg->dev->ctx->lock);
+
+	return erased;
+}
+
+
+static int flashmtd_read(struct _storage_t *strg, off_t offs, void *data, size_t len, size_t *retlen)
+{
+	mutexLock(strg->dev->ctx->lock);
+
+	off_t start = offs - strg->start;
+	int ret = cache_read(strg->dev->ctx->dcache, start, data, len);
+
+	mutexUnlock(strg->dev->ctx->lock);
+	if (ret >= 0) {
+		*retlen = len;
+		return EOK;
+	}
+
+	return ret;
+}
+
+
+static int flashmtd_write(struct _storage_t *strg, off_t offs, const void *data, size_t len, size_t *retlen)
+{
+	if ((offs % strg->dev->mtd->writesz) != 0 || (len % strg->dev->mtd->writesz) != 0) {
+		return -EINVAL;
+	}
+
+	mutexLock(strg->dev->ctx->lock);
+
+	off_t start = offs - strg->start;
+	ssize_t ret = cache_write(strg->dev->ctx->dcache, start, data, len, LIBCACHE_POLICY);
+
+	mutexUnlock(strg->dev->ctx->lock);
+
+	if (ret >= 0) {
+		*retlen = len;
+		return EOK;
+	}
+
+	return ret;
 }
 
 
@@ -559,6 +634,7 @@ static const storage_mtdops_t mtdOps = {
 int flashdev_done(storage_t *strg)
 {
 	/* Free device context */
+	cache_deinit(strg->dev->ctx->dcache);
 	munmap(strg->dev->ctx->metabuf, strg->dev->mtd->writesz);
 	munmap(strg->dev->ctx->databuf, 2 * strg->dev->mtd->writesz);
 	flashdrv_dmadestroy(strg->dev->ctx->dma);
@@ -656,6 +732,24 @@ int flashdev_init(storage_t *strg)
 
 	/* NAND does not support block device yet */
 	strg->dev->blk = NULL;
+
+	cache_ops_t cacheOps = {
+		.readCb = _flashmtd_readCb,
+		.writeCb = _flashmtd_writeCb,
+		.ctx = &strg->dev->ctx->dcacheCtx
+	};
+	strg->dev->ctx->dcache = cache_init(strg->size, info->writesz, BLK_CACHE_SECNUM, &cacheOps);
+	if (strg->dev->ctx->dcache == NULL) {
+		free(strg->dev->mtd);
+		resourceDestroy(strg->dev->ctx->lock);
+		munmap(strg->dev->ctx->metabuf, info->writesz);
+		munmap(strg->dev->ctx->databuf, 2 * info->writesz);
+		flashdrv_dmadestroy(strg->dev->ctx->dma);
+		free(strg->dev->ctx);
+		free(strg->dev);
+		return -ENOMEM;
+	}
+	strg->dev->ctx->dcacheCtx.strg = strg;
 
 	return EOK;
 }

@@ -337,9 +337,12 @@ static ssize_t flashsrv_devWriteRaw(id_t id, flash_i_devctl_t *idevctl, const ch
 	if ((rawsz % rawPagesz) != 0 || (rawoffs % rawPagesz) != 0) {
 		return -EINVAL;
 	}
-	rawoffs += (strg->start / strg->dev->mtd->erasesz) * rawEraseBlockSz;
 
 	mutexLock(strg->dev->ctx->lock);
+	cache_invalidate(strg->dev->ctx->dcache, rawoffs, rawsz);
+
+	rawoffs += (strg->start / strg->dev->mtd->erasesz) * rawEraseBlockSz;
+
 	while (tempsz < rawsz) {
 		memcpy(strg->dev->ctx->databuf, data + tempsz, rawPagesz);
 
