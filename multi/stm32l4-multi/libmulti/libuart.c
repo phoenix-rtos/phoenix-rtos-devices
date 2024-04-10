@@ -139,9 +139,15 @@ static int libuart_rxirq(unsigned int n, void *arg)
 			ctx->data.irq.rxdr = libuart_incrementWrap(ctx->data.irq.rxdr, ctx->data.irq.rxdfifosz);
 			ctx->data.irq.rxbeg += 1;
 			*ctx->data.irq.read += 1;
+
+			if (ctx->data.irq.rxbeg >= ctx->data.irq.rxend) {
+				ctx->data.irq.rxbeg = NULL;
+				release = 1;
+				break;
+			}
 		}
 
-		if ((ctx->data.irq.rxbeg == ctx->data.irq.rxend) || (ctx->data.irq.rxnblock != 0)) {
+		if (ctx->data.irq.rxnblock != 0) {
 			ctx->data.irq.rxbeg = NULL;
 			release = 1;
 		}
