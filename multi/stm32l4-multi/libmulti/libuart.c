@@ -262,8 +262,10 @@ static int libuart_irqWrite(libuart_ctx *ctx, const void *buff, unsigned int buf
 
 	keepidle(1);
 
-	ctx->data.irq.txbeg = (void *)((unsigned char *)buff);
+	assert(ctx->data.irq.txbeg == NULL);
+
 	ctx->data.irq.txend = (void *)((unsigned char *)buff + bufflen);
+	ctx->data.irq.txbeg = (void *)((unsigned char *)buff);
 	*(ctx->base + cr1) |= 1 << 7;
 
 	while (ctx->data.irq.txbeg != NULL) {
