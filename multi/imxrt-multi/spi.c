@@ -395,9 +395,23 @@ static int spi_getIsel(int mux, int *isel, int *val)
 static int spi_muxVal(int spi, int mux)
 {
 	if ((mux >= pctl_mux_gpio_lpsr_06 &&
-			mux <= pctl_mux_gpio_lpsr_08) ||
-			mux == pctl_mux_gpio_lpsr_12)
-		return (spi == 5) ? 4 : 8;
+					mux <= pctl_mux_gpio_lpsr_08) ||
+					mux == pctl_mux_gpio_lpsr_12) {
+		/*
+		 * Note that SPIs are numbered from zero in the configuration structure.
+		 * Physical SPI5 corresponds to SPI4 in SPI init struct and
+		 * physical SPI6 corresponds to SPI5 in SPI init struct (see static void spi_initPins()).
+		 */
+		if (spi == 4) {
+			return 8;
+		}
+		else if (spi == 5) {
+			return 4;
+		}
+		else {
+			return -1;
+		}
+	}
 
 	switch (mux) {
 		case pctl_mux_gpio_ad_28 :
@@ -445,6 +459,22 @@ static int spi_muxVal(int spi, int mux)
 		case pctl_mux_gpio_sd_b2_11 :
 			return 6;
 
+		case pctl_mux_gpio_emc_b2_00 :
+		case pctl_mux_gpio_emc_b2_01 :
+		case pctl_mux_gpio_emc_b2_02 :
+		case pctl_mux_gpio_emc_b2_03 :
+		case pctl_mux_gpio_emc_b2_04 :
+		case pctl_mux_gpio_emc_b2_05 :
+		case pctl_mux_gpio_emc_b2_06 :
+		case pctl_mux_gpio_emc_b2_07 :
+		case pctl_mux_gpio_emc_b2_08 :
+		case pctl_mux_gpio_emc_b2_09 :
+		case pctl_mux_gpio_emc_b2_10 :
+		case pctl_mux_gpio_lpsr_13 :
+		case pctl_mux_gpio_lpsr_14 :
+		case pctl_mux_gpio_lpsr_15 :
+			return 8;
+
 		case pctl_mux_gpio_disp_b1_04 :
 		case pctl_mux_gpio_disp_b1_05 :
 		case pctl_mux_gpio_disp_b1_06 :
@@ -459,7 +489,7 @@ static int spi_muxVal(int spi, int mux)
 			return 9;
 
 		default :
-			return 8;
+			return -1;
 	}
 }
 
@@ -581,10 +611,13 @@ static void spi_initPins(void)
 	};
 
 	for (i = 0; i < sizeof(info) / sizeof(info[0]); ++i) {
-		common_setMux(info[i].mux, 0, spi_muxVal(info[i].spi, info[i].mux));
-
-		if (spi_getIsel(info[i].mux, &isel, &val) == 0) {
-			common_setInput(isel, val);
+		/* Check mux value validity. If invalid don't change gpio mux settings */
+		int muxVal = spi_muxVal(info[i].spi, info[i].mux);
+		if (muxVal >= 0) {
+			common_setMux(info[i].mux, 0, muxVal);
+			if (spi_getIsel(info[i].mux, &isel, &val) == 0) {
+				common_setInput(isel, val);
+			}
 		}
 	}
 }
