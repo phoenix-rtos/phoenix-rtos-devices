@@ -129,7 +129,9 @@ static void signal_txready(void *arg)
 	condSignal(uart->intcond);
 }
 
-
+#ifdef __TARGET_RISCV64
+__attribute__((section(".interrupt"), aligned(0x1000)))
+#endif
 static int uart_interrupt(unsigned int n, void *arg)
 {
 	return ((uart_t *)arg)->intcond;
