@@ -400,7 +400,7 @@ static int usbacm_write(usbacm_dev_t *dev, const char *data, size_t len)
 	int ret = 0;
 
 	TRACE("write: len=%u, flags=%u", len, dev->flags);
-	if ((ret = usb_transferBulk(dev->pipeBulkOUT, data, len, usb_dir_out)) <= 0) {
+	if ((ret = usb_transferBulk(dev->pipeBulkOUT, (void *)data, len, usb_dir_out)) <= 0) {
 		fprintf(stderr, "usbacm: write failed\n");
 		ret = -EIO;
 	}
