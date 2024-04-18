@@ -3,7 +3,7 @@
  *
  * i.MX RT1060 definitions
  *
- * Copyright 2019 Phoenix Systems
+ * Copyright 2019, 2024 Phoenix Systems
  * Author: Aleksander Kaminski
  *
  * This file is part of Phoenix-RTOS.
@@ -126,192 +126,143 @@
 
 #define TRNG_BASE ((void *)0x400cc000)
 
-#define UART1_TX_PIN ad_b0_12
-#define UART1_RX_PIN ad_b0_13
-#define UART1_RTS_PIN ad_b0_15
-#define UART1_CTS_PIN ad_b0_14
 
-#ifndef UART2_TX_PIN
-#define UART2_TX_PIN ad_b1_02
-//#define UART2_TX_PIN sd_b1_11
-#endif
-#ifndef UART2_RX_PIN
-#define UART2_RX_PIN ad_b1_03
-//#define UART2_RX_PIN sd_b1_10
-#endif
-#define UART2_RTS_PIN ad_b1_01
-#define UART2_CTS_PIN ad_b1_00
+/* TODO: Remove *_DEFAULT defines together with deprecation warnings in config.h */
 
-#ifndef UART3_TX_PIN
-#define UART3_TX_PIN emc_13
-//#define UART3_TX_PIN ad_b1_06
-//#define UART3_TX_PIN b0_08
-#endif
-#ifndef UART3_RX_PIN
-#define UART3_RX_PIN emc_14
-//#define UART3_RX_PIN ad_b1_07
-//#define UART3_RX_PIN b0_09
-#endif
-#ifndef UART3_RTS_PIN
-#define UART3_RTS_PIN emc_16
-//#define UART3_RTS_PIN ad_b1_05
-#endif
-#ifndef UART3_CTS_PIN
-#define UART3_CTS_PIN emc_15
-//#define UART3_CTS_PIN ad_b1_04
-#endif
+#define UART1_TX_PIN_DEFAULT  ad_b0_12
+#define UART1_RX_PIN_DEFAULT  ad_b0_13
+#define UART1_RTS_PIN_DEFAULT ad_b0_15
+#define UART1_CTS_PIN_DEFAULT ad_b0_14
 
-#ifndef UART4_TX_PIN
-#define UART4_TX_PIN emc_19
-//#define UART4_TX_PIN b1_00
-//#define UART4_TX_PIN sd_b1_00
-#endif
-#ifndef UART4_RX_PIN
-#define UART4_RX_PIN emc_20
-//#define UART4_RX_PIN b1_01
-//#define UART4_RX_PIN sd_b1_01
-#endif
-#define UART4_RTS_PIN emc_18
-#define UART4_CTS_PIN emc_17
+#define UART2_TX_PIN_DEFAULT ad_b1_02
+// #define UART2_TX_PIN_DEFAULT sd_b1_11
+#define UART2_RX_PIN_DEFAULT ad_b1_03
+// #define UART2_RX_PIN_DEFAULT sd_b1_10
+#define UART2_RTS_PIN_DEFAULT ad_b1_01
+#define UART2_CTS_PIN_DEFAULT ad_b1_00
 
-#ifndef UART5_TX_PIN
-#define UART5_TX_PIN emc_23
-//#define UART5_TX_PIN b1_12
-#endif
-#ifndef UART5_RX_PIN
-#define UART5_RX_PIN emc_24
-//#define UART5_RX_PIN b1_13
-#endif
-#define UART5_RTS_PIN emc_27
-#define UART5_CTS_PIN emc_28
+#define UART3_TX_PIN_DEFAULT emc_13
+// #define UART3_TX_PIN_DEFAULT ad_b1_06
+// #define UART3_TX_PIN_DEFAULT b0_08
+#define UART3_RX_PIN_DEFAULT emc_14
+// #define UART3_RX_PIN_DEFAULT ad_b1_07
+// #define UART3_RX_PIN_DEFAULT b0_09
+#define UART3_RTS_PIN_DEFAULT emc_16
+// #define UART3_RTS_PIN_DEFAULT ad_b1_05
+#define UART3_CTS_PIN_DEFAULT emc_15
+// #define UART3_CTS_PIN_DEFAULT ad_b1_04
 
-#ifndef UART6_TX_PIN
-#define UART6_TX_PIN emc_25
-//#define UART6_TX_PIN ad_b0_12
-#endif
-#ifndef UART6_RX_PIN
-#define UART6_RX_PIN emc_26
-//#define UART6_RX_PIN ad_b0_03
-#endif
-#define UART6_RTS_PIN emc_29
-#define UART6_CTS_PIN emc_30
+#define UART4_TX_PIN_DEFAULT emc_19
+// #define UART4_TX_PIN_DEFAULT b1_00
+// #define UART4_TX_PIN_DEFAULT sd_b1_00
+#define UART4_RX_PIN_DEFAULT emc_20
+// #define UART4_RX_PIN_DEFAULT b1_01
+// #define UART4_RX_PIN_DEFAULT sd_b1_01
+#define UART4_RTS_PIN_DEFAULT emc_18
+#define UART4_CTS_PIN_DEFAULT emc_17
 
-#ifndef UART7_TX_PIN
-#define UART7_TX_PIN emc_31
-//#define UART7_TX_PIN sd_b1_08
-#endif
-#ifndef UART7_RX_PIN
-#define UART7_RX_PIN emc_32
-//#define UART7_RX_PIN sd_b1_09
-#endif
-#define UART7_RTS_PIN sd_b1_07
-#define UART7_CTS_PIN sd_b1_06
+#define UART5_TX_PIN_DEFAULT emc_23
+// #define UART5_TX_PIN_DEFAULT b1_12
+#define UART5_RX_PIN_DEFAULT emc_24
+// #define UART5_RX_PIN_DEFAULT b1_13
+#define UART5_RTS_PIN_DEFAULT emc_27
+#define UART5_CTS_PIN_DEFAULT emc_28
 
-#ifndef UART8_TX_PIN
-#define UART8_TX_PIN emc_38
-//#define UART8_TX_PIN ad_b1_10
-//#define UART8_TX_PIN sd_b0_04
-#endif
-#ifndef UART8_RX_PIN
-#define UART8_RX_PIN emc_39
-//#define UART8_RX_PIN ad_b1_11
-//#define UART8_RX_PIN sd_b0_05
-#endif
-#define UART8_RTS_PIN sd_b0_03
-#define UART8_CTS_PIN sd_b0_02
+#define UART6_TX_PIN_DEFAULT emc_25
+// #define UART6_TX_PIN_DEFAULT ad_b0_12
+#define UART6_RX_PIN_DEFAULT emc_26
+// #define UART6_RX_PIN_DEFAULT ad_b0_03
+#define UART6_RTS_PIN_DEFAULT emc_29
+#define UART6_CTS_PIN_DEFAULT emc_30
 
-#ifndef SPI1_SCK
-#define SPI1_SCK sd_b0_00
-#endif
-#ifndef SPI1_SD0
-#define SPI1_SD0 sd_b0_02
-#endif
-#ifndef SPI1_SDI
-#define SPI1_SDI sd_b0_03
-#endif
-#ifndef SPI1_PCS0
-#define SPI1_PCS0 sd_b0_01
-#endif
+#define UART7_TX_PIN_DEFAULT emc_31
+// #define UART7_TX_PIN_DEFAULT sd_b1_08
+#define UART7_RX_PIN_DEFAULT emc_32
+// #define UART7_RX_PIN_DEFAULT sd_b1_09
+#define UART7_RTS_PIN_DEFAULT sd_b1_07
+#define UART7_CTS_PIN_DEFAULT sd_b1_06
+
+#define UART8_TX_PIN_DEFAULT emc_38
+// #define UART8_TX_PIN_DEFAULT ad_b1_10
+// #define UART8_TX_PIN_DEFAULT sd_b0_04
+#define UART8_RX_PIN_DEFAULT emc_39
+// #define UART8_RX_PIN_DEFAULT ad_b1_11
+// #define UART8_RX_PIN_DEFAULT sd_b0_05
+#define UART8_RTS_PIN_DEFAULT sd_b0_03
+#define UART8_CTS_PIN_DEFAULT sd_b0_02
 
 
-#ifndef SPI2_SCK
-#define SPI2_SCK sd_b1_07
-#endif
-#ifndef SPI2_SD0
-#define SPI2_SD0 sd_b1_08
-#endif
-#ifndef SPI2_SDI
-#define SPI2_SDI sd_b1_09
-#endif
-#ifndef SPI2_PCS0
-#define SPI2_PCS0 sd_b1_06
-#endif
+#define SPI1_SCK_DEFAULT  sd_b0_00
+#define SPI1_SDO_DEFAULT  sd_b0_02
+#define SPI1_SDI_DEFAULT  sd_b0_03
+#define SPI1_PCS0_DEFAULT sd_b0_01
+#define SPI1_PCS1_DEFAULT
+#define SPI1_PCS2_DEFAULT
+#define SPI1_PCS3_DEFAULT
+
+#define SPI2_SCK_DEFAULT  sd_b1_07
+#define SPI2_SDO_DEFAULT  sd_b1_08
+#define SPI2_SDI_DEFAULT  sd_b1_09
+#define SPI2_PCS0_DEFAULT sd_b1_06
+#define SPI2_PCS1_DEFAULT
+#define SPI2_PCS2_DEFAULT
+#define SPI2_PCS3_DEFAULT
+
+#define SPI3_SCK_DEFAULT  ad_b0_00
+#define SPI3_SDO_DEFAULT  ad_b0_01
+#define SPI3_SDI_DEFAULT  ad_b0_02
+#define SPI3_PCS0_DEFAULT ad_b0_03
+#define SPI3_PCS1_DEFAULT
+#define SPI3_PCS2_DEFAULT
+#define SPI3_PCS3_DEFAULT
+
+#define SPI4_SCK_DEFAULT  b0_03
+#define SPI4_SDO_DEFAULT  b0_02
+#define SPI4_SDI_DEFAULT  b0_01
+#define SPI4_PCS0_DEFAULT b0_00
+#define SPI4_PCS1_DEFAULT
+#define SPI4_PCS2_DEFAULT
+#define SPI4_PCS3_DEFAULT
 
 
-#ifndef SPI3_SCK
-#define SPI3_SCK ad_b0_00
-#endif
-#ifndef SPI3_SD0
-#define SPI3_SD0 ad_b0_01
-#endif
-#ifndef SPI3_SDI
-#define SPI3_SDI ad_b0_02
-#endif
-#ifndef SPI3_PCS0
-#define SPI3_PCS0 ad_b0_03
-#endif
-
-
-#ifndef SPI4_SCK
-#define SPI4_SCK b0_03
-#endif
-#ifndef SPI4_SD0
-#define SPI4_SD0 b0_02
-#endif
-#ifndef SPI4_SDI
-#define SPI4_SDI b0_01
-#endif
-#ifndef SPI4_PCS0
-#define SPI4_PCS0 b0_00
-#endif
-
+/* TODO: Take care of I2C (defines + implementation) */
 
 #ifndef I2C1_SCL_PIN
 #define I2C1_SCL_PIN ad_b1_00
-//#define I2C1_SCL_PIN sd_b1_04
+// #define I2C1_SCL_PIN sd_b1_04
 #endif
 #ifndef I2C1_SDA_PIN
 #define I2C1_SDA_PIN ad_b1_01
-//#define I2C1_SDA_PIN sd_b1_05
+// #define I2C1_SDA_PIN sd_b1_05
 #endif
 
 #ifndef I2C2_SCL_PIN
 #define I2C2_SCL_PIN b0_04
-//#define I2C2_SCL_PIN sd_b1_11
+// #define I2C2_SCL_PIN sd_b1_11
 #endif
 #ifndef I2C2_SDA_PIN
 #define I2C2_SDA_PIN b0_05
-//#define I2C2_SDA_PIN sd_b1_10
+// #define I2C2_SDA_PIN sd_b1_10
 #endif
 
 #ifndef I2C3_SCL_PIN
 #define I2C3_SCL_PIN ad_b1_07
-//#define I2C3_SCL_PIN emc_22
-//#define I2C3_SCL_PIN sd_b0_00
+// #define I2C3_SCL_PIN emc_22
+// #define I2C3_SCL_PIN sd_b0_00
 #endif
 #ifndef I2C3_SDA_PIN
 #define I2C3_SDA_PIN ad_b1_06
-//#define I2C3_SDA_PIN emc_21
-//#define I2C3_SDA_PIN sd_b0_01
+// #define I2C3_SDA_PIN emc_21
+// #define I2C3_SDA_PIN sd_b0_01
 #endif
 
 #ifndef I2C4_SCL_PIN
 #define I2C4_SCL_PIN ad_b0_12
-//#define I2C4_SCL_PIN emc_12
+// #define I2C4_SCL_PIN emc_12
 #endif
 #ifndef I2C4_SDA_PIN
 #define I2C4_SDA_PIN ad_b0_13
-//#define I2C4_SDA_PIN emc_11
+// #define I2C4_SDA_PIN emc_11
 #endif
 
 
