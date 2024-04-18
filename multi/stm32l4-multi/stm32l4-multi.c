@@ -39,9 +39,14 @@
 #include "uart.h"
 #include "rng.h"
 
-#define THREADS_NO 3
+
+#if ((MULTIDRV_INTERFACE_THREADS) < 2)
+#error "At least two interface threads required"
+#endif
+
+#define THREADS_NO       MULTIDRV_INTERFACE_THREADS
 #define THREADS_PRIORITY 1
-#define STACKSZ 640
+#define STACKSZ          640
 
 
 #if (UART1 && TTY1) || (UART2 && TTY2) || (UART3 && TTY3) || \

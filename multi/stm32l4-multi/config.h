@@ -15,6 +15,10 @@
 
 #include <board_config.h>
 
+#ifndef MULTIDRV_INTERFACE_THREADS
+#define MULTIDRV_INTERFACE_THREADS 3
+#endif
+
 /* UART */
 #ifndef UART1
 #define UART1 0
