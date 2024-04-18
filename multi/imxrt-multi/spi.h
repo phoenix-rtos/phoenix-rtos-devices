@@ -15,6 +15,8 @@
 #ifndef _SPI_H_
 #define _SPI_H_
 
+#include <sys/msg.h>
+
 
 int spi_handleMsg(msg_t *msg, int dev);
 
