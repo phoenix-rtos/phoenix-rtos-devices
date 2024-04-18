@@ -15,6 +15,10 @@
 #ifndef _CONFIG_H_
 #define _CONFIG_H_
 
+#include "helpers.h"
+
+#include <board_config.h>
+
 #if defined(__CPU_IMXRT105X)
 #include "imxrt1050.h"
 #elif defined(__CPU_IMXRT106X)
@@ -25,6 +29,7 @@
 #warning "No target specified! Falling back to default"
 #include "imxrt1060.h"
 #endif
+
 
 #ifndef IMXRT_MULTI_PRIO
 #define IMXRT_MULTI_PRIO 2

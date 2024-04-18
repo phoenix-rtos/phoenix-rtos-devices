@@ -12,17 +12,13 @@
  */
 
 
-#include <sys/interrupt.h>
-#include <sys/threads.h>
-#include <sys/pwman.h>
-#include <sys/msg.h>
-#include <unistd.h>
 #include <errno.h>
+#include <stdint.h>
+#include <sys/interrupt.h>
+#include <sys/msg.h>
+#include <sys/threads.h>
 
-#include <board_config.h>
-#include "imxrt-multi.h"
 #include "common.h"
-#include "config.h"
 #include "spi.h"
 
 #define SPI1_POS 0

@@ -29,7 +29,6 @@
 
 #include <phoenix/ioctl.h>
 #include <posix/utils.h>
-#include <board_config.h>
 
 #include "common.h"
 
