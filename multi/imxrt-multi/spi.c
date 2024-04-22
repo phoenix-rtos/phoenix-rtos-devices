@@ -394,9 +394,8 @@ static int spi_getIsel(int mux, int *isel, int *val)
 
 static int spi_muxVal(int spi, int mux)
 {
-	if ((mux >= pctl_mux_gpio_lpsr_06 &&
-					mux <= pctl_mux_gpio_lpsr_08) ||
-					mux == pctl_mux_gpio_lpsr_12) {
+	if ((mux >= pctl_mux_gpio_lpsr_06 && mux <= pctl_mux_gpio_lpsr_08) ||
+		mux == pctl_mux_gpio_lpsr_12) {
 		/*
 		 * Note that SPIs are numbered from zero in the configuration structure.
 		 * Physical SPI5 corresponds to SPI4 in SPI init struct and
@@ -414,78 +413,78 @@ static int spi_muxVal(int spi, int mux)
 	}
 
 	switch (mux) {
-		case pctl_mux_gpio_ad_28 :
-		case pctl_mux_gpio_ad_29 :
-		case pctl_mux_gpio_ad_30 :
-		case pctl_mux_gpio_ad_31 :
+		case pctl_mux_gpio_ad_28:
+		case pctl_mux_gpio_ad_29:
+		case pctl_mux_gpio_ad_30:
+		case pctl_mux_gpio_ad_31:
 			return 0;
 
-		case pctl_mux_gpio_ad_24 :
-		case pctl_mux_gpio_ad_25 :
-		case pctl_mux_gpio_ad_26 :
-		case pctl_mux_gpio_ad_27 :
-		case pctl_mux_gpio_lpsr_02 :
-		case pctl_mux_gpio_lpsr_03 :
-		case pctl_mux_gpio_lpsr_04 :
-		case pctl_mux_gpio_lpsr_05 :
+		case pctl_mux_gpio_ad_24:
+		case pctl_mux_gpio_ad_25:
+		case pctl_mux_gpio_ad_26:
+		case pctl_mux_gpio_ad_27:
+		case pctl_mux_gpio_lpsr_02:
+		case pctl_mux_gpio_lpsr_03:
+		case pctl_mux_gpio_lpsr_04:
+		case pctl_mux_gpio_lpsr_05:
 			return 1;
 
-		case pctl_mux_gpio_ad_18 :
-		case pctl_mux_gpio_ad_19 :
-		case pctl_mux_gpio_ad_20 :
-		case pctl_mux_gpio_ad_21 :
-		case pctl_mux_gpio_ad_22 :
-		case pctl_mux_gpio_ad_23 :
+		case pctl_mux_gpio_ad_18:
+		case pctl_mux_gpio_ad_19:
+		case pctl_mux_gpio_ad_20:
+		case pctl_mux_gpio_ad_21:
+		case pctl_mux_gpio_ad_22:
+		case pctl_mux_gpio_ad_23:
 			return 2;
 
-		case pctl_mux_gpio_sd_b2_06 :
+		case pctl_mux_gpio_sd_b2_06:
 			return 3;
 
-		case pctl_mux_gpio_sd_b2_00 :
-		case pctl_mux_gpio_sd_b2_01 :
-		case pctl_mux_gpio_sd_b2_02 :
-		case pctl_mux_gpio_sd_b2_03 :
-		case pctl_mux_gpio_sd_b2_04 :
-		case pctl_mux_gpio_sd_b2_05 :
-		case pctl_mux_gpio_lpsr_09 :
-		case pctl_mux_gpio_lpsr_10 :
-		case pctl_mux_gpio_lpsr_11 :
+		case pctl_mux_gpio_sd_b2_00:
+		case pctl_mux_gpio_sd_b2_01:
+		case pctl_mux_gpio_sd_b2_02:
+		case pctl_mux_gpio_sd_b2_03:
+		case pctl_mux_gpio_sd_b2_04:
+		case pctl_mux_gpio_sd_b2_05:
+		case pctl_mux_gpio_lpsr_09:
+		case pctl_mux_gpio_lpsr_10:
+		case pctl_mux_gpio_lpsr_11:
 			return 4;
 
-		case pctl_mux_gpio_sd_b2_07 :
-		case pctl_mux_gpio_sd_b2_08 :
-		case pctl_mux_gpio_sd_b2_09 :
-		case pctl_mux_gpio_sd_b2_10 :
-		case pctl_mux_gpio_sd_b2_11 :
+		case pctl_mux_gpio_sd_b2_07:
+		case pctl_mux_gpio_sd_b2_08:
+		case pctl_mux_gpio_sd_b2_09:
+		case pctl_mux_gpio_sd_b2_10:
+		case pctl_mux_gpio_sd_b2_11:
 			return 6;
 
-		case pctl_mux_gpio_emc_b2_00 :
-		case pctl_mux_gpio_emc_b2_01 :
-		case pctl_mux_gpio_emc_b2_02 :
-		case pctl_mux_gpio_emc_b2_03 :
-		case pctl_mux_gpio_emc_b2_04 :
-		case pctl_mux_gpio_emc_b2_05 :
-		case pctl_mux_gpio_emc_b2_06 :
-		case pctl_mux_gpio_emc_b2_07 :
-		case pctl_mux_gpio_emc_b2_08 :
-		case pctl_mux_gpio_emc_b2_09 :
-		case pctl_mux_gpio_emc_b2_10 :
-		case pctl_mux_gpio_lpsr_13 :
-		case pctl_mux_gpio_lpsr_14 :
-		case pctl_mux_gpio_lpsr_15 :
+		case pctl_mux_gpio_emc_b2_00:
+		case pctl_mux_gpio_emc_b2_01:
+		case pctl_mux_gpio_emc_b2_02:
+		case pctl_mux_gpio_emc_b2_03:
+		case pctl_mux_gpio_emc_b2_04:
+		case pctl_mux_gpio_emc_b2_05:
+		case pctl_mux_gpio_emc_b2_06:
+		case pctl_mux_gpio_emc_b2_07:
+		case pctl_mux_gpio_emc_b2_08:
+		case pctl_mux_gpio_emc_b2_09:
+		case pctl_mux_gpio_emc_b2_10:
+		case pctl_mux_gpio_lpsr_13:
+		case pctl_mux_gpio_lpsr_14:
+		case pctl_mux_gpio_lpsr_15:
 			return 8;
 
-		case pctl_mux_gpio_disp_b1_04 :
-		case pctl_mux_gpio_disp_b1_05 :
-		case pctl_mux_gpio_disp_b1_06 :
-		case pctl_mux_gpio_disp_b1_07 :
-		case pctl_mux_gpio_disp_b1_08 :
-		case pctl_mux_gpio_disp_b1_09 :
-		case pctl_mux_gpio_disp_b1_10 :
-		case pctl_mux_gpio_disp_b2_12 :
-		case pctl_mux_gpio_disp_b2_13 :
-		case pctl_mux_gpio_disp_b2_14 :
-		case pctl_mux_gpio_disp_b2_15 :
+		case pctl_mux_gpio_disp_b1_04:
+		case pctl_mux_gpio_disp_b1_05:
+		case pctl_mux_gpio_disp_b1_06:
+		case pctl_mux_gpio_disp_b1_07:
+		case pctl_mux_gpio_disp_b1_08:
+		case pctl_mux_gpio_disp_b1_09:
+		case pctl_mux_gpio_disp_b1_10:
+		case pctl_mux_gpio_disp_b2_12:
+		case pctl_mux_gpio_disp_b2_13:
+		case pctl_mux_gpio_disp_b2_14:
+		case pctl_mux_gpio_disp_b2_15:
 			return 9;
 
 		default :
