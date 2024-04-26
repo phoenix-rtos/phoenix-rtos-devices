@@ -309,11 +309,6 @@ static void flashsrv_meterfsThread(void *arg)
 
 static int flashsrv_verifyRawIO(const flash_memory_t *memory, msg_t *msg, size_t *size)
 {
-	if (msg->oid.id >= memory->pCnt) {
-		msg->o.err = -EINVAL;
-		return -EINVAL;
-	}
-
 	if (memory->parts[msg->oid.id].pHeader->size <= msg->i.io.offs) {
 		msg->o.err = -EINVAL;
 		return -EINVAL;
@@ -339,57 +334,72 @@ static void flashsrv_rawThread(void *arg)
 		while (msgRecv(memory->rawPort, &msg, &rid) < 0) {
 		}
 
-		switch (msg.type) {
-			case mtRead:
-				if (flashsrv_verifyRawIO(memory, &msg, &msg.o.size) < 0) {
-					msg.o.err = -EINVAL;
+		if (msg.oid.id >= memory->pCnt) {
+			msg.o.err = -EINVAL;
+		}
+		else {
+			switch (msg.type) {
+				case mtRead:
+					if (flashsrv_verifyRawIO(memory, &msg, &msg.o.size) < 0) {
+						msg.o.err = -EINVAL;
+						break;
+					}
+
+					startAddr = memory->parts[msg.oid.id].pHeader->offset;
+					mutexLock(memory->lock);
+					msg.o.err = flash_readData(&memory->ctx, startAddr + msg.i.io.offs, msg.o.data, msg.o.size);
+					mutexUnlock(memory->lock);
 					break;
-				}
 
-				startAddr = memory->parts[msg.oid.id].pHeader->offset;
-				mutexLock(memory->lock);
-				msg.o.err = flash_readData(&memory->ctx, startAddr + msg.i.io.offs, msg.o.data, msg.o.size);
-				mutexUnlock(memory->lock);
-				break;
+				case mtWrite:
+					if (flashsrv_verifyRawIO(memory, &msg, &msg.o.size) < 0) {
+						msg.o.err = -EINVAL;
+						break;
+					}
 
-			case mtWrite:
-				if (flashsrv_verifyRawIO(memory, &msg, &msg.o.size) < 0) {
-					msg.o.err = -EINVAL;
+					startAddr = memory->parts[msg.oid.id].pHeader->offset;
+					mutexLock(memory->lock);
+					msg.o.err = flash_bufferedWrite(&memory->ctx, startAddr + msg.i.io.offs, msg.i.data, msg.i.size);
+					mutexUnlock(memory->lock);
 					break;
-				}
 
-				startAddr = memory->parts[msg.oid.id].pHeader->offset;
-				mutexLock(memory->lock);
-				msg.o.err = flash_bufferedWrite(&memory->ctx, startAddr + msg.i.io.offs, msg.i.data, msg.i.size);
-				mutexUnlock(memory->lock);
-				break;
+				case mtDevCtl:
+					mutexLock(memory->lock);
+					flashsrv_rawCtl(memory, &msg);
+					mutexUnlock(memory->lock);
+					break;
 
-			case mtDevCtl:
-				mutexLock(memory->lock);
-				flashsrv_rawCtl(memory, &msg);
-				mutexUnlock(memory->lock);
-				break;
+				case mtOpen:
+					msg.o.err = 0;
+					break;
 
-			case mtOpen:
-				msg.o.err = EOK;
-				break;
+				case mtClose:
+					mutexLock(memory->lock);
+					(void)flash_sync(&memory->ctx);
+					mutexUnlock(memory->lock);
+					msg.o.err = 0;
+					break;
 
-			case mtClose:
-				mutexLock(memory->lock);
-				(void)flash_sync(&memory->ctx);
-				mutexUnlock(memory->lock);
-				msg.o.err = EOK;
-				break;
+				case mtSync:
+					mutexLock(memory->lock);
+					msg.o.err = flash_sync(&memory->ctx);
+					mutexUnlock(memory->lock);
+					break;
 
-			case mtSync:
-				mutexLock(memory->lock);
-				msg.o.err = flash_sync(&memory->ctx);
-				mutexUnlock(memory->lock);
-				break;
+				case mtGetAttr:
+					if (msg.i.attr.type == atSize) {
+						msg.o.attr.val = memory->parts[msg.oid.id].pHeader->size;
+						msg.o.err = 0;
+					}
+					else {
+						msg.o.err = -ENOSYS;
+					}
+					break;
 
-			default:
-				msg.o.err = -ENOSYS;
-				break;
+				default:
+					msg.o.err = -ENOSYS;
+					break;
+			}
 		}
 		msgRespond(memory->rawPort, &msg, rid);
 	}
@@ -427,7 +437,17 @@ static void flashsrv_devThread(void *arg)
 
 			case mtOpen:
 			case mtClose:
-				msg.o.err = EOK;
+				msg.o.err = 0;
+				break;
+
+			case mtGetAttr:
+				if (msg.i.attr.type == atSize) {
+					msg.o.attr.val = memory->ctx.properties->totalSz;
+					msg.o.err = 0;
+				}
+				else {
+					msg.o.err = -ENOSYS;
+				}
 				break;
 
 			default:
