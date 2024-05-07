@@ -35,7 +35,7 @@
 #define TRACE(str, ...) do { if (0) fprintf(stderr, __FILE__  ":%d trace: " str "\n", __LINE__, ##__VA_ARGS__); } while (0)
 /* clang-format on */
 
-#define METERFS_STACKSZ   1024
+#define METERFS_STACKSZ   1280
 #define THREAD_STACKSZ    1024
 #define FLASH_MEMORIES_NO (FLEXSPI_COUNT)
 
