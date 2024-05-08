@@ -117,13 +117,18 @@ static void multi_dispatchMsg(msg_t *msg)
 			break;
 #endif
 
-#ifndef __CPU_IMXRT117X
 		case id_i2c1:
 		case id_i2c2:
 		case id_i2c3:
 		case id_i2c4:
+#ifdef __CPU_IMXRT117X
+		case id_i2c5:
+		case id_i2c6:
+#endif
 			i2c_handleMsg(msg, id);
 			break;
+
+#ifndef __CPU_IMXRT117X
 		case id_trng:
 			trng_handleMsg(msg);
 			break;
@@ -384,8 +389,6 @@ static int createDevFiles(void)
 
 
 /* I2Cs */
-#ifndef __CPU_IMXRT117X
-
 #if I2C1
 	if (mkFile(&dir, id_i2c1, "i2c1", multi_port) < 0) {
 		return -1;
@@ -410,6 +413,23 @@ static int createDevFiles(void)
 	}
 #endif
 
+
+#ifdef __CPU_IMXRT117X
+
+#if I2C5
+	if (mkFile(&dir, id_i2c5, "i2c5", multi_port) < 0) {
+		return -1;
+	}
+#endif
+
+#if I2C4
+	if (mkFile(&dir, id_i2c6, "i2c6", multi_port) < 0) {
+		return -1;
+	}
+#endif
+
+#endif
+
 #if TRNG
 	if (mkFile(&dir, id_trng, "random", multi_port) < 0) {
 		return -1;
@@ -419,9 +439,6 @@ static int createDevFiles(void)
 	if (mkFile(&dir, id_trng, "trng", multi_port) < 0) {
 		return -1;
 	}
-#endif
-
-
 #endif
 
 	return 0;
@@ -542,6 +559,7 @@ int main(void)
 	uart_init();
 	gpio_init();
 	spi_init();
+	i2c_init();
 
 	oid.port = common.uart_port;
 	oid.id = id_console;
