@@ -1122,27 +1122,52 @@
 #endif /* #ifdef __CPU_IMXRT117X */
 
 
-#ifndef __CPU_IMXRT117X
-
 /* I2C */
 
 #ifndef I2C1
 #define I2C1 0
+#elif !ISBOOLEAN(I2C1)
+#error "I2C1 must have a value of 0, 1, or be undefined"
 #endif
 
 #ifndef I2C2
 #define I2C2 0
+#elif !ISBOOLEAN(I2C2)
+#error "I2C2 must have a value of 0, 1, or be undefined"
 #endif
 
 #ifndef I2C3
 #define I2C3 0
+#elif !ISBOOLEAN(I2C3)
+#error "I2C3 must have a value of 0, 1, or be undefined"
 #endif
 
 #ifndef I2C4
 #define I2C4 0
+#elif !ISBOOLEAN(I2C4)
+#error "I2C4 must have a value of 0, 1, or be undefined"
 #endif
 
+#ifdef __CPU_IMXRT117X
+
+#ifndef I2C5
+#define I2C5 0
+#elif !ISBOOLEAN(I2C5)
+#error "I2C5 must have a value of 0, 1, or be undefined"
+#endif
+
+#ifndef I2C6
+#define I2C6 0
+#elif !ISBOOLEAN(I2C6)
+#error "I2C6 must have a value of 0, 1, or be undefined"
+#endif
+
+#endif /* #ifdef __CPU_IMXRT117X */
+
+
 /* TRNG */
+
+#ifndef __CPU_IMXRT117X
 
 #ifndef TRNG
 #define TRNG 0

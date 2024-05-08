@@ -17,9 +17,10 @@
 #include <sys/msg.h>
 
 
-int i2c_handleMsg(msg_t *msg, int dev);
+void i2c_handleMsg(msg_t *msg, int dev);
 
 
 int i2c_init(void);
+
 
 #endif
