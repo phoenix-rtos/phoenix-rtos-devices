@@ -114,6 +114,28 @@
 #define LPSPI6_IRQ lpspi6_irq
 
 
+#define I2C1_BASE ((void *)0x40104000)
+#define I2C2_BASE ((void *)0x40108000)
+#define I2C3_BASE ((void *)0x4010c000)
+#define I2C4_BASE ((void *)0x40110000)
+#define I2C5_BASE ((void *)0x40c34000)
+#define I2C6_BASE ((void *)0x40c38000)
+
+#define I2C1_CLK pctl_clk_lpi2c1
+#define I2C2_CLK pctl_clk_lpi2c2
+#define I2C3_CLK pctl_clk_lpi2c3
+#define I2C4_CLK pctl_clk_lpi2c4
+#define I2C5_CLK pctl_clk_lpi2c5
+#define I2C6_CLK pctl_clk_lpi2c6
+
+#define I2C1_IRQ lpi2c1_irq
+#define I2C2_IRQ lpi2c2_irq
+#define I2C3_IRQ lpi2c3_irq
+#define I2C4_IRQ lpi2c4_irq
+#define I2C5_IRQ lpi2c5_irq
+#define I2C6_IRQ lpi2c6_irq
+
+
 /* TODO: Remove *_DEFAULT defines together with deprecation warnings in config.h */
 
 #define UART1_TX_PIN_DEFAULT ad_24
