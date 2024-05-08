@@ -14,8 +14,10 @@
 #include <endian.h>
 #include <errno.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <sys/msg.h>
 #include <sys/file.h>
 #include <sys/threads.h>
@@ -59,6 +61,8 @@ typedef struct {
 	oid_t oid;
 	uint8_t fID;
 	uint8_t pStatus;
+
+	pid_t authProcPid;
 
 	void *fsCtx;
 } flashsrv_partition_t;
@@ -261,6 +265,12 @@ static int flashsrv_fsEraseSectorf1(struct _meterfs_devCtx_t *devCtx, off_t offs
 	(void)devCtx;
 
 	return flashsrv_eraseSector(1, offs);
+}
+
+
+static inline bool hasAccess(flashsrv_partition_t *part, pid_t pid)
+{
+	return part->authProcPid == 0 || part->authProcPid == pid;
 }
 
 
@@ -572,6 +582,9 @@ static void flashsrv_rawThread(void *arg)
 		if (msg.oid.id >= memory->pCnt) {
 			msg.o.err = -EINVAL;
 		}
+		else if (!hasAccess(&memory->parts[msg.oid.id], msg.pid)) {
+			msg.o.err = -EACCES;
+		}
 		else {
 			switch (msg.type) {
 				case mtRead:
@@ -601,10 +614,15 @@ static void flashsrv_rawThread(void *arg)
 					break;
 
 				case mtOpen:
+					/* Exclusive access mechanism enabled on O_EXCL except when O_CREAT is passed */
+					if ((msg.i.openclose.flags & (O_CREAT | O_EXCL)) == O_EXCL) {
+						memory->parts[msg.oid.id].authProcPid = msg.pid;
+					}
 					msg.o.err = 0;
 					break;
 
 				case mtClose:
+					memory->parts[msg.oid.id].authProcPid = 0;
 					(void)flashsrv_bufferedSync(memory->fOid.id);
 					msg.o.err = 0;
 					break;
