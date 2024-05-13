@@ -848,6 +848,7 @@ static int flashsrv_flashMemoriesInit(void)
 			return -ENOENT;
 		}
 
+		memory->fOid.id = i;
 		snprintf(path, sizeof(path), "/dev/flash%d", memory->fOid.id);
 
 		err = portCreate(&memory->fOid.port);
@@ -862,7 +863,6 @@ static int flashsrv_flashMemoriesInit(void)
 			return err;
 		}
 
-		memory->fOid.id = i;
 		memory->rawActive = 0;
 		memory->pCnt = 0;
 
