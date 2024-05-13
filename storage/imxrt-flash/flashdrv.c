@@ -288,18 +288,18 @@ static int flash_defineFlexSPI(flash_context_t *ctx)
 			ctx->fspi.instance = 0;
 			ctx->fspi.base = (void *)FLEXSPI1_BASE;
 			ctx->fspi.ahbAddr = (void *)FLEXSPI1_AHB_ADDR;
-			ctx->fspi.slPortMask = 1;
+			ctx->fspi.slPortMask = FLEXSPI1_PORT_MASK;
 			ctx->timeout = 10000;
-			ctx->port = 0;
+			ctx->port = FLEXSPI1_PORT;
 			break;
 
 		case FLASH_INTERNAL_DATA_ADDRESS:
 			ctx->fspi.instance = 1;
 			ctx->fspi.base = (void *)FLEXSPI2_BASE;
 			ctx->fspi.ahbAddr = (void *)FLEXSPI2_AHB_ADDR;
-			ctx->fspi.slPortMask = 1;
+			ctx->fspi.slPortMask = FLEXSPI2_PORT_MASK;
 			ctx->timeout = 10000;
-			ctx->port = 0;
+			ctx->port = FLEXSPI2_PORT;
 			break;
 
 		default:

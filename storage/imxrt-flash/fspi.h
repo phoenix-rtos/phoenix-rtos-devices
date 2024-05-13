@@ -11,25 +11,58 @@
  * %LICENSE%
  */
 
+#include <board_config.h>
 
 #ifndef _FLEXSPI_H_
 #define _FLEXSPI_H_
 
 #if defined(__CPU_IMXRT106X)
 
-#define FLEXSPI_COUNT     2
+#ifndef FLEXSPI_COUNT
+#define FLEXSPI_COUNT 2
+#endif
+
 #define FLEXSPI1_BASE     ((addr_t)0x402a8000)
 #define FLEXSPI2_BASE     ((addr_t)0x402a4000)
 #define FLEXSPI1_AHB_ADDR ((addr_t)0x60000000)
 #define FLEXSPI2_AHB_ADDR ((addr_t)0x70000000)
 
+#ifndef FLEXSPI1_PORT
+#define FLEXSPI1_PORT 0
+#endif
+#ifndef FLEXSPI1_PORT_MASK
+#define FLEXSPI1_PORT_MASK 1
+#endif
+#ifndef FLEXSPI2_PORT
+#define FLEXSPI2_PORT 0
+#endif
+#ifndef FLEXSPI2_PORT_MASK
+#define FLEXSPI2_PORT_MASK 1
+#endif
+
 #elif defined(__CPU_IMXRT117X)
 
-#define FLEXSPI_COUNT     1
+#ifndef FLEXSPI_COUNT
+#define FLEXSPI_COUNT 1
+#endif
+
 #define FLEXSPI1_BASE     ((addr_t)0x400cc000)
-#define FLEXSPI2_BASE     ((addr_t)-1)
+#define FLEXSPI2_BASE     ((addr_t)0x400d0000)
 #define FLEXSPI1_AHB_ADDR ((addr_t)0x30000000)
-#define FLEXSPI2_AHB_ADDR ((addr_t)-1)
+#define FLEXSPI2_AHB_ADDR ((addr_t)0x60000000)
+
+#ifndef FLEXSPI1_PORT
+#define FLEXSPI1_PORT 0
+#endif
+#ifndef FLEXSPI1_PORT_MASK
+#define FLEXSPI1_PORT_MASK 1
+#endif
+#ifndef FLEXSPI2_PORT
+#define FLEXSPI2_PORT 0
+#endif
+#ifndef FLEXSPI2_PORT_MASK
+#define FLEXSPI2_PORT_MASK 1
+#endif
 
 #else
 #error "FlexSPI is not supported on this target"
