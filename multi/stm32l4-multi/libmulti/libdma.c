@@ -14,6 +14,7 @@
 #include <sys/interrupt.h>
 #include <sys/time.h>
 #include <sys/pwman.h>
+#include <stdbool.h>
 
 #include "../common.h"
 #include "libmulti/libdma.h"
@@ -175,14 +176,17 @@ static int libdma_irqHandler(unsigned int n, void *arg)
 
 			dma_transfers[dma][channel].type = dma_transferNull;
 			break;
-		case dma_transferInf:
+		case dma_transferInf: {
+			uint8_t handlerFlags = 0;
 			if ((flags & DMA_HTIE_FLAG) != 0) {
-				dma_transfers[dma][channel].inf.fn(dma_transfers[dma][channel].inf.arg, dma_ht);
+				handlerFlags |= dma_ht;
 			}
 			if ((flags & DMA_TCIE_FLAG) != 0) {
-				dma_transfers[dma][channel].inf.fn(dma_transfers[dma][channel].inf.arg, dma_tc);
+				handlerFlags |= dma_tc;
 			}
+			dma_transfers[dma][channel].inf.fn(dma_transfers[dma][channel].inf.arg, handlerFlags);
 			break;
+		}
 		case dma_transferNull:
 		default:
 			/* Shouldn't happen */
