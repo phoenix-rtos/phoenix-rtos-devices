@@ -22,7 +22,8 @@
 /* clang-format off */
 
 enum { flashsrv_devctl_properties = 0, flashsrv_devctl_sync, flashsrv_devctl_eraseSector,
-	flashsrv_devctl_erasePartition, flashsrv_devctl_directWrite, flashsrv_devctl_directRead };
+	flashsrv_devctl_erasePartition, flashsrv_devctl_directWrite, flashsrv_devctl_directRead,
+	flashsrv_devctl_calcCrc32 };
 
 /* clang-format on */
 
@@ -45,6 +46,14 @@ typedef struct {
 		struct {
 			uint32_t addr;
 		} read;
+
+		/* calcCrc32 */
+		struct {
+			/* set addr & len to 0 for full range */
+			uint32_t addr;
+			uint32_t len;
+			uint32_t base;
+		} crc32;
 	};
 } __attribute__((packed)) flash_i_devctl_t;
 
@@ -60,6 +69,7 @@ typedef struct {
 typedef struct {
 	union {
 		flashsrv_properties_t properties;
+		uint32_t crc32;
 	};
 } __attribute__((packed)) flash_o_devctl_t;
 
@@ -78,6 +88,7 @@ typedef struct {
 	ssize_t (*write)(uint8_t fID, size_t offset, const void *data, size_t size);
 	int (*eraseSector)(uint8_t fID, uint32_t offs);
 	int (*getProperties)(uint8_t fID, flashsrv_properties_t *p);
+	int (*calcCrc32)(uint8_t fID, size_t offset, size_t len, uint32_t *crc32);
 } flashsrv_partitionOps_t;
 
 

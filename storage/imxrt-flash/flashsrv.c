@@ -47,6 +47,8 @@
 #define IMXRT_FLASH_PRIO 3
 #endif
 
+#define CRC32_BUFSZ 256
+
 /* clang-format off */
 enum { flashsrv_memory_inactive = 0, flashsrv_memory_active = 0xff };
 /* clang-format on */
@@ -78,7 +80,7 @@ typedef struct {
 } flashsrv_memory_t;
 
 
-struct {
+static struct {
 	flashsrv_memory_t flash_memories[FLASH_MEMORIES_NO];
 	uint32_t flexspi_addresses[FLASH_MEMORIES_NO];
 	flashsrv_partitionOps_t ops;
@@ -166,6 +168,54 @@ static int flashsrv_chipErase(uint8_t fID)
 }
 
 
+static uint32_t flashsrv_crc32Update(uint32_t crc32, const uint8_t *data, size_t len)
+{
+	unsigned int i;
+
+	while (len--) {
+		crc32 ^= *data++;
+		for (i = 0; i < 8; i++) {
+			crc32 = (crc32 >> 1) ^ ((crc32 & 1) ? 0xedb88320 : 0);
+		}
+	}
+
+	return crc32;
+}
+
+
+static int flashsrv_calcCrc32(uint8_t fID, size_t offset, size_t len, uint32_t *crc32)
+{
+	flashsrv_memory_t *mem;
+	uint8_t buf[CRC32_BUFSZ];
+	uint32_t tmp;
+	int res;
+
+	res = flashsrv_getFlashMemory(fID, &mem);
+	if (res < 0) {
+		return res;
+	}
+
+	/* caller should set crc32 to base */
+	tmp = *crc32;
+
+	while (len > 0) {
+		res = flash_directRead(&mem->ctx, offset, buf, len < sizeof(buf) ? len : sizeof(buf));
+		if (res < 0) {
+			return res;
+		}
+
+		tmp = flashsrv_crc32Update(tmp, buf, res);
+
+		offset += res;
+		len -= res;
+	}
+
+	*crc32 = tmp;
+
+	return EOK;
+}
+
+
 /* Callbacks to meterfs - wrappers for basic flash functions */
 
 static ssize_t flashsrv_fsWritef0(struct _meterfs_devCtx_t *devCtx, off_t offs, const void *buff, size_t bufflen)
@@ -219,6 +269,7 @@ static int flashsrv_fsEraseSectorf1(struct _meterfs_devCtx_t *devCtx, off_t offs
 static void flashsrv_devCtl(flashsrv_memory_t *memory, msg_t *msg)
 {
 	uint8_t fID;
+	uint32_t crc32;
 	flash_i_devctl_t *idevctl = (flash_i_devctl_t *)msg->i.raw;
 	flash_o_devctl_t *odevctl = (flash_o_devctl_t *)msg->o.raw;
 
@@ -288,6 +339,24 @@ static void flashsrv_devCtl(flashsrv_memory_t *memory, msg_t *msg)
 			msg->o.err = flashsrv_directRead(memory->fOid.id, idevctl->read.addr, msg->o.data, msg->o.size);
 			break;
 
+		case flashsrv_devctl_calcCrc32:
+			TRACE("imxrt-flashsrv: flashsrv_devctl_calcCrc32, addr: %u, len: %u, base: %4x, id: %u, port: %u.",
+				idevctl->crc32.addr, idevctl->crc32.len, idevctl->crc32.base, msg->oid.id, msg->oid.port);
+
+			if (idevctl->crc32.addr == 0 && idevctl->crc32.len == 0) {
+				/* calculate CRC for whole flash */
+				idevctl->crc32.len = memory->ctx.properties.size;
+			}
+			else if ((idevctl->crc32.addr + idevctl->crc32.len) > memory->ctx.properties.size) {
+				msg->o.err = -EINVAL;
+				break;
+			}
+
+			crc32 = idevctl->crc32.base;
+			msg->o.err = flashsrv_calcCrc32(memory->fOid.id, idevctl->crc32.addr, idevctl->crc32.len, &crc32);
+			odevctl->crc32 = crc32;
+			break;
+
 		default:
 			msg->o.err = -EINVAL;
 			break;
@@ -300,6 +369,7 @@ static void flashsrv_rawCtl(flashsrv_memory_t *memory, msg_t *msg)
 	int i;
 	uint32_t sNb;
 	uint8_t partID;
+	uint32_t crc32;
 	flash_i_devctl_t *idevctl = (flash_i_devctl_t *)msg->i.raw;
 	flash_o_devctl_t *odevctl = (flash_o_devctl_t *)msg->o.raw;
 
@@ -380,6 +450,24 @@ static void flashsrv_rawCtl(flashsrv_memory_t *memory, msg_t *msg)
 			}
 
 			msg->o.err = flashsrv_directRead(memory->fOid.id, memory->parts[partID].pHeader->offset + idevctl->read.addr, msg->o.data, msg->o.size);
+			break;
+
+		case flashsrv_devctl_calcCrc32:
+			TRACE("imxrt-flashsrv: flashsrv_devctl_calcCrc32, addr: %u, len: %u, base: %4x, id: %u, port: %u.",
+				idevctl->crc32.addr, idevctl->crc32.len, idevctl->crc32.base, msg->oid.id, msg->oid.port);
+
+			if (idevctl->crc32.addr == 0 && idevctl->crc32.len == 0) {
+				/* calculate CRC for whole partition */
+				idevctl->crc32.len = memory->parts[partID].pHeader->size;
+			}
+			else if ((idevctl->crc32.addr + idevctl->crc32.len) > memory->parts[partID].pHeader->size) {
+				msg->o.err = -EINVAL;
+				break;
+			}
+
+			crc32 = idevctl->crc32.base;
+			msg->o.err = flashsrv_calcCrc32(memory->fOid.id, memory->parts[partID].pHeader->offset + idevctl->crc32.addr, idevctl->crc32.len, &crc32);
+			odevctl->crc32 = crc32;
 			break;
 
 		default:
@@ -685,7 +773,7 @@ static int flashsrv_mountPart(flashsrv_partition_t *part)
 			part->pStatus = flashsrv_memory_active;
 			break;
 
-		/* Each meterfs partiton is handled by separete thread */
+		/* Each meterfs partition is handled by separate thread */
 		case ptable_meterfs:
 			res = flashsrv_initMeterfs(part);
 			if (res < 0) {
@@ -914,6 +1002,24 @@ static int flashsrv_getProperties(uint8_t fID, flashsrv_properties_t *p)
 }
 
 
+static int flashsrv_safeCalcCrc32(uint8_t fID, size_t offset, size_t len, uint32_t *crc32)
+{
+	ssize_t ret;
+	flashsrv_memory_t *mem;
+
+	ret = flashsrv_getFlashMemory(fID, &mem);
+	if (ret < 0) {
+		return ret;
+	}
+
+	mutexLock(mem->lock);
+	ret = flashsrv_calcCrc32(fID, offset, len, crc32);
+	mutexUnlock(mem->lock);
+
+	return ret;
+}
+
+
 static ssize_t flashsrv_safeDirectWrite(uint8_t fID, size_t offset, const void *data, size_t size)
 {
 	ssize_t ret;
@@ -977,6 +1083,7 @@ static int flashsrv_customInit(void)
 	flashsrv_common.ops.write = flashsrv_safeDirectWrite;
 	flashsrv_common.ops.eraseSector = flashsrv_safeSectorErase;
 	flashsrv_common.ops.getProperties = flashsrv_getProperties;
+	flashsrv_common.ops.calcCrc32 = flashsrv_safeCalcCrc32;
 
 	return flashsrv_customIntInit(&flashsrv_common.ops);
 }
