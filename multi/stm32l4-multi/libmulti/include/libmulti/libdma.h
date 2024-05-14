@@ -28,7 +28,7 @@ enum { dma_per2mem = 0, dma_mem2per };
 enum { dma_spi = 0, dma_uart };
 
 
-enum { dma_ht = 0, dma_tc };
+enum { dma_ht = (1 << 0), dma_tc = (1 << 1) };
 
 
 enum {dma_priorityLow = 0, dma_priorityMedium, dma_priorityHigh, dma_priorityVeryHigh };
