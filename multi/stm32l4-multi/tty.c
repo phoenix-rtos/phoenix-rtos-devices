@@ -409,7 +409,12 @@ static int _tty_configure(tty_ctx_t *ctx, char bits, char parity, char enable)
 		(void)*(ctx->base + rdr);
 
 		if (enable != 0) {
-			flags = (1 << 5) | (1 << 3) | (1 << 2);
+			/* Enable transimitter and receiver (TE + RE) */
+			flags = (1 << 3) | (1 << 2);
+			if (ctx->type == tty_irq) {
+				/* Enable RXNE interrupt (RXNEIE) */
+				flags |= (1 << 5);
+			}
 			if (ctx->type == tty_dma) {
 				/* Idle line interrupt enable. */
 				flags |= (1 << 4);
@@ -477,7 +482,12 @@ static void tty_setBaudrate(void *uart, speed_t baud)
 		*(ctx->base + icr) = -1;
 		(void)*(ctx->base + rdr);
 
-		flags = (1 << 5) | (1 << 3) | (1 << 2);
+		/* Enable transimitter and receiver (TE + RE) */
+		flags = (1 << 3) | (1 << 2);
+		if (ctx->type == tty_irq) {
+			/* Enable RXNE interrupt (RXNEIE) */
+			flags |= (1 << 5);
+		}
 		if (ctx->type == tty_dma) {
 			/* Idle line interrupt enable. */
 			flags |= (1 << 4);
