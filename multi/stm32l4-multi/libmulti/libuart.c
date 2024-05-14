@@ -251,6 +251,12 @@ int libuart_configure(libuart_ctx *ctx, char bits, char parity, unsigned int bau
 		mutexLock(ctx->data.dma.txlock);
 		mutexLock(ctx->data.dma.rxlock);
 		mutexLock(ctx->data.dma.rxcondlock);
+
+		/* From RM0351: "[...] DMA channel must be disabled before resetting the UE bit */
+		(void)libdma_infiniteRxAsync(ctx->data.dma.per, NULL, 0, NULL, NULL);
+		ctx->data.dma.rxfifopos = 0;
+		ctx->data.dma.rxfifoprevend = 0;
+		ctx->data.dma.rxfifofull = 0;
 	}
 
 	if (parity != uart_parnone) {
@@ -303,6 +309,11 @@ int libuart_configure(libuart_ctx *ctx, char bits, char parity, unsigned int bau
 			dataBarier();
 			*(ctx->base + cr1) |= 1;
 			ctx->enabled = 1;
+
+			if (ctx->type == uart_dma) {
+				/* DMA RX channel is enabled after enabling UART peripheral */
+				(void)libdma_infiniteRxAsync(ctx->data.dma.per, (void *)ctx->data.dma.rxfifo, ctx->data.dma.rxfifosz, libuart_infiniteRxHandler, ctx);
+			}
 		}
 
 		dataBarier();
@@ -614,8 +625,6 @@ static int libuart_dmaInit(libuart_ctx *ctx, unsigned int uart)
 
 	/* Clear overflow bit. */
 	*(ctx->base + icr) |= (1 << 3);
-
-	(void)libdma_infiniteRxAsync(ctx->data.dma.per, (void *)ctx->data.dma.rxfifo, ctx->data.dma.rxfifosz, libuart_infiniteRxHandler, ctx);
 
 	interrupt(libuart_info[uart].irq, uart_irqDMA, (void *)ctx, ctx->data.dma.rxcond, NULL);
 
