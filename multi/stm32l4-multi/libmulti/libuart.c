@@ -305,7 +305,12 @@ int libuart_configure(libuart_ctx *ctx, char bits, char parity, unsigned int bau
 		(void)*(ctx->base + rdr);
 
 		if (enable != 0) {
-			*(ctx->base + cr1) |= (1 << 5) | (1 << 3) | (1 << 2);
+			if (ctx->type == uart_irq) {
+				/* Enable RXNE interrupt (RXNEIE) */
+				*(ctx->base + cr1) |= (1 << 5);
+			}
+			/* Enable transimitter and receiver (TE + RE) */
+			*(ctx->base + cr1) |= (1 << 3) | (1 << 2);
 			dataBarier();
 			*(ctx->base + cr1) |= 1;
 			ctx->enabled = 1;
