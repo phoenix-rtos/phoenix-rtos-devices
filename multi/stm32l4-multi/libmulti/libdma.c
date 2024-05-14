@@ -381,13 +381,15 @@ int libdma_infiniteRxAsync(const struct libdma_per *per, void *rxMAddr, size_t l
 	if (DMA_MAX_LEN < len) {
 		return -EINVAL;
 	}
+	libdma_unprepareTransfer(dma, channel);
 
 	dma_transfers[dma][channel].type = dma_transferInf;
 	dma_transfers[dma][channel].inf.fn = fn;
 	dma_transfers[dma][channel].inf.arg = arg;
 
-	libdma_prepareTransfer(dma, channel, rxMAddr, len, DMA_TCIE_FLAG | DMA_HTIE_FLAG | DMA_CIRCULAR_FLAG);
-
+	if ((rxMAddr != NULL) && (len > 0)) {
+		libdma_prepareTransfer(dma, channel, rxMAddr, len, DMA_TCIE_FLAG | DMA_HTIE_FLAG | DMA_CIRCULAR_FLAG);
+	}
 	return 0;
 }
 
