@@ -658,8 +658,6 @@ int libuart_init(libuart_ctx *ctx, unsigned int uart, int dma)
 
 	devClk(libuart_info[uart].dev, 1);
 	ctx->base = libuart_info[uart].base;
-	/* Set up UART to 115200,8,n,1 16-bit oversampling */
-	libuart_configure(ctx, 8, uart_parnone, 115200, 1);
 
 	if (dma == 0) {
 		err = libuart_irqInit(ctx, uart);
@@ -672,7 +670,7 @@ int libuart_init(libuart_ctx *ctx, unsigned int uart, int dma)
 		return err;
 	}
 
-	ctx->enabled = 1;
-
+	/* Set up UART to 115200,8,n,1 16-bit oversampling */
+	libuart_configure(ctx, 8, uart_parnone, 115200, 1);
 	return 0;
 }
