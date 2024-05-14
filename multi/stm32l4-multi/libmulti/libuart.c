@@ -151,6 +151,73 @@ static int libuart_rxirq(unsigned int n, void *arg)
 }
 
 
+static void libuart_infiniteRxHandler(void *arg, int type)
+{
+	libuart_ctx *ctx = arg;
+	size_t read;
+	size_t rxbufsz;
+	size_t torx;
+	size_t infifo;
+	size_t cpysz;
+	volatile char *rxbuf = ctx->data.dma.rxbuf;
+
+	size_t rxfifopos = ctx->data.dma.rxfifopos;
+	size_t rxfifoprevend = ctx->data.dma.rxfifoprevend;
+	size_t endPos = ctx->data.dma.rxfifosz - libdma_leftToRx(ctx->data.dma.per);
+
+	bool overrun = false;
+	/* Check overrun */
+	if (((rxfifoprevend < rxfifopos) && ((rxfifopos < endPos) || (endPos < rxfifoprevend))) ||
+		((rxfifopos <= rxfifoprevend) && ((rxfifopos < endPos) && (endPos < rxfifoprevend)))) {
+		rxfifopos = endPos;
+		overrun = true;
+	}
+
+	if (rxbuf == NULL) {
+		if (overrun && (rxfifopos == endPos)) {
+			ctx->data.dma.rxfifofull = 1;
+		}
+		ctx->data.dma.rxfifopos = rxfifopos;
+		ctx->data.dma.rxfifoprevend = endPos;
+		return;
+	}
+
+	infifo = ctx->data.dma.rxfifosz + endPos - rxfifopos;
+	if (infifo >= ctx->data.dma.rxfifosz) {
+		infifo -= ctx->data.dma.rxfifosz;
+	}
+
+	if (((endPos != rxfifoprevend) && (infifo == 0)) || (ctx->data.dma.rxfifofull != 0)) {
+		ctx->data.dma.rxfifofull = 1;
+		infifo = ctx->data.dma.rxfifosz;
+	}
+
+	rxbufsz = ctx->data.dma.rxbufsz;
+	read = ctx->data.dma.read;
+
+	torx = min(rxbufsz - read, infifo);
+	if (torx != 0) {
+		ctx->data.dma.rxfifofull = 0;
+		cpysz = min(ctx->data.dma.rxfifosz - rxfifopos, torx);
+		for (size_t i = 0; i < cpysz; i++) {
+			rxbuf[read + i] = ctx->data.dma.rxfifo[rxfifopos + i];
+		}
+		rxfifopos += cpysz;
+		if (torx != cpysz) {
+			for (size_t i = 0; i < torx - cpysz; i++) {
+				rxbuf[read + cpysz + i] = ctx->data.dma.rxfifo[i];
+			}
+			rxfifopos = torx - cpysz;
+		}
+
+		ctx->data.dma.read = read + torx;
+	}
+
+	ctx->data.dma.rxfifopos = rxfifopos;
+	ctx->data.dma.rxfifoprevend = endPos;
+}
+
+
 int libuart_configure(libuart_ctx *ctx, char bits, char parity, unsigned int baud, char enable)
 {
 	int err = EOK, baseClk = getCpufreq();
@@ -468,73 +535,6 @@ int libuart_read(libuart_ctx *ctx, void *buff, unsigned int count, char mode, un
 		return libuart_irqRead(ctx, buff, count, mode, timeout);
 	}
 	return libuart_dmaRead(ctx, buff, count, mode, timeout);
-}
-
-
-static void libuart_infiniteRxHandler(void *arg, int type)
-{
-	libuart_ctx *ctx = arg;
-	size_t read;
-	size_t rxbufsz;
-	size_t torx;
-	size_t infifo;
-	size_t cpysz;
-	volatile char *rxbuf = ctx->data.dma.rxbuf;
-
-	size_t rxfifopos = ctx->data.dma.rxfifopos;
-	size_t rxfifoprevend = ctx->data.dma.rxfifoprevend;
-	size_t endPos = ctx->data.dma.rxfifosz - libdma_leftToRx(ctx->data.dma.per);
-
-	bool overrun = false;
-	/* Check overrun */
-	if (((rxfifoprevend < rxfifopos) && ((rxfifopos < endPos) || (endPos < rxfifoprevend))) ||
-		((rxfifopos <= rxfifoprevend) && ((rxfifopos < endPos) && (endPos < rxfifoprevend)))) {
-		rxfifopos = endPos;
-		overrun = true;
-	}
-
-	if (rxbuf == NULL) {
-		if (overrun && (rxfifopos == endPos)) {
-			ctx->data.dma.rxfifofull = 1;
-		}
-		ctx->data.dma.rxfifopos = rxfifopos;
-		ctx->data.dma.rxfifoprevend = endPos;
-		return;
-	}
-
-	infifo = ctx->data.dma.rxfifosz + endPos - rxfifopos;
-	if (infifo >= ctx->data.dma.rxfifosz) {
-		infifo -= ctx->data.dma.rxfifosz;
-	}
-
-	if (((endPos != rxfifoprevend) && (infifo == 0)) || (ctx->data.dma.rxfifofull != 0)) {
-		ctx->data.dma.rxfifofull = 1;
-		infifo = ctx->data.dma.rxfifosz;
-	}
-
-	rxbufsz = ctx->data.dma.rxbufsz;
-	read = ctx->data.dma.read;
-
-	torx = min(rxbufsz - read, infifo);
-	if (torx != 0) {
-		ctx->data.dma.rxfifofull = 0;
-		cpysz = min(ctx->data.dma.rxfifosz - rxfifopos, torx);
-		for (size_t i = 0; i < cpysz; i++) {
-			rxbuf[read + i] = ctx->data.dma.rxfifo[rxfifopos + i];
-		}
-		rxfifopos += cpysz;
-		if (torx != cpysz) {
-			for (size_t i = 0; i < torx - cpysz; i++) {
-				rxbuf[read + cpysz + i] = ctx->data.dma.rxfifo[i];
-			}
-			rxfifopos = torx - cpysz;
-		}
-
-		ctx->data.dma.read = read + torx;
-	}
-
-	ctx->data.dma.rxfifopos = rxfifopos;
-	ctx->data.dma.rxfifoprevend = endPos;
 }
 
 
