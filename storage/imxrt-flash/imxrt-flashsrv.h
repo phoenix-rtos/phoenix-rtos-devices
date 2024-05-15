@@ -29,7 +29,23 @@ enum { flashsrv_devctl_properties = 0, flashsrv_devctl_sync, flashsrv_devctl_era
 
 typedef struct {
 	int type;
-	uint32_t addr;
+
+	union {
+		/* eraseSector */
+		struct {
+			uint32_t addr;
+		} erase;
+
+		/* directWrite */
+		struct {
+			uint32_t addr;
+		} write;
+
+		/* directRead */
+		struct {
+			uint32_t addr;
+		} read;
+	};
 } __attribute__((packed)) flash_i_devctl_t;
 
 
@@ -42,7 +58,9 @@ typedef struct {
 
 
 typedef struct {
-	flashsrv_properties_t properties;
+	union {
+		flashsrv_properties_t properties;
+	};
 } __attribute__((packed)) flash_o_devctl_t;
 
 
