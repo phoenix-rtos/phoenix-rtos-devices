@@ -74,7 +74,7 @@ typedef struct {
 
 	uint32_t pCnt;
 	uint8_t fStatus;
-	uint8_t rawActive;
+	bool rawActive;
 
 	oid_t fOid;
 	uint32_t rawPort;
@@ -770,7 +770,7 @@ static int flashsrv_mountPart(flashsrv_partition_t *part)
 			}
 
 			if (!flashsrv_common.flash_memories[part->fID].rawActive) {
-				flashsrv_common.flash_memories[part->fID].rawActive = 1;
+				flashsrv_common.flash_memories[part->fID].rawActive = true;
 
 				mem = malloc(THREAD_STACKSZ);
 				if (mem == NULL) {
@@ -961,7 +961,7 @@ static int flashsrv_flashMemoriesInit(void)
 			return err;
 		}
 
-		memory->rawActive = 0;
+		memory->rawActive = false;
 		memory->pCnt = 0;
 
 		err = create_dev(&memory->fOid, path);
