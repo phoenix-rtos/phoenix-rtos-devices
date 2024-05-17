@@ -70,7 +70,6 @@ typedef struct {
 
 	uint32_t pCnt;
 	uint8_t fStatus;
-	uint8_t currPart;
 	uint8_t rawActive;
 
 	oid_t fOid;
@@ -497,34 +496,28 @@ static void flashsrv_meterfsThread(void *arg)
 
 		switch (msg.type) {
 			case mtRead:
-				flashsrv_common.flash_memories[part->fID].currPart = part->oid.id;
 				msg.o.err = meterfs_readFile(msg.oid.id, msg.i.io.offs, msg.o.data, msg.o.size, (meterfs_ctx_t *)part->fsCtx);
 				break;
 
 			case mtWrite:
-				flashsrv_common.flash_memories[part->fID].currPart = part->oid.id;
 				msg.o.err = meterfs_writeFile(msg.oid.id, msg.i.data, msg.i.size, (meterfs_ctx_t *)part->fsCtx);
 				break;
 
 			case mtLookup:
-				flashsrv_common.flash_memories[part->fID].currPart = part->oid.id;
 				msg.o.err = meterfs_lookup(msg.i.data, &msg.o.lookup.fil.id, (meterfs_ctx_t *)part->fsCtx);
 				msg.o.lookup.fil.port = part->oid.port;
 				memcpy(&msg.o.lookup.dev, &msg.o.lookup.fil, sizeof(oid_t));
 				break;
 
 			case mtOpen:
-				flashsrv_common.flash_memories[part->fID].currPart = part->oid.id;
 				msg.o.err = meterfs_open(msg.oid.id, (meterfs_ctx_t *)part->fsCtx);
 				break;
 
 			case mtClose:
-				flashsrv_common.flash_memories[part->fID].currPart = part->oid.id;
 				msg.o.err = meterfs_close(msg.oid.id, (meterfs_ctx_t *)part->fsCtx);
 				break;
 
 			case mtDevCtl:
-				flashsrv_common.flash_memories[part->fID].currPart = part->oid.id;
 				msg.o.err = meterfs_devctl(idevctl, odevctl, (meterfs_ctx_t *)part->fsCtx);
 				break;
 
