@@ -41,38 +41,11 @@ enum { mcr0 = 0, mcr1, mcr2, ahbcr, inten, intr, lutkey, lutcr, ahbrxbuf0cr0, ah
 /* clang-format on */
 
 
-static inline void fspi_schedYield(void)
-{
-	(void)usleep(0);
-	/*
-	 * NOTICE: this schedYield is only valid when used with a scheduler that is able to block FLASH (xip)
-	 * threads from execution (threads with a lower priority than the higher priority RAM code).
-	 * Otherwise, adjust the implementation of this function as needed, following the same principles
-	 * as for the implementation of enter/exit critical sections.
-	 */
-}
-
-
-static time_t fspi_timerGetMillis(void)
+static time_t flexspi_timerGetMillis(void)
 {
 	struct timespec ts;
 	(void)clock_gettime(CLOCK_MONOTONIC, &ts);
 	return (time_t)(((unsigned long long)ts.tv_sec) * 1000uLL + ((unsigned long long)(ts.tv_nsec / 1000000L)));
-}
-
-
-static addr_t flexspi_getAddressByPort(flexspi_t *fspi, uint8_t port, addr_t addr)
-{
-	unsigned int i;
-
-	/* FlexSPI use the port (chip select) based on an offset of each memory size */
-	for (i = 0u; i < port; ++i) {
-		if (fspi->slPortMask & (1u << i)) {
-			addr += fspi->slFlashSz[i];
-		}
-	}
-
-	return addr;
 }
 
 
@@ -100,6 +73,53 @@ static int flexspi_checkFlags(flexspi_t *fspi)
 }
 
 
+static int flexspi_poll(flexspi_t *fspi, volatile uint32_t *addr, uint32_t mask, uint32_t val, time_t start, time_t timeout, int checkFlags)
+{
+	int res;
+	int retries = 0;
+
+	while ((*addr & mask) != val) {
+		if (checkFlags != 0) {
+			res = flexspi_checkFlags(fspi);
+			if (res != EOK) {
+				return res;
+			}
+		}
+
+		if (retries < FLEXSPI_QUICK_POLL_MAX_RETRIES) {
+			/*
+			 * Majority of polls finish in less than FLEXSPI_QUICK_POLL_MAX_RETRIES. Doing syscall
+			 * or yielding CPU is not optimal for such polls.
+			 */
+			retries++;
+		}
+		else {
+			if ((timeout > 0uLL) && ((flexspi_timerGetMillis() - start) >= timeout)) {
+				return -ETIME;
+			}
+			flexspi_schedYield();
+		}
+	}
+
+	return EOK;
+}
+
+
+static addr_t flexspi_getAddressByPort(flexspi_t *fspi, uint8_t port, addr_t addr)
+{
+	unsigned int i;
+
+	/* FlexSPI use the port (chip select) based on an offset of each memory size */
+	for (i = 0u; i < port; ++i) {
+		if (fspi->slPortMask & (1u << i)) {
+			addr += fspi->slFlashSz[i];
+		}
+	}
+
+	return addr;
+}
+
+
 static ssize_t flexspi_opRead(flexspi_t *fspi, time_t start, struct xferOp *xfer)
 {
 	int res;
@@ -110,15 +130,9 @@ static ssize_t flexspi_opRead(flexspi_t *fspi, time_t start, struct xferOp *xfer
 		volatile uint8_t *rfdr = (volatile uint8_t *)(fspi->base + rfdr32); /* 2x */
 
 		/* Wait for rx FIFO available */
-		while ((*(fspi->base + intr) & (1u << 5u)) == 0u) {
-			res = flexspi_checkFlags(fspi);
-			if (res != EOK) {
-				return res;
-			}
-			else if ((xfer->timeout > 0uLL) && ((fspi_timerGetMillis() - start) >= xfer->timeout)) {
-				return -ETIME;
-			}
-			fspi_schedYield();
+		res = flexspi_poll(fspi, fspi->base + intr, 1u << 5u, 1u << 5u, start, xfer->timeout, 1);
+		if (res != EOK) {
+			return res;
 		}
 
 		/* FlexSPI FIFO watermark level is 64bit aligned */
@@ -130,11 +144,9 @@ static ssize_t flexspi_opRead(flexspi_t *fspi, time_t start, struct xferOp *xfer
 		*(fspi->base + intr) |= 1u << 5u;
 	}
 
-	while ((*(fspi->base + sts0) & 3u) != 3u) {
-		if (xfer->timeout > 0uLL && (fspi_timerGetMillis() - start) >= xfer->timeout) {
-			return -ETIME;
-		}
-		fspi_schedYield();
+	res = flexspi_poll(fspi, fspi->base + sts0, 3u, 3u, start, xfer->timeout, 0);
+	if (res != EOK) {
+		return res;
 	}
 
 	return (ssize_t)xfer->data.read.sz;
@@ -151,15 +163,9 @@ static ssize_t flexspi_opWrite(flexspi_t *fspi, time_t start, struct xferOp *xfe
 		volatile uint8_t *tfdr = (volatile uint8_t *)(fspi->base + tfdr32); /* 2x */
 
 		/* Wait for tx FIFO available */
-		while ((*(fspi->base + intr) & (1u << 6u)) == 0u) {
-			res = flexspi_checkFlags(fspi);
-			if (res != EOK) {
-				return res;
-			}
-			else if ((xfer->timeout > 0uLL) && ((fspi_timerGetMillis() - start) >= xfer->timeout)) {
-				return -ETIME;
-			}
-			fspi_schedYield();
+		res = flexspi_poll(fspi, fspi->base + intr, 1u << 6u, 1u << 6u, start, xfer->timeout, 1);
+		if (res != EOK) {
+			return res;
 		}
 
 		/* FlexSPI FIFO watermark level is 64bit aligned */
@@ -171,11 +177,9 @@ static ssize_t flexspi_opWrite(flexspi_t *fspi, time_t start, struct xferOp *xfe
 		*(fspi->base + intr) |= 1u << 6u;
 	}
 
-	while ((*(fspi->base + sts0) & 3u) != 3u) {
-		if (xfer->timeout > 0uLL && (fspi_timerGetMillis() - start) >= xfer->timeout) {
-			return -ETIME;
-		}
-		fspi_schedYield();
+	res = flexspi_poll(fspi, fspi->base + sts0, 3u, 3u, start, xfer->timeout, 0);
+	if (res != EOK) {
+		return res;
 	}
 
 	return (ssize_t)xfer->data.write.sz;
@@ -184,8 +188,9 @@ static ssize_t flexspi_opWrite(flexspi_t *fspi, time_t start, struct xferOp *xfe
 
 ssize_t flexspi_xferExec(flexspi_t *fspi, struct xferOp *xfer)
 {
+	int res;
 	uint32_t dataSize;
-	time_t start = fspi_timerGetMillis();
+	time_t start = flexspi_timerGetMillis();
 
 	if (xfer->op == xfer_opRead) {
 		/* For >64k read out the data directly from the AHB buffer (data may be cached) */
@@ -209,11 +214,9 @@ ssize_t flexspi_xferExec(flexspi_t *fspi, struct xferOp *xfer)
 	}
 
 	/* Wait for either AHB & IP bus ready or sequence controller to be idle */
-	while ((*(fspi->base + sts0) & 3u) != 3u) {
-		if (xfer->timeout > 0uLL && (fspi_timerGetMillis() - start) >= xfer->timeout) {
-			return -ETIME;
-		}
-		fspi_schedYield();
+	res = flexspi_poll(fspi, fspi->base + sts0, 3u, 3u, start, xfer->timeout, 0);
+	if (res != EOK) {
+		return res;
 	}
 
 	/* Clear the instruction pointer */
@@ -249,11 +252,9 @@ ssize_t flexspi_xferExec(flexspi_t *fspi, struct xferOp *xfer)
 	}
 
 	/* Wait for IP command complete */
-	while ((*(fspi->base + intr) & 1u) == 0u) {
-		if (xfer->timeout > 0uLL && (fspi_timerGetMillis() - start) >= xfer->timeout) {
-			return -ETIME;
-		}
-		fspi_schedYield();
+	res = flexspi_poll(fspi, fspi->base + intr, 1u, 1u, start, xfer->timeout, 0);
+	if (res != EOK) {
+		return res;
 	}
 
 	/* Acknowledge */

@@ -103,12 +103,16 @@ int nor_waitBusy(flexspi_t *fspi, uint8_t port, time_t timeout)
 	int res;
 	uint8_t status = 0;
 
-	do {
+	for (;;) {
 		res = nor_readStatus(fspi, port, &status, timeout);
 		if (res < EOK) {
 			return res;
 		}
-	} while ((status & 1) != 0);
+		if ((status & 1) == 0) {
+			break;
+		}
+		flexspi_schedYield();
+	}
 
 	return EOK;
 }
