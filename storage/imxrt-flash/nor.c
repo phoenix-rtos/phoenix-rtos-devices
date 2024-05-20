@@ -111,7 +111,7 @@ int nor_waitBusy(flexspi_t *fspi, uint8_t port, time_t timeout)
 		if ((status & 1) == 0) {
 			break;
 		}
-		flexspi_schedYield();
+		flexspi_schedYield(fspi);
 	}
 
 	return EOK;
