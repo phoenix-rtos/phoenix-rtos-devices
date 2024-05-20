@@ -97,7 +97,7 @@ static int flexspi_poll(flexspi_t *fspi, volatile uint32_t *addr, uint32_t mask,
 			if ((timeout > 0uLL) && ((flexspi_timerGetMillis() - start) >= timeout)) {
 				return -ETIME;
 			}
-			flexspi_schedYield();
+			flexspi_schedYield(fspi);
 		}
 	}
 

@@ -286,6 +286,7 @@ static int flash_defineFlexSPI(flash_context_t *ctx)
 	switch (ctx->address) {
 		case FLASH_EXT_DATA_ADDRESS:
 			ctx->fspi.instance = 0;
+			ctx->fspi.xip = FLEXSPI1_XIP;
 			ctx->fspi.base = (void *)FLEXSPI1_BASE;
 			ctx->fspi.ahbAddr = (void *)FLEXSPI1_AHB_ADDR;
 			ctx->fspi.slPortMask = FLEXSPI1_PORT_MASK;
@@ -295,6 +296,7 @@ static int flash_defineFlexSPI(flash_context_t *ctx)
 
 		case FLASH_INTERNAL_DATA_ADDRESS:
 			ctx->fspi.instance = 1;
+			ctx->fspi.xip = FLEXSPI2_XIP;
 			ctx->fspi.base = (void *)FLEXSPI2_BASE;
 			ctx->fspi.ahbAddr = (void *)FLEXSPI2_AHB_ADDR;
 			ctx->fspi.slPortMask = FLEXSPI2_PORT_MASK;

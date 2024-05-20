@@ -28,11 +28,17 @@
 #define FLEXSPI1_AHB_ADDR ((addr_t)0x60000000)
 #define FLEXSPI2_AHB_ADDR ((addr_t)0x70000000)
 
+#ifndef FLEXSPI1_XIP
+#define FLEXSPI1_XIP 1
+#endif
 #ifndef FLEXSPI1_PORT
 #define FLEXSPI1_PORT 0
 #endif
 #ifndef FLEXSPI1_PORT_MASK
 #define FLEXSPI1_PORT_MASK 1
+#endif
+#ifndef FLEXSPI2_XIP
+#define FLEXSPI2_XIP 0
 #endif
 #ifndef FLEXSPI2_PORT
 #define FLEXSPI2_PORT 0
@@ -52,11 +58,17 @@
 #define FLEXSPI1_AHB_ADDR ((addr_t)0x30000000)
 #define FLEXSPI2_AHB_ADDR ((addr_t)0x60000000)
 
+#ifndef FLEXSPI1_XIP
+#define FLEXSPI1_XIP 1
+#endif
 #ifndef FLEXSPI1_PORT
 #define FLEXSPI1_PORT 0
 #endif
 #ifndef FLEXSPI1_PORT_MASK
 #define FLEXSPI1_PORT_MASK 1
+#endif
+#ifndef FLEXSPI2_XIP
+#define FLEXSPI2_XIP 0
 #endif
 #ifndef FLEXSPI2_PORT
 #define FLEXSPI2_PORT 0
@@ -78,6 +90,7 @@ typedef struct _flexspi_t {
 	volatile uint32_t *base;
 	uint8_t *ahbAddr;
 	uint8_t instance;
+	uint8_t xip;
 	uint8_t slPortMask;
 	size_t slFlashSz[4];
 } flexspi_t;
@@ -108,15 +121,20 @@ struct xferOp {
 };
 
 
-static inline void flexspi_schedYield(void)
+static inline void flexspi_schedYield(flexspi_t *fspi)
 {
-	/*
-	 * NOTICE: this schedYield is only valid when used with a scheduler that is able to block FLASH (xip)
-	 * threads from execution (threads with a lower priority than the higher priority RAM code).
-	 * Otherwise, adjust the implementation of this function as needed, following the same principles
-	 * as for the implementation of enter/exit critical sections.
-	 */
-	(void)usleep(0);
+	if (fspi->xip == 1) {
+		/*
+		 * NOTICE: this schedYield is only valid when used with a scheduler that is able to block FLASH (xip)
+		 * threads from execution (threads with a lower priority than the higher priority RAM code).
+		 * Otherwise, adjust the implementation of this function as needed, following the same principles
+		 * as for the implementation of enter/exit critical sections.
+		 */
+		(void)usleep(0);
+	}
+	else {
+		(void)usleep(100);
+	}
 }
 
 
