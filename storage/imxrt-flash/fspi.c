@@ -126,7 +126,24 @@ static ssize_t flexspi_opRead(flexspi_t *fspi, time_t start, struct xferOp *xfer
 	uint8_t *ptr = xfer->data.read.ptr;
 	uint8_t *end = ptr + xfer->data.read.sz;
 
-	while (ptr != end) {
+	while ((ptr + sizeof(uint64_t)) <= end) {
+		/* Wait for rx FIFO available */
+		res = flexspi_poll(fspi, fspi->base + intr, 1u << 5u, 1u << 5u, start, xfer->timeout, 1);
+		if (res != EOK) {
+			return res;
+		}
+
+		/* FlexSPI FIFO watermark level is 64bit aligned */
+		*(uint32_t *)ptr = *(fspi->base + rfdr32);
+		ptr += sizeof(uint32_t);
+		*(uint32_t *)ptr = *(fspi->base + rfdr32 + 1);
+		ptr += sizeof(uint32_t);
+
+		/* Move FIFO pointer to watermark level */
+		*(fspi->base + intr) |= 1u << 5u;
+	}
+
+	if (ptr != end) {
 		volatile uint8_t *rfdr = (volatile uint8_t *)(fspi->base + rfdr32); /* 2x */
 
 		/* Wait for rx FIFO available */
@@ -136,7 +153,7 @@ static ssize_t flexspi_opRead(flexspi_t *fspi, time_t start, struct xferOp *xfer
 		}
 
 		/* FlexSPI FIFO watermark level is 64bit aligned */
-		for (size_t n = sizeof(uint64_t); (n != 0u) && (ptr != end); --n) {
+		while (ptr != end) {
 			*(ptr++) = *(rfdr++);
 		}
 
@@ -159,7 +176,24 @@ static ssize_t flexspi_opWrite(flexspi_t *fspi, time_t start, struct xferOp *xfe
 	const uint8_t *ptr = xfer->data.write.ptr;
 	const uint8_t *end = ptr + xfer->data.write.sz;
 
-	while (ptr != end) {
+	while ((ptr + sizeof(uint64_t)) <= end) {
+		/* Wait for tx FIFO available */
+		res = flexspi_poll(fspi, fspi->base + intr, 1u << 6u, 1u << 6u, start, xfer->timeout, 1);
+		if (res != EOK) {
+			return res;
+		}
+
+		/* FlexSPI FIFO watermark level is 64bit aligned */
+		*(fspi->base + tfdr32) = *(uint32_t *)ptr;
+		ptr += sizeof(uint32_t);
+		*(fspi->base + tfdr32 + 1) = *(uint32_t *)ptr;
+		ptr += sizeof(uint32_t);
+
+		/* Move FIFO pointer to watermark level */
+		*(fspi->base + intr) |= 1u << 6u;
+	}
+
+	if (ptr != end) {
 		volatile uint8_t *tfdr = (volatile uint8_t *)(fspi->base + tfdr32); /* 2x */
 
 		/* Wait for tx FIFO available */
@@ -169,7 +203,7 @@ static ssize_t flexspi_opWrite(flexspi_t *fspi, time_t start, struct xferOp *xfe
 		}
 
 		/* FlexSPI FIFO watermark level is 64bit aligned */
-		for (size_t n = sizeof(uint64_t); (n != 0u) && (ptr != end); --n) {
+		while (ptr != end) {
 			*(tfdr++) = *(ptr++);
 		}
 
