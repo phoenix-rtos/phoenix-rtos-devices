@@ -103,10 +103,6 @@ struct xferOp {
 };
 
 
-/* Software reset (without configuration registers) */
-extern void flexspi_swreset(flexspi_t *fspi);
-
-
 /* Execute a transfer using lookup table of FlexSPI sequences */
 extern ssize_t flexspi_xferExec(flexspi_t *fspi, struct xferOp *xfer);
 
