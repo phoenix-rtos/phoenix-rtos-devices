@@ -36,8 +36,6 @@ typedef struct {
 	uint8_t isDirty;
 
 	uint32_t address;
-	uint32_t instance;
-	uint32_t flashID;
 	time_t timeout;
 
 	uint32_t prevAddr;

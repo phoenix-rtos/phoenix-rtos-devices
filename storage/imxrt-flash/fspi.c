@@ -61,15 +61,6 @@ static time_t fspi_timerGetMillis(void)
 }
 
 
-void flexspi_swreset(flexspi_t *fspi)
-{
-	*(fspi->base + mcr0) |= 1u;
-	while ((*(fspi->base + mcr0) & 1u) != 0u) {
-		fspi_schedYield();
-	}
-}
-
-
 static addr_t flexspi_getAddressByPort(flexspi_t *fspi, uint8_t port, addr_t addr)
 {
 	unsigned int i;

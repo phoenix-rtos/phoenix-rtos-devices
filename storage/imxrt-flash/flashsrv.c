@@ -83,7 +83,6 @@ typedef struct {
 static struct {
 	flashsrv_memory_t flash_memories[FLASH_MEMORIES_NO];
 	uint32_t flexspi_addresses[FLASH_MEMORIES_NO];
-	flashsrv_partitionOps_t ops;
 } flashsrv_common;
 
 
@@ -985,110 +984,6 @@ static inline int isXIP(void *addr)
 }
 
 
-static int flashsrv_getProperties(uint8_t fID, flashsrv_properties_t *p)
-{
-	flashsrv_memory_t *mem;
-
-	int res = flashsrv_getFlashMemory(fID, &mem);
-	if (res == EOK) {
-		mutexLock(mem->lock);
-		p->size = mem->ctx.properties.size;
-		p->psize = mem->ctx.properties.page_size;
-		p->ssize = mem->ctx.properties.sector_size;
-		p->offs = 0;
-		mutexUnlock(mem->lock);
-	}
-	return res;
-}
-
-
-static int flashsrv_safeCalcCrc32(uint8_t fID, size_t offset, size_t len, uint32_t *crc32)
-{
-	ssize_t ret;
-	flashsrv_memory_t *mem;
-
-	ret = flashsrv_getFlashMemory(fID, &mem);
-	if (ret < 0) {
-		return ret;
-	}
-
-	mutexLock(mem->lock);
-	ret = flashsrv_calcCrc32(fID, offset, len, crc32);
-	mutexUnlock(mem->lock);
-
-	return ret;
-}
-
-
-static ssize_t flashsrv_safeDirectWrite(uint8_t fID, size_t offset, const void *data, size_t size)
-{
-	ssize_t ret;
-	flashsrv_memory_t *mem;
-
-	ret = flashsrv_getFlashMemory(fID, &mem);
-	if (ret < 0) {
-		return ret;
-	}
-
-	mutexLock(mem->lock);
-	ret = flashsrv_directWrite(fID, offset, data, size);
-	mutexUnlock(mem->lock);
-	return ret;
-}
-
-
-static ssize_t flashsrv_safeDirectRead(uint8_t fID, size_t offset, void *data, size_t size)
-{
-	ssize_t ret;
-	flashsrv_memory_t *mem;
-
-	ret = flashsrv_getFlashMemory(fID, &mem);
-	if (ret < 0) {
-		return ret;
-	}
-
-	mutexLock(mem->lock);
-	ret = flashsrv_directRead(fID, offset, data, size);
-	mutexUnlock(mem->lock);
-	return ret;
-}
-
-
-static int flashsrv_safeSectorErase(uint8_t fID, size_t offs)
-{
-	ssize_t ret;
-	flashsrv_memory_t *mem;
-
-	ret = flashsrv_getFlashMemory(fID, &mem);
-	if (ret < 0) {
-		return ret;
-	}
-
-	mutexLock(mem->lock);
-	ret = flashsrv_eraseSector(fID, offs);
-	mutexUnlock(mem->lock);
-	return ret;
-}
-
-
-__attribute__((weak)) int flashsrv_customIntInit(flashsrv_partitionOps_t *ops)
-{
-	return EOK;
-};
-
-
-static int flashsrv_customInit(void)
-{
-	flashsrv_common.ops.read = flashsrv_safeDirectRead;
-	flashsrv_common.ops.write = flashsrv_safeDirectWrite;
-	flashsrv_common.ops.eraseSector = flashsrv_safeSectorErase;
-	flashsrv_common.ops.getProperties = flashsrv_getProperties;
-	flashsrv_common.ops.calcCrc32 = flashsrv_safeCalcCrc32;
-
-	return flashsrv_customIntInit(&flashsrv_common.ops);
-}
-
-
 int main(void)
 {
 	void *mem;
@@ -1108,10 +1003,6 @@ int main(void)
 	if (flashsrv_partsInit() != EOK) {
 		LOG_ERROR("imxrt-flashsrv: partitions were not initialized correctly.\n");
 		return EXIT_FAILURE;
-	}
-
-	if (flashsrv_customInit() < 0) {
-		LOG_ERROR("imxrt-flashsrv: custom init failed.\n");
 	}
 
 	printf("imxrt-flashsrv: initialized.\n");
