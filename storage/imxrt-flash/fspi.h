@@ -11,6 +11,7 @@
  * %LICENSE%
  */
 
+#include <unistd.h>
 #include <board_config.h>
 
 #ifndef _FLEXSPI_H_
@@ -68,6 +69,10 @@
 #error "FlexSPI is not supported on this target"
 #endif
 
+#ifndef FLEXSPI_QUICK_POLL_MAX_RETRIES
+#define FLEXSPI_QUICK_POLL_MAX_RETRIES 5
+#endif
+
 
 typedef struct _flexspi_t {
 	volatile uint32_t *base;
@@ -101,6 +106,18 @@ struct xferOp {
 		} command;
 	} data;
 };
+
+
+static inline void flexspi_schedYield(void)
+{
+	/*
+	 * NOTICE: this schedYield is only valid when used with a scheduler that is able to block FLASH (xip)
+	 * threads from execution (threads with a lower priority than the higher priority RAM code).
+	 * Otherwise, adjust the implementation of this function as needed, following the same principles
+	 * as for the implementation of enter/exit critical sections.
+	 */
+	(void)usleep(0);
+}
 
 
 /* Execute a transfer using lookup table of FlexSPI sequences */
