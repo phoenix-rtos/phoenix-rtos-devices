@@ -71,7 +71,7 @@
 
 typedef struct _flexspi_t {
 	volatile uint32_t *base;
-	uint32_t *ahbAddr;
+	uint8_t *ahbAddr;
 	uint8_t instance;
 	uint8_t slPortMask;
 	size_t slFlashSz[4];
