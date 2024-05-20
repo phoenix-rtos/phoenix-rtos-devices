@@ -191,7 +191,7 @@ ssize_t flexspi_xferExec(flexspi_t *fspi, struct xferOp *xfer)
 		/* For >64k read out the data directly from the AHB buffer (data may be cached) */
 		if (xfer->data.read.sz > 0xffffu) {
 			memcpy(xfer->data.read.ptr, fspi->ahbAddr + xfer->addr, xfer->data.read.sz);
-			return EOK;
+			return (ssize_t)xfer->data.read.sz;
 		}
 
 		dataSize = xfer->data.read.sz & 0xffffu;
