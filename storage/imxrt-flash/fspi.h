@@ -17,6 +17,19 @@
 #ifndef _FLEXSPI_H_
 #define _FLEXSPI_H_
 
+/* clang-format off */
+
+/*
+ * Use to construct (FLEXSPIx_PORT_MASK) consisting of one or more slave buses per flexspi instance x
+ */
+enum { flexspi_slBusA1 = 0x1, flexspi_slBusA2 = 0x2, flexspi_slBusB1 = 0x4, flexspi_slBusB2 = 0x8 };
+
+/* Select particular slave bus during xferExec */
+enum { flexspi_portA1 = 0, flexspi_portA2, flexspi_portB1, flexspi_portB2 };
+
+/* clang-format on */
+
+
 #if defined(__CPU_IMXRT106X)
 
 #ifndef FLEXSPI_COUNT
@@ -32,7 +45,7 @@
 #define FLEXSPI1_XIP 1
 #endif
 #ifndef FLEXSPI1_PORT
-#define FLEXSPI1_PORT 0
+#define FLEXSPI1_PORT flexspi_portA1
 #endif
 #ifndef FLEXSPI1_PORT_MASK
 #define FLEXSPI1_PORT_MASK 1
@@ -41,10 +54,10 @@
 #define FLEXSPI2_XIP 0
 #endif
 #ifndef FLEXSPI2_PORT
-#define FLEXSPI2_PORT 0
+#define FLEXSPI2_PORT flexspi_portA1
 #endif
 #ifndef FLEXSPI2_PORT_MASK
-#define FLEXSPI2_PORT_MASK 1
+#define FLEXSPI2_PORT_MASK flexspi_slBusA1
 #endif
 
 #elif defined(__CPU_IMXRT117X)
@@ -62,19 +75,19 @@
 #define FLEXSPI1_XIP 1
 #endif
 #ifndef FLEXSPI1_PORT
-#define FLEXSPI1_PORT 0
+#define FLEXSPI1_PORT flexspi_portA1
 #endif
 #ifndef FLEXSPI1_PORT_MASK
-#define FLEXSPI1_PORT_MASK 1
+#define FLEXSPI1_PORT_MASK flexspi_slBusA1
 #endif
 #ifndef FLEXSPI2_XIP
 #define FLEXSPI2_XIP 0
 #endif
 #ifndef FLEXSPI2_PORT
-#define FLEXSPI2_PORT 0
+#define FLEXSPI2_PORT flexspi_portA1
 #endif
 #ifndef FLEXSPI2_PORT_MASK
-#define FLEXSPI2_PORT_MASK 1
+#define FLEXSPI2_PORT_MASK flexspi_slBusA1
 #endif
 
 #else
