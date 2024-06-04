@@ -218,7 +218,7 @@ int gpio_init(void)
 		platformctl_t pctl = {
 			.action = pctl_get,
 			.type = pctl_ambapp,
-			.ambapp = {
+			.task.ambapp = {
 				.dev = &dev,
 				.instance = &instance,
 			}

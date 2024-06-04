@@ -321,9 +321,9 @@ static int uart_cguInit(unsigned int n)
 	ctl.action = pctl_set;
 	ctl.type = pctl_cguctrl;
 
-	ctl.cguctrl.state = enable;
-	ctl.cguctrl.cgu = cgu_primary;
-	ctl.cguctrl.cgudev = cguinfo[n];
+	ctl.task.cguctrl.v.state = enable;
+	ctl.task.cguctrl.cgu = cgu_primary;
+	ctl.task.cguctrl.cgudev = cguinfo[n];
 
 	return platformctl(&ctl);
 #else
@@ -339,7 +339,7 @@ static int uart_init(unsigned int n, speed_t baud, int raw)
 	platformctl_t ctl = {
 		.action = pctl_set,
 		.type = pctl_iomux,
-		.iocfg = {
+		.task.iocfg = {
 			.opt = 0x1,
 			.pin = info[n].rxPin,
 			.pullup = 0,
@@ -351,7 +351,7 @@ static int uart_init(unsigned int n, speed_t baud, int raw)
 		return -1;
 	}
 
-	ctl.iocfg.pin = info[n].txPin;
+	ctl.task.iocfg.pin = info[n].txPin;
 
 	if (platformctl(&ctl) < 0) {
 		return -1;
@@ -367,8 +367,8 @@ static int uart_init(unsigned int n, speed_t baud, int raw)
 
 	ctl.action = pctl_get;
 	ctl.type = pctl_ambapp;
-	ctl.ambapp.dev = &dev;
-	ctl.ambapp.instance = &instance;
+	ctl.task.ambapp.dev = &dev;
+	ctl.task.ambapp.instance = &instance;
 
 	if (platformctl(&ctl) < 0) {
 		return -1;

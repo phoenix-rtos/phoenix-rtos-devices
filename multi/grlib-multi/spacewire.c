@@ -648,8 +648,8 @@ static int spw_cguInit(int dev)
 	platformctl_t pctl = {
 		.action = pctl_set,
 		.type = pctl_cguctrl,
-		.cguctrl = {
-			.state = enable,
+		.task.cguctrl = {
+			.v.state = enable,
 			.cgudev = cgudev_spw0 + dev,
 		}
 	};
@@ -658,8 +658,8 @@ static int spw_cguInit(int dev)
 	platformctl_t pctl = {
 		.action = pctl_set,
 		.type = pctl_cguctrl,
-		.cguctrl = {
-			.state = enable,
+		.task.cguctrl = {
+			.v.state = enable,
 			.cgu = cgu_secondary,
 			.cgudev = cgudev_grspw,
 		}
@@ -791,7 +791,7 @@ int spw_init(void)
 		platformctl_t pctl = {
 			.action = pctl_get,
 			.type = pctl_ambapp,
-			.ambapp = {
+			.task.ambapp = {
 				.dev = &dev,
 				.instance = &instance,
 			}
