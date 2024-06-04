@@ -102,7 +102,7 @@ grdma_ctx_t *grdma_init(unsigned int instance)
 	platformctl_t pctl = {
 		.action = pctl_get,
 		.type = pctl_ambapp,
-		.ambapp = {
+		.task.ambapp = {
 			.dev = &dev,
 			.instance = &instance,
 		}

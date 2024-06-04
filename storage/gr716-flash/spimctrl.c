@@ -146,7 +146,7 @@ int spimctrl_init(spimctrl_t *spimctrl, int instance)
 	platformctl_t pctl = {
 		.action = pctl_get,
 		.type = pctl_cguctrl,
-		.cguctrl = {
+		.task.cguctrl = {
 			.cgu = cgu_primary,
 			.cgudev = cgudev_spimctrl0 + instance,
 		}
@@ -166,9 +166,9 @@ int spimctrl_init(spimctrl_t *spimctrl, int instance)
 	spimctrl->instance = instance;
 
 	/* Enable clock if needed */
-	if (pctl.cguctrl.stateVal == 0) {
+	if (pctl.task.cguctrl.v.stateVal == 0) {
 		pctl.action = pctl_set;
-		pctl.cguctrl.state = enable;
+		pctl.task.cguctrl.v.state = enable;
 		res = platformctl(&pctl);
 		if (res < 0) {
 			return res;

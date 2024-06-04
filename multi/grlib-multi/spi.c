@@ -96,29 +96,29 @@ static int spi_initPins(spi_pins_t *pins)
 	platformctl_t pctl = {
 		.action = pctl_set,
 		.type = pctl_iomux,
-		.iocfg = {
+		.task.iocfg = {
 			.opt = SPI_IOMUX_OPT,
 			.pulldn = 0,
 			.pullup = 0,
 		}
 	};
 
-	pctl.iocfg.pin = pins->sck;
+	pctl.task.iocfg.pin = pins->sck;
 	if (platformctl(&pctl) < 0) {
 		return -1;
 	}
 
-	pctl.iocfg.pin = pins->mosi;
+	pctl.task.iocfg.pin = pins->mosi;
 	if (platformctl(&pctl) < 0) {
 		return -1;
 	}
 
-	pctl.iocfg.pin = pins->miso;
+	pctl.task.iocfg.pin = pins->miso;
 	if (platformctl(&pctl) < 0) {
 		return -1;
 	}
 
-	pctl.iocfg.pin = pins->cs;
+	pctl.task.iocfg.pin = pins->cs;
 	if (platformctl(&pctl) < 0) {
 		return -1;
 	}
@@ -280,13 +280,13 @@ static int spi_cguInit(int dev)
 	platformctl_t pctl = {
 		.action = pctl_set,
 		.type = pctl_cguctrl,
-		.cguctrl = {
-			.state = enable,
+		.task.cguctrl = {
+			.v.state = enable,
 			.cgu = cgu_primary,
 		}
 	};
 
-	pctl.cguctrl.cgudev = cgudev_spictrl0 + dev;
+	pctl.task.cguctrl.cgudev = cgudev_spictrl0 + dev;
 	return platformctl(&pctl);
 #else
 	return 0;
@@ -342,7 +342,7 @@ int spi_init(void)
 		platformctl_t pctl = {
 			.action = pctl_get,
 			.type = pctl_ambapp,
-			.ambapp = {
+			.task.ambapp = {
 				.dev = &dev,
 				.instance = &instance,
 			}
