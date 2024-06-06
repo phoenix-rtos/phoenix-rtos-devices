@@ -34,7 +34,13 @@
 
 #include <phoenix/ioctl.h>
 
+#if defined(__TARGET_SPARCV8LEON3)
 #include <phoenix/arch/sparcv8leon3/sparcv8leon3.h>
+#elif defined(__TARGET_RISCV64)
+#include <phoenix/arch/riscv64/riscv64.h>
+#endif
+
+#include <phoenix/gaisler/ambapp.h>
 
 #define UART_STACKSZ (4096)
 
@@ -105,7 +111,7 @@ static struct {
 } uart_common;
 
 
-static int uart_interrupt(unsigned int n, void *arg)
+static int __attribute__((section(".interrupt"), aligned(0x1000))) uart_interrupt(unsigned int n, void *arg)
 {
 	uart_t *uart = (uart_t *)arg;
 
