@@ -424,7 +424,7 @@ static int loadFromFile(const char *path)
 	cleanInvalDCache((void *)m4_common.m4memory, m4_common.m4memorysz);
 
 	while (total < m4_common.m4memorysz) {
-		r = fread(buff, sizeof(buff), 1, f);
+		r = fread(buff, 1, sizeof(buff), f);
 		if (r == 0) {
 			if (ferror(f) != 0) {
 				fclose(f);
