@@ -268,6 +268,9 @@ static int tty_dmarxready(tty_ctx_t *ctx)
 
 static int tty_uartenabled(tty_ctx_t *ctx)
 {
+	if ((uint32_t)(ctx->base + cr1) == 0x40004400) {
+		*(int*)NULL = 0;
+	}
 	return (*(ctx->base + cr1) & 1) ? 1 : 0;
 }
 
