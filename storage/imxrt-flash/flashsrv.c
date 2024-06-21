@@ -740,6 +740,8 @@ static int flashsrv_initMeterfs(flashsrv_partition_t *part)
 		ctx->eraseSector = flashsrv_fsEraseSectorf1;
 	}
 
+	ctx->keyInit = false;
+
 	if (meterfs_init(ctx) < 0) {
 		LOG_ERROR("imxrt-flashsrv: init meterfs at flash: %u, partition: %u.", part->fID, part->oid.id);
 		return -1;

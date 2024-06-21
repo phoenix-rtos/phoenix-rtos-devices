@@ -111,6 +111,8 @@ int hostflashsrv_init(size_t *flashsz, size_t *sectorsz, const char *fileName)
 
 	hostflashsrv_common.ctx.devCtx = hostflash_devCtx();
 
+	hostflashsrv_common.ctx.keyInit = false;
+
 	if (meterfs_init(&hostflashsrv_common.ctx) < 0) {
 		printf("hostflashsrv: meterfs init failed\n");
 		return -1;
