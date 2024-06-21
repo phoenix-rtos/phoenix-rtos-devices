@@ -482,6 +482,8 @@ static int flashsrv_initMeterfs(flashsrv_partition_t *part)
 	ctx->write = flashsrv_fsWritef0;
 	ctx->eraseSector = flashsrv_fsEraseSectorf0;
 
+	ctx->keyInit = false;
+
 	if (meterfs_init(ctx) < 0) {
 		LOG_ERROR("failed to initialize meterfs at flash: %u, partition: %u", part->fID, part->oid.id);
 		return -1;
