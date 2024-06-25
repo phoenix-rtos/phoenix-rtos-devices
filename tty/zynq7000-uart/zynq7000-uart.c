@@ -126,8 +126,8 @@ static void uart_intThread(void *arg)
 			libtty_wake_writer(&uart->tty);
 		}
 
-		/* RX Trigger IRQ occurred */
-		if (*(uart->base + isr) & (1 << 0)) {
+		/* RX Trigger IRQ occurred and turned off the interrupt */
+		if ((*(uart->base + imr) & (1 << 0)) == 0) {
 			*(uart->base + isr) = (1 << 0); /* RX Trigger status can be cleared after getting data from RX FIFO */
 			*(uart->base + ier) = (1 << 0); /* Enable RX Trigger irq which has been disabled in uart irq handler */
 		}
