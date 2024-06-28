@@ -1,0 +1,9 @@
+#
+# Makefile for Phoenix-RTOS 3 device drivers
+#
+# MCX N94x drivers
+#
+# Copyright 2019, 2020, 2024 Phoenix Systems
+#
+
+DEFAULT_COMPONENTS := mcxn94x-multi
