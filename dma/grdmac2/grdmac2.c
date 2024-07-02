@@ -17,6 +17,7 @@
 #include <sys/mman.h>
 #include <sys/platform.h>
 
+#include <phoenix/gaisler/ambapp.h>
 #include <phoenix/arch/sparcv8leon3/sparcv8leon3.h>
 
 #include "grdmac2.h"

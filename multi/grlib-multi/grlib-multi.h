@@ -19,6 +19,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <sys/types.h>
+#include <phoenix/gaisler/ambapp.h>
 
 
 /* clang-format off */
