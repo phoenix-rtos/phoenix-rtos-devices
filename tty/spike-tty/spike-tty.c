@@ -180,7 +180,7 @@ static void spiketty_thr(void *arg)
 	for (;;) {
 		if ((c = sbi_getchar()) > 0)
 			libtty_putchar(&spiketty->tty, c, NULL);
-		usleep(10);
+		usleep(50000);
 	}
 }
 
