@@ -1164,6 +1164,54 @@
 
 #endif /* #ifdef __CPU_IMXRT117X */
 
+#ifndef I2C1_PUSHPULL
+#define I2C1_PUSHPULL 0
+#endif
+
+#ifndef I2C2_PUSHPULL
+#define I2C2_PUSHPULL 0
+#endif
+
+#ifndef I2C3_PUSHPULL
+#define I2C3_PUSHPULL 0
+#endif
+
+#ifndef I2C4_PUSHPULL
+#define I2C4_PUSHPULL 0
+#endif
+
+#ifndef I2C5_PUSHPULL
+#define I2C5_PUSHPULL 0
+#endif
+
+#ifndef I2C6_PUSHPULL
+#define I2C6_PUSHPULL 0
+#endif
+
+#ifndef I2C1_SPEED
+#define I2C1_SPEED i2c_speed_slow
+#endif
+
+#ifndef I2C2_SPEED
+#define I2C2_SPEED i2c_speed_slow
+#endif
+
+#ifndef I2C3_SPEED
+#define I2C3_SPEED i2c_speed_slow
+#endif
+
+#ifndef I2C4_SPEED
+#define I2C4_SPEED i2c_speed_slow
+#endif
+
+#ifndef I2C5_SPEED
+#define I2C5_SPEED i2c_speed_slow
+#endif
+
+#ifndef I2C6_SPEED
+#define I2C6_SPEED i2c_speed_slow
+#endif
+
 
 /* TRNG */
 

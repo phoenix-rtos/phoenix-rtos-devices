@@ -26,14 +26,12 @@ enum { id_console = 0, id_uart1, id_uart2, id_uart3, id_uart4, id_uart5, id_uart
 #ifdef __CPU_IMXRT117X
 	id_spi5, id_spi6,
 #endif
-	id_i2c1, id_i2c2, id_i2c3, id_i2c4, id_trng,
-#ifdef __CPU_IMXRT117X
-	id_cm4_0, id_cm4_1, id_cm4_2, id_cm4_3,
-#endif
-	id_pseudoNull, id_pseudoZero, id_pseudoFull, id_pseudoRandom, id_kmsgctrl,
+	id_i2c1, id_i2c2, id_i2c3, id_i2c4,
 #ifdef __CPU_IMXRT117X
 	id_i2c5, id_i2c6,
+	id_cm4_0, id_cm4_1, id_cm4_2, id_cm4_3,
 #endif
+	id_trng, id_pseudoNull, id_pseudoZero, id_pseudoFull, id_pseudoRandom, id_kmsgctrl,
 };
 /* clang-format on */
 
@@ -91,6 +89,15 @@ typedef struct {
 
 } spi_t;
 /* clang-format on */
+
+
+/* I2C */
+
+enum i2c_speeds {
+	i2c_speed_slow = 0,
+	i2c_speed_fast,
+	i2c_speed_fast_plus,
+};
 
 
 /* Cortex M4 */
