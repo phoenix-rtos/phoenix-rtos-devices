@@ -422,13 +422,15 @@ static int createDevFiles(void)
 	}
 #endif
 
-#if I2C4
+#if I2C6
 	if (mkFile(&dir, id_i2c6, "i2c6", multi_port) < 0) {
 		return -1;
 	}
 #endif
 
 #endif
+
+#ifndef __CPU_IMXRT117X
 
 #if TRNG
 	if (mkFile(&dir, id_trng, "random", multi_port) < 0) {
@@ -439,6 +441,8 @@ static int createDevFiles(void)
 	if (mkFile(&dir, id_trng, "trng", multi_port) < 0) {
 		return -1;
 	}
+#endif
+
 #endif
 
 	return 0;
