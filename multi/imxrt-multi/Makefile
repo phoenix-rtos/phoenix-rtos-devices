@@ -8,7 +8,7 @@ NAME := imxrt-multi
 
 LOCAL_PATH := $(call my-dir)
 
-LOCAL_SRCS = imxrt-multi.c common.c uart.c gpio.c spi.c i2c.c fs.c posixsrv.c
+LOCAL_SRCS = imxrt-multi.c common.c uart.c gpio.c spi.c i2c.c fs.c posixsrv.c pct2075.c
 ifneq ($(TARGET_SUBFAMILY), imxrt117x)
   LOCAL_SRCS += trng.c
 else
