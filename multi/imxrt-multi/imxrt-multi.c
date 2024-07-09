@@ -43,6 +43,10 @@
 #include <pseudodev.h>
 #endif
 
+#if PCT2075
+#include "pct2075.h"
+#endif
+
 #define MULTI_THREADS_NO 2
 #define UART_THREADS_NO 2
 
@@ -142,6 +146,12 @@ static void multi_dispatchMsg(msg_t *msg)
 			if (pseudo_handleMsg(msg, multi2pseudo(id)) < 0) {
 				msg->o.err = -EPERM;
 			}
+			break;
+#endif
+
+#if PCT2075
+		case id_temp1:
+			pct2075_handleMsg(msg);
 			break;
 #endif
 
@@ -443,6 +453,12 @@ static int createDevFiles(void)
 	}
 #endif
 
+#endif
+
+#if PCT2075
+	if (mkFile(&dir, id_temp1, "temp1", multi_port) < 0) {
+		return -1;
+	}
 #endif
 
 	return 0;

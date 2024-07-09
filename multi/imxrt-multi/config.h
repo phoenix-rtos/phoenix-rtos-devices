@@ -1223,6 +1223,18 @@
 
 #endif /* #ifndef __CPU_IMXRT117X */
 
+/* Temperature */
+
+#ifndef PCT2075
+#define PCT2075 0
+#elif !ISBOOLEAN(PCT2075)
+#error "PCT2075 must have a value of 0, 1, or be undefined"
+#elif !defined(PCT2075_BUS_NUM)
+#error "PCT2075_BUS_NUM must be defined"
+#elif !defined(PCT2075_DEV_ADDR)
+#error "PCT2075_DEV_ADDR must be defined"
+#endif
+
 /* libdummyfs */
 #ifndef BUILTIN_DUMMYFS
 #define BUILTIN_DUMMYFS 0

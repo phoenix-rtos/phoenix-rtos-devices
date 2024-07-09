@@ -31,7 +31,7 @@ enum { id_console = 0, id_uart1, id_uart2, id_uart3, id_uart4, id_uart5, id_uart
 	id_i2c5, id_i2c6,
 	id_cm4_0, id_cm4_1, id_cm4_2, id_cm4_3,
 #endif
-	id_trng, id_pseudoNull, id_pseudoZero, id_pseudoFull, id_pseudoRandom, id_kmsgctrl,
+	id_trng, id_pseudoNull, id_pseudoZero, id_pseudoFull, id_pseudoRandom, id_kmsgctrl, id_temp1
 };
 /* clang-format on */
 

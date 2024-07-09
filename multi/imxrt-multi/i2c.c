@@ -18,9 +18,7 @@
 #include <i2c-msg.h>
 #include <errno.h>
 
-#include <board_config.h>
 #include "common.h"
-#include "config.h"
 #include "trace.h"
 
 
@@ -232,7 +230,7 @@ static inline int _i2c_getAndClearStatus(volatile uint32_t *base)
 	*(base + msr) = status;
 
 	if ((status & STATUS_PIN_LOW_TIMEOUT) != 0) {
-		return -ETIME;
+		return -ETIMEDOUT;
 	}
 	else if ((status & STATUS_FIFO_ERROR) != 0) {
 		return -EIO;
@@ -241,7 +239,7 @@ static inline int _i2c_getAndClearStatus(volatile uint32_t *base)
 		return -EIO;
 	}
 	else if ((status & STATUS_NACK) != 0) {
-		return -ENOENT;
+		return -ENXIO;
 	}
 	else if ((status & STATUS_STOP) != 0) {
 		return RET_STOP;
@@ -266,7 +264,7 @@ static int _i2c_waitForInterrupt(int pos, uint32_t bitWait)
 			*(base + mier) = 0;
 			/* More cleanup will be done by _i2c_finishTransaction */
 			mutexUnlock(i2c_common[pos].irqMutex);
-			return -ETIME;
+			return -ETIMEDOUT;
 		}
 	} while (i2c_common[pos].state != i2c_stateReady);
 
@@ -375,7 +373,7 @@ static int _i2c_finishTransaction(int pos, int ret)
 			ret = -EIO;
 		}
 
-		if (ret == -ETIME) {
+		if (ret == -ETIMEDOUT) {
 			mutexLock(i2c_common[pos].irqMutex);
 			i2c_common[pos].state = i2c_stateReady;
 			/* cond may have been signalled before we turned off IRQ - try to take it to ensure it's
@@ -488,6 +486,48 @@ void i2c_handleMsg(msg_t *msg, int dev)
 			msg->o.err = -ENOSYS;
 			break;
 	}
+}
+
+
+int multi_i2c_busWrite(unsigned bus, uint8_t dev_addr, const uint8_t *data, uint32_t len)
+{
+	if (bus >= N_PERIPHERALS) {
+		return -EINVAL;
+	}
+
+	unsigned pos = i2cPreConfig[bus].pos;
+	mutexLock(i2c_common[pos].mutex);
+	int ret = _i2c_busWrite(pos, dev_addr, data, len);
+	mutexUnlock(i2c_common[pos].mutex);
+	return ret;
+}
+
+
+int multi_i2c_busRead(unsigned bus, uint8_t dev_addr, uint8_t *data_out, uint32_t len)
+{
+	if (bus >= N_PERIPHERALS) {
+		return -EINVAL;
+	}
+
+	unsigned pos = i2cPreConfig[bus].pos;
+	mutexLock(i2c_common[pos].mutex);
+	int ret = _i2c_busRead(pos, dev_addr, data_out, len);
+	mutexUnlock(i2c_common[pos].mutex);
+	return ret;
+}
+
+
+int multi_i2c_regRead(unsigned bus, uint8_t dev_addr, uint8_t reg_addr, uint8_t *data_out, uint32_t len)
+{
+	if (bus >= N_PERIPHERALS) {
+		return -EINVAL;
+	}
+
+	unsigned pos = i2cPreConfig[bus].pos;
+	mutexLock(i2c_common[pos].mutex);
+	int ret = _i2c_regRead(pos, dev_addr, reg_addr, data_out, len);
+	mutexUnlock(i2c_common[pos].mutex);
+	return ret;
 }
 
 
