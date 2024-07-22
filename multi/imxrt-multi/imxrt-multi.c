@@ -46,7 +46,7 @@
 #define MULTI_THREADS_NO 2
 #define UART_THREADS_NO 2
 
-#define STACKSZ 600
+#define STACKSZ 1024
 
 
 struct {
