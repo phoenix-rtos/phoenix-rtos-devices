@@ -1,0 +1,9 @@
+#
+# Makefile for Phoenix-RTOS 3 devices
+#
+# armv8r52-mps3an536 drivers
+#
+# Copyright 2024 Phoenix Systems
+#
+
+DEFAULT_COMPONENTS := cmsdk-apbuart
