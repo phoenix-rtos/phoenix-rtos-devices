@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * sparcv8leon3-grlib UART driver
+ * sparcv8leon-grlib UART driver
  *
  * Copyright 2023 Phoenix Systems
  * Author: Lukasz Leczkowski
@@ -34,8 +34,8 @@
 
 #include <phoenix/ioctl.h>
 
-#if defined(__TARGET_SPARCV8LEON3)
-#include <phoenix/arch/sparcv8leon3/sparcv8leon3.h>
+#if defined(__TARGET_SPARCV8LEON)
+#include <phoenix/arch/sparcv8leon/sparcv8leon.h>
 #elif defined(__TARGET_RISCV64)
 #include <phoenix/arch/riscv64/riscv64.h>
 #endif
