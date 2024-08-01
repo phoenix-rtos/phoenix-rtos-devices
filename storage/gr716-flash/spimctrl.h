@@ -16,7 +16,7 @@
 
 #include <stdint.h>
 #include <sys/types.h>
-#include <phoenix/arch/sparcv8leon3/gr716/gr716.h>
+#include <phoenix/arch/sparcv8leon/gr716/gr716.h>
 
 
 #define SPIMCTRL_NUM 2
