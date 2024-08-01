@@ -20,7 +20,7 @@
 #include <sys/threads.h>
 #include <posix/utils.h>
 
-#include <phoenix/arch/sparcv8leon3/sparcv8leon3.h>
+#include <phoenix/arch/sparcv8leon/sparcv8leon.h>
 
 #include "adc.h"
 #include "grlib-multi.h"
