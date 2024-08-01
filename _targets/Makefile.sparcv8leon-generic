@@ -1,7 +1,7 @@
 #
 # Makefile for Phoenix-RTOS 3 device drivers
 #
-# sparcv8leon3-generic drivers
+# sparcv8leon-generic drivers
 #
 # Copyright 2024 Phoenix Systems
 #
