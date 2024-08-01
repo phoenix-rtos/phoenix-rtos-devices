@@ -22,7 +22,7 @@
 #include "gpio.h"
 #include "grlib-multi.h"
 
-#include <phoenix/arch/sparcv8leon3/sparcv8leon3.h>
+#include <phoenix/arch/sparcv8leon/sparcv8leon.h>
 
 #define GPIO_PORT_0 0
 #define GPIO_PORT_1 1

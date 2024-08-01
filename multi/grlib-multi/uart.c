@@ -30,7 +30,7 @@
 
 #include <phoenix/ioctl.h>
 
-#include <phoenix/arch/sparcv8leon3/sparcv8leon3.h>
+#include <phoenix/arch/sparcv8leon/sparcv8leon.h>
 
 #include <grdmac2.h>
 

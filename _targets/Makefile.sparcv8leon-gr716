@@ -1,9 +1,9 @@
 #
 # Makefile for Phoenix-RTOS 3 device drivers
 #
-# sparcv8leon3-gr712rc drivers
+# sparcv8leon-gr716 drivers
 #
 # Copyright 2023 Phoenix Systems
 #
 
-DEFAULT_COMPONENTS := grlib-multi gr712rc-flash
+DEFAULT_COMPONENTS := gr716-flash grlib-multi libgrdmac2
