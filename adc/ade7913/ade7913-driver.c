@@ -52,6 +52,8 @@
 #define log_error(fmt, ...) do { printf(LOG_TAG COL_RED fmt COL_NORMAL "\n", ##__VA_ARGS__); } while (0)
 /* clang-format on */
 
+/* enable debugging of DMA IRQ not in-sync processing */
+#define DEBUG_NOTSYNC 1
 
 #ifndef ADE7913_DREADY_MUXPIN
 #define ADE7913_DREADY_MUXPIN pctl_mux_gpio_ad_21
@@ -171,12 +173,21 @@ struct {
 	oid_t oid;
 
 	int enabled;
+
+#if DEBUG_NOTSYNC
+	volatile uint32_t edma_error;
+	volatile uint32_t notsync;
+	volatile uint32_t prev_transfers;
+	volatile uint32_t tcd_daddr;
+#endif /* DEBUG_NOTSYNC */
 } common;
 
 
 static int edma_spi_rcv_irq_handler(unsigned int n, void *arg)
 {
+#if DEBUG_NOTSYNC
 	struct edma_tcd_s tcd;
+#endif /* DEBUG_NOTSYNC */
 	uint32_t reg, mux_copy[4];
 	int i, notsync = 0;
 
@@ -230,6 +241,15 @@ static int edma_spi_rcv_irq_handler(unsigned int n, void *arg)
 		++common.edma_transfers;
 	}
 	else {
+#if DEBUG_NOTSYNC
+		/* NOTE: the notsync event happens on second IRQ handler after boot-up - the reason is unknown,
+		 * after TCD adjustment everything works as expected */
+		common.notsync = 1;
+		common.prev_transfers = common.edma_transfers;
+		edma_read_tcd(&tcd, SPI_RCV_DMA_CHANNEL);
+		common.tcd_daddr = tcd.daddr;
+#endif /* DEBUG_NOTSYNC */
+
 		/* If not in-sync adjust DMA TCD (as described above) */
 		edma_install_tcd(common.tcd_spircv_ptr, SPI_RCV_DMA_CHANNEL);
 		edma_channel_enable(SPI_RCV_DMA_CHANNEL);
@@ -252,6 +272,10 @@ static int edma_error_handler(unsigned int n, void *arg)
 
 	if (edma_error_channel() & mask) {
 		edma_clear_error(DREADY_DMA_CHANNEL);
+		edma_channel_enable(DREADY_DMA_CHANNEL);
+#if DEBUG_NOTSYNC
+		common.edma_error = 1;
+#endif /* DEBUG_NOTSYNC */
 	}
 
 	return EOK;
@@ -874,6 +898,18 @@ static int dev_read(void *data, size_t size)
 		*(uint32_t *)data = common.edma_transfers;
 	}
 	mutexUnlock(common.edma_spi_rcv_lock);
+
+#if DEBUG_NOTSYNC
+	if (common.notsync != 0) {
+		common.notsync = 0;
+		uint32_t diff = (common.tcd_daddr) - (uint32_t)common.buff;
+		log_info("notsync: %u -> %u (daddr(0x%x) - buff(0x%x) = 0x%x)", common.prev_transfers, common.edma_transfers, common.tcd_daddr, (uint32_t)common.buff, diff);
+	}
+	if (common.edma_error != 0) {
+		common.edma_error = 0;
+		log_info("edma error detected (transfers: %u)", common.edma_transfers);
+	}
+#endif /* DEBUG_NOTSYNC */
 
 	return res;
 }
