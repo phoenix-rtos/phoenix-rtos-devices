@@ -84,12 +84,16 @@
 #endif
 
 /*
- * The buffer needs to be aligned with:
- * num_of_devices * bytes_per_device * num_of_buffers
+ * Single buffer needs to be aligned with:
+ * num_of_devices * bytes_per_device
  * so that in each filled buffer there will be same amount
  * of samples for each device.
+ *
+ * Single buffer len can't exceed 0x200 * sizeof(uint32_t) = 2048
+ * (SPI_RCV TCD `biter_elinkyes` can hold only 9-bit minor loop cnt)
  */
 #define ADC_BUFFER_SIZE (4 * (ADE7913_BUF_NUM) * _PAGE_SIZE)
+_Static_assert((ADC_BUFFER_SIZE / ADE7913_BUF_NUM) <= (0x200 * sizeof(uint64_t)), "Single buffer size too large for SPI_RCV TCD");
 
 #define DREADY_DMA_CHANNEL  5
 #define SPI_RCV_DMA_CHANNEL 6
@@ -127,6 +131,7 @@ static const int spi_clk[] = { pctl_clk_lpspi1, pctl_clk_lpspi2, pctl_clk_lpspi3
 
 
 /* ADE7913 commands LUT used by DMA */
+/* `04` triggers SPI read in Burst Mode, we need to keep SCLK running for next 14 bytes, (000000) would trigger ADE reset */
 static const uint32_t adc_read_cmd_lookup[4] = { 0xFFFFFF04, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF };
 
 static uint32_t spi_write_cmd_lookup[4] = {
@@ -438,7 +443,7 @@ static int adc_init(int hard)
 		devnum = (int)(common.order[i] - '0');
 
 		if (ade7913_reset_hard(&common.ade7913_spi, devnum) < 0) {
-			log_error("Could reset ADE7913 no. %d", devnum);
+			log_error("Could not reset ADE7913 no. %d", devnum);
 		}
 	}
 
@@ -533,6 +538,7 @@ static int dma_setup_tcds(void)
 {
 	int cs_seq, res, i, tcd_count;
 
+	/* DREADY_DMA_CHANNEL */
 	common.tcds[0].soff = 0;
 	common.tcds[0].attr = (edma_get_tcd_attr_xsize(sizeof(uint32_t)) << 8) |
 		edma_get_tcd_attr_xsize(sizeof(uint32_t));
@@ -554,6 +560,8 @@ static int dma_setup_tcds(void)
 	/* Enable scatter-gather and link with SPI send channel at major loop end */
 	common.tcds[0].csr = TCD_CSR_ESG_BIT | TCD_CSR_MAJORLINK_CH(SPI_SND_DMA_CHANNEL);
 
+	/* SPI_SND_DMA_CHANNEL */
+	/* SPI BULK readout command TCD (the same for every ADE) */
 	common.tcds[4].soff = sizeof(uint32_t);
 	common.tcds[4].attr = (edma_get_tcd_attr_xsize(sizeof(uint32_t)) << 8) |
 		edma_get_tcd_attr_xsize(sizeof(uint32_t));
@@ -575,7 +583,7 @@ static int dma_setup_tcds(void)
 	/* Enable scatter-gather */
 	common.tcds[4].csr = TCD_CSR_ESG_BIT;
 
-	/* Clone the above setup for each of the ADE7913 devices creating a ring */
+	/* Clone the above setup (SPI setup with consecutive CS enable command) for each of the ADE7913 devices creating a ring */
 	for (i = 1; i < common.devcnt; ++i) {
 		edma_copy_tcd(&common.tcds[i], &common.tcds[0]);
 		common.tcds[i].dlast_sga = (uint32_t)(&common.tcds[i + 1]);
@@ -585,6 +593,7 @@ static int dma_setup_tcds(void)
 	/* ... and close the ring */
 	common.tcds[common.devcnt - 1].dlast_sga = (uint32_t)(&common.tcds[0]);
 
+	/* SPI_RCV_DMA_CHANNEL */
 	/* Setup SPI receive buffers (for samples) */
 	common.tcds[5].soff = 0;
 	common.tcds[5].saddr = (uint32_t)(common.spi_ptr + spi_rdr);
@@ -621,10 +630,19 @@ static int dma_setup_tcds(void)
 	 *                                                                                    !STOP            -! SEQ_DMA_CHANNEL
 	 * (devcnt=4, three-phase meter L1,L2,L3,N)
 	 *
+	 * 1. DREADY_DMA_CHANNEL configures SPI (enables CSx) and triggers SPI_SND channel
+	 * 2. SPI_SND_CHANNEL sends 4 * 4 bytes via SPI (Bulk readout channel)
+	 * 3. Every minor loop iteration (4 bytes) the SPI_RCV channel can be triggered (by SPI peripheral)
+	 * 4. After every minor loop iteration of SPI_RCV channel (4 bytes received) trigger SEQ_DMA_CHANNEL
+	 * 5. Every 4th SEQ_DMA_CHANNEL trigger (4 * 4 bytes received) will trigger DREADY_DMA_CHANNEL (move to next CS)
+	 *
+	 * 6. SPI_RCV_CHANNEL: every time (ADC_BUFFER_SIZE / ADE7913_BUF_NUM) bytes are read (major loop iteration) - trigger interrupt and to ADC SYNC in IRQ
+	 *
 	 */
 
 	cs_seq = 5 + i;
 
+	/* SEQ_RMA_CHANNEL */
 	common.tcds[cs_seq].soff = 0;
 	common.tcds[cs_seq].saddr = 0;
 	common.tcds[cs_seq].slast = 0;
