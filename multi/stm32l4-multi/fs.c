@@ -11,7 +11,7 @@
  * %LICENSE%
  */
 
-#include "config.h"
+#include "fs.h"
 
 #if BUILTIN_DUMMYFS
 
@@ -144,7 +144,7 @@ static void msgthr(void *ctx)
 }
 
 
-int fs_init(void)
+int fs_init(int asRoot, oid_t *rootOid)
 {
 	void *ctx;
 	oid_t root = { 0 };
@@ -152,7 +152,8 @@ int fs_init(void)
 	if (portCreate(&fs_common.port) != 0)
 		return -1;
 
-	if (portRegister(fs_common.port, "/", &root)) {
+	const char *rootPath = (asRoot != 0) ? "/" : "devfs";
+	if (portRegister(fs_common.port, rootPath, &root)) {
 		portDestroy(fs_common.port);
 		return -1;
 	}
@@ -164,10 +165,13 @@ int fs_init(void)
 		return -1;
 	}
 
-	if (syspage_create(ctx, &root) != EOK) {
-		dummyfs_unmount(ctx);
-		portDestroy(fs_common.port);
-		return -1;
+	*rootOid = root;
+	if (asRoot != 0) {
+		if (syspage_create(ctx, &root) != EOK) {
+			dummyfs_unmount(ctx);
+			portDestroy(fs_common.port);
+			return -1;
+		}
 	}
 
 	if (beginthread(msgthr, 4, fs_common.stack, MSGTHR_STACKSZ, ctx) != EOK) {
