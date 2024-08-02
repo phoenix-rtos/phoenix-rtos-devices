@@ -92,7 +92,7 @@
  * Single buffer len can't exceed 0x200 * sizeof(uint32_t) = 2048
  * (SPI_RCV TCD `biter_elinkyes` can hold only 9-bit minor loop cnt)
  */
-#define ADC_BUFFER_SIZE (4 * (ADE7913_BUF_NUM) * _PAGE_SIZE)
+#define ADC_BUFFER_SIZE (1920 * (ADE7913_BUF_NUM))
 _Static_assert((ADC_BUFFER_SIZE / ADE7913_BUF_NUM) <= (0x200 * sizeof(uint64_t)), "Single buffer size too large for SPI_RCV TCD");
 
 #define DREADY_DMA_CHANNEL  5
@@ -133,6 +133,10 @@ static const int spi_clk[] = { pctl_clk_lpspi1, pctl_clk_lpspi2, pctl_clk_lpspi3
 /* ADE7913 commands LUT used by DMA */
 /* `04` triggers SPI read in Burst Mode, we need to keep SCLK running for next 14 bytes, (000000) would trigger ADE reset */
 static const uint32_t adc_read_cmd_lookup[4] = { 0xFFFFFF04, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF };
+
+_Static_assert(((ADC_BUFFER_SIZE / ADE7913_BUF_NUM) % (4 * sizeof(adc_read_cmd_lookup)) == 0), "Buffer size won't support 4 devices");
+_Static_assert(((ADC_BUFFER_SIZE / ADE7913_BUF_NUM) % (3 * sizeof(adc_read_cmd_lookup)) == 0), "Buffer size won't support 3 devices");
+/* divisible by 2 and 1 from the checks above */
 
 static uint32_t spi_write_cmd_lookup[4] = {
 	((uint32_t)spi_mode_3 << 30) | (1 << 27) | (0 << 24) | (spi_msb << 23) | (1 << 22) | (16 * 8 - 1),
@@ -216,9 +220,11 @@ static int edma_spi_rcv_irq_handler(unsigned int n, void *arg)
 		*common.iomux_ptr[i] = mux_copy[i];
 	}
 
+#if 0 /* not needed in normal use case, for now keeping code until testing would be finished */
 	/* Re-enable /DREADY after SYNC broadcast */
 	edma_install_tcd(common.tcd_dready_ptr, DREADY_DMA_CHANNEL);
 	edma_channel_enable(DREADY_DMA_CHANNEL);
+#endif
 
 	if (notsync == 0) {
 		++common.edma_transfers;
@@ -227,11 +233,11 @@ static int edma_spi_rcv_irq_handler(unsigned int n, void *arg)
 		/* If not in-sync adjust DMA TCD (as described above) */
 		edma_install_tcd(common.tcd_spircv_ptr, SPI_RCV_DMA_CHANNEL);
 		edma_channel_enable(SPI_RCV_DMA_CHANNEL);
-		edma_read_tcd(&tcd, SPI_RCV_DMA_CHANNEL);
 
+		/* adjust edma_transfers to be monotonic and point to next buf_num `0` */
+		/* WARN: if ADE7913_BUF_NUM is not a power of 2, change second line to edma_transfers -= edma_transfers % ADE7913_BUF_NUM */
 		common.edma_transfers += ADE7913_BUF_NUM;
 		common.edma_transfers &= ~(ADE7913_BUF_NUM - 1);
-		common.edma_transfers += ((((tcd.daddr + tcd.doff) - (uint32_t)common.buff) & ~(ADC_BUFFER_SIZE / (ADE7913_BUF_NUM) - 1)) >> 11);
 	}
 
 	edma_clear_interrupt(SPI_RCV_DMA_CHANNEL);
@@ -568,7 +574,7 @@ static int dma_setup_tcds(void)
 
 	/* Number of bytes per minor loop iteration */
 	common.tcds[4].nbytes_mlnoffno = 4 * sizeof(uint32_t);
-	common.tcds[4].slast = -sizeof(uint32_t);
+	common.tcds[4].slast = -common.tcds[4].nbytes_mlnoffno;
 	common.tcds[4].doff = 0;
 	common.tcds[4].dlast_sga = (uint32_t)&common.tcds[4];
 
@@ -1110,7 +1116,7 @@ int main(int argc, char **argv)
 
 	for (i = 0; i < common.devcnt; ++i) {
 		devnum = common.order[i] - '0';
-		if (devnum >= common.devcnt || devnum < 0) {
+		if (devnum >= 4 || devnum < 0) {
 			log_error("Wrong order format provided");
 			usage(argv[0]);
 			return EXIT_FAILURE;
