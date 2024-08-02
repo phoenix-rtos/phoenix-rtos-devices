@@ -247,10 +247,9 @@ int ade7913_sync(oid_t *device, const char *cs, int devcnt, int snap)
 	oid_t gpiodev;
 	platformctl_t pctl;
 
-	int muxes[4] = { pctl_mux_gpio_ad_18, pctl_mux_gpio_ad_19,
-		pctl_mux_gpio_ad_20, pctl_mux_gpio_ad_29 };
+	int muxes[4] = { pctl_mux_gpio_ad_29, pctl_mux_gpio_ad_18, pctl_mux_gpio_ad_19, pctl_mux_gpio_ad_20 };
 
-	int pins[4] = { 17, 18, 19, 28 };
+	int pins[4] = { 28, 17, 18, 19 };
 
 	uint8_t buff[2] = { (ade7913_sync_snap << ADE7913_ADDR_OFFS), ADE7913_SYNC_SNAP_SYNC };
 
@@ -289,7 +288,7 @@ int ade7913_sync(oid_t *device, const char *cs, int devcnt, int snap)
 	pctl.iomux.sion = 0;
 	pctl.iomux.mode = 5;
 
-	for (i = 0; i < 4; ++i) {
+	for (i = 0; i < devcnt; ++i) {
 		pctl.iomux.mux = muxes[(int)(cs[i] - '0')];
 		platformctl(&pctl);
 	}
