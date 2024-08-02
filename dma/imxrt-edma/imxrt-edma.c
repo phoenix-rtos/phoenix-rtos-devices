@@ -298,22 +298,22 @@ int edma_is_hw_req_pending(unsigned channel)
 
 void edma_channel_enable(unsigned channel)
 {
-	edma_regs->serq = channel | (1 << 6);
+	edma_regs->serq = channel;
 }
 
 void edma_channel_disable(unsigned channel)
 {
-	edma_regs->cerq |= channel;
+	edma_regs->cerq = channel;
 }
 
 void edma_clear_interrupt(unsigned channel)
 {
-	edma_regs->cint |= channel;
+	edma_regs->cint = channel;
 }
 
 void edma_clear_error(unsigned channel)
 {
-	edma_regs->cerr |= channel;
+	edma_regs->cerr = channel;
 }
 
 void edma_software_request_start(int channel)
