@@ -16,8 +16,10 @@
 #define _TTYPC_H_
 
 #include <sys/types.h>
+#include <board_config.h>
 
 #include "ttypc_vt.h"
+#include "event_queue.h"
 
 
 /* Number of virtual terminals */
@@ -45,7 +47,6 @@ enum {
 	KB_EXT = 0x0400
 };
 
-
 struct _ttypc_t {
 	unsigned int port; /* Driver port */
 
@@ -60,10 +61,31 @@ struct _ttypc_t {
 	unsigned char ktype;   /* Keyboard type */
 	unsigned char lockst;  /* Lock keys state */
 	unsigned char shiftst; /* Shift keys state */
-	unsigned int kirq;     /* Interrupt number */
-	handle_t klock;        /* Interrupt mutex */
-	handle_t kcond;        /* Interrupt condition variable */
-	handle_t kinth;        /* Interrupt handle */
+	handle_t kmcond;       /* Kbd/mouse interrupt condition variable */
+	handle_t kmlock;       /* Kbd/mouse interrupt mutex */
+
+	unsigned int kirq; /* Kbd interrupt number */
+	handle_t kinth;    /* Kbd interrupt handle */
+
+#if PC_TTY_MOUSE_ENABLE
+	unsigned int mirq; /* Mouse interrupt number */
+	handle_t minth;    /* Mouse interrupt handle */
+#endif
+
+#if PC_TTY_CREATE_PS2_VDEVS
+	event_queue_t keq;  /* Kbd event buffer */
+	unsigned int kport; /* Kbd device port */
+
+	/* Kbd pool thread stack */
+	char kpstack[1024] __attribute__((aligned(8)));
+#if PC_TTY_MOUSE_ENABLE
+	event_queue_t meq;  /* Mouse event buffer */
+	unsigned int mport; /* Mouse device port */
+
+	/* Mouse pool thread stack */
+	char mpstack[1024] __attribute__((aligned(8)));
+#endif
+#endif
 
 	/* Virtual terminals */
 	ttypc_vt_t *vt;       /* Active virtual terminal */
@@ -73,7 +95,7 @@ struct _ttypc_t {
 	handle_t lock; /* Access mutex */
 
 	/* Thread stacks */
-	char kstack[2048] __attribute__ ((aligned(8)));
+	char kstack[2048] __attribute__((aligned(8)));
 	char pstack[2048] __attribute__ ((aligned(8)));
 
 	/* Framebuffer console */
