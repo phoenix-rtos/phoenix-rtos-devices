@@ -13,6 +13,7 @@
  */
 
 #include <errno.h>
+#include <paths.h>
 #include <stdint.h>
 #include <string.h>
 #include <unistd.h>
@@ -21,6 +22,9 @@
 #include <sys/io.h>
 #include <sys/threads.h>
 #include <sys/reboot.h>
+
+#include <libklog.h>
+#include <posix/utils.h>
 
 #include "ttypc_kbd.h"
 #include "ttypc_vga.h"
@@ -548,6 +552,49 @@ static int ttypc_kbd_write(ttypc_t *ttypc, unsigned char byte)
 }
 
 
+static void ttypc_kbd_poolthr(void *arg)
+{
+	poolthr_args_t *poolthr_args = (poolthr_args_t *)arg;
+	msg_rid_t rid;
+	msg_t msg;
+
+	for (;;) {
+		if (msgRecv(poolthr_args->port, &msg, &rid) < 0)
+			continue;
+
+		if (libklog_ctrlHandle(poolthr_args->port, &msg, rid) == 0) {
+			/* msg has been handled by libklog */
+			continue;
+		}
+
+		switch (msg.type) {
+			case mtOpen:
+				msg.o.err = EOK;
+				break;
+
+			case mtRead:
+				if (msg.oid.id < NVTS) {
+					((int *)msg.o.data)[0] = inb((void *)poolthr_args->ttypc->kbd);
+					msg.o.err = 1;
+					msg.o.size = 1;
+				}
+				else
+					msg.o.err = -EINVAL;
+				break;
+
+			case mtClose:
+				break;
+
+			default:
+				msg.o.err = -ENOSYS;
+				break;
+		}
+
+		msgRespond(poolthr_args->port, &msg, rid);
+	}
+}
+
+
 /* May not work for PS/2 emulation through USB legacy support */
 int _ttypc_kbd_updateled(ttypc_t *ttypc)
 {
@@ -578,6 +625,13 @@ void ttypc_kbd_destroy(ttypc_t *ttypc)
 int ttypc_kbd_init(ttypc_t *ttypc)
 {
 	int i, err;
+	oid_t oid;
+
+	memset(&poolthr_args, 0, sizeof(poolthr_args_t));
+	poolthr_args.ttypc = ttypc;
+
+	if ((err = portCreate(&poolthr_args.port)) < 0)
+		return err;
 
 	/* PS/2 Keyboard base IO-port */
 	ttypc->kbd = (void *)0x60;
@@ -610,6 +664,16 @@ int ttypc_kbd_init(ttypc_t *ttypc)
 		return err;
 	}
 
+	/* Wait for the filesystem */
+	while (lookup("/", NULL, &oid) < 0)
+		usleep(10000);
+
+	oid.port = poolthr_args.port;
+	oid.id = 0;
+	if (create_dev(&oid, _PATH_KBD) < 0) {
+		fprintf(stderr, "pc-tty: failed to register device %s\n", _PATH_KBD);
+	}
+
 	/* Attach interrupt */
 	if ((err = interrupt((ttypc->kirq = 1), ttypc_kbd_interrupt, ttypc, ttypc->kcond, &ttypc->kinth)) < 0) {
 		resourceDestroy(ttypc->klock);
@@ -619,6 +683,14 @@ int ttypc_kbd_init(ttypc_t *ttypc)
 
 	/* Launch keyboard control thread */
 	if ((err = beginthread(ttypc_kbd_ctlthr, 1, ttypc->kstack, sizeof(ttypc->kstack), ttypc)) < 0) {
+		resourceDestroy(ttypc->klock);
+		resourceDestroy(ttypc->kcond);
+		resourceDestroy(ttypc->kinth);
+		return err;
+	}
+
+	/* Launch keyboard pool thread */
+	if ((err = beginthread(ttypc_kbd_poolthr, 1, ttypc->kpstack, sizeof(ttypc->kpstack), &poolthr_args)) < 0) {
 		resourceDestroy(ttypc->klock);
 		resourceDestroy(ttypc->kcond);
 		resourceDestroy(ttypc->kinth);

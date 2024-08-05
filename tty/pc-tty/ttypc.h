@@ -73,6 +73,7 @@ struct _ttypc_t {
 	/* Thread stacks */
 	char kstack[2048] __attribute__ ((aligned(8)));
 	char pstack[2048] __attribute__ ((aligned(8)));
+	char kpstack[2048] __attribute__((aligned(8)));
 };
 
 
