@@ -14,20 +14,37 @@
 
 #include <errno.h>
 #include <paths.h>
+#include <poll.h>
 #include <stdint.h>
 #include <string.h>
 #include <unistd.h>
 
+#include <sys/file.h>
 #include <sys/interrupt.h>
 #include <sys/io.h>
 #include <sys/threads.h>
 #include <sys/reboot.h>
 
 #include <libklog.h>
+#include <fcntl.h>
 #include <posix/utils.h>
 
 #include "ttypc_kbd.h"
 #include "ttypc_vga.h"
+
+
+#define max(a, b) ({ \
+	__typeof__(a) _a = (a); \
+	__typeof__(b) _b = (b); \
+	_a > _b ? _a : _b; \
+})
+
+
+#define min(a, b) ({ \
+	__typeof__(a) _a = (a); \
+	__typeof__(b) _b = (b); \
+	_a > _b ? _b : _a; \
+})
 
 
 /* Keyboard key map entry */
@@ -41,7 +58,33 @@ typedef struct {
 } ttypc_kbd_keymap_t;
 
 
+typedef struct {
+	ttypc_t *ttypc;
+	unsigned int kbd_port;
+	handle_t kplock;
+	handle_t kcond;
+
+	unsigned int mouse_port;
+
+	// TODO: this should be a proper fifo:
+	unsigned int event;
+	handle_t mev_waitq;
+	handle_t mev_mutex;
+} poolthr_args_t;
+
+poolthr_args_t poolthr_args;
+
+
+typedef struct {
+	ttypc_t *ttypc;
+	handle_t kcond;
+} ctlthr_args_t;
+
+ctlthr_args_t ctlthr_args;
+
+
 /* U.S 101 keys keyboard map */
+/* clang-format off */
 static const ttypc_kbd_keymap_t scodes[] = {
 	/*type       unshift    shift      ctl        altgr      shift_altgr scancode */
 	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 0 unused */
@@ -174,6 +217,7 @@ static const ttypc_kbd_keymap_t scodes[] = {
 	{ KB_NONE,   "",        "",        "",        "",        "" }     /* 127 */
 };
 
+/* clang-format on */
 
 /* KB_KP (keypad keys) modifiers map */
 static const unsigned char kpmod[] = {
@@ -217,36 +261,36 @@ static char *_ttypc_kbd_get(ttypc_t *ttypc)
 		dt &= 0x7f;
 
 		switch (scodes[dt].type) {
-		case KB_SCROLL:
-			if (!ext)
-				ttypc->shiftst &= ~KB_SCROLL;
-			break;
+			case KB_SCROLL:
+				if (!ext)
+					ttypc->shiftst &= ~KB_SCROLL;
+				break;
 
-		case KB_NUM:
-			if (!ext)
-				ttypc->shiftst &= ~KB_NUM;
-			break;
+			case KB_NUM:
+				if (!ext)
+					ttypc->shiftst &= ~KB_NUM;
+				break;
 
-		case KB_CAPS:
-			if (!ext)
-				ttypc->shiftst &= ~KB_CAPS;
-			break;
+			case KB_CAPS:
+				if (!ext)
+					ttypc->shiftst &= ~KB_CAPS;
+				break;
 
-		case KB_CTL:
-			ttypc->shiftst &= ~KB_CTL;
-			break;
+			case KB_CTL:
+				ttypc->shiftst &= ~KB_CTL;
+				break;
 
-		case KB_SHIFT:
-			if (!ext)
-				ttypc->shiftst &= ~KB_SHIFT;
-			break;
+			case KB_SHIFT:
+				if (!ext)
+					ttypc->shiftst &= ~KB_SHIFT;
+				break;
 
-		case KB_ALT:
-			if (ext)
-				ttypc->shiftst &= ~KB_ALTGR;
-			else
-				ttypc->shiftst &= ~KB_ALT;
-			break;
+			case KB_ALT:
+				if (ext)
+					ttypc->shiftst &= ~KB_ALTGR;
+				else
+					ttypc->shiftst &= ~KB_ALT;
+				break;
 		}
 
 		/* Last key released */
@@ -259,123 +303,123 @@ static char *_ttypc_kbd_get(ttypc_t *ttypc)
 	/* Key is pressed */
 	else {
 		switch (scodes[dt].type) {
-		/* Lock keys - Scroll, Num, Caps */
-		case KB_SCROLL:
-			if (ttypc->shiftst & KB_SCROLL)
+			/* Lock keys - Scroll, Num, Caps */
+			case KB_SCROLL:
+				if (ttypc->shiftst & KB_SCROLL)
+					break;
+				ttypc->shiftst |= KB_SCROLL;
+				ttypc->lockst ^= KB_SCROLL;
+				_ttypc_kbd_updateled(ttypc);
 				break;
-			ttypc->shiftst |= KB_SCROLL;
-			ttypc->lockst ^= KB_SCROLL;
-			_ttypc_kbd_updateled(ttypc);
-			break;
 
-		case KB_NUM:
-			if (ttypc->shiftst & KB_NUM)
+			case KB_NUM:
+				if (ttypc->shiftst & KB_NUM)
+					break;
+				ttypc->shiftst |= KB_NUM;
+				ttypc->lockst ^= KB_NUM;
+				_ttypc_kbd_updateled(ttypc);
 				break;
-			ttypc->shiftst |= KB_NUM;
-			ttypc->lockst ^= KB_NUM;
-			_ttypc_kbd_updateled(ttypc);
-			break;
 
-		case KB_CAPS:
-			if (ttypc->shiftst & KB_CAPS)
+			case KB_CAPS:
+				if (ttypc->shiftst & KB_CAPS)
+					break;
+				ttypc->shiftst |= KB_CAPS;
+				ttypc->lockst ^= KB_CAPS;
+				_ttypc_kbd_updateled(ttypc);
 				break;
-			ttypc->shiftst |= KB_CAPS;
-			ttypc->lockst ^= KB_CAPS;
-			_ttypc_kbd_updateled(ttypc);
-			break;
 
-		/* Shift keys - Ctl, Shift, Alt */
-		case KB_CTL:
-			ttypc->shiftst |= KB_CTL;
-			break;
-
-		case KB_SHIFT:
-			ttypc->shiftst |= KB_SHIFT;
-			break;
-
-		case KB_ALT:
-			if (ext)
-				ttypc->shiftst |= KB_ALTGR;
-			else
-				ttypc->shiftst |= KB_ALT;
-			break;
-
-		/* Function keys */
-		case KB_FUNC:
-		/* Regular ASCII */
-		case KB_ASCII:
-			/* Keys with extended scan codes don't depend on any modifiers */
-			if (ext) {
-				/* Handles keypad '/' key */
-				s = scodes[dt].unshift;
+			/* Shift keys - Ctl, Shift, Alt */
+			case KB_CTL:
+				ttypc->shiftst |= KB_CTL;
 				break;
-			}
-			/* Control modifier */
-			if (ttypc->shiftst & KB_CTL) {
-				s = scodes[dt].ctl;
-				break;
-			}
 
-			/* Right alt and right alt with shift modifiers */
-			if (ttypc->shiftst & KB_ALTGR) {
-				if (ttypc->shiftst & KB_SHIFT)
-					s = scodes[dt].shift_altgr;
+			case KB_SHIFT:
+				ttypc->shiftst |= KB_SHIFT;
+				break;
+
+			case KB_ALT:
+				if (ext)
+					ttypc->shiftst |= KB_ALTGR;
 				else
-					s = scodes[dt].altgr;
-			}
-			/* Shift modifier */
-			else if (ttypc->shiftst & KB_SHIFT) {
-				s = scodes[dt].shift;
-			}
-			/* No modifiers */
-			else {
-				s = scodes[dt].unshift;
-			}
-
-			/* Caps lock */
-			if ((ttypc->lockst & KB_CAPS) && (*scodes[dt].unshift >= 'a') && (*scodes[dt].unshift <= 'z')) {
-				if (s == scodes[dt].altgr)
-					s = scodes[dt].shift_altgr;
-				else if (s == scodes[dt].shift_altgr)
-					s = scodes[dt].altgr;
-				else if (s == scodes[dt].shift)
-					s = scodes[dt].unshift;
-				else if (s == scodes[dt].unshift)
-					s = scodes[dt].shift;
-			}
-			break;
-
-		/* Keys without meaning */
-		case KB_NONE:
-			break;
-
-		/* Keypad */
-		case KB_KP:
-			/* Keys with extended scan codes don't depend on any modifiers */
-			if (ext) {
-				/* Handles DEL, HOME, END, PU, PD and arrow (non keypad) keys */
-				s = scodes[dt].shift;
+					ttypc->shiftst |= KB_ALT;
 				break;
-			}
 
-			/* Shift modifier */
-			if (ttypc->shiftst & KB_SHIFT)
-				s = scodes[dt].shift;
-			/* Control modifier */
-			else if (ttypc->shiftst & KB_CTL)
-				s = scodes[dt].ctl;
-			/* No modifiers */
-			else
-				s = scodes[dt].unshift;
-
-			/* Num lock */
-			if (ttypc->lockst & KB_NUM) {
-				if (s == scodes[dt].shift)
+			/* Function keys */
+			case KB_FUNC:
+			/* Regular ASCII */
+			case KB_ASCII:
+				/* Keys with extended scan codes don't depend on any modifiers */
+				if (ext) {
+					/* Handles keypad '/' key */
 					s = scodes[dt].unshift;
-				else if ((s == scodes[dt].ctl) || (s == scodes[dt].unshift))
+					break;
+				}
+				/* Control modifier */
+				if (ttypc->shiftst & KB_CTL) {
+					s = scodes[dt].ctl;
+					break;
+				}
+
+				/* Right alt and right alt with shift modifiers */
+				if (ttypc->shiftst & KB_ALTGR) {
+					if (ttypc->shiftst & KB_SHIFT)
+						s = scodes[dt].shift_altgr;
+					else
+						s = scodes[dt].altgr;
+				}
+				/* Shift modifier */
+				else if (ttypc->shiftst & KB_SHIFT) {
 					s = scodes[dt].shift;
-			}
-			break;
+				}
+				/* No modifiers */
+				else {
+					s = scodes[dt].unshift;
+				}
+
+				/* Caps lock */
+				if ((ttypc->lockst & KB_CAPS) && (*scodes[dt].unshift >= 'a') && (*scodes[dt].unshift <= 'z')) {
+					if (s == scodes[dt].altgr)
+						s = scodes[dt].shift_altgr;
+					else if (s == scodes[dt].shift_altgr)
+						s = scodes[dt].altgr;
+					else if (s == scodes[dt].shift)
+						s = scodes[dt].unshift;
+					else if (s == scodes[dt].unshift)
+						s = scodes[dt].shift;
+				}
+				break;
+
+			/* Keys without meaning */
+			case KB_NONE:
+				break;
+
+			/* Keypad */
+			case KB_KP:
+				/* Keys with extended scan codes don't depend on any modifiers */
+				if (ext) {
+					/* Handles DEL, HOME, END, PU, PD and arrow (non keypad) keys */
+					s = scodes[dt].shift;
+					break;
+				}
+
+				/* Shift modifier */
+				if (ttypc->shiftst & KB_SHIFT)
+					s = scodes[dt].shift;
+				/* Control modifier */
+				else if (ttypc->shiftst & KB_CTL)
+					s = scodes[dt].ctl;
+				/* No modifiers */
+				else
+					s = scodes[dt].unshift;
+
+				/* Num lock */
+				if (ttypc->lockst & KB_NUM) {
+					if (s == scodes[dt].shift)
+						s = scodes[dt].unshift;
+					else if ((s == scodes[dt].ctl) || (s == scodes[dt].unshift))
+						s = scodes[dt].shift;
+				}
+				break;
 		}
 	}
 
@@ -403,28 +447,86 @@ static char *_ttypc_kbd_get(ttypc_t *ttypc)
 }
 
 
-/* Keyboard interrupt handler */
+/* Keyboard/mouse interrupt handler */
 static int ttypc_kbd_interrupt(unsigned int n, void *arg)
 {
 	ttypc_t *ttypc = (ttypc_t *)arg;
 
-	return ttypc->kcond;
+	return ttypc->kmcond;
+}
+
+
+/* Gets PS/2 output buffer status */
+static unsigned char ttypc_get_output_status(ttypc_t *ttypc)
+{
+	return inb((void *)((uintptr_t)ttypc->kbd + 4));
+}
+
+
+/* Macros for distinguishing the origin of pending output */
+#define KBD_OUTPUT_PENDING(status)   (((status) & (1 << 0)) && !((status) & (1 << 5)))
+#define MOUSE_OUTPUT_PENDING(status) (((status) & (1 << 0)) && ((status) & (1 << 5)))
+
+
+/* Waits for keyboard controller status bit with small timeout */
+static int ttypc_kbd_waitstatus(ttypc_t *ttypc, unsigned char bit, unsigned char state)
+{
+	unsigned int i;
+
+	for (i = 0; i < 0xffff; i++) {
+		if (!(inb((void *)((uintptr_t)ttypc->kbd + 4)) & ((1 << bit) ^ (state << bit))))
+			return EOK;
+		usleep(10);
+	}
+
+	return -ETIMEDOUT;
+}
+
+
+static void handle_mouse_event(ttypc_t *ttypc)
+{
+	unsigned char b = inb((void *)ttypc->kbd);
+
+	mev_buf_t *mev = &ttypc->mev;
+
+	mutexLock(ttypc->mev_mutex);
+	if (mev->count < MEV_SIZE) {
+		mev->buf[mev->w] = b;
+		mev->w = (mev->w + 1) % MEV_SIZE;
+		mev->count++;
+		if (mev->count >= 3)
+			condSignal(ttypc->mev_waitq);
+	}  // else: discard
+	mutexUnlock(ttypc->mev_mutex);
 }
 
 
 static void ttypc_kbd_ctlthr(void *arg)
 {
-	ttypc_t *ttypc = (ttypc_t *)arg;
+	ctlthr_args_t *ctlthr_args = (ctlthr_args_t *)arg;
+	ttypc_t *ttypc = ctlthr_args->ttypc;
 	ttypc_vt_t *cvt;
 	char *s, k;
 	char buff[10];
 	unsigned char m;
+	unsigned char status;
 
 	mutexLock(ttypc->klock);
 	for (;;) {
-		/* Wait for character codes to show up in keyboard output buffer */
-		while (!(inb((void *)((uintptr_t)ttypc->kbd + 4)) & 0x01))
-			condWait(ttypc->kcond, ttypc->klock, 0);
+		while (1) {
+			status = ttypc_get_output_status(ttypc);
+			if (KBD_OUTPUT_PENDING(status)) {
+				break;
+			}
+			else if (MOUSE_OUTPUT_PENDING(status)) {
+				handle_mouse_event(ttypc);
+			}
+			else {
+				condWait(ttypc->kmcond, ttypc->klock, 0);
+			}
+		}
+
+		condSignal(ctlthr_args->kcond);
 
 		mutexLock(ttypc->lock);
 		mutexLock((cvt = ttypc->vt)->lock);
@@ -505,27 +607,8 @@ static void ttypc_kbd_ctlthr(void *arg)
 }
 
 
-/* Waits for keyboard controller status bit with small timeout */
-static int ttypc_kbd_waitstatus(ttypc_t *ttypc, unsigned char bit, unsigned char state)
-{
-	unsigned int i;
-
-	for (i = 0; i < 0xffff; i++) {
-		if (!(inb((void *)((uintptr_t)ttypc->kbd + 4)) & ((1 << bit) ^ (state << bit))))
-			return EOK;
-		usleep(10);
-	}
-
-	return -ETIMEDOUT;
-}
-
-
 /* Reads a byte from keyboard controller output buffer */
-/*
- * FIXME: (unused) Function not to be removed, needs to be preserved
- * for future implementation of ps2-aux (mouse device) support.
- */
-__attribute__((unused)) static int ttypc_kbd_read(ttypc_t *ttypc)
+static int ttypc_kbd_read(ttypc_t *ttypc)
 {
 	int err;
 
@@ -537,8 +620,7 @@ __attribute__((unused)) static int ttypc_kbd_read(ttypc_t *ttypc)
 }
 
 
-/* Writes a byte to keyboard controller input buffer */
-static int ttypc_kbd_write(ttypc_t *ttypc, unsigned char byte)
+static int _ttypc_kbd_write_to_port(ttypc_t *ttypc, void *port, unsigned char byte)
 {
 	int err;
 
@@ -546,23 +628,39 @@ static int ttypc_kbd_write(ttypc_t *ttypc, unsigned char byte)
 	if ((err = ttypc_kbd_waitstatus(ttypc, 1, 0)) < 0)
 		return err;
 
-	outb((void *)ttypc->kbd, byte);
+	outb(port, byte);
 
 	return EOK;
+}
+
+
+/* Writes a byte to keyboard controller control buffer */
+static int ttypc_kbd_write_ctrl(ttypc_t *ttypc, unsigned char byte)
+{
+	return _ttypc_kbd_write_to_port(ttypc, (void *)ttypc->kbd + 4, byte);
+}
+
+
+/* Writes a byte to keyboard controller input buffer */
+static int ttypc_kbd_write(ttypc_t *ttypc, unsigned char byte)
+{
+	return _ttypc_kbd_write_to_port(ttypc, (void *)ttypc->kbd, byte);
 }
 
 
 static void ttypc_kbd_poolthr(void *arg)
 {
 	poolthr_args_t *poolthr_args = (poolthr_args_t *)arg;
+	ttypc_t *ttypc = poolthr_args->ttypc;
 	msg_rid_t rid;
 	msg_t msg;
 
+	mutexLock(poolthr_args->kplock);
 	for (;;) {
-		if (msgRecv(poolthr_args->port, &msg, &rid) < 0)
+		if (msgRecv(poolthr_args->kbd_port, &msg, &rid) < 0)
 			continue;
 
-		if (libklog_ctrlHandle(poolthr_args->port, &msg, rid) == 0) {
+		if (libklog_ctrlHandle(poolthr_args->kbd_port, &msg, rid) == 0) {
 			/* msg has been handled by libklog */
 			continue;
 		}
@@ -573,13 +671,14 @@ static void ttypc_kbd_poolthr(void *arg)
 				break;
 
 			case mtRead:
-				if (msg.oid.id < NVTS) {
-					((int *)msg.o.data)[0] = inb((void *)poolthr_args->ttypc->kbd);
-					msg.o.err = 1;
-					msg.o.size = 1;
-				}
-				else
-					msg.o.err = -EINVAL;
+				// FIXME: use fifo here instead
+
+				if (!(inb((void *)((uintptr_t)ttypc->kbd + 4)) & 0x01))
+					condWait(poolthr_args->kcond, poolthr_args->kplock, 0);
+
+				((unsigned char *)msg.o.data)[0] = inb((void *)poolthr_args->ttypc->kbd);
+
+				msg.o.err = 1;
 				break;
 
 			case mtClose:
@@ -590,7 +689,106 @@ static void ttypc_kbd_poolthr(void *arg)
 				break;
 		}
 
-		msgRespond(poolthr_args->port, &msg, rid);
+		msgRespond(poolthr_args->kbd_port, &msg, rid);
+	}
+}
+
+static void ttypc_kbd_mouse_poolthr(void *arg)
+{
+	poolthr_args_t *poolthr_args = (poolthr_args_t *)arg;
+	ttypc_t *ttypc = poolthr_args->ttypc;
+	msg_rid_t rid;
+	msg_t msg;
+	mev_buf_t *mev = &ttypc->mev;
+
+	for (;;) {
+		if (msgRecv(poolthr_args->mouse_port, &msg, &rid) < 0)
+			continue;
+
+		if (libklog_ctrlHandle(poolthr_args->mouse_port, &msg, rid) == 0) {
+			/* msg has been handled by libklog */
+			continue;
+		}
+
+		switch (msg.type) {
+			case mtOpen:
+				msg.o.err = EOK;
+				break;
+
+			case mtRead:
+				if (msg.o.size < 3) {
+					/* we don't want someone to read partial PS/2 packets */
+					/* ...unless? TODO */
+					msg.o.err = 0;
+					break;
+				}
+
+				mutexLock(ttypc->mev_mutex);
+
+				if (msg.i.io.mode & O_NONBLOCK && mev->count < 3) {
+					msg.o.err = -EWOULDBLOCK;
+					mutexUnlock(ttypc->mev_mutex);
+					break;
+				}
+
+				while (mev->count < 3)
+					condWait(ttypc->mev_waitq, ttypc->mev_mutex, 0);
+
+				unsigned int size = 3;
+				unsigned int bytes;
+
+				if (mev->w < mev->r)
+					memcpy(msg.o.data, mev->buf + mev->r, bytes = min(mev->count, mev->w - mev->r));
+				else {
+					memcpy(msg.o.data, mev->buf + mev->r, bytes = min(size, MEV_SIZE - mev->r));
+
+					if (bytes < size) {
+						size -= bytes;
+						memcpy(msg.o.data + bytes, mev->buf, min(size, mev->w));
+						bytes += min(size, mev->w);
+					}
+				}
+
+				mev->r = (mev->r + bytes) % MEV_SIZE;
+				mev->count -= bytes;
+
+				mutexUnlock(ttypc->mev_mutex);
+
+				msg.o.err = bytes;
+				break;
+
+			case mtWrite:
+				if (ttypc_kbd_write(ttypc, ((unsigned char *)msg.i.data)[0]) < 0) {
+					msg.o.err = -EINVAL;
+					break;
+				}
+				msg.o.err = 1;
+				break;
+
+			case mtGetAttr:
+				if ((msg.i.attr.type != atPollStatus)) {
+					msg.o.err = -EINVAL;
+					break;
+				}
+
+				mutexLock(ttypc->mev_mutex);
+				msg.o.attr.val = 0;
+				if (mev->count >= 3)
+					msg.o.attr.val |= POLLIN;
+				mutexUnlock(ttypc->mev_mutex);
+
+				msg.o.err = EOK;
+				break;
+
+			case mtClose:
+				break;
+
+			default:
+				msg.o.err = -ENOSYS;
+				break;
+		}
+
+		msgRespond(poolthr_args->mouse_port, &msg, rid);
 	}
 }
 
@@ -617,7 +815,7 @@ int _ttypc_kbd_updateled(ttypc_t *ttypc)
 void ttypc_kbd_destroy(ttypc_t *ttypc)
 {
 	resourceDestroy(ttypc->klock);
-	resourceDestroy(ttypc->kcond);
+	resourceDestroy(ttypc->kmcond);
 	resourceDestroy(ttypc->kinth);
 }
 
@@ -630,8 +828,30 @@ int ttypc_kbd_init(ttypc_t *ttypc)
 	memset(&poolthr_args, 0, sizeof(poolthr_args_t));
 	poolthr_args.ttypc = ttypc;
 
-	if ((err = portCreate(&poolthr_args.port)) < 0)
+	if ((err = portCreate(&poolthr_args.kbd_port)) < 0)
 		return err;
+
+	if ((err = portCreate(&poolthr_args.mouse_port)) < 0) {
+		portDestroy(poolthr_args.kbd_port);
+		return err;
+	}
+
+	if ((err = mutexCreate(&poolthr_args.kplock)) < 0) {
+		portDestroy(poolthr_args.kbd_port);
+		portDestroy(poolthr_args.mouse_port);
+		return err;
+	}
+
+	if ((err = condCreate(&poolthr_args.kcond)) < 0) {
+		portDestroy(poolthr_args.kbd_port);
+		portDestroy(poolthr_args.mouse_port);
+		resourceDestroy(poolthr_args.kplock);
+		return err;
+	}
+
+	memset(&ctlthr_args, 0, sizeof(ctlthr_args_t));
+	ctlthr_args.ttypc = ttypc;
+	ctlthr_args.kcond = poolthr_args.kcond;
 
 	/* PS/2 Keyboard base IO-port */
 	ttypc->kbd = (void *)0x60;
@@ -656,11 +876,66 @@ int ttypc_kbd_init(ttypc_t *ttypc)
 			break;
 	} while (0);
 
+	unsigned char status;
+
+	/* Mouse initialization */
+	do {
+		/* Enable mouse */
+		ttypc_kbd_write_ctrl(ttypc, 0xA8);
+		if ((err = ttypc_kbd_read(ttypc)) != 0xFA) {
+			fprintf(stderr, "pc-tty: could not enable mouse\n");
+			break;
+		}
+
+		/* Get compaq status byte */
+		ttypc_kbd_write_ctrl(ttypc, 0x20);
+
+		status = ttypc_kbd_read(ttypc);
+		status |= (1 << 1);  /* Enable IRQ12 interrupt */
+		status &= ~(1 << 5); /* Enable mouse clock (unset bit 5) */
+
+		/* Set compaq status byte */
+		ttypc_kbd_write_ctrl(ttypc, 0x60);
+		ttypc_kbd_write(ttypc, status);
+
+		/* Set defaults */
+		ttypc_kbd_write_ctrl(ttypc, 0xD4);
+		ttypc_kbd_write(ttypc, 0xF6);
+		if ((err = ttypc_kbd_read(ttypc)) != 0xFA) {
+			fprintf(stderr, "pc-tty: mouse initialization failed - no ACK after setting defaults\n");
+			break;
+		}
+
+		/* Send mouse cmd - enable packet streaming */
+		ttypc_kbd_write_ctrl(ttypc, 0xD4);
+		ttypc_kbd_write(ttypc, 0xF4);
+		if ((err = ttypc_kbd_read(ttypc)) != 0xFA)
+			fprintf(stderr, "pc-tty: mouse initialization failed - no ACK after enable packet streaming cmd\n");
+
+		/* Is the mouse alive? */
+		ttypc_kbd_write_ctrl(ttypc, 0xD4);
+		ttypc_kbd_write(ttypc, 0xEB);
+		if ((err = ttypc_kbd_read(ttypc)) != 0xFA)
+			fprintf(stderr, "pc-tty: mouse died\n");
+
+	} while (0);
+
 	if ((err = mutexCreate(&ttypc->klock)) < 0)
 		return err;
 
-	if ((err = condCreate(&ttypc->kcond)) < 0) {
+	if ((err = condCreate(&ttypc->kmcond)) < 0) {
 		resourceDestroy(ttypc->klock);
+		// TODO destroy above
+		return err;
+	}
+
+	if ((err = mutexCreate(&ttypc->mev_mutex)) < 0) {
+		// TODO destroy above
+		return err;
+	}
+
+	if ((err = condCreate(&ttypc->mev_waitq)) < 0) {
+		// TODO destroy above
 		return err;
 	}
 
@@ -668,23 +943,39 @@ int ttypc_kbd_init(ttypc_t *ttypc)
 	while (lookup("/", NULL, &oid) < 0)
 		usleep(10000);
 
-	oid.port = poolthr_args.port;
+	oid.port = poolthr_args.kbd_port;
 	oid.id = 0;
-	if (create_dev(&oid, _PATH_KBD) < 0) {
+	if ((err = create_dev(&oid, _PATH_KBD)) < 0) {
 		fprintf(stderr, "pc-tty: failed to register device %s\n", _PATH_KBD);
-	}
-
-	/* Attach interrupt */
-	if ((err = interrupt((ttypc->kirq = 1), ttypc_kbd_interrupt, ttypc, ttypc->kcond, &ttypc->kinth)) < 0) {
-		resourceDestroy(ttypc->klock);
-		resourceDestroy(ttypc->kcond);
 		return err;
 	}
 
-	/* Launch keyboard control thread */
-	if ((err = beginthread(ttypc_kbd_ctlthr, 1, ttypc->kstack, sizeof(ttypc->kstack), ttypc)) < 0) {
+	oid.port = poolthr_args.mouse_port;
+	oid.id = 0;
+	if ((err = create_dev(&oid, _PATH_MOUSE)) < 0) {
+		fprintf(stderr, "pc-tty: failed to register device %s\n", _PATH_MOUSE);
+		return err;
+	}
+
+	/* Attach KIRQ1 (kbd event) interrupt handle */
+	if ((err = interrupt((ttypc->kirq = 1), ttypc_kbd_interrupt, ttypc, ttypc->kmcond, &ttypc->kinth)) < 0) {
 		resourceDestroy(ttypc->klock);
-		resourceDestroy(ttypc->kcond);
+		resourceDestroy(ttypc->kmcond);
+		return err;
+	}
+
+	/* Launch keyboard/mouse control thread */
+	if ((err = beginthread(ttypc_kbd_ctlthr, 1, ttypc->kstack, sizeof(ttypc->kstack), &ctlthr_args)) < 0) {
+		resourceDestroy(ttypc->klock);
+		resourceDestroy(ttypc->kmcond);
+		resourceDestroy(ttypc->kinth);
+		return err;
+	}
+
+	/* Attach KIRQ12 (mouse event) interrupt handle */
+	if ((err = interrupt((ttypc->mirq = 12), ttypc_kbd_interrupt, ttypc, ttypc->kmcond, &ttypc->minth)) < 0) {
+		resourceDestroy(ttypc->klock);
+		resourceDestroy(ttypc->kmcond);
 		resourceDestroy(ttypc->kinth);
 		return err;
 	}
@@ -692,7 +983,15 @@ int ttypc_kbd_init(ttypc_t *ttypc)
 	/* Launch keyboard pool thread */
 	if ((err = beginthread(ttypc_kbd_poolthr, 1, ttypc->kpstack, sizeof(ttypc->kpstack), &poolthr_args)) < 0) {
 		resourceDestroy(ttypc->klock);
-		resourceDestroy(ttypc->kcond);
+		resourceDestroy(ttypc->kmcond);
+		resourceDestroy(ttypc->kinth);
+		return err;
+	}
+
+	/* Launch mouse pool thread */
+	if ((err = beginthread(ttypc_kbd_mouse_poolthr, 1, ttypc->mpstack, sizeof(ttypc->mpstack), &poolthr_args)) < 0) {
+		resourceDestroy(ttypc->klock);
+		resourceDestroy(ttypc->kmcond);
 		resourceDestroy(ttypc->kinth);
 		return err;
 	}
