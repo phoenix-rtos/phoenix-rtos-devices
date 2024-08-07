@@ -24,6 +24,9 @@
 #define NVTS 4
 
 
+#define MEV_SIZE 256
+
+
 /* Keyboard types */
 enum { KBD_BIOS, KBD_PS2 };
 
@@ -44,36 +47,59 @@ enum {
 	KB_EXT     = 0x0400
 };
 
+typedef struct _mev_buf {
+	unsigned char buf[MEV_SIZE];
+	unsigned int count;
+	unsigned int r;
+	unsigned int w;
+} mev_buf_t;
+
 
 struct _ttypc_t {
-	unsigned int port;     /* Driver port */
+	unsigned int port; /* Driver port */
 
 	/* VGA */
-	volatile void *vga;    /* VGA screen memory */
-	void *crtc;            /* Video Display Controller (CRTC) */
-	unsigned color;        /* Color support */
+	volatile void *vga; /* VGA screen memory */
+	void *crtc;         /* Video Display Controller (CRTC) */
+	unsigned color;     /* Color support */
 
 	/* KBD */
 	volatile void *kbd;    /* Keyboard controller */
 	unsigned char ktype;   /* Keyboard type */
 	unsigned char lockst;  /* Lock keys state */
 	unsigned char shiftst; /* Shift keys state */
-	unsigned int kirq;     /* Interrupt number */
-	handle_t klock;        /* Interrupt mutex */
-	handle_t kcond;        /* Interrupt condition variable */
-	handle_t kinth;        /* Interrupt handle */
+	unsigned int kirq;     /* Kbd interrupt number */
+	handle_t klock;        /* Kbd interrupt mutex */
+	handle_t kinth;        /* Kbd interrupt handle */
+
+	unsigned int mirq; /* Mouse interrupt number */
+	handle_t minth;    /* Mouse interrupt handle */
+
+	handle_t kmcond; /* Kbd/mouse interrupt condition variable */
+
+	/* TODO: do a proper fifo */
+	unsigned char kev; /* Keyboard event "buffer" */
+	unsigned int kev_count;
+	handle_t kev_mutex;
+	handle_t kev_waitq;
+
+	mev_buf_t mev; /* Mouse event buffer */
+	handle_t mev_mutex;
+	handle_t mev_waitq;
 
 	/* Virtual terminals */
-	ttypc_vt_t *vt;        /* Active virtual terminal */
-	ttypc_vt_t vts[NVTS];  /* Virtual Terminals */
+	ttypc_vt_t *vt;       /* Active virtual terminal */
+	ttypc_vt_t vts[NVTS]; /* Virtual Terminals */
 
 	/* Synchronization */
-	handle_t lock;         /* Access mutex */
+	handle_t lock; /* Access mutex */
 
 	/* Thread stacks */
-	char kstack[2048] __attribute__ ((aligned(8)));
-	char pstack[2048] __attribute__ ((aligned(8)));
-	char kpstack[2048] __attribute__((aligned(8)));
+	char kstack[2048] __attribute__((aligned(8)));
+	char pstack[2048] __attribute__((aligned(8)));
+
+	char kpstack[1024] __attribute__((aligned(8)));
+	char mpstack[1024] __attribute__((aligned(8)));
 };
 
 
