@@ -332,16 +332,41 @@ static int uart_cguInit(unsigned int n)
 	ctl.task.cguctrl.cgudev = cguinfo[n];
 
 	return platformctl(&ctl);
+#elif defined(__CPU_GR740)
+	static const unsigned int cguinfo[] = {
+		cgudev_apbuart0,
+		cgudev_apbuart1
+	};
+	platformctl_t ctl = {
+		.action = pctl_get,
+		.type = pctl_cguctrl,
+		.task.cguctrl.cgudev = cguinfo[n]
+	};
+
+	if (platformctl(&ctl) < 0) {
+		return -1;
+	}
+
+	if (ctl.task.cguctrl.v.stateVal == 1) {
+		return 0;
+	}
+
+	ctl.action = pctl_set;
+	ctl.type = pctl_cguctrl;
+
+	ctl.task.cguctrl.v.state = enable;
+	ctl.task.cguctrl.cgudev = cguinfo[n];
+
+	return platformctl(&ctl);
 #else
 	return 0;
 #endif
 }
 
 
-static int uart_init(unsigned int n, speed_t baud, int raw)
+static int uart_iomuxInit(unsigned int n)
 {
-	libtty_callbacks_t callbacks;
-	uart_t *uart = &uart_common.uart;
+#if defined(__CPU_GR716)
 	platformctl_t ctl = {
 		.action = pctl_set,
 		.type = pctl_iomux,
@@ -359,7 +384,37 @@ static int uart_init(unsigned int n, speed_t baud, int raw)
 
 	ctl.task.iocfg.pin = info[n].txPin;
 
+	return platformctl(&ctl);
+#elif defined(__CPU_GR740)
+	platformctl_t ctl = {
+		.action = pctl_set,
+		.type = pctl_iomux,
+		.task.iocfg = {
+			.opt = iomux_alternateio,
+			.pin = info[n].rxPin,
+			.pullup = 0,
+			.pulldn = 0,
+		}
+	};
+
 	if (platformctl(&ctl) < 0) {
+		return -1;
+	}
+
+	ctl.task.iocfg.pin = info[n].txPin;
+
+	return platformctl(&ctl);
+#else
+	return 0;
+#endif
+}
+
+
+static int uart_init(unsigned int n, speed_t baud, int raw)
+{
+	uart_t *uart = &uart_common.uart;
+
+	if (uart_iomuxInit(n) < 0) {
 		return -1;
 	}
 
@@ -370,11 +425,12 @@ static int uart_init(unsigned int n, speed_t baud, int raw)
 	/* Get info from AMBA PnP about APBUART */
 	unsigned int instance = n;
 	ambapp_dev_t dev = { .devId = CORE_ID_APBUART };
-
-	ctl.action = pctl_get;
-	ctl.type = pctl_ambapp;
-	ctl.task.ambapp.dev = &dev;
-	ctl.task.ambapp.instance = &instance;
+	platformctl_t ctl = {
+		.action = pctl_get,
+		.type = pctl_ambapp,
+		.task.ambapp.dev = &dev,
+		.task.ambapp.instance = &instance
+	};
 
 	if (platformctl(&ctl) < 0) {
 		return -1;
@@ -393,10 +449,12 @@ static int uart_init(unsigned int n, speed_t baud, int raw)
 		return -1;
 	}
 
-	callbacks.arg = uart;
-	callbacks.set_cflag = uart_setCFlag;
-	callbacks.set_baudrate = uart_setBaudrate;
-	callbacks.signal_txready = uart_signalTXReady;
+	libtty_callbacks_t callbacks = {
+		.arg = uart,
+		.set_cflag = uart_setCFlag,
+		.set_baudrate = uart_setBaudrate,
+		.signal_txready = uart_signalTXReady,
+	};
 
 	if (libtty_init(&uart->tty, &callbacks, _PAGE_SIZE, baud) < 0) {
 		munmap((void *)uart->base, _PAGE_SIZE);
