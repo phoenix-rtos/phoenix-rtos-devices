@@ -11,6 +11,8 @@
  * %LICENSE%
  */
 
+#include "librtt.h"
+
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
@@ -63,7 +65,7 @@ static inline void dataMemoryBarrier(void)
 
 struct rtt_pipe {
 	const char *name;
-	unsigned char *ptr;
+	volatile unsigned char *ptr;
 	unsigned int sz;
 	volatile unsigned int wr;
 	volatile unsigned int rd;
@@ -80,20 +82,22 @@ struct rtt_desc {
 };
 
 
-static const char rtt_tagReversed[] = LIBRTT_TAG_BACKWARD;
-static const char *const rtt_txName[LIBRTT_TXCHANNELS] = LIBRTT_TXCHANNELS_NAMES;
-static const char *const rtt_rxName[LIBRTT_RXCHANNELS] = LIBRTT_RXCHANNELS_NAMES;
+static const char librtt_tagReversed[] = LIBRTT_TAG_BACKWARD;
+static const char *const librtt_txName[LIBRTT_TXCHANNELS] = LIBRTT_TXCHANNELS_NAMES;
+static const char *const librtt_rxName[LIBRTT_RXCHANNELS] = LIBRTT_RXCHANNELS_NAMES;
 
 
 static struct {
 	volatile struct rtt_desc *rtt;
 	void *memptr;
+	librtt_cacheOp_t invalFn;
+	librtt_cacheOp_t cleanFn;
 } librtt_common = { 0 };
 
 
-int rtt_check(int chan)
+int librtt_check(int chan)
 {
-	if (librtt_common.rtt == NULL || chan < 0 || chan >= LIBRTT_TXCHANNELS) {
+	if ((librtt_common.rtt == NULL) || (chan < 0) || (chan >= LIBRTT_TXCHANNELS)) {
 		return -ENODEV;
 	}
 
@@ -101,23 +105,40 @@ int rtt_check(int chan)
 }
 
 
-ssize_t rtt_read(int chan, void *buf, size_t count)
+static void performCacheOp(librtt_cacheOp_t op, volatile unsigned char *buf, unsigned int sz, unsigned int rd, unsigned int wr)
+{
+	if ((rd == wr) || (op == NULL)) {
+		return;
+	}
+
+	if (wr < rd) {
+		op((void *)(buf + rd), sz - rd);
+		op((void *)buf, wr + 1);
+	}
+	else {
+		op((void *)(buf + rd), wr - rd + 1);
+	}
+}
+
+
+ssize_t librtt_read(int chan, void *buf, size_t count)
 {
 	volatile struct rtt_desc *rtt = librtt_common.rtt;
 
-	if (rtt_check(chan) < 0) {
+	if (librtt_check(chan) < 0) {
 		return -ENODEV;
 	}
 
 	dataMemoryBarrier();
 
-	unsigned char *srcBuf = (unsigned char *)rtt->rxChannel[chan].ptr;
+	volatile unsigned char *srcBuf = rtt->rxChannel[chan].ptr;
 	unsigned char *dstBuf = (unsigned char *)buf;
 	unsigned int sz = rtt->rxChannel[chan].sz - 1;
 	unsigned int rd = rtt->rxChannel[chan].rd & sz;
 	unsigned int wr = rtt->rxChannel[chan].wr & sz;
 	size_t todo = count;
 
+	performCacheOp(librtt_common.invalFn, srcBuf, sz + 1, rd, wr);
 	while ((todo != 0) && (rd != wr)) {
 		*dstBuf++ = srcBuf[rd];
 		rd = (rd + 1) & sz;
@@ -132,18 +153,18 @@ ssize_t rtt_read(int chan, void *buf, size_t count)
 }
 
 
-ssize_t rtt_write(int chan, const void *buf, size_t count)
+ssize_t librtt_write(int chan, const void *buf, size_t count)
 {
 	volatile struct rtt_desc *rtt = librtt_common.rtt;
 
-	if (rtt_check(chan) < 0) {
+	if (librtt_check(chan) < 0) {
 		return -ENODEV;
 	}
 
 	dataMemoryBarrier();
 
 	const unsigned char *srcBuf = (const unsigned char *)buf;
-	unsigned char *dstBuf = (unsigned char *)rtt->txChannel[chan].ptr;
+	volatile unsigned char *dstBuf = rtt->txChannel[chan].ptr;
 	unsigned int sz = rtt->txChannel[chan].sz - 1;
 	unsigned int rd = (rtt->txChannel[chan].rd + sz) & sz;
 	unsigned int wr = rtt->txChannel[chan].wr & sz;
@@ -155,6 +176,7 @@ ssize_t rtt_write(int chan, const void *buf, size_t count)
 		todo--;
 	}
 
+	performCacheOp(librtt_common.cleanFn, dstBuf, sz + 1, rd, wr);
 	rtt->txChannel[chan].wr = wr;
 
 	dataMemoryBarrier();
@@ -163,7 +185,7 @@ ssize_t rtt_write(int chan, const void *buf, size_t count)
 }
 
 
-ssize_t rtt_txAvail(int chan)
+ssize_t librtt_txAvail(int chan)
 {
 	volatile struct rtt_desc *rtt = librtt_common.rtt;
 
@@ -181,7 +203,7 @@ ssize_t rtt_txAvail(int chan)
 }
 
 
-void rtt_rxReset(int chan)
+void librtt_rxReset(int chan)
 {
 	dataMemoryBarrier();
 	librtt_common.rtt->rxChannel[chan].rd = librtt_common.rtt->rxChannel[chan].wr;
@@ -189,7 +211,7 @@ void rtt_rxReset(int chan)
 }
 
 
-void rtt_txReset(int chan)
+void librtt_txReset(int chan)
 {
 	dataMemoryBarrier();
 	librtt_common.rtt->txChannel[chan].wr = librtt_common.rtt->txChannel[chan].rd;
@@ -197,61 +219,66 @@ void rtt_txReset(int chan)
 }
 
 
-int rtt_init(void *addr, void *bufptr, size_t bufsz)
+int librtt_init(void *addr, void *bufptr, size_t bufsz, librtt_cacheOp_t invalFn, librtt_cacheOp_t cleanFn)
 {
 	unsigned int n, m;
-	volatile struct rtt_desc *rtt = librtt_common.rtt;
-
-	if ((rtt != NULL) && (bufsz != 0) && ((bufsz & (bufsz - 1)) != 0)) {
+	const size_t bufSzPerChannel = bufsz / (LIBRTT_TXCHANNELS + LIBRTT_RXCHANNELS);
+	if ((LIBRTT_DESC_SIZE < sizeof(struct rtt_desc)) ||
+		(librtt_common.rtt != NULL) ||
+		(bufSzPerChannel == 0) ||
+		((bufSzPerChannel & (bufSzPerChannel - 1)) != 0)) {
 		return -EINVAL;
 	}
 
 	if (bufptr == NULL) {
 		bufptr = mmap(NULL,
-			bufsz * rtt->txChannels * rtt->rxChannels,
+			bufsz,
 			PROT_WRITE | PROT_READ, MAP_ANONYMOUS | MAP_UNCACHED,
 			-1,
 			0);
+
 		if (bufptr == MAP_FAILED) {
 			return -ENOMEM;
 		}
-		librtt_common.memptr = bufptr;
 	}
 
-	rtt = (volatile struct rtt_desc *)addr;
+	librtt_common.memptr = bufptr;
+	librtt_common.invalFn = invalFn;
+	librtt_common.cleanFn = cleanFn;
+
+	volatile struct rtt_desc *rtt = addr;
 	memset((void *)rtt, 0, sizeof(*rtt));
 
 	rtt->txChannels = LIBRTT_TXCHANNELS;
 	rtt->rxChannels = LIBRTT_RXCHANNELS;
 
-	bufsz /= (rtt->txChannels + rtt->rxChannels);
-
 	m = 0;
 	for (n = 0; n < rtt->txChannels; n++) {
-		rtt->txChannel[n].name = rtt_txName[n];
-		rtt->txChannel[n].ptr = (unsigned char *)bufptr + m * bufsz;
-		rtt->txChannel[n].sz = bufsz;
+		rtt->txChannel[n].name = librtt_txName[n];
+		rtt->txChannel[n].ptr = (unsigned char *)bufptr + m * bufSzPerChannel;
+		rtt->txChannel[n].sz = bufSzPerChannel;
 		m++;
 	}
 
 	for (n = 0; n < rtt->rxChannels; n++) {
-		rtt->rxChannel[n].name = rtt_rxName[n];
-		rtt->rxChannel[n].ptr = (unsigned char *)bufptr + m * bufsz;
-		rtt->rxChannel[n].sz = bufsz;
+		rtt->rxChannel[n].name = librtt_rxName[n];
+		rtt->rxChannel[n].ptr = (unsigned char *)bufptr + m * bufSzPerChannel;
+		rtt->rxChannel[n].sz = bufSzPerChannel;
 		m++;
 	}
 
 	n = 0;
-	m = sizeof(rtt_tagReversed) - 1;
-	while (n < sizeof(rtt->tag) && m > 0) {
-		rtt->tag[n++] = rtt_tagReversed[--m];
+	m = sizeof(librtt_tagReversed) - 1;
+	while ((n < sizeof(rtt->tag)) && (m > 0)) {
+		rtt->tag[n++] = librtt_tagReversed[--m];
 	}
 
+	librtt_common.rtt = rtt;
 	return 0;
 }
 
 
-void rtt_done(void)
+void librtt_done(void)
 {
 	volatile struct rtt_desc *rtt = librtt_common.rtt;
 

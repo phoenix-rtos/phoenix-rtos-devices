@@ -5,7 +5,7 @@
 #
 
 NAME := librtt
-LOCAL_SRCS := rtt.c
-LOCAL_HEADERS := rtt.h
+LOCAL_SRCS := librtt.c
+LOCAL_HEADERS := librtt.h
 
 include $(static-lib.mk)
