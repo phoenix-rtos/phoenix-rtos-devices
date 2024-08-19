@@ -21,39 +21,53 @@
 
 typedef int (*librtt_cacheOp_t)(void *addr, unsigned int sz);
 
-/* Initialize rtt descriptor and rtt internal structures.
-   TODO: on armv7m targets MAP_UNCACHED flag seems to not be implemented.
-   Caller must supply `bufptr` in non-cached memory.
-*/
-int librtt_init(void *addr, void *bufptr, size_t bufsz, librtt_cacheOp_t invalFn, librtt_cacheOp_t cleanFn);
+
+/* Initialize rtt descriptor if it is not initialized already */
+int librtt_init(void *addr, librtt_cacheOp_t invalFn, librtt_cacheOp_t cleanFn);
+
+
+/* Initialize a single RTT channel */
+int librtt_initChannel(int isTx, unsigned int ch, unsigned char *buf, size_t sz);
 
 
 /* Release resources, cleanup */
 void librtt_done(void);
 
 
-/* Check if channel is present */
-int librtt_check(int chan);
+/* Check if TX channel is present */
+int librtt_checkTx(unsigned int ch);
+
+
+/* Check if RX channel is present */
+int librtt_checkRx(unsigned int ch);
 
 
 /* Non-blocking read from channel */
-ssize_t librtt_read(int chan, void *buf, size_t count);
+ssize_t librtt_read(unsigned int ch, void *buf, size_t count);
 
 
 /* Non-blocking write to channel */
-ssize_t librtt_write(int chan, const void *buf, size_t count);
+ssize_t librtt_write(unsigned int ch, const void *buf, size_t count, int allowOverwrite);
+
+
+/* Check for available data in rx */
+ssize_t librtt_rxAvail(unsigned int ch);
 
 
 /* Check for available space in tx */
-ssize_t librtt_txAvail(int chan);
+ssize_t librtt_txAvail(unsigned int ch);
+
+
+/* Check if a reader has read something from chosen TX channel since the last check */
+int librtt_txCheckReaderAttached(unsigned int ch);
 
 
 /* Reset rx fifo pointers */
-void librtt_rxReset(int chan);
+void librtt_rxReset(unsigned int ch);
 
 
 /* Reset tx fifo pointers */
-void librtt_txReset(int chan);
+void librtt_txReset(unsigned int ch);
 
 
 #endif /* end of LIBRTT_H */
