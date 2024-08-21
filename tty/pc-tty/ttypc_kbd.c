@@ -31,7 +31,9 @@
 #include <posix/utils.h>
 
 #include "ttypc_kbd.h"
+#include "ttypc_mouse.h"
 #include "ttypc_vga.h"
+#include "ttypc_ps2.h"
 #include "event_queue.h"
 
 
@@ -44,26 +46,6 @@ typedef struct {
 	char *altgr;
 	char *shift_altgr;
 } ttypc_kbd_keymap_t;
-
-
-typedef struct {
-	ttypc_t *ttypc;
-	unsigned int kbd_port;
-	handle_t kplock;
-	handle_t kcond;
-
-	unsigned int mouse_port;
-} poolthr_args_t;
-
-poolthr_args_t poolthr_args;
-
-
-typedef struct {
-	ttypc_t *ttypc;
-	handle_t kcond;
-} ctlthr_args_t;
-
-ctlthr_args_t ctlthr_args;
 
 
 /* U.S 101 keys keyboard map */
@@ -433,18 +415,12 @@ static char *_ttypc_kbd_get(ttypc_t *ttypc)
 }
 
 
-/* Keyboard/mouse interrupt handler */
-static int ttypc_kbd_interrupt(unsigned int n, void *arg)
+/* Keyboard interrupt handler */
+static int _ttypc_kbd_interrupt(unsigned int n, void *arg)
 {
 	ttypc_t *ttypc = (ttypc_t *)arg;
 
 	return ttypc->kmcond;
-}
-
-
-static unsigned char ttypc_kbd_read_ctrl_buf(ttypc_t *ttypc)
-{
-	return inb((void *)((uintptr_t)ttypc->kbd + 4));
 }
 
 
@@ -453,33 +429,21 @@ static unsigned char ttypc_kbd_read_ctrl_buf(ttypc_t *ttypc)
 #define MOUSE_OUTPUT_PENDING(status) (((status) & (1 << 0)) && ((status) & (1 << 5)))
 
 
-/* Waits for keyboard controller status bit with small timeout */
-static int ttypc_kbd_waitstatus(ttypc_t *ttypc, unsigned char bit, unsigned char state)
+void __attribute__((weak)) ttypc_mouse_handle_event(ttypc_t *ttypc)
 {
-	unsigned int i;
-
-	for (i = 0; i < 0xffff; i++) {
-		if (!(inb((void *)((uintptr_t)ttypc->kbd + 4)) & ((1 << bit) ^ (state << bit))))
-			return EOK;
-		usleep(10);
-	}
-
-	return -ETIMEDOUT;
+	fprintf(stderr, "pc-tty: ttypc_mouse_handle_event() called while mouse disabled\n");
 }
 
 
-static void ttypc_kbd_handle_mouse_event(ttypc_t *ttypc)
+int __attribute__((weak)) ttypc_mouse_init(ttypc_t *ttypc)
 {
-	unsigned char b = inb((void *)ttypc->kbd);
-
-	event_queue_put(ttypc->meq, b, 3, 0);
+	return EOK;
 }
 
 
 static void ttypc_kbd_ctlthr(void *arg)
 {
-	ctlthr_args_t *ctlthr_args = (ctlthr_args_t *)arg;
-	ttypc_t *ttypc = ctlthr_args->ttypc;
+	ttypc_t *ttypc = (ttypc_t *)arg;
 	ttypc_vt_t *cvt;
 	char *s, k;
 	char buff[10];
@@ -489,12 +453,12 @@ static void ttypc_kbd_ctlthr(void *arg)
 	mutexLock(ttypc->klock);
 	for (;;) {
 		while (1) {
-			status = ttypc_kbd_read_ctrl_buf(ttypc);
+			status = ttypc_ps2_read_ctrl(ttypc);
 			if (KBD_OUTPUT_PENDING(status)) {
 				break;
 			}
 			else if (MOUSE_OUTPUT_PENDING(status)) {
-				ttypc_kbd_handle_mouse_event(ttypc);
+				ttypc_mouse_handle_event(ttypc);
 			}
 			else {
 				condWait(ttypc->kmcond, ttypc->klock, 0);
@@ -581,60 +545,17 @@ static void ttypc_kbd_ctlthr(void *arg)
 }
 
 
-/* Reads a byte from keyboard I/O buffer */
-static int ttypc_kbd_read(ttypc_t *ttypc)
-{
-	int err;
-
-	/* Wait for output buffer not to be empty */
-	if ((err = ttypc_kbd_waitstatus(ttypc, 0, 1)) < 0)
-		return err;
-
-	return inb((void *)ttypc->kbd);
-}
-
-
-static int _ttypc_kbd_write_to_port(ttypc_t *ttypc, void *port, unsigned char byte)
-{
-	int err;
-
-	/* Wait for input buffer to be empty */
-	if ((err = ttypc_kbd_waitstatus(ttypc, 1, 0)) < 0)
-		return err;
-
-	outb(port, byte);
-
-	return EOK;
-}
-
-
-/* Writes a byte to keyboard control buffer */
-static int ttypc_kbd_write_ctrl(ttypc_t *ttypc, unsigned char byte)
-{
-	return _ttypc_kbd_write_to_port(ttypc, (void *)ttypc->kbd + 4, byte);
-}
-
-
-/* Writes a byte to keyboard I/O buffer */
-static int ttypc_kbd_write(ttypc_t *ttypc, unsigned char byte)
-{
-	return _ttypc_kbd_write_to_port(ttypc, (void *)ttypc->kbd, byte);
-}
-
-
 static void ttypc_kbd_poolthr(void *arg)
 {
-	poolthr_args_t *poolthr_args = (poolthr_args_t *)arg;
-	ttypc_t *ttypc = poolthr_args->ttypc;
+	ttypc_t *ttypc = (ttypc_t *)arg;
 	msg_rid_t rid;
 	msg_t msg;
 
-	mutexLock(poolthr_args->kplock);
 	for (;;) {
-		if (msgRecv(poolthr_args->kbd_port, &msg, &rid) < 0)
+		if (msgRecv(ttypc->kport, &msg, &rid) < 0)
 			continue;
 
-		if (libklog_ctrlHandle(poolthr_args->kbd_port, &msg, rid) == 0) {
+		if (libklog_ctrlHandle(ttypc->kport, &msg, rid) == 0) {
 			/* msg has been handled by libklog */
 			continue;
 		}
@@ -656,73 +577,7 @@ static void ttypc_kbd_poolthr(void *arg)
 				break;
 		}
 
-		msgRespond(poolthr_args->kbd_port, &msg, rid);
-	}
-}
-
-
-static void ttypc_kbd_mouse_poolthr(void *arg)
-{
-	poolthr_args_t *poolthr_args = (poolthr_args_t *)arg;
-	ttypc_t *ttypc = poolthr_args->ttypc;
-	msg_rid_t rid;
-	msg_t msg;
-
-	for (;;) {
-		if (msgRecv(poolthr_args->mouse_port, &msg, &rid) < 0)
-			continue;
-
-		if (libklog_ctrlHandle(poolthr_args->mouse_port, &msg, rid) == 0) {
-			/* msg has been handled by libklog */
-			continue;
-		}
-
-		switch (msg.type) {
-			case mtOpen:
-				msg.o.err = EOK;
-				break;
-
-			case mtRead:
-				if (msg.o.size < 3) {
-					/* Pretend there's nothing to read. We don't want someone to
-			 read partial mouse packets - this would mess up byte ordering
-			 and confuse recipients. */
-					msg.o.err = 0;
-					break;
-				}
-				msg.o.err = event_queue_get(ttypc->meq, msg.o.data, 3, msg.i.io.mode);
-				break;
-
-			case mtWrite:
-				if (ttypc_kbd_write(ttypc, ((unsigned char *)msg.i.data)[0]) < 0) {
-					msg.o.err = -EINVAL;
-					break;
-				}
-				msg.o.err = 1;
-				break;
-
-			case mtGetAttr:
-				if ((msg.i.attr.type != atPollStatus)) {
-					msg.o.err = -EINVAL;
-					break;
-				}
-
-				msg.o.attr.val = 0;
-				if (event_queue_count(ttypc->meq) >= 3)
-					msg.o.attr.val |= POLLIN;
-
-				msg.o.err = EOK;
-				break;
-
-			case mtClose:
-				break;
-
-			default:
-				msg.o.err = -ENOSYS;
-				break;
-		}
-
-		msgRespond(poolthr_args->mouse_port, &msg, rid);
+		msgRespond(ttypc->kport, &msg, rid);
 	}
 }
 
@@ -732,11 +587,11 @@ int _ttypc_kbd_updateled(ttypc_t *ttypc)
 {
 	do {
 		/* Send update LEDs command */
-		if (ttypc_kbd_write(ttypc, 0xed) < 0)
+		if (ttypc_ps2_write(ttypc, 0xed) < 0)
 			break;
 
 		/* Send LEDs state */
-		if (ttypc_kbd_write(ttypc, (ttypc->lockst >> 4) & 0x07) < 0)
+		if (ttypc_ps2_write(ttypc, (ttypc->lockst >> 4) & 0x07) < 0)
 			break;
 
 		return 1;
@@ -746,77 +601,13 @@ int _ttypc_kbd_updateled(ttypc_t *ttypc)
 }
 
 
-static int _ttypc_kbd_mouse_init(ttypc_t *ttypc)
-{
-	unsigned char status;
-
-	do {
-		/* Enable mouse */
-		ttypc_kbd_write_ctrl(ttypc, 0xA8);
-		if ((status = ttypc_kbd_read(ttypc)) != 0xFA) {
-			fprintf(stderr, "pc-tty: mouse not found\n");
-			break;
-		}
-
-		/* Get compaq status byte */
-		ttypc_kbd_write_ctrl(ttypc, 0x20);
-
-		status = ttypc_kbd_read(ttypc);
-		status |= (1 << 1);  /* Enable IRQ12 interrupt */
-		status &= ~(1 << 5); /* Enable mouse clock (unset bit 5) */
-
-		/* Set compaq status byte */
-		ttypc_kbd_write_ctrl(ttypc, 0x60);
-		ttypc_kbd_write(ttypc, status);
-
-		/* Set defaults */
-		ttypc_kbd_write_ctrl(ttypc, 0xD4);
-		ttypc_kbd_write(ttypc, 0xF6);
-		if ((status = ttypc_kbd_read(ttypc)) != 0xFA) {
-			fprintf(stderr, "pc-tty: mouse initialization failed - no ACK after setting defaults\n");
-			break;
-		}
-
-		/* Send mouse cmd - enable packet streaming */
-		ttypc_kbd_write_ctrl(ttypc, 0xD4);
-		ttypc_kbd_write(ttypc, 0xF4);
-		if ((status = ttypc_kbd_read(ttypc)) != 0xFA) {
-			fprintf(stderr, "pc-tty: mouse initialization failed - no ACK after enable packet streaming cmd\n");
-			break;
-		}
-
-		/* Is the mouse alive? */
-		ttypc_kbd_write_ctrl(ttypc, 0xD4);
-		ttypc_kbd_write(ttypc, 0xEB);
-		if ((status = ttypc_kbd_read(ttypc)) != 0xFA)
-			fprintf(stderr, "pc-tty: mouse died\n");
-	} while (0);
-
-	if (status != 0xFA) {
-		/** If mouse initialization had failed at any point, disable mouse
-		  so that it doesn't clutter the I/O port with events we won't handle */
-		ttypc_kbd_write_ctrl(ttypc, 0xA7);
-		if ((status = ttypc_kbd_read(ttypc)) != 0xFA) {
-			fprintf(stderr, "pc-tty: could not disable mouse (?)\n");
-		}
-
-		return -1;
-	}
-
-	return EOK;
-}
-
-
 void ttypc_kbd_destroy(ttypc_t *ttypc)
 {
 	resourceDestroy(ttypc->klock);
 	resourceDestroy(ttypc->kmcond);
 	event_queue_destroy(ttypc->keq);
-	event_queue_destroy(ttypc->meq);
 	resourceDestroy(ttypc->kinth);
-	resourceDestroy(ttypc->minth);
-	resourceDestroy(poolthr_args.kplock);
-	resourceDestroy(poolthr_args.kcond);
+	portDestroy(ttypc->kport);
 }
 
 
@@ -824,10 +615,6 @@ int ttypc_kbd_init(ttypc_t *ttypc)
 {
 	int i, err;
 	oid_t oid;
-	bool has_mouse = false;
-
-	memset(&poolthr_args, 0, sizeof(poolthr_args_t));
-	memset(&ctlthr_args, 0, sizeof(ctlthr_args_t));
 
 	/* PS/2 Keyboard base IO-port */
 	ttypc->kbd = (void *)0x60;
@@ -844,11 +631,11 @@ int ttypc_kbd_init(ttypc_t *ttypc)
 	/* Configure typematic */
 	do {
 		/* Send set typematic rate/delay command */
-		if (ttypc_kbd_write(ttypc, 0xf3) < 0)
+		if (ttypc_ps2_write(ttypc, 0xf3) < 0)
 			break;
 
 		/* 250 ms / 30.0 reports/sec */
-		if (ttypc_kbd_write(ttypc, 0) < 0)
+		if (ttypc_ps2_write(ttypc, 0) < 0)
 			break;
 	} while (0);
 
@@ -857,33 +644,15 @@ int ttypc_kbd_init(ttypc_t *ttypc)
 		usleep(10000);
 
 	/* Create virtual keyboard device */
-	do {
-		if ((err = portCreate(&poolthr_args.kbd_port)) < 0) {
-			fprintf(stderr, "pc-tty: failed to create keyboard port\n");
-			break;
-		}
-		oid.port = poolthr_args.kbd_port;
-		oid.id = 0;
-		if ((err = create_dev(&oid, _PATH_KBD)) < 0) {
-			fprintf(stderr, "pc-tty: failed to register device %s\n", _PATH_KBD);
-		}
-	} while (0);
-
-	/* Mouse initialization */
-	if ((err = _ttypc_kbd_mouse_init(ttypc)) == EOK) {
-		has_mouse = true;
-		do {
-			/* Create virtual mouse device */
-			if ((err = portCreate(&poolthr_args.mouse_port)) < 0) {
-				fprintf(stderr, "pc-tty: failed to create mouse port\n");
-				break;
-			}
-			oid.port = poolthr_args.mouse_port;
-			oid.id = 0;
-			if ((err = create_dev(&oid, _PATH_MOUSE)) < 0) {
-				fprintf(stderr, "pc-tty: failed to register device %s\n", _PATH_MOUSE);
-			}
-		} while (0);
+	if ((err = portCreate(&ttypc->kport)) < 0) {
+		fprintf(stderr, "pc-tty: failed to create keyboard port\n");
+		return err;
+	}
+	oid.port = ttypc->kport;
+	oid.id = 0;
+	if ((err = create_dev(&oid, _PATH_KBD)) < 0) {
+		fprintf(stderr, "pc-tty: failed to register device %s\n", _PATH_KBD);
+		return err;
 	}
 
 	do {
@@ -896,51 +665,29 @@ int ttypc_kbd_init(ttypc_t *ttypc)
 		if ((err = event_queue_init(&ttypc->keq, 32)) < 0)
 			break;
 
-		if ((err = event_queue_init(&ttypc->meq, 256)) < 0)
-			break;
-
 		/* Attach KIRQ1 (kbd event) interrupt handle */
-		if ((err = interrupt((ttypc->kirq = 1), ttypc_kbd_interrupt, ttypc, ttypc->kmcond, &ttypc->kinth)) < 0)
+		if ((err = interrupt((ttypc->kirq = 1), _ttypc_kbd_interrupt, ttypc, ttypc->kmcond, &ttypc->kinth)) < 0)
 			break;
 
-		/* Attach KIRQ12 (mouse event) interrupt handle */
-		if ((err = interrupt((ttypc->mirq = 12), ttypc_kbd_interrupt, ttypc, ttypc->kmcond, &ttypc->minth)) < 0)
-			break;
-
-		poolthr_args.ttypc = ttypc;
-		ctlthr_args.ttypc = ttypc;
-		ctlthr_args.kcond = poolthr_args.kcond;
-
-		if ((err = mutexCreate(&poolthr_args.kplock)) < 0)
-			break;
-
-		if ((err = condCreate(&poolthr_args.kcond)) < 0)
+		/* Initialize mouse */
+		if ((err = ttypc_mouse_init(ttypc)) < 0)
 			break;
 
 		/* Launch keyboard/mouse control thread */
-		if ((err = beginthread(ttypc_kbd_ctlthr, 1, ttypc->kstack, sizeof(ttypc->kstack), &ctlthr_args)) < 0)
+		if ((err = beginthread(ttypc_kbd_ctlthr, 1, ttypc->kstack, sizeof(ttypc->kstack), ttypc)) < 0)
 			break;
 
 		/* Launch keyboard pool thread */
-		if ((err = beginthread(ttypc_kbd_poolthr, 1, ttypc->kpstack, sizeof(ttypc->kpstack), &poolthr_args)) < 0)
+		if ((err = beginthread(ttypc_kbd_poolthr, 1, ttypc->kpstack, sizeof(ttypc->kpstack), ttypc)) < 0)
 			break;
 
-		if (has_mouse) {
-			/* Launch mouse pool thread */
-			if ((err = beginthread(ttypc_kbd_mouse_poolthr, 1, ttypc->mpstack, sizeof(ttypc->mpstack), &poolthr_args)) < 0)
-				break;
-		}
 	} while (0);
 
 	if (err < 0) {
 		resourceDestroy(ttypc->klock);
 		resourceDestroy(ttypc->kmcond);
 		event_queue_destroy(ttypc->keq);
-		event_queue_destroy(ttypc->meq);
 		resourceDestroy(ttypc->kinth);
-		resourceDestroy(ttypc->minth);
-		resourceDestroy(poolthr_args.kplock);
-		resourceDestroy(poolthr_args.kcond);
 		return err;
 	}
 

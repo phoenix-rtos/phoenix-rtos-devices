@@ -8,4 +8,9 @@
 NAME := pc-tty
 SRCS := $(wildcard tty/pc-tty/*.c)
 DEP_LIBS := libtty libklog
+
+ifeq ($(HAS_MOUSE), n)
+	SRCS := $(filter-out tty/pc-tty/ttypc_mouse.c, $(SRCS))
+endif
+
 include $(binary.mk)
