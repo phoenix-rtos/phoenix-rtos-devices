@@ -18,13 +18,11 @@
 #include <sys/types.h>
 
 #include "ttypc_vt.h"
+#include "event_queue.h"
 
 
 /* Number of virtual terminals */
 #define NVTS 4
-
-
-#define MEV_SIZE 256
 
 
 /* Keyboard types */
@@ -46,13 +44,6 @@ enum {
 	KB_KP      = 0x0200,
 	KB_EXT     = 0x0400
 };
-
-typedef struct _mev_buf {
-	unsigned char buf[MEV_SIZE];
-	unsigned int count;
-	unsigned int r;
-	unsigned int w;
-} mev_buf_t;
 
 
 struct _ttypc_t {
@@ -77,15 +68,8 @@ struct _ttypc_t {
 
 	handle_t kmcond; /* Kbd/mouse interrupt condition variable */
 
-	/* TODO: do a proper fifo */
-	unsigned char kev; /* Keyboard event "buffer" */
-	unsigned int kev_count;
-	handle_t kev_mutex;
-	handle_t kev_waitq;
-
-	mev_buf_t mev; /* Mouse event buffer */
-	handle_t mev_mutex;
-	handle_t mev_waitq;
+	event_queue_t *keq; /* Keyboard event buffer */
+	event_queue_t *meq; /* Mouse event buffer */
 
 	/* Virtual terminals */
 	ttypc_vt_t *vt;       /* Active virtual terminal */
