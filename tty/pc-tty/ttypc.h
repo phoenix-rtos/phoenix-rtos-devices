@@ -25,28 +25,29 @@
 
 
 /* Keyboard types */
-enum { KBD_BIOS, KBD_PS2 };
+enum { KBD_BIOS,
+	KBD_PS2 };
 
 
 /* Keyboard key types */
 enum {
-	KB_NONE    = 0x0000,
-	KB_CTL     = 0x0001,
-	KB_SHIFT   = 0x0002,
-	KB_ALT     = 0x0004,
-	KB_ALTGR   = 0x0008,
-	KB_SCROLL  = 0x0010,
-	KB_NUM     = 0x0020,
-	KB_CAPS    = 0x0040,
-	KB_FUNC    = 0x0080,
-	KB_ASCII   = 0x0100,
-	KB_KP      = 0x0200,
-	KB_EXT     = 0x0400
+	KB_NONE = 0x0000,
+	KB_CTL = 0x0001,
+	KB_SHIFT = 0x0002,
+	KB_ALT = 0x0004,
+	KB_ALTGR = 0x0008,
+	KB_SCROLL = 0x0010,
+	KB_NUM = 0x0020,
+	KB_CAPS = 0x0040,
+	KB_FUNC = 0x0080,
+	KB_ASCII = 0x0100,
+	KB_KP = 0x0200,
+	KB_EXT = 0x0400
 };
 
 
 struct _ttypc_t {
-	unsigned int port;     /* Driver port */
+	unsigned int port; /* Driver port */
 
 	/* VGA */
 	volatile void *vga;    /* VGA screen memory */
@@ -65,11 +66,11 @@ struct _ttypc_t {
 	handle_t kinth;        /* Interrupt handle */
 
 	/* Virtual terminals */
-	ttypc_vt_t *vt;        /* Active virtual terminal */
-	ttypc_vt_t vts[NVTS];  /* Virtual Terminals */
+	ttypc_vt_t *vt;       /* Active virtual terminal */
+	ttypc_vt_t vts[NVTS]; /* Virtual Terminals */
 
 	/* Synchronization */
-	handle_t lock;         /* Access mutex */
+	handle_t lock; /* Access mutex */
 
 	/* Thread stacks */
 	char kstack[2048] __attribute__ ((aligned(8)));
