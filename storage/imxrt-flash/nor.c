@@ -45,6 +45,7 @@ static const struct nor_info flashInfo[] = {
 	{ FLASH_ID(0xef, 0x4019), "W25Q256JVEIQ", 32 * 1024 * 1024, 0x100, 0x1000 },
 	{ FLASH_ID(0xef, 0x6019), "W25Q256JW-Q", 32 * 1024 * 1024, 0x100, 0x1000 },
 	{ FLASH_ID(0xef, 0x8019), "W25Q256JW-M", 32 * 1024 * 1024, 0x100, 0x1000 },
+	{ FLASH_ID(0xef, 0x6020), "W25Q512NW-Q", 64 * 1024 * 1024, 0x100, 0x1000 },
 
 	/* ISSI */
 	{ FLASH_ID(0x9d, 0x7016), "IS25WP032", 4 * 1024 * 1024, 0x100, 0x1000 },
