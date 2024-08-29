@@ -671,7 +671,7 @@ static int spw_cguInit(int dev)
 
 static void spw_defaultConfig(spw_dev_t *dev)
 {
-	dev->vbase[SPW_CTRL] |= SPW_CTRL_LS;
+	dev->vbase[SPW_CTRL] = SPW_CTRL_LS | SPW_CTRL_IE | SPW_CTRL_PM;
 	dev->vbase[DMA_CTRL] |= DMA_CTRL_RI | DMA_CTRL_TI;
 	dev->vbase[DMA_RX_LEN] = MAX_PACKET_LEN;
 	dev->vbase[DMA_TX_DESC] = va2pa((void *)dev->txDesc);
