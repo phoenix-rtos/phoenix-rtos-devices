@@ -26,14 +26,6 @@
 #include <sys/threads.h>
 #include <posix/utils.h>
 
-#if defined(__CPU_GR716)
-#include <phoenix/arch/sparcv8leon/gr716/gr716.h>
-#elif defined(__CPU_GR712RC)
-#include <phoenix/arch/sparcv8leon/gr712rc/gr712rc.h>
-#else
-#error Unsupported target
-#endif
-
 #include <phoenix/arch/sparcv8leon/sparcv8leon.h>
 
 #include "spacewire.h"
@@ -653,6 +645,7 @@ static int spw_cguInit(int dev)
 			.cgudev = cgudev_spw0 + dev,
 		}
 	};
+	return platformctl(&pctl);
 #elif defined(__CPU_GR716)
 	(void)dev;
 	platformctl_t pctl = {
@@ -664,8 +657,11 @@ static int spw_cguInit(int dev)
 			.cgudev = cgudev_grspw,
 		}
 	};
-#endif
 	return platformctl(&pctl);
+#else
+	(void)dev;
+	return 0;
+#endif
 }
 
 
