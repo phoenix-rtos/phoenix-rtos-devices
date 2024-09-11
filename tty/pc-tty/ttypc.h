@@ -66,7 +66,7 @@ struct _ttypc_t {
 	handle_t klock;    /* Kbd interrupt mutex */
 	handle_t kinth;    /* Kbd interrupt handle */
 
-#if PC_TTY_ENABLE_MOUSE
+#if PC_TTY_MOUSE_ENABLE
 	unsigned int mirq; /* Mouse interrupt number */
 	handle_t minth;    /* Mouse interrupt handle */
 #endif
@@ -77,7 +77,7 @@ struct _ttypc_t {
 
 	/* Kbd pool thread stack */
 	char kpstack[1024] __attribute__((aligned(8)));
-#if PC_TTY_ENABLE_MOUSE
+#if PC_TTY_MOUSE_ENABLE
 	event_queue_t meq;  /* Mouse event buffer */
 	unsigned int mport; /* Mouse device port */
 

@@ -17,7 +17,7 @@
 
 #include <sys/threads.h>
 
-#define TTYPC_EQBUF_SIZE 256u
+#define TTYPC_EQBUF_SIZE 258u /* should be a multiple of 3 for mouse events */
 
 typedef struct _event_queue_t {
 	unsigned char buf[TTYPC_EQBUF_SIZE];
