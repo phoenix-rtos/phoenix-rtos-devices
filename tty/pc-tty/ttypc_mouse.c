@@ -16,7 +16,7 @@
 #include "board_config.h"
 #include "ttypc_mouse.h"
 
-#if PC_TTY_ENABLE_MOUSE
+#if PC_TTY_MOUSE_ENABLE
 
 #include <poll.h>
 #include <unistd.h>
@@ -42,6 +42,12 @@ static int _ttypc_mouse_setup(ttypc_t *ttypc)
 	int err;
 
 	do {
+
+/* Some BIOS-es do this part of configuration already and
+redoing it may not be necessary or could even hang the PS/2
+controller completely (as is the case on ThinkPad/Phoenix BIOS 2.26) */
+#if !PC_TTY_MOUSE_SKIP_CONFIG
+
 		/* Enable mouse. Should receive ACK (0xFA) afterwards */
 		err = ttypc_ps2_write_ctrl(ttypc, 0xA8);
 		if (err < 0) {
@@ -61,8 +67,13 @@ static int _ttypc_mouse_setup(ttypc_t *ttypc)
 		}
 
 		status = ttypc_ps2_read(ttypc);
-		status |= (1u << 1u);  /* Enable IRQ12 interrupt */
+		status |= (1u << 1u); /* Enable IRQ12 interrupt */
+
+/* Some sources say the bit 5 should be unset for proper functioning,
+   but on QEMU and real hardware it is not necessary */
+#if 0
 		status &= ~(1u << 5u); /* Enable mouse clock (unset bit 5) */
+#endif
 
 		/* Set compaq status byte */
 		err = ttypc_ps2_write_ctrl(ttypc, 0x60);
@@ -73,6 +84,8 @@ static int _ttypc_mouse_setup(ttypc_t *ttypc)
 		if (err < 0) {
 			break;
 		}
+
+#endif
 
 		/* Set defaults. Should receive ACK afterwards */
 		err = ttypc_ps2_write_ctrl(ttypc, 0xD4);
@@ -105,21 +118,6 @@ static int _ttypc_mouse_setup(ttypc_t *ttypc)
 			err = -1;
 			break;
 		}
-
-		/* Is the mouse alive? It is, if ACK received */
-		err = ttypc_ps2_write_ctrl(ttypc, 0xD4);
-		if (err < 0) {
-			break;
-		}
-		err = ttypc_ps2_write(ttypc, 0xEB);
-		if (err < 0) {
-			break;
-		}
-		err = ttypc_ps2_read(ttypc);
-		if (err != 0xFA) {
-			(void)fprintf(stderr, "pc-tty: mouse died\n");
-			err = -1;
-		}
 	} while (0);
 
 	if (err < 0) {
@@ -131,6 +129,7 @@ static int _ttypc_mouse_setup(ttypc_t *ttypc)
 }
 
 
+#if PC_TTY_CREATE_PS2_VDEVS
 static void _ttypc_kbd_mouse_poolthr(void *arg)
 {
 	ttypc_t *ttypc = (ttypc_t *)arg;
@@ -160,7 +159,23 @@ static void _ttypc_kbd_mouse_poolthr(void *arg)
 					msg.o.err = 0;
 					break;
 				}
+
+				/* TODO allow for reading multiples of 3 */
 				msg.o.err = event_queue_get(&ttypc->meq, msg.o.data, 3, msg.i.io.mode);
+
+				/* 3rd bit should be set in the first byte of mouse package */
+				while ((((char *)msg.o.data)[0] & 0x8) == 0) {
+					/* this is not a first byte, scroll through the buffer */
+
+					msg.o.err = event_queue_get(&ttypc->meq, msg.o.data, 1, msg.i.io.mode);
+
+					if ((((char *)msg.o.data)[0] & 0x8) != 0) {
+						/* found the first byte, get the other two */
+						msg.o.err += event_queue_get(&ttypc->meq, (char *)msg.o.data + 1, 2, msg.i.io.mode);
+						break;
+					}
+				}
+
 				break;
 
 			case mtWrite:
@@ -196,6 +211,7 @@ static void _ttypc_kbd_mouse_poolthr(void *arg)
 		msgRespond(ttypc->mport, &msg, rid);
 	}
 }
+#endif
 
 
 /* Mouse interrupt handler */
@@ -233,19 +249,21 @@ int ttypc_mouse_init(ttypc_t *ttypc)
 			portDestroy(ttypc->mport);
 			break;
 		}
-#endif
 
 		err = event_queue_init(&ttypc->meq);
 		if (err < 0) {
 			portDestroy(ttypc->mport);
 			break;
 		}
+#endif
 
 		/* Attach KIRQ12 (mouse event) interrupt handle */
 		err = interrupt((ttypc->mirq = 12), _ttypc_mouse_interrupt, ttypc, ttypc->kmcond, &ttypc->minth);
 		if (err < 0) {
+#if PC_TTY_CREATE_PS2_VDEVS
 			portDestroy(ttypc->mport);
 			event_queue_destroy(&ttypc->meq);
+#endif
 			break;
 		}
 
@@ -283,6 +301,7 @@ int ttypc_mouse_init(ttypc_t *ttypc)
 
 int ttypc_mouse_handle_event(ttypc_t *ttypc)
 {
+#if PC_TTY_CREATE_PS2_VDEVS
 	unsigned char b;
 	int err;
 
@@ -290,14 +309,20 @@ int ttypc_mouse_handle_event(ttypc_t *ttypc)
 	err = event_queue_put(&ttypc->meq, b, 3);
 
 	return err;
+#else
+	(void)inb((void *)ttypc->kbd);
+	return EOK;
+#endif
 }
 
 
 void ttypc_mouse_destroy(ttypc_t *ttypc)
 {
 	resourceDestroy(ttypc->minth);
+#if PC_TTY_CREATE_PS2_VDEVS
 	event_queue_destroy(&ttypc->meq);
 	portDestroy(ttypc->mport);
+#endif
 }
 
 #else

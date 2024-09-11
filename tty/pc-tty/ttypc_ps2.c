@@ -44,7 +44,7 @@ static int _ttypc_ps2_waitstatus(ttypc_t *ttypc, unsigned int bit, unsigned int 
 		}
 
 		if (i < rounds - 1u) {
-			usleep(SLEEP_MS);
+			usleep(SLEEP_MS * 1000);
 		}
 	}
 
