@@ -33,6 +33,7 @@
 #include "common.h"
 
 #include "uart.h"
+#include "rtt.h"
 #include "gpio.h"
 #include "spi.h"
 #include "i2c.h"
@@ -168,7 +169,11 @@ static void uart_dispatchMsg(msg_t *msg)
 
 	switch (id) {
 		case id_console:
+#ifdef ONLY_RTT_CONSOLE
+			rtt_handleMsg(msg, RTT_CHANNEL_CONSOLE + id_rtt0);
+#else
 			uart_handleMsg(msg, UART_CONSOLE - 1 + id_uart1);
+#endif
 			break;
 
 		case id_uart1:
@@ -190,6 +195,11 @@ static void uart_dispatchMsg(msg_t *msg)
 			uart_handleMsg(msg, id);
 			break;
 #endif
+
+		case id_rtt0:
+		case id_rtt1:
+			rtt_handleMsg(msg, id);
+			break;
 
 		default:
 			msg->o.err = -ENODEV;
@@ -335,6 +345,18 @@ static int createDevFiles(void)
 	}
 #endif
 
+#endif
+
+#if RTT_CHANNEL0
+	if (mkFile(&dir, id_rtt0, "rtt0", common.uart_port) < 0) {
+		return -1;
+	}
+#endif
+
+#if RTT_CHANNEL1
+	if (mkFile(&dir, id_rtt1, "rtt1", common.uart_port) < 0) {
+		return -1;
+	}
 #endif
 
 	/* GPIOs */
@@ -577,6 +599,7 @@ int main(void)
 #endif
 
 	uart_init();
+	rtt_init();
 	gpio_init();
 	spi_init();
 	i2c_init();
@@ -585,7 +608,11 @@ int main(void)
 	oid.id = id_console;
 	create_dev(&oid, _PATH_CONSOLE);
 
+#ifdef ONLY_RTT_CONSOLE
+	libklog_init(rtt_klogCblk);
+#else
 	libklog_init(uart_klogCblk);
+#endif
 	oid_t kmsgctrl = { .port = common.uart_port, .id = id_kmsgctrl };
 	libklog_ctrlRegister(&kmsgctrl);
 
