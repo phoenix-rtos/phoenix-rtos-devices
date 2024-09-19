@@ -289,6 +289,68 @@ int librtt_txCheckReaderAttached(unsigned int ch)
 }
 
 
+static int librtt_verifyChannel(volatile struct rtt_desc *rtt, unsigned int ch, unsigned char *buffers, size_t buffersSize)
+{
+	unsigned char *bufEnd = buffers + buffersSize;
+	size_t sz = rtt->channel[ch].sz;
+	/* Check buffer size is non-zero and power of 2 */
+	if ((sz == 0) || ((sz & (sz - 1)) != 0)) {
+		return -EINVAL;
+	}
+
+	if ((rtt->channel[ch].ptr < buffers) || (rtt->channel[ch].ptr >= bufEnd)) {
+		return -EINVAL;
+	}
+
+	if (((rtt->channel[ch].ptr + rtt->channel[ch].sz) <= buffers) || ((rtt->channel[ch].ptr + rtt->channel[ch].sz) > bufEnd)) {
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+
+int librtt_verify(void *addr, size_t cbSize, void *buffers, size_t buffersSize, librtt_cacheOp_t invalFn, librtt_cacheOp_t cleanFn)
+{
+	int n, ret;
+	if ((cbSize < sizeof(struct rtt_desc))) {
+		return -EINVAL;
+	}
+
+	volatile struct rtt_desc *rtt = addr;
+	for (n = 0; n < librtt_tagLength; n++) {
+		if (librtt_tagReversed[n] != rtt->tag[librtt_tagLength - 1 - n]) {
+			break;
+		}
+	}
+
+	if (n != librtt_tagLength) {
+		return -EINVAL;
+	}
+
+	if ((rtt->txChannels > LIBRTT_TXCHANNELS) || (rtt->rxChannels > LIBRTT_RXCHANNELS)) {
+		return -EINVAL;
+	}
+
+	int totalChannels = rtt->txChannels + rtt->rxChannels;
+	for (n = 0; n < totalChannels; n++) {
+		ret = librtt_verifyChannel(rtt, n, buffers, buffersSize);
+		if (ret != 0) {
+			return ret;
+		}
+
+		if (n < LIBRTT_TXCHANNELS) {
+			librtt_common.lastRd[n] = rtt->channel[n].rd;
+		}
+	}
+
+	librtt_common.invalFn = invalFn;
+	librtt_common.cleanFn = cleanFn;
+	librtt_common.rtt = rtt;
+	return 0;
+}
+
+
 int librtt_init(void *addr, librtt_cacheOp_t invalFn, librtt_cacheOp_t cleanFn)
 {
 	if ((LIBRTT_DESC_SIZE < sizeof(struct rtt_desc)) || (librtt_common.rtt != NULL)) {
@@ -300,26 +362,12 @@ int librtt_init(void *addr, librtt_cacheOp_t invalFn, librtt_cacheOp_t cleanFn)
 
 	volatile struct rtt_desc *rtt = addr;
 
-	int n;
-	for (n = 0; n < librtt_tagLength; n++) {
-		if (librtt_tagReversed[n] != rtt->tag[librtt_tagLength - 1 - n]) {
-			break;
-		}
-	}
-
-	if (n == librtt_tagLength) {
-		if ((rtt->txChannels + rtt->rxChannels) <= (LIBRTT_TXCHANNELS + LIBRTT_RXCHANNELS)) {
-			librtt_common.rtt = rtt;
-			return 0;
-		}
-	}
-
 	memset((void *)rtt, 0, sizeof(*rtt));
 
 	rtt->txChannels = LIBRTT_TXCHANNELS;
 	rtt->rxChannels = LIBRTT_RXCHANNELS;
 
-	for (n = 0; n < librtt_tagLength; n++) {
+	for (int n = 0; n < librtt_tagLength; n++) {
 		rtt->tag[librtt_tagLength - 1 - n] = librtt_tagReversed[n];
 	}
 
