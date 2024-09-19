@@ -22,7 +22,11 @@
 typedef int (*librtt_cacheOp_t)(void *addr, unsigned int sz);
 
 
-/* Initialize rtt descriptor if it is not initialized already */
+/* Verify contents of rtt descriptor and initialize data structure if successful */
+int librtt_verify(void *addr, size_t cbSize, void *buffers, size_t buffersSize, librtt_cacheOp_t invalFn, librtt_cacheOp_t cleanFn);
+
+
+/* Initialize rtt descriptor */
 int librtt_init(void *addr, librtt_cacheOp_t invalFn, librtt_cacheOp_t cleanFn);
 
 

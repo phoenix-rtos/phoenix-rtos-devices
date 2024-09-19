@@ -77,7 +77,7 @@ struct rtt_desc {
 	char tag[16];
 	unsigned int txChannels;
 	unsigned int rxChannels;
-	struct rtt_pipe channel[LIBRTT_TXCHANNELS + LIBRTT_RXCHANNELS];
+	struct rtt_pipe channel[];
 };
 
 
@@ -113,7 +113,7 @@ static void performCacheOp(librtt_cacheOp_t op, volatile unsigned char *buf, uns
 
 int librtt_checkTx(unsigned int ch)
 {
-	if ((librtt_common.rtt == NULL) || (ch >= librtt_common.rtt->txChannels)) {
+	if ((librtt_common.rtt == NULL) || (ch >= librtt_common.rtt->txChannels) || (ch >= LIBRTT_TXCHANNELS)) {
 		return -ENODEV;
 	}
 
@@ -123,7 +123,7 @@ int librtt_checkTx(unsigned int ch)
 
 int librtt_checkRx(unsigned int ch)
 {
-	if ((librtt_common.rtt == NULL) || (ch >= librtt_common.rtt->rxChannels)) {
+	if ((librtt_common.rtt == NULL) || (ch >= librtt_common.rtt->rxChannels) || (ch >= LIBRTT_RXCHANNELS)) {
 		return -ENODEV;
 	}
 
@@ -290,9 +290,73 @@ int librtt_txCheckReaderAttached(unsigned int ch)
 }
 
 
+static int librtt_verifyChannel(volatile struct rtt_desc *rtt, unsigned int ch, unsigned char *buffers, size_t buffersSize)
+{
+	unsigned char *bufEnd = buffers + buffersSize;
+	size_t sz = rtt->channel[ch].sz;
+	/* Check buffer size is non-zero and power of 2 */
+	if ((sz == 0) || ((sz & (sz - 1)) != 0)) {
+		return -EINVAL;
+	}
+
+	if ((rtt->channel[ch].ptr < buffers) || (rtt->channel[ch].ptr >= bufEnd)) {
+		return -EINVAL;
+	}
+
+	if (((rtt->channel[ch].ptr + rtt->channel[ch].sz) <= buffers) || ((rtt->channel[ch].ptr + rtt->channel[ch].sz) > bufEnd)) {
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+
+int librtt_verify(void *addr, size_t cbSize, void *buffers, size_t buffersSize, librtt_cacheOp_t invalFn, librtt_cacheOp_t cleanFn)
+{
+	int n, ret;
+	if (cbSize < sizeof(struct rtt_desc)) {
+		return -EINVAL;
+	}
+
+	volatile struct rtt_desc *rtt = addr;
+	for (n = 0; n < librtt_tagLength; n++) {
+		if (librtt_tagReversed[n] != rtt->tag[librtt_tagLength - 1 - n]) {
+			break;
+		}
+	}
+
+	if (n != librtt_tagLength) {
+		return -EINVAL;
+	}
+
+	size_t realCbSize = sizeof(struct rtt_desc) + ((rtt->txChannels + rtt->rxChannels) * sizeof(struct rtt_pipe));
+	if (cbSize < realCbSize) {
+		return -EINVAL;
+	}
+
+	int totalChannels = rtt->txChannels + rtt->rxChannels;
+	for (n = 0; n < totalChannels; n++) {
+		ret = librtt_verifyChannel(rtt, n, buffers, buffersSize);
+		if (ret != 0) {
+			return ret;
+		}
+
+		if (n < LIBRTT_TXCHANNELS) {
+			librtt_common.lastRd[n] = rtt->channel[n].rd;
+		}
+	}
+
+	librtt_common.invalFn = invalFn;
+	librtt_common.cleanFn = cleanFn;
+	librtt_common.rtt = rtt;
+	return 0;
+}
+
+
 int librtt_init(void *addr, librtt_cacheOp_t invalFn, librtt_cacheOp_t cleanFn)
 {
-	if ((LIBRTT_DESC_SIZE < sizeof(struct rtt_desc)) || (librtt_common.rtt != NULL)) {
+	const size_t cbSize = sizeof(struct rtt_desc) + (LIBRTT_TXCHANNELS + LIBRTT_RXCHANNELS) * sizeof(struct rtt_pipe);
+	if ((LIBRTT_DESC_SIZE < cbSize) || (librtt_common.rtt != NULL)) {
 		return -EINVAL;
 	}
 
@@ -301,26 +365,12 @@ int librtt_init(void *addr, librtt_cacheOp_t invalFn, librtt_cacheOp_t cleanFn)
 
 	volatile struct rtt_desc *rtt = addr;
 
-	int n;
-	for (n = 0; n < librtt_tagLength; n++) {
-		if (librtt_tagReversed[n] != rtt->tag[librtt_tagLength - 1 - n]) {
-			break;
-		}
-	}
-
-	if (n == librtt_tagLength) {
-		if ((rtt->txChannels + rtt->rxChannels) <= (LIBRTT_TXCHANNELS + LIBRTT_RXCHANNELS)) {
-			librtt_common.rtt = rtt;
-			return 0;
-		}
-	}
-
-	memset((void *)rtt, 0, sizeof(*rtt));
+	memset((void *)rtt, 0, cbSize);
 
 	rtt->txChannels = LIBRTT_TXCHANNELS;
 	rtt->rxChannels = LIBRTT_RXCHANNELS;
 
-	for (n = 0; n < librtt_tagLength; n++) {
+	for (int n = 0; n < librtt_tagLength; n++) {
 		rtt->tag[librtt_tagLength - 1 - n] = librtt_tagReversed[n];
 	}
 
@@ -336,11 +386,6 @@ int librtt_initChannel(int isTx, unsigned int ch, unsigned char *buf, size_t sz)
 		return -EINVAL;
 	}
 
-	unsigned int chMax = (isTx != 0) ? rtt->txChannels : rtt->rxChannels;
-	if ((ch >= chMax)) {
-		return -EINVAL;
-	}
-
 	/* Check buffer size is non-zero and power of 2 */
 	if ((sz == 0) || ((sz & (sz - 1)) != 0)) {
 		return -EINVAL;
@@ -348,20 +393,19 @@ int librtt_initChannel(int isTx, unsigned int ch, unsigned char *buf, size_t sz)
 
 	const char *name = NULL;
 	if (isTx != 0) {
-		if (ch < LIBRTT_TXCHANNELS) {
-			name = librtt_txName[ch];
+		if ((ch >= LIBRTT_TXCHANNELS) || (ch >= rtt->txChannels)) {
+			return -EINVAL;
 		}
-	}
-	else {
-		if (ch < LIBRTT_RXCHANNELS) {
-			name = librtt_rxName[ch];
-		}
-	}
 
-	if (isTx != 0) {
+		name = librtt_txName[ch];
 		librtt_common.lastRd[ch] = 0;
 	}
 	else {
+		if ((ch >= LIBRTT_RXCHANNELS) || (ch >= rtt->rxChannels)) {
+			return -EINVAL;
+		}
+
+		name = librtt_rxName[ch];
 		ch += rtt->txChannels;
 	}
 
