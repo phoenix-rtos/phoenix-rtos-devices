@@ -27,9 +27,8 @@
 #include "rtt.h"
 
 
-#ifndef RTT_ADDR
-/* RTT descriptors location, last 256 bytes of DTCM */
-#define RTT_ADDR (0x20040000 - 0x100)
+#ifndef RTT_SYSPAGE_MAP_NAME
+#define RTT_SYSPAGE_MAP_NAME "rtt"
 #endif
 
 #define RTT_TX_BUF_SIZE          1024
@@ -147,8 +146,11 @@ static int rtt_initOne(rtt_t *uart, int chn, unsigned char *buf)
 	uart->chn = chn;
 
 	int ret = 0;
-	ret = (ret == 0) ? librtt_initChannel(1, chn, buf, RTT_TX_BUF_SIZE) : ret;
-	ret = (ret == 0) ? librtt_initChannel(0, chn, buf + RTT_TX_BUF_SIZE, RTT_RX_BUF_SIZE) : ret;
+	if (buf != NULL) {
+		ret = (ret == 0) ? librtt_initChannel(1, chn, buf, RTT_TX_BUF_SIZE) : ret;
+		ret = (ret == 0) ? librtt_initChannel(0, chn, buf + RTT_TX_BUF_SIZE, RTT_RX_BUF_SIZE) : ret;
+	}
+
 	ret = (ret == 0) ? mutexCreate(&uart->lock) : ret;
 	/* TODO: calculate approx. baud rate based on buffer size and polling rate */
 	ret = (ret == 0) ? libtty_init(&uart->tty_common, &callbacks, TTY_BUF_SIZE, libtty_int_to_baudrate(115200)) : ret;
@@ -157,52 +159,97 @@ static int rtt_initOne(rtt_t *uart, int chn, unsigned char *buf)
 }
 
 
-int rtt_init(void)
+static int rtt_getMemInfo(void **rttMemPtr_out, size_t *rttMemSz_out)
 {
-	if (RTT_ACTIVE_CNT == 0) {
-		return EOK;
-	}
+	void *rttMemPtr = NULL;
+	size_t rttMemSz = 0;
+	meminfo_t mi;
+	mi.page.mapsz = -1;
+	mi.entry.kmapsz = -1;
+	mi.entry.mapsz = -1;
+	mi.maps.mapsz = 0;
+	mi.maps.map = NULL;
+	meminfo(&mi);
 
-	/* Reserve memory for the descriptor and buffers */
-	intptr_t startAddr = (RTT_ADDR - (RTT_ACTIVE_CNT * (RTT_TX_BUF_SIZE + RTT_RX_BUF_SIZE))) & ~(_PAGE_SIZE - 1);
-	size_t mapSize = RTT_ADDR + LIBRTT_DESC_SIZE - startAddr;
-	unsigned char *rttBuffer = mmap(
-		NULL,
-		mapSize,
-		PROT_WRITE | PROT_READ,
-		MAP_ANONYMOUS | MAP_UNCACHED | MAP_PHYSMEM,
-		-1,
-		startAddr);
-
-	if (rttBuffer == MAP_FAILED) {
+	mi.maps.map = malloc(mi.maps.mapsz * sizeof(mapinfo_t));
+	if (mi.maps.map == NULL) {
 		return -ENOMEM;
 	}
 
-	int ret = librtt_init((void *)RTT_ADDR, NULL, NULL);
+	meminfo(&mi);
+	for (int i = 0; i < mi.maps.mapsz; i++) {
+		if (strcmp(mi.maps.map[i].name, RTT_SYSPAGE_MAP_NAME) == 0) {
+			rttMemPtr = (void *)mi.maps.map[i].vstart;
+			rttMemSz = mi.maps.map[i].vend - mi.maps.map[i].vstart;
+			break;
+		}
+	}
+
+	free(mi.maps.map);
+	if (rttMemPtr == NULL) {
+		return -ENODEV;
+	}
+
+	*rttMemPtr_out = rttMemPtr;
+	*rttMemSz_out = rttMemSz;
+	return EOK;
+}
+
+
+int rtt_init(void)
+{
+	if (RTT_CHANNEL_CNT == 0) {
+		return EOK;
+	}
+
+	int doInit = 0;
+	void *rttMemPtr = NULL;
+	size_t rttMemSz = 0;
+	int ret = rtt_getMemInfo(&rttMemPtr, &rttMemSz);
 	if (ret != 0) {
-		librtt_done();
-		munmap(rttBuffer, mapSize);
 		return ret;
 	}
 
-	unsigned char *buf = rttBuffer;
-	for (int i = 0, chn = 0; chn < RTT_CHANNEL_CNT; ++chn) {
+	size_t bufSz = rttMemSz - LIBRTT_DESC_SIZE;
+	void *cbAddr = rttMemPtr + bufSz;
+	ret = librtt_verify(
+			cbAddr,
+			LIBRTT_DESC_SIZE,
+			rttMemPtr,
+			bufSz,
+			NULL,
+			NULL);
+	if (ret != 0) {
+		doInit = 1;
+		ret = librtt_init(cbAddr, NULL, NULL);
+		if (ret != 0) {
+			return ret;
+		}
+	}
+
+	unsigned char *buf = (doInit != 0) ? rttMemPtr : NULL;
+	unsigned char *nextBuf = buf;
+	for (int i = 0, chn = 0; chn < RTT_CHANNEL_CNT; chn++, buf = nextBuf) {
 		if (rttConfig[chn] == 0) {
 			continue;
 		}
 
 		rtt_t *uart = &rtt_common.uarts[i++];
-		int ret = rtt_initOne(uart, chn, buf);
-		if (ret != 0) {
-			librtt_done();
-			munmap(rttBuffer, mapSize);
-			return ret;
+		if (buf != NULL) {
+			nextBuf = buf + RTT_TX_BUF_SIZE + RTT_RX_BUF_SIZE;
+			if ((nextBuf - (unsigned char *)rttMemPtr) > bufSz) {
+				break;
+			}
 		}
 
-		buf += RTT_RX_BUF_SIZE + RTT_TX_BUF_SIZE;
+		ret = rtt_initOne(uart, chn, buf);
+		if (ret != 0) {
+			librtt_done();
+			return ret;
+		}
 	}
 
-	beginthread(rtt_thread, IMXRT_MULTI_PRIO, rtt_common.stack, sizeof(rtt_common.stack), NULL);
+	ret = beginthread(rtt_thread, IMXRT_MULTI_PRIO, rtt_common.stack, sizeof(rtt_common.stack), NULL);
 	return ret;
 }
 
