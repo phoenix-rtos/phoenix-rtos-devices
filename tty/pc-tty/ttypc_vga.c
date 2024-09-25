@@ -4,8 +4,8 @@
  * VGA display
  *
  * Copyright 2008 Pawel Pisarczyk
- * Copyright 2017, 2012, 2019, 2020 Phoenix Systems
- * Author: Pawel Pisarczyk, Lukasz Kosinski
+ * Copyright 2017, 2012, 2019, 2020, 2024 Phoenix Systems
+ * Author: Pawel Pisarczyk, Lukasz Kosinski, Adam Greloch
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -21,6 +21,7 @@
 #include <sys/threads.h>
 
 #include "ttypc.h"
+#include "ttypc_fbcon.h"
 #include "ttypc_vga.h"
 
 
@@ -69,39 +70,101 @@ ssize_t _ttypc_vga_read(volatile uint16_t *vga, uint16_t *buff, size_t n)
 }
 
 
-ssize_t _ttypc_vga_write(volatile uint16_t *vga, uint16_t *buff, size_t n)
+ssize_t _ttypc_vga_write(ttypc_vt_t *vt, volatile uint16_t *vga, uint16_t *buff, size_t n)
 {
 	size_t i;
+	int pos, col, row;
 
-	for (i = 0; i < n; i++)
+	pos = vga - vt->vram;
+	col = pos % vt->cols;
+	row = pos / vt->cols;
+
+	for (i = 0; i < n; i++) {
 		*(vga + i) = *(buff + i);
+
+		_ttypc_fbcon_drawChar(vt, col, row, *(buff + i));
+		if (col < vt->cols - 1) {
+			col++;
+		}
+		else {
+			col = 0;
+			row++;
+		}
+	}
 
 	return n;
 }
 
 
-volatile uint16_t *_ttypc_vga_set(volatile uint16_t *vga, uint16_t val, size_t n)
+volatile uint16_t *_ttypc_vga_set(ttypc_vt_t *vt, volatile uint16_t *vga, uint16_t val, size_t n)
 {
 	size_t i;
+	int pos, col, row;
 
-	for (i = 0; i < n; i++)
+	pos = vga - vt->vram;
+	col = pos % vt->cols;
+	row = pos / vt->cols;
+
+	for (i = 0; i < n; i++) {
 		*(vga + i) = val;
-	
+
+		_ttypc_fbcon_drawChar(vt, col, row, val);
+		if (col < vt->cols - 1) {
+			col++;
+		}
+		else {
+			col = 0;
+			row++;
+		}
+	}
+
 	return vga;
 }
 
 
-volatile uint16_t *_ttypc_vga_move(volatile uint16_t *dvga, volatile uint16_t *svga, size_t n)
+volatile uint16_t *_ttypc_vga_move(ttypc_vt_t *vt, volatile uint16_t *dvga, volatile uint16_t *svga, size_t n)
 {
 	size_t i;
+	int pos, col, row;
 
 	if (dvga < svga) {
-		for (i = 0; i < n; i++)
+		pos = dvga - vt->vram;
+		col = pos % vt->cols;
+		row = pos / vt->cols;
+
+		for (i = 0; i < n; i++) {
 			dvga[i] = svga[i];
+
+			_ttypc_fbcon_drawChar(vt, col, row, svga[i]);
+			if (col < vt->cols - 1) {
+				col++;
+			}
+			else {
+				col = 0;
+				row++;
+			}
+		}
 	}
 	else {
-		for (i = n; i--; )
+		pos = dvga - vt->vram + n;
+		col = pos % vt->cols;
+		row = pos / vt->cols;
+
+		for (i = n; i--;) {
 			dvga[i] = svga[i];
+
+			_ttypc_fbcon_drawChar(vt, col, row, svga[i]);
+			if (col > 0) {
+				col--;
+			}
+			else {
+				if (row == 0) {
+					break;
+				}
+				col = vt->cols - 1;
+				row--;
+			}
+		}
 	}
 
 	return dvga;
@@ -120,25 +183,25 @@ void _ttypc_vga_switch(ttypc_vt_t *vt)
 	_ttypc_vga_read(cvt->vram, cvt->mem, cvt->rows * cvt->cols);
 	cvt->vram = cvt->mem;
 
+	/* Set active VT, do it before writes to unlock access to the fb */
+	ttypc->vt = vt;
+
 	mutexLock(vt->lock);
 	/* VT memory -> VGA memory */
 	vt->vram = ttypc->vga;
-	_ttypc_vga_write(vt->vram, vt->mem, vt->rows * vt->cols);
+	_ttypc_vga_write(vt, vt->vram, vt->mem, vt->rows * vt->cols);
 	/* Set cursor position... */
 	_ttypc_vga_setcursor(vt);
 	/* ... and visibility */
 	_ttypc_vga_togglecursor(vt, vt->cst);
 	mutexUnlock(vt->lock);
-
-	/* Set active VT */
-	ttypc->vt = vt;
 }
 
 
 /* Returns scrollback capacity in lines */
 static unsigned int _ttypc_vga_scrollbackcapacity(ttypc_vt_t *vt)
 {
-	return (SCRB_PAGES * _PAGE_SIZE) / (vt->cols * CHR_VGA);
+	return (SCRB_PAGES * (vt->cols * vt->rows + _PAGE_SIZE - 1) & ~(_PAGE_SIZE - 1)) / (vt->cols * CHR_VGA);
 }
 
 
@@ -167,8 +230,8 @@ void _ttypc_vga_rollup(ttypc_vt_t *vt, unsigned int n)
 
 	/* Roll up */
 	if (n < vt->bottom - vt->top) {
-		_ttypc_vga_move(vt->vram + vt->top * vt->cols, vt->vram + (vt->top + n) * vt->cols, (vt->bottom - vt->top + 1 - n) * vt->cols);
-		_ttypc_vga_set(vt->vram + (vt->bottom + 1 - n) * vt->cols, vt->attr | ' ', n * vt->cols);
+		_ttypc_vga_move(vt, vt->vram + vt->top * vt->cols, vt->vram + (vt->top + n) * vt->cols, (vt->bottom - vt->top + 1 - n) * vt->cols);
+		_ttypc_vga_set(vt, vt->vram + (vt->bottom + 1 - n) * vt->cols, vt->attr | ' ', n * vt->cols);
 	}
 }
 
@@ -181,9 +244,9 @@ void _ttypc_vga_rolldown(ttypc_vt_t *vt, unsigned int n)
 	if (vt->bottom > vt->crow) {
 		k = min(n, vt->bottom - vt->crow);
 		l = min(k, vt->scrbsz);
-		_ttypc_vga_move(vt->vram + (vt->top + k) * vt->cols, vt->vram + vt->top * vt->cols, (vt->bottom - vt->top + 1 - k) * vt->cols);
-		_ttypc_vga_set(vt->vram + vt->top * vt->cols, vt->attr | ' ', (k - l) * vt->cols);
-		_ttypc_vga_write(vt->vram + (vt->top + k - l) * vt->cols, vt->scrb + (vt->scrbsz - l) * vt->cols, l * vt->cols);
+		_ttypc_vga_move(vt, vt->vram + (vt->top + k) * vt->cols, vt->vram + vt->top * vt->cols, (vt->bottom - vt->top + 1 - k) * vt->cols);
+		_ttypc_vga_set(vt, vt->vram + vt->top * vt->cols, vt->attr | ' ', (k - l) * vt->cols);
+		_ttypc_vga_write(vt, vt->vram + (vt->top + k - l) * vt->cols, vt->scrb + (vt->scrbsz - l) * vt->cols, l * vt->cols);
 		vt->scrbsz -= l;
 	}
 }
@@ -209,11 +272,11 @@ void _ttypc_vga_scroll(ttypc_vt_t *vt, int n)
 
 	/* Copy scrollback */
 	vt->scrbpos += n;
-	_ttypc_vga_write(vt->vram, vt->scrb + (vt->scrbsz - vt->scrbpos) * vt->cols, min(vt->scrbpos, vt->rows) * vt->cols);
+	_ttypc_vga_write(vt, vt->vram, vt->scrb + (vt->scrbsz - vt->scrbpos) * vt->cols, min(vt->scrbpos, vt->rows) * vt->cols);
 
 	/* Copy scroll origin */
 	if (vt->scrbpos < vt->rows) {
-		_ttypc_vga_write(vt->vram + vt->scrbpos * vt->cols, vt->scro, (vt->rows - vt->scrbpos) * vt->cols);
+		_ttypc_vga_write(vt, vt->vram + vt->scrbpos * vt->cols, vt->scro, (vt->rows - vt->scrbpos) * vt->cols);
 
 		if ((vt == vt->ttypc->vt) && vt->cst) {
 			/* Show cursor */
@@ -234,7 +297,7 @@ void _ttypc_vga_scrollcancel(ttypc_vt_t *vt)
 		return;
 
 	/* Restore scroll origin */
-	_ttypc_vga_write(vt->vram, vt->scro, vt->rows * vt->cols);
+	_ttypc_vga_write(vt, vt->vram, vt->scro, vt->rows * vt->cols);
 
 	/* Restore cursor position... */
 	vt->cpos -= vt->scrbpos * vt->cols;
@@ -257,9 +320,21 @@ void _ttypc_vga_getcursor(ttypc_vt_t *vt)
 }
 
 
+#define INVERT_COLORS(val) (((val & 0x0f00) << 4) | ((val & 0xf000) >> 4) | (val & 0xff))
+
+
 void _ttypc_vga_setcursor(ttypc_vt_t *vt)
 {
 	_ttypc_vga_writereg(vt->ttypc, CRTC_CURSORH, vt->cpos);
+
+	/* Undraw current cursor */
+	if (vt->dpos != -1) {
+		_ttypc_fbcon_drawChar(vt, vt->dpos % vt->cols, vt->dpos / vt->cols, vt->vram[vt->dpos]);
+	}
+
+	/* Draw a new one */
+	_ttypc_fbcon_drawChar(vt, vt->cpos % vt->cols, vt->cpos / vt->cols, INVERT_COLORS(vt->vram[vt->cpos]));
+	vt->dpos = vt->cpos;
 }
 
 
@@ -279,19 +354,41 @@ void _ttypc_vga_togglecursor(ttypc_vt_t *vt, uint8_t state)
 
 void ttypc_vga_destroy(ttypc_t *ttypc)
 {
+	ttypc_fbcon_destroy(ttypc);
 	munmap((void *)ttypc->vga, _PAGE_SIZE);
 }
 
 
 int ttypc_vga_init(ttypc_t *ttypc)
 {
+	int memsz;
+
 	/* Test monitor type */
 	ttypc->color = inb((void *)GN_MISCOUTR) & 0x01;
 	ttypc->crtc = (ttypc->color) ? (void *)CRTC_COLOR : (void *)CRTC_MONO;
 
-	/* Map video memory */
-	if ((ttypc->vga = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PHYSMEM | MAP_ANONYMOUS, -1, (ttypc->color) ? VGA_COLOR : VGA_MONO)) == MAP_FAILED)
-		return -ENOMEM;
+	if (ttypc_fbcon_init(ttypc) < 0) {
+		/* Map video memory */
+		ttypc->vga = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PHYSMEM | MAP_ANONYMOUS, -1, (ttypc->color) ? VGA_COLOR : VGA_MONO);
+		if (ttypc->vga == MAP_FAILED) {
+			return -ENOMEM;
+		}
+
+		ttypc->fbaddr = NULL;
+		ttypc->fbcols = -1;
+		ttypc->fbrows = -1;
+	}
+	else {
+		/* Map general purpose memory, not video memory. If fbcon is present, then we're
+		 * in graphics mode already, so the standard VGA_MONO/VGA_COLOR framebuffers can
+		 * be inactive and contain garbage.  */
+		memsz = (ttypc->fbcols * ttypc->fbrows + _PAGE_SIZE - 1) & ~(_PAGE_SIZE - 1);
+		ttypc->vga = mmap(NULL, memsz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		if (ttypc->vga == MAP_FAILED) {
+			ttypc_fbcon_destroy(ttypc);
+			return -ENOMEM;
+		}
+	}
 
 	return EOK;
 }

@@ -163,15 +163,15 @@ extern ssize_t _ttypc_vga_read(volatile uint16_t *vga, uint16_t *buff, size_t n)
 
 
 /* Copies buff to VGA screen buffer */
-extern ssize_t _ttypc_vga_write(volatile uint16_t *vga, uint16_t *buff, size_t n);
+extern ssize_t _ttypc_vga_write(ttypc_vt_t* vt, volatile uint16_t *vga, uint16_t *buff, size_t n);
 
 
 /* Sets VGA screen buffer characters to val */
-extern volatile uint16_t *_ttypc_vga_set(volatile uint16_t *vga, uint16_t val, size_t n);
+extern volatile uint16_t *_ttypc_vga_set(ttypc_vt_t *vt, volatile uint16_t *vga, uint16_t val, size_t n);
 
 
 /* Moves VGA screen memory */
-extern volatile uint16_t *_ttypc_vga_move(volatile uint16_t *dvga, volatile uint16_t *svga, size_t n);
+extern volatile uint16_t *_ttypc_vga_move(ttypc_vt_t *vt, volatile uint16_t *dvga, volatile uint16_t *svga, size_t n);
 
 
 /* Switches to another VT */

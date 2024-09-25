@@ -20,6 +20,7 @@
 #include <sys/threads.h>
 
 #include "ttypc_vga.h"
+#include "ttypc_fbcon.h"
 #include "ttypc_vt.h"
 #include "ttypc_vtf.h"
 
@@ -27,6 +28,8 @@
 /* Writes character to screen buffer */
 static void _ttypc_vt_sdraw(ttypc_vt_t *vt, char c)
 {
+	int pos, col, row;
+
 	if ((c >= 0x20) && (c <= 0x7f))
 		c = (vt->ss) ? (*vt->Gs)[c - 0x20] : (*vt->GL)[c - 0x20];
 	else if (c >= 0xa0)
@@ -34,6 +37,11 @@ static void _ttypc_vt_sdraw(ttypc_vt_t *vt, char c)
 
 	*(vt->vram + vt->cpos) = vt->attr | c;
 	vt->ss = 0;
+
+	pos = vt->cpos;
+	col = pos % vt->cols;
+	row = pos / vt->cols;
+	_ttypc_fbcon_drawChar(vt, col, row, vt->attr | c);
 }
 
 
@@ -143,7 +151,7 @@ static void _ttypc_vt_sput(ttypc_vt_t *vt, char c)
 		case ESC_INIT:
 			/* InseRt Mode */
 			if (vt->irm)
-				_ttypc_vga_move(vt->vram + vt->cpos + 1, vt->vram + vt->cpos, vt->cols - vt->ccol - 1);
+				_ttypc_vga_move(vt, vt->vram + vt->cpos + 1, vt->vram + vt->cpos, vt->cols - vt->ccol - 1);
 
 			_ttypc_vt_sdraw(vt, c);
 
@@ -729,6 +737,8 @@ int ttypc_vt_init(ttypc_t *ttypc, unsigned int ttybuffsz, ttypc_vt_t *vt)
 	/* Disable default libtty tab expansion */
 	vt->tty.term.c_oflag &= ~(XTABS);
 
+	vt->dpos = -1;
+
 	/* Init emulator */
 	vt->ttypc = ttypc;
 	vt->cols = 80;
@@ -736,7 +746,7 @@ int ttypc_vt_init(ttypc_t *ttypc, unsigned int ttybuffsz, ttypc_vt_t *vt)
 	_ttypc_vtf_str(vt);
 
 	/* Clear screen */
-	_ttypc_vga_set(vt->vram, vt->attr | ' ', vt->cols * vt->rows);
+	_ttypc_vga_set(vt, vt->vram, vt->attr | ' ', vt->cols * vt->rows);
 
 	return EOK;
 }

@@ -294,7 +294,7 @@ void _ttypc_vtf_aln(ttypc_vt_t *vt)
 	vt->cpos = 0;
 	vt->ccol = 0;
 	vt->crow = 0;
-	_ttypc_vga_set(vt->vram, vt->attr | 'E' , vt->rows * vt->cols);
+	_ttypc_vga_set(vt, vt->vram, vt->attr | 'E', vt->rows * vt->cols);
 }
 
 
@@ -382,15 +382,15 @@ void _ttypc_vtf_clreos(ttypc_vt_t *vt)
 {
 	switch (vt->parms[0]) {
 	case 0:
-		_ttypc_vga_set(vt->vram + vt->cpos, vt->attr | ' ', vt->cols * vt->rows - vt->cpos);
+		_ttypc_vga_set(vt, vt->vram + vt->cpos, vt->attr | ' ', vt->cols * vt->rows - vt->cpos);
 		break;
 
 	case 1:
-		_ttypc_vga_set(vt->vram, vt->attr | ' ', vt->cpos + 1);
+		_ttypc_vga_set(vt, vt->vram, vt->attr | ' ', vt->cpos + 1);
 		break;
 
 	case 2:
-		_ttypc_vga_set(vt->vram, vt->attr | ' ', vt->cols * vt->rows);
+		_ttypc_vga_set(vt, vt->vram, vt->attr | ' ', vt->cols * vt->rows);
 		break;
 	}
 }
@@ -400,15 +400,15 @@ void _ttypc_vtf_clreol(ttypc_vt_t *vt)
 {
 	switch (vt->parms[0]) {
 	case 0:
-		_ttypc_vga_set(vt->vram + vt->cpos, vt->attr | ' ', vt->cols - vt->ccol);
+		_ttypc_vga_set(vt, vt->vram + vt->cpos, vt->attr | ' ', vt->cols - vt->ccol);
 		break;
 
 	case 1:
-		_ttypc_vga_set(vt->vram + vt->cpos - vt->ccol, vt->attr | ' ', vt->ccol + 1);
+		_ttypc_vga_set(vt, vt->vram + vt->cpos - vt->ccol, vt->attr | ' ', vt->ccol + 1);
 		break;
 
 	case 2:
-		_ttypc_vga_set(vt->vram + vt->cpos - vt->ccol, vt->attr | ' ', vt->cols);
+		_ttypc_vga_set(vt, vt->vram + vt->cpos - vt->ccol, vt->attr | ' ', vt->cols);
 		break;
 	}
 }
@@ -454,8 +454,8 @@ void _ttypc_vtf_il(ttypc_vt_t *vt)
 			_ttypc_vga_rolldown(vt, p);
 		}
 		else {
-			_ttypc_vga_move(vt->vram + vt->cpos + p * vt->cols, vt->vram + vt->cpos, (vt->bottom - vt->crow + 1 - p) * vt->cols);
-			_ttypc_vga_set(vt->vram + vt->cpos, vt->attr | ' ', p * vt->cols);
+			_ttypc_vga_move(vt, vt->vram + vt->cpos + p * vt->cols, vt->vram + vt->cpos, (vt->bottom - vt->crow + 1 - p) * vt->cols);
+			_ttypc_vga_set(vt, vt->vram + vt->cpos, vt->attr | ' ', p * vt->cols);
 		}
 	}
 }
@@ -470,8 +470,8 @@ void _ttypc_vtf_ic(ttypc_vt_t *vt)
 	else if (p > vt->cols - vt->ccol)
 		p = vt->cols - vt->ccol;
 
-	_ttypc_vga_move(vt->vram + vt->cpos + p, vt->vram + vt->cpos, vt->cols - vt->ccol - p);
-	_ttypc_vga_set(vt->vram + vt->cpos, vt->attr | ' ', p);
+	_ttypc_vga_move(vt, vt->vram + vt->cpos + p, vt->vram + vt->cpos, vt->cols - vt->ccol - p);
+	_ttypc_vga_set(vt, vt->vram + vt->cpos, vt->attr | ' ', p);
 }
 
 
@@ -492,8 +492,8 @@ void _ttypc_vtf_dl(ttypc_vt_t *vt)
 			_ttypc_vga_rollup(vt, p);
 		}
 		else {
-			_ttypc_vga_move(vt->vram + vt->cpos, vt->vram + vt->cpos + p * vt->cols, (vt->bottom - vt->crow + 1 - p) * vt->cols);
-			_ttypc_vga_set(vt->vram + (vt->bottom + 1 - p) * vt->cols, vt->attr | ' ', p * vt->cols);
+			_ttypc_vga_move(vt, vt->vram + vt->cpos, vt->vram + vt->cpos + p * vt->cols, (vt->bottom - vt->crow + 1 - p) * vt->cols);
+			_ttypc_vga_set(vt, vt->vram + (vt->bottom + 1 - p) * vt->cols, vt->attr | ' ', p * vt->cols);
 		}
 	}
 }
@@ -508,8 +508,8 @@ void _ttypc_vtf_dch(ttypc_vt_t *vt)
 	else if (p > vt->cols - vt->ccol)
 		p = vt->cols - vt->ccol;
 
-	_ttypc_vga_move(vt->vram + vt->cpos, vt->vram + vt->cpos + p, vt->cols - vt->ccol - p);
-	_ttypc_vga_set(vt->vram + vt->cpos + vt->cols - p, vt->attr | ' ', p);
+	_ttypc_vga_move(vt, vt->vram + vt->cpos, vt->vram + vt->cpos + p, vt->cols - vt->ccol - p);
+	_ttypc_vga_set(vt, vt->vram + vt->cpos + vt->cols - p, vt->attr | ' ', p);
 }
 
 
@@ -569,7 +569,7 @@ void _ttypc_vtf_ris(ttypc_vt_t *vt)
 	vt->scrbpos = 0;
 
 	/* Clear screen */
-	_ttypc_vga_set(vt->vram, vt->attr | ' ', vt->cols * vt->rows);
+	_ttypc_vga_set(vt, vt->vram, vt->attr | ' ', vt->cols * vt->rows);
 	/* Soft reset */
 	_ttypc_vtf_str(vt);
 }
@@ -585,7 +585,7 @@ void _ttypc_vtf_ech(ttypc_vt_t *vt)
 	else if (p > vt->cols - vt->ccol)
 		p = vt->cols - vt->ccol;
 
-	_ttypc_vga_set(vt->vram + vt->cpos, vt->attr | ' ', p);
+	_ttypc_vga_set(vt, vt->vram + vt->cpos, vt->attr | ' ', p);
 }
 
 
@@ -834,7 +834,7 @@ void _ttypc_vtf_stbm(ttypc_vt_t *vt)
 
 
 /* Sets SGR attr to a VGA character */
-static void _ttypc_vtf_setattr(volatile uint16_t *ptr, uint16_t attr)
+static void _ttypc_vtf_setattr(ttypc_vt_t *vt, volatile uint16_t *ptr, uint16_t attr)
 {
 	uint16_t nattr = attr;
 
@@ -850,10 +850,10 @@ static void _ttypc_vtf_setattr(volatile uint16_t *ptr, uint16_t attr)
 
 
 /* Applies SGR attr to VGA screen buffer */
-static void _ttypc_vtf_applyattr(volatile uint16_t *begin, volatile uint16_t *end, uint16_t attr)
+static void _ttypc_vtf_applyattr(ttypc_vt_t *vt, volatile uint16_t *begin, volatile uint16_t *end, uint16_t attr)
 {
 	for (; begin < end; begin++)
-		_ttypc_vtf_setattr(begin, attr);
+		_ttypc_vtf_setattr(vt, begin, attr);
 }
 
 
@@ -864,12 +864,12 @@ static void _ttypc_vtf_applysgr(ttypc_vt_t *vt, uint8_t sgr)
 	vt->attr = ((vt->ttypc->color) ? csgr[sgr] : msgr[sgr]) << 8;
 
 	/* Apply attr to vram */
-	_ttypc_vtf_applyattr(vt->vram, vt->vram + vt->rows * vt->cols, vt->attr);
+	_ttypc_vtf_applyattr(vt, vt->vram, vt->vram + vt->rows * vt->cols, vt->attr);
 	/* Apply attr to scrollback */
-	_ttypc_vtf_applyattr(vt->scrb, vt->scrb + vt->scrbsz * vt->cols, vt->attr);
+	_ttypc_vtf_applyattr(vt, vt->scrb, vt->scrb + vt->scrbsz * vt->cols, vt->attr);
 	/* Apply attr to scroll origin */
 	if (vt->scrbpos)
-		_ttypc_vtf_applyattr(vt->scro, vt->scro + vt->rows * vt->cols, vt->attr);
+		_ttypc_vtf_applyattr(vt, vt->scro, vt->scro + vt->rows * vt->cols, vt->attr);
 }
 
 

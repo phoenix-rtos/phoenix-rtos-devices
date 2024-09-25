@@ -77,6 +77,7 @@ typedef struct {
 	uint8_t ccol;            /* Cursor column */
 	uint8_t crow;            /* Cursor row */
 	uint16_t cpos;           /* Cursor position offset */
+	int16_t dpos;            /* Drawn cursor position offset */
 
 	/* Scrollback */
 	uint16_t *scro;          /* Scroll origin buffer */
