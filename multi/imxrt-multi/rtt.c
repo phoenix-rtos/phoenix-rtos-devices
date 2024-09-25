@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/minmax.h>
 #include <sys/mman.h>
 #include <sys/threads.h>
 #include <sys/file.h>
@@ -33,9 +34,9 @@
 
 #define RTT_TX_BUF_SIZE          1024
 #define RTT_RX_BUF_SIZE          256
-#define RTT_POLLING_RATE_MS      20
-#define RTT_NO_PICKUP_TIMEOUT_MS (2 * RTT_POLLING_RATE_MS)
-#define RTT_RETRIES              (RTT_NO_PICKUP_TIMEOUT_MS / RTT_POLLING_RATE_MS)
+#define RTT_NO_PICKUP_TIMEOUT_US 131072
+#define RTT_RATE_MAX_US          131072
+#define RTT_RATE_MIN_US          2048
 
 /* Doesn't need to be large, data will mostly be stored in RTT buffers */
 #define TTY_BUF_SIZE 64
@@ -77,10 +78,12 @@ static inline ssize_t rtt_txAvailMode(unsigned int chn)
 
 static void rtt_thread(void *arg)
 {
-	unsigned retries[RTT_ACTIVE_CNT];
-	memset(retries, 0, sizeof(retries));
+	int timeout[RTT_ACTIVE_CNT];
+	memset(timeout, 0, sizeof(timeout));
+	int pollingRate = RTT_RATE_MAX_US;
 
 	for (;;) {
+		unsigned chnsIdle = 0;
 		for (int chn_idx = 0; chn_idx < RTT_ACTIVE_CNT; chn_idx++) {
 			rtt_t *uart = &rtt_common.uarts[chn_idx];
 			unsigned char data;
@@ -92,19 +95,19 @@ static void rtt_thread(void *arg)
 				/* Do nothing, in this case the remaining code is unnecessary */
 			}
 			else if (librtt_txCheckReaderAttached(uart->chn) != 0) {
-				retries[chn_idx] = RTT_RETRIES;
+				timeout[chn_idx] = RTT_NO_PICKUP_TIMEOUT_US;
 			}
 			else if (onTx == 0) {
-				if (retries[chn_idx] == 0) {
+				if (timeout[chn_idx] == 0) {
 					onTx = 1;
 				}
 				else {
-					retries[chn_idx]--;
+					timeout[chn_idx] = max(0, timeout[chn_idx] - pollingRate);
 				}
 			}
 
-
 			if ((onRx == 0) && ((txReady == 0) || (onTx == 0))) {
+				chnsIdle++;
 				continue;
 			}
 
@@ -116,21 +119,28 @@ static void rtt_thread(void *arg)
 				onRx = librtt_rxAvail(uart->chn);
 			}
 
-			while (onTx > 0 && txReady) {
+			while ((onTx > 0) && (txReady != 0)) {
 				data = libtty_getchar(&uart->tty_common, NULL);
 				ssize_t written = librtt_write(uart->chn, &data, 1, 0);
 				if (written <= 0) {
 					uart->diag_txSkipped++;
 				}
 
-				onTx = rtt_txAvailMode(uart->chn);
+				onTx = (timeout[chn_idx] == 0) ? 1 : rtt_txAvailMode(uart->chn);
 				txReady = libtty_txready(&uart->tty_common);
 			}
 
 			mutexUnlock(uart->lock);
 		}
 
-		usleep(RTT_POLLING_RATE_MS * 1000);
+		if (chnsIdle == RTT_ACTIVE_CNT) {
+			pollingRate = min(RTT_RATE_MAX_US, (pollingRate * 3) / 2);
+		}
+		else {
+			pollingRate = max(RTT_RATE_MIN_US, pollingRate / 2);
+		}
+
+		usleep(pollingRate);
 	}
 }
 
