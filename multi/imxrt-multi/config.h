@@ -754,7 +754,7 @@
 
 /* clang-format on */
 
-#if !defined(UART_CONSOLE) && !defined(RTT_CHANNEL_CONSOLE)
+#ifndef UART_CONSOLE
 #if defined(__CPU_IMXRT105X)
 #define UART_CONSOLE 1
 #elif defined(__CPU_IMXRT106X)
@@ -766,12 +766,20 @@
 #endif
 #endif
 
-#if defined(UART_CONSOLE)
-#if ISEMPTY(UART_CONSOLE)
-#error "UART_CONSOLE must not be empty"
-#elif UART_CONSOLE <= 0
+#if !ISEMPTY(UART_CONSOLE)
+#if UART_CONSOLE <= 0
 #error "Invalid value for UART_CONSOLE"
 #endif
+#endif
+
+#if defined(UART_CONSOLE_USER)
+#if !ISEMPTY(UART_CONSOLE_USER)
+#if (UART_CONSOLE_USER <= 0)
+#error "Invalid value for UART_CONSOLE_USER"
+#endif
+#endif
+#else
+#define UART_CONSOLE_USER UART_CONSOLE
 #endif
 
 
@@ -802,18 +810,19 @@
 #endif
 
 
-#if defined(UART_CONSOLE) && defined(RTT_CHANNEL_CONSOLE)
-#error "Console on UART and RTT not supported"
-#elif defined(RTT_CHANNEL_CONSOLE)
-#if ISEMPTY(RTT_CHANNEL_CONSOLE)
-#error "RTT_CHANNEL_CONSOLE must not be empty"
-#elif RTT_CHANNEL_CONSOLE < 0
+#ifndef RTT_CHANNEL_CONSOLE
+#define RTT_CHANNEL_CONSOLE
+#elif !ISEMPTY(RTT_CHANNEL_CONSOLE)
+#if RTT_CHANNEL_CONSOLE < 0
 #error "Invalid value for RTT_CHANNEL_CONSOLE"
 #endif
-
-#define ONLY_RTT_CONSOLE
 #endif
 
+#if !ISEMPTY(UART_CONSOLE_USER) && !ISEMPTY(RTT_CHANNEL_CONSOLE)
+#error "Console on both UART and RTT not supported"
+#elif ISEMPTY(UART_CONSOLE_USER) && ISEMPTY(RTT_CHANNEL_CONSOLE)
+#error "Console must be either on UART or RTT"
+#endif
 
 /* SPI */
 

@@ -255,7 +255,7 @@ int rtt_init(void)
 
 void rtt_klogCblk(const char *data, size_t size)
 {
-#ifdef RTT_CHANNEL_CONSOLE
+#if !ISEMPTY(RTT_CHANNEL_CONSOLE)
 	libtty_write(&rtt_common.uarts[rttPos[RTT_CHANNEL_CONSOLE]].tty_common, data, size, 0);
 #endif
 }

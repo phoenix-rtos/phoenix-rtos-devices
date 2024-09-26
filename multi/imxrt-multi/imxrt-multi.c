@@ -169,10 +169,13 @@ static void uart_dispatchMsg(msg_t *msg)
 
 	switch (id) {
 		case id_console:
-#ifdef ONLY_RTT_CONSOLE
+#if !ISEMPTY(RTT_CHANNEL_CONSOLE)
 			rtt_handleMsg(msg, RTT_CHANNEL_CONSOLE + id_rtt0);
-#else
+#elif !ISEMPTY(UART_CONSOLE_USER)
 			uart_handleMsg(msg, UART_CONSOLE - 1 + id_uart1);
+#else
+			/* TODO: Add support for no console */
+			msg->o.err = -ENODEV;
 #endif
 			break;
 
@@ -608,7 +611,7 @@ int main(void)
 	oid.id = id_console;
 	create_dev(&oid, _PATH_CONSOLE);
 
-#ifdef ONLY_RTT_CONSOLE
+#if !ISEMPTY(RTT_CHANNEL_CONSOLE)
 	libklog_init(rtt_klogCblk);
 #else
 	libklog_init(uart_klogCblk);
