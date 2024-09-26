@@ -772,8 +772,8 @@ static void uart_initPins(void)
 
 void uart_klogCblk(const char *data, size_t size)
 {
-#ifdef UART_CONSOLE
-	libtty_write(&uart_common.uarts[uartPos[UART_CONSOLE - 1]].tty_common, data, size, 0);
+#if !ISEMPTY(UART_CONSOLE_USER)
+	libtty_write(&uart_common.uarts[uartPos[UART_CONSOLE_USER - 1]].tty_common, data, size, 0);
 #endif
 }
 

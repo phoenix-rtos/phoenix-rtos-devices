@@ -754,7 +754,7 @@
 
 /* clang-format on */
 
-#if !defined(UART_CONSOLE) && !defined(RTT_CHANNEL_CONSOLE)
+#ifndef UART_CONSOLE
 #if defined(__CPU_IMXRT105X)
 #define UART_CONSOLE 1
 #elif defined(__CPU_IMXRT106X)
@@ -766,54 +766,63 @@
 #endif
 #endif
 
-#if defined(UART_CONSOLE)
-#if ISEMPTY(UART_CONSOLE)
-#error "UART_CONSOLE must not be empty"
-#elif UART_CONSOLE <= 0
+#if !ISEMPTY(UART_CONSOLE)
+#if UART_CONSOLE <= 0
 #error "Invalid value for UART_CONSOLE"
 #endif
+#endif
+
+#if defined(UART_CONSOLE_USER)
+#if !ISEMPTY(UART_CONSOLE_USER)
+#if (UART_CONSOLE_USER <= 0)
+#error "Invalid value for UART_CONSOLE_USER"
+#endif
+#endif
+#else
+#define UART_CONSOLE_USER UART_CONSOLE
 #endif
 
 
 /* RTT */
 
-#ifndef RTT_CHANNEL0
-#define RTT_CHANNEL0 0
-#elif !ISBOOLEAN(RTT_CHANNEL0)
-#error "RTT_CHANNEL0 must have a value of 0, 1, or be undefined"
+#ifndef RTT0
+#define RTT0 0
+#elif !ISBOOLEAN(RTT0)
+#error "RTT0 must have a value of 0, 1, or be undefined"
 #endif
 
-#ifndef RTT_CHANNEL1
-#define RTT_CHANNEL1 0
-#elif !ISBOOLEAN(RTT_CHANNEL1)
-#error "RTT_CHANNEL1 must have a value of 0, 1, or be undefined"
+#ifndef RTT1
+#define RTT1 0
+#elif !ISBOOLEAN(RTT1)
+#error "RTT1 must have a value of 0, 1, or be undefined"
 #endif
 
-#ifndef RTT_CHANNEL0_BLOCKING
-#define RTT_CHANNEL0_BLOCKING 0
-#elif !ISBOOLEAN(RTT_CHANNEL0_BLOCKING)
-#error "RTT_CHANNEL0_BLOCKING must have a value of 0, 1, or be undefined"
+#ifndef RTT0_BLOCKING
+#define RTT0_BLOCKING 0
+#elif !ISBOOLEAN(RTT0_BLOCKING)
+#error "RTT0_BLOCKING must have a value of 0, 1, or be undefined"
 #endif
 
-#ifndef RTT_CHANNEL1_BLOCKING
-#define RTT_CHANNEL1_BLOCKING 0
-#elif !ISBOOLEAN(RTT_CHANNEL1_BLOCKING)
-#error "RTT_CHANNEL1_BLOCKING must have a value of 0, 1, or be undefined"
+#ifndef RTT1_BLOCKING
+#define RTT1_BLOCKING 0
+#elif !ISBOOLEAN(RTT1_BLOCKING)
+#error "RTT1_BLOCKING must have a value of 0, 1, or be undefined"
 #endif
 
 
-#if defined(UART_CONSOLE) && defined(RTT_CHANNEL_CONSOLE)
-#error "Console on UART and RTT not supported"
-#elif defined(RTT_CHANNEL_CONSOLE)
-#if ISEMPTY(RTT_CHANNEL_CONSOLE)
-#error "RTT_CHANNEL_CONSOLE must not be empty"
-#elif RTT_CHANNEL_CONSOLE < 0
-#error "Invalid value for RTT_CHANNEL_CONSOLE"
+#ifndef RTT_CONSOLE_USER
+#define RTT_CONSOLE_USER
+#elif !ISEMPTY(RTT_CONSOLE_USER)
+#if RTT_CONSOLE_USER < 0
+#error "Invalid value for RTT_CONSOLE_USER"
+#endif
 #endif
 
-#define ONLY_RTT_CONSOLE
+#if !ISEMPTY(UART_CONSOLE_USER) && !ISEMPTY(RTT_CONSOLE_USER)
+#error "Console on both UART and RTT not supported"
+#elif ISEMPTY(UART_CONSOLE_USER) && ISEMPTY(RTT_CONSOLE_USER)
+#error "Console must be either on UART or RTT"
 #endif
-
 
 /* SPI */
 

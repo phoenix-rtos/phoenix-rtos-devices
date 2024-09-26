@@ -40,9 +40,9 @@
 /* Doesn't need to be large, data will mostly be stored in RTT buffers */
 #define TTY_BUF_SIZE 64
 
-#define RTT_CHANNEL0_POS 0
-#define RTT_CHANNEL1_POS (RTT_CHANNEL0_POS + RTT_CHANNEL0)
-#define RTT_ACTIVE_CNT   (RTT_CHANNEL0 + RTT_CHANNEL1)
+#define RTT0_POS       0
+#define RTT1_POS       (RTT0_POS + RTT0)
+#define RTT_ACTIVE_CNT (RTT0 + RTT1)
 
 typedef struct rtt_s {
 	int chn;
@@ -57,13 +57,13 @@ static struct {
 } rtt_common;
 
 
-static const int rttConfig[] = { RTT_CHANNEL0, RTT_CHANNEL1 };
+static const int rttConfig[] = { RTT0, RTT1 };
 
 
-static const int rttBlocking[] = { RTT_CHANNEL0_BLOCKING, RTT_CHANNEL1_BLOCKING };
+static const int rttBlocking[] = { RTT0_BLOCKING, RTT1_BLOCKING };
 
 
-static const int rttPos[] = { RTT_CHANNEL0_POS, RTT_CHANNEL1_POS };
+static const int rttPos[] = { RTT0_POS, RTT1_POS };
 
 
 #define RTT_CHANNEL_CNT (sizeof(rttConfig) / sizeof(rttConfig[0]))
@@ -255,8 +255,8 @@ int rtt_init(void)
 
 void rtt_klogCblk(const char *data, size_t size)
 {
-#ifdef RTT_CHANNEL_CONSOLE
-	libtty_write(&rtt_common.uarts[rttPos[RTT_CHANNEL_CONSOLE]].tty_common, data, size, 0);
+#if !ISEMPTY(RTT_CONSOLE_USER)
+	libtty_write(&rtt_common.uarts[rttPos[RTT_CONSOLE_USER]].tty_common, data, size, 0);
 #endif
 }
 
