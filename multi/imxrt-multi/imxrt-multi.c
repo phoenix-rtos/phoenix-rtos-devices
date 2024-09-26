@@ -169,10 +169,13 @@ static void uart_dispatchMsg(msg_t *msg)
 
 	switch (id) {
 		case id_console:
-#ifdef ONLY_RTT_CONSOLE
-			rtt_handleMsg(msg, RTT_CHANNEL_CONSOLE + id_rtt0);
+#if !ISEMPTY(RTT_CONSOLE_USER)
+			rtt_handleMsg(msg, RTT_CONSOLE_USER + id_rtt0);
+#elif !ISEMPTY(UART_CONSOLE_USER)
+			uart_handleMsg(msg, UART_CONSOLE_USER - 1 + id_uart1);
 #else
-			uart_handleMsg(msg, UART_CONSOLE - 1 + id_uart1);
+			/* TODO: Add support for no console */
+			msg->o.err = -ENODEV;
 #endif
 			break;
 
@@ -347,13 +350,13 @@ static int createDevFiles(void)
 
 #endif
 
-#if RTT_CHANNEL0
+#if RTT0
 	if (mkFile(&dir, id_rtt0, "rtt0", common.uart_port) < 0) {
 		return -1;
 	}
 #endif
 
-#if RTT_CHANNEL1
+#if RTT1
 	if (mkFile(&dir, id_rtt1, "rtt1", common.uart_port) < 0) {
 		return -1;
 	}
@@ -608,7 +611,7 @@ int main(void)
 	oid.id = id_console;
 	create_dev(&oid, _PATH_CONSOLE);
 
-#ifdef ONLY_RTT_CONSOLE
+#if !ISEMPTY(RTT_CONSOLE_USER)
 	libklog_init(rtt_klogCblk);
 #else
 	libklog_init(uart_klogCblk);
