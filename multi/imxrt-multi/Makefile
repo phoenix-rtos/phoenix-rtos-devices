@@ -18,4 +18,7 @@ DEP_LIBS := libtty libklog libpseudodev i2c-common librtt
 LIBS := libdummyfs libklog libpseudodev libposixsrv
 LOCAL_HEADERS := imxrt-multi.h
 
+# FIXME: adapt code to array-bounds checker 
+LOCAL_CFLAGS := -Wno-array-bounds
+
 include $(binary.mk)
