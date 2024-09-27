@@ -314,7 +314,7 @@ static void uart_klogClbk(const char *data, size_t size)
 
 static void uart_mkDev(unsigned int id)
 {
-	char path[12];
+	char path[20];
 
 	snprintf(path, sizeof(path), "/dev/uart%u", id);
 	if (create_dev(&uart_common.uart.oid, path) < 0) {

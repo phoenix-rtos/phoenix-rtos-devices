@@ -567,6 +567,11 @@ static int spw_configure(spw_dev_t *dev, const spw_config_t *config)
 
 static void spw_handleDevCtl(msg_t *msg, int dev)
 {
+	if ((dev < 0) || (dev >= (sizeof(spw_common.dev) / sizeof(spw_common.dev[0])))) {
+		msg->o.err = -ENODEV;
+		return;
+	}
+
 	const multi_i_t *idevctl = (multi_i_t *)msg->i.raw;
 	multi_o_t *odevctl = (multi_o_t *)msg->o.raw;
 	spw_dev_t *spw = &spw_common.dev[dev];
