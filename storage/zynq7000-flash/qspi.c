@@ -405,7 +405,7 @@ static int qspi_setPin(uint32_t pin)
 
 static int qspi_initPins(void)
 {
-	int res, i;
+	int res = EOK;
 	static const int pins[] = {
 		QSPI_CS,
 		QSPI_IO0,
@@ -416,7 +416,7 @@ static int qspi_initPins(void)
 		QSPI_FCLK
 	};
 
-	for (i = 0; i < sizeof(pins) / sizeof(pins[0]); ++i) {
+	for (size_t i = 0; i < (sizeof(pins) / sizeof(pins[0])); ++i) {
 		/* Pin should not be configured by the driver */
 		if (pins[i] < 0) {
 			continue;
