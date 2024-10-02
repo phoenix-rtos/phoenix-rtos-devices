@@ -3,8 +3,8 @@
  *
  * Generic ATA controller driver
  *
- * Copyright 2012-2015, 2019, 2020 Phoenix Systems
- * Author: Marcin Stragowski, Kamil Amanowicz, Lukasz Kosinski
+ * Copyright 2012-2015, 2019, 2020, 2024 Phoenix Systems
+ * Author: Marcin Stragowski, Kamil Amanowicz, Lukasz Kosinski, Adam Greloch
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -17,10 +17,14 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <stdbool.h>
 
 #include <sys/io.h>
 #include <sys/list.h>
 #include <sys/threads.h>
+
+#include <sys/platform.h>
+#include <phoenix/arch/ia32/ia32.h>
 
 #include "ata.h"
 
@@ -31,6 +35,12 @@ ata_common_t ata_common;
 
 
 static ata_bus_t *buses;
+
+
+static const int pci_devClasses[2] = {
+	0x0101, /* IDE interface */
+	0x0105, /* ATA controller */
+};
 
 
 static uint32_t ata_readreg(void *base, uint8_t reg, uint8_t size)
@@ -610,7 +620,11 @@ static int ata_initbus(void *base, void *ctrl, ata_bus_t *bus)
 
 int ata_init(void)
 {
+	int i, err;
 	ata_bus_t *bus1, *bus2;
+	addr_t ata1Base, ata1Ctrl, ata2Base, ata2Ctrl;
+	bool bus1Found = false, bus2Found = false;
+	platformctl_t pctl = { .action = pctl_get, .type = pctl_pci };
 
 	ata_common.ndevs = 0;
 	ata_common.devs = NULL;
@@ -624,11 +638,70 @@ int ata_init(void)
 		return -ENOMEM;
 	}
 
-	if (ata_initbus((void *)(ATA1_BASE | 0x1), (void *)(ATA1_CTRL | 0x1), bus1) < 0)
-		free(bus1);
+	/* try most common addresses first */
+	ata1Base = ATA1_BASE;
+	ata1Ctrl = ATA1_CTRL;
+	ata2Base = ATA2_BASE;
+	ata2Ctrl = ATA2_CTRL;
 
-	if (ata_initbus((void *)(ATA2_BASE | 0x1), (void *)(ATA2_CTRL | 0x1), bus2) < 0)
+	if (ata_initbus((void *)(ata1Base | 0x1), (void *)(ata1Ctrl | 0x1), bus1) == EOK) {
+		bus1Found = true;
+	}
+
+	if (ata_initbus((void *)(ata2Base | 0x1), (void *)(ata2Ctrl | 0x1), bus2) == EOK) {
+		bus2Found = true;
+	}
+
+	if (buses == NULL) {
+		/* no buses found on common addresses. look through pci config BARs */
+		for (i = 0; i < sizeof(pci_devClasses); i++) {
+			pctl.pci.id.vendor = PCI_ANY;
+			pctl.pci.id.device = PCI_ANY;
+			pctl.pci.id.subvendor = PCI_ANY;
+			pctl.pci.id.subdevice = PCI_ANY;
+			pctl.pci.dev.bus = 0;
+			pctl.pci.dev.dev = 0;
+			pctl.pci.dev.func = 0;
+			pctl.pci.caps = NULL;
+
+			pctl.pci.id.cl = pci_devClasses[i];
+			err = platformctl(&pctl);
+			if (err < 0) {
+				/* try next device class */
+				continue;
+			}
+
+			ata1Base = pctl.pci.dev.resources[0].base;
+			ata1Ctrl = pctl.pci.dev.resources[1].base;
+			ata2Base = pctl.pci.dev.resources[2].base;
+			ata2Ctrl = pctl.pci.dev.resources[3].base;
+
+			if (ata_initbus((void *)(ata1Base | 0x1), (void *)(ata1Ctrl | 0x1), bus1) == EOK) {
+				bus1Found = true;
+			}
+
+			if (ata_initbus((void *)(ata2Base | 0x1), (void *)(ata2Ctrl | 0x1), bus2) == EOK) {
+				bus2Found = true;
+			}
+
+			if (buses != NULL) {
+				/* at least one bus found, success */
+				break;
+			}
+		}
+	}
+
+	if (!bus1Found) {
+		free(bus1);
+	}
+
+	if (!bus2Found) {
 		free(bus2);
+	}
+
+	if (buses == NULL) {
+		return -ENODEV;
+	}
 
 	return EOK;
 }
