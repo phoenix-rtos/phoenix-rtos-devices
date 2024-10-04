@@ -51,6 +51,7 @@
 #include "ttypc_fbfont.h"
 #include <sys/platform.h>
 #include <phoenix/arch/ia32/ia32.h>
+#include <phoenix/fbcon.h>
 
 
 typedef struct {
@@ -108,8 +109,8 @@ void _ttypc_fbcon_drawChar(ttypc_vt_t *vt, uint16_t col, uint16_t row, uint16_t 
 	uint8_t *data = ttypc_fbcon_fbfont + (TTYPC_FBFONT_BYTES_PER_GLYPH * c);
 	uint16_t x = col * TTYPC_FBFONT_W, y = row * TTYPC_FBFONT_H;
 
-	if (vt->ttypc->vt != vt || vt->ttypc->fbaddr == NULL) {
-		/* this vt is not a current vt or the fbcon is unavailable, don't draw anything */
+	if ((vt->ttypc->vt != vt) || (vt->fbmode != FBCON_ENABLED)) {
+		/* if this vt is not the current vt or the fbcon is disabled/unsupported, don't draw anything */
 		return;
 	}
 

@@ -367,16 +367,15 @@ int ttypc_vga_init(ttypc_t *ttypc)
 	ttypc->color = inb((void *)GN_MISCOUTR) & 0x01;
 	ttypc->crtc = (ttypc->color) ? (void *)CRTC_COLOR : (void *)CRTC_MONO;
 
+	ttypc->fbcols = -1;
+	ttypc->fbrows = -1;
+
 	if (ttypc_fbcon_init(ttypc) < 0) {
 		/* Map video memory */
 		ttypc->vga = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PHYSMEM | MAP_ANONYMOUS, -1, (ttypc->color) ? VGA_COLOR : VGA_MONO);
 		if (ttypc->vga == MAP_FAILED) {
 			return -ENOMEM;
 		}
-
-		ttypc->fbaddr = NULL;
-		ttypc->fbcols = -1;
-		ttypc->fbrows = -1;
 	}
 	else {
 		/* Map general purpose memory, not video memory. If fbcon is present, then we're

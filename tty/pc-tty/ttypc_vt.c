@@ -19,6 +19,8 @@
 #include <sys/mman.h>
 #include <sys/threads.h>
 
+#include <phoenix/fbcon.h>
+
 #include "ttypc_vga.h"
 #include "ttypc_fbcon.h"
 #include "ttypc_vt.h"
@@ -649,7 +651,30 @@ int ttypc_vt_pollstatus(ttypc_vt_t *vt)
 
 int ttypc_vt_ioctl(ttypc_vt_t *vt, pid_t pid, unsigned int cmd, const void *idata, const void **odata)
 {
-	return libtty_ioctl(&vt->tty, pid, cmd, idata, odata);
+	int mode;
+	int ret = EOK;
+
+	switch (cmd) {
+		case FBCONSETMODE:
+			if (vt->fbmode == FBCON_UNSUPPORTED) {
+				ret = -ENODEV;
+				break;
+			}
+			mode = (int)idata;
+			if ((mode != FBCON_ENABLED) && (mode != FBCON_DISABLED)) {
+				ret = -EINVAL;
+				break;
+			}
+			vt->fbmode = mode;
+			break;
+		case FBCONGETMODE:
+			*odata = (const void *)&vt->fbmode;
+			break;
+		default:
+			ret = libtty_ioctl(&vt->tty, pid, cmd, idata, odata);
+			break;
+	}
+	return ret;
 }
 
 
@@ -733,6 +758,8 @@ int ttypc_vt_init(ttypc_t *ttypc, unsigned int ttybuffsz, ttypc_vt_t *vt)
 		}
 		return err;
 	}
+
+	vt->fbmode = FBCON_UNSUPPORTED;
 
 	/* Disable default libtty tab expansion */
 	vt->tty.term.c_oflag &= ~(XTABS);
