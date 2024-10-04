@@ -50,6 +50,7 @@ struct _ttypc_t {
 
 	/* VGA */
 	volatile void *vga;    /* VGA screen memory */
+	uint32_t memsz;        /* VGA screen memory size */
 	void *crtc;            /* Video Display Controller (CRTC) */
 	unsigned color;        /* Color support */
 
@@ -77,8 +78,8 @@ struct _ttypc_t {
 	/* Framebuffer console */
 	uint16_t fbw;          /* Width in pixels */
 	uint16_t fbh;          /* Height in pixels */
-	int16_t fbcols;        /* Console columns count */
-	int16_t fbrows;        /* Console rows count */
+	int16_t fbmaxcols;     /* Maximum console columns count */
+	int16_t fbmaxrows;     /* Maximum console rows count */
 	uint16_t fbbpp;        /* Bits per pixel */
 	uint16_t fbpitch;      /* Pitch (framebuffer line length)*/
 	volatile void *fbaddr; /* Framebuffer address */

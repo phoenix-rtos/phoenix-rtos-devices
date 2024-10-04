@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <stdint.h>
 #include <string.h>
+#include <signal.h>
 
 #include <sys/mman.h>
 #include <sys/threads.h>
@@ -713,6 +714,18 @@ static void _ttypc_vt_signaltxready(void *arg)
 }
 
 
+void ttypc_vt_resize(ttypc_vt_t *vt, uint8_t cols, uint8_t rows)
+{
+	vt->tty.ws.ws_col = cols;
+	vt->tty.ws.ws_row = rows;
+	libtty_signal_pgrp(&vt->tty, SIGWINCH);
+
+	vt->cols = cols;
+	vt->rows = rows;
+	_ttypc_vtf_str(vt);
+}
+
+
 int ttypc_vt_init(ttypc_t *ttypc, unsigned int ttybuffsz, ttypc_vt_t *vt)
 {
 	libtty_callbacks_t cb = {
@@ -726,7 +739,7 @@ int ttypc_vt_init(ttypc_t *ttypc, unsigned int ttybuffsz, ttypc_vt_t *vt)
 	if ((err = mutexCreate(&vt->lock)) < 0)
 		return err;
 
-	vt->mem = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	vt->mem = mmap(NULL, ttybuffsz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (vt->mem == MAP_FAILED) {
 		resourceDestroy(vt->lock);
 		return -ENOMEM;
@@ -734,31 +747,32 @@ int ttypc_vt_init(ttypc_t *ttypc, unsigned int ttybuffsz, ttypc_vt_t *vt)
 	vt->vram = vt->mem;
 
 	if (SCRB_PAGES) {
-		vt->scro = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		vt->scro = mmap(NULL, ttybuffsz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 		if (vt->scro == MAP_FAILED) {
 			resourceDestroy(vt->lock);
-			munmap(vt->mem, _PAGE_SIZE);
+			munmap(vt->mem, ttybuffsz);
 			return -ENOMEM;
 		}
-		vt->scrb = mmap(NULL, SCRB_PAGES * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		vt->scrb = mmap(NULL, SCRB_PAGES * ttybuffsz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 		if (vt->scrb == MAP_FAILED) {
 			resourceDestroy(vt->lock);
-			munmap(vt->mem, _PAGE_SIZE);
-			munmap(vt->scro, _PAGE_SIZE);
+			munmap(vt->mem, ttybuffsz);
+			munmap(vt->scro, ttybuffsz);
 			return -ENOMEM;
 		}
 	}
 
 	if ((err = libtty_init(&vt->tty, &cb, ttybuffsz, TTYDEF_SPEED)) < 0) {
 		resourceDestroy(vt->lock);
-		munmap(vt->mem, _PAGE_SIZE);
+		munmap(vt->mem, ttybuffsz);
 		if (SCRB_PAGES) {
-			munmap(vt->scro, _PAGE_SIZE);
-			munmap(vt->scrb, SCRB_PAGES * _PAGE_SIZE);
+			munmap(vt->scro, ttybuffsz);
+			munmap(vt->scrb, SCRB_PAGES * ttybuffsz);
 		}
 		return err;
 	}
 
+	vt->buffsz = ttybuffsz;
 	vt->fbmode = FBCON_UNSUPPORTED;
 
 	/* Disable default libtty tab expansion */
