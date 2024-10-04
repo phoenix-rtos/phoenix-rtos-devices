@@ -20,6 +20,8 @@
 #include <sys/mman.h>
 #include <sys/threads.h>
 
+#include <phoenix/fbcon.h>
+
 #include "ttypc.h"
 #include "ttypc_fbcon.h"
 #include "ttypc_vga.h"
@@ -186,6 +188,11 @@ void _ttypc_vga_switch(ttypc_vt_t *vt)
 	/* Set active VT, do it before writes to unlock access to the fb */
 	ttypc->vt = vt;
 
+	if (vt->fbmode != FBCON_UNSUPPORTED) {
+		/* Resize the virtual terminal to match fbcon maximum resolution */
+		ttypc_vt_resize(vt, vt->ttypc->fbmaxcols, vt->ttypc->fbmaxrows);
+	}
+
 	mutexLock(vt->lock);
 	/* VT memory -> VGA memory */
 	vt->vram = ttypc->vga;
@@ -201,7 +208,7 @@ void _ttypc_vga_switch(ttypc_vt_t *vt)
 /* Returns scrollback capacity in lines */
 static unsigned int _ttypc_vga_scrollbackcapacity(ttypc_vt_t *vt)
 {
-	return (SCRB_PAGES * (vt->cols * vt->rows + _PAGE_SIZE - 1) & ~(_PAGE_SIZE - 1)) / (vt->cols * CHR_VGA);
+	return (SCRB_PAGES * vt->buffsz) / (vt->cols * CHR_VGA);
 }
 
 
@@ -355,24 +362,23 @@ void _ttypc_vga_togglecursor(ttypc_vt_t *vt, uint8_t state)
 void ttypc_vga_destroy(ttypc_t *ttypc)
 {
 	ttypc_fbcon_destroy(ttypc);
-	munmap((void *)ttypc->vga, _PAGE_SIZE);
+	munmap((void *)ttypc->vga, ttypc->memsz);
 }
 
 
 int ttypc_vga_init(ttypc_t *ttypc)
 {
-	int memsz;
-
 	/* Test monitor type */
 	ttypc->color = inb((void *)GN_MISCOUTR) & 0x01;
 	ttypc->crtc = (ttypc->color) ? (void *)CRTC_COLOR : (void *)CRTC_MONO;
 
-	ttypc->fbcols = -1;
-	ttypc->fbrows = -1;
+	ttypc->fbmaxcols = -1;
+	ttypc->fbmaxrows = -1;
 
 	if (ttypc_fbcon_init(ttypc) < 0) {
 		/* Map video memory */
-		ttypc->vga = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PHYSMEM | MAP_ANONYMOUS, -1, (ttypc->color) ? VGA_COLOR : VGA_MONO);
+		ttypc->memsz = _PAGE_SIZE;
+		ttypc->vga = mmap(NULL, ttypc->memsz, PROT_READ | PROT_WRITE, MAP_PHYSMEM | MAP_ANONYMOUS, -1, (ttypc->color) ? VGA_COLOR : VGA_MONO);
 		if (ttypc->vga == MAP_FAILED) {
 			return -ENOMEM;
 		}
@@ -381,8 +387,8 @@ int ttypc_vga_init(ttypc_t *ttypc)
 		/* Map general purpose memory, not video memory. If fbcon is present, then we're
 		 * in graphics mode already, so the standard VGA_MONO/VGA_COLOR framebuffers can
 		 * be inactive and contain garbage.  */
-		memsz = (ttypc->fbcols * ttypc->fbrows + _PAGE_SIZE - 1) & ~(_PAGE_SIZE - 1);
-		ttypc->vga = mmap(NULL, memsz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		ttypc->memsz = (ttypc->fbmaxcols * ttypc->fbmaxrows * CHR_VGA + _PAGE_SIZE - 1) & ~(_PAGE_SIZE - 1);
+		ttypc->vga = mmap(NULL, ttypc->memsz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 		if (ttypc->vga == MAP_FAILED) {
 			ttypc_fbcon_destroy(ttypc);
 			return -ENOMEM;

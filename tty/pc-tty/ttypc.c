@@ -141,12 +141,14 @@ int main(void)
 
 	/* Initialize VTs */
 	for (i = 0; i < NVTS; i++) {
-		if ((err = ttypc_vt_init(&ttypc_common, _PAGE_SIZE, ttypc_common.vts + i)) < 0)
+		err = ttypc_vt_init(&ttypc_common, ttypc_common.memsz, ttypc_common.vts + i);
+		if (err < 0) {
 			return err;
+		}
 	}
 
 	/* Enable fbcon in VTs if available */
-	if ((ttypc_common.fbcols != -1) && (ttypc_common.fbrows != -1)) {
+	if ((ttypc_common.fbmaxcols != -1) && (ttypc_common.fbmaxrows != -1)) {
 		for (i = 0; i < NVTS; i++) {
 			ttypc_common.vts[i].fbmode = FBCON_ENABLED;
 		}
@@ -155,6 +157,11 @@ int main(void)
 	/* Set active virtual terminal */
 	ttypc_common.vt = ttypc_common.vts;
 	ttypc_common.vt->vram = ttypc_common.vga;
+
+	if (ttypc_common.vt->fbmode == FBCON_ENABLED) {
+		/* Resize active virtual terminal to match fbcon maximum resolution */
+		ttypc_vt_resize(ttypc_common.vt, ttypc_common.fbmaxcols, ttypc_common.fbmaxrows);
+	}
 
 	/* Initialize cursor */
 	if (ttypc_common.vt->fbmode == FBCON_UNSUPPORTED) {
