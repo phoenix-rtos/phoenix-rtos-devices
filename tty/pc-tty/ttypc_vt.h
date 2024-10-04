@@ -130,6 +130,7 @@ typedef struct {
 	libtty_common_t tty;     /* Terminal character processing (using libtty) */
 
 	uint8_t fbmode;  /* Framebuffer mode: (i.e. enabled, disabled, unsupported) */
+	uint32_t buffsz; /* Virtual terminal buffer size */
 
 	/* Synchronization */
 	handle_t lock; /* Access lock */
@@ -158,6 +159,10 @@ extern int ttypc_vt_pollstatus(ttypc_vt_t *vt);
 
 /* Virtual terminal ioctl */
 extern int ttypc_vt_ioctl(ttypc_vt_t *vt, pid_t pid, unsigned int cmd, const void *idata, const void **odata);
+
+
+/* Resizes virtual terminal */
+extern void ttypc_vt_resize(ttypc_vt_t *vt, uint8_t cols, uint8_t rows);
 
 
 /* Destroys virtual terminal */

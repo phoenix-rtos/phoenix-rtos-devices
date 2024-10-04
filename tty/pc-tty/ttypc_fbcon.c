@@ -150,9 +150,8 @@ int ttypc_fbcon_init(ttypc_t *ttypc)
 	ttypc->fbbpp = pctl.graphmode.bpp;
 	ttypc->fbpitch = pctl.graphmode.pitch;
 
-	/* TODO use fbcols, fbrows to operate in higher resolutions than 80x25 in tty/vt */
-	ttypc->fbcols = ttypc->fbw / TTYPC_FBFONT_W;
-	ttypc->fbrows = ttypc->fbh / TTYPC_FBFONT_H;
+	ttypc->fbmaxcols = ttypc->fbw / TTYPC_FBFONT_W;
+	ttypc->fbmaxrows = ttypc->fbh / TTYPC_FBFONT_H;
 
 	return EOK;
 }
