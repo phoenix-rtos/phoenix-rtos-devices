@@ -130,6 +130,8 @@ typedef struct {
 	char tabs[MAXTABS];      /* Table of active tab stops */
 	libtty_common_t tty;     /* Terminal character processing (using libtty) */
 
+	uint8_t fbmode;  /* Framebuffer mode: (i.e. enabled, disabled, unsupported) */
+
 	/* Synchronization */
 	handle_t lock; /* Access lock */
 } ttypc_vt_t;

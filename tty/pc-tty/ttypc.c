@@ -27,6 +27,7 @@
 
 #include <libklog.h>
 #include <posix/utils.h>
+#include <phoenix/fbcon.h>
 
 #include "ttypc.h"
 #include "ttypc_bioskbd.h"
@@ -132,22 +133,38 @@ int main(void)
 	if ((err = mutexCreate(&ttypc_common.lock)) < 0)
 		return err;
 
+	/* Initialize VGA display */
+	err = ttypc_vga_init(&ttypc_common);
+	if (err < 0) {
+		return err;
+	}
+
 	/* Initialize VTs */
 	for (i = 0; i < NVTS; i++) {
 		if ((err = ttypc_vt_init(&ttypc_common, _PAGE_SIZE, ttypc_common.vts + i)) < 0)
 			return err;
 	}
 
-	/* Initialize VGA display */
-	if ((err = ttypc_vga_init(&ttypc_common)) < 0)
-		return err;
+	/* Enable fbcon in VTs if available */
+	if ((ttypc_common.fbcols != -1) && (ttypc_common.fbrows != -1)) {
+		for (i = 0; i < NVTS; i++) {
+			ttypc_common.vts[i].fbmode = FBCON_ENABLED;
+		}
+	}
 
 	/* Set active virtual terminal */
 	ttypc_common.vt = ttypc_common.vts;
 	ttypc_common.vt->vram = ttypc_common.vga;
 
 	/* Initialize cursor */
-	_ttypc_vga_getcursor(ttypc_common.vt);
+	if (ttypc_common.vt->fbmode == FBCON_UNSUPPORTED) {
+		/* If fbcon is unsupported, retrieve the cursor so we don't overwrite the tty as
+		 * some earlier component might have written something to the text mode buffer (i.e. plo) */
+		_ttypc_vga_getcursor(ttypc_common.vt);
+	}
+	/* else: In case of fbcon, we don't care about the text mode buffer, because we're
+	 * in the graphic mode already and the text mode buffer may contain garbage */
+
 	/* Set default cursor color */
 	_ttypc_vga_set(ttypc_common.vt, ttypc_common.vt->vram + ttypc_common.vt->cpos, FG_LIGHTGREY << 8, ttypc_common.vt->rows * ttypc_common.vt->cols - ttypc_common.vt->cpos);
 
