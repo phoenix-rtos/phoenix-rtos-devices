@@ -654,7 +654,7 @@ int ata_init(void)
 
 	if (buses == NULL) {
 		/* no buses found on common addresses. look through pci config BARs */
-		for (i = 0; i < sizeof(pci_devClasses); i++) {
+		for (i = 0; i < sizeof(pci_devClasses) / sizeof(pci_devClasses[0]); i++) {
 			pctl.pci.id.vendor = PCI_ANY;
 			pctl.pci.id.device = PCI_ANY;
 			pctl.pci.id.subvendor = PCI_ANY;
