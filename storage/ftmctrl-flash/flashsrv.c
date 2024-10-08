@@ -472,6 +472,14 @@ static storage_t *flashsrv_init(void)
 		return NULL;
 	}
 
+	if (flashdrv_cacheInit(strg) < 0) {
+		free(strg->dev->mtd);
+		free(strg->dev);
+		flashdrv_contextDestroy(ctx);
+		free(strg);
+		return NULL;
+	}
+
 	oid_t oid;
 	res = storage_add(strg, &oid);
 	if (res < 0) {
