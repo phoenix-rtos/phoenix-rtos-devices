@@ -32,14 +32,21 @@
 #include <hub.h>
 #include <hcd.h>
 
+/* FIXME: temporarily added. ehci.c should be generic */
+#include <phoenix/arch/ia32/ia32.h>
+#include <sys/platform.h>
+
 #include "ehci.h"
 
-#define EHCI_PERIODIC_SIZE 128
+/* TODO make this smaller (or do a platform specific size) */
+#define EHCI_PERIODIC_SIZE 1024
 
 
 static inline void ehci_memDmb(void)
 {
-	asm volatile ("dmb" ::: "memory");
+	// asm volatile ("dmb" ::: "memory");
+	asm("" ::: "memory");
+	// __sync_synchronize();
 }
 
 
@@ -47,20 +54,20 @@ static void ehci_startAsync(hcd_t *hcd)
 {
 	ehci_t *ehci = (ehci_t *)hcd->priv;
 
-	*(hcd->base + asynclistaddr) = va2pa((void *)ehci->asyncList->hw);
-	*(hcd->base + usbcmd) |= USBCMD_ASE;
+	ehci->opRegs->asyncListAddr = va2pa((void *)ehci->asyncList->hw);
+	ehci->opRegs->usbCmd |= USBCMD_ASE;
 	ehci_memDmb();
-	while ((*(hcd->base + usbsts) & USBSTS_AS) == 0)
-		;
+	while ((ehci->opRegs->usbSts & USBSTS_AS) == 0);
 }
 
 
 static void ehci_stopAsync(hcd_t *hcd)
 {
-	*(hcd->base + usbcmd) &= ~USBCMD_ASE;
+	ehci_t *ehci = (ehci_t *)hcd->priv;
+
+	ehci->opRegs->usbCmd &= ~USBCMD_ASE;
 	ehci_memDmb();
-	while ((*(hcd->base + usbsts) & USBSTS_AS) != 0)
-		;
+	while ((ehci->opRegs->usbSts & USBSTS_AS) != 0);
 }
 
 
@@ -488,19 +495,16 @@ static int ehci_irqHandler(unsigned int n, void *data)
 	ehci_t *ehci = (ehci_t *)hcd->priv;
 	uint32_t currentStatus;
 
-	currentStatus = *(hcd->base + usbsts);
+	currentStatus = ehci->opRegs->usbSts;
 	do {
-		*(hcd->base + usbsts) = currentStatus & EHCI_INTRMASK;
+		ehci->opRegs->usbSts = currentStatus & EHCI_INTRMASK;
 
 		ehci->status |= currentStatus;
 
 		/* For edge triggered interrupts to prevent losing interrupts,
 		 * poll the usbsts register until it is stable */
-		currentStatus = *(hcd->base + usbsts);
+		currentStatus = ehci->opRegs->usbSts;
 	} while ((currentStatus & EHCI_INTRMASK) != 0);
-
-	if (ehci->status & USBSTS_PCI)
-		ehci->portsc = *(hcd->base + portsc1);
 
 	return -!(ehci->status & EHCI_INTRMASK);
 }
@@ -594,8 +598,9 @@ static void ehci_irqThread(void *arg)
 			mutexUnlock(hcd->transLock);
 		}
 
-		if (ehci->status & USBSTS_PCI)
+		if (ehci->status & USBSTS_PCI) {
 			ehci_portStatusChanged(hcd);
+		}
 	}
 }
 
@@ -769,7 +774,7 @@ static int ehci_init(hcd_t *hcd)
 {
 	ehci_t *ehci;
 	ehci_qh_t *qh;
-	int i;
+	int i, rv;
 
 	if ((ehci = calloc(1, sizeof(ehci_t))) == NULL) {
 		fprintf(stderr, "ehci: Out of memory!\n");
@@ -796,6 +801,7 @@ static int ehci_init(hcd_t *hcd)
 		return -EINVAL;
 	}
 
+	printf("%d\n", __LINE__);
 	if (condCreate(&ehci->irqCond) < 0) {
 		fprintf(stderr, "ehci: Out of memory!\n");
 		ehci_free(ehci);
@@ -808,6 +814,7 @@ static int ehci_init(hcd_t *hcd)
 		return -ENOMEM;
 	}
 
+	printf("%d\n", __LINE__);
 	if (mutexCreate(&ehci->asyncLock) < 0) {
 		fprintf(stderr, "ehci: Out of memory!\n");
 		ehci_free(ehci);
@@ -819,6 +826,7 @@ static int ehci_init(hcd_t *hcd)
 		ehci_free(ehci);
 		return -ENOMEM;
 	}
+	printf("%d\n", __LINE__);
 
 	/* Initialize Async List with a dummy qh to optimize
 	 * accesses and make them safer */
@@ -833,34 +841,83 @@ static int ehci_init(hcd_t *hcd)
 
 	for (i = 0; i < EHCI_PERIODIC_SIZE; ++i)
 		ehci->periodicList[i] = QH_PTR_INVALID;
+	printf("%d\n", __LINE__);
 
 	if (beginthread(ehci_irqThread, 2, ehci->stack, sizeof(ehci->stack), hcd) != 0) {
 		ehci_free(ehci);
 		return -ENOMEM;
 	}
+	printf("%d\n", __LINE__);
 	interrupt(hcd->info->irq, ehci_irqHandler, hcd, ehci->irqCond, &ehci->irqHandle);
 
-	/* Reset controller */
-	*(hcd->base + usbcmd) |= 2;
-	while (*(hcd->base + usbcmd) & 2)
-		;
 
-	/* Set host mode */
-	*(hcd->base + usbmode) |= 3;
+	ehci->capRegs = (ehci_capRegs_t *)hcd->base;
+
+	hcd->opbase = (volatile int *)hcd->base + ehci->capRegs->capLength / sizeof(int);
+	printf("base = %p\n", (void *)hcd->base);
+	printf("opbase = %p\n", (void *)hcd->opbase);
+	printf("caplen = %d\n", ehci->capRegs->capLength);
+
+	ehci->opRegs = (ehci_opRegs_t *)hcd->opbase;
+
+	printf("hccparams = 0x%.8x\n", ehci->capRegs->hccParams);
+
+	uint8_t eecp = (ehci->capRegs->hccParams >> 8) & 0xff;
+	printf("eecp = 0x%x\n", eecp);
+
+#if 0
+	if (eecp >= 0x40) {
+		/* Take ownership of the controller from BIOS */
+		/* should do pctl_set here on HC OS Owned Semaphore and read on BIOS Owned */
+		platformctl_t pctl;
+		pctl.action = pctl_set;
+		pctl.type = pctl_usblegacymode;
+		pctl.usblegacymode.dev.bus = 0x0;
+		pctl.usblegacymode.dev.dev = 0x4;
+		pctl.usblegacymode.dev.func = 0x0;
+		pctl.usblegacymode.enable = 0;
+		pctl.usblegacymode.eecp = eecp;
+
+		rv = platformctl(&pctl);
+		if (rv < 0) {
+			fprintf(stderr, "pctl_usblegacymode failed: %d\n", rv);
+		}
+	}
+#endif
+
+	/* Stop the controller */
+	ehci->opRegs->usbCmd &= ~USBCMD_RUN;
+	while ((ehci->opRegs->usbSts & (USBSTS_HCH)) == 0);
+	printf("%d\n", __LINE__);
+
+	rv = ehci->opRegs->usbSts;
+	printf("usbsts before reset: 0x%.8x\n", rv);
+
+	/* Reset controller */
+	ehci->opRegs->usbCmd |= USBCMD_HCRESET;
+	while (ehci->opRegs->usbCmd & USBCMD_HCRESET) { usleep(10); };
+
+	rv = ehci->opRegs->usbSts;
+	printf("usbsts after reset: 0x%.8x\n", rv);
 
 	/* Enable interrupts */
-	*(hcd->base + usbintr) = USBSTS_UI | USBSTS_UEI;
+	ehci->opRegs->usbIntr = USBSTS_UI | USBSTS_UEI | USBSTS_PCI;
 
 	/* Set periodic frame list */
-	*(hcd->base + periodiclistbase) = va2pa(ehci->periodicList);
+	ehci->opRegs->periodicListBase = va2pa(ehci->periodicList);
 
-	/* Set interrupts threshold, frame list size - 128 bytes, turn controller on */
-	*(hcd->base + usbcmd) |= (1 << 4) | (3 << 2) | 1;
+	// TODO set frame list size - 256 items (1024 bytes)
+	// TODO set interrupts threshold
+
+	/* Set interrupts threshold, turn controller on */
+	ehci->opRegs->usbCmd |= USBCMD_PSE | USBCMD_RUN;
+	while ((ehci->opRegs->usbSts & (USBSTS_HCH)) != 0);
 
 	/* Route all ports to this host controller */
-	*(hcd->base + configflag) = 1;
+	ehci->opRegs->configFlag = 1;
 
 	ehci_startAsync(hcd);
+	printf("ehci initialized\n");
 
 	return 0;
 }

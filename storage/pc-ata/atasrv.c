@@ -266,7 +266,7 @@ static int atasrv_initbase(ata_dev_t *dev)
 }
 
 
-static int atasrv_initpart(atasrv_dev_t *bdev, uint8_t type, uint32_t start, uint32_t sectors)
+int ata_initpart(atasrv_dev_t *bdev, uint8_t type, uint32_t start, uint32_t sectors)
 {
 	atasrv_dev_t *pdev;
 	int err;
@@ -623,7 +623,7 @@ int main(int argc, char **argv)
 					return -EINVAL;
 				}
 
-				if ((err = atasrv_initpart(bdev, (uint8_t)type, (uint32_t)start, (uint32_t)sectors)) < 0) {
+				if ((err = ata_initpart(bdev, (uint8_t)type, (uint32_t)start, (uint32_t)sectors)) < 0) {
 					fprintf(stderr, "pc-ata: failed to register partition on device %d starting at LBA %u\n", id, start);
 					return err;
 				}
@@ -670,7 +670,7 @@ int main(int argc, char **argv)
 			for (j = 0; j < sizeof(mbr->pent) / sizeof(mbr->pent[0]); j++) {
 				if (!(mbr->pent[j].type))
 					continue;
-				if (atasrv_initpart(bdev, mbr->pent[j].type, mbr->pent[j].start, mbr->pent[j].sectors) < 0)
+				if (ata_initpart(bdev, mbr->pent[j].type, mbr->pent[j].start, mbr->pent[j].sectors) < 0)
 					fprintf(stderr, "pc-ata: failed to register MBR partition %u from device %u\n", j, i);
 			}
 		}
