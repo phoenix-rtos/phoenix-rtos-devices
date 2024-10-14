@@ -479,10 +479,12 @@ int main(int argc, char *argv[])
 		mutexLock(umass_common.lock);
 		switch (umsg->type) {
 			case usb_msg_insertion:
+				printf("got insertion event\n");
 				if (umass_handleInsertion(&umsg->insertion) != 0)
 					fprintf(stderr, "umass: Failed to initialize device!\n");
 				break;
 			case usb_msg_deletion:
+				printf("got deletion event\n");
 				umass_handleDeletion(&umsg->deletion);
 				break;
 			default:

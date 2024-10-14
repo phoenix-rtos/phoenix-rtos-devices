@@ -29,10 +29,13 @@
 #define USBSTS_UEI   (1 << 1)
 #define USBSTS_UI    (1 << 0)
 
-#define EHCI_INTRMASK (USBSTS_PCI | USBSTS_UEI | USBSTS_UI)
+#define EHCI_INTRMASK (USBSTS_PCI | USBSTS_UEI | USBSTS_UI | USBSTS_FRI | USBSTS_SEI | USBSTS_IAA)
 
-#define USBCMD_ASE (1 << 5)
-#define USBCMD_IAA (1 << 6)
+#define USBCMD_RUN     (1 << 0)
+#define USBCMD_HCRESET (1 << 1)
+#define USBCMD_PSE     (1 << 4)
+#define USBCMD_ASE     (1 << 5)
+#define USBCMD_IAA     (1 << 6)
 
 #define PORTSC_PTS_1 (3 << 30)
 #define PORTSC_STS   (1 << 29)
@@ -117,24 +120,49 @@
 #define EHCI_MAX_QH_POOL  10
 
 enum {
-	/* identification regs */
-	id = 0x0, hwgeneral, hwhost, hwdevice, hwtxbuf, hwrxbuf,
-
-	/* operational regs */
-	gptimer0ld	= 0x20, gptimer0ctrl, gptimer1ld, gptimer1ctrl, sbuscfg,
-
 	/* capability regs */
-	caplength = 0x40, hciversion = 0x40, hcsparams, hccparams,
-	dciversion = 0x48, dccparams,
-
-	/* operational regs cont. */
-	usbcmd = 0x50, usbsts, usbintr, frindex,
-	periodiclistbase = 0x55, deviceaddr = 0x55, asynclistaddr = 0x56,
-	endpointlistaddr = 0x56, burstsize = 0x58, txfilltunning, endptnak = 0x5E,
-	endptnaken, configflag, portsc1, otgsc = 0x69, usbmode, endptsetupstat,
-	endptprime, endptflush, endptstat, endptcomplete, endptctrl0, endptctrl1,
-	endptctrl2, endptctrl3, endptctrl4, endptctrl5, endptctrl6, endptctrl7,
+	caplength = 0x0,
+	hciversion = 0x2,
+	hcsparams = 0x4,
+	hccparams = 0x8,
 };
+
+enum {
+	/* operational regs cont. */
+	usbcmd = 0x0,
+	usbsts = 0x4,
+	usbintr = 0x8,
+	frindex = 0x0c,
+	ctrldssegment = 0x10,
+	periodiclistbase = 0x14,
+	asynclistaddr = 0x18,
+	configflag = 0x40,
+	portsc1 = 0x47
+};
+
+
+typedef struct _ehci_capregs {
+	uint8_t capLength;
+	uint8_t reserved;
+	uint16_t hciVersion;
+	uint32_t hcsParams;
+	uint32_t hccParams;
+	uint64_t hcspPortRoute;
+} __attribute__((packed)) ehci_capRegs_t;
+
+
+typedef struct _ehci_opregs {
+	volatile uint32_t usbCmd;
+	volatile uint32_t usbSts;
+	volatile uint32_t usbIntr;
+	volatile uint32_t frIndex;
+	volatile uint32_t ctrlDsSegment;
+	volatile uint32_t periodicListBase;
+	volatile uint32_t asyncListAddr;
+	volatile uint32_t reserved[9];
+	volatile uint32_t configFlag;
+	volatile uint32_t portsc[16]; /* NOTE: arbitral size, increase if needed/allocate dynamically */
+} __attribute__((packed)) ehci_opRegs_t;
 
 
 enum { usb_otg1_ctrl = 0x200, usb_otg2_ctrl, usb_otg1_phy_ctrl = usb_otg2_ctrl + 5, usb_otg2_phy_ctrl };
@@ -184,6 +212,10 @@ typedef struct _ehci_qh {
 
 typedef struct {
 	char stack[1024] __attribute__((aligned(8)));
+
+	ehci_capRegs_t *capRegs;
+	ehci_opRegs_t *opRegs;
+
 	uint32_t *periodicList;
 	ehci_qh_t *asyncList;
 	ehci_qh_t **periodicNodes;
@@ -196,7 +228,6 @@ typedef struct {
 	handle_t irqCond, irqHandle, irqLock, asyncLock, periodicLock;
 	volatile unsigned portResetChange;
 	volatile unsigned status;
-	volatile unsigned portsc;
 } ehci_t;
 
 

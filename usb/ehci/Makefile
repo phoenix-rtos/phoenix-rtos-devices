@@ -6,6 +6,7 @@
 
 # FIXME: rename usb host component
 NAME := libusbehci
+# TODO use TARGET_FAMILY-TARGET_SUBFAMILY
 LOCAL_SRCS := ehci.c ehci-hub.c phy-$(TARGET_SUBFAMILY).c
 
 include $(static-lib.mk)
