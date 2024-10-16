@@ -20,6 +20,7 @@
 #include <fcntl.h>
 #include <sys/msg.h>
 #include <sys/file.h>
+#include <sys/mman.h>
 #include <sys/threads.h>
 #include <posix/utils.h>
 
@@ -997,7 +998,57 @@ static inline int isXIP(void *addr)
 }
 
 
-int main(void)
+/* detect active "bank" (the partition from which the flashsrv was loaded)
+ * and create symlink `/dev/root` to that partition */
+static int flashsrv_detectActiveBank(const char *progname)
+{
+	syspageprog_t prog;
+	char path[32];
+	int i;
+
+	int progsz = syspageprog(NULL, -1);
+	if (progsz < 0) {
+		return -1;
+	}
+
+	for (i = 0; i < progsz; i++) {
+		if (syspageprog(&prog, i) != 0) {
+			continue;
+		}
+
+		if (strcmp(prog.name, progname) == 0) {
+			break;
+		}
+	}
+
+	if (i >= progsz) { /* program not found in syspage */
+		return -1;
+	}
+
+	for (i = 0; i < FLASH_MEMORIES_NO; ++i) {
+		flashsrv_memory_t *memory = flashsrv_common.flash_memories + i;
+		if (memory->fStatus != flashsrv_memory_active) {
+			continue;
+		}
+		for (int j = 0; j < memory->pCnt; ++j) {
+			flashsrv_partition_t *part = &memory->parts[j];
+
+			/* convert to XIP/AHB addresses */
+			uint32_t part_start = memory->ctx.address + part->pHeader->offset;
+			uint32_t part_end = part_start + part->pHeader->size;
+			if (prog.addr >= part_start && prog.addr < part_end) {
+				snprintf(path, sizeof(path), "/dev/flash%u.%s", i, part->pHeader->name);
+				return symlink(path, "/dev/root");
+			}
+		}
+	}
+
+	/* partition was not found */
+	return -1;
+}
+
+
+int main(int argc, char **argv)
 {
 	void *mem;
 
@@ -1019,6 +1070,13 @@ int main(void)
 	}
 
 	printf("imxrt-flashsrv: initialized.\n");
+
+	/* detect active bank if requested by commandline */
+	if (argc > 1 && strcmp("-b", argv[1]) == 0) {
+		if (flashsrv_detectActiveBank(argv[0]) < 0) {
+			LOG_ERROR("imxrt-flashsrv: failed to detect active bank.\n");
+		}
+	}
 
 	/* flashsrv_devThread handles requests associated with the whole single flash chip */
 	if (FLASH_MEMORIES_NO > 1 && flashsrv_common.flash_memories[1].fStatus == flashsrv_memory_active) {
