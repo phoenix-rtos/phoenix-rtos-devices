@@ -27,8 +27,11 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <libext2.h>
+
 #include <usb.h>
 #include <usbdriver.h>
+#include <storage/storage.h>
 
 #include "../pc-ata/mbr.h"
 
@@ -41,6 +44,12 @@
 
 #define CBW_SIG 0x43425355
 #define CSW_SIG 0x53425355
+
+/* clang-format off */
+#define LOG(fmt, ...) do { (void)fprintf(stdout, "umass: " fmt "\n", ##__VA_ARGS__); } while (0)
+#define LOG_ERROR(fmt, ...) do { (void)fprintf(stderr, "umass:%s:%d: " fmt "\n", __func__, __LINE__, ##__VA_ARGS__); } while (0)
+#define TRACE(fmt, ...) do { if (0) { (void)fprintf(stdout, "umass:%s:%d: " fmt "\n", __func__, __LINE__, ##__VA_ARGS__); } } while (0)
+/* clang-format on */
 
 
 typedef struct {
@@ -88,6 +97,7 @@ typedef struct umass_dev {
 	uint32_t partOffset;
 	uint32_t partSize;
 	handle_t lock;
+	void *fdata;
 } umass_dev_t;
 
 
@@ -187,7 +197,7 @@ static int umass_check(umass_dev_t *dev)
 }
 
 
-static int umass_read(umass_dev_t *dev, off_t offs, char *buf, size_t len)
+static int umass_readFromDev(umass_dev_t *dev, off_t offs, char *buf, size_t len)
 {
 	scsi_cdb10_t readcmd = { .opcode = 0x28 };
 	int ret;
@@ -212,7 +222,7 @@ static int umass_read(umass_dev_t *dev, off_t offs, char *buf, size_t len)
 }
 
 
-static int umass_write(umass_dev_t *dev, off_t offs, const char *buf, size_t len)
+static int umass_writeFromDev(umass_dev_t *dev, off_t offs, const char *buf, size_t len)
 {
 	scsi_cdb10_t writecmd = { .opcode = 0x2a };
 	int ret;
@@ -264,6 +274,24 @@ static umass_dev_t *umass_devFind(int id)
 }
 
 
+static ssize_t umass_read(id_t id, off_t offs, char *buf, size_t len)
+{
+	mutexLock(umass_common.lock);
+	umass_dev_t *dev = umass_devFind(id);
+	mutexUnlock(umass_common.lock);
+	return umass_readFromDev(dev, offs, buf, len);
+}
+
+
+static ssize_t umass_write(id_t id, off_t offs, const char *buf, size_t len)
+{
+	mutexLock(umass_common.lock);
+	umass_dev_t *dev = umass_devFind(id);
+	mutexUnlock(umass_common.lock);
+	return umass_writeFromDev(dev, offs, buf, len);
+}
+
+
 static void umass_msgthr(void *arg)
 {
 	umass_dev_t *dev;
@@ -281,10 +309,6 @@ static void umass_msgthr(void *arg)
 			continue;
 		}
 
-		mutexLock(umass_common.lock);
-		dev = umass_devFind(msg.oid.id);
-		mutexUnlock(umass_common.lock);
-
 		if (dev == NULL) {
 			msg.o.err = -ENOENT;
 			msgRespond(umass_common.msgport, &msg, rid);
@@ -298,14 +322,17 @@ static void umass_msgthr(void *arg)
 				break;
 
 			case mtRead:
-				msg.o.err = umass_read(dev, msg.i.io.offs, msg.o.data, msg.o.size);
+				msg.o.err = umass_read(msg.oid.id, msg.i.io.offs, msg.o.data, msg.o.size);
 				break;
 
 			case mtWrite:
-				msg.o.err = umass_write(dev, msg.i.io.offs, msg.i.data, msg.i.size);
+				msg.o.err = umass_write(msg.oid.id, msg.i.io.offs, msg.i.data, msg.i.size);
 				break;
 
 			case mtGetAttr:
+				mutexLock(umass_common.lock);
+				dev = umass_devFind(msg.oid.id);
+				mutexUnlock(umass_common.lock);
 				msg.o.err = umass_getattr(dev, msg.i.attr.type, &msg.o.attr.val);
 				break;
 
@@ -353,6 +380,7 @@ static int umass_handleInsertion(usb_devinfo_t *insertion)
 {
 	umass_dev_t *dev;
 	oid_t oid;
+	int err;
 
 	if ((dev = umass_devAlloc()) == NULL) {
 		fprintf(stderr, "umass: devAlloc failed\n");
@@ -402,6 +430,14 @@ static int umass_handleInsertion(usb_devinfo_t *insertion)
 	LIST_ADD(&umass_common.devices, dev);
 	fprintf(stderr, "umass: New USB Mass Storage device: %s sectors: %d\n", dev->path, dev->partSize);
 
+	err = libext2_mount(&oid, dev->partSize, umass_read, umass_write, &dev->fdata);
+	if (err < 0) {
+		fprintf(stderr, "usb: Can't mount ext2!\n");
+		return -EINVAL;
+	}
+	fprintf(stderr, "usb: ok\n");
+
+
 	return 0;
 }
 
@@ -417,7 +453,7 @@ static int umass_handleDeletion(usb_deletion_t *del)
 	do {
 		next = dev->next;
 		if (dev->instance.bus == del->bus && dev->instance.dev == del->dev &&
-				dev->instance.interface == del->interface) {
+			dev->instance.interface == del->interface) {
 			if (dev == next)
 				cont = 0;
 			resourceDestroy(dev->lock);
