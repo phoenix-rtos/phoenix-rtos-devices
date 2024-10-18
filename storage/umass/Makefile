@@ -6,6 +6,6 @@
 
 NAME := umass
 LOCAL_SRCS := umass.c
-LIBS := libusb
+LIBS := libusb libext2
 
 include $(binary.mk)
