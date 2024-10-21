@@ -15,11 +15,15 @@
 #include <errno.h>
 #include <stdint.h>
 #include <string.h>
+#include <signal.h>
 
 #include <sys/mman.h>
 #include <sys/threads.h>
 
+#include <phoenix/fbcon.h>
+
 #include "ttypc_vga.h"
+#include "ttypc_fbcon.h"
 #include "ttypc_vt.h"
 #include "ttypc_vtf.h"
 
@@ -27,6 +31,8 @@
 /* Writes character to screen buffer */
 static void _ttypc_vt_sdraw(ttypc_vt_t *vt, char c)
 {
+	int pos, col, row;
+
 	if ((c >= 0x20) && (c <= 0x7f))
 		c = (vt->ss) ? (*vt->Gs)[c - 0x20] : (*vt->GL)[c - 0x20];
 	else if (c >= 0xa0)
@@ -34,6 +40,11 @@ static void _ttypc_vt_sdraw(ttypc_vt_t *vt, char c)
 
 	*(vt->vram + vt->cpos) = vt->attr | c;
 	vt->ss = 0;
+
+	pos = vt->cpos;
+	col = pos % vt->cols;
+	row = pos / vt->cols;
+	_ttypc_fbcon_drawChar(vt, col, row, vt->attr | c);
 }
 
 
@@ -143,7 +154,7 @@ static void _ttypc_vt_sput(ttypc_vt_t *vt, char c)
 		case ESC_INIT:
 			/* InseRt Mode */
 			if (vt->irm)
-				_ttypc_vga_move(vt->vram + vt->cpos + 1, vt->vram + vt->cpos, vt->cols - vt->ccol - 1);
+				_ttypc_vga_move(vt, vt->cpos + 1, vt->cpos, vt->cols - vt->ccol - 1);
 
 			_ttypc_vt_sdraw(vt, c);
 
@@ -641,7 +652,30 @@ int ttypc_vt_pollstatus(ttypc_vt_t *vt)
 
 int ttypc_vt_ioctl(ttypc_vt_t *vt, pid_t pid, unsigned int cmd, const void *idata, const void **odata)
 {
-	return libtty_ioctl(&vt->tty, pid, cmd, idata, odata);
+	int mode;
+	int ret = EOK;
+
+	switch (cmd) {
+		case FBCONSETMODE:
+			if (vt->fbmode == FBCON_UNSUPPORTED) {
+				ret = -ENODEV;
+				break;
+			}
+			mode = (int)idata;
+			if (mode != FBCON_ENABLED && mode != FBCON_DISABLED) {
+				ret = -EINVAL;
+				break;
+			}
+			vt->fbmode = mode;
+			break;
+		case FBCONGETMODE:
+			*odata = (const void *)&vt->fbmode;
+			break;
+		default:
+			ret = libtty_ioctl(&vt->tty, pid, cmd, idata, odata);
+			break;
+	}
+	return ret;
 }
 
 
@@ -680,6 +714,18 @@ static void _ttypc_vt_signaltxready(void *arg)
 }
 
 
+void ttypc_vt_resize(ttypc_vt_t *vt, uint8_t cols, uint8_t rows)
+{
+	vt->tty.ws.ws_col = cols;
+	vt->tty.ws.ws_row = rows;
+	libtty_signal_pgrp(&vt->tty, SIGWINCH);
+
+	vt->cols = cols;
+	vt->rows = rows;
+	_ttypc_vtf_str(vt);
+}
+
+
 int ttypc_vt_init(ttypc_t *ttypc, unsigned int ttybuffsz, ttypc_vt_t *vt)
 {
 	libtty_callbacks_t cb = {
@@ -693,7 +739,7 @@ int ttypc_vt_init(ttypc_t *ttypc, unsigned int ttybuffsz, ttypc_vt_t *vt)
 	if ((err = mutexCreate(&vt->lock)) < 0)
 		return err;
 
-	vt->mem = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	vt->mem = mmap(NULL, ttybuffsz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (vt->mem == MAP_FAILED) {
 		resourceDestroy(vt->lock);
 		return -ENOMEM;
@@ -701,33 +747,38 @@ int ttypc_vt_init(ttypc_t *ttypc, unsigned int ttybuffsz, ttypc_vt_t *vt)
 	vt->vram = vt->mem;
 
 	if (SCRB_PAGES) {
-		vt->scro = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		vt->scro = mmap(NULL, ttybuffsz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 		if (vt->scro == MAP_FAILED) {
 			resourceDestroy(vt->lock);
-			munmap(vt->mem, _PAGE_SIZE);
+			munmap(vt->mem, ttybuffsz);
 			return -ENOMEM;
 		}
-		vt->scrb = mmap(NULL, SCRB_PAGES * _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		vt->scrb = mmap(NULL, SCRB_PAGES * ttybuffsz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 		if (vt->scrb == MAP_FAILED) {
 			resourceDestroy(vt->lock);
-			munmap(vt->mem, _PAGE_SIZE);
-			munmap(vt->scro, _PAGE_SIZE);
+			munmap(vt->mem, ttybuffsz);
+			munmap(vt->scro, ttybuffsz);
 			return -ENOMEM;
 		}
 	}
 
 	if ((err = libtty_init(&vt->tty, &cb, ttybuffsz, TTYDEF_SPEED)) < 0) {
 		resourceDestroy(vt->lock);
-		munmap(vt->mem, _PAGE_SIZE);
+		munmap(vt->mem, ttybuffsz);
 		if (SCRB_PAGES) {
-			munmap(vt->scro, _PAGE_SIZE);
-			munmap(vt->scrb, SCRB_PAGES * _PAGE_SIZE);
+			munmap(vt->scro, ttybuffsz);
+			munmap(vt->scrb, SCRB_PAGES * ttybuffsz);
 		}
 		return err;
 	}
 
+	vt->buffsz = ttybuffsz;
+	vt->fbmode = FBCON_UNSUPPORTED;
+
 	/* Disable default libtty tab expansion */
 	vt->tty.term.c_oflag &= ~(XTABS);
+
+	vt->dpos = -1;
 
 	/* Init emulator */
 	vt->ttypc = ttypc;
@@ -736,7 +787,7 @@ int ttypc_vt_init(ttypc_t *ttypc, unsigned int ttybuffsz, ttypc_vt_t *vt)
 	_ttypc_vtf_str(vt);
 
 	/* Clear screen */
-	_ttypc_vga_set(vt->vram, vt->attr | ' ', vt->cols * vt->rows);
+	_ttypc_vga_set(vt, 0, vt->attr | ' ', vt->cols * vt->rows);
 
 	return EOK;
 }
