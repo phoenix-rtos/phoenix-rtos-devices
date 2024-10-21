@@ -153,8 +153,9 @@ static void _ttypc_vt_sput(ttypc_vt_t *vt, char c)
 		switch (vt->escst) {
 		case ESC_INIT:
 			/* InseRt Mode */
-			if (vt->irm)
-				_ttypc_vga_move(vt, vt->vram + vt->cpos + 1, vt->vram + vt->cpos, vt->cols - vt->ccol - 1);
+			if (vt->irm) {
+				_ttypc_vga_move(vt, vt->cpos + 1, vt->cpos, vt->cols - vt->ccol - 1);
+			}
 
 			_ttypc_vt_sdraw(vt, c);
 
@@ -787,7 +788,7 @@ int ttypc_vt_init(ttypc_t *ttypc, unsigned int ttybuffsz, ttypc_vt_t *vt)
 	_ttypc_vtf_str(vt);
 
 	/* Clear screen */
-	_ttypc_vga_set(vt, vt->vram, vt->attr | ' ', vt->cols * vt->rows);
+	_ttypc_vga_set(vt, 0, vt->attr | ' ', vt->cols * vt->rows);
 
 	return EOK;
 }
