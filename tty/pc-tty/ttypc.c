@@ -173,7 +173,7 @@ int main(void)
 	 * in the graphic mode already and the text mode buffer may contain garbage */
 
 	/* Set default cursor color */
-	_ttypc_vga_set(ttypc_common.vt, ttypc_common.vt->vram + ttypc_common.vt->cpos, FG_LIGHTGREY << 8, ttypc_common.vt->rows * ttypc_common.vt->cols - ttypc_common.vt->cpos);
+	_ttypc_vga_set(ttypc_common.vt, ttypc_common.vt->cpos, FG_LIGHTGREY << 8, ttypc_common.vt->rows * ttypc_common.vt->cols - ttypc_common.vt->cpos);
 
 	/* Run pool threads */
 	if ((err = beginthread(ttypc_poolthr, 1, ttypc_common.pstack, sizeof(ttypc_common.pstack), &ttypc_common)) < 0)

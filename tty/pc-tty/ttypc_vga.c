@@ -61,9 +61,10 @@ static void _ttypc_vga_setctype(ttypc_t *ttypc, uint8_t from, uint8_t to)
 }
 
 
-ssize_t _ttypc_vga_read(volatile uint16_t *vga, uint16_t *buff, size_t n)
+ssize_t _ttypc_vga_read(ttypc_vt_t *vt, size_t offs, uint16_t *buff, size_t n)
 {
 	size_t i;
+	volatile uint16_t *vga = vt->vram + offs;
 
 	for (i = 0; i < n; i++)
 		*(buff + i) = *(vga + i);
@@ -72,10 +73,11 @@ ssize_t _ttypc_vga_read(volatile uint16_t *vga, uint16_t *buff, size_t n)
 }
 
 
-ssize_t _ttypc_vga_write(ttypc_vt_t *vt, volatile uint16_t *vga, uint16_t *buff, size_t n)
+ssize_t _ttypc_vga_write(ttypc_vt_t *vt, size_t offs, uint16_t *buff, size_t n)
 {
 	size_t i;
 	int pos, col, row;
+	volatile uint16_t *vga = vt->vram + offs;
 
 	pos = vga - vt->vram;
 	col = pos % vt->cols;
@@ -98,10 +100,11 @@ ssize_t _ttypc_vga_write(ttypc_vt_t *vt, volatile uint16_t *vga, uint16_t *buff,
 }
 
 
-volatile uint16_t *_ttypc_vga_set(ttypc_vt_t *vt, volatile uint16_t *vga, uint16_t val, size_t n)
+volatile uint16_t *_ttypc_vga_set(ttypc_vt_t *vt, size_t offs, uint16_t val, size_t n)
 {
 	size_t i;
 	int pos, col, row;
+	volatile uint16_t *vga = vt->vram + offs;
 
 	pos = vga - vt->vram;
 	col = pos % vt->cols;
@@ -124,10 +127,11 @@ volatile uint16_t *_ttypc_vga_set(ttypc_vt_t *vt, volatile uint16_t *vga, uint16
 }
 
 
-volatile uint16_t *_ttypc_vga_move(ttypc_vt_t *vt, volatile uint16_t *dvga, volatile uint16_t *svga, size_t n)
+volatile uint16_t *_ttypc_vga_move(ttypc_vt_t *vt, size_t doffs, size_t soffs, size_t n)
 {
 	size_t i;
 	int pos, col, row;
+	volatile uint16_t *dvga = vt->vram + doffs, *svga = vt->vram + soffs;
 
 	if (dvga < svga) {
 		pos = dvga - vt->vram;
@@ -182,7 +186,7 @@ void _ttypc_vga_switch(ttypc_vt_t *vt)
 		return;
 
 	/* VGA memory -> VT memory */
-	_ttypc_vga_read(cvt->vram, cvt->mem, cvt->rows * cvt->cols);
+	_ttypc_vga_read(cvt, 0, cvt->mem, cvt->rows * cvt->cols);
 	cvt->vram = cvt->mem;
 
 	/* Set active VT, do it before writes to unlock access to the fb */
@@ -196,7 +200,7 @@ void _ttypc_vga_switch(ttypc_vt_t *vt)
 	mutexLock(vt->lock);
 	/* VT memory -> VGA memory */
 	vt->vram = ttypc->vga;
-	_ttypc_vga_write(vt, vt->vram, vt->mem, vt->rows * vt->cols);
+	_ttypc_vga_write(vt, 0, vt->mem, vt->rows * vt->cols);
 	/* Set cursor position... */
 	_ttypc_vga_setcursor(vt);
 	/* ... and visibility */
@@ -233,12 +237,12 @@ void _ttypc_vga_rollup(ttypc_vt_t *vt, unsigned int n)
 
 	/* Update scrollback buffer */
 	_ttypc_vga_allocscrollback(vt, k);
-	_ttypc_vga_read(vt->vram + (vt->top + n - k) * vt->cols, vt->scrb + (vt->scrbsz - k) * vt->cols, k * vt->cols);
+	_ttypc_vga_read(vt, (vt->top + n - k) * vt->cols, vt->scrb + (vt->scrbsz - k) * vt->cols, k * vt->cols);
 
 	/* Roll up */
 	if (n < vt->bottom - vt->top) {
-		_ttypc_vga_move(vt, vt->vram + vt->top * vt->cols, vt->vram + (vt->top + n) * vt->cols, (vt->bottom - vt->top + 1 - n) * vt->cols);
-		_ttypc_vga_set(vt, vt->vram + (vt->bottom + 1 - n) * vt->cols, vt->attr | ' ', n * vt->cols);
+		_ttypc_vga_move(vt, vt->top * vt->cols, (vt->top + n) * vt->cols, (vt->bottom - vt->top + 1 - n) * vt->cols);
+		_ttypc_vga_set(vt, (vt->bottom + 1 - n) * vt->cols, vt->attr | ' ', n * vt->cols);
 	}
 }
 
@@ -251,9 +255,9 @@ void _ttypc_vga_rolldown(ttypc_vt_t *vt, unsigned int n)
 	if (vt->bottom > vt->crow) {
 		k = min(n, vt->bottom - vt->crow);
 		l = min(k, vt->scrbsz);
-		_ttypc_vga_move(vt, vt->vram + (vt->top + k) * vt->cols, vt->vram + vt->top * vt->cols, (vt->bottom - vt->top + 1 - k) * vt->cols);
-		_ttypc_vga_set(vt, vt->vram + vt->top * vt->cols, vt->attr | ' ', (k - l) * vt->cols);
-		_ttypc_vga_write(vt, vt->vram + (vt->top + k - l) * vt->cols, vt->scrb + (vt->scrbsz - l) * vt->cols, l * vt->cols);
+		_ttypc_vga_move(vt, (vt->top + k) * vt->cols, vt->top * vt->cols, (vt->bottom - vt->top + 1 - k) * vt->cols);
+		_ttypc_vga_set(vt, vt->top * vt->cols, vt->attr | ' ', (k - l) * vt->cols);
+		_ttypc_vga_write(vt, (vt->top + k - l) * vt->cols, vt->scrb + (vt->scrbsz - l) * vt->cols, l * vt->cols);
 		vt->scrbsz -= l;
 	}
 }
@@ -275,15 +279,15 @@ void _ttypc_vga_scroll(ttypc_vt_t *vt, int n)
 
 	/* Save scroll origin */
 	if (!vt->scrbpos)
-		_ttypc_vga_read(vt->vram, vt->scro, vt->rows * vt->cols);
+		_ttypc_vga_read(vt, 0, vt->scro, vt->rows * vt->cols);
 
 	/* Copy scrollback */
 	vt->scrbpos += n;
-	_ttypc_vga_write(vt, vt->vram, vt->scrb + (vt->scrbsz - vt->scrbpos) * vt->cols, min(vt->scrbpos, vt->rows) * vt->cols);
+	_ttypc_vga_write(vt, 0, vt->scrb + (vt->scrbsz - vt->scrbpos) * vt->cols, min(vt->scrbpos, vt->rows) * vt->cols);
 
 	/* Copy scroll origin */
 	if (vt->scrbpos < vt->rows) {
-		_ttypc_vga_write(vt, vt->vram + vt->scrbpos * vt->cols, vt->scro, (vt->rows - vt->scrbpos) * vt->cols);
+		_ttypc_vga_write(vt, vt->scrbpos * vt->cols, vt->scro, (vt->rows - vt->scrbpos) * vt->cols);
 
 		if ((vt == vt->ttypc->vt) && vt->cst) {
 			/* Show cursor */
@@ -304,7 +308,7 @@ void _ttypc_vga_scrollcancel(ttypc_vt_t *vt)
 		return;
 
 	/* Restore scroll origin */
-	_ttypc_vga_write(vt, vt->vram, vt->scro, vt->rows * vt->cols);
+	_ttypc_vga_write(vt, 0, vt->scro, vt->rows * vt->cols);
 
 	/* Restore cursor position... */
 	vt->cpos -= vt->scrbpos * vt->cols;
