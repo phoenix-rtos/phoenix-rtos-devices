@@ -294,7 +294,7 @@ void _ttypc_vtf_aln(ttypc_vt_t *vt)
 	vt->cpos = 0;
 	vt->ccol = 0;
 	vt->crow = 0;
-	_ttypc_vga_set(vt, vt->vram, vt->attr | 'E', vt->rows * vt->cols);
+	_ttypc_vga_set(vt, 0, vt->attr | 'E', vt->rows * vt->cols);
 }
 
 
@@ -382,15 +382,15 @@ void _ttypc_vtf_clreos(ttypc_vt_t *vt)
 {
 	switch (vt->parms[0]) {
 	case 0:
-		_ttypc_vga_set(vt, vt->vram + vt->cpos, vt->attr | ' ', vt->cols * vt->rows - vt->cpos);
+		_ttypc_vga_set(vt, vt->cpos, vt->attr | ' ', vt->cols * vt->rows - vt->cpos);
 		break;
 
 	case 1:
-		_ttypc_vga_set(vt, vt->vram, vt->attr | ' ', vt->cpos + 1);
+		_ttypc_vga_set(vt, 0, vt->attr | ' ', vt->cpos + 1);
 		break;
 
 	case 2:
-		_ttypc_vga_set(vt, vt->vram, vt->attr | ' ', vt->cols * vt->rows);
+		_ttypc_vga_set(vt, 0, vt->attr | ' ', vt->cols * vt->rows);
 		break;
 	}
 }
@@ -400,15 +400,15 @@ void _ttypc_vtf_clreol(ttypc_vt_t *vt)
 {
 	switch (vt->parms[0]) {
 	case 0:
-		_ttypc_vga_set(vt, vt->vram + vt->cpos, vt->attr | ' ', vt->cols - vt->ccol);
+		_ttypc_vga_set(vt, vt->cpos, vt->attr | ' ', vt->cols - vt->ccol);
 		break;
 
 	case 1:
-		_ttypc_vga_set(vt, vt->vram + vt->cpos - vt->ccol, vt->attr | ' ', vt->ccol + 1);
+		_ttypc_vga_set(vt, vt->cpos - vt->ccol, vt->attr | ' ', vt->ccol + 1);
 		break;
 
 	case 2:
-		_ttypc_vga_set(vt, vt->vram + vt->cpos - vt->ccol, vt->attr | ' ', vt->cols);
+		_ttypc_vga_set(vt, vt->cpos - vt->ccol, vt->attr | ' ', vt->cols);
 		break;
 	}
 }
@@ -454,8 +454,8 @@ void _ttypc_vtf_il(ttypc_vt_t *vt)
 			_ttypc_vga_rolldown(vt, p);
 		}
 		else {
-			_ttypc_vga_move(vt, vt->vram + vt->cpos + p * vt->cols, vt->vram + vt->cpos, (vt->bottom - vt->crow + 1 - p) * vt->cols);
-			_ttypc_vga_set(vt, vt->vram + vt->cpos, vt->attr | ' ', p * vt->cols);
+			_ttypc_vga_move(vt, vt->cpos + p * vt->cols, vt->cpos, (vt->bottom - vt->crow + 1 - p) * vt->cols);
+			_ttypc_vga_set(vt, vt->cpos, vt->attr | ' ', p * vt->cols);
 		}
 	}
 }
@@ -470,8 +470,8 @@ void _ttypc_vtf_ic(ttypc_vt_t *vt)
 	else if (p > vt->cols - vt->ccol)
 		p = vt->cols - vt->ccol;
 
-	_ttypc_vga_move(vt, vt->vram + vt->cpos + p, vt->vram + vt->cpos, vt->cols - vt->ccol - p);
-	_ttypc_vga_set(vt, vt->vram + vt->cpos, vt->attr | ' ', p);
+	_ttypc_vga_move(vt, vt->cpos + p, vt->cpos, vt->cols - vt->ccol - p);
+	_ttypc_vga_set(vt, vt->cpos, vt->attr | ' ', p);
 }
 
 
@@ -492,8 +492,8 @@ void _ttypc_vtf_dl(ttypc_vt_t *vt)
 			_ttypc_vga_rollup(vt, p);
 		}
 		else {
-			_ttypc_vga_move(vt, vt->vram + vt->cpos, vt->vram + vt->cpos + p * vt->cols, (vt->bottom - vt->crow + 1 - p) * vt->cols);
-			_ttypc_vga_set(vt, vt->vram + (vt->bottom + 1 - p) * vt->cols, vt->attr | ' ', p * vt->cols);
+			_ttypc_vga_move(vt, vt->cpos, vt->cpos + p * vt->cols, (vt->bottom - vt->crow + 1 - p) * vt->cols);
+			_ttypc_vga_set(vt, (vt->bottom + 1 - p) * vt->cols, vt->attr | ' ', p * vt->cols);
 		}
 	}
 }
@@ -508,8 +508,8 @@ void _ttypc_vtf_dch(ttypc_vt_t *vt)
 	else if (p > vt->cols - vt->ccol)
 		p = vt->cols - vt->ccol;
 
-	_ttypc_vga_move(vt, vt->vram + vt->cpos, vt->vram + vt->cpos + p, vt->cols - vt->ccol - p);
-	_ttypc_vga_set(vt, vt->vram + vt->cpos + vt->cols - p, vt->attr | ' ', p);
+	_ttypc_vga_move(vt, vt->cpos, vt->cpos + p, vt->cols - vt->ccol - p);
+	_ttypc_vga_set(vt, vt->cpos + vt->cols - p, vt->attr | ' ', p);
 }
 
 
@@ -569,7 +569,7 @@ void _ttypc_vtf_ris(ttypc_vt_t *vt)
 	vt->scrbpos = 0;
 
 	/* Clear screen */
-	_ttypc_vga_set(vt, vt->vram, vt->attr | ' ', vt->cols * vt->rows);
+	_ttypc_vga_set(vt, 0, vt->attr | ' ', vt->cols * vt->rows);
 	/* Soft reset */
 	_ttypc_vtf_str(vt);
 }
@@ -585,7 +585,7 @@ void _ttypc_vtf_ech(ttypc_vt_t *vt)
 	else if (p > vt->cols - vt->ccol)
 		p = vt->cols - vt->ccol;
 
-	_ttypc_vga_set(vt, vt->vram + vt->cpos, vt->attr | ' ', p);
+	_ttypc_vga_set(vt, vt->cpos, vt->attr | ' ', p);
 }
 
 
