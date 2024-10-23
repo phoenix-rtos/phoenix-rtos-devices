@@ -1,9 +1,9 @@
 /*
  * Phoenix-RTOS
  *
- * GRLIB FTMCTRL Flash driver
+ * GRLIB SPIMCTRL Flash driver
  *
- * Copyright 2023 Phoenix Systems
+ * Copyright 2024 Phoenix Systems
  * Author: Lukasz Leczkowski
  *
  * This file is part of Phoenix-RTOS.
@@ -29,9 +29,9 @@ struct cache_devCtx_s {
 
 struct _storage_devCtx_t {
 	cfi_info_t cfi;
-	const struct nor_dev *dev;
+	const struct flash_dev *dev;
 
-	const struct spimctrl *spimctrl;
+	struct spimctrl *spimctrl;
 
 	handle_t lock;
 	size_t sectorsz;

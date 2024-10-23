@@ -1,9 +1,9 @@
 /*
  * Phoenix-RTOS
  *
- * GR716 flash driver
+ * GRLIB SPIMCTRL Flash driver
  *
- * Copyright 2023 Phoenix Systems
+ * Copyright 2024 Phoenix Systems
  * Author: Lukasz Leczkowski
  *
  * This file is part of Phoenix-RTOS.
@@ -16,6 +16,7 @@
 #include <sys/time.h>
 
 #include "flash.h"
+#include "flashdrv.h"
 
 
 #define FLASH_CMD_RDID 0x9fu
@@ -25,30 +26,27 @@
 #define FLASH_SR_WIP 0x01u /* Write in progress */
 #define FLASH_SR_WEL 0x02u /* Write enable latch */
 
+#define VID_MACRONIX 0xc2u
+#define VID_SPANSION 0x01u
 
 /* clang-format off */
-#define FLASH_ID(vid, pid) (((((vid) & 0xffu) << 16) | ((pid) & 0xff00u) | ((pid) & 0xffu)) << 8)
-
 
 enum { write_disable = 0, write_enable };
 
 
-static const char *nor_vendors[] = {
-	"\xef" " Winbond",
-	"\x20" " Micron",
-	"\x9d" " ISSI",
-	"\xc2" " Macronix",
-	NULL
+static const struct flash_cmds flash_spansionCmds = {
+	.rdsr = 0x05u, .wren = 0x06u, .wrdi = 0x04u, .rdear = 0x16u,
+	.wrear = 0x17u, .ce = 0x60u, .se = 0xd8u, .pp = 0x02u, .read = 0x03u
 };
 /* clang-format on */
 
 
-static const struct nor_info flashInfo[] = {
-
+static const struct flash_dev flash_devs[] = {
+	{ "S25FL128S", VID_SPANSION, 0x2018u, &flash_spansionCmds }
 };
 
 
-static int flash_readStatus(struct nor_dev *dev, struct spimctrl *spimctrl, uint8_t *status)
+static int flash_readStatus(const struct flash_dev *dev, struct spimctrl *spimctrl, uint8_t *status)
 {
 	struct xferOp xfer;
 	const uint8_t cmd = dev->cmds->rdsr;
@@ -63,7 +61,7 @@ static int flash_readStatus(struct nor_dev *dev, struct spimctrl *spimctrl, uint
 }
 
 
-static int flash_writeEnable(struct nor_dev *dev, struct spimctrl *spimctrl, int enable)
+static int flash_writeEnable(const struct flash_dev *dev, struct spimctrl *spimctrl, int enable)
 {
 	int res;
 	struct xferOp xfer;
@@ -82,12 +80,12 @@ static int flash_writeEnable(struct nor_dev *dev, struct spimctrl *spimctrl, int
 	xfer.dataLen = 0;
 
 	res = spimctrl_xfer(spimctrl, &xfer);
-	if (res < EOK) {
+	if (res < 0) {
 		return res;
 	}
 
 	res = flash_readStatus(dev, spimctrl, &status);
-	if (res < EOK) {
+	if (res < 0) {
 		return res;
 	}
 
@@ -97,11 +95,11 @@ static int flash_writeEnable(struct nor_dev *dev, struct spimctrl *spimctrl, int
 		return -EIO;
 	}
 
-	return EOK;
+	return 0;
 }
 
 
-static int flash_readEAR(struct nor_dev *dev, struct spimctrl *spimctrl, uint8_t *status)
+static int flash_readEAR(const struct flash_dev *dev, struct spimctrl *spimctrl, uint8_t *status)
 {
 	struct xferOp xfer;
 	const uint8_t cmd = dev->cmds->rdear;
@@ -116,7 +114,7 @@ static int flash_readEAR(struct nor_dev *dev, struct spimctrl *spimctrl, uint8_t
 }
 
 
-static int flash_writeEAR(struct nor_dev *dev, struct spimctrl *spimctrl, uint8_t value)
+static int flash_writeEAR(const struct flash_dev *dev, struct spimctrl *spimctrl, uint8_t value)
 {
 	int res;
 	struct xferOp xfer;
@@ -131,12 +129,12 @@ static int flash_writeEAR(struct nor_dev *dev, struct spimctrl *spimctrl, uint8_
 	xfer.dataLen = 1;
 
 	res = spimctrl_xfer(spimctrl, &xfer);
-	if (res < EOK) {
+	if (res < 0) {
 		return res;
 	}
 
-	res = flash_readEAR(spimctrl, &spimctrl->ear);
-	if (res < EOK) {
+	res = flash_readEAR(dev, spimctrl, &spimctrl->ear);
+	if (res < 0) {
 		return res;
 	}
 
@@ -144,13 +142,13 @@ static int flash_writeEAR(struct nor_dev *dev, struct spimctrl *spimctrl, uint8_
 		return -EIO;
 	}
 
-	return EOK;
+	return 0;
 }
 
 
-static int flash_validateEar(struct nor_dev *dev, struct spimctrl *spimctrl, uint32_t addr)
+static int flash_validateEar(const struct flash_dev *dev, struct spimctrl *spimctrl, uint32_t addr)
 {
-	int res = EOK;
+	int res = 0;
 	const uint8_t desiredEar = (addr >> 24) & 0xffu;
 
 	if (desiredEar != spimctrl->ear) {
@@ -160,7 +158,7 @@ static int flash_validateEar(struct nor_dev *dev, struct spimctrl *spimctrl, uin
 }
 
 
-int flash_waitBusy(struct nor_dev *dev, struct spimctrl *spimctrl, time_t timeout)
+int flash_waitBusy(const struct flash_dev *dev, struct spimctrl *spimctrl, time_t timeout)
 {
 	int res;
 	uint8_t status = 0;
@@ -171,7 +169,7 @@ int flash_waitBusy(struct nor_dev *dev, struct spimctrl *spimctrl, time_t timeou
 
 	do {
 		res = flash_readStatus(dev, spimctrl, &status);
-		if (res < EOK) {
+		if (res < 0) {
 			return res;
 		}
 
@@ -181,18 +179,18 @@ int flash_waitBusy(struct nor_dev *dev, struct spimctrl *spimctrl, time_t timeou
 		}
 	} while ((status & FLASH_SR_WIP) != 0);
 
-	return EOK;
+	return 0;
 }
 
 
-int flash_eraseChip(struct nor_dev *dev, struct spimctrl *spimctrl, time_t timeout)
+int flash_chipErase(const struct flash_dev *dev, struct spimctrl *spimctrl, time_t timeout)
 {
 	int res;
 	struct xferOp xfer;
 	const uint8_t cmd = dev->cmds->ce;
 
 	res = flash_writeEnable(dev, spimctrl, write_enable);
-	if (res < EOK) {
+	if (res < 0) {
 		return res;
 	}
 
@@ -203,27 +201,28 @@ int flash_eraseChip(struct nor_dev *dev, struct spimctrl *spimctrl, time_t timeo
 	xfer.dataLen = 0;
 
 	res = spimctrl_xfer(spimctrl, &xfer);
-	if (res < EOK) {
+	if (res < 0) {
 		return res;
 	}
 
-	return flash_waitBusy(spimctrl, timeout);
+	return flash_waitBusy(dev, spimctrl, timeout);
 }
 
 
-int flash_eraseSector(struct nor_dev *dev, struct spimctrl *spimctrl, addr_t addr, time_t timeout)
+int flash_sectorErase(const struct flash_dev *dev, struct spimctrl *spimctrl, addr_t addr, time_t timeout)
 {
 	int res;
 	struct xferOp xfer;
-	const uint8_t cmd[4] = { dev->cmds->se, (addr >> 16) & 0xff, (addr >> 8) & 0xff, addr & 0xff };
+	const addr_t eraseAddr = addr + spimctrl->moffs;
+	const uint8_t cmd[4] = { dev->cmds->se, (eraseAddr >> 16) & 0xff, (eraseAddr >> 8) & 0xff, eraseAddr & 0xff };
 
-	res = flash_validateEar(dev, spimctrl, addr);
-	if (res < EOK) {
+	res = flash_validateEar(dev, spimctrl, eraseAddr);
+	if (res < 0) {
 		return res;
 	}
 
 	res = flash_writeEnable(dev, spimctrl, write_enable);
-	if (res < EOK) {
+	if (res < 0) {
 		return res;
 	}
 
@@ -234,7 +233,7 @@ int flash_eraseSector(struct nor_dev *dev, struct spimctrl *spimctrl, addr_t add
 	xfer.dataLen = 0;
 
 	res = spimctrl_xfer(spimctrl, &xfer);
-	if (res < EOK) {
+	if (res < 0) {
 		return res;
 	}
 
@@ -244,18 +243,19 @@ int flash_eraseSector(struct nor_dev *dev, struct spimctrl *spimctrl, addr_t add
 }
 
 
-int flash_pageProgram(struct nor_dev *dev, struct spimctrl *spimctrl, addr_t addr, const void *src, size_t len, time_t timeout)
+int flash_pageProgram(const struct flash_dev *dev, struct spimctrl *spimctrl, addr_t addr, const void *src, size_t len, time_t timeout)
 {
 	struct xferOp xfer;
-	const uint8_t cmd[4] = { dev->cmds->pp, (addr >> 16) & 0xff, (addr >> 8) & 0xff, addr & 0xff };
+	const addr_t programAddr = addr + spimctrl->moffs;
+	const uint8_t cmd[4] = { dev->cmds->pp, (programAddr >> 16) & 0xff, (programAddr >> 8) & 0xff, programAddr & 0xff };
 
-	int res = flash_validateEar(dev, spimctrl, addr);
-	if (res < EOK) {
+	int res = flash_validateEar(dev, spimctrl, programAddr);
+	if (res < 0) {
 		return res;
 	}
 
 	res = flash_writeEnable(dev, spimctrl, write_enable);
-	if (res < EOK) {
+	if (res < 0) {
 		return res;
 	}
 
@@ -266,7 +266,7 @@ int flash_pageProgram(struct nor_dev *dev, struct spimctrl *spimctrl, addr_t add
 	xfer.dataLen = len;
 
 	res = spimctrl_xfer(spimctrl, &xfer);
-	if (res < EOK) {
+	if (res < 0) {
 		return res;
 	}
 
@@ -276,13 +276,13 @@ int flash_pageProgram(struct nor_dev *dev, struct spimctrl *spimctrl, addr_t add
 }
 
 
-static ssize_t flash_readCmd(struct nor_dev *dev, struct spimctrl *spimctrl, addr_t addr, void *data, size_t size)
+static ssize_t flash_readCmd(const struct flash_dev *dev, struct spimctrl *spimctrl, addr_t addr, void *data, size_t size)
 {
 	struct xferOp xfer;
 	const uint8_t cmd[4] = { dev->cmds->read, (addr >> 16) & 0xff, (addr >> 8) & 0xff, addr & 0xff };
 
 	int res = flash_validateEar(dev, spimctrl, addr);
-	if (res < EOK) {
+	if (res < 0) {
 		return res;
 	}
 
@@ -294,39 +294,31 @@ static ssize_t flash_readCmd(struct nor_dev *dev, struct spimctrl *spimctrl, add
 
 	res = spimctrl_xfer(spimctrl, &xfer);
 
-	return (res < EOK) ? res : (ssize_t)size;
+	return (res < 0) ? res : (ssize_t)size;
 }
 
 
-static ssize_t flash_readAhb(struct nor_dev *dev, struct spimctrl *spimctrl, addr_t addr, void *data, size_t size)
+// static ssize_t flash_readAhb(const struct flash_dev *dev, struct spimctrl *spimctrl, addr_t addr, void *data, size_t size)
+// {
+// 	int res = flash_validateEar(dev, spimctrl, addr);
+// 	if (res < 0) {
+// 		return res;
+// 	}
+
+// 	(void)memcpy(data, (void *)addr + spimctrl->ahbStartAddr, size);
+
+// 	return (res < 0) ? res : (ssize_t)size;
+// }
+
+
+ssize_t flash_readData(const struct flash_dev *dev, struct spimctrl *spimctrl, addr_t addr, void *data, size_t size)
 {
-	int res = flash_validateEar(dev, spimctrl, addr);
-	if (res < EOK) {
-		return res;
-	}
-
-	(void)memcpy(data, (void *)addr + spimctrl->ahbStartAddr, size);
-
-	return (res < EOK) ? res : (ssize_t)size;
+	addr_t readAddr = addr + spimctrl->moffs;
+	return flash_readCmd(dev, spimctrl, readAddr, data, size);
 }
 
 
-ssize_t flash_readData(struct nor_dev *dev, struct spimctrl *spimctrl, addr_t addr, void *data, size_t size)
-{
-	if (((addr & 0xff000000) == 0) && (((addr + size) & 0xff000000) != 0)) {
-		/* If we'd have to change EAR register during read,
-		 * read data through command (can be read without EAR change)
-		 */
-		return flash_readCmd(dev, spimctrl, addr, data, size);
-	}
-	else {
-		/* Direct copy */
-		return flash_readAhb(dev, spimctrl, addr, data, size);
-	}
-}
-
-
-static int flash_readId(struct nor_dev *dev, struct spimctrl *spimctrl, cfi_info_t *info)
+static int flash_readId(const struct spimctrl *spimctrl, cfi_info_t *cfi)
 {
 	struct xferOp xfer;
 	const uint8_t cmd[4] = { FLASH_CMD_RDID, 0x00u, 0x00u, 0x00u };
@@ -334,59 +326,70 @@ static int flash_readId(struct nor_dev *dev, struct spimctrl *spimctrl, cfi_info
 	xfer.type = xfer_opRead;
 	xfer.cmd = cmd;
 	xfer.cmdLen = 4;
-	xfer.rxData = (uint8_t *)info;
-	xfer.dataLen = sizeof(*info);
+	xfer.rxData = (uint8_t *)cfi;
+	xfer.dataLen = sizeof(*cfi);
 
 	return spimctrl_xfer(spimctrl, &xfer);
 }
 
 
-static int flash_query(struct nor_dev *dev, struct spimctrl *spimctrl, const struct nor_info **nor, const char **pVendor)
+static uint16_t flash_deserialize16(uint16_t value)
 {
-	int res;
-	uint32_t jedecId = 0;
+	return ((value & 0xff) << 8) | ((value >> 8) & 0xff);
+}
 
-	res = flash_readId(dev, spimctrl, &dev->cfi);
-	if (res < EOK) {
-		return res;
-	}
 
-	res = flash_readEAR(dev, spimctrl, &spimctrl->ear);
-	if (res < EOK) {
+static int flash_query(const struct flash_dev **dev, struct spimctrl *spimctrl, cfi_info_t *cfi)
+{
+	int res = flash_readId(spimctrl, cfi);
+	if (res < 0) {
 		return res;
 	}
 
 	res = -ENXIO;
-	for (size_t i = 0; i < sizeof(flashInfo) / sizeof(flashInfo[0]); ++i) {
-		if (flashInfo[i].jedecId == jedecId) {
-			*nor = &flashInfo[i];
-			res = EOK;
+
+	uint16_t device;
+	memcpy(&device, &cfi->vendorData[1], sizeof(device));
+	device = flash_deserialize16(device);
+
+	for (size_t i = 0; i < sizeof(flash_devs) / sizeof(flash_devs[0]); ++i) {
+		const struct flash_dev *flash = &flash_devs[i];
+		if ((cfi->vendorData[0] == flash->vendor) && (device == flash->device)) {
+			*dev = flash;
+			res = 0;
 			break;
 		}
 	}
 
-	if (res != EOK) {
+	if (res != 0) {
 		return res;
 	}
 
-	*pVendor = "Unknown";
-
-	for (size_t i = 0; nor_vendors[i]; ++i) {
-		if (*(uint8_t *)nor_vendors[i] == (jedecId >> 24)) {
-			*pVendor = &nor_vendors[i][2];
-			break;
-		}
+	res = flash_readEAR(*dev, spimctrl, &spimctrl->ear);
+	if (res < 0) {
+		return res;
 	}
 
-	return EOK;
+	return 0;
 }
 
 
 int flash_init(struct _storage_devCtx_t *ctx)
 {
+	spimctrl_init(ctx->spimctrl);
+	int res = flash_query(&ctx->dev, ctx->spimctrl, &ctx->cfi);
+
+	if (res < 0) {
+		return res;
+	}
+
+	LOG("Flash: %s", ctx->dev->name);
+
+	return 0;
 }
 
 
 void flash_destroy(struct _storage_devCtx_t *ctx)
 {
+	spimctrl_destroy(ctx->spimctrl);
 }

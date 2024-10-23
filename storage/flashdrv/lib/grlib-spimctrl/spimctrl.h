@@ -1,9 +1,9 @@
 /*
  * Phoenix-RTOS
  *
- * SPI Memory Controller driver
+ * GRLIB SPIMCTRL driver
  *
- * Copyright 2023 Phoenix Systems
+ * Copyright 2024 Phoenix Systems
  * Author: Lukasz Leczkowski
  *
  * This file is part of Phoenix-RTOS.
@@ -18,23 +18,19 @@
 #include <sys/types.h>
 
 
-#define SPIMCTRL_NUM 2
-
-#define FLASH0_AHB_ADDR 0x02000000
-#define FLASH1_AHB_ADDR 0x04000000
-
-#define SPIMCTRL0_BASE ((void *)0xFFF00100)
-#define SPIMCTRL1_BASE ((void *)0xFFF00200)
-
-
-/* clang-format off */
-enum { spimctrl_instance0 = 0, spimctrl_instance1 };
-/* clang-format on */
-
 struct spimctrl {
 	volatile uint32_t *base;
-	addr_t ahbStartAddr;
-	uint8_t instance;
+
+	/* Address where flash is mapped in AHB */
+	addr_t maddr;
+
+	/* Offset configured in SPIMCTRL core.
+	 * This offset is automatically added by the core when reading directly
+	 * through AHB, but must be manually added when communicating with flash
+	 * through SPI commands.
+	 * Purpose of this is to skip the bitstream area on FPGA boards.
+	 */
+	addr_t moffs;
 	uint8_t ear;
 };
 
@@ -53,36 +49,19 @@ struct xferOp {
 };
 
 
-static inline addr_t spimctrl_ahbAddr(int instance)
-{
-	switch (instance) {
-		case spimctrl_instance0: return FLASH0_AHB_ADDR;
-		case spimctrl_instance1: return FLASH1_AHB_ADDR;
-		default: return 0;
-	}
-}
-
-
-static inline void *spimctrl_getBase(int instance)
-{
-	switch (instance) {
-		case spimctrl_instance0: return SPIMCTRL0_BASE;
-		case spimctrl_instance1: return SPIMCTRL1_BASE;
-		default: return NULL;
-	}
-}
-
-
 /* Execute a transfer through spimctrl */
-extern int spimctrl_xfer(struct spimctrl *spimctrl, struct xferOp *op);
+int spimctrl_xfer(const struct spimctrl *spimctrl, struct xferOp *op);
 
 
 /* Reset spimctrl core */
-extern void spimctrl_reset(struct spimctrl *spimctrl);
+void spimctrl_reset(const struct spimctrl *spimctrl);
 
 
 /* Initialize spimctrl instance */
-extern int spimctrl_init(struct spimctrl *spimctrl, int instance);
+int spimctrl_init(struct spimctrl *spimctrl);
+
+
+void spimctrl_destroy(struct spimctrl *spimctrl);
 
 
 #endif

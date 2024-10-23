@@ -102,7 +102,7 @@ static int flashsrv_sync(storage_t *strg)
 	storage_mtd_t *mtd = strg->dev->mtd;
 	if ((mtd != NULL) && (mtd->ops != NULL) && (mtd->ops->sync != NULL)) {
 		mtd->ops->sync(strg);
-		return EOK;
+		return 0;
 	}
 
 	return -EINVAL;
@@ -124,7 +124,7 @@ static int flashsrv_getAttr(storage_t *strg, int type, long long *attr)
 			return -EINVAL;
 	}
 
-	return EOK;
+	return 0;
 }
 
 
@@ -140,7 +140,7 @@ static void flashsrv_msgHandler(void *arg, msg_t *msg)
 		case mtOpen:
 		case mtClose:
 			strg = storage_get(msg->oid.id);
-			msg->o.err = (strg == NULL) ? -EINVAL : EOK;
+			msg->o.err = (strg == NULL) ? -EINVAL : 0;
 			TRACE("mtOpen/mtClose: %d", msg->o.err);
 			break;
 
@@ -222,7 +222,7 @@ static int flashsrv_mountRoot(const char *name, const char *fstype)
 		return res;
 	}
 
-	return EOK;
+	return 0;
 }
 
 
@@ -232,6 +232,8 @@ static void flashsrv_help(const char *prog)
 	printf("\t-r <name:fs> - mount partition <name> as root\n");
 	printf("\t               use psdisk to create partitions\n");
 	printf("\t-h           - print this message\n");
+	printf("\t-c <addr>    - use <addr> as memory controller base address");
+	printf("\t-m <addr>    - use <addr> as flash memory base address");
 	printf("\t-d <driver>  - use <driver> for flash memory\n");
 	printf("\t               available drivers: \n");
 	printf("\t               ");
@@ -247,7 +249,7 @@ static struct flash_driver *flashsrv_parseInitArgs(int argc, char **argv)
 	struct flash_driver *driver = NULL;
 
 	for (;;) {
-		int c = getopt(argc, argv, "r:d:h");
+		int c = getopt(argc, argv, "r:d:c:m:h");
 		if (c == -1) {
 			return 0;
 		}
@@ -425,7 +427,7 @@ static int flashsrv_partAdd(storage_t *parent, uint32_t offset, uint32_t size, c
 
 	TRACE("initialized partition %s: offset=%u, size=%u", name, offset, size);
 
-	return EOK;
+	return 0;
 }
 
 

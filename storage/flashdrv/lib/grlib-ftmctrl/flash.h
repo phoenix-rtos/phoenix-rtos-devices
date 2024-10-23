@@ -47,12 +47,6 @@ typedef struct _flash_dev_t {
 } flash_dev_t;
 
 
-static inline off_t flash_getSectorOffset(const struct _storage_devCtx_t *ctx, off_t offs)
-{
-	return offs & ~(ctx->sectorsz - 1);
-}
-
-
 int flash_writeBuffer(const struct _storage_devCtx_t *ctx, off_t offs, const uint8_t *data, size_t len, time_t timeout);
 
 /* Timeout in us */

@@ -1,9 +1,9 @@
 /*
  * Phoenix-RTOS
  *
- * GR716 flash driver
+ * GRLIB SPIMCTRL Flash driver
  *
- * Copyright 2023 Phoenix Systems
+ * Copyright 2024 Phoenix Systems
  * Author: Lukasz Leczkowski
  *
  * This file is part of Phoenix-RTOS.
@@ -11,8 +11,8 @@
  * %LICENSE%
  */
 
-#ifndef _NOR_H_
-#define _NOR_H_
+#ifndef _SPIMCTRL_FLASH_H_
+#define _SPIMCTRL_FLASH_H_
 
 
 #include <storage/storage.h>
@@ -26,7 +26,7 @@
 #define NOR_PAGESZ_MAX   0x100u
 
 
-struct nor_cmds {
+struct flash_cmds {
 	uint8_t rdsr;  /* Read status register */
 	uint8_t wren;  /* Write enable */
 	uint8_t wrdi;  /* Write disable */
@@ -39,29 +39,28 @@ struct nor_cmds {
 };
 
 
-struct nor_dev {
-	cfi_info_t cfi;
-	const struct nor_cmds *cmds;
-
+struct flash_dev {
 	const char *name;
 	const uint8_t vendor;
 	const uint16_t device;
+
+	const struct flash_cmds *cmds;
 };
 
 
-int flash_waitBusy(struct nor_dev *dev, struct spimctrl *spimctrl, time_t timeout);
+int flash_waitBusy(const struct flash_dev *dev, struct spimctrl *spimctrl, time_t timeout);
 
 
-int flash_eraseChip(struct nor_dev *dev, struct spimctrl *spimctrl, time_t timeout);
+int flash_chipErase(const struct flash_dev *dev, struct spimctrl *spimctrl, time_t timeout);
 
 
-int flash_eraseSector(struct nor_dev *dev, struct spimctrl *spimctrl, addr_t addr, time_t timeout);
+int flash_sectorErase(const struct flash_dev *dev, struct spimctrl *spimctrl, addr_t addr, time_t timeout);
 
 
-int flash_pageProgram(struct nor_dev *dev, struct spimctrl *spimctrl, addr_t addr, const void *src, size_t len, time_t timeout);
+int flash_pageProgram(const struct flash_dev *dev, struct spimctrl *spimctrl, addr_t addr, const void *src, size_t len, time_t timeout);
 
 
-ssize_t flash_readData(struct nor_dev *dev, struct spimctrl *spimctrl, addr_t addr, void *buff, size_t len);
+ssize_t flash_readData(const struct flash_dev *dev, struct spimctrl *spimctrl, addr_t addr, void *buff, size_t len);
 
 
 int flash_init(struct _storage_devCtx_t *ctx);

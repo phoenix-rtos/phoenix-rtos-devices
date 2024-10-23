@@ -139,10 +139,10 @@ int flash_writeBuffer(const struct _storage_devCtx_t *ctx, off_t offs, const uin
 	data += i;
 
 	if (len == 0) {
-		return EOK;
+		return 0;
 	}
 
-	off_t sectorOffs = flash_getSectorOffset(ctx, offs);
+	off_t sectorOffs = common_getSectorOffset(ctx, offs);
 
 	ctx->dev->ops->issueWriteBuffer(common.base, sectorOffs, offs, len);
 
@@ -362,7 +362,7 @@ int flash_init(struct _storage_devCtx_t *ctx)
 		return -ENOMEM;
 	}
 
-	return EOK;
+	return 0;
 }
 
 

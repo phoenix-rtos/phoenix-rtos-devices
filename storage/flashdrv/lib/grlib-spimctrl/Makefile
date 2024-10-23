@@ -1,10 +1,10 @@
 #
 # Makefile for Phoenix-RTOS libspimctrl driver
 #
-# Copyright 2023, 2024 Phoenix Systems
+# Copyright 2024 Phoenix Systems
 #
 
 NAME := libspimctrl
-LOCAL_SRCS := flashdrv.c
+LOCAL_SRCS := flash.c flashdrv.c spimctrl.c
 
 include $(static-lib.mk)

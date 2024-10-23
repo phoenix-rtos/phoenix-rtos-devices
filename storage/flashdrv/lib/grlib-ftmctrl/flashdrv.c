@@ -20,6 +20,7 @@
 #include <sys/minmax.h>
 #include <sys/threads.h>
 
+#include <common.h>
 #include <flashsrv.h>
 
 #include "flashdrv.h"
@@ -31,33 +32,20 @@
 #define LIBCACHE_POLICY  LIBCACHE_WRITE_BACK
 
 
-/* Helper functions */
-
-
-static int fdrv_isValidAddress(size_t memsz, off_t offs, size_t len)
-{
-	if ((offs < memsz) && ((offs + len) <= memsz)) {
-		return 1;
-	}
-
-	return 0;
-}
-
-
 /* MTD interface */
 
 
 static int _flashdrv_mtdRead(storage_t *strg, off_t offs, void *buff, size_t len, size_t *retlen)
 {
 	struct _storage_devCtx_t *ctx = strg->dev->ctx;
-	if (fdrv_isValidAddress(CFI_SIZE(ctx->cfi.chipSz), offs, len) == 0) {
+	if (common_isValidAddress(CFI_SIZE(ctx->cfi.chipSz), offs, len) == 0) {
 		*retlen = 0;
 		return -EINVAL;
 	}
 
 	if (len == 0u) {
 		*retlen = 0;
-		return EOK;
+		return 0;
 	}
 
 	ftmctrl_WrEn(ctx->ftmctrl);
@@ -66,7 +54,7 @@ static int _flashdrv_mtdRead(storage_t *strg, off_t offs, void *buff, size_t len
 
 	*retlen = len;
 
-	return EOK;
+	return 0;
 }
 
 
@@ -106,20 +94,20 @@ static int flashdrv_mtdRead(storage_t *strg, off_t offs, void *buff, size_t len,
 static int _flashdrv_mtdWrite(storage_t *strg, off_t offs, const void *buff, size_t len, size_t *retlen)
 {
 	struct _storage_devCtx_t *ctx = strg->dev->ctx;
-	if (fdrv_isValidAddress(CFI_SIZE(ctx->cfi.chipSz), offs, len) == 0) {
+	if (common_isValidAddress(CFI_SIZE(ctx->cfi.chipSz), offs, len) == 0) {
 		*retlen = 0;
 		return -EINVAL;
 	}
 
 	if (len == 0u) {
 		*retlen = 0;
-		return EOK;
+		return 0;
 	}
 
 	const uint8_t *src = buff;
 	size_t doneBytes = 0;
 
-	int res = EOK;
+	int res = 0;
 	const size_t writeBuffsz = strg->dev->mtd->writeBuffsz;
 
 	while (doneBytes < len) {
@@ -188,12 +176,12 @@ static int flashdrv_mtdErase(storage_t *strg, off_t offs, size_t len)
 	}
 
 	struct _storage_devCtx_t *ctx = strg->dev->ctx;
-	if ((fdrv_isValidAddress(CFI_SIZE(ctx->cfi.chipSz), offs, len) == 0) || ((offs & (ctx->sectorsz - 1)) != 0) || (len % ctx->sectorsz != 0)) {
+	if ((common_isValidAddress(CFI_SIZE(ctx->cfi.chipSz), offs, len) == 0) || ((offs & (ctx->sectorsz - 1)) != 0) || (len % ctx->sectorsz != 0)) {
 		return -EINVAL;
 	}
 
 	if (len == 0u) {
-		return EOK;
+		return 0;
 	}
 
 	mutexLock(ctx->lock);
@@ -207,7 +195,7 @@ static int flashdrv_mtdErase(storage_t *strg, off_t offs, size_t len)
 		end = CFI_SIZE(ctx->cfi.chipSz);
 	}
 	else {
-		end = flash_getSectorOffset(ctx, offs + len + ctx->sectorsz - 1u);
+		end = common_getSectorOffset(ctx, offs + len + ctx->sectorsz - 1u);
 		TRACE("erasing sectors from 0x%llx to 0x%llx", offs, end);
 	}
 

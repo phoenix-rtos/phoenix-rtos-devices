@@ -1,9 +1,9 @@
 /*
  * Phoenix-RTOS
  *
- * SPI Memory Controller driver
+ * GRLIB SPIMCTRL driver
  *
- * Copyright 2023 Phoenix Systems
+ * Copyright 2024 Phoenix Systems
  * Author: Lukasz Leczkowski
  *
  * This file is part of Phoenix-RTOS.
@@ -12,10 +12,12 @@
  */
 
 #include <errno.h>
+#include <sys/mman.h>
 #include <sys/platform.h>
 
+#include <board_config.h>
+
 #include "spimctrl.h"
-#include "nor/flash.h"
 
 /* Control register */
 
@@ -48,13 +50,13 @@ static void spimctrl_userCtrl(volatile uint32_t *spimctrlBase)
 }
 
 
-static int spimctrl_busy(struct spimctrl *spimctrl)
+static int spimctrl_busy(const struct spimctrl *spimctrl)
 {
 	return (*(spimctrl->base + flash_stat) & CORE_BUSY) >> 1;
 }
 
 
-static int spimctrl_ready(struct spimctrl *spimctrl)
+static int spimctrl_ready(const struct spimctrl *spimctrl)
 {
 	uint32_t val = (*(spimctrl->base + flash_stat) & (INITIALIZED | OPER_DONE));
 
@@ -76,7 +78,7 @@ static uint8_t spimctrl_rx(volatile uint32_t *spimctrlBase)
 }
 
 
-static void spimctrl_read(struct spimctrl *spimctrl, struct xferOp *op)
+static void spimctrl_read(const struct spimctrl *spimctrl, struct xferOp *op)
 {
 	spimctrl_userCtrl(spimctrl->base);
 
@@ -87,7 +89,7 @@ static void spimctrl_read(struct spimctrl *spimctrl, struct xferOp *op)
 
 	/* read data */
 	for (size_t i = 0; i < op->dataLen; i++) {
-		spimctrl_tx(spimctrl->base, FLASH_CMD_NOP);
+		spimctrl_tx(spimctrl->base, 0x00u);
 		op->rxData[i] = spimctrl_rx(spimctrl->base);
 	}
 
@@ -95,7 +97,7 @@ static void spimctrl_read(struct spimctrl *spimctrl, struct xferOp *op)
 }
 
 
-static void spimctrl_write(struct spimctrl *spimctrl, struct xferOp *op)
+static void spimctrl_write(const struct spimctrl *spimctrl, struct xferOp *op)
 {
 	spimctrl_userCtrl(spimctrl->base);
 
@@ -113,7 +115,7 @@ static void spimctrl_write(struct spimctrl *spimctrl, struct xferOp *op)
 }
 
 
-int spimctrl_xfer(struct spimctrl *spimctrl, struct xferOp *op)
+int spimctrl_xfer(const struct spimctrl *spimctrl, struct xferOp *op)
 {
 	if ((spimctrl_busy(spimctrl) == 1) || spimctrl_ready(spimctrl) == 0) {
 		return -EBUSY;
@@ -129,54 +131,30 @@ int spimctrl_xfer(struct spimctrl *spimctrl, struct xferOp *op)
 		default:
 			return -EINVAL;
 	}
-	return EOK;
+	return 0;
 }
 
 
-void spimctrl_reset(struct spimctrl *spimctrl)
+void spimctrl_reset(const struct spimctrl *spimctrl)
 {
 	*(spimctrl->base + flash_ctrl) = CORE_RST;
 }
 
 
-int spimctrl_init(struct spimctrl *spimctrl, int instance)
+int spimctrl_init(struct spimctrl *spimctrl)
 {
-	int res;
-	void *base = spimctrl_getBase(instance);
-	platformctl_t pctl = {
-		.action = pctl_get,
-		.type = pctl_cguctrl,
-		.task.cguctrl = {
-			.cgu = cgu_primary,
-			.cgudev = cgudev_spimctrl0 + instance,
-		}
-	};
-
-	if (base == NULL) {
-		return -EINVAL;
-	}
-
-	res = platformctl(&pctl);
-	if (res < 0) {
-		return res;
-	}
-
-	spimctrl->base = base;
-	spimctrl->ahbStartAddr = spimctrl_ahbAddr(instance);
-	spimctrl->instance = instance;
-
-	/* Enable clock if needed */
-	if (pctl.task.cguctrl.v.stateVal == 0) {
-		pctl.action = pctl_set;
-		pctl.task.cguctrl.v.state = enable;
-		res = platformctl(&pctl);
-		if (res < 0) {
-			return res;
-		}
-	}
+	spimctrl->base = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, SPIMCTRL0_BASE);
+	spimctrl->maddr = FLASH0_ADDR;
+	spimctrl->moffs = FLASH0_OFFS;
 
 	/* Reset core */
 	spimctrl_reset(spimctrl);
 
-	return EOK;
+	return 0;
+}
+
+
+void spimctrl_destroy(struct spimctrl *spimctrl)
+{
+	(void)munmap((void *)spimctrl->base, _PAGE_SIZE);
 }
