@@ -14,7 +14,6 @@
 
 #include <arpa/inet.h>
 #include <errno.h>
-#include <signal.h>
 #include <sys/list.h>
 #include <sys/msg.h>
 #include <sys/minmax.h>
@@ -153,6 +152,8 @@ typedef struct umass_dev {
 	handle_t lock;
 
 	umass_part_t part; /* TODO extend for more partitions */
+
+	usb_driver_t *drv;
 } umass_dev_t;
 
 
@@ -160,7 +161,6 @@ static struct {
 	idtree_t devices;
 	umass_dev_t device;
 
-	unsigned drvport;
 	unsigned msgport;
 	handle_t lock;
 	rbtree_t fss; /* Registered filesystems */
@@ -232,21 +232,21 @@ static int _umass_transmit(umass_dev_t *dev, void *cmd, size_t clen, char *data,
 	cbw.clen = clen;
 	memcpy(cbw.cmd, cmd, clen);
 
-	if ((ret = usb_transferBulk(dev->pipeOut, &cbw, sizeof(cbw), usb_dir_out)) != sizeof(cbw)) {
+	if ((ret = usb_transferBulk(dev->drv, dev->pipeOut, &cbw, sizeof(cbw), usb_dir_out)) != sizeof(cbw)) {
 		fprintf(stderr, "umass_transmit: usb_transferBulk OUT failed\n");
 		return -EIO;
 	}
 
 	/* Optional data transfer */
 	if (dlen > 0) {
-		if ((ret = usb_transferBulk(dataPipe, data, dlen, dir)) < 0) {
+		if ((ret = usb_transferBulk(dev->drv, dataPipe, data, dlen, dir)) < 0) {
 			fprintf(stderr, "umass_transmit: umass_transmit data transfer failed\n");
 			return ret;
 		}
 		bytes = ret;
 	}
 
-	if ((ret = usb_transferBulk(dev->pipeIn, &csw, sizeof(csw), usb_dir_in)) != sizeof(csw)) {
+	if ((ret = usb_transferBulk(dev->drv, dev->pipeIn, &csw, sizeof(csw), usb_dir_in)) != sizeof(csw)) {
 		fprintf(stderr, "umass_transmit: usb_transferBulk IN transfer failed\n");
 		return -EIO;
 	}
@@ -646,7 +646,6 @@ static int umass_mountRoot(umass_dev_t *dev)
 		if (err < 0) {
 			break;
 		}
-		umass_common.mount_root = false; /* don't try to mount root again */
 		err = EOK;
 	} while (0);
 
@@ -657,37 +656,40 @@ static int umass_mountRoot(umass_dev_t *dev)
 }
 
 
-static int _umass_handleInsertion(usb_devinfo_t *insertion)
+static int umass_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion)
 {
 	int err;
 	umass_dev_t *dev;
 	oid_t oid;
+
+	mutexLock(umass_common.lock);
 
 	if ((dev = umass_devAlloc()) == NULL) {
 		fprintf(stderr, "umass: devAlloc failed\n");
 		return -ENOMEM;
 	}
 
+	dev->drv = drv;
 	dev->instance = *insertion;
-	if ((dev->pipeCtrl = usb_open(insertion, usb_transfer_control, 0)) < 0) {
+	if ((dev->pipeCtrl = usb_open(drv, insertion, usb_transfer_control, 0)) < 0) {
 		free(dev);
 		fprintf(stderr, "umass: usb_open failed\n");
 		return -EINVAL;
 	}
 
-	if (usb_setConfiguration(dev->pipeCtrl, 1) != 0) {
+	if (usb_setConfiguration(drv, dev->pipeCtrl, 1) != 0) {
 		free(dev);
 		fprintf(stderr, "umass: setConfiguration failed\n");
 		return -EINVAL;
 	}
 
-	if ((dev->pipeIn = usb_open(insertion, usb_transfer_bulk, usb_dir_in)) < 0) {
+	if ((dev->pipeIn = usb_open(drv, insertion, usb_transfer_bulk, usb_dir_in)) < 0) {
 		fprintf(stderr, "umass: pipe open failed \n");
 		free(dev);
 		return -EINVAL;
 	}
 
-	if ((dev->pipeOut = usb_open(insertion, usb_transfer_bulk, usb_dir_out)) < 0) {
+	if ((dev->pipeOut = usb_open(drv, insertion, usb_transfer_bulk, usb_dir_out)) < 0) {
 		fprintf(stderr, "umass: pipe open failed\n");
 		free(dev);
 		return -EINVAL;
@@ -711,14 +713,27 @@ static int _umass_handleInsertion(usb_devinfo_t *insertion)
 
 	printf("umass: New USB Mass Storage device: %s sectors: %d\n", dev->path, dev->part.sectors);
 
+	mutexUnlock(umass_common.lock);
+
+	if (umass_common.mount_root) {
+		err = umass_mountRoot(dev);
+		if (err < 0) {
+			fprintf(stderr, "umass: failed to mount root partition\n");
+			return err;
+		}
+		umass_common.mount_root = false; /* don't try to mount root again */
+	}
+
 	return 0;
 }
 
 
-static int _umass_handleDeletion(usb_deletion_t *del)
+static int umass_handleDeletion(usb_driver_t *drv, usb_deletion_t *del)
 {
 	umass_dev_t *dev;
 	rbnode_t *node, *next;
+
+	mutexLock(umass_common.lock);
 
 	node = lib_rbMinimum(umass_common.devices.root);
 	while (node != NULL) {
@@ -736,26 +751,116 @@ static int _umass_handleDeletion(usb_deletion_t *del)
 		node = next;
 	}
 
+	mutexUnlock(umass_common.lock);
+
 	return 0;
 }
 
 
-static void umass_signalExit(int sig)
+static int umass_handleCompletion(usb_driver_t *drv, usb_completion_t *c, const char *data, size_t len)
 {
-	exit(EXIT_SUCCESS);
+	return EOK;
 }
+
+
+static usb_handlers_t umass_handlers = {
+	.insertion = umass_handleInsertion,
+	.deletion = umass_handleDeletion,
+	.completion = umass_handleCompletion,
+};
+
+
+static int umass_init(usb_driver_t *drv)
+{
+	int ret, i;
+
+	do {
+		ret = mutexCreate(&umass_common.rlock);
+		if (ret < 0) {
+			fprintf(stderr, "umass: failed to create server requests mutex\n");
+			break;
+		}
+
+		ret = condCreate(&umass_common.rcond);
+		if (ret < 0) {
+			fprintf(stderr, "umass: failed to create server requests condition variable\n");
+			break;
+		}
+
+		umass_common.rqueue = NULL;
+		idtree_init(&umass_common.devices);
+		lib_rbInit(&umass_common.fss, umass_cmpfs, NULL);
+
+#ifdef UMASS_MOUNT_EXT2
+		/* Register filesystems */
+		ret = umass_registerfs(LIBEXT2_NAME, LIBEXT2_TYPE, LIBEXT2_MOUNT, LIBEXT2_UNMOUNT, LIBEXT2_HANDLER);
+		if (ret < 0) {
+			fprintf(stderr, "umass: failed to register ext2 filesystem\n");
+			break;
+		}
+#endif
+
+		/* Port for communication with driver clients */
+		ret = portCreate(&umass_common.msgport);
+		if (ret != 0) {
+			fprintf(stderr, "umass: Can't create message port!\n");
+			break;
+		}
+
+		ret = mutexCreate(&umass_common.lock);
+		if (ret < 0) {
+			fprintf(stderr, "umass: Can't create mutex!\n");
+			break;
+		}
+
+		/* Run message threads */
+		for (i = 0; i < sizeof(umass_common.mstacks) / sizeof(umass_common.mstacks[0]); i++) {
+			if ((ret = beginthread(umass_msgthr, 4, umass_common.mstacks[i], sizeof(umass_common.mstacks[i]), NULL)) != 0) {
+				fprintf(stderr, "umass: fail to beginthread ret: %d\n", ret);
+				break;
+			}
+		}
+
+		/* Run pool threads */
+		for (i = 0; i < sizeof(umass_common.pstacks) / sizeof(umass_common.pstacks[0]); i++) {
+			ret = beginthread(umass_poolthr, 4, umass_common.pstacks[i], sizeof(umass_common.pstacks[i]), NULL);
+			if (ret < 0) {
+				fprintf(stderr, "umass: failed to start pool thread %d\n", i);
+				break;
+			}
+		}
+
+		ret = EOK;
+	} while (0);
+
+	return ret;
+}
+
+
+int umass_destroy(usb_driver_t *drv)
+{
+	return EOK;
+}
+
+
+static usb_driverOps_t umass_ops = {
+	.init = umass_init,
+	.destroy = umass_destroy,
+};
+
+
+usb_driver_t umass_driver = {
+	.handlers = &umass_handlers,
+	.ops = &umass_ops,
+	.filters = filters,
+	.nfilters = sizeof(filters) / sizeof(filters[0]),
+	.priv = (uintptr_t *)&umass_common,
+};
 
 
 int main(int argc, char *argv[])
 {
-	rbnode_t *node;
-	umass_dev_t *dev;
-	int ret, i;
-	pid_t pid;
-	msg_t msg;
-	usb_msg_t *umsg = (usb_msg_t *)msg.i.raw;
 	char c;
-	bool root_mount_pending = false;
 
 	umass_common.mount_root = false;
 
@@ -776,125 +881,5 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	/* Set parent exit handler */
-	signal(SIGUSR1, umass_signalExit);
-
-	/* Daemonize server */
-	if ((pid = fork()) < 0) {
-		fprintf(stderr, "umass: failed to daemonize server\n");
-		exit(EXIT_FAILURE);
-	}
-	else if (pid > 0) {
-		/* Parent waits to be killed by the child after finished server initialization */
-		sleep(10);
-		fprintf(stderr, "umass: failed to successfully initialize server\n");
-		exit(EXIT_FAILURE);
-	}
-
-	/* Set child exit handler */
-	signal(SIGUSR1, umass_signalExit);
-
-	if (setsid() < 0) {
-		fprintf(stderr, "umass: failed to create new session\n");
-		exit(EXIT_FAILURE);
-	}
-
-	if ((ret = mutexCreate(&umass_common.rlock)) < 0) {
-		fprintf(stderr, "umass: failed to create server requests mutex\n");
-		return ret;
-	}
-
-	if ((ret = condCreate(&umass_common.rcond)) < 0) {
-		fprintf(stderr, "umass: failed to create server requests condition variable\n");
-		return ret;
-	}
-
-	umass_common.rqueue = NULL;
-	idtree_init(&umass_common.devices);
-	lib_rbInit(&umass_common.fss, umass_cmpfs, NULL);
-
-#ifdef UMASS_MOUNT_EXT2
-	/* Register filesystems */
-	if (umass_registerfs(LIBEXT2_NAME, LIBEXT2_TYPE, LIBEXT2_MOUNT, LIBEXT2_UNMOUNT, LIBEXT2_HANDLER) < 0)
-		fprintf(stderr, "umass: failed to register ext2 filesystem\n");
-#endif
-
-	/* Port for communication with the USB stack */
-	if (portCreate(&umass_common.drvport) != 0) {
-		fprintf(stderr, "umass: Can't create driver port!\n");
-		return 1;
-	}
-
-	/* Port for communication with driver clients */
-	if (portCreate(&umass_common.msgport) != 0) {
-		fprintf(stderr, "umass: Can't create message port!\n");
-		return 1;
-	}
-
-	if (mutexCreate(&umass_common.lock) < 0) {
-		fprintf(stderr, "umass: Can't create mutex!\n");
-		return 1;
-	}
-
-	/* Run message threads */
-	for (i = 0; i < sizeof(umass_common.mstacks) / sizeof(umass_common.mstacks[0]); i++) {
-		if ((ret = beginthread(umass_msgthr, 4, umass_common.mstacks[i], sizeof(umass_common.mstacks[i]), NULL)) != 0) {
-			fprintf(stderr, "umass: fail to beginthread ret: %d\n", ret);
-			return 1;
-		}
-	}
-
-	/* Run pool threads */
-	for (i = 0; i < sizeof(umass_common.pstacks) / sizeof(umass_common.pstacks[0]); i++) {
-		if ((ret = beginthread(umass_poolthr, 4, umass_common.pstacks[i], sizeof(umass_common.pstacks[i]), NULL)) < 0) {
-			fprintf(stderr, "umass: failed to start pool thread %d\n", i);
-			return ret;
-		}
-	}
-
-	/* Finished server initialization - kill parent */
-	kill(getppid(), SIGUSR1);
-
-	if ((usb_connect(filters, sizeof(filters) / sizeof(filters[0]), umass_common.drvport)) < 0) {
-		fprintf(stderr, "umass: Fail to connect to usb host!\n");
-		return 1;
-	}
-
-	for (;;) {
-		ret = usb_eventsWait(umass_common.drvport, &msg);
-		if (ret != 0)
-			return 1;
-		mutexLock(umass_common.lock);
-		switch (umsg->type) {
-			case usb_msg_insertion:
-				if (_umass_handleInsertion(&umsg->insertion) == 0) {
-					if (umass_common.mount_root) {
-						root_mount_pending = true;
-						node = lib_rbMinimum(umass_common.devices.root);
-						dev = lib_treeof(umass_dev_t, node, lib_treeof(idnode_t, linkage, node));
-					}
-				}
-				else {
-					fprintf(stderr, "umass: Failed to initialize device!\n");
-				}
-				break;
-			case usb_msg_deletion:
-				_umass_handleDeletion(&umsg->deletion);
-				break;
-			default:
-				fprintf(stderr, "umass: Error when receiving event from host\n");
-				break;
-		}
-		mutexUnlock(umass_common.lock);
-
-		if (root_mount_pending) {
-			ret = umass_mountRoot(dev);
-			if (ret < 0) {
-				fprintf(stderr, "umass: failed to mount root partition\n");
-			}
-			root_mount_pending = false;
-		}
-	}
-
-	return 0;
+	return usb_procDrvRun(&umass_driver, true);
 }
