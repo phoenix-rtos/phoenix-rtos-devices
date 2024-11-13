@@ -25,7 +25,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <stdbool.h>
 
 #include <posix/idtree.h>
 
@@ -37,6 +36,7 @@
 #include <usbdriver.h>
 
 #include "../pc-ata/mbr.h"
+#include "umass.h"
 
 #define UMASS_N_MSG_THREADS  2
 #define UMASS_N_POOL_THREADS 4
@@ -770,9 +770,17 @@ static usb_handlers_t umass_handlers = {
 };
 
 
-static int umass_init(usb_driver_t *drv)
+static int umass_init(usb_driver_t *drv, void *args)
 {
+	umass_args_t *umass_args = (umass_args_t *)args;
 	int ret, i;
+
+	if (umass_args != NULL) {
+		umass_common.mount_root = umass_args->mount_root;
+	}
+	else {
+		umass_common.mount_root = true;
+	}
 
 	do {
 		ret = mutexCreate(&umass_common.rlock);
@@ -837,7 +845,7 @@ static int umass_init(usb_driver_t *drv)
 }
 
 
-int umass_destroy(usb_driver_t *drv)
+static int umass_destroy(usb_driver_t *drv)
 {
 	return EOK;
 }
@@ -849,37 +857,17 @@ static usb_driverOps_t umass_ops = {
 };
 
 
-usb_driver_t umass_driver = {
+static usb_driver_t umass_driver = {
+	.name = "umass",
 	.handlers = &umass_handlers,
 	.ops = &umass_ops,
 	.filters = filters,
 	.nfilters = sizeof(filters) / sizeof(filters[0]),
-	.priv = (uintptr_t *)&umass_common,
+	.priv = (void *)&umass_common,
 };
 
 
-int main(int argc, char *argv[])
+__attribute__((constructor)) static void umass_register(void)
 {
-	char c;
-
-	umass_common.mount_root = false;
-
-	/* Wait for console */
-	while (write(1, "", 0) < 0)
-		usleep(50000);
-
-	if (argc > 1) {
-		/* Process command line options */
-		while ((c = getopt(argc, argv, "r")) != -1) {
-			switch (c) {
-				case 'r':
-					umass_common.mount_root = true;
-					break;
-				default:
-					return EOK;
-			}
-		}
-	}
-
-	return usb_procDrvRun(&umass_driver, true);
+	usb_driverRegister(&umass_driver);
 }
