@@ -783,6 +783,55 @@
 #endif
 
 
+#ifndef UART1_HALF_DUPLEX_GPIO
+#define UART1_HALF_DUPLEX_GPIO .port = 0, .pin = 0, .onTx = 0
+#endif
+
+#ifndef UART2_HALF_DUPLEX_GPIO
+#define UART2_HALF_DUPLEX_GPIO .port = 0, .pin = 0, .onTx = 0
+#endif
+
+#ifndef UART3_HALF_DUPLEX_GPIO
+#define UART3_HALF_DUPLEX_GPIO .port = 0, .pin = 0, .onTx = 0
+#endif
+
+#ifndef UART4_HALF_DUPLEX_GPIO
+#define UART4_HALF_DUPLEX_GPIO .port = 0, .pin = 0, .onTx = 0
+#endif
+
+#ifndef UART5_HALF_DUPLEX_GPIO
+#define UART5_HALF_DUPLEX_GPIO .port = 0, .pin = 0, .onTx = 0
+#endif
+
+#ifndef UART6_HALF_DUPLEX_GPIO
+#define UART6_HALF_DUPLEX_GPIO .port = 0, .pin = 0, .onTx = 0
+#endif
+
+#ifndef UART7_HALF_DUPLEX_GPIO
+#define UART7_HALF_DUPLEX_GPIO .port = 0, .pin = 0, .onTx = 0
+#endif
+
+#ifndef UART8_HALF_DUPLEX_GPIO
+#define UART8_HALF_DUPLEX_GPIO .port = 0, .pin = 0, .onTx = 0
+#endif
+
+#ifndef UART9_HALF_DUPLEX_GPIO
+#define UART9_HALF_DUPLEX_GPIO .port = 0, .pin = 0, .onTx = 0
+#endif
+
+#ifndef UART10_HALF_DUPLEX_GPIO
+#define UART10_HALF_DUPLEX_GPIO .port = 0, .pin = 0, .onTx = 0
+#endif
+
+#ifndef UART11_HALF_DUPLEX_GPIO
+#define UART11_HALF_DUPLEX_GPIO .port = 0, .pin = 0, .onTx = 0
+#endif
+
+#ifndef UART12_HALF_DUPLEX_GPIO
+#define UART12_HALF_DUPLEX_GPIO .port = 0, .pin = 0, .onTx = 0
+#endif
+
+
 /* RTT */
 
 #ifndef RTT0

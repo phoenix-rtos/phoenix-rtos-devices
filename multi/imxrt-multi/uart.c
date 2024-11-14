@@ -26,6 +26,7 @@
 #include <libtty.h>
 #include <libtty-lf-fifo.h>
 
+#include "gpio.h"
 #include "common.h"
 #include "uart.h"
 
@@ -51,12 +52,20 @@
 #endif
 
 
+typedef struct {
+	uint16_t port;
+	uint8_t pin;
+	uint8_t onTx;
+} uart_halfDuplexAction_t;
+
+
 typedef struct uart_s {
 	char stack[1024] __attribute__ ((aligned(8)));
 
 	volatile uint32_t *base;
 	uint32_t mode;
 	uint16_t dev_no;
+	uart_halfDuplexAction_t halfDuplexAction;
 
 	handle_t cond;
 	handle_t inth;
@@ -92,6 +101,22 @@ static const int uartPos[] = { UART1_POS, UART2_POS, UART3_POS, UART4_POS, UART5
 	UART7_POS, UART8_POS, UART9_POS, UART10_POS, UART11_POS, UART12_POS };
 
 
+static const uart_halfDuplexAction_t uartHalfDuplex[] = {
+	{ UART1_HALF_DUPLEX_GPIO },
+	{ UART2_HALF_DUPLEX_GPIO },
+	{ UART3_HALF_DUPLEX_GPIO },
+	{ UART4_HALF_DUPLEX_GPIO },
+	{ UART5_HALF_DUPLEX_GPIO },
+	{ UART6_HALF_DUPLEX_GPIO },
+	{ UART7_HALF_DUPLEX_GPIO },
+	{ UART8_HALF_DUPLEX_GPIO },
+	{ UART9_HALF_DUPLEX_GPIO },
+	{ UART10_HALF_DUPLEX_GPIO },
+	{ UART11_HALF_DUPLEX_GPIO },
+	{ UART12_HALF_DUPLEX_GPIO },
+};
+
+
 enum { veridr = 0, paramr, globalr, pincfgr, baudr, statr, ctrlr, datar, matchr, modirr, fifor, waterr };
 
 
@@ -107,13 +132,20 @@ static inline int uart_getTXcount(uart_t *uart)
 }
 
 
+static int uart_performHalfDuplexAction(const uart_halfDuplexAction_t *action, int tx)
+{
+	uint32_t val = ((tx != 0) ? 0 : 1) ^ ((action->onTx != 0) ? 1 : 0);
+	return gpio_setPort(action->port, 1 << action->pin, val << action->pin);
+}
+
+
 static int uart_handleIntr(unsigned int n, void *arg)
 {
 	uart_t *uart = (uart_t *)arg;
 	uint32_t status = *(uart->base + statr);
 
 	/* Disable interrupts, enabled in uart_intrThread */
-	*(uart->base + ctrlr) &= ~((1 << 27) | (1 << 26) | (1 << 25) | (1 << 23) | (1 << 21));
+	*(uart->base + ctrlr) &= ~((1 << 27) | (1 << 26) | (1 << 25) | (1 << 23) | (1 << 22) | (1 << 21));
 
 	/* check for RX overrun */
 	if ((status & (1uL << 19u)) != 0u) {
@@ -142,21 +174,37 @@ static void uart_intrThread(void *arg)
 	uart_t *uart = (uart_t *)arg;
 	uint8_t mask;
 	uint8_t c;
+	int rxActive = 1;
 
 	for (;;) {
 		/* wait for character or transmit data */
 		mutexLock(uart->lock);
 		while (lf_fifo_empty(&uart->rxFifoCtx) != 0) { /* nothing to RX */
-			if (libtty_txready(&uart->tty_common)) { /* something to TX */
+			uint32_t intrs = (1 << 27) | (1 << 26) | (1 << 25) | (1 << 21);
+			if (libtty_txready(&uart->tty_common)) {          /* something to TX */
 				if (uart_getTXcount(uart) < uart->txFifoSz) { /* TX ready */
 					break;
 				}
 				else {
-					*(uart->base + ctrlr) |= 1 << 23;
+					intrs |= 1 << 23;
 				}
 			}
 
-			*(uart->base + ctrlr) |= (1 << 27) | (1 << 26) | (1 << 25) | (1 << 21);
+			if ((uart->halfDuplexAction.port != 0) && (rxActive == 0)) {
+				uint32_t status = *(uart->base + statr);
+				if ((status & (1 << 22)) != 0u) {
+					/* Transmission finished, activate RX */
+					uart_performHalfDuplexAction(&uart->halfDuplexAction, 0);
+					*(uart->base + ctrlr) |= (1 << 18);
+					rxActive = 1;
+				}
+				else {
+					/* Transmission in progress, activate interrupt */
+					intrs |= (1 << 22);
+				}
+			}
+
+			*(uart->base + ctrlr) |= intrs;
 
 			condWait(uart->cond, uart->lock, 0);
 		}
@@ -176,8 +224,16 @@ static void uart_intrThread(void *arg)
 		}
 
 		/* TX */
-		while (libtty_txready(&uart->tty_common) && uart_getTXcount(uart) < uart->txFifoSz) {
-			*(uart->base + datar) = libtty_getchar(&uart->tty_common, NULL);
+		if (libtty_txready(&uart->tty_common) && uart_getTXcount(uart) < uart->txFifoSz) {
+			if ((uart->halfDuplexAction.port != 0) && (rxActive != 0)) {
+				*(uart->base + ctrlr) &= ~(1 << 18);
+				uart_performHalfDuplexAction(&uart->halfDuplexAction, 1);
+				rxActive = 0;
+			}
+
+			do {
+				*(uart->base + datar) = libtty_getchar(&uart->tty_common, NULL);
+			} while (libtty_txready(&uart->tty_common) && uart_getTXcount(uart) < uart->txFifoSz);
 		}
 	}
 }
@@ -818,6 +874,7 @@ int uart_init(void)
 		uart = &uart_common.uarts[i++];
 		uart->base = info[dev].base;
 		uart->dev_no = dev;
+		uart->halfDuplexAction = uartHalfDuplex[dev];
 
 #ifdef __CPU_IMXRT117X
 		common_setClock(info[dev].dev, -1, -1, -1, -1, 1);
@@ -878,6 +935,15 @@ int uart_init(void)
 
 		/* Enable overrun, noise, framing error and receiver interrupts */
 		*(uart->base + ctrlr) |= (1 << 27) | (1 << 26) | (1 << 25) | (1 << 21);
+
+		if (uart->halfDuplexAction.port != 0) {
+			const uart_halfDuplexAction_t *action = &uart->halfDuplexAction;
+			if (gpio_setDir(action->port, 1 << action->pin, 1 << action->pin) < 0) {
+				return -1;
+			}
+
+			uart_performHalfDuplexAction(action, 0);
+		}
 
 		/* Enable TX and RX */
 		*(uart->base + ctrlr) |= (1 << 19) | (1 << 18);

@@ -601,9 +601,9 @@ int main(void)
 	}
 #endif
 
+	gpio_init();
 	uart_init();
 	rtt_init();
-	gpio_init();
 	spi_init();
 	i2c_init();
 
