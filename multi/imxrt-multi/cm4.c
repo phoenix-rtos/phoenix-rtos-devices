@@ -366,6 +366,11 @@ static int runCore(unsigned int offset)
 	platformctl_t pctl;
 	unsigned int vectors = (unsigned int)CM4_MEMORY_START + offset;
 
+	if ((*(m4_common.src + src_scr) & 1) != 0) {
+		/* Core is already running */
+		return -EALREADY;
+	}
+
 	/* Set CM4's VTOR to the start of it's memory */
 	pctl.action = pctl_set;
 	pctl.type = pctl_iolpsrgpr;
