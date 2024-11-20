@@ -22,4 +22,17 @@ int gpio_handleMsg(msg_t *msg, int dev);
 
 int gpio_init(void);
 
+
+int gpio_setPort(int port, uint32_t mask, uint32_t val);
+
+
+int gpio_getPort(int port, uint32_t *val);
+
+
+int gpio_setDir(int port, uint32_t mask, uint32_t val);
+
+
+int gpio_getDir(int port, uint32_t *val);
+
+
 #endif
