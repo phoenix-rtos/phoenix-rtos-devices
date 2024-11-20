@@ -31,15 +31,15 @@
 #include "uart.h"
 
 
-#define UART1_POS 0
-#define UART2_POS (UART1_POS + UART1)
-#define UART3_POS (UART2_POS + UART2)
-#define UART4_POS (UART3_POS + UART3)
-#define UART5_POS (UART4_POS + UART4)
-#define UART6_POS (UART5_POS + UART5)
-#define UART7_POS (UART6_POS + UART6)
-#define UART8_POS (UART7_POS + UART7)
-#define UART9_POS (UART8_POS + UART8)
+#define UART1_POS  0
+#define UART2_POS  (UART1_POS + UART1)
+#define UART3_POS  (UART2_POS + UART2)
+#define UART4_POS  (UART3_POS + UART3)
+#define UART5_POS  (UART4_POS + UART4)
+#define UART6_POS  (UART5_POS + UART5)
+#define UART7_POS  (UART6_POS + UART6)
+#define UART8_POS  (UART7_POS + UART7)
+#define UART9_POS  (UART8_POS + UART8)
 #define UART10_POS (UART9_POS + UART9)
 #define UART11_POS (UART10_POS + UART10)
 #define UART12_POS (UART11_POS + UART11)
@@ -94,26 +94,112 @@ struct {
 } uart_common;
 
 
-static const int uartConfig[] = { UART1, UART2, UART3, UART4, UART5, UART6, UART7, UART8, UART9, UART10, UART11, UART12 };
-
-
-static const int uartPos[] = { UART1_POS, UART2_POS, UART3_POS, UART4_POS, UART5_POS, UART6_POS,
-	UART7_POS, UART8_POS, UART9_POS, UART10_POS, UART11_POS, UART12_POS };
-
-
-static const uart_halfDuplexAction_t uartHalfDuplex[] = {
-	{ UART1_HALF_DUPLEX_GPIO },
-	{ UART2_HALF_DUPLEX_GPIO },
-	{ UART3_HALF_DUPLEX_GPIO },
-	{ UART4_HALF_DUPLEX_GPIO },
-	{ UART5_HALF_DUPLEX_GPIO },
-	{ UART6_HALF_DUPLEX_GPIO },
-	{ UART7_HALF_DUPLEX_GPIO },
-	{ UART8_HALF_DUPLEX_GPIO },
-	{ UART9_HALF_DUPLEX_GPIO },
-	{ UART10_HALF_DUPLEX_GPIO },
-	{ UART11_HALF_DUPLEX_GPIO },
-	{ UART12_HALF_DUPLEX_GPIO },
+static const struct {
+	volatile uint32_t *base;
+	int clk;
+	unsigned irq;
+	int active;
+	int pos;
+	uart_halfDuplexAction_t halfDuplexAction;
+} uart_preConfig[] = {
+	{
+		UART1_BASE,
+		UART1_CLK,
+		UART1_IRQ,
+		UART1,
+		UART1_POS,
+		{ UART1_HALF_DUPLEX_GPIO },
+	},
+	{
+		UART2_BASE,
+		UART2_CLK,
+		UART2_IRQ,
+		UART2,
+		UART2_POS,
+		{ UART2_HALF_DUPLEX_GPIO },
+	},
+	{
+		UART3_BASE,
+		UART3_CLK,
+		UART3_IRQ,
+		UART3,
+		UART3_POS,
+		{ UART3_HALF_DUPLEX_GPIO },
+	},
+	{
+		UART4_BASE,
+		UART4_CLK,
+		UART4_IRQ,
+		UART4,
+		UART4_POS,
+		{ UART4_HALF_DUPLEX_GPIO },
+	},
+	{
+		UART5_BASE,
+		UART5_CLK,
+		UART5_IRQ,
+		UART5,
+		UART5_POS,
+		{ UART5_HALF_DUPLEX_GPIO },
+	},
+	{
+		UART6_BASE,
+		UART6_CLK,
+		UART6_IRQ,
+		UART6,
+		UART6_POS,
+		{ UART6_HALF_DUPLEX_GPIO },
+	},
+	{
+		UART7_BASE,
+		UART7_CLK,
+		UART7_IRQ,
+		UART7,
+		UART7_POS,
+		{ UART7_HALF_DUPLEX_GPIO },
+	},
+	{
+		UART8_BASE,
+		UART8_CLK,
+		UART8_IRQ,
+		UART8,
+		UART8_POS,
+		{ UART8_HALF_DUPLEX_GPIO },
+	},
+#ifdef __CPU_IMXRT117X
+	{
+		UART9_BASE,
+		UART9_CLK,
+		UART9_IRQ,
+		UART9,
+		UART9_POS,
+		{ UART9_HALF_DUPLEX_GPIO },
+	},
+	{
+		UART10_BASE,
+		UART10_CLK,
+		UART10_IRQ,
+		UART10,
+		UART10_POS,
+		{ UART10_HALF_DUPLEX_GPIO },
+	},
+	{
+		UART11_BASE,
+		UART11_CLK,
+		UART11_IRQ,
+		UART11,
+		UART11_POS,
+		{ UART11_HALF_DUPLEX_GPIO },
+	},
+	{
+		UART12_BASE,
+		UART12_CLK,
+		UART12_IRQ,
+		UART12,
+		UART12_POS,
+		{ UART12_HALF_DUPLEX_GPIO },
+	},
+#endif
 };
 
 
@@ -357,10 +443,10 @@ int uart_handleMsg(msg_t *msg, int dev)
 
 	dev -= id_uart1;
 
-	if (dev < 0 || dev >= sizeof(uartConfig) / sizeof(uartConfig[0]) || !uartConfig[dev])
+	if ((dev < 0) || (dev >= (sizeof(uart_preConfig) / sizeof(uart_preConfig[0]))) || (uart_preConfig[dev].active == 0))
 		return -EINVAL;
 
-	uart = &uart_common.uarts[uartPos[dev]];
+	uart = &uart_common.uarts[uart_preConfig[dev].pos];
 
 	switch (msg->type) {
 		case mtWrite:
@@ -829,7 +915,7 @@ static void uart_initPins(void)
 void uart_klogCblk(const char *data, size_t size)
 {
 #if !ISEMPTY(UART_CONSOLE_USER)
-	libtty_write(&uart_common.uarts[uartPos[UART_CONSOLE_USER - 1]].tty_common, data, size, 0);
+	libtty_write(&uart_common.uarts[uart_preConfig[UART_CONSOLE_USER - 1].pos].tty_common, data, size, 0);
 #endif
 }
 
@@ -841,24 +927,6 @@ int uart_init(void)
 	uart_t *uart;
 	libtty_callbacks_t callbacks;
 	static const size_t fifoSzLut[] = { 1, 4, 8, 16, 32, 64, 128, 256 };
-	static const struct {
-		volatile uint32_t *base;
-		int dev;
-		unsigned irq;
-	} info[] = {
-		{ UART1_BASE, UART1_CLK, UART1_IRQ },
-		{ UART2_BASE, UART2_CLK, UART2_IRQ },
-		{ UART3_BASE, UART3_CLK, UART3_IRQ },
-		{ UART4_BASE, UART4_CLK, UART4_IRQ },
-		{ UART5_BASE, UART5_CLK, UART5_IRQ },
-		{ UART6_BASE, UART6_CLK, UART6_IRQ },
-		{ UART7_BASE, UART7_CLK, UART7_IRQ },
-		{ UART8_BASE, UART8_CLK, UART8_IRQ },
-		{ UART9_BASE, UART9_CLK, UART9_IRQ },
-		{ UART10_BASE, UART10_CLK, UART10_IRQ },
-		{ UART11_BASE, UART11_CLK, UART11_IRQ },
-		{ UART12_BASE, UART12_CLK, UART12_IRQ }
-	};
 
 	memset(&uart_common, 0, sizeof(uart_common));
 
@@ -867,19 +935,20 @@ int uart_init(void)
 	const uint32_t default_baud[] = { UART_BAUDRATES };
 	const uint32_t tty_bufsz[] = { UART_BUFSIZES };
 
-	for (i = 0, dev = 0; dev < sizeof(uartConfig) / sizeof(uartConfig[0]); ++dev) {
-		if (!uartConfig[dev])
+	for (i = 0, dev = 0; dev < (sizeof(uart_preConfig) / sizeof(uart_preConfig[0])); ++dev) {
+		if (uart_preConfig[dev].active == 0) {
 			continue;
+		}
 
 		uart = &uart_common.uarts[i++];
-		uart->base = info[dev].base;
+		uart->base = uart_preConfig[dev].base;
 		uart->dev_no = dev;
-		uart->halfDuplexAction = uartHalfDuplex[dev];
+		uart->halfDuplexAction = uart_preConfig[dev].halfDuplexAction;
 
 #ifdef __CPU_IMXRT117X
-		common_setClock(info[dev].dev, -1, -1, -1, -1, 1);
+		common_setClock(uart_preConfig[dev].clk, -1, -1, -1, -1, 1);
 #else
-		common_setClock(info[dev].dev, clk_state_run);
+		common_setClock(uart_preConfig[dev].clk, clk_state_run);
 #endif
 		if (condCreate(&uart->cond) < 0 || mutexCreate(&uart->lock) < 0)
 			return -1;
@@ -949,7 +1018,7 @@ int uart_init(void)
 		*(uart->base + ctrlr) |= (1 << 19) | (1 << 18);
 
 		beginthread(uart_intrThread, IMXRT_MULTI_PRIO, &uart->stack, sizeof(uart->stack), uart);
-		interrupt(info[dev].irq, uart_handleIntr, (void *)uart, uart->cond, NULL);
+		interrupt(uart_preConfig[dev].irq, uart_handleIntr, (void *)uart, uart->cond, NULL);
 	}
 
 	return 0;
