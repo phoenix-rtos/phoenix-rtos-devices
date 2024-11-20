@@ -36,7 +36,11 @@
 
 #include "ehci.h"
 
+#ifdef EHCI_IMX
 #define EHCI_PERIODIC_SIZE 128
+#else
+#define EHCI_PERIODIC_SIZE 1024
+#endif
 
 #ifndef EHCI_PRIO
 #define EHCI_PRIO 2
@@ -45,7 +49,11 @@
 
 static inline void ehci_memDmb(void)
 {
-	asm volatile ("dmb" ::: "memory");
+#ifdef EHCI_IMX
+	asm volatile("dmb" ::: "memory");
+#else
+	__sync_synchronize();
+#endif
 }
 
 
@@ -53,19 +61,21 @@ static void ehci_startAsync(hcd_t *hcd)
 {
 	ehci_t *ehci = (ehci_t *)hcd->priv;
 
-	*(hcd->base + asynclistaddr) = va2pa((void *)ehci->asyncList->hw);
-	*(hcd->base + usbcmd) |= USBCMD_ASE;
+	*(ehci->opbase + asynclistaddr) = va2pa((void *)ehci->asyncList->hw);
+	*(ehci->opbase + usbcmd) |= USBCMD_ASE;
 	ehci_memDmb();
-	while ((*(hcd->base + usbsts) & USBSTS_AS) == 0)
+	while ((*(ehci->opbase + usbsts) & USBSTS_AS) == 0)
 		;
 }
 
 
 static void ehci_stopAsync(hcd_t *hcd)
 {
-	*(hcd->base + usbcmd) &= ~USBCMD_ASE;
+	ehci_t *ehci = (ehci_t *)hcd->priv;
+
+	*(ehci->opbase + usbcmd) &= ~USBCMD_ASE;
 	ehci_memDmb();
-	while ((*(hcd->base + usbsts) & USBSTS_AS) != 0)
+	while ((*(ehci->opbase + usbsts) & USBSTS_AS) != 0)
 		;
 }
 
@@ -494,19 +504,19 @@ static int ehci_irqHandler(unsigned int n, void *data)
 	ehci_t *ehci = (ehci_t *)hcd->priv;
 	uint32_t currentStatus;
 
-	currentStatus = *(hcd->base + usbsts);
+	currentStatus = *(ehci->opbase + usbsts);
 	do {
-		*(hcd->base + usbsts) = currentStatus & EHCI_INTRMASK;
+		*(ehci->opbase + usbsts) = currentStatus & EHCI_INTRMASK;
 
 		ehci->status |= currentStatus;
 
 		/* For edge triggered interrupts to prevent losing interrupts,
 		 * poll the usbsts register until it is stable */
-		currentStatus = *(hcd->base + usbsts);
+		currentStatus = *(ehci->opbase + usbsts);
 	} while ((currentStatus & EHCI_INTRMASK) != 0);
 
 	if (ehci->status & USBSTS_PCI)
-		ehci->portsc = *(hcd->base + portsc1);
+		ehci->portsc = *(ehci->opbase + portsc1);
 
 	return -!(ehci->status & EHCI_INTRMASK);
 }
@@ -600,8 +610,9 @@ static void ehci_irqThread(void *arg)
 			mutexUnlock(hcd->transLock);
 		}
 
-		if (ehci->status & USBSTS_PCI)
+		if (ehci->status & USBSTS_PCI) {
 			ehci_portStatusChanged(hcd);
+		}
 	}
 }
 
@@ -677,7 +688,7 @@ static int ehci_transferEnqueue(hcd_t *hcd, usb_transfer_t *t, usb_pipe_t *pipe)
 
 	/* Data stage */
 	if ((t->type == usb_transfer_control && t->size > 0) || t->type == usb_transfer_bulk ||
-		t->type == usb_transfer_interrupt) {
+			t->type == usb_transfer_interrupt) {
 		if (ehci_qtdAdd(hcd->priv, &qtds, token, pipe->maxPacketLen, t->buffer, t->size, 1) < 0) {
 			ehci_qtdsPut(hcd->priv, &qtds);
 			t->hcdpriv = NULL;
@@ -844,27 +855,57 @@ static int ehci_init(hcd_t *hcd)
 		ehci_free(ehci);
 		return -ENOMEM;
 	}
+
 	interrupt(hcd->info->irq, ehci_irqHandler, hcd, ehci->irqCond, &ehci->irqHandle);
 
+	if (((addr_t)hcd->base & (0x20 - 1)) != 0) {
+		fprintf(stderr, "ehci: USBBASE not aligned to 32 bits\n");
+		ehci_free(ehci);
+		return -EINVAL;
+	}
+
+	/* Set USBBASE */
+	ehci->base = hcd->base;
+
+#ifdef EHCI_IMX
+	/* imx deviation: Here we don't distinguish between base/opbase addresses, as
+	 * the distance between operational register base and USBBASE is a known
+	 * constant accounted for in the register enum already. */
+	ehci->opbase = ehci->base;
+#else
+	/* In general, EHCI states that the operational register base has address:
+	 * USBBASE + CAPLENGTH */
+	ehci->opbase = (volatile int *)((char *)ehci->base + *(uint8_t *)(ehci->base + caplength));
+#endif
+
 	/* Reset controller */
-	*(hcd->base + usbcmd) |= 2;
-	while (*(hcd->base + usbcmd) & 2)
+	*(ehci->opbase + usbcmd) |= USBCMD_HCRESET;
+	while ((*(ehci->opbase + usbcmd) & USBCMD_HCRESET) != 0)
 		;
 
-	/* Set host mode */
-	*(hcd->base + usbmode) |= 3;
+#ifdef EHCI_IMX
+	/* imx deviation: Set host mode */
+	*(ehci->opbase + usbmode) |= 3;
+#endif
 
 	/* Enable interrupts */
-	*(hcd->base + usbintr) = USBSTS_UI | USBSTS_UEI;
+	*(ehci->opbase + usbintr) = USBSTS_UI | USBSTS_UEI;
 
 	/* Set periodic frame list */
-	*(hcd->base + periodiclistbase) = va2pa(ehci->periodicList);
+	*(ehci->opbase + periodiclistbase) = va2pa(ehci->periodicList);
 
-	/* Set interrupts threshold, frame list size - 128 bytes, turn controller on */
-	*(hcd->base + usbcmd) |= (1 << 4) | (3 << 2) | 1;
+#ifdef EHCI_IMX
+	/* imx deviation: Set frame list size (128 bytes) */
+	*(ehci->opbase + usbcmd) |= (3 << 2);
+#endif
+
+	/* Enable periodic scheduling, turn the controller on */
+	*(ehci->opbase + usbcmd) |= USBCMD_PSE | USBCMD_RUN;
+	while ((*(ehci->opbase + usbsts) & (USBSTS_HCH)) != 0)
+		;
 
 	/* Route all ports to this host controller */
-	*(hcd->base + configflag) = 1;
+	*(ehci->opbase + configflag) = 1;
 
 	ehci_startAsync(hcd);
 
