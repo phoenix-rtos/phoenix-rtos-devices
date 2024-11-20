@@ -6,4 +6,4 @@
 # Copyright 2019 Phoenix Systems
 #
 
-DEFAULT_COMPONENTS := pc-tty uart16550 pc-ata
+DEFAULT_COMPONENTS := pc-tty uart16550 pc-ata libusbehci umass
