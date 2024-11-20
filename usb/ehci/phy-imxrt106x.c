@@ -32,13 +32,13 @@ enum { phy_pwd, phy_pwd_set, phy_pwd_clr, phy_pwd_tog, phy_tx, phy_tx_set,
 
 /* NOTE: This should be later implemented using device tree */
 static const hcd_info_t imxrt_info[] = {
-	{
-		.type = "ehci",
+	{ .type = "ehci",
 		.hcdaddr = 0x402e0200,
-		.phyaddr = 0x400da000,
-		.clk = pctl_clk_usboh3,
-		.irq = 128
-	}
+		.phy = {
+			.addr = 0x400da000,
+			.clk = pctl_clk_usboh3,
+		},
+		.irq = 128 }
 };
 
 
@@ -104,10 +104,10 @@ void phy_enableHighSpeedDisconnect(hcd_t *hcd, int enable)
 int phy_init(hcd_t *hcd)
 {
 	/* No mmapping, since we are on NOMMU architecture */
-	hcd->phybase = (volatile int *)hcd->info->phyaddr;
+	hcd->phybase = (volatile int *)hcd->info->phy.addr;
 	hcd->base = (volatile int *)hcd->info->hcdaddr;
 
-	setClock(hcd->info->clk, clk_state_run);
+	setClock(hcd->info->phy.clk, clk_state_run);
 	phy_reset(hcd);
 	phy_config(hcd);
 
