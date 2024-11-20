@@ -33,13 +33,13 @@ enum { phy_pwd, phy_pwd_set, phy_pwd_clr, phy_pwd_tog, phy_tx, phy_tx_set,
 
 /* NOTE: This should be obtained using device tree */
 static const hcd_info_t imx6ull_info[] = {
-	{
-		.type = "ehci",
+	{ .type = "ehci",
 		.hcdaddr = 0x02184200,
-		.phyaddr = 0x020ca000,
-		.clk = pctl_clk_usboh3,
-		.irq = 74
-	}
+		.phy = {
+			.addr = 0x020ca000,
+			.clk = pctl_clk_usboh3,
+		},
+		.irq = 74 }
 };
 
 
@@ -88,7 +88,7 @@ void phy_initClock(hcd_t *hcd)
 		.action = pctl_set,
 		.type = pctl_devclock,
 		.devclock = {
-			.dev = hcd->info->clk,
+			.dev = hcd->info->phy.clk,
 			.state = 3,
 		}
 	};
@@ -103,7 +103,7 @@ void phy_disableClock(hcd_t *hcd)
 		.action = pctl_set,
 		.type = pctl_devclock,
 		.devclock = {
-			.dev = hcd->info->clk,
+			.dev = hcd->info->phy.clk,
 			.state = 0,
 		}
 	};
@@ -123,8 +123,8 @@ int phy_init(hcd_t *hcd)
 {
 	off_t offs;
 
-	offs = hcd->info->phyaddr % _PAGE_SIZE;
-	hcd->phybase = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, hcd->info->phyaddr - offs);
+	offs = hcd->info->phy.addr % _PAGE_SIZE;
+	hcd->phybase = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, hcd->info->phy.addr - offs);
 	if (hcd->phybase == MAP_FAILED)
 		return -ENOMEM;
 	hcd->phybase += (offs / sizeof(int));
