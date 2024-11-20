@@ -34,10 +34,73 @@ struct {
 } gpio_common;
 
 
-static void gpio_handleDevCtl(msg_t *msg, int port)
+int gpio_setPort(int port, uint32_t mask, uint32_t val)
 {
 	unsigned int set, clr, t;
 
+	if ((port <= 0) || (port > GPIO_PORTS)) {
+		return -EINVAL;
+	}
+
+	port -= 1;
+	set = val & mask;
+	clr = ~val & mask;
+
+	/* DR_SET & DR_CLEAR registers are not functional */
+	mutexLock(gpio_common.lock);
+	t = *(gpio_common.base[port] + gpio_dr) & ~clr;
+	*(gpio_common.base[port] + gpio_dr) = t | set;
+	mutexUnlock(gpio_common.lock);
+	return EOK;
+}
+
+
+int gpio_getPort(int port, uint32_t *val)
+{
+	if ((port <= 0) || (port > GPIO_PORTS)) {
+		return -EINVAL;
+	}
+
+	port -= 1;
+	*val = *(gpio_common.base[port] + gpio_dr);
+	return EOK;
+}
+
+
+int gpio_setDir(int port, uint32_t mask, uint32_t val)
+{
+	unsigned int set, clr, t;
+
+	if ((port <= 0) || (port > GPIO_PORTS)) {
+		return -EINVAL;
+	}
+
+	port -= 1;
+	set = val & mask;
+	clr = ~val & mask;
+
+	mutexLock(gpio_common.lock);
+	t = *(gpio_common.base[port] + gpio_gdir) & ~clr;
+	*(gpio_common.base[port] + gpio_gdir) = t | set;
+	mutexUnlock(gpio_common.lock);
+	return EOK;
+}
+
+
+int gpio_getDir(int port, uint32_t *val)
+{
+	if ((port <= 0) || (port > GPIO_PORTS)) {
+		return -EINVAL;
+	}
+
+	port -= 1;
+	*val = *(gpio_common.base[port] + gpio_gdir);
+	return EOK;
+}
+
+
+static void gpio_handleDevCtl(msg_t *msg, int port)
+{
 	multi_i_t *imsg = (multi_i_t *)msg->i.raw;
 	multi_o_t *omsg = (multi_o_t *)msg->o.raw;
 
@@ -45,32 +108,19 @@ static void gpio_handleDevCtl(msg_t *msg, int port)
 
 	switch (imsg->gpio.type) {
 		case gpio_set_port:
-			/* DR_SET & DR_CLEAR registers are not functional */
-			set = imsg->gpio.port.val & imsg->gpio.port.mask;
-			clr = ~imsg->gpio.port.val & imsg->gpio.port.mask;
-
-			mutexLock(gpio_common.lock);
-			t = *(gpio_common.base[port] + gpio_dr) & ~clr;
-			*(gpio_common.base[port] + gpio_dr) = t | set;
-			mutexUnlock(gpio_common.lock);
+			msg->o.err = gpio_setPort(port, imsg->gpio.port.mask, imsg->gpio.port.val);
 			break;
 
 		case gpio_get_port:
-			omsg->val = *(gpio_common.base[port] + gpio_dr);
+			msg->o.err = gpio_getPort(port, &omsg->val);
 			break;
 
 		case gpio_set_dir:
-			set = imsg->gpio.dir.val & imsg->gpio.dir.mask;
-			clr = ~imsg->gpio.dir.val & imsg->gpio.dir.mask;
-
-			mutexLock(gpio_common.lock);
-			t = *(gpio_common.base[port] + gpio_gdir) & ~clr;
-			*(gpio_common.base[port] + gpio_gdir) = t | set;
-			mutexUnlock(gpio_common.lock);
+			msg->o.err = gpio_setDir(port, imsg->gpio.dir.mask, imsg->gpio.dir.val);
 			break;
 
 		case gpio_get_dir:
-			omsg->val = *(gpio_common.base[port] + gpio_gdir);
+			msg->o.err = gpio_getDir(port, &omsg->val);
 			break;
 
 		default:
@@ -82,10 +132,7 @@ static void gpio_handleDevCtl(msg_t *msg, int port)
 
 int gpio_handleMsg(msg_t *msg, int dev)
 {
-	dev -= id_gpio1;
-
-	if (dev >= GPIO_PORTS)
-		return -EINVAL;
+	dev -= id_gpio1 - 1; /* Port number will be verified later */
 
 	switch (msg->type) {
 		case mtGetAttr:
