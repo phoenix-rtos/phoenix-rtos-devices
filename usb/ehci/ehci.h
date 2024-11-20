@@ -31,8 +31,11 @@
 
 #define EHCI_INTRMASK (USBSTS_PCI | USBSTS_UEI | USBSTS_UI)
 
-#define USBCMD_ASE (1 << 5)
-#define USBCMD_IAA (1 << 6)
+#define USBCMD_RUN     (1 << 0)
+#define USBCMD_HCRESET (1 << 1)
+#define USBCMD_PSE     (1 << 4)
+#define USBCMD_ASE     (1 << 5)
+#define USBCMD_IAA     (1 << 6)
 
 #define PORTSC_PTS_1 (3 << 30)
 #define PORTSC_STS   (1 << 29)
@@ -116,6 +119,9 @@
 #define EHCI_MAX_QTD_POOL 20
 #define EHCI_MAX_QH_POOL  10
 
+
+/* clang-format off */
+#ifdef EHCI_IMX
 enum {
 	/* identification regs */
 	id = 0x0, hwgeneral, hwhost, hwdevice, hwtxbuf, hwrxbuf,
@@ -136,10 +142,24 @@ enum {
 	endptctrl2, endptctrl3, endptctrl4, endptctrl5, endptctrl6, endptctrl7,
 };
 
-
 enum { usb_otg1_ctrl = 0x200, usb_otg2_ctrl, usb_otg1_phy_ctrl = usb_otg2_ctrl + 5, usb_otg2_phy_ctrl };
 
 enum { ehci_item_itd = 0, ehci_item_qh, ehci_item_sitd, ehci_item_fstn };
+#else
+enum {
+	/* capability regs */
+	caplength = 0x0, hciversion = 0x0, hcsparams, hccparams,
+	hcspportroute1, hcspportroute2 /* hcspportroute is a 64-bit register */
+};
+
+enum {
+	/* operational regs */
+	usbcmd = 0x0, usbsts, usbintr, frindex, ctrldssegment,
+	periodiclistbase = 0x5, asynclistaddr,
+	configflag = 0x10, portsc1
+};
+#endif
+/* clang-format on */
 
 
 struct qtd {
@@ -184,6 +204,7 @@ typedef struct _ehci_qh {
 
 typedef struct {
 	char stack[1024] __attribute__((aligned(8)));
+
 	uint32_t *periodicList;
 	ehci_qh_t *asyncList;
 	ehci_qh_t **periodicNodes;
@@ -197,6 +218,9 @@ typedef struct {
 	volatile unsigned portResetChange;
 	volatile unsigned status;
 	volatile unsigned portsc;
+
+	volatile int *base;
+	volatile int *opbase;
 } ehci_t;
 
 
