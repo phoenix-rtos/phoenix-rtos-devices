@@ -12,4 +12,7 @@ LOCAL_HEADERS := stm32l4-multi.h
 DEP_LIBS := libstm32l4-multi libtty libklog
 LIBS := libdummyfs libklog libposixsrv
 
+# FIXME: adapt code to array-bounds checker 
+LOCAL_CFLAGS := -Wno-array-bounds
+
 include $(binary.mk)

@@ -107,7 +107,7 @@ int sensorsspi_open(const char *devSPI, const char *devSS, oid_t *spi, oid_t *ss
 
 	/* Configure pin as output */
 	dir = dirname(path);
-	sprintf(dir, "%s/dir", dir);
+	strcat(dir, "/dir");
 
 	ntries = 10;
 	while (lookup(dir, NULL, &oid) < 0) {
@@ -127,7 +127,7 @@ int sensorsspi_open(const char *devSPI, const char *devSS, oid_t *spi, oid_t *ss
 
 	/* Raise SS pin high */
 	dir = dirname(path);
-	sprintf(dir, "%s/port", dir);
+	strcat(dir, "/port");
 
 	ntries = 10;
 	while (lookup(dir, NULL, &oid) < 0) {
