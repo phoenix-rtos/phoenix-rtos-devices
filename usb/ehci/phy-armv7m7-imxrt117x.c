@@ -40,8 +40,10 @@ static const hcd_info_t imxrt_info[] = {
 	{
 		.type = "ehci",
 		.hcdaddr = 0x40430000,
-		.phyaddr = 0x40434000,
-		.clk = pctl_lpcg_usb,
+		.phy = {
+			.addr = 0x40434000,
+			.clk = pctl_lpcg_usb,
+		},
 		.irq = usb_otg1_irq,
 	},
 #endif
@@ -49,8 +51,10 @@ static const hcd_info_t imxrt_info[] = {
 	{
 		.type = "ehci",
 		.hcdaddr = 0x4042c000,
-		.phyaddr = 0x40438000,
-		.clk = pctl_lpcg_usb,
+		.phy = {
+			.addr = 0x40438000,
+			.clk = pctl_lpcg_usb,
+		},
 		.irq = usb_otg2_irq,
 	}
 #endif
@@ -165,13 +169,13 @@ int phy_init(hcd_t *hcd)
 		return -ENODEV;
 	}
 
-	res = setClock(hcd->info->clk, 1);
+	res = setClock(hcd->info->phy.clk, 1);
 	if (res < 0) {
 		return res;
 	}
 
 	/* NOMMU architecture, mmap not needed */
-	hcd->phybase = (void *)hcd->info->phyaddr;
+	hcd->phybase = (void *)hcd->info->phy.addr;
 	hcd->base = (void *)hcd->info->hcdaddr;
 
 	phy_start(hcd);
