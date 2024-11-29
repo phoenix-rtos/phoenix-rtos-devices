@@ -421,6 +421,7 @@ static usbacm_dev_t *usbacm_devAlloc(void)
 		return NULL;
 	}
 
+	mutexLock(usbacm_common.lock);
 	/* Get next device number */
 	if (usbacm_common.devices == NULL)
 		dev->id = 0;
@@ -428,6 +429,12 @@ static usbacm_dev_t *usbacm_devAlloc(void)
 		dev->id = usbacm_common.devices->prev->id + 1;
 
 	dev->fileId = usbacm_common.lastId++;
+	dev->rfcnt = 1;
+
+	/* add this device prematurely to devices list, to mitigate race condition on
+	 * multiple concurrent insertions */
+	LIST_ADD(&usbacm_common.devices, dev);
+	mutexUnlock(usbacm_common.lock);
 
 	snprintf(dev->path, sizeof(dev->path), "/dev/usbacm%u", dev->id);
 
@@ -711,14 +718,13 @@ static int usbacm_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion)
 	} while (0);
 
 	if (err < 0) {
+		mutexLock(usbacm_common.lock);
+		/* remove the device from list, as it has been added there in devAlloc */
+		LIST_REMOVE(&usbacm_common.devices, dev);
+		mutexUnlock(usbacm_common.lock);
 		free(dev);
 		return err;
 	}
-
-	dev->rfcnt = 1;
-	mutexLock(usbacm_common.lock);
-	LIST_ADD(&usbacm_common.devices, dev);
-	mutexUnlock(usbacm_common.lock);
 
 	fprintf(stdout, "usbacm: New device: %s\n", dev->path);
 
@@ -760,9 +766,9 @@ static int usbacm_handleDeletion(usb_driver_t *drv, usb_deletion_t *del)
 		dev = next;
 	} while (dev != usbacm_common.devices);
 
-	mutexUnlock(usbacm_common.lock);
-
 	usbacm_freeAll(&usbacm_common.devicesToFree);
+
+	mutexUnlock(usbacm_common.lock);
 
 	return 0;
 }
