@@ -187,10 +187,10 @@ static const usb_device_id_t filters[] = {
 #ifdef UMASS_MOUNT_EXT2
 static int umass_registerfs(const char *name, uint8_t type, fs_mount_t mount, fs_unmount_t unmount, fs_handler_t handler)
 {
-	umass_fs_t *fs;
-
-	if ((fs = (umass_fs_t *)malloc(sizeof(umass_fs_t))) == NULL)
+	umass_fs_t *fs = malloc(sizeof(umass_fs_t));
+	if (fs == NULL) {
 		return -ENOMEM;
+	}
 
 	strcpy(fs->name, name);
 	fs->type = type;
@@ -232,21 +232,24 @@ static int _umass_transmit(umass_dev_t *dev, void *cmd, size_t clen, char *data,
 	cbw.clen = clen;
 	memcpy(cbw.cmd, cmd, clen);
 
-	if ((ret = usb_transferBulk(dev->drv, dev->pipeOut, &cbw, sizeof(cbw), usb_dir_out)) != sizeof(cbw)) {
+	ret = usb_transferBulk(dev->drv, dev->pipeOut, &cbw, sizeof(cbw), usb_dir_out);
+	if (ret != sizeof(cbw)) {
 		fprintf(stderr, "umass_transmit: usb_transferBulk OUT failed\n");
 		return -EIO;
 	}
 
 	/* Optional data transfer */
 	if (dlen > 0) {
-		if ((ret = usb_transferBulk(dev->drv, dataPipe, data, dlen, dir)) < 0) {
+		ret = usb_transferBulk(dev->drv, dataPipe, data, dlen, dir);
+		if (ret < 0) {
 			fprintf(stderr, "umass_transmit: umass_transmit data transfer failed\n");
 			return ret;
 		}
 		bytes = ret;
 	}
 
-	if ((ret = usb_transferBulk(dev->drv, dev->pipeIn, &csw, sizeof(csw), usb_dir_in)) != sizeof(csw)) {
+	ret = usb_transferBulk(dev->drv, dev->pipeIn, &csw, sizeof(csw), usb_dir_in);
+	if (ret != sizeof(csw)) {
 		fprintf(stderr, "umass_transmit: usb_transferBulk IN transfer failed\n");
 		return -EIO;
 	}
@@ -269,14 +272,17 @@ static int _umass_check(umass_dev_t *dev)
 	};
 	char testcmd[6] = { 0 };
 	mbr_t *mbr;
+	int ret;
 
-	if (_umass_transmit(dev, testcmd, sizeof(testcmd), NULL, 0, usb_dir_in) < 0) {
+	ret = _umass_transmit(dev, testcmd, sizeof(testcmd), NULL, 0, usb_dir_in);
+	if (ret < 0) {
 		fprintf(stderr, "umass_transmit failed\n");
 		return -1;
 	}
 
 	/* Read MBR */
-	if (_umass_transmit(dev, &readcmd, sizeof(readcmd), dev->buffer, UMASS_SECTOR_SIZE, usb_dir_in) < 0) {
+	ret = _umass_transmit(dev, &readcmd, sizeof(readcmd), dev->buffer, UMASS_SECTOR_SIZE, usb_dir_in);
+	if (ret < 0) {
 		fprintf(stderr, "umass_transmit 2 failed\n");
 		return -1;
 	}
@@ -286,7 +292,6 @@ static int _umass_check(umass_dev_t *dev)
 		return -1;
 
 	/* Read only the first partition */
-	/* TODO read the rest of them*/
 	dev->part.start = mbr->pent[0].start;
 	dev->part.sectors = mbr->pent[0].sectors;
 	dev->part.fs = NULL;
@@ -317,8 +322,9 @@ static umass_fs_t *umass_findfs(uint8_t type)
 	for (node = lib_rbMinimum(umass_common.fss.root); node != NULL; node = lib_rbNext(node)) {
 		fs = lib_treeof(umass_fs_t, node, node);
 
-		if (fs->type == type)
+		if (fs->type == type) {
 			return fs;
+		}
 	}
 
 	return NULL;
@@ -346,8 +352,9 @@ static int umass_readFromDev(umass_dev_t *dev, off_t offs, char *buf, size_t len
 
 	mutexLock(dev->lock);
 	ret = _umass_transmit(dev, &readcmd, sizeof(readcmd), dev->buffer, len, usb_dir_in);
-	if (ret > 0)
+	if (ret > 0) {
 		memcpy(buf, dev->buffer, len);
+	}
 	else if (len > 0) {
 		printf("read transmit failed for offs: %lld\n", offs);
 	}
@@ -362,11 +369,13 @@ static int umass_writeToDev(umass_dev_t *dev, off_t offs, const char *buf, size_
 	scsi_cdb10_t writecmd = { .opcode = 0x2a };
 	int ret;
 
-	if ((offs % UMASS_SECTOR_SIZE) || (len % UMASS_SECTOR_SIZE))
+	if ((offs % UMASS_SECTOR_SIZE) || (len % UMASS_SECTOR_SIZE)) {
 		return -EINVAL;
+	}
 
-	if (offs + len > dev->part.sectors * UMASS_SECTOR_SIZE)
+	if (offs + len > dev->part.sectors * UMASS_SECTOR_SIZE) {
 		return -EINVAL;
+	}
 
 	len = min(len, sizeof(dev->buffer));
 
@@ -435,13 +444,18 @@ static int umass_mountFromDev(umass_dev_t *dev, const char *name, oid_t *oid)
 		return -ENODEV;
 	}
 
-	if (dev->part.fs != NULL)
+	if (dev->part.fs != NULL) {
 		return -EEXIST;
+	}
 
-	if ((dev->part.fs = fs = umass_getfs(name)) == NULL)
+	fs = umass_getfs(name);
+	if (fs == NULL) {
 		return -ENOENT;
+	}
+	dev->part.fs = fs;
 
-	if (portCreate(&dev->part.port) != 0) {
+	err = portCreate(&dev->part.port);
+	if (err != 0) {
 		fprintf(stderr, "umass: Can't create partition port!\n");
 		return 1;
 	}
@@ -449,11 +463,14 @@ static int umass_mountFromDev(umass_dev_t *dev, const char *name, oid_t *oid)
 	oid->port = dev->part.port;
 	oid->id = dev->fileId;
 
-	if ((err = fs->mount(oid, UMASS_SECTOR_SIZE, umass_read, umass_write, &dev->part.fdata)) < 0)
+	err = fs->mount(oid, UMASS_SECTOR_SIZE, umass_read, umass_write, &dev->part.fdata);
+	if (err < 0) {
 		return err;
+	}
 	oid->id = err;
 
-	if ((err = beginthread(umass_fsthr, 4, dev->part.fsstack, sizeof(dev->part.fsstack), &dev->part)) < 0) {
+	err = beginthread(umass_fsthr, 4, dev->part.fsstack, sizeof(dev->part.fsstack), &dev->part);
+	if (err < 0) {
 		dev->part.fs->unmount(dev->part.fdata);
 		dev->part.fs = NULL;
 		dev->part.fdata = NULL;
@@ -480,18 +497,24 @@ static void umass_fsthr(void *arg)
 {
 	umass_part_t *part = (umass_part_t *)arg;
 	umass_req_t *req;
-	int umount = 0;
+	int umount = 0, ret;
 
 	for (;;) {
-		if ((req = (umass_req_t *)malloc(sizeof(umass_req_t))) == NULL)
+		req = (umass_req_t *)malloc(sizeof(umass_req_t));
+		if (req == NULL) {
 			continue;
+		}
 
 		req->part = part;
-		while (msgRecv(req->part->port, &req->msg, &req->rid) < 0)
-			;
 
-		if (req->msg.type == mtUmount)
+		ret = -1;
+		while (ret < 0) {
+			ret = msgRecv(req->part->port, &req->msg, &req->rid);
+		}
+
+		if (req->msg.type == mtUmount) {
 			umount = 1;
+		}
 
 		mutexLock(umass_common.rlock);
 
@@ -500,8 +523,9 @@ static void umass_fsthr(void *arg)
 		mutexUnlock(umass_common.rlock);
 		condSignal(umass_common.rcond);
 
-		if (umount)
+		if (umount != 0) {
 			endthread();
+		}
 	}
 }
 
@@ -513,8 +537,9 @@ static void umass_poolthr(void *arg)
 	for (;;) {
 		mutexLock(umass_common.rlock);
 
-		while (umass_common.rqueue == NULL)
+		while (umass_common.rqueue == NULL) {
 			condWait(umass_common.rcond, umass_common.rlock, 0);
+		}
 		req = umass_common.rqueue->prev;
 		LIST_REMOVE(&umass_common.rqueue, req);
 
@@ -669,32 +694,37 @@ static int umass_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion)
 
 	dev->drv = drv;
 	dev->instance = *insertion;
-	if ((dev->pipeCtrl = usb_open(drv, insertion, usb_transfer_control, 0)) < 0) {
+	dev->pipeCtrl = usb_open(drv, insertion, usb_transfer_control, 0);
+	if (dev->pipeCtrl < 0) {
 		free(dev);
 		fprintf(stderr, "umass: usb_open failed\n");
 		return -EINVAL;
 	}
 
-	if (usb_setConfiguration(drv, dev->pipeCtrl, 1) != 0) {
+	err = usb_setConfiguration(drv, dev->pipeCtrl, 1);
+	if (err != 0) {
 		free(dev);
 		fprintf(stderr, "umass: setConfiguration failed\n");
 		return -EINVAL;
 	}
 
-	if ((dev->pipeIn = usb_open(drv, insertion, usb_transfer_bulk, usb_dir_in)) < 0) {
+	dev->pipeIn = usb_open(drv, insertion, usb_transfer_bulk, usb_dir_in);
+	if (dev->pipeIn < 0) {
 		fprintf(stderr, "umass: pipe open failed \n");
 		free(dev);
 		return -EINVAL;
 	}
 
-	if ((dev->pipeOut = usb_open(drv, insertion, usb_transfer_bulk, usb_dir_out)) < 0) {
+	dev->pipeOut = usb_open(drv, insertion, usb_transfer_bulk, usb_dir_out);
+	if (dev->pipeOut < 0) {
 		fprintf(stderr, "umass: pipe open failed\n");
 		free(dev);
 		return -EINVAL;
 	}
 	dev->tag = 0;
 
-	if (_umass_check(dev)) {
+	err = _umass_check(dev);
+	if (err != 0) {
 		fprintf(stderr, "umass: umass_check failed\n");
 		free(dev);
 		return -EINVAL;
@@ -814,7 +844,8 @@ static int umass_init(usb_driver_t *drv, void *args)
 
 		/* Run message threads */
 		for (i = 0; i < sizeof(umass_common.mstacks) / sizeof(umass_common.mstacks[0]); i++) {
-			if ((ret = beginthread(umass_msgthr, 4, umass_common.mstacks[i], sizeof(umass_common.mstacks[i]), NULL)) != 0) {
+			ret = beginthread(umass_msgthr, 4, umass_common.mstacks[i], sizeof(umass_common.mstacks[i]), NULL);
+			if (ret != 0) {
 				fprintf(stderr, "umass: fail to beginthread ret: %d\n", ret);
 				break;
 			}
