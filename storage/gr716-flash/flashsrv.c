@@ -502,30 +502,6 @@ static int flashsrv_mountPart(flashsrv_partition_t *part)
 	(void)snprintf(path, sizeof(path), "flash%u.%s", part->fID, part->pHeader->name);
 
 	switch (part->pHeader->type) {
-		/* Raw partitions locate within single flash chip are handled by one thread */
-		case ptable_raw:
-			part->fsCtx = NULL;
-			part->oid.port = flashsrv_common.flash_memories[part->fID].rawPort;
-
-			res = create_dev(&part->oid, path);
-			if (res < 0) {
-				LOG_ERROR("create %s - err: %d", path, res);
-				return res;
-			}
-
-			if (!flashsrv_common.flash_memories[part->fID].rawActive) {
-				flashsrv_common.flash_memories[part->fID].rawActive = 1;
-
-				mem = malloc(THREAD_STACKSZ);
-				if (mem == NULL) {
-					LOG_ERROR("cannot alloc memory.");
-					return -ENOMEM;
-				}
-
-				beginthread(flashsrv_rawThread, GR716_FLASH_PRIO, mem, THREAD_STACKSZ, (void *)&flashsrv_common.flash_memories[part->fID]);
-			}
-			break;
-
 		/* Each meterfs partition is handled by separate thread */
 		case ptable_meterfs:
 			res = flashsrv_initMeterfs(part);
@@ -551,8 +527,30 @@ static int flashsrv_mountPart(flashsrv_partition_t *part)
 			beginthread(flashsrv_meterfsThread, GR716_FLASH_PRIO, mem, METERFS_STACKSZ, (void *)part);
 			break;
 
+		/* Raw partitions located within single flash chip are handled by one thread */
+		case ptable_raw:
+		/* Mount unknown partitions as raw for forward compatibility and allow FUSE-like usage */
 		default:
-			res = -EINVAL;
+			part->fsCtx = NULL;
+			part->oid.port = flashsrv_common.flash_memories[part->fID].rawPort;
+
+			res = create_dev(&part->oid, path);
+			if (res < 0) {
+				LOG_ERROR("create %s - err: %d", path, res);
+				return res;
+			}
+
+			if (!flashsrv_common.flash_memories[part->fID].rawActive) {
+				flashsrv_common.flash_memories[part->fID].rawActive = 1;
+
+				mem = malloc(THREAD_STACKSZ);
+				if (mem == NULL) {
+					LOG_ERROR("cannot alloc memory.");
+					return -ENOMEM;
+				}
+
+				beginthread(flashsrv_rawThread, GR716_FLASH_PRIO, mem, THREAD_STACKSZ, (void *)&flashsrv_common.flash_memories[part->fID]);
+			}
 			break;
 	}
 
