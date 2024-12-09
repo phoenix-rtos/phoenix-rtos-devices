@@ -257,7 +257,13 @@ static int flashsrv_fsEraseSectorf0(struct _meterfs_devCtx_t *devCtx, off_t offs
 {
 	(void)devCtx;
 
-	return flashsrv_eraseSector(0, offs);
+	const unsigned int fID = 0;
+
+	/* meterfs: drop mutex between sector erases to prevent starving other threads */
+	mutexUnlock(flashsrv_common.flash_memories[fID].lock);
+	mutexLock(flashsrv_common.flash_memories[fID].lock);
+
+	return flashsrv_eraseSector(fID, offs);
 }
 
 
@@ -265,7 +271,17 @@ static int flashsrv_fsEraseSectorf1(struct _meterfs_devCtx_t *devCtx, off_t offs
 {
 	(void)devCtx;
 
-	return flashsrv_eraseSector(1, offs);
+	const unsigned int fID = 1;
+
+	if (fID >= FLASH_MEMORIES_NO) {
+		return -EINVAL;
+	}
+
+	/* meterfs: drop mutex between sector erases to prevent starving other threads */
+	mutexUnlock(flashsrv_common.flash_memories[fID].lock);
+	mutexLock(flashsrv_common.flash_memories[fID].lock);
+
+	return flashsrv_eraseSector(fID, offs);
 }
 
 
