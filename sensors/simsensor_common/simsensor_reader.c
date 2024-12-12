@@ -34,7 +34,7 @@ static int reader_getFieldLLong(const char **actField, long long *res)
 	char *endptr;
 	long long value = strtoll(*actField, &endptr, 10);
 
-	if (!(*endptr == READER_DATA_SEPARATOR || *endptr == '\0' || *endptr == '\n' || *endptr == '\r' || *actField == endptr)) {
+	if (!(*endptr == READER_DATA_SEPARATOR || *endptr == '\0' || *endptr == '\n' || *endptr == '\r') || *actField == endptr) {
 		printf("simsensor: Invalid file\n");
 		return -1;
 	}
