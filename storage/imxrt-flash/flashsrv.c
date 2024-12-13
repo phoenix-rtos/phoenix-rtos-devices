@@ -732,6 +732,7 @@ static void flashsrv_devThread(void *arg)
 
 static int flashsrv_initMeterfs(flashsrv_partition_t *part)
 {
+	int res;
 	meterfs_ctx_t *ctx;
 
 	part->fsCtx = calloc(1, sizeof(meterfs_ctx_t));
@@ -759,7 +760,11 @@ static int flashsrv_initMeterfs(flashsrv_partition_t *part)
 
 	ctx->keyInit = false;
 
-	if (meterfs_init(ctx) < 0) {
+	mutexLock(flashsrv_common.flash_memories[part->fID].lock);
+	res = meterfs_init(ctx);
+	mutexUnlock(flashsrv_common.flash_memories[part->fID].lock);
+
+	if (res < 0) {
 		LOG_ERROR("imxrt-flashsrv: init meterfs at flash: %u, partition: %u.", part->fID, part->oid.id);
 		return -1;
 	}
