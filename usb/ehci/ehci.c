@@ -29,12 +29,18 @@
 #include <usbhost.h>
 #include <stdio.h>
 
+#include <board_config.h>
+
 #include <hub.h>
 #include <hcd.h>
 
 #include "ehci.h"
 
 #define EHCI_PERIODIC_SIZE 128
+
+#ifndef EHCI_PRIO
+#define EHCI_PRIO 2
+#endif
 
 
 static inline void ehci_memDmb(void)
@@ -834,7 +840,7 @@ static int ehci_init(hcd_t *hcd)
 	for (i = 0; i < EHCI_PERIODIC_SIZE; ++i)
 		ehci->periodicList[i] = QH_PTR_INVALID;
 
-	if (beginthread(ehci_irqThread, 2, ehci->stack, sizeof(ehci->stack), hcd) != 0) {
+	if (beginthread(ehci_irqThread, EHCI_PRIO, ehci->stack, sizeof(ehci->stack), hcd) != 0) {
 		ehci_free(ehci);
 		return -ENOMEM;
 	}
