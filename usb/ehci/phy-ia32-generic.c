@@ -78,7 +78,11 @@ int hcd_getInfo(const hcd_info_t **info)
 
 		sprintf(hcd_info[i].type, "ehci");
 		hcd_info[i].hcdaddr = pctl.pci.dev.resources[0].base;
+
+		/* TODO do ACPI _PRT lookup instead */
+		fprintf(stderr, "phy: choosing default irq from pci\n");
 		hcd_info[i].irq = pctl.pci.dev.irq;
+
 		hcd_info[i].pci_devId.bus = pctl.pci.dev.bus;
 		hcd_info[i].pci_devId.dev = pctl.pci.dev.dev;
 		hcd_info[i].pci_devId.func = pctl.pci.dev.func;
