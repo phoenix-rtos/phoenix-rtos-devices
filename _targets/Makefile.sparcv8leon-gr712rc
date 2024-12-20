@@ -6,4 +6,4 @@
 # Copyright 2023 Phoenix Systems
 #
 
-DEFAULT_COMPONENTS := grlib-multi gr712rc-flash
+DEFAULT_COMPONENTS := grlib-multi flashdrv
