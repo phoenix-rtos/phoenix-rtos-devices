@@ -3,8 +3,8 @@
  *
  * ehci root hub implementation
  *
- * Copyright 2021 Phoenix Systems
- * Author: Maciej Purski
+ * Copyright 2021, 2024 Phoenix Systems
+ * Author: Maciej Purski, Adam Greloch
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -39,7 +39,12 @@ static const struct {
 		.bcdUSB = 0x0200,
 		.bDeviceClass = USB_CLASS_HUB,
 		.bDeviceSubClass = 0,
+#ifdef EHCI_IMX
+		/* imx deviation: the controller has an embedded TT */
 		.bDeviceProtocol = 1, /* Single TT */
+#else
+		.bDeviceProtocol = 0, /* Root hub */
+#endif
 		.bMaxPacketSize0 = 64,
 		.idVendor = 0x0,
 		.idProduct = 0x0,
@@ -88,9 +93,13 @@ static void ehci_resetPort(hcd_t *hcd, int port)
 {
 	ehci_t *ehci = (ehci_t *)hcd->priv;
 	volatile int *reg = (ehci->opbase + portsc1) + (port - 1);
+	int tmp;
 
-	*reg &= ~PORTSC_ENA;
-	*reg |= PORTSC_PR;
+	log_debug("resetting port %d", port);
+
+	tmp = *reg;
+	tmp &= ~(PORTSC_ENA | PORTSC_PR);
+	*reg = tmp | PORTSC_PR;
 
 #ifdef EHCI_IMX
 	/*
@@ -101,9 +110,26 @@ static void ehci_resetPort(hcd_t *hcd, int port)
 		;
 	usleep(20 * 1000);
 #else
+	/* Wait for reset to complete */
+	usleep(50 * 1000);
+
+	/* Stop the reset sequence */
+	*reg = tmp;
+
+	/* Wait until reset sequence stops */
+	while ((*reg & PORTSC_PR) != 0)
+		;
+
 	usleep(20 * 1000);
-	*reg &= ~PORTSC_PR;
 #endif
+
+	tmp = *reg;
+
+	log_debug("port %d reset done, status after reset=%x", port, tmp);
+
+	if ((tmp & PORTSC_ENA) == 0) {
+		log_debug("device on port %d is not a highspeed device", port);
+	}
 
 	ehci->portResetChange = 1 << port;
 
@@ -158,10 +184,16 @@ static int ehci_getPortStatus(usb_dev_t *hub, int port, usb_port_status_t *statu
 	if (ehci->portResetChange & (1 << port))
 		status->wPortChange |= USB_PORT_STAT_C_RESET;
 
+#ifdef EHCI_IMX
 	if ((val & PORTSC_PSPD) >> 26 == 1)
 		status->wPortStatus |= USB_PORT_STAT_LOW_SPEED;
 	else if ((val & PORTSC_PSPD) >> 26 == 2)
 		status->wPortStatus |= USB_PORT_STAT_HIGH_SPEED;
+#endif
+
+	/* TODO handle low/full speed devices on ia32 */
+
+	status->wPortStatus |= USB_PORT_STAT_HIGH_SPEED;
 
 	/* TODO: set indicator */
 
@@ -334,11 +366,13 @@ uint32_t ehci_getHubStatus(usb_dev_t *hub)
 	ehci_t *ehci = (ehci_t *)hcd->priv;
 
 	for (i = 0; i < hub->nports; i++) {
-		val = ehci->portsc;
+		val = *(ehci->opbase + portsc1 + i);
+		log_debug("(INT%d) port %d portsc: %x", hcd->info->irq, i + 1, val);
 		if (val & (PORTSC_CSC | PORTSC_PEC | PORTSC_OCC))
 			status |= 1 << (i + 1);
 	}
 
+	log_debug("(INT%d): status: %x", hcd->info->irq, status);
 	return status;
 }
 
