@@ -179,10 +179,16 @@ static int ehci_getPortStatus(usb_dev_t *hub, int port, usb_port_status_t *statu
 	if (ehci->portResetChange & (1 << port))
 		status->wPortChange |= USB_PORT_STAT_C_RESET;
 
+#ifdef EHCI_IMX
 	if ((val & PORTSC_PSPD) >> 26 == 1)
 		status->wPortStatus |= USB_PORT_STAT_LOW_SPEED;
 	else if ((val & PORTSC_PSPD) >> 26 == 2)
 		status->wPortStatus |= USB_PORT_STAT_HIGH_SPEED;
+#endif
+
+	/* TODO handle low/full speed devices on ia32 */
+
+	status->wPortStatus |= USB_PORT_STAT_HIGH_SPEED;
 
 	/* TODO: set indicator */
 

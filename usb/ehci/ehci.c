@@ -165,6 +165,32 @@ static void ehci_qtdsPut(ehci_t *ehci, ehci_qtd_t **head)
 }
 
 
+static void
+ehci_qtdDump(ehci_qtd_t *qtd, bool dump_bufs)
+{
+	uint32_t s;
+
+	s = qtd->hw->token;
+	log_debug("status=0x%08x: toggle=%d bytes=0x%x ioc=%d c_page=0x%x",
+			s, s >> 31, (s >> 16) & 0x7fff,
+			(s >> 15) & 0b1, (s >> 12) & 0b111);
+	fprintf(stderr, "  cerr=%d pid=%d stat=%s%s%s%s%s%s%s%s\n",
+			(s >> 10) & 0b11, (s >> 8) & 0b11,
+			(s & QTD_ACTIVE) ? "ACTIVE" : "NOT_ACTIVE",
+			(s & QTD_HALTED) ? "-HALTED" : "",
+			(s & QTD_BUFERR) ? "-BUFERR" : "",
+			(s & QTD_BABBLE) ? "-BABBLE" : "",
+			(s & QTD_XACT) ? "-XACT" : "",
+			(s & QTD_MISSED_UFRAME) ? "-MISSED" : "",
+			(s & QTD_SPLIT) ? "-SPLIT" : "",
+			(s & QTD_PING) ? "-PING" : "");
+
+	for (s = 0; dump_bufs && s < 5; s++) {
+		fprintf(stderr, "  buf[%d]=0x%08x  buf_hi[%d]=0x%08x\n", s, qtd->hw->buf[s], s, qtd->hw->buf_hi[s]);
+	}
+}
+
+
 static ehci_qtd_t *ehci_qtdAlloc(ehci_t *ehci, int pid, size_t maxpacksz, char *data, size_t *size, int datax)
 {
 	ehci_qtd_t *qtd;
@@ -214,6 +240,7 @@ static ehci_qtd_t *ehci_qtdAlloc(ehci_t *ehci, int pid, size_t maxpacksz, char *
 			qtd->hw->buf_hi[i] = 0;
 		}
 
+		log_debug("setting len to %d", bytes);
 		qtd->hw->token |= bytes << 16;
 		*size -= bytes;
 	}
@@ -305,6 +332,8 @@ static void ehci_qhConf(ehci_qh_t *qh, usb_pipe_t *pipe)
 	qh->hw->info[0] |= (pipe->dev->speed << 12);
 	qh->hw->info[0] |= (pipe->type == usb_transfer_control) ? QH_DT : 0;
 	qh->hw->info[0] |= (pipe->maxPacketLen << 16);
+
+	log_debug("qh.eps: %d\n", (qh->hw->info[0] >> 12) & 0b11);
 
 	if (pipe->type == usb_transfer_control && pipe->dev->speed != usb_high_speed)
 		qh->hw->info[0] |= QH_CTRL;
@@ -540,9 +569,10 @@ static int ehci_qtdsCheck(hcd_t *hcd, usb_transfer_t *t, int *status)
 
 	*status = 0;
 	do {
-		log_debug("qtds->hw->token=%x", qtds->hw->token);
-		if (qtds->hw->token & (QTD_XACT | QTD_BABBLE | QTD_BUFERR))
+		ehci_qtdDump(qtds, false);
+		if (qtds->hw->token & (QTD_XACT | QTD_BABBLE | QTD_BUFERR | QTD_HALTED)) {
 			error++;
+		}
 
 		qtds = qtds->next;
 	} while (qtds != t->hcdpriv);
@@ -681,7 +711,7 @@ static int ehci_qtdAdd(ehci_t *ehci, ehci_qtd_t **list, int token, size_t maxpac
 			return -ENOMEM;
 
 		LIST_ADD(list, tmp);
-		dt = !dt;
+		dt = 1 - dt;
 	} while (remaining > 0);
 
 	return 0;
@@ -704,19 +734,9 @@ static int ehci_transferEnqueue(hcd_t *hcd, usb_transfer_t *t, usb_pipe_t *pipe)
 	ehci_qh_t *qh;
 	ehci_qtd_t *qtds = NULL;
 	int token = t->direction == usb_dir_in ? in_token : out_token;
-	int status, ret;
 
 	if (usb_isRoothub(pipe->dev))
 		return ehci_roothubReq(pipe->dev, t);
-
-	// ???
-	// ret = ehci_qtdsCheck(hcd, t, &status);
-	// if (ret != 0) {
-	// 	/* Transfer completed early */
-	// 	t->hcdpriv = NULL;
-	// 	usb_transferFinished(t, status);
-	// 	return 0;
-	// }
 
 	if (t->type == usb_transfer_control) {
 		log_debug("transferEnqueue setup bRequest=%d", t->setup->bRequest);
