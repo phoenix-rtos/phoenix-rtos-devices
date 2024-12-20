@@ -23,7 +23,8 @@
 #include <hcd.h>
 
 
-#define EHCI_PROGIF (0x20)
+#define EHCI_MAP_SIZE (0x1000)
+#define EHCI_PROGIF   (0x20)
 
 
 int hcd_getInfo(const hcd_info_t **info)
@@ -73,7 +74,21 @@ int hcd_getInfo(const hcd_info_t **info)
 
 		sprintf(hcd_info[i].type, "ehci");
 		hcd_info[i].hcdaddr = pctl.pci.dev.resources[0].base;
-		hcd_info[i].irq = pctl.pci.dev.irq;
+		if (pctl.pci.dev.dev == 0x1a) {
+			if (pctl.pci.dev.pin == 1) {
+				hcd_info[i].irq = 16;
+			}
+			else {
+				hcd_info[i].irq = 18;
+			}
+		}
+		else if (pctl.pci.dev.dev == 0x1d) {
+			hcd_info[i].irq = 23;
+		}
+		else {
+			printf("choosing default irq from pci\n");
+			hcd_info[i].irq = pctl.pci.dev.irq;
+		}
 		hcd_info[i].pci_devId.bus = pctl.pci.dev.bus;
 		hcd_info[i].pci_devId.dev = pctl.pci.dev.dev;
 		hcd_info[i].pci_devId.func = pctl.pci.dev.func;
@@ -158,11 +173,12 @@ int phy_init(hcd_t *hcd)
 	hcd->phybase = NULL;
 
 	offs = hcd->info->hcdaddr % _PAGE_SIZE;
-	hcd->base = mmap(NULL, 2 * _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, hcd->info->hcdaddr - offs);
+	hcd->base = mmap(NULL, EHCI_MAP_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, hcd->info->hcdaddr - offs);
 	if (hcd->base == MAP_FAILED) {
 		return -ENOMEM;
 	}
 	hcd->base += (offs / sizeof(int));
+	printf("hcd->base: %p\n", hcd->base);
 
 	phy_config(hcd);
 

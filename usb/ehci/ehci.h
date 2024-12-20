@@ -29,13 +29,14 @@
 #define USBSTS_UEI   (1 << 1)
 #define USBSTS_UI    (1 << 0)
 
-#define EHCI_INTRMASK (USBSTS_PCI | USBSTS_UEI | USBSTS_UI)
+#define EHCI_INTRMASK (USBSTS_SEI | USBSTS_PCI | USBSTS_UEI | USBSTS_UI)
 
 #define USBCMD_RUN     (1 << 0)
 #define USBCMD_HCRESET (1 << 1)
 #define USBCMD_PSE     (1 << 4)
 #define USBCMD_ASE     (1 << 5)
 #define USBCMD_IAA     (1 << 6)
+#define USBCMD_LRESET  (1 << 7)
 
 #define PORTSC_PTS_1 (3 << 30)
 #define PORTSC_STS   (1 << 29)
@@ -111,6 +112,8 @@
 /* 'change' bits cleared by writing 1 */
 #define PORTSC_CBITS (PORTSC_CSC | PORTSC_PEC | PORTSC_OCC)
 
+#define HCCPARAMS_64BIT_ADDRS (1 << 0)
+
 
 #define EHCI_PAGE_SIZE        4096
 #define EHCI_PERIODIC_ALIGN   4096
@@ -161,12 +164,15 @@ enum {
 #endif
 /* clang-format on */
 
+/* TODO: buf_hi is required only on ia32 if hcd is capable of 64-bit addressing
+ * Shrink it on smaller targets to save memory? */
 
 struct qtd {
 	uint32_t next;
 	uint32_t altnext;
 	uint32_t token;
 	uint32_t buf[5];
+	uint32_t buf_hi[5];
 };
 
 
@@ -180,6 +186,7 @@ struct qh {
 	uint32_t altnextQtd;
 	uint32_t token;
 	uint32_t buf[5];
+	uint32_t buf_hi[5];
 };
 
 
@@ -217,7 +224,6 @@ typedef struct {
 	handle_t irqCond, irqHandle, irqLock, asyncLock, periodicLock;
 	volatile unsigned portResetChange;
 	volatile unsigned status;
-	volatile unsigned portsc;
 
 	volatile int *base;
 	volatile int *opbase;
@@ -234,6 +240,33 @@ int ehci_roothubReq(usb_dev_t *hub, usb_transfer_t *t);
 
 
 uint32_t ehci_getHubStatus(usb_dev_t *hub);
+
+
+#define EHCI_TRACE     1
+#define EHCI_DEBUG     1
+#define EHCI_DEBUG_IRQ 1
+
+#define COL_RED    "\033[1;31m"
+#define COL_NORMAL "\033[0m"
+#define LOG_TAG    "ehci: "
+
+#define log_error(fmt, ...) \
+	do { \
+		if (1) \
+			fprintf(stderr, COL_RED LOG_TAG fmt "\n" COL_NORMAL, ##__VA_ARGS__); \
+	} while (0)
+
+#define log_debug(fmt, ...) \
+	do { \
+		if (EHCI_DEBUG != 0) \
+			fprintf(stderr, LOG_TAG fmt "\n", ##__VA_ARGS__); \
+	} while (0)
+
+#define log_trace(fmt, ...) \
+	do { \
+		if (EHCI_TRACE != 0) \
+			fprintf(stderr, LOG_TAG fmt "\n", ##__VA_ARGS__); \
+	} while (0)
 
 
 #endif /* _USB_EHCI_H_ */

@@ -88,9 +88,13 @@ static void ehci_resetPort(hcd_t *hcd, int port)
 {
 	ehci_t *ehci = (ehci_t *)hcd->priv;
 	volatile int *reg = (ehci->opbase + portsc1) + (port - 1);
+	int tmp;
 
-	*reg &= ~PORTSC_ENA;
-	*reg |= PORTSC_PR;
+	log_debug("resetting port %d", port);
+
+	tmp = *reg;
+	tmp &= ~(PORTSC_ENA | PORTSC_PR);
+	*reg = tmp | PORTSC_PR;
 
 #ifdef EHCI_IMX
 	/*
@@ -101,9 +105,26 @@ static void ehci_resetPort(hcd_t *hcd, int port)
 		;
 	usleep(20 * 1000);
 #else
+	/* Wait for reset to complete */
+	usleep(50 * 1000);
+
+	/* Stop the reset sequence */
+	*reg = tmp;
+
+	/* Wait until reset sequence stops */
+	while ((*reg & PORTSC_PR) != 0)
+		;
+
 	usleep(20 * 1000);
-	*reg &= ~PORTSC_PR;
 #endif
+
+	tmp = *reg;
+
+	log_debug("port %d reset done, status after reset=%x", port, tmp);
+
+	if ((tmp & PORTSC_ENA) == 0) {
+		log_debug("device on port %d is not a highspeed device", port);
+	}
 
 	ehci->portResetChange = 1 << port;
 
@@ -172,6 +193,8 @@ static int ehci_getPortStatus(usb_dev_t *hub, int port, usb_port_status_t *statu
 static int ehci_setPortFeature(usb_dev_t *hub, int port, uint16_t wValue)
 {
 	hcd_t *hcd = hub->hcd;
+	// ehci_t *ehci = (ehci_t *)hcd->priv;
+	// volatile int *portsc = ehci->opbase + portsc1 + port - 1;
 
 	if (port > hub->nports)
 		return -1;
@@ -182,6 +205,10 @@ static int ehci_setPortFeature(usb_dev_t *hub, int port, uint16_t wValue)
 			break;
 		case USB_PORT_FEAT_SUSPEND:
 		case USB_PORT_FEAT_POWER:
+			/* FIXME this disables/crashes the ports for some reason
+			   possibly, the controller doesn't like this to be blindly set
+			   if it doesn't support PPC */
+			// *portsc |= PORTSC_PP;
 		case USB_PORT_FEAT_TEST:
 		case USB_PORT_FEAT_INDICATOR:
 			/* TODO */
@@ -334,11 +361,13 @@ uint32_t ehci_getHubStatus(usb_dev_t *hub)
 	ehci_t *ehci = (ehci_t *)hcd->priv;
 
 	for (i = 0; i < hub->nports; i++) {
-		val = ehci->portsc;
+		val = *(ehci->opbase + portsc1 + i);
+		log_debug("(INT%d) port %d portsc: %x", hcd->info->irq, i + 1, val);
 		if (val & (PORTSC_CSC | PORTSC_PEC | PORTSC_OCC))
 			status |= 1 << (i + 1);
 	}
 
+	log_debug("(INT%d): status: %x", hcd->info->irq, status);
 	return status;
 }
 
@@ -351,11 +380,14 @@ int ehci_roothubReq(usb_dev_t *hub, usb_transfer_t *t)
 
 	/* It will be finished, when a port status changes */
 	if (t->type == usb_transfer_interrupt) {
+		log_debug("transfer interrupt");
 		/* Enable Port Status Changed interrupt if this is a first call */
 		if ((*(ehci->opbase + usbintr) & USBSTS_PCI) == 0)
 			*(ehci->opbase + usbintr) |= USBSTS_PCI;
 		return 0;
 	}
+
+	log_debug("roothubReq: bRequest=%d, wIndex=%d, wValue=%d", setup->bRequest, setup->wIndex, setup->wValue);
 
 	switch (setup->bRequest) {
 		case REQ_GET_STATUS:
