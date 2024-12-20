@@ -23,7 +23,19 @@
 #include <sys/minmax.h>
 
 #include <board_config.h>
+#if defined(__CPU_ZYNQ7000)
 #include <phoenix/arch/armv7a/zynq7000/zynq7000.h>
+
+#define QSPI_INTERRUPT 51
+#define QSPI_BASE      0xe000d000
+#elif defined(__CPU_ZYNQMP)
+#include <phoenix/arch/aarch64/zynqmp/zynqmp.h>
+
+#define QSPI_INTERRUPT 47
+#define QSPI_BASE      0x00ff0f0000
+#else
+#error "Unsupported platform"
+#endif
 
 
 /* clang-format off */
@@ -44,7 +56,7 @@ struct {
 static inline void qspi_dataMemoryBarrier(void)
 {
 	/* clang-format off */
-	__asm__ volatile ("dmb");
+	__asm__ volatile ("dmb sy");
 	/* clang-format on */
 }
 
@@ -336,14 +348,15 @@ static void qspi_IOMode(void)
 }
 
 
-static int qspi_setAmbaClk(int dev, unsigned int state)
+#if defined(__CPU_ZYNQ7000)
+static int qspi_activateClock(unsigned int state)
 {
 	platformctl_t ctl;
 
 	ctl.action = pctl_set;
 	ctl.type = pctl_ambaclock;
 
-	ctl.ambaclock.dev = dev;
+	ctl.ambaclock.dev = pctl_amba_lqspi_clk;
 	ctl.ambaclock.state = state;
 
 	return platformctl(&ctl);
@@ -403,6 +416,70 @@ static int qspi_setPin(uint32_t pin)
 }
 
 
+#elif defined(__CPU_ZYNQMP)
+static int qspi_activateClock(unsigned int state)
+{
+	platformctl_t ctl;
+
+	ctl.action = pctl_set;
+	ctl.type = pctl_devreset;
+
+	ctl.devreset.dev = pctl_devreset_lpd_qspi;
+	ctl.devreset.state = !state;
+
+	return platformctl(&ctl);
+}
+
+
+static int qspi_initClk(void)
+{
+	platformctl_t ctl;
+
+	ctl.action = pctl_set;
+	ctl.type = pctl_devclock;
+
+	ctl.devclock.dev = pctl_devclock_lpd_qspi;
+	ctl.devclock.src = 0;
+	ctl.devclock.div0 = 5;
+	ctl.devclock.div1 = 0;
+	ctl.devclock.active = 0x1;
+
+	return platformctl(&ctl);
+}
+
+
+static int qspi_setPin(uint32_t pin)
+{
+	platformctl_t ctl;
+
+	/* Pin should not be configured by the driver */
+	if (pin < 0) {
+		return EOK;
+	}
+
+	if (pin > pctl_mio_pin_06) {
+		return -EINVAL;
+	}
+
+	ctl.action = pctl_set;
+	ctl.type = pctl_mio;
+
+	ctl.mio.pin = pin;
+	ctl.mio.l0 = 0x1;
+	ctl.mio.l1 = 0;
+	ctl.mio.l2 = 0;
+	ctl.mio.l3 = 0;
+	ctl.mio.config = 0;
+
+	if (pin == QSPI_CS) {
+		ctl.mio.config |= PCTL_MIO_PULL_UP_nDOWN | PCTL_MIO_PULL_ENABLE;
+	}
+
+	return platformctl(&ctl);
+}
+#endif
+
+
 static int qspi_initPins(void)
 {
 	int res, i;
@@ -441,7 +518,7 @@ int qspi_deinit(void)
 
 	munmap((void *)qspi_common.base, _PAGE_SIZE);
 
-	return qspi_setAmbaClk(pctl_amba_lqspi_clk, 0);
+	return qspi_activateClock(0);
 }
 
 
@@ -457,7 +534,7 @@ int qspi_init(void)
 	}
 
 	/* Enable clock */
-	res = qspi_setAmbaClk(pctl_amba_lqspi_clk, 1);
+	res = qspi_activateClock(1);
 	if (res < 0) {
 		return -EIO;
 	}
@@ -468,16 +545,16 @@ int qspi_init(void)
 		return -EIO;
 	}
 
-	qspi_common.base = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, 0xe000d000);
+	qspi_common.base = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, QSPI_BASE);
 	if (qspi_common.base == MAP_FAILED) {
-		qspi_setAmbaClk(pctl_amba_lqspi_clk, 0);
+		qspi_activateClock(0);
 		return -ENOMEM;
 	}
 
 	res = condCreate(&qspi_common.cond);
 	if (res < 0) {
 		munmap((void *)qspi_common.base, _PAGE_SIZE);
-		qspi_setAmbaClk(pctl_amba_lqspi_clk, 0);
+		qspi_activateClock(0);
 		return -ENOENT;
 	}
 
@@ -486,11 +563,11 @@ int qspi_init(void)
 	if (res < 0) {
 		munmap((void *)qspi_common.base, _PAGE_SIZE);
 		resourceDestroy(qspi_common.cond);
-		qspi_setAmbaClk(pctl_amba_lqspi_clk, 0);
+		qspi_activateClock(0);
 		return -ENOENT;
 	}
 
-	interrupt(51, qspi_irqHandler, NULL, qspi_common.cond, &qspi_common.inth);
+	interrupt(QSPI_INTERRUPT, qspi_irqHandler, NULL, qspi_common.cond, &qspi_common.inth);
 
 	qspi_IOMode();
 

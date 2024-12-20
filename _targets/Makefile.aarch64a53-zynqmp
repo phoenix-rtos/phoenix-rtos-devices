@@ -1,0 +1,9 @@
+#
+# Makefile for Phoenix-RTOS 3 device drivers
+#
+# ZynqMP drivers
+#
+# Copyright 2021 Phoenix Systems
+#
+
+DEFAULT_COMPONENTS := zynq7000-uart zynq7000-flash
