@@ -19,6 +19,7 @@
 #include <phoenix/arch/ia32/ia32.h>
 #include <stdio.h>
 #include <sys/platform.h>
+#include <libacpi.h>
 
 #include <hcd.h>
 
@@ -31,8 +32,10 @@ int hcd_getInfo(const hcd_info_t **info)
 {
 	platformctl_t pctl;
 	int i, err;
+	uint8_t irq;
 
 	hcd_info_t *hcd_info = NULL;
+	acpi_device_t device = { 0 };
 
 	pctl.action = pctl_get;
 	pctl.type = pctl_pci;
@@ -73,12 +76,21 @@ int hcd_getInfo(const hcd_info_t **info)
 		memset((void *)(hcd_info + i), 0, sizeof(hcd_info_t));
 
 		sprintf(hcd_info[i].type, "ehci");
+
+		/* TODO make common pci/acpi/pctl pci dev typedef */
+		device.type = acpi_pci;
+		device.pci.bus = pctl.pci.dev.bus;
+		device.pci.dev = pctl.pci.dev.dev;
+		device.pci.func = pctl.pci.dev.func;
+
+		err = acpi_getIrq(&device, &irq);
+		if (err < 0) {
+			fprintf(stderr, "phy: failed to get irq from acpi, defaulting to pci irq\n");
+		}
+
+		hcd_info[i].irq = err == 0 ? irq : pctl.pci.dev.irq;
+
 		hcd_info[i].hcdaddr = pctl.pci.dev.resources[0].base;
-
-		/* TODO do ACPI _PRT lookup instead */
-		fprintf(stderr, "phy: choosing default irq from pci\n");
-		hcd_info[i].irq = pctl.pci.dev.irq;
-
 		hcd_info[i].pci_devId.bus = pctl.pci.dev.bus;
 		hcd_info[i].pci_devId.dev = pctl.pci.dev.dev;
 		hcd_info[i].pci_devId.func = pctl.pci.dev.func;

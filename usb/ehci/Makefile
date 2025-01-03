@@ -12,4 +12,8 @@ ifneq (,$(findstring imx,$(TARGET_SUBFAMILY)))
  CFLAGS += -DEHCI_IMX
 endif
 
+ifeq ($(TARGET_FAMILY),ia32)
+ DEPS += libacpi
+endif
+
 include $(static-lib.mk)
