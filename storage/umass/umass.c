@@ -28,6 +28,8 @@
 
 #include <posix/idtree.h>
 
+#define UMASS_DEBUG 0
+
 #ifdef UMASS_MOUNT_EXT2
 #include <libext2.h>
 #endif
@@ -37,53 +39,28 @@
 
 #include "../pc-ata/mbr.h"
 #include "umass.h"
+#include "scsi.h"
 
 #define UMASS_N_MSG_THREADS  2
 #define UMASS_N_POOL_THREADS 4
+
+#define UMASS_TRANSMIT_RETRIES 3
+#define UMASS_INIT_RETRIES     10
 
 #define UMASS_SECTOR_SIZE 512
 
 #define UMASS_WRITE 0
 #define UMASS_READ  0x80
 
-#define CBW_SIG 0x43425355
-#define CSW_SIG 0x53425355
+#define USB_SUBCLASS_SCSI 0x06
+#define USB_PROTOCOL_BULK 0x50
 
 /* clang-format off */
 #define LOG(str_, ...) do { printf("umass: " str_ "\n", ##__VA_ARGS__); } while (0)
-#define LOG_ERROR(str_, ...) LOG(__FILE__ ":%d error: " str_, __LINE__, ##__VA_ARGS__)
-#define TRACE(str_, ...) do { if (0) LOG(__FILE__ ":%d TRACE: " str_, __LINE__, ##__VA_ARGS__); } while (0)
+#define LOG_ERROR(str_, ...) LOG("error: " str_, ##__VA_ARGS__)
+#define TRACE(str_, ...) do { if (0) LOG("trace (%d): " str_, __LINE__, ##__VA_ARGS__); } while (0)
+#define DEBUG(str_, ...) do { if (UMASS_DEBUG) LOG("debug: " str_, ##__VA_ARGS__); } while (0)
 /* clang-format on */
-
-
-typedef struct {
-	uint32_t sig;
-	uint32_t tag;
-	uint32_t dlen;
-	uint8_t flags;
-	uint8_t lun;
-	uint8_t clen;
-	uint8_t cmd[16];
-} __attribute__((packed)) umass_cbw_t;
-
-
-typedef struct {
-	uint32_t sig;
-	uint32_t tag;
-	uint32_t dr;
-	uint8_t status;
-} __attribute__((packed)) umass_csw_t;
-
-
-typedef struct {
-	uint8_t opcode;
-	uint8_t action : 5;
-	uint8_t misc0 : 3;
-	uint32_t lba;
-	uint8_t misc1;
-	uint16_t length;
-	uint8_t control;
-} __attribute__((packed)) scsi_cdb10_t;
 
 
 /* Device access callbacks */
@@ -179,8 +156,7 @@ static struct {
 
 
 static const usb_device_id_t filters[] = {
-	/* USB Mass Storage class */
-	{ USBDRV_ANY, USBDRV_ANY, USB_CLASS_MASS_STORAGE, USBDRV_ANY, USBDRV_ANY },
+	{ USBDRV_ANY, USBDRV_ANY, USB_CLASS_MASS_STORAGE, USB_SUBCLASS_SCSI, USB_PROTOCOL_BULK },
 };
 
 
@@ -215,54 +191,182 @@ static int umass_cmpfs(rbnode_t *node1, rbnode_t *node2)
 }
 
 
+static int umass_scsiRequestSense(umass_dev_t *dev, char *odata);
+
+
 static int _umass_transmit(umass_dev_t *dev, void *cmd, size_t clen, char *data, size_t dlen, int dir)
 {
+	scsi_sense_t *sense;
 	umass_cbw_t cbw = { 0 };
 	umass_csw_t csw = { 0 };
-	int ret = 0, bytes = 0;
+	int ret = -1, bytes = 0;
 	int dataPipe;
+	int i;
 
 	if (clen > 16)
 		return -1;
 
-	dataPipe = (dir == usb_dir_out) ? dev->pipeOut : dev->pipeIn;
-	cbw.sig = CBW_SIG;
-	cbw.tag = dev->tag++;
-	cbw.dlen = dlen;
-	cbw.flags = (dir == usb_dir_out) ? UMASS_WRITE : UMASS_READ;
-	cbw.lun = 0;
-	cbw.clen = clen;
-	memcpy(cbw.cmd, cmd, clen);
+	for (i = 0; ret < 0 && i < UMASS_TRANSMIT_RETRIES; i++) {
+		dataPipe = (dir == usb_dir_out) ? dev->pipeOut : dev->pipeIn;
+		cbw.sig = CBW_SIG;
+		cbw.tag = dev->tag++;
+		cbw.dlen = dlen;
+		cbw.flags = (dir == usb_dir_out) ? UMASS_WRITE : UMASS_READ;
+		cbw.lun = 0;
+		cbw.clen = clen;
+		memcpy(cbw.cmd, cmd, clen);
 
-	ret = usb_transferBulk(dev->drv, dev->pipeOut, &cbw, sizeof(cbw), usb_dir_out);
-	if (ret != sizeof(cbw)) {
-		fprintf(stderr, "umass_transmit: usb_transferBulk OUT failed\n");
-		return -EIO;
-	}
-
-	/* Optional data transfer */
-	if (dlen > 0) {
-		ret = usb_transferBulk(dev->drv, dataPipe, data, dlen, dir);
-		if (ret < 0) {
-			fprintf(stderr, "umass_transmit: umass_transmit data transfer failed\n");
-			return ret;
+		ret = usb_transferBulk(dev->drv, dev->pipeOut, &cbw, sizeof(cbw), usb_dir_out);
+		if (ret != sizeof(cbw)) {
+			fprintf(stderr, "umass_transmit: usb_transferBulk OUT failed\n");
+			return -EIO;
 		}
-		bytes = ret;
-	}
 
-	ret = usb_transferBulk(dev->drv, dev->pipeIn, &csw, sizeof(csw), usb_dir_in);
-	if (ret != sizeof(csw)) {
-		fprintf(stderr, "umass_transmit: usb_transferBulk IN transfer failed\n");
-		return -EIO;
-	}
+		/* Optional data transfer */
+		if (dlen > 0) {
+			ret = usb_transferBulk(dev->drv, dataPipe, data, dlen, dir);
+			if (ret < 0) {
+				fprintf(stderr, "umass_transmit: umass_transmit data transfer failed\n");
+				return ret;
+			}
+			bytes = ret;
+		}
 
-	/* Transfer finished, check transfer correctness */
-	if (csw.sig != CSW_SIG || csw.tag != cbw.tag || csw.status != 0) {
-		fprintf(stderr, "umass_transmit: transfer incorrect\n");
-		return -EIO;
+		ret = usb_transferBulk(dev->drv, dev->pipeIn, &csw, sizeof(csw), usb_dir_in);
+		if (ret != sizeof(csw)) {
+			fprintf(stderr, "umass_transmit: usb_transferBulk IN transfer failed\n");
+			return -EIO;
+		}
+
+		/* Transfer finished, check transfer correctness */
+		if (csw.sig != CSW_SIG || csw.tag != cbw.tag || csw.status != 0) {
+			if (csw.status == 1) {
+				ret = umass_scsiRequestSense(dev, dev->buffer);
+				if (ret < 0) {
+					DEBUG("REQUEST SENSE failed: %d", ret);
+				}
+				else {
+					sense = (scsi_sense_t *)dev->buffer;
+					DEBUG("REQUEST SENSE code=0x%x, sense key code=0x%x", sense->errorcode, sense->sensekey);
+				}
+
+				/* Retry transfer */
+				ret = -1;
+				bytes = 0;
+				continue;
+			}
+			else {
+				DEBUG("transfer incorrect.\n csw.sig=0x%x, csw.tag=0x%x, cbw.tag=0x%x, csw.status=%d\n", csw.sig, csw.tag,
+						cbw.tag, csw.status);
+				return -EIO;
+			}
+		}
 	}
 
 	return bytes;
+}
+
+
+/* Left commented out: can be useful when handling devices of other types than direct-access
+ * (non-zero "Peripheral Device Type" in INQUIRY) */
+#if 0
+static int umass_getMaxLUN(umass_dev_t *dev, int ifaceNum, int *maxlun)
+{
+	usb_setup_packet_t setup = (usb_setup_packet_t) {
+		.bmRequestType = REQUEST_DIR_DEV2HOST | REQUEST_TYPE_CLASS | REQUEST_RECIPIENT_INTERFACE,
+		.bRequest = 0xFE, /* Get Max LUN */
+		.wValue = 0,
+		.wIndex = ifaceNum,
+		.wLength = 1,
+	};
+	int ret;
+
+	ret = usb_transferControl(dev->drv, dev->pipeCtrl, &setup, maxlun, 1, usb_dir_in);
+	if (ret < 0) {
+		LOG("get max LUN failed");
+		dev->maxlun = 0;
+		return -EIO;
+	}
+
+	return 0;
+}
+#endif
+
+
+static int umass_scsiTest(umass_dev_t *dev)
+{
+	char testCmd[6] = { 0 };
+	int ret;
+
+	ret = _umass_transmit(dev, testCmd, sizeof(testCmd), NULL, 0, usb_dir_in);
+
+	return ret == 0 ? 0 : -EIO;
+}
+
+
+static int umass_scsiRequestSense(umass_dev_t *dev, char *odata)
+{
+	uint8_t len = sizeof(scsi_sense_t);
+	int ret;
+	scsi_cdb6_t requestSenseCmd = {
+		.opcode = SCSI_REQUEST_SENSE,
+		.length = htons(len),
+	};
+
+	ret = _umass_transmit(dev, &requestSenseCmd, sizeof(requestSenseCmd), (char *)odata, len, usb_dir_in);
+
+	return ret == sizeof(scsi_sense_t) ? 0 : -EIO;
+}
+
+
+static int umass_scsiInquiry(umass_dev_t *dev, char *odata)
+{
+	uint8_t len = sizeof(scsi_inquiry_t);
+	int ret;
+	scsi_cdb6_t inquiryCmd = {
+		.opcode = SCSI_INQUIRY,
+		.length = htons(len),
+	};
+
+	ret = _umass_transmit(dev, &inquiryCmd, sizeof(inquiryCmd), odata, len, usb_dir_in);
+
+	return ret == sizeof(scsi_inquiry_t) ? 0 : -EIO;
+}
+
+
+static int _umass_scsiInit(umass_dev_t *dev)
+{
+	int ret;
+	int i, ok;
+	scsi_inquiry_t *inquiry;
+
+	for (i = 0, ok = 0; ok < 2 && i < UMASS_INIT_RETRIES; i++) {
+		ok = 0;
+
+		ret = umass_scsiTest(dev);
+		if (ret == 0) {
+			DEBUG("TEST UNIT READY succeeded");
+			ok++;
+		}
+
+		/* Some real world are said to not work without doing INQUIRY first */
+		ret = umass_scsiInquiry(dev, dev->buffer);
+		if (ret == 0) {
+			inquiry = (scsi_inquiry_t *)dev->buffer;
+
+			DEBUG("INQUIRY succeeded\n"
+				  "  device type=%x vendorid=%s\n"
+				  "  productid=%s",
+					inquiry->devicetype, inquiry->vendorid, inquiry->productid);
+
+			ok++;
+		}
+		else {
+			DEBUG("INQUIRY failed, ret=%d", ret);
+		}
+	}
+
+	return ok == 2 ? 0 : -1;
 }
 
 
@@ -272,26 +376,21 @@ static int _umass_check(umass_dev_t *dev)
 		.opcode = 0x28,
 		.length = htons(0x1)
 	};
-	char testcmd[6] = { 0 };
 	mbr_t *mbr;
 	int ret;
-
-	ret = _umass_transmit(dev, testcmd, sizeof(testcmd), NULL, 0, usb_dir_in);
-	if (ret < 0) {
-		fprintf(stderr, "umass_transmit failed\n");
-		return -1;
-	}
 
 	/* Read MBR */
 	ret = _umass_transmit(dev, &readcmd, sizeof(readcmd), dev->buffer, UMASS_SECTOR_SIZE, usb_dir_in);
 	if (ret < 0) {
-		fprintf(stderr, "umass_transmit 2 failed\n");
+		LOG_ERROR("reading MBR failed");
 		return -1;
 	}
 
 	mbr = (mbr_t *)dev->buffer;
-	if (mbr->magic != MBR_MAGIC)
+	if (mbr->magic != MBR_MAGIC) {
+		LOG_ERROR("bad MBR magic: 0x%x", mbr->magic);
 		return -1;
+	}
 
 	/* Read only the first partition */
 	dev->part.start = mbr->pent[0].start;
@@ -299,6 +398,8 @@ static int _umass_check(umass_dev_t *dev)
 	dev->part.fs = NULL;
 	dev->part.fdata = NULL;
 	dev->part.idx = 0;
+
+	DEBUG("part.start=0x%x, part.sectors=0x%x", dev->part.start, dev->part.sectors);
 
 	return 0;
 }
@@ -688,6 +789,9 @@ static int umass_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion)
 	int err;
 	umass_dev_t *dev;
 	oid_t oid;
+	int ret;
+
+	fprintf(stderr, "umass: pending insertion\n");
 
 	mutexLock(umass_common.lock);
 
@@ -727,8 +831,15 @@ static int umass_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion)
 	}
 	dev->tag = 0;
 
-	err = _umass_check(dev);
-	if (err != 0) {
+	ret = _umass_scsiInit(dev);
+	if (ret < 0) {
+		fprintf(stderr, "umass: device didn't initialize properly after scsi init sequence\n");
+		free(dev);
+		return -EINVAL;
+	}
+
+	ret = _umass_check(dev);
+	if (ret < 0) {
 		fprintf(stderr, "umass: umass_check failed\n");
 		free(dev);
 		return -EINVAL;
