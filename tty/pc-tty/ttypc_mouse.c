@@ -13,7 +13,8 @@
 
 #include <errno.h>
 
-#include "board_config.h"
+#include <board_config.h>
+
 #include "ttypc_mouse.h"
 
 #if PC_TTY_MOUSE_ENABLE
@@ -32,8 +33,9 @@
 #include "event_queue.h"
 #include "ttypc_ps2.h"
 
-
-#define POOL_THREAD_PRIORITY 1
+#ifndef TTYPC_MOUSE_POOL_PRIO
+#define TTYPC_MOUSE_POOL_PRIO 1
+#endif
 
 #ifndef PC_TTY_MOUSE_SKIP_CONFIG
 #define PC_TTY_MOUSE_SKIP_CONFIG 0
@@ -258,7 +260,7 @@ int ttypc_mouse_init(ttypc_t *ttypc)
 
 #if PC_TTY_CREATE_PS2_VDEVS
 		/* Launch mouse pool thread */
-		err = beginthread(ttypc_mouse_poolthr, POOL_THREAD_PRIORITY, ttypc->mpstack, sizeof(ttypc->mpstack), ttypc);
+		err = beginthread(ttypc_mouse_poolthr, TTYPC_MOUSE_POOL_PRIO, ttypc->mpstack, sizeof(ttypc->mpstack), ttypc);
 		if (err < 0) {
 			portDestroy(ttypc->mport);
 			event_queue_destroy(&ttypc->meq);
