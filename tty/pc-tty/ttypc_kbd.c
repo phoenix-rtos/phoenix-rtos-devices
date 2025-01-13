@@ -29,6 +29,8 @@
 #include <fcntl.h>
 #include <posix/utils.h>
 
+#include <board_config.h>
+
 #include "ttypc_kbd.h"
 #include "ttypc_mouse.h"
 #include "ttypc_vga.h"
@@ -36,8 +38,13 @@
 #include "event_queue.h"
 
 
-#define CTL_THREAD_PRIORITY  1
-#define POOL_THREAD_PRIORITY 1
+#ifndef TTYPC_KBD_CTL_PRIO
+#define TTYPC_KBD_CTL_PRIO 1
+#endif
+
+#ifndef TTYPC_KBD_POOL_PRIO
+#define TTYPC_KBD_POOL_PRIO 1
+#endif
 
 
 /* Keyboard key map entry */
@@ -725,14 +732,14 @@ int ttypc_kbd_init(ttypc_t *ttypc)
 		}
 
 		/* Launch keyboard/mouse control thread */
-		err = beginthread(ttypc_ps2_ctlthr, CTL_THREAD_PRIORITY, ttypc->kstack, sizeof(ttypc->kstack), ttypc);
+		err = beginthread(ttypc_ps2_ctlthr, TTYPC_KBD_CTL_PRIO, ttypc->kstack, sizeof(ttypc->kstack), ttypc);
 		if (err < 0) {
 			break;
 		}
 
 #if PC_TTY_CREATE_PS2_VDEVS
 		/* Launch keyboard pool thread */
-		err = beginthread(ttypc_kbd_poolthr, POOL_THREAD_PRIORITY, ttypc->kpstack, sizeof(ttypc->kpstack), ttypc);
+		err = beginthread(ttypc_kbd_poolthr, TTYPC_KBD_POOL_PRIO, ttypc->kpstack, sizeof(ttypc->kpstack), ttypc);
 		if (err < 0) {
 			break;
 		}
