@@ -22,6 +22,7 @@
 
 #include <stdint.h>
 #include <termios.h>
+#include <unistd.h>
 
 /* termios comparison macro's. */
 #define CMP_CC(v, c) (tty->term.c_cc[v] != _POSIX_VDISABLE && \
