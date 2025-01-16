@@ -18,6 +18,7 @@
 
 #include <stdint.h>
 #include <termios.h>
+#include <unistd.h>
 
 #include "ttydefaults.h"
 

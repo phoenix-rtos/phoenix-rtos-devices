@@ -54,6 +54,7 @@
 #include <signal.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <unistd.h>
 
 #include "ttydefaults.h"
 
