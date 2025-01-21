@@ -24,6 +24,10 @@
 #include "ftmctrl.h"
 
 
+#define LIBCACHE_LINECNT 1024
+#define LIBCACHE_POLICY  LIBCACHE_WRITE_THROUGH
+
+
 /* Helper functions */
 
 
@@ -40,13 +44,8 @@ static int fdrv_isValidAddress(size_t memsz, off_t offs, size_t len)
 /* MTD interface */
 
 
-static int flashdrv_mtdRead(storage_t *strg, off_t offs, void *buff, size_t len, size_t *retlen)
+static int _flashdrv_mtdRead(storage_t *strg, off_t offs, void *buff, size_t len, size_t *retlen)
 {
-	if ((strg == NULL) || (strg->dev == NULL) || (strg->dev->ctx == NULL)) {
-		*retlen = 0;
-		return -EINVAL;
-	}
-
 	struct _storage_devCtx_t *ctx = strg->dev->ctx;
 	if (fdrv_isValidAddress(CFI_SIZE(ctx->cfi.chipSz), offs, len) == 0) {
 		*retlen = 0;
@@ -58,13 +57,9 @@ static int flashdrv_mtdRead(storage_t *strg, off_t offs, void *buff, size_t len,
 		return EOK;
 	}
 
-	mutexLock(ctx->lock);
-
 	ftmctrl_WrEn(ctx->ftmctrl);
 	flash_read(ctx, offs, buff, len);
 	ftmctrl_WrDis(ctx->ftmctrl);
-
-	mutexUnlock(ctx->lock);
 
 	*retlen = len;
 
@@ -72,13 +67,41 @@ static int flashdrv_mtdRead(storage_t *strg, off_t offs, void *buff, size_t len,
 }
 
 
-static int flashdrv_mtdWrite(storage_t *strg, off_t offs, const void *buff, size_t len, size_t *retlen)
+static ssize_t _flashdrv_mtdReadCb(uint64_t offs, void *buff, size_t len, cache_devCtx_t *ctx)
 {
-	if ((strg == NULL) || (strg->dev == NULL) || (strg->dev->ctx == NULL)) {
-		*retlen = 0;
-		return -EINVAL;
+	storage_t *strg = ctx->strg;
+	size_t retlen;
+	ssize_t ret;
+
+	ret = _flashdrv_mtdRead(strg, offs, buff, len, &retlen);
+	if (ret < 0) {
+		return ret;
 	}
 
+	return (ssize_t)retlen;
+}
+
+
+static int flashdrv_mtdRead(storage_t *strg, off_t offs, void *buff, size_t len, size_t *retlen)
+{
+	mutexLock(strg->dev->ctx->lock);
+	int ret = cache_read(strg->dev->ctx->cache, offs, buff, len);
+	mutexUnlock(strg->dev->ctx->lock);
+
+	if (ret < 0) {
+		*retlen = 0;
+	}
+	else {
+		*retlen = len;
+		ret = 0;
+	}
+
+	return ret;
+}
+
+
+static int _flashdrv_mtdWrite(storage_t *strg, off_t offs, const void *buff, size_t len, size_t *retlen)
+{
 	struct _storage_devCtx_t *ctx = strg->dev->ctx;
 	if (fdrv_isValidAddress(CFI_SIZE(ctx->cfi.chipSz), offs, len) == 0) {
 		*retlen = 0;
@@ -92,8 +115,6 @@ static int flashdrv_mtdWrite(storage_t *strg, off_t offs, const void *buff, size
 
 	const uint8_t *src = buff;
 	size_t doneBytes = 0;
-
-	mutexLock(ctx->lock);
 
 	int res = EOK;
 	const size_t writeBuffsz = strg->dev->mtd->writeBuffsz;
@@ -114,10 +135,46 @@ static int flashdrv_mtdWrite(storage_t *strg, off_t offs, const void *buff, size
 		offs += chunk;
 	}
 
-	mutexUnlock(ctx->lock);
 	*retlen = doneBytes;
 
 	return res;
+}
+
+
+static ssize_t _flashdrv_mtdWriteCb(uint64_t offs, const void *buff, size_t len, cache_devCtx_t *ctx)
+{
+	storage_t *strg = ctx->strg;
+	size_t retlen;
+	ssize_t ret;
+
+	if ((offs % strg->dev->mtd->writesz) != 0 || (len % strg->dev->mtd->writesz) != 0) {
+		return -EINVAL;
+	}
+
+	ret = _flashdrv_mtdWrite(strg, offs, buff, len, &retlen);
+	if (ret < 0) {
+		return ret;
+	}
+
+	return (ssize_t)retlen;
+}
+
+
+static int flashdrv_mtdWrite(storage_t *strg, off_t offs, const void *buff, size_t len, size_t *retlen)
+{
+	mutexLock(strg->dev->ctx->lock);
+	int ret = cache_write(strg->dev->ctx->cache, offs, buff, len, LIBCACHE_POLICY);
+	mutexUnlock(strg->dev->ctx->lock);
+
+	if (ret < 0) {
+		*retlen = 0;
+	}
+	else {
+		*retlen = len;
+		ret = 0;
+	}
+
+	return ret;
 }
 
 
@@ -163,9 +220,24 @@ static int flashdrv_mtdErase(storage_t *strg, off_t offs, size_t len)
 	}
 
 	ftmctrl_WrDis(ctx->ftmctrl);
+	res = cache_invalidate(ctx->cache, offs, end);
 	mutexUnlock(ctx->lock);
 
 	return res;
+}
+
+
+static void flashdrv_mtdSync(storage_t *strg)
+{
+	if ((strg == NULL) || (strg->dev == NULL) || (strg->dev->ctx == NULL)) {
+		return;
+	}
+
+	struct _storage_devCtx_t *ctx = strg->dev->ctx;
+
+	mutexLock(ctx->lock);
+	cache_flush(ctx->cache, 0, CFI_SIZE(ctx->cfi.chipSz));
+	mutexUnlock(ctx->lock);
 }
 
 
@@ -179,7 +251,7 @@ static const storage_mtdops_t mtdOps = {
 	.meta_read = NULL,
 	.meta_write = NULL,
 
-	.sync = NULL,
+	.sync = flashdrv_mtdSync,
 	.lock = NULL,
 	.unLock = NULL,
 	.isLocked = NULL,
@@ -234,8 +306,28 @@ struct _storage_devCtx_t *flashdrv_contextInit(void)
 }
 
 
+int flashdrv_cacheInit(storage_t *strg)
+{
+	cache_ops_t cacheOps = {
+		.readCb = _flashdrv_mtdReadCb,
+		.writeCb = _flashdrv_mtdWriteCb,
+		.ctx = &strg->dev->ctx->cacheCtx
+	};
+	strg->dev->ctx->cache = cache_init(strg->size, strg->dev->mtd->writeBuffsz, LIBCACHE_LINECNT, &cacheOps);
+	if (strg->dev->ctx->cache == NULL) {
+		return -ENOMEM;
+	}
+	strg->dev->ctx->cacheCtx.strg = strg;
+
+	return 0;
+}
+
+
 void flashdrv_contextDestroy(struct _storage_devCtx_t *ctx)
 {
+	if (ctx->cache != NULL) {
+		cache_deinit(ctx->cache);
+	}
 	(void)resourceDestroy(ctx->lock);
 	(void)munmap(ctx->ftmctrl, _PAGE_SIZE);
 	free(ctx);

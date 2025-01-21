@@ -16,6 +16,7 @@
 
 #include "cfi.h"
 
+#include <cache.h>
 #include <stdio.h>
 #include <sys/types.h>
 #include <storage/storage.h>
@@ -27,6 +28,11 @@
 /* clang-format on */
 
 
+struct cache_devCtx_s {
+	struct _storage_t *strg;
+};
+
+
 struct _storage_devCtx_t {
 	cfi_info_t cfi;
 	const struct _flash_dev_t *dev;
@@ -34,6 +40,9 @@ struct _storage_devCtx_t {
 	handle_t lock;
 	void *ftmctrl;
 	size_t sectorsz;
+
+	cachectx_t *cache;
+	cache_devCtx_t cacheCtx;
 };
 
 
@@ -41,6 +50,9 @@ const storage_mtdops_t *flashdrv_getMtdOps(void);
 
 
 struct _storage_devCtx_t *flashdrv_contextInit(void);
+
+
+int flashdrv_cacheInit(storage_t *strg);
 
 
 void flashdrv_contextDestroy(struct _storage_devCtx_t *ctx);
