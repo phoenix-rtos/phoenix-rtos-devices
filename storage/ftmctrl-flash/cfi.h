@@ -20,8 +20,8 @@
 #include <sys/types.h>
 
 /* Timeouts in us */
-#define CFI_TIMEOUT_MAX_PROGRAM(typical, maximum) ((1u << typical) * (1u << maximum))
-#define CFI_TIMEOUT_MAX_ERASE(typical, maximum)   ((1u << typical) * (1u << maximum) * 1024u)
+#define CFI_TIMEOUT_MAX_PROGRAM(typical, maximum) ((1u << typical) * (1u << maximum) * 2)
+#define CFI_TIMEOUT_MAX_ERASE(typical, maximum)   ((1u << typical) * (1u << maximum) * 1024u * 2)
 
 #define CFI_SIZE(size) (1u << ((uint32_t)size))
 
