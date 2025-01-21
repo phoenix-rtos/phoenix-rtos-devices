@@ -6,4 +6,4 @@
 # Copyright 2024 Phoenix Systems
 #
 
-DEFAULT_COMPONENTS := grlib-uart
+DEFAULT_COMPONENTS := grlib-multi
