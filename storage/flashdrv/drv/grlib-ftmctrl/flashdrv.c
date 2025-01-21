@@ -3,7 +3,7 @@
  *
  * GRLIB FTMCTRL Flash driver
  *
- * Copyright 2023 Phoenix Systems
+ * Copyright 2023-2025 Phoenix Systems
  * Author: Lukasz Leczkowski
  *
  * This file is part of Phoenix-RTOS.
@@ -20,6 +20,10 @@
 #include <sys/minmax.h>
 #include <sys/threads.h>
 
+#include <flashdrv/common.h>
+#include <flashdrv/flashsrv.h>
+
+#include "flashdrv.h"
 #include "flash.h"
 #include "ftmctrl.h"
 
@@ -28,42 +32,29 @@
 #define LIBCACHE_POLICY  LIBCACHE_WRITE_THROUGH
 
 
-/* Helper functions */
-
-
-static int fdrv_isValidAddress(size_t memsz, off_t offs, size_t len)
-{
-	if ((offs < memsz) && ((offs + len) <= memsz)) {
-		return 1;
-	}
-
-	return 0;
-}
-
-
 /* MTD interface */
 
 
 static int _flashdrv_mtdRead(storage_t *strg, off_t offs, void *buff, size_t len, size_t *retlen)
 {
 	struct _storage_devCtx_t *ctx = strg->dev->ctx;
-	if (fdrv_isValidAddress(CFI_SIZE(ctx->cfi.chipSz), offs, len) == 0) {
+	if (!common_isValidAddress(CFI_SIZE(ctx->cfi.chipSz), offs, len)) {
 		*retlen = 0;
 		return -EINVAL;
 	}
 
 	if (len == 0u) {
 		*retlen = 0;
-		return EOK;
+		return 0;
 	}
 
 	ftmctrl_WrEn(ctx->ftmctrl);
-	flash_read(ctx, offs, buff, len);
+	ftmctrl_flash_read(ctx, offs, buff, len);
 	ftmctrl_WrDis(ctx->ftmctrl);
 
 	*retlen = len;
 
-	return EOK;
+	return 0;
 }
 
 
@@ -103,27 +94,27 @@ static int flashdrv_mtdRead(storage_t *strg, off_t offs, void *buff, size_t len,
 static int _flashdrv_mtdWrite(storage_t *strg, off_t offs, const void *buff, size_t len, size_t *retlen)
 {
 	struct _storage_devCtx_t *ctx = strg->dev->ctx;
-	if (fdrv_isValidAddress(CFI_SIZE(ctx->cfi.chipSz), offs, len) == 0) {
+	if (!common_isValidAddress(CFI_SIZE(ctx->cfi.chipSz), offs, len)) {
 		*retlen = 0;
 		return -EINVAL;
 	}
 
 	if (len == 0u) {
 		*retlen = 0;
-		return EOK;
+		return 0;
 	}
 
 	const uint8_t *src = buff;
 	size_t doneBytes = 0;
 
-	int res = EOK;
+	int res = 0;
 	const size_t writeBuffsz = strg->dev->mtd->writeBuffsz;
 
 	while (doneBytes < len) {
 		size_t chunk = min(writeBuffsz - (offs % writeBuffsz), len - doneBytes);
 
 		ftmctrl_WrEn(ctx->ftmctrl);
-		res = flash_writeBuffer(ctx, offs, src, chunk, CFI_TIMEOUT_MAX_PROGRAM(ctx->cfi.toutTypical.bufWrite, ctx->cfi.toutMax.bufWrite));
+		res = ftmctrl_flash_writeBuffer(ctx, offs, src, chunk, CFI_TIMEOUT_MAX_PROGRAM(ctx->cfi.toutTypical.bufWrite, ctx->cfi.toutMax.bufWrite) * 2);
 		ftmctrl_WrDis(ctx->ftmctrl);
 
 		if (res < 0) {
@@ -185,12 +176,12 @@ static int flashdrv_mtdErase(storage_t *strg, off_t offs, size_t len)
 	}
 
 	struct _storage_devCtx_t *ctx = strg->dev->ctx;
-	if ((fdrv_isValidAddress(CFI_SIZE(ctx->cfi.chipSz), offs, len) == 0) || ((offs & (ctx->sectorsz - 1)) != 0) || (len % ctx->sectorsz != 0)) {
+	if (!common_isValidAddress(CFI_SIZE(ctx->cfi.chipSz), offs, len) || (offs % ctx->sectorsz != 0) || (len % ctx->sectorsz != 0)) {
 		return -EINVAL;
 	}
 
 	if (len == 0u) {
-		return EOK;
+		return 0;
 	}
 
 	mutexLock(ctx->lock);
@@ -200,18 +191,18 @@ static int flashdrv_mtdErase(storage_t *strg, off_t offs, size_t len)
 	int res = -ENOSYS;
 	if ((offs == 0) && (len == CFI_SIZE(ctx->cfi.chipSz))) {
 		TRACE("erasing entire memory");
-		res = flash_chipErase(ctx, CFI_TIMEOUT_MAX_ERASE(ctx->cfi.toutTypical.chipErase, ctx->cfi.toutMax.chipErase));
+		res = ftmctrl_flash_chipErase(ctx, CFI_TIMEOUT_MAX_ERASE(ctx->cfi.toutTypical.chipErase, ctx->cfi.toutMax.chipErase));
 		end = CFI_SIZE(ctx->cfi.chipSz);
 	}
 	else {
-		end = flash_getSectorOffset(ctx, offs + len + ctx->sectorsz - 1u);
-		TRACE("erasing sectors from 0x%llx to 0x%llx", offs, end);
+		end = common_getSectorOffset(ctx->sectorsz, offs + len + ctx->sectorsz - 1u);
+		TRACE("erasing sectors from 0x%jx to 0x%jx", (uintmax_t)offs, (uintmax_t)end);
 	}
 
 	if (res == -ENOSYS) {
 		off_t secOffs = offs;
 		while (secOffs < end) {
-			res = flash_sectorErase(ctx, secOffs, CFI_TIMEOUT_MAX_ERASE(ctx->cfi.toutTypical.blkErase, ctx->cfi.toutMax.blkErase));
+			res = ftmctrl_flash_sectorErase(ctx, secOffs, CFI_TIMEOUT_MAX_ERASE(ctx->cfi.toutTypical.blkErase, ctx->cfi.toutMax.blkErase) * 2);
 			if (res < 0) {
 				break;
 			}
@@ -227,20 +218,6 @@ static int flashdrv_mtdErase(storage_t *strg, off_t offs, size_t len)
 }
 
 
-static void flashdrv_mtdSync(storage_t *strg)
-{
-	if ((strg == NULL) || (strg->dev == NULL) || (strg->dev->ctx == NULL)) {
-		return;
-	}
-
-	struct _storage_devCtx_t *ctx = strg->dev->ctx;
-
-	mutexLock(ctx->lock);
-	cache_flush(ctx->cache, 0, CFI_SIZE(ctx->cfi.chipSz));
-	mutexUnlock(ctx->lock);
-}
-
-
 static const storage_mtdops_t mtdOps = {
 	.erase = flashdrv_mtdErase,
 	.unPoint = NULL,
@@ -251,7 +228,7 @@ static const storage_mtdops_t mtdOps = {
 	.meta_read = NULL,
 	.meta_write = NULL,
 
-	.sync = flashdrv_mtdSync,
+	.sync = NULL,
 	.lock = NULL,
 	.unLock = NULL,
 	.isLocked = NULL,
@@ -267,26 +244,43 @@ static const storage_mtdops_t mtdOps = {
 };
 
 
-const storage_mtdops_t *flashdrv_getMtdOps(void)
+static void flashdrv_destroy(storage_t *strg)
 {
-	return &mtdOps;
+	if (strg == NULL) {
+		return;
+	}
+
+	if (strg->dev != NULL) {
+		if (strg->dev->ctx != NULL) {
+			if (strg->dev->ctx->cache != NULL) {
+				cache_deinit(strg->dev->ctx->cache);
+			}
+			(void)resourceDestroy(strg->dev->ctx->lock);
+			(void)munmap(strg->dev->ctx->ftmctrl, _PAGE_SIZE);
+			ftmctrl_flash_destroy(strg->dev->ctx);
+		}
+		free(strg->dev->ctx);
+		free(strg->dev->mtd);
+		free(strg->dev);
+	}
+	free(strg);
 }
 
 
-struct _storage_devCtx_t *flashdrv_contextInit(void)
+static storage_t *flashdrv_init(addr_t mctrlBase, addr_t flashBase)
 {
 	struct _storage_devCtx_t *ctx = malloc(sizeof(struct _storage_devCtx_t));
 	if (ctx == NULL) {
 		return NULL;
 	}
-	ctx->ftmctrl = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, FTMCTRL_BASE);
+	ctx->ftmctrl = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, mctrlBase);
 	if (ctx->ftmctrl == MAP_FAILED) {
 		free(ctx);
 		return NULL;
 	}
 
 	ftmctrl_WrEn(ctx->ftmctrl);
-	int res = flash_init(ctx);
+	int res = ftmctrl_flash_init(ctx, flashBase);
 	ftmctrl_WrDis(ctx->ftmctrl);
 	if (res < 0) {
 		(void)munmap(ctx->ftmctrl, _PAGE_SIZE);
@@ -296,18 +290,59 @@ struct _storage_devCtx_t *flashdrv_contextInit(void)
 
 	if (mutexCreate(&ctx->lock) < 0) {
 		(void)munmap(ctx->ftmctrl, _PAGE_SIZE);
+		ftmctrl_flash_destroy(ctx);
 		free(ctx);
 		return NULL;
 	}
 
-	flash_printInfo(ctx);
+	storage_t *strg = calloc(1, sizeof(storage_t));
+	if (strg == NULL) {
+		(void)munmap(ctx->ftmctrl, _PAGE_SIZE);
+		ftmctrl_flash_destroy(ctx);
+		free(ctx);
+		return NULL;
+	}
 
-	return ctx;
-}
+	strg->start = 0;
+	strg->size = CFI_SIZE(ctx->cfi.chipSz);
 
+	strg->dev = calloc(1, sizeof(storage_dev_t));
+	if (strg->dev == NULL) {
+		(void)munmap(ctx->ftmctrl, _PAGE_SIZE);
+		ftmctrl_flash_destroy(ctx);
+		free(ctx);
+		free(strg);
+		return NULL;
+	}
 
-int flashdrv_cacheInit(storage_t *strg)
-{
+	/* Assign device context */
+	strg->dev->ctx = ctx;
+
+	storage_mtd_t *mtd = calloc(1, sizeof(storage_mtd_t));
+	if (mtd == NULL) {
+		flashdrv_destroy(strg);
+		return NULL;
+	}
+
+	/* MTD interface */
+	mtd->ops = &mtdOps;
+	mtd->type = mtd_norFlash;
+	mtd->name = ctx->dev->name;
+	mtd->metaSize = 0;
+	mtd->oobSize = 0;
+	mtd->oobAvail = 0;
+
+	uint8_t shift = ((ctx->dev->chipWidth == 16) && (ftmctrl_portWidth(ctx->ftmctrl) == 8)) ? 1 : 0;
+	mtd->writeBuffsz = CFI_SIZE(ctx->cfi.bufSz) >> shift;
+	mtd->writesz = 1;
+	mtd->erasesz = ctx->sectorsz;
+
+	strg->dev->mtd = mtd;
+
+	/* No block device interface */
+	strg->dev->blk = NULL;
+
+	/* Initialize cache */
 	cache_ops_t cacheOps = {
 		.readCb = _flashdrv_mtdReadCb,
 		.writeCb = _flashdrv_mtdWriteCb,
@@ -315,20 +350,24 @@ int flashdrv_cacheInit(storage_t *strg)
 	};
 	strg->dev->ctx->cache = cache_init(strg->size, strg->dev->mtd->writeBuffsz, LIBCACHE_LINECNT, &cacheOps);
 	if (strg->dev->ctx->cache == NULL) {
-		return -ENOMEM;
+		flashdrv_destroy(strg);
+		return NULL;
 	}
 	strg->dev->ctx->cacheCtx.strg = strg;
 
-	return 0;
+	ftmctrl_flash_printInfo(ctx);
+
+	return strg;
 }
 
 
-void flashdrv_contextDestroy(struct _storage_devCtx_t *ctx)
+void __attribute__((constructor)) ftmctrl_register(void)
 {
-	if (ctx->cache != NULL) {
-		cache_deinit(ctx->cache);
-	}
-	(void)resourceDestroy(ctx->lock);
-	(void)munmap(ctx->ftmctrl, _PAGE_SIZE);
-	free(ctx);
+	static const struct flash_driver ftmctrl = {
+		.name = "ftmctrl",
+		.init = flashdrv_init,
+		.destroy = flashdrv_destroy,
+	};
+
+	flashsrv_register(&ftmctrl);
 }

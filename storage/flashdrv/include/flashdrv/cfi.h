@@ -5,7 +5,7 @@
  *
  * CFI
  *
- * Copyright 2024 Phoenix Systems
+ * Copyright 2025 Phoenix Systems
  * Author: Lukasz Leczkowski
  *
  * This file is part of Phoenix-RTOS.
@@ -13,17 +13,18 @@
  * %LICENSE%
  */
 
-#ifndef _CFI_H_
-#define _CFI_H_
+#ifndef _FLASHDRV_CFI_H_
+#define _FLASHDRV_CFI_H_
 
 
 #include <sys/types.h>
 
 /* Timeouts in us */
-#define CFI_TIMEOUT_MAX_PROGRAM(typical, maximum) ((1u << typical) * (1u << maximum) * 2)
-#define CFI_TIMEOUT_MAX_ERASE(typical, maximum)   ((1u << typical) * (1u << maximum) * 1024u * 2)
+#define CFI_TIMEOUT_MAX_PROGRAM(typical, maximum) ((1u << (typical)) * (1u << (maximum)))
+#define CFI_TIMEOUT_MAX_ERASE(typical, maximum)   ((1u << (typical)) * (1u << (maximum)) * 1024u)
 
-#define CFI_SIZE(size) (1u << ((uint32_t)size))
+#define CFI_SIZE(size)        (1u << ((uint32_t)(size)))
+#define CFI_REGION_SIZE(size) ((size) * 256u)
 
 
 typedef struct {

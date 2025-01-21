@@ -3,7 +3,7 @@
  *
  * GRLIB FTMCTRL Flash driver
  *
- * Copyright 2023, 2024 Phoenix Systems
+ * Copyright 2023-2025 Phoenix Systems
  * Author: Lukasz Leczkowski
  *
  * This file is part of Phoenix-RTOS.
@@ -21,6 +21,8 @@
 #include <unistd.h>
 #include <sys/mman.h>
 #include <sys/time.h>
+
+#include <flashdrv/common.h>
 
 #include "cmds.h"
 #include "flash.h"
@@ -111,7 +113,7 @@ static uint16_t flash_deserialize16(uint16_t value)
 }
 
 
-int flash_writeBuffer(const struct _storage_devCtx_t *ctx, off_t offs, const uint8_t *data, size_t len, time_t timeout)
+int ftmctrl_flash_writeBuffer(const struct _storage_devCtx_t *ctx, off_t offs, const uint8_t *data, size_t len, time_t timeout)
 {
 	uint16_t val;
 	const int portWidth = ftmctrl_portWidth(ctx->ftmctrl);
@@ -139,10 +141,10 @@ int flash_writeBuffer(const struct _storage_devCtx_t *ctx, off_t offs, const uin
 	data += i;
 
 	if (len == 0) {
-		return EOK;
+		return 0;
 	}
 
-	off_t sectorOffs = flash_getSectorOffset(ctx, offs);
+	off_t sectorOffs = common_getSectorOffset(ctx->sectorsz, offs);
 
 	ctx->dev->ops->issueWriteBuffer(common.base, sectorOffs, offs, len);
 
@@ -196,7 +198,7 @@ int flash_writeBuffer(const struct _storage_devCtx_t *ctx, off_t offs, const uin
 }
 
 
-int flash_sectorErase(const struct _storage_devCtx_t *ctx, off_t sectorOffs, time_t timeout)
+int ftmctrl_flash_sectorErase(const struct _storage_devCtx_t *ctx, off_t sectorOffs, time_t timeout)
 {
 	ctx->dev->ops->issueSectorErase(common.base, sectorOffs);
 
@@ -230,7 +232,7 @@ int flash_sectorErase(const struct _storage_devCtx_t *ctx, off_t sectorOffs, tim
 }
 
 
-int flash_chipErase(const struct _storage_devCtx_t *ctx, time_t timeout)
+int ftmctrl_flash_chipErase(const struct _storage_devCtx_t *ctx, time_t timeout)
 {
 	if (ctx->dev->ops->issueChipErase == NULL) {
 		return -ENOSYS;
@@ -248,7 +250,7 @@ int flash_chipErase(const struct _storage_devCtx_t *ctx, time_t timeout)
 }
 
 
-void flash_read(const struct _storage_devCtx_t *ctx, off_t offs, void *buff, size_t len)
+void ftmctrl_flash_read(const struct _storage_devCtx_t *ctx, off_t offs, void *buff, size_t len)
 {
 	ctx->dev->ops->issueReset(common.base);
 
@@ -256,7 +258,7 @@ void flash_read(const struct _storage_devCtx_t *ctx, off_t offs, void *buff, siz
 }
 
 
-void flash_printInfo(const struct _storage_devCtx_t *ctx)
+void ftmctrl_flash_printInfo(const struct _storage_devCtx_t *ctx)
 {
 	LOG("configured %s %u MB flash", ctx->dev->name, CFI_SIZE(ctx->cfi.chipSz) / (1024 * 1024));
 }
@@ -331,13 +333,13 @@ static const flash_dev_t *flash_query(cfi_info_t *cfi)
 }
 
 
-int flash_init(struct _storage_devCtx_t *ctx)
+int ftmctrl_flash_init(struct _storage_devCtx_t *ctx, addr_t flashBase)
 {
-	amd_register();
-	intel_register();
+	ftmctrl_amd_register();
+	ftmctrl_intel_register();
 
 	/* Temporarily map one page on flash as uncached to be able to read status */
-	common.base = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, ADDR_FLASH);
+	common.base = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, flashBase);
 	if (common.base == MAP_FAILED) {
 		LOG_ERROR("failed to map flash");
 		return -ENOMEM;
@@ -356,21 +358,28 @@ int flash_init(struct _storage_devCtx_t *ctx)
 	ctx->sectorsz = CFI_SIZE(ctx->cfi.chipSz) / (ctx->cfi.regions[0].count + 1);
 
 	/* Map entire flash */
-	common.base = mmap(NULL, CFI_SIZE(ctx->cfi.chipSz), PROT_READ | PROT_WRITE, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, ADDR_FLASH);
+	common.base = mmap(NULL, CFI_SIZE(ctx->cfi.chipSz), PROT_READ | PROT_WRITE, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, flashBase);
 	if (common.base == MAP_FAILED) {
 		LOG_ERROR("failed to map flash");
 		return -ENOMEM;
 	}
 
-	return EOK;
+	return 0;
 }
 
 
-void flash_register(const flash_dev_t *dev)
+void ftmctrl_flash_destroy(struct _storage_devCtx_t *ctx)
+{
+	(void)munmap((void *)common.base, CFI_SIZE(ctx->cfi.chipSz));
+}
+
+
+void ftmctrl_flash_register(const flash_dev_t *dev)
 {
 	if (common.nmodels >= FLASH_DEVICES) {
 		LOG("Too many flashes: %s not registered. Please increase FLASH_DEVICES", dev->name);
-		return;
 	}
-	common.devs[common.nmodels++] = dev;
+	else {
+		common.devs[common.nmodels++] = dev;
+	}
 }
