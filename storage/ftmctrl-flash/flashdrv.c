@@ -1,9 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * Operating system loader
- *
- * GR712RC Flash on PROM interface driver
+ * GRLIB FTMCTRL Flash driver
  *
  * Copyright 2023 Phoenix Systems
  * Author: Lukasz Leczkowski
@@ -14,26 +12,19 @@
  */
 
 
+#include <board_config.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <string.h>
 #include <sys/mman.h>
 #include <sys/minmax.h>
 #include <sys/threads.h>
 
-#include "flashdrv.h"
 #include "flash.h"
 #include "ftmctrl.h"
 
 
 /* Helper functions */
-
-
-static off_t fdrv_getBlockAddress(const struct _storage_devCtx_t *ctx, off_t offs)
-{
-	return offs & ~(ctx->blockSz - 1);
-}
 
 
 static int fdrv_isValidAddress(size_t memsz, off_t offs, size_t len)
@@ -104,11 +95,19 @@ static int flashdrv_mtdWrite(storage_t *strg, off_t offs, const void *buff, size
 
 	mutexLock(ctx->lock);
 
+	int res = EOK;
+	const size_t writeBuffsz = strg->dev->mtd->writeBuffsz;
+
 	while (doneBytes < len) {
-		size_t chunk = min(CFI_SIZE(ctx->cfi.bufSz), len - doneBytes);
+		size_t chunk = min(writeBuffsz - (offs % writeBuffsz), len - doneBytes);
+
 		ftmctrl_WrEn(ctx->ftmctrl);
-		flash_writeBuffer(ctx, offs, src, chunk);
+		res = flash_writeBuffer(ctx, offs, src, chunk, CFI_TIMEOUT_MAX_PROGRAM(ctx->cfi.toutTypical.bufWrite, ctx->cfi.toutMax.bufWrite));
 		ftmctrl_WrDis(ctx->ftmctrl);
+
+		if (res < 0) {
+			break;
+		}
 
 		doneBytes += chunk;
 		src += chunk;
@@ -118,7 +117,7 @@ static int flashdrv_mtdWrite(storage_t *strg, off_t offs, const void *buff, size
 	mutexUnlock(ctx->lock);
 	*retlen = doneBytes;
 
-	return EOK;
+	return res;
 }
 
 
@@ -129,7 +128,7 @@ static int flashdrv_mtdErase(storage_t *strg, off_t offs, size_t len)
 	}
 
 	struct _storage_devCtx_t *ctx = strg->dev->ctx;
-	if (fdrv_isValidAddress(CFI_SIZE(ctx->cfi.chipSz), offs, len) == 0) {
+	if ((fdrv_isValidAddress(CFI_SIZE(ctx->cfi.chipSz), offs, len) == 0) || ((offs & (ctx->sectorsz - 1)) != 0) || (len % ctx->sectorsz != 0)) {
 		return -EINVAL;
 	}
 
@@ -137,40 +136,36 @@ static int flashdrv_mtdErase(storage_t *strg, off_t offs, size_t len)
 		return EOK;
 	}
 
-	off_t end;
-
 	mutexLock(ctx->lock);
-
-	if (len == (size_t)-1) {
-		/* Erase entire memory */
-		offs = 0;
-		end = CFI_SIZE(ctx->cfi.chipSz);
-		TRACE("erasing entire memory");
-	}
-	else {
-		/* Erase sectors or blocks */
-		offs = fdrv_getBlockAddress(ctx, offs);
-		end = fdrv_getBlockAddress(ctx, offs + len + ctx->blockSz - 1u);
-		TRACE("erasing blocks from 0x%llx to 0x%llx", offs, end);
-	}
-
 	ftmctrl_WrEn(ctx->ftmctrl);
 
-	while (offs < end) {
-		int res;
-		res = flash_blockErase(offs, CFI_TIMEOUT_MAX_ERASE(ctx->cfi.toutTypical.blkErase, ctx->cfi.toutMax.blkErase));
-		if (res < 0) {
-			ftmctrl_WrDis(ctx->ftmctrl);
-			mutexUnlock(ctx->lock);
-			return res;
+	off_t end;
+	int res = -ENOSYS;
+	if ((offs == 0) && (len == CFI_SIZE(ctx->cfi.chipSz))) {
+		TRACE("erasing entire memory");
+		res = flash_chipErase(ctx, CFI_TIMEOUT_MAX_ERASE(ctx->cfi.toutTypical.chipErase, ctx->cfi.toutMax.chipErase));
+		end = CFI_SIZE(ctx->cfi.chipSz);
+	}
+	else {
+		end = flash_getSectorOffset(ctx, offs + len + ctx->sectorsz - 1u);
+		TRACE("erasing sectors from 0x%llx to 0x%llx", offs, end);
+	}
+
+	if (res == -ENOSYS) {
+		off_t secOffs = offs;
+		while (secOffs < end) {
+			res = flash_sectorErase(ctx, secOffs, CFI_TIMEOUT_MAX_ERASE(ctx->cfi.toutTypical.blkErase, ctx->cfi.toutMax.blkErase));
+			if (res < 0) {
+				break;
+			}
+			secOffs += ctx->sectorsz;
 		}
-		offs += ctx->blockSz;
 	}
 
 	ftmctrl_WrDis(ctx->ftmctrl);
 	mutexUnlock(ctx->lock);
 
-	return EOK;
+	return res;
 }
 
 
@@ -233,7 +228,7 @@ struct _storage_devCtx_t *flashdrv_contextInit(void)
 		return NULL;
 	}
 
-	flash_printInfo(&ctx->cfi);
+	flash_printInfo(ctx);
 
 	return ctx;
 }

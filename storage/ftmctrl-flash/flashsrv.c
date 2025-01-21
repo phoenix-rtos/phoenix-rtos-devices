@@ -1,7 +1,9 @@
 /*
  * Phoenix-RTOS
  *
- * GR712RC Flash server
+ * GRLIB FTMCTRL Flash driver
+ *
+ * Flash server
  *
  * Copyright 2023 Phoenix Systems
  * Author: Lukasz Leczkowski
@@ -29,6 +31,8 @@
 #include <storage/storage.h>
 
 #include "flashdrv.h"
+#include "flash.h"
+#include "ftmctrl.h"
 
 #define STRG_PATH "mtd0"
 
@@ -288,13 +292,15 @@ static int flashsrv_devInit(storage_t *strg, struct _storage_devCtx_t *ctx)
 
 	mtd->ops = flashdrv_getMtdOps();
 	mtd->type = mtd_norFlash;
-	mtd->name = "Intel";
+	mtd->name = ctx->dev->name;
 	mtd->metaSize = 0;
 	mtd->oobSize = 0;
 	mtd->oobAvail = 0;
-	mtd->writeBuffsz = CFI_SIZE(ctx->cfi.bufSz);
+
+	uint8_t shift = ((ctx->dev->chipWidth == 16) && (ftmctrl_portWidth(ctx->ftmctrl) == 8)) ? 1 : 0;
+	mtd->writeBuffsz = CFI_SIZE(ctx->cfi.bufSz) >> shift;
 	mtd->writesz = 1;
-	mtd->erasesz = ctx->blockSz;
+	mtd->erasesz = ctx->sectorsz;
 
 	strg->dev->mtd = mtd;
 
@@ -325,7 +331,7 @@ static void flashsrv_devDestroy(storage_t *strg)
 
 static ptable_t *flashsrv_ptableRead(storage_t *strg)
 {
-	uint32_t count, offs = CFI_SIZE(strg->dev->ctx->cfi.chipSz) - strg->dev->ctx->blockSz;
+	uint32_t count, offs = CFI_SIZE(strg->dev->ctx->cfi.chipSz) - strg->dev->ctx->sectorsz;
 	/* Read number of partitions */
 	if (flashsrv_read(strg, offs, &count, sizeof(count)) != sizeof(count)) {
 		return NULL;
@@ -334,7 +340,7 @@ static ptable_t *flashsrv_ptableRead(storage_t *strg)
 
 	/* Verify ptable size */
 	uint32_t size = ptable_size(count);
-	if (size > strg->dev->ctx->blockSz) {
+	if (size > strg->dev->ctx->sectorsz) {
 		return NULL;
 	}
 
@@ -359,7 +365,7 @@ static ptable_t *flashsrv_ptableRead(storage_t *strg)
 		return NULL;
 	}
 
-	if (ptable_deserialize(ptable, CFI_SIZE(strg->dev->ctx->cfi.chipSz), strg->dev->ctx->blockSz) < 0) {
+	if (ptable_deserialize(ptable, CFI_SIZE(strg->dev->ctx->cfi.chipSz), strg->dev->ctx->sectorsz) < 0) {
 		free(ptable);
 		return NULL;
 	}
@@ -368,13 +374,11 @@ static ptable_t *flashsrv_ptableRead(storage_t *strg)
 }
 
 
-static int flashsrv_partAdd(storage_t *parent, storage_t **newPart, uint32_t offset, uint32_t size, const char *name)
+static int flashsrv_partAdd(storage_t *parent, uint32_t offset, uint32_t size, const char *name)
 {
-	unsigned int partId = 0;
 	storage_t *part = parent->parts;
 	if (part != NULL) {
 		do {
-			partId++;
 			part = part->next;
 		} while (part != parent->parts);
 	}
@@ -388,16 +392,10 @@ static int flashsrv_partAdd(storage_t *parent, storage_t **newPart, uint32_t off
 	part->parent = parent;
 	part->start = offset;
 	part->size = size;
-
-	int res = flashsrv_devInit(part, parent->dev->ctx);
-	if (res < 0) {
-		LOG_ERROR("failed to initialize a partition");
-		free(part);
-		return res;
-	}
+	part->dev = parent->dev;
 
 	oid_t oid;
-	res = storage_add(part, &oid);
+	int res = storage_add(part, &oid);
 	if (res < 0) {
 		LOG_ERROR("failed to add a partition");
 		flashsrv_devDestroy(part);
@@ -425,10 +423,6 @@ static int flashsrv_partAdd(storage_t *parent, storage_t **newPart, uint32_t off
 
 	TRACE("initialized partition %s: offset=%u, size=%u", name, offset, size);
 
-	if (newPart != NULL) {
-		*newPart = part;
-	}
-
 	return EOK;
 }
 
@@ -442,8 +436,7 @@ static int flashsrv_partsInit(storage_t *strg)
 	}
 
 	for (size_t i = 0; i < ptable->count; i++) {
-		storage_t *newPart;
-		if (flashsrv_partAdd(strg, &newPart, ptable->parts[i].offset, ptable->parts[i].size, (const char *)ptable->parts[i].name) < 0) {
+		if (flashsrv_partAdd(strg, ptable->parts[i].offset, ptable->parts[i].size, (const char *)ptable->parts[i].name) < 0) {
 			LOG_ERROR("failed to add partition %s", (const char *)ptable->parts[i].name);
 			free(ptable);
 			return -1;
