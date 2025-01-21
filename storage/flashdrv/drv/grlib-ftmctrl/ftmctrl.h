@@ -5,7 +5,7 @@
  *
  * FTMCTRL routines
  *
- * Copyright 2023 Phoenix Systems
+ * Copyright 2023-2025 Phoenix Systems
  * Author: Lukasz Leczkowski
  *
  * This file is part of Phoenix-RTOS.

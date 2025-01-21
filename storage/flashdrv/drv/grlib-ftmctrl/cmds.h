@@ -5,7 +5,7 @@
  *
  * Flash commands
  *
- * Copyright 2024 Phoenix Systems
+ * Copyright 2025 Phoenix Systems
  * Author: Lukasz Leczkowski
  *
  * This file is part of Phoenix-RTOS.
@@ -13,8 +13,8 @@
  * %LICENSE%
  */
 
-#ifndef _CMDS_H_
-#define _CMDS_H_
+#ifndef _FTMCTRL_CMDS_H_
+#define _FTMCTRL_CMDS_H_
 
 
 /* Common flash commands */

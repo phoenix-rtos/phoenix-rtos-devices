@@ -5,7 +5,7 @@
  *
  * Internal flash functions
  *
- * Copyright 2023, 2024 Phoenix Systems
+ * Copyright 2023-2025 Phoenix Systems
  * Author: Lukasz Leczkowski
  *
  * This file is part of Phoenix-RTOS.
@@ -13,8 +13,8 @@
  * %LICENSE%
  */
 
-#ifndef _FLASH_H_
-#define _FLASH_H_
+#ifndef _FTMCTRL_FLASH_H_
+#define _FTMCTRL_FLASH_H_
 
 
 #include <sys/types.h>
@@ -47,37 +47,34 @@ typedef struct _flash_dev_t {
 } flash_dev_t;
 
 
-static inline off_t flash_getSectorOffset(const struct _storage_devCtx_t *ctx, off_t offs)
-{
-	return offs & ~(ctx->sectorsz - 1);
-}
-
-
-int flash_writeBuffer(const struct _storage_devCtx_t *ctx, off_t offs, const uint8_t *data, size_t len, time_t timeout);
+int ftmctrl_flash_writeBuffer(const struct _storage_devCtx_t *ctx, off_t offs, const uint8_t *data, size_t len, time_t timeout);
 
 /* Timeout in us */
-int flash_sectorErase(const struct _storage_devCtx_t *ctx, off_t sectorOffs, time_t timeout);
+int ftmctrl_flash_sectorErase(const struct _storage_devCtx_t *ctx, off_t sectorOffs, time_t timeout);
 
 
-int flash_chipErase(const struct _storage_devCtx_t *ctx, time_t timeout);
+int ftmctrl_flash_chipErase(const struct _storage_devCtx_t *ctx, time_t timeout);
 
 
-void flash_read(const struct _storage_devCtx_t *ctx, off_t offs, void *buff, size_t len);
+void ftmctrl_flash_read(const struct _storage_devCtx_t *ctx, off_t offs, void *buff, size_t len);
 
 
-void flash_printInfo(const struct _storage_devCtx_t *ctx);
+void ftmctrl_flash_printInfo(const struct _storage_devCtx_t *ctx);
 
 
-int flash_init(struct _storage_devCtx_t *ctx);
+int ftmctrl_flash_init(struct _storage_devCtx_t *ctx, addr_t flashBase);
 
 
-void flash_register(const flash_dev_t *dev);
+void ftmctrl_flash_destroy(struct _storage_devCtx_t *ctx);
 
 
-void amd_register(void);
+void ftmctrl_flash_register(const flash_dev_t *dev);
 
 
-void intel_register(void);
+void ftmctrl_amd_register(void);
+
+
+void ftmctrl_intel_register(void);
 
 
 #endif

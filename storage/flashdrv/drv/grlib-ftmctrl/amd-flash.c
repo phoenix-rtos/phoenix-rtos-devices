@@ -5,7 +5,7 @@
  *
  * AMD command set flash interface
  *
- * Copyright 2024 Phoenix Systems
+ * Copyright 2025 Phoenix Systems
  * Author: Lukasz Leczkowski
  *
  * This file is part of Phoenix-RTOS.
@@ -115,7 +115,7 @@ static void amd_exitQuery(volatile uint8_t *base)
 }
 
 
-void amd_register(void)
+void ftmctrl_amd_register(void)
 {
 	static const flash_ops_t ops = {
 		.statusRead = amd_statusRead,
@@ -143,6 +143,6 @@ void amd_register(void)
 	};
 
 	for (size_t i = 0; i < (sizeof(amd_devices) / sizeof(amd_devices[0])); ++i) {
-		flash_register(&amd_devices[i]);
+		ftmctrl_flash_register(&amd_devices[i]);
 	}
 }

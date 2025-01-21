@@ -5,7 +5,7 @@
  *
  * Intel command set flash interface
  *
- * Copyright 2024 Phoenix Systems
+ * Copyright 2025 Phoenix Systems
  * Author: Lukasz Leczkowski
  *
  * This file is part of Phoenix-RTOS.
@@ -15,6 +15,8 @@
 
 #include "cmds.h"
 #include "flash.h"
+
+#include <flashdrv/flashsrv.h>
 
 #include <errno.h>
 
@@ -98,7 +100,7 @@ static void intel_exitQuery(volatile uint8_t *base)
 }
 
 
-void intel_register(void)
+void ftmctrl_intel_register(void)
 {
 	static const flash_ops_t ops = {
 		.statusRead = intel_statusRead,
@@ -126,6 +128,6 @@ void intel_register(void)
 	};
 
 	for (size_t i = 0; i < sizeof(intel_devices) / sizeof(intel_devices[0]); i++) {
-		flash_register(&intel_devices[i]);
+		ftmctrl_flash_register(&intel_devices[i]);
 	}
 }

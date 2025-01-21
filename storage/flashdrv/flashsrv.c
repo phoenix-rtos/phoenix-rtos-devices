@@ -5,7 +5,7 @@
  *
  * Flash server
  *
- * Copyright 2023 Phoenix Systems
+ * Copyright 2023-2025 Phoenix Systems
  * Author: Lukasz Leczkowski
  *
  * This file is part of Phoenix-RTOS.
@@ -30,11 +30,28 @@
 #include <ptable.h>
 #include <storage/storage.h>
 
-#include "flashdrv.h"
-#include "flash.h"
-#include "ftmctrl.h"
+#include <flashdrv/flashsrv.h>
 
 #define STRG_PATH "mtd0"
+
+#define MAX_DRIVERS 4
+
+
+struct flashsrv_opts {
+	const struct flash_driver *driver;
+	addr_t mctrlBase;
+	addr_t flashBase;
+	struct {
+		char *partname;
+		char *fs;
+	} root;
+};
+
+
+static struct {
+	const struct flash_driver *registry[MAX_DRIVERS];
+	size_t ndrivers;
+} common;
 
 
 /* Flash server operations */
@@ -97,7 +114,7 @@ static int flashsrv_sync(storage_t *strg)
 	storage_mtd_t *mtd = strg->dev->mtd;
 	if ((mtd != NULL) && (mtd->ops != NULL) && (mtd->ops->sync != NULL)) {
 		mtd->ops->sync(strg);
-		return EOK;
+		return 0;
 	}
 
 	return -EINVAL;
@@ -119,7 +136,7 @@ static int flashsrv_getAttr(storage_t *strg, int type, long long *attr)
 			return -EINVAL;
 	}
 
-	return EOK;
+	return 0;
 }
 
 
@@ -135,46 +152,46 @@ static void flashsrv_msgHandler(void *arg, msg_t *msg)
 		case mtOpen:
 		case mtClose:
 			strg = storage_get(msg->oid.id);
-			msg->o.err = (strg == NULL) ? -EINVAL : EOK;
+			msg->o.err = (strg == NULL) ? -EINVAL : 0;
 			TRACE("mtOpen/mtClose: %d", msg->o.err);
 			break;
 
 		case mtRead:
 			strg = storage_get(msg->oid.id);
-			TRACE("mtRead: id: %u, size: %d, off: %llu", msg->oid.id, msg->o.size, msg->i.io.offs);
+			TRACE("mtRead: id: %ju, size: %zu, off: %ju", (uintmax_t)msg->oid.id, msg->o.size, (uintmax_t)msg->i.io.offs);
 			msg->o.err = flashsrv_read(strg, msg->i.io.offs, msg->o.data, msg->o.size);
 			break;
 
 		case mtWrite:
 			strg = storage_get(msg->oid.id);
-			TRACE("mtWrite: id: %u, size: %d, off: %llu", msg->oid.id, msg->o.size, msg->i.io.offs);
+			TRACE("mtWrite: id: %ju, size: %zu, off: %ju", (uintmax_t)msg->oid.id, msg->o.size, (uintmax_t)msg->i.io.offs);
 			msg->o.err = flashsrv_write(strg, msg->i.io.offs, msg->o.data, msg->o.size);
 			break;
 
 		case mtSync:
 			strg = storage_get(msg->oid.id);
-			TRACE("mtSync: id: %u", msg->oid.id);
+			TRACE("mtSync: id: %ju", (uintmax_t)msg->oid.id);
 			msg->o.err = flashsrv_sync(strg);
 			break;
 
 		case mtGetAttr:
 			strg = storage_get(msg->oid.id);
-			TRACE("mtGetAttr: id: %u, type: %d", msg->oid.id, msg->i.attr.type);
+			TRACE("mtGetAttr: id: %ju, type: %d", (uintmax_t)msg->oid.id, msg->i.attr.type);
 			msg->o.err = flashsrv_getAttr(strg, msg->i.attr.type, &msg->o.attr.val);
 			break;
 
 		case mtMount:
-			TRACE("mtMount: id: %u, fstype: %s, mode: %ld", msg->oid.id, imnt->fstype, imnt->mode);
+			TRACE("mtMount: id: %ju, fstype: %s, mode: %ld", (uintmax_t)msg->oid.id, imnt->fstype, imnt->mode);
 			msg->o.err = storage_mountfs(storage_get(msg->oid.id), imnt->fstype, msg->i.data, imnt->mode, &imnt->mnt, &omnt->oid);
 			break;
 
 		case mtUmount:
-			TRACE("mtUmount: id: %u", msg->oid.id);
+			TRACE("mtUmount: id: %ju", (uintmax_t)msg->oid.id);
 			msg->o.err = storage_umountfs(storage_get(msg->oid.id));
 			break;
 
 		case mtMountPoint:
-			TRACE("mtMountPoint: id: %u", msg->oid.id);
+			TRACE("mtMountPoint: id: %ju", (uintmax_t)msg->oid.id);
 			msg->o.err = storage_mountpoint(storage_get(msg->oid.id), &omnt->oid);
 			break;
 
@@ -217,7 +234,7 @@ static int flashsrv_mountRoot(const char *name, const char *fstype)
 		return res;
 	}
 
-	return EOK;
+	return 0;
 }
 
 
@@ -227,111 +244,104 @@ static void flashsrv_help(const char *prog)
 	printf("\t-r <name:fs> - mount partition <name> as root\n");
 	printf("\t               use psdisk to create partitions\n");
 	printf("\t-h           - print this message\n");
+	printf("\t-c <addr>    - use <addr> as memory controller base address (required)\n");
+	printf("\t-m <addr>    - use <addr> as flash memory base address (required)\n");
+	printf("\t-d <driver>  - use <driver> for flash memory (required)\n");
+	printf("\t               available drivers: \n");
+	printf("\t               ");
+
+	for (size_t i = 0; i < common.ndrivers; i++) {
+		printf("%s%s", common.registry[i]->name, (i < common.ndrivers - 1) ? ", " : "\n");
+	}
 }
 
 
-static int flashsrv_parseArgs(int argc, char **argv)
+static int flashsrv_parseInitArgs(int argc, char **argv, struct flashsrv_opts *opts)
 {
 	for (;;) {
-		int c = getopt(argc, argv, "r:h");
+		int c = getopt(argc, argv, "r:d:c:m:h");
 		if (c == -1) {
 			return 0;
 		}
 
-		char *partName, *fs;
 		switch (c) {
-			case 'r':
-				partName = optarg;
-				fs = strchr(optarg, ':');
-				if (fs == NULL) {
+			case 'h':
+				flashsrv_help(argv[0]);
+				return -1;
+
+			case 'd': {
+				const char *name = optarg;
+				for (size_t i = 0; i < common.ndrivers; i++) {
+					if (strcmp(common.registry[i]->name, name) == 0) {
+						opts->driver = common.registry[i];
+						break;
+					}
+				}
+				if (opts->driver == NULL) {
+					LOG_ERROR("Unknown driver: %s", name);
+					return -1;
+				}
+				break;
+			}
+
+			case 'r': {
+				opts->root.partname = optarg;
+				opts->root.fs = strchr(optarg, ':');
+				if (opts->root.fs == NULL) {
 					LOG_ERROR("Invalid argument: %s", optarg);
 					return -1;
 				}
-				*fs = '\0';
-				fs++;
-				if (flashsrv_mountRoot(partName, fs) < 0) {
-					LOG_ERROR("Failed to mount root filesystem");
+				*opts->root.fs = '\0';
+				opts->root.fs++;
+				break;
+			}
+
+			case 'c':
+				errno = 0;
+				opts->mctrlBase = strtoul(optarg, NULL, 0);
+				if ((opts->mctrlBase == 0) && (errno != 0)) {
+					LOG_ERROR("Invalid argument: %s", optarg);
 					return -1;
 				}
 				break;
 
-			case 'h':
-				flashsrv_help(argv[0]);
-				return -1;
+			case 'm':
+				errno = 0;
+				opts->flashBase = strtoul(optarg, NULL, 0);
+				if ((opts->flashBase == 0) && (errno != 0)) {
+					LOG_ERROR("Invalid argument: %s", optarg);
+					return -1;
+				}
+				break;
 
 			default:
 				LOG_ERROR("Unknown option: %c", c);
 				return -1;
 		}
 	}
+
+	return 0;
 }
 
 
 /* Initialization functions */
 
 
-static int flashsrv_devInit(storage_t *strg, struct _storage_devCtx_t *ctx)
+void flashsrv_register(const struct flash_driver *driver)
 {
-	if (strg->parent == NULL) {
-		strg->start = 0;
-		strg->size = CFI_SIZE(ctx->cfi.chipSz);
+	if (common.ndrivers < MAX_DRIVERS) {
+		common.registry[common.ndrivers++] = driver;
 	}
-
-	/* Initialize device structure */
-	strg->dev = malloc(sizeof(storage_dev_t));
-	if (strg->dev == NULL) {
-		return -ENOMEM;
-	}
-
-	/* Initialize MTD interface */
-	storage_mtd_t *mtd = malloc(sizeof(storage_mtd_t));
-	if (mtd == NULL) {
-		free(strg->dev);
-		return -ENOMEM;
-	}
-
-	mtd->ops = flashdrv_getMtdOps();
-	mtd->type = mtd_norFlash;
-	mtd->name = ctx->dev->name;
-	mtd->metaSize = 0;
-	mtd->oobSize = 0;
-	mtd->oobAvail = 0;
-
-	uint8_t shift = ((ctx->dev->chipWidth == 16) && (ftmctrl_portWidth(ctx->ftmctrl) == 8)) ? 1 : 0;
-	mtd->writeBuffsz = CFI_SIZE(ctx->cfi.bufSz) >> shift;
-	mtd->writesz = 1;
-	mtd->erasesz = ctx->sectorsz;
-
-	strg->dev->mtd = mtd;
-
-	/* No block device interface */
-	strg->dev->blk = NULL;
-
-	/* Assign device context */
-	strg->dev->ctx = ctx;
-
-	return EOK;
-}
-
-
-static void flashsrv_devDestroy(storage_t *strg)
-{
-	if (strg->dev != NULL) {
-		if (strg->dev->mtd != NULL) {
-			free(strg->dev->mtd);
-		}
-		if (strg->dev->blk != NULL) {
-			free(strg->dev->blk);
-		}
-		free(strg->dev);
-		strg->dev = NULL;
+	else {
+		LOG("Too many drivers: %s not registered. Please increase MAX_DRIVERS", driver->name);
 	}
 }
 
 
 static ptable_t *flashsrv_ptableRead(storage_t *strg)
 {
-	uint32_t count, offs = CFI_SIZE(strg->dev->ctx->cfi.chipSz) - strg->dev->ctx->sectorsz;
+	uint32_t count;
+	off_t offs = strg->size - strg->dev->mtd->erasesz;
 	/* Read number of partitions */
 	if (flashsrv_read(strg, offs, &count, sizeof(count)) != sizeof(count)) {
 		return NULL;
@@ -340,7 +350,7 @@ static ptable_t *flashsrv_ptableRead(storage_t *strg)
 
 	/* Verify ptable size */
 	uint32_t size = ptable_size(count);
-	if (size > strg->dev->ctx->sectorsz) {
+	if (size > strg->dev->mtd->erasesz) {
 		return NULL;
 	}
 
@@ -365,7 +375,7 @@ static ptable_t *flashsrv_ptableRead(storage_t *strg)
 		return NULL;
 	}
 
-	if (ptable_deserialize(ptable, CFI_SIZE(strg->dev->ctx->cfi.chipSz), strg->dev->ctx->sectorsz) < 0) {
+	if (ptable_deserialize(ptable, strg->size, strg->dev->mtd->erasesz) < 0) {
 		free(ptable);
 		return NULL;
 	}
@@ -398,7 +408,6 @@ static int flashsrv_partAdd(storage_t *parent, uint32_t offset, uint32_t size, c
 	int res = storage_add(part, &oid);
 	if (res < 0) {
 		LOG_ERROR("failed to add a partition");
-		flashsrv_devDestroy(part);
 		free(part);
 		return res;
 	}
@@ -407,7 +416,6 @@ static int flashsrv_partAdd(storage_t *parent, uint32_t offset, uint32_t size, c
 	if (snprintf(path, sizeof(path), "%s.%s", STRG_PATH, name) >= sizeof(path)) {
 		LOG_ERROR("failed to build partition path");
 		storage_remove(part);
-		flashsrv_devDestroy(part);
 		free(part);
 		return -ENAMETOOLONG;
 	}
@@ -416,14 +424,13 @@ static int flashsrv_partAdd(storage_t *parent, uint32_t offset, uint32_t size, c
 	if (res < 0) {
 		LOG_ERROR("failed to create partition device file");
 		storage_remove(part);
-		flashsrv_devDestroy(part);
 		free(part);
 		return res;
 	}
 
 	TRACE("initialized partition %s: offset=%u, size=%u", name, offset, size);
 
-	return EOK;
+	return 0;
 }
 
 
@@ -449,44 +456,19 @@ static int flashsrv_partsInit(storage_t *strg)
 }
 
 
-static storage_t *flashsrv_init(void)
+static storage_t *flashsrv_init(struct flashsrv_opts *opts)
 {
-	storage_t *strg = calloc(1, sizeof(storage_t));
+	storage_t *strg = opts->driver->init(opts->mctrlBase, opts->flashBase);
 	if (strg == NULL) {
-		LOG_ERROR("failed to allocate storage_t");
-		return NULL;
-	}
-
-	struct _storage_devCtx_t *ctx = flashdrv_contextInit();
-	if (ctx == NULL) {
-		LOG_ERROR("failed to initialize flash context");
-		free(strg);
-		return NULL;
-	}
-
-	int res = flashsrv_devInit(strg, ctx);
-	if (res < 0) {
-		LOG_ERROR("failed to initialize libstorage interface (%d)", res);
-		flashdrv_contextDestroy(ctx);
-		free(strg);
-		return NULL;
-	}
-
-	if (flashdrv_cacheInit(strg) < 0) {
-		free(strg->dev->mtd);
-		free(strg->dev);
-		flashdrv_contextDestroy(ctx);
-		free(strg);
+		LOG_ERROR("failed initialize storage interface");
 		return NULL;
 	}
 
 	oid_t oid;
-	res = storage_add(strg, &oid);
+	int res = storage_add(strg, &oid);
 	if (res < 0) {
 		LOG_ERROR("failed to add storage device (%d)", res);
-		flashdrv_contextDestroy(ctx);
-		flashsrv_devDestroy(strg);
-		free(strg);
+		opts->driver->destroy(strg);
 		return NULL;
 	}
 
@@ -494,9 +476,7 @@ static storage_t *flashsrv_init(void)
 	if (res < 0) {
 		LOG_ERROR("failed to create device file (%d)", res);
 		storage_remove(strg);
-		flashdrv_contextDestroy(ctx);
-		flashsrv_devDestroy(strg);
-		free(strg);
+		opts->driver->destroy(strg);
 		return NULL;
 	}
 
@@ -536,8 +516,26 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 
+	struct flashsrv_opts opts = {
+		.driver = NULL,
+		.mctrlBase = (addr_t)-1,
+		.flashBase = (addr_t)-1,
+		.root = { 0 }
+	};
+
+	int err = flashsrv_parseInitArgs(argc, argv, &opts);
+	if (err < 0) {
+		exit(EXIT_FAILURE);
+	}
+
+	if ((opts.driver == NULL) || (opts.mctrlBase == (addr_t)-1) || (opts.flashBase == (addr_t)-1)) {
+		LOG("Required arguments not present");
+		flashsrv_help(argv[0]);
+		exit(EXIT_FAILURE);
+	}
+
 	/* Initialize storage library with the message handler for the flash memory */
-	int err = storage_init(flashsrv_msgHandler, 16);
+	err = storage_init(flashsrv_msgHandler, 16);
 	if (err < 0) {
 		LOG_ERROR("failed to initialize server (%d)\n", err);
 		exit(EXIT_FAILURE);
@@ -551,7 +549,7 @@ int main(int argc, char **argv)
 	}
 
 	/* Initialize flash driver and mtd interface */
-	storage_t *strg = flashsrv_init();
+	storage_t *strg = flashsrv_init(&opts);
 	if (strg == NULL) {
 		exit(EXIT_FAILURE);
 	}
@@ -559,23 +557,28 @@ int main(int argc, char **argv)
 	/* Read partition table and initialize */
 	if (flashsrv_partsInit(strg) < 0) {
 		storage_remove(strg);
-		flashdrv_contextDestroy(strg->dev->ctx);
-		flashsrv_devDestroy(strg);
-		free(strg);
+		opts.driver->destroy(strg);
 		exit(EXIT_FAILURE);
 	}
 
-	if (flashsrv_parseArgs(argc, argv) < 0) {
-		storage_remove(strg);
-		flashdrv_contextDestroy(strg->dev->ctx);
-		flashsrv_devDestroy(strg);
-		free(strg);
-		exit(EXIT_FAILURE);
+	if ((opts.root.partname != NULL) && (opts.root.fs != NULL)) {
+		if (flashsrv_mountRoot(opts.root.partname, opts.root.fs) < 0) {
+			storage_remove(strg);
+			opts.driver->destroy(strg);
+			exit(EXIT_FAILURE);
+		}
 	}
 
 	/* Finished server initialization - kill parent */
 	kill(getppid(), SIGUSR1);
-	storage_run(1, 2 * _PAGE_SIZE);
+	err = storage_run(1, 2 * _PAGE_SIZE);
+
+	storage_remove(strg);
+	opts.driver->destroy(strg);
+
+	if (err < 0) {
+		exit(EXIT_FAILURE);
+	}
 
 	return EXIT_SUCCESS;
 }

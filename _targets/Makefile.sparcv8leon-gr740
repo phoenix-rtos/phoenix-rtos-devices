@@ -3,7 +3,7 @@
 #
 # sparcv8leon-gr740 drivers
 #
-# Copyright 2024 Phoenix Systems
+# Copyright 2025 Phoenix Systems
 #
 
-DEFAULT_COMPONENTS := grlib-multi ftmctrl-flash
+DEFAULT_COMPONENTS := grlib-multi flashdrv
