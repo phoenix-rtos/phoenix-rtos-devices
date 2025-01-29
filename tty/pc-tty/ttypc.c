@@ -117,12 +117,20 @@ static void ttypc_klogClbk(const char *data, size_t size)
 }
 
 
-int main(void)
+int main(int argc, char **argv)
 {
 	unsigned int i;
 	char path[12];
 	oid_t oid;
 	int err;
+
+	int isconsole = 1;
+	if ((argc == 2) && (strcmp(argv[1], "-n") == 0)) {
+		isconsole = 0;
+	}
+	else if (argc != 1) {
+		return -1;
+	}
 
 	/* Initialize driver */
 	memset(&ttypc_common, 0, sizeof(ttypc_t));
@@ -196,15 +204,17 @@ int main(void)
 	while (lookup("/", NULL, &oid) < 0)
 		usleep(10000);
 
-	oid.port = ttypc_common.port;
-	oid.id = 0;
-	if (create_dev(&oid, _PATH_CONSOLE) < 0) {
-		fprintf(stderr, "pc-tty: failed to register device %s\n", _PATH_CONSOLE);
-	}
+	if (isconsole != 0) {
+		oid.port = ttypc_common.port;
+		oid.id = 0;
+		if (create_dev(&oid, _PATH_CONSOLE) < 0) {
+			fprintf(stderr, "pc-tty: failed to register device %s\n", _PATH_CONSOLE);
+		}
 
-	libklog_init(ttypc_klogClbk);
-	oid_t kmsgctrl = { .port = ttypc_common.port, .id = KMSG_CTRL_ID };
-	libklog_ctrlRegister(&kmsgctrl);
+		libklog_init(ttypc_klogClbk);
+		oid_t kmsgctrl = { .port = ttypc_common.port, .id = KMSG_CTRL_ID };
+		libklog_ctrlRegister(&kmsgctrl);
+	}
 
 	/* Register devices */
 	for (i = 0; i < NVTS; i++) {
