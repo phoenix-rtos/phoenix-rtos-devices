@@ -1,11 +1,11 @@
 /*
  * Phoenix-RTOS
  *
- * PS/2 101-key US keyboard (based on FreeBSD 4.4 pcvt)
+ * PS/2 101-key US keyboard and 3-button mouse (based on FreeBSD 4.4 pcvt)
  *
  * Copyright 2001, 2007-2008 Pawel Pisarczyk
- * Copyright 2012, 2017, 2019, 2020 Phoenix Systems
- * Author: Pawel Pisarczyk, Lukasz Kosinski
+ * Copyright 2012, 2017, 2019, 2020, 2024 Phoenix Systems
+ * Author: Pawel Pisarczyk, Lukasz Kosinski, Adam Greloch
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -16,14 +16,35 @@
 #include <stdint.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdbool.h>
+#include <poll.h>
 
+#include <sys/file.h>
 #include <sys/interrupt.h>
 #include <sys/io.h>
 #include <sys/threads.h>
 #include <sys/reboot.h>
 
+#include <libklog.h>
+#include <fcntl.h>
+#include <posix/utils.h>
+
+#include <board_config.h>
+
 #include "ttypc_kbd.h"
+#include "ttypc_mouse.h"
 #include "ttypc_vga.h"
+#include "ttypc_ps2.h"
+#include "event_queue.h"
+
+
+#ifndef TTYPC_KBD_CTL_PRIO
+#define TTYPC_KBD_CTL_PRIO 1
+#endif
+
+#ifndef TTYPC_KBD_POOL_PRIO
+#define TTYPC_KBD_POOL_PRIO 1
+#endif
 
 
 /* Keyboard key map entry */
@@ -38,6 +59,7 @@ typedef struct {
 
 
 /* U.S 101 keys keyboard map */
+/* clang-format off */
 static const ttypc_kbd_keymap_t scodes[] = {
 	/*type       unshift    shift      ctl        altgr      shift_altgr scancode */
 	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 0 unused */
@@ -169,7 +191,7 @@ static const ttypc_kbd_keymap_t scodes[] = {
 	{ KB_NONE,   "",        "",        "",        "",        "" },    /* 126 */
 	{ KB_NONE,   "",        "",        "",        "",        "" }     /* 127 */
 };
-
+/* clang-format on */
 
 /* KB_KP (keypad keys) modifiers map */
 static const unsigned char kpmod[] = {
@@ -193,14 +215,16 @@ static const unsigned char kpmod[] = {
 
 
 /* Gets key code from keyboard */
-static char *_ttypc_kbd_get(ttypc_t *ttypc)
+static char *_ttypc_kbd_get(ttypc_t *ttypc, unsigned char dt)
 {
 	static const char erreboot[] = "Failed to reboot\n";
 	static unsigned char ext = 0, lkey = 0, lkeyup = 0, lext = 0;
-	unsigned char dt;
 	char *s = NULL;
 
-	dt = inb((void *)ttypc->kbd);
+#if PC_TTY_CREATE_PS2_VDEVS
+	/* Copy this event in raw form to queue */
+	(void)event_queue_put(&ttypc->keq, dt, 1);
+#endif
 
 	/* Extended scan code */
 	if (scodes[dt & 0x7f].type == KB_EXT) {
@@ -213,36 +237,36 @@ static char *_ttypc_kbd_get(ttypc_t *ttypc)
 		dt &= 0x7f;
 
 		switch (scodes[dt].type) {
-		case KB_SCROLL:
-			if (!ext)
-				ttypc->shiftst &= ~KB_SCROLL;
-			break;
+			case KB_SCROLL:
+				if (!ext)
+					ttypc->shiftst &= ~KB_SCROLL;
+				break;
 
-		case KB_NUM:
-			if (!ext)
-				ttypc->shiftst &= ~KB_NUM;
-			break;
+			case KB_NUM:
+				if (!ext)
+					ttypc->shiftst &= ~KB_NUM;
+				break;
 
-		case KB_CAPS:
-			if (!ext)
-				ttypc->shiftst &= ~KB_CAPS;
-			break;
+			case KB_CAPS:
+				if (!ext)
+					ttypc->shiftst &= ~KB_CAPS;
+				break;
 
-		case KB_CTL:
-			ttypc->shiftst &= ~KB_CTL;
-			break;
+			case KB_CTL:
+				ttypc->shiftst &= ~KB_CTL;
+				break;
 
-		case KB_SHIFT:
-			if (!ext)
-				ttypc->shiftst &= ~KB_SHIFT;
-			break;
+			case KB_SHIFT:
+				if (!ext)
+					ttypc->shiftst &= ~KB_SHIFT;
+				break;
 
-		case KB_ALT:
-			if (ext)
-				ttypc->shiftst &= ~KB_ALTGR;
-			else
-				ttypc->shiftst &= ~KB_ALT;
-			break;
+			case KB_ALT:
+				if (ext)
+					ttypc->shiftst &= ~KB_ALTGR;
+				else
+					ttypc->shiftst &= ~KB_ALT;
+				break;
 		}
 
 		/* Last key released */
@@ -255,123 +279,123 @@ static char *_ttypc_kbd_get(ttypc_t *ttypc)
 	/* Key is pressed */
 	else {
 		switch (scodes[dt].type) {
-		/* Lock keys - Scroll, Num, Caps */
-		case KB_SCROLL:
-			if (ttypc->shiftst & KB_SCROLL)
+			/* Lock keys - Scroll, Num, Caps */
+			case KB_SCROLL:
+				if (ttypc->shiftst & KB_SCROLL)
+					break;
+				ttypc->shiftst |= KB_SCROLL;
+				ttypc->lockst ^= KB_SCROLL;
+				_ttypc_kbd_updateled(ttypc);
 				break;
-			ttypc->shiftst |= KB_SCROLL;
-			ttypc->lockst ^= KB_SCROLL;
-			_ttypc_kbd_updateled(ttypc);
-			break;
 
-		case KB_NUM:
-			if (ttypc->shiftst & KB_NUM)
+			case KB_NUM:
+				if (ttypc->shiftst & KB_NUM)
+					break;
+				ttypc->shiftst |= KB_NUM;
+				ttypc->lockst ^= KB_NUM;
+				_ttypc_kbd_updateled(ttypc);
 				break;
-			ttypc->shiftst |= KB_NUM;
-			ttypc->lockst ^= KB_NUM;
-			_ttypc_kbd_updateled(ttypc);
-			break;
 
-		case KB_CAPS:
-			if (ttypc->shiftst & KB_CAPS)
+			case KB_CAPS:
+				if (ttypc->shiftst & KB_CAPS)
+					break;
+				ttypc->shiftst |= KB_CAPS;
+				ttypc->lockst ^= KB_CAPS;
+				_ttypc_kbd_updateled(ttypc);
 				break;
-			ttypc->shiftst |= KB_CAPS;
-			ttypc->lockst ^= KB_CAPS;
-			_ttypc_kbd_updateled(ttypc);
-			break;
 
-		/* Shift keys - Ctl, Shift, Alt */
-		case KB_CTL:
-			ttypc->shiftst |= KB_CTL;
-			break;
-
-		case KB_SHIFT:
-			ttypc->shiftst |= KB_SHIFT;
-			break;
-
-		case KB_ALT:
-			if (ext)
-				ttypc->shiftst |= KB_ALTGR;
-			else
-				ttypc->shiftst |= KB_ALT;
-			break;
-
-		/* Function keys */
-		case KB_FUNC:
-		/* Regular ASCII */
-		case KB_ASCII:
-			/* Keys with extended scan codes don't depend on any modifiers */
-			if (ext) {
-				/* Handles keypad '/' key */
-				s = scodes[dt].unshift;
+			/* Shift keys - Ctl, Shift, Alt */
+			case KB_CTL:
+				ttypc->shiftst |= KB_CTL;
 				break;
-			}
-			/* Control modifier */
-			if (ttypc->shiftst & KB_CTL) {
-				s = scodes[dt].ctl;
-				break;
-			}
 
-			/* Right alt and right alt with shift modifiers */
-			if (ttypc->shiftst & KB_ALTGR) {
-				if (ttypc->shiftst & KB_SHIFT)
-					s = scodes[dt].shift_altgr;
+			case KB_SHIFT:
+				ttypc->shiftst |= KB_SHIFT;
+				break;
+
+			case KB_ALT:
+				if (ext)
+					ttypc->shiftst |= KB_ALTGR;
 				else
-					s = scodes[dt].altgr;
-			}
-			/* Shift modifier */
-			else if (ttypc->shiftst & KB_SHIFT) {
-				s = scodes[dt].shift;
-			}
-			/* No modifiers */
-			else {
-				s = scodes[dt].unshift;
-			}
-
-			/* Caps lock */
-			if ((ttypc->lockst & KB_CAPS) && (*scodes[dt].unshift >= 'a') && (*scodes[dt].unshift <= 'z')) {
-				if (s == scodes[dt].altgr)
-					s = scodes[dt].shift_altgr;
-				else if (s == scodes[dt].shift_altgr)
-					s = scodes[dt].altgr;
-				else if (s == scodes[dt].shift)
-					s = scodes[dt].unshift;
-				else if (s == scodes[dt].unshift)
-					s = scodes[dt].shift;
-			}
-			break;
-
-		/* Keys without meaning */
-		case KB_NONE:
-			break;
-
-		/* Keypad */
-		case KB_KP:
-			/* Keys with extended scan codes don't depend on any modifiers */
-			if (ext) {
-				/* Handles DEL, HOME, END, PU, PD and arrow (non keypad) keys */
-				s = scodes[dt].shift;
+					ttypc->shiftst |= KB_ALT;
 				break;
-			}
 
-			/* Shift modifier */
-			if (ttypc->shiftst & KB_SHIFT)
-				s = scodes[dt].shift;
-			/* Control modifier */
-			else if (ttypc->shiftst & KB_CTL)
-				s = scodes[dt].ctl;
-			/* No modifiers */
-			else
-				s = scodes[dt].unshift;
-
-			/* Num lock */
-			if (ttypc->lockst & KB_NUM) {
-				if (s == scodes[dt].shift)
+			/* Function keys */
+			case KB_FUNC:
+			/* Regular ASCII */
+			case KB_ASCII:
+				/* Keys with extended scan codes don't depend on any modifiers */
+				if (ext) {
+					/* Handles keypad '/' key */
 					s = scodes[dt].unshift;
-				else if ((s == scodes[dt].ctl) || (s == scodes[dt].unshift))
+					break;
+				}
+				/* Control modifier */
+				if (ttypc->shiftst & KB_CTL) {
+					s = scodes[dt].ctl;
+					break;
+				}
+
+				/* Right alt and right alt with shift modifiers */
+				if (ttypc->shiftst & KB_ALTGR) {
+					if (ttypc->shiftst & KB_SHIFT)
+						s = scodes[dt].shift_altgr;
+					else
+						s = scodes[dt].altgr;
+				}
+				/* Shift modifier */
+				else if (ttypc->shiftst & KB_SHIFT) {
 					s = scodes[dt].shift;
-			}
-			break;
+				}
+				/* No modifiers */
+				else {
+					s = scodes[dt].unshift;
+				}
+
+				/* Caps lock */
+				if ((ttypc->lockst & KB_CAPS) && (*scodes[dt].unshift >= 'a') && (*scodes[dt].unshift <= 'z')) {
+					if (s == scodes[dt].altgr)
+						s = scodes[dt].shift_altgr;
+					else if (s == scodes[dt].shift_altgr)
+						s = scodes[dt].altgr;
+					else if (s == scodes[dt].shift)
+						s = scodes[dt].unshift;
+					else if (s == scodes[dt].unshift)
+						s = scodes[dt].shift;
+				}
+				break;
+
+			/* Keys without meaning */
+			case KB_NONE:
+				break;
+
+			/* Keypad */
+			case KB_KP:
+				/* Keys with extended scan codes don't depend on any modifiers */
+				if (ext) {
+					/* Handles DEL, HOME, END, PU, PD and arrow (non keypad) keys */
+					s = scodes[dt].shift;
+					break;
+				}
+
+				/* Shift modifier */
+				if (ttypc->shiftst & KB_SHIFT)
+					s = scodes[dt].shift;
+				/* Control modifier */
+				else if (ttypc->shiftst & KB_CTL)
+					s = scodes[dt].ctl;
+				/* No modifiers */
+				else
+					s = scodes[dt].unshift;
+
+				/* Num lock */
+				if (ttypc->lockst & KB_NUM) {
+					if (s == scodes[dt].shift)
+						s = scodes[dt].unshift;
+					else if ((s == scodes[dt].ctl) || (s == scodes[dt].unshift))
+						s = scodes[dt].shift;
+				}
+				break;
 		}
 	}
 
@@ -400,165 +424,205 @@ static char *_ttypc_kbd_get(ttypc_t *ttypc)
 
 
 /* Keyboard interrupt handler */
-static int ttypc_kbd_interrupt(unsigned int n, void *arg)
+static int _ttypc_kbd_interrupt(unsigned int n, void *arg)
 {
-	ttypc_t *ttypc = (ttypc_t *)arg;
-
-	return ttypc->kcond;
+	return 0;
 }
 
 
-static void ttypc_kbd_ctlthr(void *arg)
+/* Macros for distinguishing the origin of pending output */
+#define OUTPUT_PENDING(status)       (((status) & (1u << 0u)) != 0)
+#define KBD_OUTPUT_PENDING(status)   (((status) & (1u << 5u)) == 0)
+#define MOUSE_OUTPUT_PENDING(status) (((status) & (1u << 5u)) != 0)
+
+
+static void ttypc_kbd_handle_event(ttypc_t *ttypc, unsigned char b)
 {
-	ttypc_t *ttypc = (ttypc_t *)arg;
-	ttypc_vt_t *cvt;
+	ttypc_vt_t *cvt = ttypc->vt;
 	char *s, k;
 	char buff[10];
 	unsigned char m;
 
-	mutexLock(ttypc->klock);
-	for (;;) {
-		/* Wait for character codes to show up in keyboard output buffer */
-		while (!(inb((void *)((uintptr_t)ttypc->kbd + 4)) & 0x01))
-			condWait(ttypc->kcond, ttypc->klock, 0);
+	mutexLock(ttypc->lock);
+	mutexLock(cvt->lock);
 
-		mutexLock(ttypc->lock);
-		mutexLock((cvt = ttypc->vt)->lock);
+	if ((s = _ttypc_kbd_get(ttypc, b)) == NULL) {
+		mutexUnlock(cvt->lock);
+		mutexUnlock(ttypc->lock);
+		return;
+	}
 
-		if ((s = _ttypc_kbd_get(ttypc)) == NULL) {
-			mutexUnlock(cvt->lock);
-			mutexUnlock(ttypc->lock);
-			continue;
-		}
+	/* Scroll up one line */
+	if (!strcmp(s, "\033[A") && ((ttypc->lockst & KB_SCROLL) || (ttypc->shiftst == (KB_CTL | KB_SHIFT)))) {
+		_ttypc_vga_scroll(cvt, 1);
+	}
+	/* Scroll down one line */
+	else if (!strcmp(s, "\033[B") && ((ttypc->lockst & KB_SCROLL) || (ttypc->shiftst == (KB_CTL | KB_SHIFT)))) {
+		_ttypc_vga_scroll(cvt, -1);
+	}
+	/* Scroll up one page */
+	else if (!strcmp(s, "\033[5~") && ((ttypc->lockst & KB_SCROLL) || (ttypc->shiftst == KB_SHIFT))) {
+		_ttypc_vga_scroll(cvt, cvt->rows);
+	}
+	/* Scroll down one page */
+	else if (!strcmp(s, "\033[6~") && ((ttypc->lockst & KB_SCROLL) || (ttypc->shiftst == KB_SHIFT))) {
+		_ttypc_vga_scroll(cvt, -cvt->rows);
+	}
+	/* Scroll to top */
+	else if (!strcmp(s, "\033[H") && ((ttypc->lockst & KB_SCROLL) || (ttypc->shiftst == KB_SHIFT))) {
+		_ttypc_vga_scroll(cvt, cvt->scrbsz - cvt->scrbpos);
+	}
+	/* Scroll to bottom */
+	else if (!strcmp(s, "\033[F") && ((ttypc->lockst & KB_SCROLL) || (ttypc->shiftst == KB_SHIFT))) {
+		_ttypc_vga_scroll(cvt, -cvt->scrbpos);
+	}
+	/* Switch between VTs (up to 12) */
+	else if (!strncmp(s, "\033[", 2) && (s[2] >= 'm') && (s[2] <= 'x') && !s[3]) {
+		if ((s[2] - 'm') < NVTS)
+			_ttypc_vga_switch(ttypc->vts + (s[2] - 'm'));
+	}
+	/* Regular character processing */
+	else {
+		/* Process KP/FN keys */
+		if (!strncmp(s, "\033[", 2)) {
+			m = kpmod[ttypc->shiftst & 0x0f];
 
-		/* Scroll up one line */
-		if (!strcmp(s, "\033[A") && ((ttypc->lockst & KB_SCROLL) || (ttypc->shiftst == (KB_CTL | KB_SHIFT)))) {
-			_ttypc_vga_scroll(cvt, 1);
-		}
-		/* Scroll down one line */
-		else if (!strcmp(s, "\033[B") && ((ttypc->lockst & KB_SCROLL) || (ttypc->shiftst == (KB_CTL | KB_SHIFT)))) {
-			_ttypc_vga_scroll(cvt, -1);
-		}
-		/* Scroll up one page */
-		else if (!strcmp(s, "\033[5~") && ((ttypc->lockst & KB_SCROLL) || (ttypc->shiftst == KB_SHIFT))) {
-			_ttypc_vga_scroll(cvt, cvt->rows);
-		}
-		/* Scroll down one page */
-		else if (!strcmp(s, "\033[6~") && ((ttypc->lockst & KB_SCROLL) || (ttypc->shiftst == KB_SHIFT))) {
-			_ttypc_vga_scroll(cvt, -cvt->rows);
-		}
-		/* Scroll to top */
-		else if (!strcmp(s, "\033[H") && ((ttypc->lockst & KB_SCROLL) || (ttypc->shiftst == KB_SHIFT))) {
-			_ttypc_vga_scroll(cvt, cvt->scrbsz - cvt->scrbpos);
-		}
-		/* Scroll to bottom */
-		else if (!strcmp(s, "\033[F") && ((ttypc->lockst & KB_SCROLL) || (ttypc->shiftst == KB_SHIFT))) {
-			_ttypc_vga_scroll(cvt, -cvt->scrbpos);
-		}
-		/* Switch between VTs (up to 12) */
-		else if (!strncmp(s, "\033[", 2) && (s[2] >= 'm') && (s[2] <= 'x') && !s[3]) {
-			if ((s[2] - 'm') < NVTS)
-				_ttypc_vga_switch(ttypc->vts + (s[2] - 'm'));
-		}
-		/* Regular character processing */
-		else {
-			/* Process KP/FN keys */
-			if (!strncmp(s, "\033[", 2)) {
-				m = kpmod[ttypc->shiftst & 0x0f];
-
-				if ((k = s[2])) {
-					if (!s[3] && ((k >= 'A' && k <= 'F') || k == 'H')) {
-						if (m) {
-							snprintf(buff, sizeof(buff), "\033[1;%u%c", m, k);
-							s = buff;
-						}
-						/* Cursor Key Mode */
-						else if (cvt->ckm) {
-							snprintf(buff, sizeof(buff), "\033O%c", k);
-							s = buff;
-						}
+			if ((k = s[2])) {
+				if (!s[3] && ((k >= 'A' && k <= 'F') || k == 'H')) {
+					if (m) {
+						snprintf(buff, sizeof(buff), "\033[1;%u%c", m, k);
+						s = buff;
 					}
-					else if ((s[3] == '~') && !s[4] && (k >= '2' && k <= '6' && (k != '4'))) {
-						if (m) {
-							snprintf(buff, sizeof(buff), "\033[%c;%u~", k, m);
-							s = buff;
-						}
+					/* Cursor Key Mode */
+					else if (cvt->ckm) {
+						snprintf(buff, sizeof(buff), "\033O%c", k);
+						s = buff;
+					}
+				}
+				else if ((s[3] == '~') && !s[4] && (k >= '2' && k <= '6' && (k != '4'))) {
+					if (m) {
+						snprintf(buff, sizeof(buff), "\033[%c;%u~", k, m);
+						s = buff;
 					}
 				}
 			}
-			else if (!strcmp(s, "\r") || !strcmp(s, "\n")) {
-				/* Line feed/New line Mode */
-				if (cvt->lnm)
-					s = "\r\n";
-			}
-
-			while (*s && !libtty_putchar(&cvt->tty, *s++, NULL));
+		}
+		else if (!strcmp(s, "\r") || !strcmp(s, "\n")) {
+			/* Line feed/New line Mode */
+			if (cvt->lnm)
+				s = "\r\n";
 		}
 
-		mutexUnlock(cvt->lock);
-		mutexUnlock(ttypc->lock);
+		while (*s && !libtty_putchar(&cvt->tty, *s++, NULL))
+			;
+	}
+
+	mutexUnlock(cvt->lock);
+	mutexUnlock(ttypc->lock);
+}
+
+
+static void ttypc_ps2_ctlthr(void *arg)
+{
+	ttypc_t *ttypc = (ttypc_t *)arg;
+	unsigned char dt;
+	unsigned char status;
+
+	mutexLock(ttypc->kmlock);
+	for (;;) {
+		status = ttypc_ps2_read_ctrl(ttypc);
+		if (OUTPUT_PENDING(status)) {
+			dt = inb((void *)ttypc->kbd);
+			if (KBD_OUTPUT_PENDING(status)) {
+				ttypc_kbd_handle_event(ttypc, dt);
+			}
+			else if (MOUSE_OUTPUT_PENDING(status)) {
+				ttypc_mouse_handle_event(ttypc, dt);
+			}
+		}
+		else {
+			condWait(ttypc->kmcond, ttypc->kmlock, 0);
+		}
 	}
 }
 
 
-/* Waits for keyboard controller status bit with small timeout */
-static int ttypc_kbd_waitstatus(ttypc_t *ttypc, unsigned char bit, unsigned char state)
+#if PC_TTY_CREATE_PS2_VDEVS
+static void ttypc_kbd_poolthr(void *arg)
 {
-	unsigned int i;
+	ttypc_t *ttypc = (ttypc_t *)arg;
+	msg_rid_t rid;
+	msg_t msg;
+	int rv;
 
-	for (i = 0; i < 0xffff; i++) {
-		if (!(inb((void *)((uintptr_t)ttypc->kbd + 4)) & ((1 << bit) ^ (state << bit))))
-			return EOK;
-		usleep(10);
+	for (;;) {
+		rv = msgRecv(ttypc->kport, &msg, &rid);
+		if (rv < 0) {
+			continue;
+		}
+
+		rv = libklog_ctrlHandle(ttypc->kport, &msg, rid);
+		if (rv == 0) {
+			/* msg has been handled by libklog */
+			continue;
+		}
+
+		switch (msg.type) {
+			case mtOpen:
+				msg.o.err = EOK;
+				break;
+
+			case mtRead:
+				msg.o.err = event_queue_get(&ttypc->keq, msg.o.data, msg.o.size, 1, msg.i.io.mode);
+				break;
+
+			case mtGetAttr:
+				if (msg.i.attr.type != atPollStatus) {
+					msg.o.err = -EINVAL;
+					break;
+				}
+
+				msg.o.attr.val = 0;
+				rv = event_queue_count(&ttypc->keq);
+				if (rv >= 1) {
+					msg.o.attr.val |= POLLIN;
+				}
+
+				msg.o.err = EOK;
+				break;
+
+			case mtClose:
+				msg.o.err = EOK;
+				break;
+
+			default:
+				msg.o.err = -ENOSYS;
+				break;
+		}
+
+		msgRespond(ttypc->kport, &msg, rid);
 	}
-
-	return -ETIMEDOUT;
 }
-
-
-/* Reads a byte from keyboard controller output buffer */
-/*
- * FIXME: (unused) Function not to be removed, needs to be preserved
- * for future implementation of ps2-aux (mouse device) support.
- */
-__attribute__((unused)) static int ttypc_kbd_read(ttypc_t *ttypc)
-{
-	int err;
-
-	/* Wait for output buffer not to be empty */
-	if ((err = ttypc_kbd_waitstatus(ttypc, 0, 1)) < 0)
-		return err;
-
-	return inb((void *)ttypc->kbd);
-}
-
-
-/* Writes a byte to keyboard controller input buffer */
-static int ttypc_kbd_write(ttypc_t *ttypc, unsigned char byte)
-{
-	int err;
-
-	/* Wait for input buffer to be empty */
-	if ((err = ttypc_kbd_waitstatus(ttypc, 1, 0)) < 0)
-		return err;
-
-	outb((void *)ttypc->kbd, byte);
-
-	return EOK;
-}
+#endif /* PC_TTY_CREATE_PS2_VDEVS */
 
 
 /* May not work for PS/2 emulation through USB legacy support */
 int _ttypc_kbd_updateled(ttypc_t *ttypc)
 {
+	int rv;
+
 	do {
 		/* Send update LEDs command */
-		if (ttypc_kbd_write(ttypc, 0xed) < 0)
+		rv = ttypc_ps2_write(ttypc, 0xed);
+		if (rv < 0) {
 			break;
+		}
 
 		/* Send LEDs state */
-		if (ttypc_kbd_write(ttypc, (ttypc->lockst >> 4) & 0x07) < 0)
+		rv = ttypc_ps2_write(ttypc, (ttypc->lockst >> 4u) & 0x07);
+		if (rv < 0) {
 			break;
+		}
 
 		return 1;
 	} while (0);
@@ -569,9 +633,14 @@ int _ttypc_kbd_updateled(ttypc_t *ttypc)
 
 void ttypc_kbd_destroy(ttypc_t *ttypc)
 {
-	resourceDestroy(ttypc->klock);
-	resourceDestroy(ttypc->kcond);
+	ttypc_mouse_destroy(ttypc);
 	resourceDestroy(ttypc->kinth);
+	resourceDestroy(ttypc->kmcond);
+	resourceDestroy(ttypc->kmlock);
+#if PC_TTY_CREATE_PS2_VDEVS
+	event_queue_destroy(&ttypc->keq);
+	portDestroy(ttypc->kport);
+#endif
 }
 
 
@@ -594,34 +663,93 @@ int ttypc_kbd_init(ttypc_t *ttypc)
 	/* Configure typematic */
 	do {
 		/* Send set typematic rate/delay command */
-		if (ttypc_kbd_write(ttypc, 0xf3) < 0)
+		err = ttypc_ps2_write(ttypc, 0xf3);
+		if (err < 0) {
 			break;
+		}
 
 		/* 250 ms / 30.0 reports/sec */
-		if (ttypc_kbd_write(ttypc, 0) < 0)
+		err = ttypc_ps2_write(ttypc, 0);
+		if (err < 0) {
 			break;
+		}
 	} while (0);
 
-	if ((err = mutexCreate(&ttypc->klock)) < 0)
-		return err;
+#if PC_TTY_CREATE_PS2_VDEVS
+	oid_t oid;
 
-	if ((err = condCreate(&ttypc->kcond)) < 0) {
-		resourceDestroy(ttypc->klock);
+	/* Wait for the filesystem */
+	while (lookup("/", NULL, &oid) < 0) {
+		usleep(10000);
+	}
+
+	/* Create virtual keyboard device */
+	err = portCreate(&ttypc->kport);
+	if (err < 0) {
+		(void)fprintf(stderr, "pc-tty: failed to create keyboard port\n");
 		return err;
 	}
 
-	/* Attach interrupt */
-	if ((err = interrupt((ttypc->kirq = 1), ttypc_kbd_interrupt, ttypc, ttypc->kcond, &ttypc->kinth)) < 0) {
-		resourceDestroy(ttypc->klock);
-		resourceDestroy(ttypc->kcond);
+	oid.port = ttypc->kport;
+	oid.id = 0;
+
+	err = create_dev(&oid, "/dev/kbd");
+	if (err < 0) {
+		(void)fprintf(stderr, "pc-tty: failed to register kbd device\n");
 		return err;
 	}
+#endif
 
-	/* Launch keyboard control thread */
-	if ((err = beginthread(ttypc_kbd_ctlthr, 1, ttypc->kstack, sizeof(ttypc->kstack), ttypc)) < 0) {
-		resourceDestroy(ttypc->klock);
-		resourceDestroy(ttypc->kcond);
-		resourceDestroy(ttypc->kinth);
+	do {
+		err = mutexCreate(&ttypc->kmlock);
+		if (err < 0) {
+			break;
+		}
+
+		err = condCreate(&ttypc->kmcond);
+		if (err < 0) {
+			break;
+		}
+
+#if PC_TTY_CREATE_PS2_VDEVS
+		err = event_queue_init(&ttypc->keq);
+		if (err < 0) {
+			break;
+		}
+#endif
+
+		/* Attach KIRQ1 (kbd event) interrupt handle */
+		ttypc->kirq = 1;
+		err = interrupt(ttypc->kirq, _ttypc_kbd_interrupt, ttypc, ttypc->kmcond, &ttypc->kinth);
+		if (err < 0) {
+			break;
+		}
+
+		/* Initialize mouse */
+		err = ttypc_mouse_init(ttypc);
+		if (err < 0) {
+			break;
+		}
+
+		/* Launch keyboard/mouse control thread */
+		err = beginthread(ttypc_ps2_ctlthr, TTYPC_KBD_CTL_PRIO, ttypc->kstack, sizeof(ttypc->kstack), ttypc);
+		if (err < 0) {
+			break;
+		}
+
+#if PC_TTY_CREATE_PS2_VDEVS
+		/* Launch keyboard pool thread */
+		err = beginthread(ttypc_kbd_poolthr, TTYPC_KBD_POOL_PRIO, ttypc->kpstack, sizeof(ttypc->kpstack), ttypc);
+		if (err < 0) {
+			break;
+		}
+#endif
+
+	} while (0);
+
+	if (err < 0) {
+		/* TODO: don't try to destroy resources that failed to create */
+		ttypc_kbd_destroy(ttypc);
 		return err;
 	}
 
