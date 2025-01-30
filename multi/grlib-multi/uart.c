@@ -362,6 +362,32 @@ static int uart_cguInit(unsigned int n)
 	pctl.task.cguctrl.cgudev = cguinfo[n];
 
 	return platformctl(&pctl);
+#elif defined(__CPU_GR740)
+	static const unsigned int cguinfo[] = {
+		cgudev_apbuart0,
+		cgudev_apbuart1
+	};
+	platformctl_t ctl = {
+		.action = pctl_get,
+		.type = pctl_cguctrl,
+		.task.cguctrl.cgudev = cguinfo[n]
+	};
+
+	if (platformctl(&ctl) < 0) {
+		return -1;
+	}
+
+	if (ctl.task.cguctrl.v.stateVal == 1) {
+		return 0;
+	}
+
+	ctl.action = pctl_set;
+	ctl.type = pctl_cguctrl;
+
+	ctl.task.cguctrl.v.state = enable;
+	ctl.task.cguctrl.cgudev = cguinfo[n];
+
+	return platformctl(&ctl);
 #else
 	return 0;
 #endif
