@@ -12,6 +12,9 @@ ifeq ($(TARGET_FAMILY),riscv64)
   LOCAL_SRCS += uarthw-riscv.c
 else ifeq ($(TARGET_FAMILY),ia32)
   LOCAL_SRCS += uarthw-pc.c
+  ifneq ($(CONSOLE),serial)
+    LOCAL_CFLAGS += -DNCONSOLE
+  endif
 else ifeq ($(TARGET_SUBFAMILY),zynq7000)
   LOCAL_SRCS += uarthw-zynq7000.c
 endif
