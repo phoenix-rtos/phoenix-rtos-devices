@@ -137,7 +137,8 @@ static void signal_txready(void *arg)
 #ifdef __TARGET_RISCV64
 __attribute__((section(".interrupt"), aligned(0x1000)))
 #endif
-static int uart_interrupt(unsigned int n, void *arg)
+static int
+uart_interrupt(unsigned int n, void *arg)
 {
 	return ((uart_t *)arg)->intcond;
 }
@@ -187,6 +188,15 @@ static void uart_ioctl(unsigned int port, msg_t *msg)
 	uart = uart_get(&oid);
 	if (uart == NULL) {
 		err = -EINVAL;
+	}
+	else if (req == KIOEN) {
+		if (uart == &uart_common.uarts[UART16550_CONSOLE_USER]) {
+			libklog_enable((unsigned int)idata);
+			err = EOK;
+		}
+		else {
+			err = -EINVAL;
+		}
 	}
 	else {
 		err = libtty_ioctl(&uart->tty, ioctl_getSenderPid(msg), req, idata, &odata);
@@ -290,16 +300,20 @@ static void _uart_mkDev(uint32_t port, int isconsole)
 				return;
 			}
 
-			if ((isconsole != 0) && (i == UART16550_CONSOLE_USER)) {
-				libklog_init(uart_klogClbk);
+			if (i == UART16550_CONSOLE_USER) {
+				if (isconsole != 0) {
+					libklog_init(uart_klogClbk);
+					if (create_dev(&uart_common.uarts[i].oid, _PATH_CONSOLE) < 0) {
+						fprintf(stderr, "uart16550: failed to register %s\n", _PATH_CONSOLE);
+						return;
+					}
 
-				if (create_dev(&uart_common.uarts[i].oid, _PATH_CONSOLE) < 0) {
-					fprintf(stderr, "uart16550: failed to register %s\n", _PATH_CONSOLE);
-					return;
+					oid_t kmsgctrl = { .port = port, .id = KMSG_CTRL_ID };
+					libklog_ctrlRegister(&kmsgctrl);
 				}
-
-				oid_t kmsgctrl = { .port = port, .id = KMSG_CTRL_ID };
-				libklog_ctrlRegister(&kmsgctrl);
+				else {
+					libklog_initNoDev(uart_klogClbk);
+				}
 			}
 		}
 	}

@@ -42,7 +42,7 @@ ttypc_t ttypc_common;
 static void ttypc_poolthr(void *arg)
 {
 	ttypc_t *ttypc = (ttypc_t *)arg;
-	const void *idata, *odata;
+	const void *idata, *odata = NULL;
 	unsigned long req;
 	msg_rid_t rid;
 	msg_t msg;
@@ -91,12 +91,22 @@ static void ttypc_poolthr(void *arg)
 
 			case mtDevCtl:
 				idata = ioctl_unpack(&msg, &req, &id);
-				if (id < NVTS) {
-					err = ttypc_vt_ioctl(ttypc->vts + id, ioctl_getSenderPid(&msg), req, idata, &odata);
+				if (req == KIOEN) {
+					if (id == 0) {
+						libklog_enable((unsigned int)idata);
+						err = EOK;
+					}
+					else {
+						err = -EINVAL;
+					}
 				}
 				else {
-					odata = NULL;
-					err = -EINVAL;
+					if (id < NVTS) {
+						err = ttypc_vt_ioctl(ttypc->vts + id, ioctl_getSenderPid(&msg), req, idata, &odata);
+					}
+					else {
+						err = -EINVAL;
+					}
 				}
 				ioctl_setResponse(&msg, req, err, odata);
 				break;
@@ -205,15 +215,18 @@ int main(int argc, char **argv)
 		usleep(10000);
 
 	if (isconsole != 0) {
+		libklog_init(ttypc_klogClbk);
 		oid.port = ttypc_common.port;
 		oid.id = 0;
 		if (create_dev(&oid, _PATH_CONSOLE) < 0) {
 			fprintf(stderr, "pc-tty: failed to register device %s\n", _PATH_CONSOLE);
 		}
 
-		libklog_init(ttypc_klogClbk);
 		oid_t kmsgctrl = { .port = ttypc_common.port, .id = KMSG_CTRL_ID };
 		libklog_ctrlRegister(&kmsgctrl);
+	}
+	else {
+		libklog_initNoDev(ttypc_klogClbk);
 	}
 
 	/* Register devices */

@@ -25,7 +25,13 @@ typedef void (*libklog_write_t)(const char *buf, size_t size);
 int libklog_ctrlHandle(uint32_t port, msg_t *msg, msg_rid_t rid);
 
 
+void libklog_enable(int enable);
+
+
 int libklog_ctrlRegister(oid_t *oid);
+
+
+int libklog_initNoDev(libklog_write_t clbk);
 
 
 int libklog_init(libklog_write_t clbk);
