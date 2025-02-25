@@ -338,7 +338,7 @@ int main(void)
 	i2c_init();
 	uart_init();
 	rng_init();
-	libklog_init(log_write);
+	libklog_init(log_write, 1);
 
 #if BUILTIN_POSIXSRV
 	posixsrv_start();

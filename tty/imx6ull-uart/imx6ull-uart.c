@@ -740,7 +740,7 @@ int main(int argc, char **argv)
 
 	if (is_console != 0) {
 		create_dev(&dev, _PATH_CONSOLE);
-		libklog_init(libklog_clbk);
+		libklog_init(libklog_clbk, 1);
 		oid_t kmsgctrl = { .port = port, .id = KMSG_CTRL_ID };
 		libklog_ctrlRegister(&kmsgctrl);
 	}

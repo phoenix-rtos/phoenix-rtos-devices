@@ -612,9 +612,9 @@ int main(void)
 	create_dev(&oid, _PATH_CONSOLE);
 
 #if !ISEMPTY(RTT_CONSOLE_USER)
-	libklog_init(rtt_klogCblk);
+	libklog_init(rtt_klogCblk, 1);
 #else
-	libklog_init(uart_klogCblk);
+	libklog_init(uart_klogCblk, 1);
 #endif
 	oid_t kmsgctrl = { .port = common.uart_port, .id = id_kmsgctrl };
 	libklog_ctrlRegister(&kmsgctrl);
