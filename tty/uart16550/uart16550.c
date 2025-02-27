@@ -76,14 +76,18 @@ static void set_baudrate(void *_uart, speed_t baud)
 {
 	uint8_t reg;
 	uart_t *uart = (uart_t *)_uart;
-	int baud_rate = libtty_baudrate_to_int(baud);
+	int32_t baud_rate = libtty_baudrate_to_int(baud);
 
-	if (baud_rate <= 0 || baud_rate > 115200) {
+	if (baud_rate <= 0) {
 		return;
 	}
 
 	/* Baud divisor */
 	baud_rate = uart->clk / (16 * baud_rate);
+
+	if (baud_rate > UINT16_MAX) {
+		return;
+	}
 
 	reg = uarthw_read(uart->hwctx, REG_LCR);
 
