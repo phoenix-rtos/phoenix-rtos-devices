@@ -322,7 +322,7 @@ static void uart_mkDev(unsigned int id)
 	}
 
 	if (id == UART_CONSOLE_USER) {
-		libklog_init(uart_klogClbk);
+		libklog_init(uart_klogClbk, 1);
 
 		if (create_dev(&uart_common.uart.oid, _PATH_CONSOLE) < 0) {
 			debug("zynq7000-uart: cannot create device file\n");

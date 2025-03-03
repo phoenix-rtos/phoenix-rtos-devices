@@ -241,7 +241,7 @@ int main(void)
 				fprintf(stderr, "spike-tty: failed to register %s\n", path);
 			}
 
-			libklog_init(spiketty_klogClbk);
+			libklog_init(spiketty_klogClbk, 1);
 			oid_t kmsgctrl = { .port = port, .id = KMSG_CTRL_ID };
 			libklog_ctrlRegister(&kmsgctrl);
 		}

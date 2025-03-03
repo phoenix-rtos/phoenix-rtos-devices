@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <paths.h>
+#include <string.h>
 
 #include <sys/file.h>
 #include <sys/interrupt.h>
@@ -187,6 +188,10 @@ static void uart_ioctl(unsigned int port, msg_t *msg)
 	if (uart == NULL) {
 		err = -EINVAL;
 	}
+	else if ((uart == &uart_common.uarts[UART16550_CONSOLE_USER]) && (req == KIOEN)) {
+		libklog_enable((unsigned int)idata);
+		err = EOK;
+	}
 	else {
 		err = libtty_ioctl(&uart->tty, ioctl_getSenderPid(msg), req, idata, &odata);
 	}
@@ -273,7 +278,7 @@ static void uart_klogClbk(const char *data, size_t size)
 }
 
 
-static void _uart_mkDev(uint32_t port)
+static void _uart_mkDev(uint32_t port, int isconsole)
 {
 	char path[12];
 	unsigned int i;
@@ -290,15 +295,17 @@ static void _uart_mkDev(uint32_t port)
 			}
 
 			if (i == UART16550_CONSOLE_USER) {
-				libklog_init(uart_klogClbk);
+				libklog_init(uart_klogClbk, isconsole);
 
-				if (create_dev(&uart_common.uarts[i].oid, _PATH_CONSOLE) < 0) {
-					fprintf(stderr, "uart16550: failed to register %s\n", _PATH_CONSOLE);
-					return;
+				if (isconsole != 0) {
+					if (create_dev(&uart_common.uarts[i].oid, _PATH_CONSOLE) < 0) {
+						fprintf(stderr, "uart16550: failed to register %s\n", _PATH_CONSOLE);
+						return;
+					}
+
+					oid_t kmsgctrl = { .port = port, .id = KMSG_CTRL_ID };
+					libklog_ctrlRegister(&kmsgctrl);
 				}
-
-				oid_t kmsgctrl = { .port = port, .id = KMSG_CTRL_ID };
-				libklog_ctrlRegister(&kmsgctrl);
 			}
 		}
 	}
@@ -354,11 +361,19 @@ static int _uart_init(uart_t *uart, unsigned int uartn, unsigned int speed)
 }
 
 
-int main(void)
+int main(int argc, char **argv)
 {
 	unsigned int i;
 	uint32_t port;
 	int err;
+
+	int isconsole = 1;
+	if ((argc == 2) && (strcmp(argv[1], "-n") == 0)) {
+		isconsole = 0;
+	}
+	else if (argc != 1) {
+		return -1;
+	}
 
 	portCreate(&port);
 
@@ -375,7 +390,7 @@ int main(void)
 	}
 
 	beginthread(poolthr, 4, uart_common.stack, sizeof(uart_common.stack), (void *)(uintptr_t)port);
-	_uart_mkDev(port);
+	_uart_mkDev(port, isconsole);
 	poolthr((void *)(uintptr_t)port);
 
 	return EXIT_SUCCESS;

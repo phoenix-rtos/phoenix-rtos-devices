@@ -398,7 +398,7 @@ int main(void)
 		return EXIT_FAILURE;
 	}
 
-	libklog_init(uart_klogClbk);
+	libklog_init(uart_klogClbk, 1);
 	oid_t kmsgctrl = { .port = oid.port, .id = id_kmsgctrl };
 	libklog_ctrlRegister(&kmsgctrl);
 

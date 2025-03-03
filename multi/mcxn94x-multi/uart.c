@@ -395,7 +395,7 @@ int uart_ttyInit(int ttyno)
 		return err;
 	}
 
-	libklog_init(uart_klogCblk);
+	libklog_init(uart_klogCblk, 1);
 
 	return 0;
 }

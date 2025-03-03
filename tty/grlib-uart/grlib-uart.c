@@ -298,7 +298,7 @@ static void uart_mkDev(unsigned int id)
 	if (id == UART_CONSOLE_USER) {
 		oid_t kmsg = { .port = uart_common.uart.oid.port, .id = KMSG_CTRL_ID };
 
-		libklog_init(uart_klogClbk);
+		libklog_init(uart_klogClbk, 1);
 
 		if (create_dev(&uart_common.uart.oid, _PATH_CONSOLE) < 0) {
 			debug("grlib-uart: Cannot create device file.\n");
