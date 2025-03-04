@@ -32,6 +32,7 @@ int zynq7000pwm_set(oid_t *oid, uint32_t compval[ZYNQ7000_PWM_CHANNELS], uint8_t
 	msg.type = mtDevCtl;
 	i->type = zynq7000pwm_msgSet;
 	i->mask = mask;
+	msg.oid = *oid;
 	memcpy(i->compval, compval, sizeof(i->compval));
 
 	ret = msgSend(oid->port, &msg);
@@ -57,7 +58,7 @@ int zynq7000pwm_get(oid_t *oid, uint32_t compval[ZYNQ7000_PWM_CHANNELS])
 
 	msg.type = mtDevCtl;
 	i->type = zynq7000pwm_msgGet;
-
+	msg.oid = *oid;
 	ret = msgSend(oid->port, &msg);
 	if (ret >= 0) {
 		ret = o->err;
