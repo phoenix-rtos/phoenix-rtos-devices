@@ -427,33 +427,34 @@ static int uart_initClk(int n)
 #elif defined(__CPU_ZYNQMP)
 static int uart_setPin(uint32_t pin)
 {
-	platformctl_t ctl;
+	return 0;
+// 	platformctl_t ctl;
 
-	ctl.action = pctl_set;
-	ctl.type = pctl_mio;
+// 	ctl.action = pctl_set;
+// 	ctl.type = pctl_mio;
 
-	/* Set default properties for UART's pins */
-	ctl.mio.pin = pin;
-	ctl.mio.l0 = ctl.mio.l1 = ctl.mio.l2 = 0;
-	ctl.mio.l3 = 0x6;
-	ctl.mio.config = PCTL_MIO_SLOW_nFAST | PCTL_MIO_PULL_UP_nDOWN | PCTL_MIO_PULL_ENABLE;
+// 	/* Set default properties for UART's pins */
+// 	ctl.mio.pin = pin;
+// 	ctl.mio.l0 = ctl.mio.l1 = ctl.mio.l2 = 0;
+// 	ctl.mio.l3 = 0x6;
+// 	ctl.mio.config = PCTL_MIO_SLOW_nFAST | PCTL_MIO_PULL_UP_nDOWN | PCTL_MIO_PULL_ENABLE;
 
-	switch (pin) {
-		case UART0_RX: /* Fall-through */
-		case UART1_RX:
-			ctl.mio.config |= PCTL_MIO_TRI_ENABLE;
-			break;
+// 	switch (pin) {
+// 		case UART0_RX: /* Fall-through */
+// 		case UART1_RX:
+// 			ctl.mio.config |= PCTL_MIO_TRI_ENABLE;
+// 			break;
 
-		case UART0_TX: /* Fall-through */
-		case UART1_TX:
-			/* Do nothing */
-			break;
+// 		case UART0_TX: /* Fall-through */
+// 		case UART1_TX:
+// 			/* Do nothing */
+// 			break;
 
-		default:
-			return -EINVAL;
-	}
+// 		default:
+// 			return -EINVAL;
+// 	}
 
-	return platformctl(&ctl);
+// 	return platformctl(&ctl);
 }
 
 
