@@ -278,7 +278,7 @@ static void _uart_mkDev(uint32_t port)
 		if (uart_common.uarts[i].init == 1) {
 			uart_common.uarts[i].oid.port = port;
 			uart_common.uarts[i].oid.id = (i == UART16550_CONSOLE_USER) ? 0 : i + 1;
-			snprintf(path, sizeof(path), "/dev/ttyS%u", i);
+			snprintf(path, sizeof(path), "/dev/tty16%u", i);
 
 			if (create_dev(&uart_common.uarts[i].oid, path) < 0) {
 				fprintf(stderr, "uart16550: failed to register %s\n", path);
