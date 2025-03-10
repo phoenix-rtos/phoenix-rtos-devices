@@ -496,7 +496,13 @@ static int uart_init(unsigned int n, speed_t baud, int raw)
 	libtty_callbacks_t callbacks;
 	uart_t *uart = &uart_common.uart;
 
-	if (uart_setPin(info[n].rxPin) < 0 || uart_setPin(info[n].txPin) < 0 || uart_activateClk(n) < 0) {
+#if (UART_CONSOLE_ROUTED_VIA_PL != 1)
+	if (uart_setPin(info[n].rxPin) < 0 || uart_setPin(info[n].txPin) < 0) {
+		return -EINVAL;
+	}
+#endif
+
+	if (uart_activateClk(n) < 0) {
 		return -EINVAL;
 	}
 
