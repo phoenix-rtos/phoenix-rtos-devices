@@ -3,8 +3,8 @@
  *
  * ehci root hub implementation
  *
- * Copyright 2021 Phoenix Systems
- * Author: Maciej Purski
+ * Copyright 2021, 2024 Phoenix Systems
+ * Author: Maciej Purski, Adam Greloch
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -39,7 +39,12 @@ static const struct {
 		.bcdUSB = 0x0200,
 		.bDeviceClass = USB_CLASS_HUB,
 		.bDeviceSubClass = 0,
+#ifdef EHCI_IMX
+		/* imx deviation: the controller has an embedded TT */
 		.bDeviceProtocol = 1, /* Single TT */
+#else
+		.bDeviceProtocol = 0, /* Root hub */
+#endif
 		.bMaxPacketSize0 = 64,
 		.idVendor = 0x0,
 		.idProduct = 0x0,
@@ -87,17 +92,44 @@ static const struct {
 static void ehci_resetPort(hcd_t *hcd, int port)
 {
 	ehci_t *ehci = (ehci_t *)hcd->priv;
-	volatile int *reg = (hcd->base + portsc1) + (port - 1);
+	volatile int *reg = (ehci->opbase + portsc1) + (port - 1);
+	int tmp;
 
-	*reg &= ~PORTSC_ENA;
-	*reg |= PORTSC_PR;
+	log_debug("resetting port %d", port);
+
+	tmp = *reg;
+	tmp &= ~(PORTSC_ENA | PORTSC_PR);
+	*reg = tmp | PORTSC_PR;
+
+#ifdef EHCI_IMX
 	/*
-	 * This is imx deviation. According to ehci documentation
+	 * imx deviation: According to ehci documentation
 	 * it is up to software to set the PR bit 0 after waiting 20ms
 	 */
 	while (*reg & PORTSC_PR)
 		;
 	usleep(20 * 1000);
+#else
+	/* Wait for reset to complete */
+	usleep(50 * 1000);
+
+	/* Stop the reset sequence */
+	*reg = tmp;
+
+	/* Wait until reset sequence stops */
+	while ((*reg & PORTSC_PR) != 0)
+		;
+
+	usleep(20 * 1000);
+#endif
+
+	tmp = *reg;
+
+	log_debug("port %d reset done, status after reset=%x", port, tmp);
+
+	if ((tmp & PORTSC_ENA) == 0) {
+		log_debug("device on port %d is not a highspeed device", port);
+	}
 
 	ehci->portResetChange = 1 << port;
 
@@ -118,7 +150,7 @@ static int ehci_getPortStatus(usb_dev_t *hub, int port, usb_port_status_t *statu
 	status->wPortChange = 0;
 	status->wPortStatus = 0;
 
-	val = *(hcd->base + portsc1 + port - 1);
+	val = *(ehci->opbase + portsc1 + port - 1);
 	if (val & PORTSC_CCS)
 		status->wPortStatus |= USB_PORT_STAT_CONNECTION;
 
@@ -152,10 +184,16 @@ static int ehci_getPortStatus(usb_dev_t *hub, int port, usb_port_status_t *statu
 	if (ehci->portResetChange & (1 << port))
 		status->wPortChange |= USB_PORT_STAT_C_RESET;
 
+#ifdef EHCI_IMX
 	if ((val & PORTSC_PSPD) >> 26 == 1)
 		status->wPortStatus |= USB_PORT_STAT_LOW_SPEED;
 	else if ((val & PORTSC_PSPD) >> 26 == 2)
 		status->wPortStatus |= USB_PORT_STAT_HIGH_SPEED;
+#endif
+
+	/* TODO handle low/full speed devices on ia32 */
+
+	status->wPortStatus |= USB_PORT_STAT_HIGH_SPEED;
 
 	/* TODO: set indicator */
 
@@ -192,7 +230,7 @@ static int ehci_clearPortFeature(usb_dev_t *hub, int port, uint16_t wValue)
 {
 	hcd_t *hcd = hub->hcd;
 	ehci_t *ehci = (ehci_t *)hcd->priv;
-	volatile int *portsc = hcd->base + portsc1 + port - 1;
+	volatile int *portsc = ehci->opbase + portsc1 + port - 1;
 	uint32_t val = *portsc;
 
 	if (port > hub->nports)
@@ -285,6 +323,7 @@ static int ehci_getStringDesc(usb_dev_t *hub, int index, char *buf, size_t size)
 static int ehci_getDesc(usb_dev_t *hub, int type, int index, char *buf, size_t size)
 {
 	hcd_t *hcd = hub->hcd;
+	ehci_t *ehci = (ehci_t *)hcd->priv;
 	usb_hub_desc_t *hdesc;
 	int bytes = 0;
 
@@ -309,7 +348,7 @@ static int ehci_getDesc(usb_dev_t *hub, int type, int index, char *buf, size_t s
 			hdesc->wHubCharacteristics = 0x1;
 			hdesc->bPwrOn2PwrGood = 10;
 			hdesc->bHubContrCurrent = 10;
-			hdesc->bNbrPorts = *(hcd->base + hcsparams) & 0xf;
+			hdesc->bNbrPorts = *(ehci->base + hcsparams) & 0xf;
 			hdesc->variable[0] = 0;    /* Device not removable */
 			hdesc->variable[1] = 0xff; /* PortPwrCtrlMask */
 			break;
@@ -327,11 +366,13 @@ uint32_t ehci_getHubStatus(usb_dev_t *hub)
 	ehci_t *ehci = (ehci_t *)hcd->priv;
 
 	for (i = 0; i < hub->nports; i++) {
-		val = ehci->portsc;
+		val = *(ehci->opbase + portsc1 + i);
+		log_debug("(INT%d) port %d portsc: %x", hcd->info->irq, i + 1, val);
 		if (val & (PORTSC_CSC | PORTSC_PEC | PORTSC_OCC))
 			status |= 1 << (i + 1);
 	}
 
+	log_debug("(INT%d): status: %x", hcd->info->irq, status);
 	return status;
 }
 
@@ -340,12 +381,13 @@ int ehci_roothubReq(usb_dev_t *hub, usb_transfer_t *t)
 {
 	usb_setup_packet_t *setup = t->setup;
 	int ret;
+	ehci_t *ehci = (ehci_t *)hub->hcd->priv;
 
 	/* It will be finished, when a port status changes */
 	if (t->type == usb_transfer_interrupt) {
 		/* Enable Port Status Changed interrupt if this is a first call */
-		if ((*(hub->hcd->base + usbintr) & USBSTS_PCI) == 0)
-			*(hub->hcd->base + usbintr) |= USBSTS_PCI;
+		if ((*(ehci->opbase + usbintr) & USBSTS_PCI) == 0)
+			*(ehci->opbase + usbintr) |= USBSTS_PCI;
 		return 0;
 	}
 
