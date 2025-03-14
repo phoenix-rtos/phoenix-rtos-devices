@@ -19,22 +19,10 @@
 #include <stdint.h>
 #include <sys/msg.h>
 
-
-typedef enum {
-    zynqmp_can_op_send = 0,
-    zynqmp_can_op_recv = 1,
-} zynqmp_can_operation_e;
-
-
-typedef struct {
-    zynqmp_can_operation_e operation;
-    uint16_t id;
-    uint8_t len;
-    union {
-        uint8_t payload[8];
-        uint32_t payload_word[2];
-    };
-} zynqmp_can_frame_t;
-
+/* Marker used in messages between app and server to distringuish operations */
+enum {
+    zynqmp_can_opSend = 0,
+    zynqmp_can_opRecv = 1,
+};
 
 #endif /* ZYNQMP_CAN_PRIV_H */

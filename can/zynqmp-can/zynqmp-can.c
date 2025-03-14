@@ -38,6 +38,7 @@
 #include <phoenix/arch/aarch64/zynqmp/zynqmp.h>
 
 #include "zynqmp-can-priv.h"
+#include "zynqmp-can-if.h"
 
 
 /* CAN peripheral instances */
@@ -194,7 +195,7 @@ static int can_irq_hdl(unsigned int can_id, void *arg)
 	/* RX FIFO Non empty IRQ occurred */
     if (can->base->ISR & (1 << 7)) {
         can->base->ICR = (1 << 7); /* Clear interrupt */
-        can->base->IER = 0; /* Turn off interrupt */
+        //can->base->IER = 0; /* Turn off interrupt */
 	}
 
     /* Return 1 to trigger send signal on conditional variable */
@@ -280,6 +281,55 @@ static int can_init(unsigned int can_id, int baudrate)
 }
 
 
+static int send_frames(zynqmp_canFrame *frames, uint32_t count)
+{
+    can_t *can = &can_common.can;
+
+    for (uint32_t i = 0; i < count; i++) {
+        can->base->TXFIFO_ID = (frames[i].id << 21);
+        can->base->TXFIFO_DLC = (frames[i].len << 28);
+        can->base->TXFIFO_DATA1 = frames[i].payload.words[0];
+        can->base->TXFIFO_DATA2 = frames[i].payload.words[1];
+    }
+
+    return 0;
+}
+
+
+static int recv_frames(zynqmp_canFrame *buf, uint32_t bufLen, uint32_t *recvFrames)
+{
+    /* Wait for data ready in RX FIFO */
+    can_t *can = &can_common.can;
+    condWait(can->cond, can->lock, 0);
+
+    /* Read all received frames */
+    *recvFrames = 0;
+    for (uint32_t i = 0; i < bufLen; i++) {
+        uint32_t isr = can->base->ISR;
+        printf("ISR before = %u\n", isr);
+        if (0 == (isr & (1 << 7))) {
+            break;
+        }
+
+        /* Read frame */
+        buf[i].id = (can->base->RXFIFO_ID >> 21) & 0x7FF;
+        buf[i].len = (can->base->RXFIFO_DLC >> 28) & 0xF;
+        buf[i].payload.words[0] = can->base->RXFIFO_DATA1;
+        buf[i].payload.words[1] = can->base->RXFIFO_DATA2;
+        (*recvFrames)++;
+
+        /* Check if there are still frames in FIFO, if no then return */
+        isr = can->base->ISR;
+        printf("ISR after = %u\n", isr);
+    }
+
+    can->base->ICR = (1 << 7); /* Clear interrupt */
+    //can->base->IER = (1 << 7); /* RX FIFO non empty IRQ */
+
+    return 0;
+}
+
+
 static void can_thread(void *arg)
 {
     msg_t msg;
@@ -306,7 +356,6 @@ static void can_thread(void *arg)
 				break;
 
 			case mtRead: {
-                can_t *can = &can_common.can;
                 printf("SRR: 0x%x\n", can->base->SRR);
                 printf("MSR: 0x%x\n", can->base->MSR);
                 printf("BRPR:0x%x\n", can->base->BRPR);
@@ -323,23 +372,18 @@ static void can_thread(void *arg)
 				break;
 
 			case mtDevCtl: {
-                zynqmp_can_frame_t *frame = (zynqmp_can_frame_t *)msg.i.raw;
-                if (frame->operation == zynqmp_can_op_send) {
-                    can->base->TXFIFO_ID = (frame->id << 21);
-                    can->base->TXFIFO_DLC = (frame->len << 28);
-                    can->base->TXFIFO_DATA1 = frame->payload_word[0];
-                    can->base->TXFIFO_DATA2 = frame->payload_word[1];
-                    msg.o.err = 0;
+                /* Choose operation based on opcode */
+                if (msg.i.io.mode == zynqmp_can_opSend) {
+                    zynqmp_canFrame *frames = (zynqmp_canFrame *)msg.i.data;
+                    uint32_t count = msg.i.size / sizeof(zynqmp_canFrame);;
+                    msg.o.err = send_frames(frames, count);
                 }
-                else if (frame->operation == zynqmp_can_op_recv) {
-                    condWait(can->cond, can->lock, 0);
-                    zynqmp_can_frame_t *frame_out = (zynqmp_can_frame_t *)msg.o.raw;
-                    frame_out->id = (can->base->RXFIFO_ID >> 21) & 0x7FF;
-                    frame_out->len = (can->base->RXFIFO_DLC >> 28) & 0xF;
-                    frame_out->payload_word[0] = can->base->RXFIFO_DATA1;
-                    frame_out->payload_word[1] = can->base->RXFIFO_DATA2;
-                    msg.o.err = 0;
-                    can->base->IER = (1 << 7);
+                else if (msg.i.io.mode == zynqmp_can_opRecv) {
+                    zynqmp_canFrame *buf = (zynqmp_canFrame *)msg.o.data;
+                    uint32_t bufLen = msg.o.size / sizeof(zynqmp_canFrame);
+                    uint32_t recvFrames = 0;
+                    msg.o.err = recv_frames(buf, bufLen, &recvFrames);
+                    msg.o.attr.val = recvFrames;
                 }
                 else {
                     printf("zynqmp-can: invalid opcode");
