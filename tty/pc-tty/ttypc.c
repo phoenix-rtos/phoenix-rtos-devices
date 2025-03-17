@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <paths.h>
 #include <poll.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -93,7 +94,7 @@ static void ttypc_poolthr(void *arg)
 				idata = ioctl_unpack(&msg, &req, &id);
 				if (req == KIOEN) {
 					if (id == 0) {
-						libklog_enable((unsigned int)idata);
+						libklog_enable((int)(intptr_t)idata);
 						err = EOK;
 					}
 					else {

@@ -191,7 +191,7 @@ static void uart_ioctl(unsigned int port, msg_t *msg)
 	}
 	else if (req == KIOEN) {
 		if ((UART16550_CONSOLE_USER >= 0) && (uart == &uart_common.uarts[UART16550_CONSOLE_USER])) {
-			libklog_enable((unsigned int)idata);
+			libklog_enable((int)(intptr_t)idata);
 			err = EOK;
 		}
 		else {
