@@ -1,9 +1,10 @@
+
 /*
  * Phoenix-RTOS
  *
- * Operating system kernel
+ * EHCI USB Physical Layer for imx6ull
  *
- * ehci/phy-imxrt106x.c
+ * ehci/phy.c
  *
  * Copyright 2018 Phoenix Systems
  * Copyright 2007 Pawel Pisarczyk
@@ -13,14 +14,14 @@
  *
  * %LICENSE%
  */
+
+#include <errno.h>
 #include <sys/mman.h>
 #include <sys/platform.h>
-#include <phoenix/arch/armv7m/imxrt/10xx/imxrt10xx.h>
+#include <phoenix/arch/armv7a/imx6ull/imx6ull.h>
 #include <stdio.h>
-#include <stdint.h>
-#include <usbhost.h>
-#include <hcd.h>
 
+#include <hcd.h>
 
 enum { phy_pwd, phy_pwd_set, phy_pwd_clr, phy_pwd_tog, phy_tx, phy_tx_set,
 	phy_tx_clr, phy_tx_tog, phy_rx, phy_rx_set, phy_rx_clr, phy_rx_tog,
@@ -30,23 +31,23 @@ enum { phy_pwd, phy_pwd_set, phy_pwd_clr, phy_pwd_tog, phy_tx, phy_tx_set,
 	phy_debug1_clr, phy_debug1_tog, phy_version };
 
 
-/* NOTE: This should be later implemented using device tree */
-static const hcd_info_t imxrt_info[] = {
-	{
-		.type = "ehci",
-		.hcdaddr = 0x402e0200,
-		.phyaddr = 0x400da000,
-		.clk = pctl_clk_usboh3,
-		.irq = 128
-	}
+/* NOTE: This should be obtained using device tree */
+static const hcd_info_t imx6ull_info[] = {
+	{ .type = "ehci",
+		.hcdaddr = 0x02184200,
+		.phy = {
+			.addr = 0x020ca000,
+			.clk = pctl_clk_usboh3,
+		},
+		.irq = 74 }
 };
 
 
-int hcd_getInfo(const hcd_info_t **hcinfo)
+int hcd_getInfo(const hcd_info_t **info)
 {
-	*hcinfo = imxrt_info;
+	*info = imx6ull_info;
 
-	return sizeof(imxrt_info) / sizeof(hcd_info_t);
+	return sizeof(imx6ull_info) / sizeof(*imx6ull_info);
 }
 
 
@@ -66,8 +67,9 @@ void phy_dumpRegisters(hcd_t *hcd, FILE *stream)
 
 void phy_config(hcd_t *hcd)
 {
-	*(hcd->phybase + phy_ctrl) |= 7 << 14;
-	*(hcd->phybase + phy_ctrl) |= 1 << 11 | 1;
+	*(hcd->phybase + phy_ctrl) |= 3 << 14;
+	*(hcd->phybase + phy_ctrl) |= 2;
+	*(hcd->phybase + phy_ctrl) |= 1 << 11;
 }
 
 
@@ -80,16 +82,33 @@ void phy_reset(hcd_t *hcd)
 }
 
 
-static int setClock(int dev, unsigned int state)
+void phy_initClock(hcd_t *hcd)
 {
-	platformctl_t pctl;
+	platformctl_t ctl = (platformctl_t) {
+		.action = pctl_set,
+		.type = pctl_devclock,
+		.devclock = {
+			.dev = hcd->info->phy.clk,
+			.state = 3,
+		}
+	};
 
-	pctl.action = pctl_set;
-	pctl.type = pctl_devclock;
-	pctl.devclock.dev = dev;
-	pctl.devclock.state = state;
+	platformctl(&ctl);
+}
 
-	return platformctl(&pctl);
+
+void phy_disableClock(hcd_t *hcd)
+{
+	platformctl_t ctl = (platformctl_t) {
+		.action = pctl_set,
+		.type = pctl_devclock,
+		.devclock = {
+			.dev = hcd->info->phy.clk,
+			.state = 0,
+		}
+	};
+
+	platformctl(&ctl);
 }
 
 void phy_enableHighSpeedDisconnect(hcd_t *hcd, int enable)
@@ -100,14 +119,25 @@ void phy_enableHighSpeedDisconnect(hcd_t *hcd, int enable)
 		*(hcd->phybase + phy_ctrl) &= ~0x2;
 }
 
-
 int phy_init(hcd_t *hcd)
 {
-	/* No mmapping, since we are on NOMMU architecture */
-	hcd->phybase = (volatile int *)hcd->info->phyaddr;
-	hcd->base = (volatile int *)hcd->info->hcdaddr;
+	off_t offs;
 
-	setClock(hcd->info->clk, clk_state_run);
+	offs = hcd->info->phy.addr % _PAGE_SIZE;
+	hcd->phybase = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, hcd->info->phy.addr - offs);
+	if (hcd->phybase == MAP_FAILED)
+		return -ENOMEM;
+	hcd->phybase += (offs / sizeof(int));
+
+	offs = hcd->info->hcdaddr % _PAGE_SIZE;
+	hcd->base = mmap(NULL, 2 * _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, hcd->info->hcdaddr - offs);
+	if (hcd->base == MAP_FAILED) {
+		munmap((void *)hcd->phybase, _PAGE_SIZE);
+		return -ENOMEM;
+	}
+	hcd->base += (offs / sizeof(int));
+
+	phy_initClock(hcd);
 	phy_reset(hcd);
 	phy_config(hcd);
 
