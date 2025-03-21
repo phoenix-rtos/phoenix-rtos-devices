@@ -36,7 +36,14 @@
 #include <posix/utils.h>
 
 #include <phoenix/ioctl.h>
+#if defined(__CPU_ZYNQ7000)
 #include <phoenix/arch/armv7a/zynq7000/zynq7000.h>
+#elif defined(__CPU_ZYNQMP)
+#include <phoenix/arch/aarch64/zynqmp/zynqmp.h>
+#else
+#error "Unsupported platform"
+#endif
+
 
 
 #define UARTS_MAX_CNT 2
@@ -54,10 +61,11 @@ typedef struct {
 	handle_t lock;
 	libtty_common_t tty;
 
-	uint8_t stack[_PAGE_SIZE] __attribute__((aligned(8)));
+	uint8_t stack[_PAGE_SIZE] __attribute__((aligned(16)));
 } uart_t;
 
 
+#if defined(__CPU_ZYNQ7000)
 static const struct {
 	uint32_t base;
 	unsigned int irq;
@@ -68,11 +76,25 @@ static const struct {
 	{ 0xe0000000, 59, pctl_amba_uart0_clk, UART0_RX, UART0_TX },
 	{ 0xe0001000, 82, pctl_amba_uart1_clk, UART1_RX, UART1_TX }
 };
+#elif defined(__CPU_ZYNQMP)
+/* TODO: on ZynqMP we can get base address and interrupts from DTB tree */
+static const struct {
+	uint32_t base;
+	unsigned int irq;
+	uint16_t clk;
+	uint16_t rst;
+	uint16_t rxPin;
+	uint16_t txPin;
+} info[UARTS_MAX_CNT] = {
+	{ 0xff000000, 53, pctl_devclock_lpd_uart0, pctl_devreset_lpd_uart0, UART0_RX, UART0_TX },
+	{ 0xff010000, 54, pctl_devclock_lpd_uart1, pctl_devreset_lpd_uart1, UART1_RX, UART1_TX }
+};
+#endif
 
 
 static struct {
 	uart_t uart;
-	uint8_t stack[_PAGE_SIZE] __attribute__((aligned(8)));
+	uint8_t stack[_PAGE_SIZE] __attribute__((aligned(16)));
 } uart_common;
 
 /* clang-format off */
@@ -334,6 +356,7 @@ static void uart_mkDev(unsigned int id)
 }
 
 
+#if defined(__CPU_ZYNQ7000)
 static int uart_setPin(uint32_t pin)
 {
 	platformctl_t ctl;
@@ -369,22 +392,23 @@ static int uart_setPin(uint32_t pin)
 }
 
 
-static int uart_initAmbaClk(unsigned int dev)
+static int uart_activateClk(int n)
 {
 	platformctl_t ctl;
 
 	ctl.action = pctl_set;
 	ctl.type = pctl_ambaclock;
 
-	ctl.ambaclock.dev = dev;
+	ctl.ambaclock.dev = info[n].clk;
 	ctl.ambaclock.state = 1;
 
 	return platformctl(&ctl);
 }
 
 
-static int uart_initClk(void)
+static int uart_initClk(int n)
 {
+	(void)n; /* On this platform both UARTs run off the same clock */
 	platformctl_t ctl;
 
 	ctl.action = pctl_set;
@@ -400,6 +424,71 @@ static int uart_initClk(void)
 
 	return platformctl(&ctl);
 }
+#elif defined(__CPU_ZYNQMP)
+static int uart_setPin(uint32_t pin)
+{
+	platformctl_t ctl;
+
+	ctl.action = pctl_set;
+	ctl.type = pctl_mio;
+
+	/* Set default properties for UART's pins */
+	ctl.mio.pin = pin;
+	ctl.mio.l0 = ctl.mio.l1 = ctl.mio.l2 = 0;
+	ctl.mio.l3 = 0x6;
+	ctl.mio.config = PCTL_MIO_SLOW_nFAST | PCTL_MIO_PULL_UP_nDOWN | PCTL_MIO_PULL_ENABLE;
+
+	switch (pin) {
+		case UART0_RX: /* Fall-through */
+		case UART1_RX:
+			ctl.mio.config |= PCTL_MIO_TRI_ENABLE;
+			break;
+
+		case UART0_TX: /* Fall-through */
+		case UART1_TX:
+			/* Do nothing */
+			break;
+
+		default:
+			return -EINVAL;
+	}
+
+	return platformctl(&ctl);
+}
+
+
+static int uart_activateClk(int n)
+{
+	platformctl_t ctl;
+
+	ctl.action = pctl_set;
+	ctl.type = pctl_devreset;
+
+	ctl.devreset.dev = info[n].rst;
+	ctl.devreset.state = 0;
+
+	return platformctl(&ctl);
+}
+
+
+static int uart_initClk(int n)
+{
+	platformctl_t ctl;
+
+	ctl.action = pctl_set;
+	ctl.type = pctl_devclock;
+
+	/* Set IO PLL as source clock and set divider:
+	 * IO_PLL / 0x14 :  1000 MHz / 20 = 50 MHz     */
+	ctl.devclock.dev = info[n].clk;
+	ctl.devclock.src = 0;
+	ctl.devclock.div0 = 0x14;
+	ctl.devclock.div1 = 0;
+	ctl.devclock.active = 0x1;
+
+	return platformctl(&ctl);
+}
+#endif
 
 
 static int uart_init(unsigned int n, speed_t baud, int raw)
@@ -407,7 +496,7 @@ static int uart_init(unsigned int n, speed_t baud, int raw)
 	libtty_callbacks_t callbacks;
 	uart_t *uart = &uart_common.uart;
 
-	if (uart_setPin(info[n].rxPin) < 0 || uart_setPin(info[n].txPin) < 0 || uart_initAmbaClk(info[n].clk) < 0) {
+	if (uart_setPin(info[n].rxPin) < 0 || uart_setPin(info[n].txPin) < 0 || uart_activateClk(n) < 0) {
 		return -EINVAL;
 	}
 
@@ -522,7 +611,7 @@ int main(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
-	if (uart_initClk() < 0) {
+	if (uart_initClk(uartn) < 0) {
 		debug("zynq7000-uart: cannot initialize clocks\n");
 		return EXIT_FAILURE;
 	}
