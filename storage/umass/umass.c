@@ -802,7 +802,7 @@ static int umass_mountRoot(umass_dev_t *dev)
 }
 
 
-static int umass_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion)
+static int umass_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion, usb_event_insertion_t *event)
 {
 	int err;
 	umass_dev_t *dev;
@@ -873,6 +873,10 @@ static int umass_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion)
 	}
 
 	printf("umass: New USB Mass Storage device: %s sectors: %d\n", dev->path, dev->part.sectors);
+
+	event->deviceCreated = true;
+	event->dev = oid;
+	strncpy(event->devPath, dev->path, sizeof(event->devPath));
 
 	mutexUnlock(umass_common.lock);
 
