@@ -6,4 +6,4 @@
 # Copyright 2024 Phoenix Systems
 #
 
-DEFAULT_COMPONENTS := zynq7000-uart zynq7000-flash
+DEFAULT_COMPONENTS := zynq-uart zynq-flash
