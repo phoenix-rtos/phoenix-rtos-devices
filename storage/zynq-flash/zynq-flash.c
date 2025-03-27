@@ -243,7 +243,7 @@ static int flash_oidResolve(const char *devPath, oid_t *oid)
 	res = snprintf(temp, sizeof(temp), "devfs/%s", devPath + 5);
 	if (res >= sizeof(temp)) {
 		res = -ENAMETOOLONG;
-		fprintf(stderr, "zynq7000-flash: failed to build file path, err: %d\n", res);
+		fprintf(stderr, "zynq-flash: failed to build file path, err: %d\n", res);
 		return res;
 	}
 
@@ -277,7 +277,7 @@ static int flash_createMtdDev(const storage_t *strg, oid_t *oid)
 		res = snprintf(path, sizeof(path), "/dev/mtd%u", strg->dev->ctx->id);
 		if (res >= sizeof(path)) {
 			res = -ENAMETOOLONG;
-			fprintf(stderr, "zynq7000-flash: failed to build file path, err: %d\n", res);
+			fprintf(stderr, "zynq-flash: failed to build file path, err: %d\n", res);
 			return res;
 		}
 
@@ -285,14 +285,14 @@ static int flash_createMtdDev(const storage_t *strg, oid_t *oid)
 			res += snprintf(path + res, sizeof(path) - res, "p%u", partID);
 			if (res >= sizeof(path)) {
 				res = -ENAMETOOLONG;
-				fprintf(stderr, "zynq7000-flash: failed to build file path, err: %d\n", res);
+				fprintf(stderr, "zynq-flash: failed to build file path, err: %d\n", res);
 				return res;
 			}
 		}
 
 		res = create_dev(oid, path);
 		if (res < 0) {
-			fprintf(stderr, "zynq7000-flash: failed to create a device file, err: %d\n", res);
+			fprintf(stderr, "zynq-flash: failed to create a device file, err: %d\n", res);
 			return res;
 		}
 	}
@@ -305,7 +305,7 @@ static int flash_createMtdDev(const storage_t *strg, oid_t *oid)
 		res = snprintf(path, sizeof(path), "/dev/mtdblock%u", strg->dev->ctx->id);
 		if (res >= sizeof(path)) {
 			res = -ENAMETOOLONG;
-			fprintf(stderr, "zynq7000-flash: failed to build file path, err: %d\n", res);
+			fprintf(stderr, "zynq-flash: failed to build file path, err: %d\n", res);
 			return res;
 		}
 
@@ -313,14 +313,14 @@ static int flash_createMtdDev(const storage_t *strg, oid_t *oid)
 			res += snprintf(path + res, sizeof(path) - res, "p%u", partID);
 			if (res >= sizeof(path)) {
 				res = -ENAMETOOLONG;
-				fprintf(stderr, "zynq7000-flash: failed to build file path, err: %d\n", res);
+				fprintf(stderr, "zynq-flash: failed to build file path, err: %d\n", res);
 				return res;
 			}
 		}
 
 		res = create_dev(oid, path);
 		if (res < 0) {
-			fprintf(stderr, "zynq7000-flash: failed to create a device file, err: %d\n", res);
+			fprintf(stderr, "zynq-flash: failed to create a device file, err: %d\n", res);
 			return res;
 		}
 	}
@@ -337,21 +337,21 @@ static int flash_partAdd(const char *parentPath, off_t start, size_t size)
 
 	err = flash_oidResolve(parentPath, &poid);
 	if (err < 0) {
-		fprintf(stderr, "zynq7000-flash: cannot resolve %s\n", parentPath);
+		fprintf(stderr, "zynq-flash: cannot resolve %s\n", parentPath);
 		return err;
 	}
 
 	parent = storage_get(GET_STORAGE_ID(poid.id));
 	if (parent == NULL) {
 		err = -EINVAL;
-		fprintf(stderr, "zynq7000-flash: failed to find a parent %s, err: %d\n", parentPath, err);
+		fprintf(stderr, "zynq-flash: failed to find a parent %s, err: %d\n", parentPath, err);
 		return err;
 	}
 
 	strg = malloc(sizeof(storage_t));
 	if (strg == NULL) {
 		err = -ENOMEM;
-		fprintf(stderr, "zynq7000-flash: failed to allocate a device, err: %d\n", err);
+		fprintf(stderr, "zynq-flash: failed to allocate a device, err: %d\n", err);
 		return err;
 	}
 
@@ -364,7 +364,7 @@ static int flash_partAdd(const char *parentPath, off_t start, size_t size)
 	err = storage_add(strg, &oid);
 	if (err < 0) {
 		free(strg);
-		fprintf(stderr, "zynq7000-flash: failed to create a partition, err: %d\n", err);
+		fprintf(stderr, "zynq-flash: failed to create a partition, err: %d\n", err);
 		return err;
 	}
 
@@ -395,26 +395,26 @@ static int flash_optsParse(int argc, char **argv)
 				devPath = optarg;
 				arg = strchr(optarg, ':');
 				if (arg == NULL) {
-					fprintf(stderr, "zynq7000-flash: missing a partition offset, err: %d\n", err);
+					fprintf(stderr, "zynq-flash: missing a partition offset, err: %d\n", err);
 					return err;
 				}
 
 				*arg++ = '\0';
 				start = strtol(arg, &arg, 0);
 				if (*arg++ != ':') {
-					fprintf(stderr, "zynq7000-flash: missing a partition size, err: %d\n", err);
+					fprintf(stderr, "zynq-flash: missing a partition size, err: %d\n", err);
 					return err;
 				}
 
 				size = strtol(arg, &arg, 0);
 				if (*arg != '\0') {
-					fprintf(stderr, "zynq7000-flash: wrong partition size %s, err: %d\n", arg, err);
+					fprintf(stderr, "zynq-flash: wrong partition size %s, err: %d\n", arg, err);
 					return err;
 				}
 
 				err = flash_partAdd(devPath, start, size);
 				if (err < 0) {
-					fprintf(stderr, "zynq7000-flash: cannot add a partition %s: %d\n", arg, err);
+					fprintf(stderr, "zynq-flash: cannot add a partition %s: %d\n", arg, err);
 					return err;
 				}
 				break;
@@ -423,20 +423,20 @@ static int flash_optsParse(int argc, char **argv)
 				devPath = optarg;
 				arg = strchr(optarg, ':');
 				if (arg == NULL) {
-					fprintf(stderr, "zynq7000-flash: missing a partition offset, err: %d\n", err);
+					fprintf(stderr, "zynq-flash: missing a partition offset, err: %d\n", err);
 					return err;
 				}
 
 				*arg++ = '\0';
 				start = strtol(arg, &arg, 0);
 				if (*arg++ != ':') {
-					fprintf(stderr, "zynq7000-flash: missing a partition size, err: %d\n", err);
+					fprintf(stderr, "zynq-flash: missing a partition size, err: %d\n", err);
 					return err;
 				}
 
 				size = strtol(arg, &arg, 0);
 				if (*arg != ':') {
-					fprintf(stderr, "zynq7000-flash: missing a filesystem name, err: %d\n", err);
+					fprintf(stderr, "zynq-flash: missing a filesystem name, err: %d\n", err);
 					return err;
 				}
 
@@ -445,14 +445,14 @@ static int flash_optsParse(int argc, char **argv)
 
 				err = flash_partAdd(devPath, start, size);
 				if (err < 0) {
-					fprintf(stderr, "zynq7000-flash: cannot add a partition %s: %d\n", arg, err);
+					fprintf(stderr, "zynq-flash: cannot add a partition %s: %d\n", arg, err);
 					return err;
 				}
 
 				id = err;
 				err = storage_mountfs(storage_get(id), fs, NULL, 0, NULL, &oid);
 				if (err < 0) {
-					fprintf(stderr, "zynq7000-flash: failed to mount a filesystem - %s: %d\n", fs, err);
+					fprintf(stderr, "zynq-flash: failed to mount a filesystem - %s: %d\n", fs, err);
 					return err;
 				}
 
@@ -482,19 +482,19 @@ static int flash_drvInit(void)
 		strg = calloc(1, sizeof(storage_t));
 		if (strg == NULL) {
 			res = -ENOMEM;
-			fprintf(stderr, "zynq7000-flash: failed to allocate storage, err: %d\n", res);
+			fprintf(stderr, "zynq-flash: failed to allocate storage, err: %d\n", res);
 			return res;
 		}
 
 		drvRes = flashdrv_init(strg);
 		if (drvRes < 0) {
-			fprintf(stderr, "zynq7000-flash: failed to initialize flash memory driver, err: %d\n", drvRes);
+			fprintf(stderr, "zynq-flash: failed to initialize flash memory driver, err: %d\n", drvRes);
 			return drvRes;
 		}
 
 		res = storage_add(strg, &oid);
 		if (res < 0) {
-			fprintf(stderr, "zynq7000-flash: failed to add new storage, err: %d\n", res);
+			fprintf(stderr, "zynq-flash: failed to add new storage, err: %d\n", res);
 			return res;
 		}
 
@@ -525,7 +525,7 @@ int main(int argc, char **argv)
 	/* Daemonize server */
 	pid = fork();
 	if (pid < 0) {
-		fprintf(stderr, "zynq7000-flash: failed to daemonize server\n");
+		fprintf(stderr, "zynq-flash: failed to daemonize server\n");
 		exit(EXIT_FAILURE);
 	}
 	/* Parent waits to be killed by the child after finished server initialization */
@@ -538,35 +538,35 @@ int main(int argc, char **argv)
 	signal(SIGUSR1, flash_signalexit);
 
 	if (setsid() < 0) {
-		fprintf(stderr, "zynq7000-flash: failed to create new session\n");
+		fprintf(stderr, "zynq-flash: failed to create new session\n");
 		exit(EXIT_FAILURE);
 	}
 
 	/* Initialize storage library */
 	res = storage_init(flash_msgHandler, 16);
 	if (res < 0) {
-		fprintf(stderr, "zynq7000-flash: failed to initialize storage library, err: %d\n", res);
+		fprintf(stderr, "zynq-flash: failed to initialize storage library, err: %d\n", res);
 		return EXIT_FAILURE;
 	}
 
 	/* Register file system related to NOR flash */
 	res = storage_registerfs("jffs2", libjffs2_mount, libjffs2_umount);
 	if (res < 0) {
-		fprintf(stderr, "zynq7000-flash: failed to register jffs2 filesystem, err: %d\n", res);
+		fprintf(stderr, "zynq-flash: failed to register jffs2 filesystem, err: %d\n", res);
 		return EXIT_FAILURE;
 	}
 
 	/* Initialize all flash devices and add them to the storage */
 	res = flash_drvInit();
 	if (res < 0) {
-		fprintf(stderr, "zynq7000-flash: failed to initialize NOR flash memory driver, err: %d\n", res);
+		fprintf(stderr, "zynq-flash: failed to initialize NOR flash memory driver, err: %d\n", res);
 		return EXIT_FAILURE;
 	}
 
 	/* Based on args, create new partitions and mount rootfs */
 	res = flash_optsParse(argc, argv);
 	if (res < 0) {
-		fprintf(stderr, "zynq7000-flash: failed to parse arguments, err: %d\n", res);
+		fprintf(stderr, "zynq-flash: failed to parse arguments, err: %d\n", res);
 		return EXIT_FAILURE;
 	}
 

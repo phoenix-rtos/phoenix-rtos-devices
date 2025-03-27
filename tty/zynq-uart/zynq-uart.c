@@ -339,14 +339,14 @@ static void uart_mkDev(unsigned int id)
 
 	snprintf(path, sizeof(path), "/dev/uart%u", id);
 	if (create_dev(&uart_common.uart.oid, path) < 0) {
-		debug("zynq7000-uart: cannot create device file\n");
+		debug("zynq-uart: cannot create device file\n");
 	}
 
 	if (id == UART_CONSOLE_USER) {
 		libklog_init(uart_klogClbk);
 
 		if (create_dev(&uart_common.uart.oid, _PATH_CONSOLE) < 0) {
-			debug("zynq7000-uart: cannot create device file\n");
+			debug("zynq-uart: cannot create device file\n");
 		}
 
 		oid_t kmsgctrl = { .port = uart_common.uart.oid.port, .id = KMSG_CTRL_ID };
@@ -577,7 +577,7 @@ int main(int argc, char **argv)
 				case 'b':
 					baud = libtty_int_to_baudrate(atoi(optarg));
 					if (baud == (speed_t)-1) {
-						debug("zynq7000-uart: wrong baudrate value\n");
+						debug("zynq-uart: wrong baudrate value\n");
 						return EXIT_FAILURE;
 					}
 					break;
@@ -585,7 +585,7 @@ int main(int argc, char **argv)
 				case 'n':
 					uartn = atoi(optarg);
 					if (uartn >= UARTS_MAX_CNT) {
-						debug("zynq7000-uart: wrong uart ID\n");
+						debug("zynq-uart: wrong uart ID\n");
 						return EXIT_FAILURE;
 					}
 					break;
@@ -606,19 +606,19 @@ int main(int argc, char **argv)
 	}
 
 	if (uartn < 0) {
-		debug("zynq7000-uart: wrong uart ID, this uart cannot be a console\n");
+		debug("zynq-uart: wrong uart ID, this uart cannot be a console\n");
 		return EXIT_FAILURE;
 	}
 
 	if (uart_initClk(uartn) < 0) {
-		debug("zynq7000-uart: cannot initialize clocks\n");
+		debug("zynq-uart: cannot initialize clocks\n");
 		return EXIT_FAILURE;
 	}
 
 	portCreate(&uart_common.uart.oid.port);
 
 	if (uart_init(uartn, baud, raw) < 0) {
-		debug("zynq7000-uart: cannot initialize uart\n");
+		debug("zynq-uart: cannot initialize uart\n");
 		return EXIT_FAILURE;
 	}
 
