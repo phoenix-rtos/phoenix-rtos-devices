@@ -267,7 +267,22 @@ static void uart_ioctl(unsigned port, msg_t *msg)
 	inData = ioctl_unpack(msg, &req, NULL);
 	pid = ioctl_getSenderPid(msg);
 
-	err = libtty_ioctl(&uart_common.uart.tty, pid, req, inData, &outData);
+	if (req == KIOEN) {
+		/*
+		 * TODO: if adding support for multiple uarts, one should check here whether
+		 * the ioctl is done on console uart (check if dev id == UART_CONSOLE_USER)
+		 */
+		if (UART_CONSOLE_USER >= 0) {
+			libklog_enable((int)(intptr_t)inData);
+			err = EOK;
+		}
+		else {
+			err = -EINVAL;
+		}
+	}
+	else {
+		err = libtty_ioctl(&uart_common.uart.tty, pid, req, inData, &outData);
+	}
 
 	ioctl_setResponse(msg, req, err, outData);
 }
