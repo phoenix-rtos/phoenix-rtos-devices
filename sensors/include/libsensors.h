@@ -21,13 +21,14 @@
 
 /* Available sensor types */
 
-#define NO_SENSOR         0
-#define SENSOR_TYPE_ACCEL (1 << 0)
-#define SENSOR_TYPE_BARO  (1 << 1)
-#define SENSOR_TYPE_GPS   (1 << 2)
-#define SENSOR_TYPE_GYRO  (1 << 3)
-#define SENSOR_TYPE_MAG   (1 << 4)
-#define SENSOR_TYPE_TEMP  (1 << 5)
+#define NO_SENSOR            0
+#define SENSOR_TYPE_ACCEL    (1 << 0)
+#define SENSOR_TYPE_BARO     (1 << 1)
+#define SENSOR_TYPE_GPS      (1 << 2)
+#define SENSOR_TYPE_GYRO     (1 << 3)
+#define SENSOR_TYPE_MAG      (1 << 4)
+#define SENSOR_TYPE_TEMP     (1 << 5)
+#define SENSOR_TYPE_DIFFBARO (1 << 6)
 
 
 typedef unsigned int sensor_type_t;
@@ -75,14 +76,14 @@ typedef struct {
 
 
 /*
-* Gyroscope data
-*
-* Delta angles are time integrated and are meant to over/underflow uint32_t.
-* Calculation of delta angle between `old` and `new` measurements:
-* 1) calculate d1 = (uint32_t)(new - old)
-* 2) calculate d2 = (uint32_t)(old - new)
-* 3) if (d1 <= d2) then (delta_angle = d1) else (delta_angle = -d2)
-*/
+ * Gyroscope data
+ *
+ * Delta angles are time integrated and are meant to over/underflow uint32_t.
+ * Calculation of delta angle between `old` and `new` measurements:
+ * 1) calculate d1 = (uint32_t)(new - old)
+ * 2) calculate d2 = (uint32_t)(old - new)
+ * 3) if (d1 <= d2) then (delta_angle = d1) else (delta_angle = -d2)
+ */
 typedef struct {
 	uint32_t devId;
 	int32_t gyroX;    /* latest angular velocity value in [mrad/s] */
@@ -112,6 +113,14 @@ typedef struct {
 } temp_data_t;
 
 
+typedef struct {
+	uint32_t devId;
+	uint32_t pressStatic; /* static pressure value in [Pa] */
+	uint32_t pressTotal;  /* total pressure value in [Pa] */
+	uint32_t temp;        /* temperature value in Kelvin [K] */
+} diffBaro_data_t;
+
+
 /* Event data gets from sensor manager */
 typedef struct {
 	sensor_type_t type;
@@ -124,6 +133,7 @@ typedef struct {
 		gyro_data_t gyro;
 		mag_data_t mag;
 		temp_data_t temp;
+		diffBaro_data_t diffBaro;
 	};
 } sensor_event_t;
 
