@@ -25,6 +25,7 @@
 
 #include <libtty.h>
 #include <libtty-lf-fifo.h>
+#include <libklog.h>
 
 #include "gpio.h"
 #include "common.h"
@@ -469,7 +470,24 @@ int uart_handleMsg(msg_t *msg, int dev)
 		case mtDevCtl:
 			in_data = ioctl_unpack(msg, &request, NULL);
 			pid = ioctl_getSenderPid(msg);
-			err = libtty_ioctl(&uart->tty_common, pid, request, in_data, &out_data);
+
+			if (request == KIOEN) {
+#if !ISEMPTY(UART_CONSOLE_USER)
+				if (dev == UART_CONSOLE_USER - 1) {
+					libklog_enable((int)(intptr_t)in_data);
+					err = EOK;
+				}
+				else {
+					err = -EINVAL;
+				}
+#else
+				err = -EINVAL;
+#endif
+			}
+			else {
+				err = libtty_ioctl(&uart->tty_common, pid, request, in_data, &out_data);
+			}
+
 			ioctl_setResponse(msg, request, err, out_data);
 			break;
 
