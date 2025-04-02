@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <paths.h>
 #include <poll.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -42,7 +43,7 @@ ttypc_t ttypc_common;
 static void ttypc_poolthr(void *arg)
 {
 	ttypc_t *ttypc = (ttypc_t *)arg;
-	const void *idata, *odata;
+	const void *idata, *odata = NULL;
 	unsigned long req;
 	msg_rid_t rid;
 	msg_t msg;
@@ -91,12 +92,22 @@ static void ttypc_poolthr(void *arg)
 
 			case mtDevCtl:
 				idata = ioctl_unpack(&msg, &req, &id);
-				if (id < NVTS) {
-					err = ttypc_vt_ioctl(ttypc->vts + id, ioctl_getSenderPid(&msg), req, idata, &odata);
+				if (req == KIOEN) {
+					if (id == 0) {
+						libklog_enable((int)(intptr_t)idata);
+						err = EOK;
+					}
+					else {
+						err = -EINVAL;
+					}
 				}
 				else {
-					odata = NULL;
-					err = -EINVAL;
+					if (id < NVTS) {
+						err = ttypc_vt_ioctl(ttypc->vts + id, ioctl_getSenderPid(&msg), req, idata, &odata);
+					}
+					else {
+						err = -EINVAL;
+					}
 				}
 				ioctl_setResponse(&msg, req, err, odata);
 				break;
@@ -117,12 +128,20 @@ static void ttypc_klogClbk(const char *data, size_t size)
 }
 
 
-int main(void)
+int main(int argc, char **argv)
 {
 	unsigned int i;
 	char path[12];
 	oid_t oid;
 	int err;
+
+	int isconsole = 1;
+	if ((argc == 2) && (strcmp(argv[1], "-n") == 0)) {
+		isconsole = 0;
+	}
+	else if (argc != 1) {
+		return -1;
+	}
 
 	/* Initialize driver */
 	memset(&ttypc_common, 0, sizeof(ttypc_t));
@@ -196,15 +215,20 @@ int main(void)
 	while (lookup("/", NULL, &oid) < 0)
 		usleep(10000);
 
-	oid.port = ttypc_common.port;
-	oid.id = 0;
-	if (create_dev(&oid, _PATH_CONSOLE) < 0) {
-		fprintf(stderr, "pc-tty: failed to register device %s\n", _PATH_CONSOLE);
-	}
+	if (isconsole != 0) {
+		libklog_init(ttypc_klogClbk);
+		oid.port = ttypc_common.port;
+		oid.id = 0;
+		if (create_dev(&oid, _PATH_CONSOLE) < 0) {
+			fprintf(stderr, "pc-tty: failed to register device %s\n", _PATH_CONSOLE);
+		}
 
-	libklog_init(ttypc_klogClbk);
-	oid_t kmsgctrl = { .port = ttypc_common.port, .id = KMSG_CTRL_ID };
-	libklog_ctrlRegister(&kmsgctrl);
+		oid_t kmsgctrl = { .port = ttypc_common.port, .id = KMSG_CTRL_ID };
+		libklog_ctrlRegister(&kmsgctrl);
+	}
+	else {
+		libklog_initNoDev(ttypc_klogClbk);
+	}
 
 	/* Register devices */
 	for (i = 0; i < NVTS; i++) {

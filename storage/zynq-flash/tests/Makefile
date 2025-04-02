@@ -1,5 +1,5 @@
 #
-# Makefile for zynq7000-flash tests
+# Makefile for zynq-flash tests
 #
 # Copyright 2022 Phoenix Systems
 #

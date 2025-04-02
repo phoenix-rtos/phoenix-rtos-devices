@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <paths.h>
+#include <string.h>
 
 #include <sys/file.h>
 #include <sys/interrupt.h>
@@ -136,7 +137,8 @@ static void signal_txready(void *arg)
 #ifdef __TARGET_RISCV64
 __attribute__((section(".interrupt"), aligned(0x1000)))
 #endif
-static int uart_interrupt(unsigned int n, void *arg)
+static int
+uart_interrupt(unsigned int n, void *arg)
 {
 	return ((uart_t *)arg)->intcond;
 }
@@ -186,6 +188,15 @@ static void uart_ioctl(unsigned int port, msg_t *msg)
 	uart = uart_get(&oid);
 	if (uart == NULL) {
 		err = -EINVAL;
+	}
+	else if (req == KIOEN) {
+		if ((UART16550_CONSOLE_USER >= 0) && (uart == &uart_common.uarts[UART16550_CONSOLE_USER])) {
+			libklog_enable((int)(intptr_t)idata);
+			err = EOK;
+		}
+		else {
+			err = -EINVAL;
+		}
 	}
 	else {
 		err = libtty_ioctl(&uart->tty, ioctl_getSenderPid(msg), req, idata, &odata);
@@ -273,7 +284,7 @@ static void uart_klogClbk(const char *data, size_t size)
 }
 
 
-static void _uart_mkDev(uint32_t port)
+static void _uart_mkDev(uint32_t port, int isconsole)
 {
 	char path[12];
 	unsigned int i;
@@ -290,15 +301,19 @@ static void _uart_mkDev(uint32_t port)
 			}
 
 			if (i == UART16550_CONSOLE_USER) {
-				libklog_init(uart_klogClbk);
+				if (isconsole != 0) {
+					libklog_init(uart_klogClbk);
+					if (create_dev(&uart_common.uarts[i].oid, _PATH_CONSOLE) < 0) {
+						fprintf(stderr, "uart16550: failed to register %s\n", _PATH_CONSOLE);
+						return;
+					}
 
-				if (create_dev(&uart_common.uarts[i].oid, _PATH_CONSOLE) < 0) {
-					fprintf(stderr, "uart16550: failed to register %s\n", _PATH_CONSOLE);
-					return;
+					oid_t kmsgctrl = { .port = port, .id = KMSG_CTRL_ID };
+					libklog_ctrlRegister(&kmsgctrl);
 				}
-
-				oid_t kmsgctrl = { .port = port, .id = KMSG_CTRL_ID };
-				libklog_ctrlRegister(&kmsgctrl);
+				else {
+					libklog_initNoDev(uart_klogClbk);
+				}
 			}
 		}
 	}
@@ -354,11 +369,19 @@ static int _uart_init(uart_t *uart, unsigned int uartn, unsigned int speed)
 }
 
 
-int main(void)
+int main(int argc, char **argv)
 {
 	unsigned int i;
 	uint32_t port;
 	int err;
+
+	int isconsole = 1;
+	if ((argc == 2) && (strcmp(argv[1], "-n") == 0)) {
+		isconsole = 0;
+	}
+	else if (argc != 1) {
+		return -1;
+	}
 
 	portCreate(&port);
 
@@ -375,7 +398,7 @@ int main(void)
 	}
 
 	beginthread(poolthr, 4, uart_common.stack, sizeof(uart_common.stack), (void *)(uintptr_t)port);
-	_uart_mkDev(port);
+	_uart_mkDev(port, isconsole);
 	poolthr((void *)(uintptr_t)port);
 
 	return EXIT_SUCCESS;

@@ -49,6 +49,7 @@ static void pumpthr(void *arg)
 	int fd, ret;
 	oid_t dev;
 	char *name;
+	int createDevs = (int)(addr_t)arg;
 
 	dev.id = 0;
 	dev.port = 0;
@@ -56,10 +57,6 @@ static void pumpthr(void *arg)
 	_errno_new(&libklog_common.e);
 	fd = open(_PATH_KLOG, O_RDONLY);
 	if (fd < 0) {
-		/* On some architectures devFS might not be bound
-		 * to /dev directory yet, which makes /dev/kmsg path not resolvable.
-		 * To make devfs/kmsg resolvable, we need to register it first.
-		 */
 		strcpy(buf, "devfs");
 		name = strrchr(_PATH_KLOG, '/');
 		if (name == NULL) {
@@ -69,16 +66,35 @@ static void pumpthr(void *arg)
 
 		strcat(buf, name);
 
-		if (portRegister(0, buf, &dev) != 0) {
-			_errno_remove(&libklog_common.e);
-			endthread();
+		if (createDevs == 0) {
+			/* Wait for KLOG device */
+			do {
+				fd = open(_PATH_KLOG, O_RDONLY);
+				if (fd < 0) {
+					fd = sys_open(buf, O_RDONLY, 0);
+				}
+				if (fd < 0) {
+					usleep(10000);
+				}
+			} while (fd < 0);
 		}
+		else {
+			/* On some architectures devFS might not be bound
+			 * to /dev directory yet, which makes /dev/kmsg path not resolvable.
+			 * To make devfs/kmsg resolvable, we need to register it first.
+			 */
 
-		/* open() treats paths not starting with '/' slash as local */
-		fd = sys_open(buf, O_RDONLY, 0);
-		if (fd < 0) {
-			_errno_remove(&libklog_common.e);
-			endthread();
+			if (portRegister(0, buf, &dev) != 0) {
+				_errno_remove(&libklog_common.e);
+				endthread();
+			}
+
+			/* open() treats paths not starting with '/' slash as local */
+			fd = sys_open(buf, O_RDONLY, 0);
+			if (fd < 0) {
+				_errno_remove(&libklog_common.e);
+				endthread();
+			}
 		}
 	}
 
@@ -109,6 +125,18 @@ static void pumpthr(void *arg)
 	close(fd);
 	_errno_remove(&libklog_common.e);
 	endthread();
+}
+
+
+void libklog_enable(int enable)
+{
+	if (enable == 0) {
+		libklog_common.enabled = 0;
+	}
+	else {
+		libklog_common.enabled = 1;
+		condSignal(libklog_common.cond);
+	}
 }
 
 
@@ -148,12 +176,11 @@ int libklog_ctrlHandle(uint32_t port, msg_t *msg, msg_rid_t rid)
 				if ((msg->i.size != 0) && (msg->i.data != NULL)) {
 					switch (((const char *)msg->i.data)[0]) {
 						case '0':
-							libklog_common.enabled = 0;
+							libklog_enable(0);
 							break;
 
 						case '1':
-							libklog_common.enabled = 1;
-							condSignal(libklog_common.cond);
+							libklog_enable(1);
 							break;
 
 						default:
@@ -203,7 +230,7 @@ int libklog_ctrlRegister(oid_t *oid)
 }
 
 
-int libklog_init(libklog_write_t clbk)
+static int libklog_initHelper(libklog_write_t clbk, int createDevs)
 {
 	oid_t dev;
 	int err;
@@ -222,22 +249,36 @@ int libklog_init(libklog_write_t clbk)
 		return err;
 	}
 
-	/* kmsg device is handled inside kernel */
-	dev.port = 0;
-	dev.id = 0;
-	err = create_dev(&dev, _PATH_KLOG);
-	if (err < 0) {
-		resourceDestroy(libklog_common.lock);
-		resourceDestroy(libklog_common.cond);
-		return err;
+	if (createDevs != 0) {
+		/* kmsg device is handled inside kernel */
+		dev.port = 0;
+		dev.id = 0;
+		err = create_dev(&dev, _PATH_KLOG);
+		if (err < 0) {
+			resourceDestroy(libklog_common.lock);
+			resourceDestroy(libklog_common.cond);
+			return err;
+		}
 	}
 
 	/* Pump klog messages from kernel buffer to tty driver */
-	if (beginthread(pumpthr, 4, libklog_common.stack, sizeof(libklog_common.stack), NULL) != 0) {
+	if (beginthread(pumpthr, 4, libklog_common.stack, sizeof(libklog_common.stack), (void *)(addr_t)createDevs) != 0) {
 		resourceDestroy(libklog_common.lock);
 		resourceDestroy(libklog_common.cond);
 		return -ENOMEM;
 	}
 
 	return 0;
+}
+
+
+int libklog_initNoDev(libklog_write_t clbk)
+{
+	return libklog_initHelper(clbk, 0);
+}
+
+
+int libklog_init(libklog_write_t clbk)
+{
+	return libklog_initHelper(clbk, 1);
 }
