@@ -17,7 +17,7 @@
 #include <stdbool.h>
 #include <time.h>
 
-#include <libsensors.h>
+#include <libsensors/client.h>
 
 
 typedef struct {
