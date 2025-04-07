@@ -14,7 +14,7 @@
 #ifndef _SENSOR_H_
 #define _SENSOR_H_
 
-#include <libsensors.h>
+#include <libsensors/client.h>
 
 #include <sys/rb.h>
 #include <posix/idtree.h>

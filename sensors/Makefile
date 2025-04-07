@@ -11,7 +11,7 @@ include $(static-lib.mk)
 # Sensors SPI interface
 NAME := libsensors-spi
 LOCAL_HEADERS := sensors-spi.h
-LOCAL_HEADERS_DIR := nothing  # do not reinstall libsensors.h
+LOCAL_HEADERS_DIR := nothing  # do not reinstall libsensors/client.h
 LOCAL_SRCS := libsensors-spi.c
 DEPS := libzynq7000-gpio-msg libspi-msg
 include $(static-lib.mk)
@@ -22,8 +22,8 @@ SENSORS_SIM := imu/imu_sim.c mag/mag_sim.c baro/baro_sim.c gps/gps_sim.c gps/gps
 SENSORS_LOCAL := $(SENSORS_SIM) $(addsuffix .c, $(filter $(SENSORS_ALL), $(DEVICE_SENSORS)))
 
 NAME := sensors
-LOCAL_HEADERS_DIR := nothing
-LOCAL_SRCS += sensors.c $(SENSORS_LOCAL) $(SENSORS_SIM)
+LOCAL_HEADERS_DIR := nothing # do not reinstall libsensors/client.h
+LOCAL_SRCS += sensors.c $(SENSORS_LOCAL)
 LOCAL_SRCS += gps/nmea.c gps/common.c simsensor_common/event_queue.c simsensor_common/simsensor_reader.c simsensor_common/simsensor_generic.c
 DEP_LIBS := libsensors libsensors-spi libzynq7000-gpio-msg libspi-msg
 include $(binary.mk)
