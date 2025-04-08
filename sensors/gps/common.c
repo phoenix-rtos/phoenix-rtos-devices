@@ -20,7 +20,8 @@
 
 #include <sys/time.h>
 
-#include "../sensors.h"
+#include <libsensors/sensor.h>
+
 #include "common.h"
 #include "nmea.h"
 

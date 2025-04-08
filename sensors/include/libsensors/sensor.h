@@ -11,8 +11,8 @@
  * %LICENSE%
  */
 
-#ifndef _SENSOR_H_
-#define _SENSOR_H_
+#ifndef _LIBSENSORS_SENSOR_H_
+#define _LIBSENSORS_SENSOR_H_
 
 #include <libsensors/client.h>
 
