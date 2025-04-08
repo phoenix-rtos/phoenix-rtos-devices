@@ -4,26 +4,29 @@
 # Copyright 2022 Phoenix Systems
 #
 
+LOCAL_PATH := $(call my-dir)
+
 # Sensors Server API Library
 NAME := libsensors
-include $(static-lib.mk)
-
-# Sensors SPI interface
-NAME := libsensors-spi
-LOCAL_HEADERS := sensors-spi.h
-LOCAL_HEADERS_DIR := nothing  # do not reinstall libsensors/client.h
-LOCAL_SRCS := libsensors-spi.c
+SRCS := $(wildcard $(LOCAL_PATH)common/*/*.c)
 DEPS := libzynq7000-gpio-msg libspi-msg
 include $(static-lib.mk)
 
-# Sensors Server
-SENSORS_ALL := imu/lsm9dsxx imu/mpu6000 mag/lsm9dsxx mag/lis2mdl baro/lps25xx baro/ms5611 gps/pa6h gps/ubx
-SENSORS_SIM := imu/imu_sim.c mag/mag_sim.c baro/baro_sim.c gps/gps_sim.c gps/gps_sim.c
-SENSORS_LOCAL := $(SENSORS_SIM) $(addsuffix .c, $(filter $(SENSORS_ALL), $(DEVICE_SENSORS)))
+# Sensors application
+SENSORHUB_COMMON_DEPS := libzynq7000-gpio-msg libspi-msg libsensors
+SENSORHUB_DRIVERS_ALL :=
+
+ALL_SENSOR_MAKES := $(shell find . -mindepth 2 -name sensors.mk -not -path '*/.*')
+include $(ALL_SENSOR_MAKES)
+
+SENSORHUB_DRIVERS_ENABLED ?= baro_sim imu_sim mag_sim
+SENSORHUB_DRIVERS_INTERNAL := $(filter $(SENSORHUB_DRIVERS_ENABLED), $(SENSORHUB_DRIVERS_ALL))
+SENSORHUB_DRIVERS_EXTERNAL := $(filter-out $(SENSORHUB_DRIVERS_INTERNAL), $(SENSORHUB_DRIVERS_ENABLED))
+$(info sensors enabled (internal [external]): $(SENSORHUB_DRIVERS_INTERNAL) [$(SENSORHUB_DRIVERS_EXTERNAL)])
 
 NAME := sensors
-LOCAL_HEADERS_DIR := nothing # do not reinstall libsensors/client.h
-LOCAL_SRCS += sensors.c $(SENSORS_LOCAL)
-LOCAL_SRCS += gps/nmea.c gps/common.c simsensor_common/event_queue.c simsensor_common/simsensor_reader.c simsensor_common/simsensor_generic.c
-DEP_LIBS := libsensors libsensors-spi libzynq7000-gpio-msg libspi-msg
+LOCAL_HEADERS_DIR := nothing # do not reinstall libsensors/*.h
+SRCS := $(LOCAL_PATH)sensors.c
+DEP_LIBS := $(SENSORHUB_COMMON_DEPS) $(SENSORHUB_DRIVERS_INTERNAL)
+LIBS := $(SENSORHUB_DRIVERS_EXTERNAL)
 include $(binary.mk)
