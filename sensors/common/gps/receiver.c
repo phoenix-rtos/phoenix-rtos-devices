@@ -20,9 +20,10 @@
 
 #include <sys/time.h>
 
-#include "../sensors.h"
-#include "common.h"
-#include "nmea.h"
+#include <libsensors/sensor.h>
+
+#include <libsensors/gps/receiver.h>
+#include <libsensors/gps/nmea.h>
 
 
 #define DEG2RAD     0.0174532925

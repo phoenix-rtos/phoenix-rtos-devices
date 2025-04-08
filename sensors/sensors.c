@@ -22,9 +22,8 @@
 #include <posix/utils.h>
 #include <sys/threads.h>
 
-#include <sensors-spi.h>
-
-#include "sensors.h"
+#include <libsensors/sensor.h>
+#include <libsensors/spi/spi.h>
 
 #define CLIENT_SET_ID(id) (id + 1)
 #define CLIENT_GET_ID(id) (id - 1)

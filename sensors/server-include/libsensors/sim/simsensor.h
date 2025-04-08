@@ -11,7 +11,7 @@
  * %LICENSE%
  */
 
-#include "../sensors.h"
+#include <libsensors/sensor.h>
 
 
 typedef struct {

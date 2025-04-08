@@ -11,7 +11,7 @@
  * %LICENSE%
  */
 
-#include "../simsensor_common/simsensor_generic.h"
+#include <libsensors/sim/simsensor.h>
 
 #define GPS_SIMESENS_NAME "gps_sim"
 #define GPS_SIM_QLEN      10
