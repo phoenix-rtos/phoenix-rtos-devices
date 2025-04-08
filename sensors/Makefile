@@ -17,9 +17,14 @@ DEPS := libzynq7000-gpio-msg libspi-msg
 include $(static-lib.mk)
 
 # Sensors Server
-SENSORS_ALL := imu/lsm9dsxx imu/mpu6000 mag/lsm9dsxx mag/lis2mdl baro/lps25xx baro/ms5611 gps/pa6h gps/ubx
-SENSORS_SIM := imu/imu_sim.c mag/mag_sim.c baro/baro_sim.c gps/gps_sim.c gps/gps_sim.c
-SENSORS_LOCAL := $(SENSORS_SIM) $(addsuffix .c, $(filter $(SENSORS_ALL), $(DEVICE_SENSORS)))
+
+#Find all local sensor files
+SENSOR_DIRS := imu/ mag/ baro/ gps/
+SENSOR_SRCS := $(patsubst sensors/%, %, $(wildcard $(addsuffix *.c, $(addprefix sensors/, $(SENSOR_DIRS)))))
+
+SENSORS_SIM := $(filter %sim.c, $(SENSOR_SRCS))
+SENSORS_HW := $(filter-out %sim.c, $(SENSOR_SRCS))
+SENSORS_LOCAL := $(SENSORS_SIM) $(addsuffix .c, $(filter $(patsubst %.c, %, $(SENSORS_HW)), $(DEVICE_SENSORS)))
 
 NAME := sensors
 LOCAL_HEADERS_DIR := nothing # do not reinstall libsensors/*.h
