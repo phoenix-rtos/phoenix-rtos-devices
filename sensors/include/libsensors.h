@@ -29,6 +29,7 @@
 #define SENSOR_TYPE_MAG      (1 << 4)
 #define SENSOR_TYPE_TEMP     (1 << 5)
 #define SENSOR_TYPE_DIFFBARO (1 << 6)
+#define SENSOR_TYPE_SENSEKF  (1 << 7)
 
 
 typedef unsigned int sensor_type_t;
@@ -121,6 +122,56 @@ typedef struct {
 } diffBaro_data_t;
 
 
+typedef struct {
+	uint32_t devId;
+
+	int status;
+
+	/* position in ENU frame in meters */
+	float enuX;
+	float enuY;
+	float enuZ;
+
+	/* velocity in ENU frame in meters per second */
+	float veloX;
+	float veloY;
+	float veloZ;
+
+	/* vehicle attitude, ranges according to Tait–Bryan convention */
+	float pitch; /* (-PI/2, PI/2) */
+	float yaw;   /* (-PI, PI) */
+	float roll;  /* (-PI, PI) */
+
+	/* vehicle attitude as quaternion */
+	float q0;
+	float q1;
+	float q2;
+	float q3;
+
+	/* angular rates in uav frame of reference */
+	float pitchDot;
+	float yawDot;
+	float rollDot;
+
+	/* accelerations in earth frame of reference */
+	float accelX;
+	float accelY;
+	float accelZ;
+
+	float accelBiasZ;
+
+	/* differential barometer related measurements */
+	float pressStat;
+	float pressTot;
+	float temp;
+	float airspeed;
+
+	/* benchmarking */
+	unsigned long long int stateTime;
+	unsigned long long int imuTime;
+} sensEkf_data_t;
+
+
 /* Event data gets from sensor manager */
 typedef struct {
 	sensor_type_t type;
@@ -134,6 +185,7 @@ typedef struct {
 		mag_data_t mag;
 		temp_data_t temp;
 		diffBaro_data_t diffBaro;
+		sensEkf_data_t sensEkf;
 	};
 } sensor_event_t;
 
