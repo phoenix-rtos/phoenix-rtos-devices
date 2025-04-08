@@ -22,9 +22,10 @@
 #include <sys/time.h>
 #include <sys/threads.h>
 
-#include "../sensors.h"
-#include "common.h"
-#include "nmea.h"
+#include <libsensors/sensor.h>
+#include <libsensors/gps/receiver.h>
+#include <libsensors/gps/nmea.h>
+
 #include "pmtk.h"
 
 #define PA6H_STR "pa6h:"

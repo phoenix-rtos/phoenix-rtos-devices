@@ -11,7 +11,7 @@
  * %LICENSE%
  */
 
-#include "../simsensor_common/simsensor_generic.h"
+#include <libsensors/sim/simsensor.h>
 
 #define BARO_SIMESENS_NAME "baro_sim"
 #define BARO_SIM_QLEN      10

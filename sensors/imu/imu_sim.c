@@ -11,7 +11,7 @@
  * %LICENSE%
  */
 
-#include "../simsensor_common/simsensor_generic.h"
+#include <libsensors/sim/simsensor.h>
 
 #define IMU_SIMESENS_NAME "imu_sim"
 #define IMU_SIM_QLEN      10
