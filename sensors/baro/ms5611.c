@@ -20,7 +20,7 @@
 #include <spi.h>
 #include <sensors-spi.h>
 
-#include "../sensors.h"
+#include <libsensors/sensor.h>
 
 /* MS5611 COMMANDS */
 
