@@ -3,7 +3,7 @@
  *
  * UART 16550 device driver
  *
- * Hardware abstraction layer (armv7a9-zynq7000)
+ * Hardware abstraction layer (armv7a9-zynq7000 and aarch64a53-zynqmp)
  *
  * Copyright 2022 Phoenix Systems
  * Author: Aleksander Kaminski
@@ -21,27 +21,27 @@
 #include "uart16550.h"
 
 #ifndef UART16550_BASE0
-#define UART16550_BASE0 0x43c10000
+#define UART16550_BASE0 0
 #endif
 
 #ifndef UART16550_IRQ0
-#define UART16550_IRQ0 61
+#define UART16550_IRQ0 0
 #endif
 
 #ifndef UART16550_BASE1
-#define UART16550_BASE1 0x43c20000
+#define UART16550_BASE1 0
 #endif
 
 #ifndef UART16550_IRQ1
-#define UART16550_IRQ1 62
+#define UART16550_IRQ1 0
 #endif
 
 #ifndef UART16550_BASE2
-#define UART16550_BASE2 0x43c30000
+#define UART16550_BASE2 0
 #endif
 
 #ifndef UART16550_IRQ2
-#define UART16550_IRQ2 63
+#define UART16550_IRQ2 0
 #endif
 
 #ifndef UART16550_BASE3
