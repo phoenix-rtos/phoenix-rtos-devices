@@ -278,7 +278,8 @@ static int zynqmpCan_init(unsigned int can_id, int baudrate)
 		return -1;
 	}
 
-	/* Configure MIO pins */
+	/* Configure MIO pins if CAN is not routed via PL subsystem */
+#if (CAN_ROUTED_VIA_PL != 1)
 	if (zynqmpCan_configMio(info[can_id].rxPin) < 0 || zynqmpCan_configMio(info[can_id].txPin) < 0) {
 		fprintf(stderr, "zynqmp-can: failed to initialize MIO pins\n");
 		munmap((void *)can.base, _PAGE_SIZE);
@@ -286,6 +287,9 @@ static int zynqmpCan_init(unsigned int can_id, int baudrate)
 		resourceDestroy(can.lock);
 		return -1;
 	}
+#else
+	(void)zynqmpCan_configMio;
+#endif
 
 	/* Wait for configuration mode */
 	while ((can.base->sr & (1 << 0)) != 1) {
