@@ -1,8 +1,8 @@
-# zynq7000-pwm
-This hardware driver server provides access to Zynq7000 PWM8X IP core. This driver require the PWM8X IP core to be loaded to the PL.
+# zynq-pwm
+This hardware driver server provides access to Zynq7000/ZynqMP PWM8X IP core. This driver require the PWM8X IP core to be loaded to the PL.
 
 ## Usage
-`zynq7000-pwm [OPTIONS]`
+`zynq-pwm [OPTIONS]`
 Options:
 - `-b base_addr` - base address of PWM8X IP (required)
 - `-r reload`    - reload value 0-4294967295, optional, default 100000

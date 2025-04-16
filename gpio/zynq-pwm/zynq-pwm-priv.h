@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * Xilinx Zynq 7000 PWM driver binary interface
+ * Xilinx Zynq7000 / ZynqMP PWM driver binary interface
  *
  * Copyright 2023 Phoenix Systems
  * Author: Aleksander Kaminski
@@ -11,24 +11,25 @@
  * %LICENSE%
  */
 
-#ifndef ZYNQ7000_PWM_PRIV_H
-#define ZYNQ7000_PWM_PRIV_H
+#ifndef ZYNQ_PWM_PRIV_H
+#define ZYNQ_PWM_PRIV_H
 
 #include <stdint.h>
 #include <sys/msg.h>
 
 
 typedef struct {
-	enum { zynq7000pwm_msgSet, zynq7000pwm_msgGet } type;
+	enum { zynqpwm_msgSet,
+		zynqpwm_msgGet } type;
 	uint32_t compval[8];
 	uint8_t mask;
-} zynq7000pwm_imsg_t;
+} zynqpwm_imsg_t;
 
 
 typedef struct {
 	int err;
 	uint32_t compval[8];
-} zynq7000pwm_omsg_t;
+} zynqpwm_omsg_t;
 
 
 #endif

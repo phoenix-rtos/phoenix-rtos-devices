@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * Xilinx Zynq 7000 PWM driver binary interface
+ * Xilinx Zynq7000 / ZynqMP PWM driver binary interface
  *
  * Copyright 2023 Phoenix Systems
  * Author: Aleksander Kaminski
@@ -13,16 +13,16 @@
 
 #include <sys/msg.h>
 #include <string.h>
-#include "zynq7000-pwm-priv.h"
-#include "zynq7000-pwm-msg.h"
+#include "zynq-pwm-priv.h"
+#include "zynq-pwm-msg.h"
 
 
-int zynq7000pwm_set(oid_t *oid, uint32_t compval[ZYNQ7000_PWM_CHANNELS], uint8_t mask)
+int zynqpwm_set(oid_t *oid, uint32_t compval[ZYNQ_PWM_CHANNELS], uint8_t mask)
 {
 	int ret;
 	msg_t msg;
-	zynq7000pwm_imsg_t *i = (zynq7000pwm_imsg_t *)msg.i.raw;
-	zynq7000pwm_omsg_t *o = (zynq7000pwm_omsg_t *)msg.o.raw;
+	zynqpwm_imsg_t *i = (zynqpwm_imsg_t *)msg.i.raw;
+	zynqpwm_omsg_t *o = (zynqpwm_omsg_t *)msg.o.raw;
 
 	msg.i.data = NULL;
 	msg.i.size = 0;
@@ -30,7 +30,7 @@ int zynq7000pwm_set(oid_t *oid, uint32_t compval[ZYNQ7000_PWM_CHANNELS], uint8_t
 	msg.o.size = 0;
 
 	msg.type = mtDevCtl;
-	i->type = zynq7000pwm_msgSet;
+	i->type = zynqpwm_msgSet;
 	i->mask = mask;
 	msg.oid = *oid;
 	memcpy(i->compval, compval, sizeof(i->compval));
@@ -44,12 +44,12 @@ int zynq7000pwm_set(oid_t *oid, uint32_t compval[ZYNQ7000_PWM_CHANNELS], uint8_t
 }
 
 
-int zynq7000pwm_get(oid_t *oid, uint32_t compval[ZYNQ7000_PWM_CHANNELS])
+int zynqpwm_get(oid_t *oid, uint32_t compval[ZYNQ_PWM_CHANNELS])
 {
 	int ret;
 	msg_t msg;
-	zynq7000pwm_imsg_t *i = (zynq7000pwm_imsg_t *)msg.i.raw;
-	zynq7000pwm_omsg_t *o = (zynq7000pwm_omsg_t *)msg.o.raw;
+	zynqpwm_imsg_t *i = (zynqpwm_imsg_t *)msg.i.raw;
+	zynqpwm_omsg_t *o = (zynqpwm_omsg_t *)msg.o.raw;
 
 	msg.i.data = NULL;
 	msg.i.size = 0;
@@ -57,7 +57,7 @@ int zynq7000pwm_get(oid_t *oid, uint32_t compval[ZYNQ7000_PWM_CHANNELS])
 	msg.o.size = 0;
 
 	msg.type = mtDevCtl;
-	i->type = zynq7000pwm_msgGet;
+	i->type = zynqpwm_msgGet;
 	msg.oid = *oid;
 	ret = msgSend(oid->port, &msg);
 	if (ret >= 0) {
