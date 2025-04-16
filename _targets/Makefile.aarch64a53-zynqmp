@@ -6,4 +6,6 @@
 # Copyright 2024 Phoenix Systems
 #
 
-DEFAULT_COMPONENTS := zynq-uart zynq-flash zynqmp-can
+DEFAULT_COMPONENTS := zynq-uart zynq-flash zynqmp-can zynq-pwm
+
+DEFAULT_COMPONENTS += libzynqpwm
