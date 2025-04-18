@@ -639,7 +639,7 @@ static void usbacm_msgthr(void *arg)
 }
 
 
-static int usbacm_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion)
+static int usbacm_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion, usb_event_insertion_t *event)
 {
 	usbacm_dev_t *dev;
 	const usb_modeswitch_t *mode;
@@ -727,6 +727,10 @@ static int usbacm_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion)
 	}
 
 	fprintf(stdout, "usbacm: New device: %s\n", dev->path);
+
+	event->deviceCreated = true;
+	event->dev = oid;
+	strncpy(event->devPath, dev->path, sizeof(event->devPath));
 
 	return 0;
 }
