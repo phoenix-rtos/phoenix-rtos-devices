@@ -20,7 +20,7 @@
 #include <sensors-spi.h>
 #include <string.h>
 
-#include "../sensors.h"
+#include <libsensors/sensor.h>
 
 /* self-identification register of magnetometer */
 #define REG_WHOAMI 0x4f

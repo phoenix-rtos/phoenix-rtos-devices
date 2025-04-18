@@ -22,7 +22,8 @@
 #include <sys/time.h>
 #include <sys/threads.h>
 
-#include "../sensors.h"
+#include <libsensors/sensor.h>
+
 #include "common.h"
 #include "nmea.h"
 #include "pmtk.h"
