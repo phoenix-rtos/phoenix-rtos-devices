@@ -91,6 +91,8 @@ typedef struct _usbacm_dev {
 	int rxState;
 
 	usb_driver_t *drv;
+
+	usb_cdc_line_coding_t line;
 } usbacm_dev_t;
 
 
@@ -254,6 +256,20 @@ static void usbacm_put(usbacm_dev_t *dev)
 	if (rfcnt == 0) {
 		usbacm_free(dev);
 	}
+}
+
+
+static int usbacm_setLine(usbacm_dev_t *dev)
+{
+	usb_setup_packet_t setup = {
+		.bmRequestType = REQUEST_DIR_HOST2DEV | REQUEST_TYPE_CLASS | REQUEST_RECIPIENT_INTERFACE,
+		.bRequest = 0x20, /* SET_LINE_CODING */
+		.wValue = 0,
+		.wIndex = 0,
+		.wLength = sizeof(usb_cdc_line_coding_t),
+	};
+
+	return usb_transferControl(dev->drv, dev->pipeCtrl, &setup, &dev->line, sizeof(usb_cdc_line_coding_t), usb_dir_out);
 }
 
 
@@ -703,6 +719,14 @@ static int usbacm_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion, u
 			err = -ENOMEM;
 			break;
 		}
+
+		dev->line.dwDTERate = 57600;
+		dev->line.bCharFormat = 0;
+		dev->line.bParityType = 0;
+		dev->line.bDataBits = 8;
+
+		/* Optional: device may reject the setting/not support the set line cmd */
+		(void)usbacm_setLine(dev);
 
 		oid.port = usbacm_common.msgport;
 		oid.id = dev->fileId;
