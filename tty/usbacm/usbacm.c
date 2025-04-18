@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <termios.h>
 
 #include <usb.h>
 #include <usbdriver.h>
@@ -91,6 +92,8 @@ typedef struct _usbacm_dev {
 	int rxState;
 
 	usb_driver_t *drv;
+
+	usb_cdc_line_coding_t line;
 } usbacm_dev_t;
 
 
@@ -254,6 +257,27 @@ static void usbacm_put(usbacm_dev_t *dev)
 	if (rfcnt == 0) {
 		usbacm_free(dev);
 	}
+}
+
+
+static int usbacm_setLine(usbacm_dev_t *dev)
+{
+	int err;
+	usb_setup_packet_t setup = (usb_setup_packet_t) {
+		.bmRequestType = REQUEST_DIR_HOST2DEV | REQUEST_TYPE_CLASS | REQUEST_RECIPIENT_INTERFACE,
+		.bRequest = 0x20, /* SET_LINE_CODING */
+		.wValue = 0,
+		.wIndex = 0,
+		.wLength = sizeof(usb_cdc_line_coding_t),
+	};
+
+	err = usb_transferControl(dev->drv, dev->pipeCtrl, &setup, &dev->line, sizeof(usb_cdc_line_coding_t), usb_dir_out);
+	if (err < 0) {
+		fprintf(stdout, "usbacm: set line failed: %d\n", err);
+		return err;
+	}
+
+	return 0;
 }
 
 
@@ -713,6 +737,17 @@ static int usbacm_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion, u
 			resourceDestroy(dev->rxLock);
 			fprintf(stderr, "usbacm: Can't create dev: %s\n", dev->path);
 			err = -EINVAL;
+			break;
+		}
+
+		dev->line.dwDTERate = 57600;
+		dev->line.bCharFormat = 0;
+		dev->line.bParityType = 0;
+		dev->line.bDataBits = 8;
+
+		err = usbacm_setLine(dev);
+		if (err < 0) {
+			fprintf(stdout, "usbacm: Set line failed: %d\n", err);
 			break;
 		}
 	} while (0);
