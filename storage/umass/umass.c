@@ -748,7 +748,7 @@ static void umass_msgthr(void *arg)
 }
 
 
-static umass_dev_t *umass_devAlloc(void)
+static umass_dev_t *_umass_devAlloc(void)
 {
 	umass_dev_t *dev;
 	int rv;
@@ -807,80 +807,82 @@ static int umass_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion, us
 	int err;
 	umass_dev_t *dev;
 	oid_t oid;
-	int ret;
-
-	fprintf(stderr, "umass: pending insertion\n");
 
 	mutexLock(umass_common.lock);
 
-	if ((dev = umass_devAlloc()) == NULL) {
-		fprintf(stderr, "umass: devAlloc failed\n");
-		return -ENOMEM;
-	}
+	do {
+		dev = _umass_devAlloc();
+		if (dev == NULL) {
+			fprintf(stderr, "umass: devAlloc failed\n");
+			err = -ENOMEM;
+			break;
+		}
 
-	dev->drv = drv;
-	dev->instance = *insertion;
-	dev->pipeCtrl = usb_open(drv, insertion, usb_transfer_control, 0);
-	if (dev->pipeCtrl < 0) {
-		free(dev);
-		fprintf(stderr, "umass: usb_open failed\n");
-		return -EINVAL;
-	}
+		dev->drv = drv;
+		dev->instance = *insertion;
+		dev->pipeCtrl = usb_open(drv, insertion, usb_transfer_control, 0);
+		if (dev->pipeCtrl < 0) {
+			free(dev);
+			fprintf(stderr, "umass: usb_open failed\n");
+			err = -EINVAL;
+			break;
+		}
 
-	err = usb_setConfiguration(drv, dev->pipeCtrl, 1);
-	if (err != 0) {
-		free(dev);
-		fprintf(stderr, "umass: setConfiguration failed\n");
-		return -EINVAL;
-	}
+		err = usb_setConfiguration(drv, dev->pipeCtrl, 1);
+		if (err != 0) {
+			free(dev);
+			fprintf(stderr, "umass: setConfiguration failed\n");
+			break;
+		}
 
-	dev->pipeIn = usb_open(drv, insertion, usb_transfer_bulk, usb_dir_in);
-	if (dev->pipeIn < 0) {
-		fprintf(stderr, "umass: pipe open failed \n");
-		free(dev);
-		return -EINVAL;
-	}
+		dev->pipeIn = usb_open(drv, insertion, usb_transfer_bulk, usb_dir_in);
+		if (dev->pipeIn < 0) {
+			fprintf(stderr, "umass: pipe open failed \n");
+			free(dev);
+			break;
+		}
 
-	dev->pipeOut = usb_open(drv, insertion, usb_transfer_bulk, usb_dir_out);
-	if (dev->pipeOut < 0) {
-		fprintf(stderr, "umass: pipe open failed\n");
-		free(dev);
-		return -EINVAL;
-	}
-	dev->tag = 0;
+		dev->pipeOut = usb_open(drv, insertion, usb_transfer_bulk, usb_dir_out);
+		if (dev->pipeOut < 0) {
+			fprintf(stderr, "umass: pipe open failed\n");
+			free(dev);
+			break;
+		}
+		dev->tag = 0;
 
-	ret = _umass_scsiInit(dev);
-	if (ret < 0) {
-		fprintf(stderr, "umass: device didn't initialize properly after scsi init sequence\n");
-		free(dev);
-		return -EINVAL;
-	}
+		err = _umass_scsiInit(dev);
+		if (err < 0) {
+			fprintf(stderr, "umass: device didn't initialize properly after scsi init sequence\n");
+			free(dev);
+			break;
+		}
 
-	ret = _umass_check(dev);
-	if (ret < 0) {
-		fprintf(stderr, "umass: umass_check failed\n");
-		free(dev);
-		return -EINVAL;
-	}
+		err = _umass_check(dev);
+		if (err < 0) {
+			fprintf(stderr, "umass: umass_check failed\n");
+			free(dev);
+			break;
+		}
 
-	oid.port = umass_common.msgport;
-	oid.id = dev->fileId;
-	err = create_dev(&oid, dev->path);
-	if (err != 0) {
-		free(dev);
-		fprintf(stderr, "usb: Can't create dev!\n");
-		return -EINVAL;
-	}
+		oid.port = umass_common.msgport;
+		oid.id = dev->fileId;
+		err = create_dev(&oid, dev->path);
+		if (err != 0) {
+			free(dev);
+			fprintf(stderr, "usb: Can't create dev!\n");
+			break;
+		}
 
-	printf("umass: New USB Mass Storage device: %s sectors: %d\n", dev->path, dev->part.sectors);
+		printf("umass: New USB Mass Storage device: %s sectors: %d\n", dev->path, dev->part.sectors);
 
-	event->deviceCreated = true;
-	event->dev = oid;
-	strncpy(event->devPath, dev->path, sizeof(event->devPath));
+		event->deviceCreated = true;
+		event->dev = oid;
+		strncpy(event->devPath, dev->path, sizeof(event->devPath));
+	} while (0);
 
 	mutexUnlock(umass_common.lock);
 
-	if (umass_common.mount_root) {
+	if (err == 0 && umass_common.mount_root) {
 		err = umass_mountRoot(dev);
 		if (err < 0) {
 			fprintf(stderr, "umass: failed to mount root partition\n");
