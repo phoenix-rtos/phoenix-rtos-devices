@@ -717,7 +717,7 @@ static int usbacm_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion, u
 			break;
 		}
 
-		condCreate(&dev->rxCond);
+		err = condCreate(&dev->rxCond);
 		if (err != 0) {
 			resourceDestroy(dev->rxLock);
 			err = -ENOMEM;
