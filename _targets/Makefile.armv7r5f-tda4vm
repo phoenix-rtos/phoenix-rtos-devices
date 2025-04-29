@@ -1,0 +1,9 @@
+#
+# Makefile for Phoenix-RTOS 3 device drivers
+#
+# TDA4VM drivers
+#
+# Copyright 2025 Phoenix Systems
+#
+
+DEFAULT_COMPONENTS := uart16550
