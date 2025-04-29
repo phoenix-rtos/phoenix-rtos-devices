@@ -777,7 +777,7 @@ static umass_dev_t *_umass_devAlloc(void)
 	dev->fileId = idtree_id(&dev->node);
 
 	rv = snprintf(dev->path, sizeof(dev->path), "/dev/umass%d", dev->fileId);
-	if (rv < 0) {
+	if (rv < 0 || rv >= sizeof(dev->path)) {
 		_umass_devFree(dev);
 		return NULL;
 	}
