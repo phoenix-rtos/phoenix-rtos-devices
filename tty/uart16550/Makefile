@@ -14,6 +14,8 @@ else ifeq ($(TARGET_FAMILY),ia32)
   LOCAL_SRCS += uarthw-pc.c
 else ifeq ($(TARGET_SUBFAMILY),zynq7000)
   LOCAL_SRCS += uarthw-zynq7000.c
+else ifeq ($(TARGET_SUBFAMILY),tda4vm)
+  LOCAL_SRCS += uarthw-tda4vm.c
 endif
 
 DEP_LIBS := libtty libklog
