@@ -52,6 +52,10 @@
 #define USBACM_UMSG_PRIO 3
 #endif
 
+#ifndef USBACM_SET_LINE_DEFAULT_RATE
+#define USBACM_SET_LINE_DEFAULT_RATE 57600
+#endif
+
 #define USBACM_BULK_SZ 2048
 
 /* clang-format off */
@@ -91,6 +95,8 @@ typedef struct _usbacm_dev {
 	int rxState;
 
 	usb_driver_t *drv;
+
+	usb_cdc_line_coding_t line;
 } usbacm_dev_t;
 
 
@@ -254,6 +260,20 @@ static void usbacm_put(usbacm_dev_t *dev)
 	if (rfcnt == 0) {
 		usbacm_free(dev);
 	}
+}
+
+
+static int usbacm_setLine(usbacm_dev_t *dev)
+{
+	usb_setup_packet_t setup = {
+		.bmRequestType = REQUEST_DIR_HOST2DEV | REQUEST_TYPE_CLASS | REQUEST_RECIPIENT_INTERFACE,
+		.bRequest = 0x20, /* SET_LINE_CODING */
+		.wValue = 0,
+		.wIndex = 0,
+		.wLength = sizeof(usb_cdc_line_coding_t),
+	};
+
+	return usb_transferControl(dev->drv, dev->pipeCtrl, &setup, &dev->line, sizeof(usb_cdc_line_coding_t), usb_dir_out);
 }
 
 
@@ -639,7 +659,7 @@ static void usbacm_msgthr(void *arg)
 }
 
 
-static int usbacm_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion)
+static int usbacm_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion, usb_event_insertion_t *event)
 {
 	usbacm_dev_t *dev;
 	const usb_modeswitch_t *mode;
@@ -697,11 +717,23 @@ static int usbacm_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion)
 			break;
 		}
 
-		condCreate(&dev->rxCond);
+		err = condCreate(&dev->rxCond);
 		if (err != 0) {
 			resourceDestroy(dev->rxLock);
 			err = -ENOMEM;
 			break;
+		}
+
+		dev->line.dwDTERate = USBACM_SET_LINE_DEFAULT_RATE;
+		dev->line.bCharFormat = 0;
+		dev->line.bParityType = 0;
+		dev->line.bDataBits = 8;
+
+		/* Some broken devices won't function without doing the set line cmd first */
+		err = usbacm_setLine(dev);
+		if (err < 0) {
+			fprintf(stderr, "usbacm: Set line to speed %d failed/unsupported: %d\n", dev->line.dwDTERate, err);
+			/* Continue as this is optional: device may reject the setting/not support the set line cmd */
 		}
 
 		oid.port = usbacm_common.msgport;
@@ -727,6 +759,10 @@ static int usbacm_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion)
 	}
 
 	fprintf(stdout, "usbacm: New device: %s\n", dev->path);
+
+	event->deviceCreated = true;
+	event->dev = oid;
+	strncpy(event->devPath, dev->path, sizeof(event->devPath));
 
 	return 0;
 }
