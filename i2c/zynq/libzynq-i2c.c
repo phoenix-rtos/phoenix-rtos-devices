@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * Zynq-7000 I2C driver
+ * Zynq7000 / ZynqMP I2C driver
  *
  * Copyright 2022 Phoenix Systems
  * Author: Hubert Buczynski
@@ -23,7 +23,14 @@
 #include <errno.h>
 #include <i2c.h>
 
+#if defined(__CPU_ZYNQ7000)
 #include <phoenix/arch/armv7a/zynq7000/zynq7000.h>
+#elif defined(__CPU_ZYNQMP)
+#include <phoenix/arch/aarch64/zynqmp/zynqmp.h>
+#else
+#error "Unsupported platform"
+#endif
+
 #include <board_config.h>
 
 /* I2C registers */
@@ -42,58 +49,79 @@
 #define I2C_FIFO_DEPTH     16
 #define I2C_TRANS_SIZE_MAX 255
 
-/* MIO I2C pins configuration */
-#define MIO_SDA 0x1240
-#define MIO_SCL 0x1240
-
-
 typedef struct {
-	unsigned int id;  /* I2C controller ID */
-	unsigned int irq; /* I2C controller IRQ */
-	addr_t paddr;     /* I2C controller base physical address */
-
+	unsigned int irq;     /* I2C controller IRQ */
+	int rst;              /* Reset subsystem ID */
+	int clk;              /* Clock ID */
+	addr_t paddr;         /* I2C controller base physical address */
 	struct {              /* I2C MIO pins configuration */
 		int pin;          /* MIO pin */
 		unsigned int cfg; /* MIO pin configuration */
 	} pins[2];            /* I2C pins, CLK, SDA */
 } i2c_info_t;
 
+/* clang-format off */
 
-/* device configuration based on board_config */
+/* Device configuration based on board_config */
+#if defined(__CPU_ZYNQ7000)
 static const i2c_info_t devsInfo[] = {
 	{
-		.id = 0,
 		.irq = 57,
+		.rst = pctl_ctrl_i2c_rst,
+		.clk = pctl_amba_i2c0_clk,
 		.paddr = 0xe0004000,
 		.pins = {
-			{ I2C0_SDA, MIO_SDA },
-			{ I2C0_SCL, MIO_SCL },
+			{ I2C0_SDA, 0x1240 },
+			{ I2C0_SCL, 0x1240 },
 		}
 	},
 	{
-		.id = 1,
 		.irq = 80,
+		.rst = pctl_ctrl_i2c_rst,
+		.clk = pctl_amba_i2c1_clk,
 		.paddr = 0xe0005000,
 		.pins = {
-			{ I2C1_SDA, MIO_SDA },
-			{ I2C1_SCL, MIO_SCL },
+			{ I2C1_SDA, 0x1240 },
+			{ I2C1_SCL, 0x1240 },
 		}
 	}
 };
+#elif defined(__CPU_ZYNQMP)
+static const i2c_info_t devsInfo[] = {
+	{
+		.irq = 49,
+		.rst = pctl_devreset_lpd_i2c0,
+		.clk = pctl_devclock_lpd_i2c0,
+		.paddr = 0x00ff020000,
+		.pins = {
+			{ I2C0_SDA, 0x0 },
+			{ I2C0_SCL, 0x0 },
+		}
+	},
+	{
+		.irq = 50,
+		.rst = pctl_devreset_lpd_i2c1,
+		.clk = pctl_devclock_lpd_i2c1,
+		.paddr = 0x00ff030000,
+		.pins = {
+			{ I2C1_SDA, 0x0 },
+			{ I2C1_SCL, 0x0 },
+		}
+	}
+};
+#endif
 
+/* clang-format on */
 
 static struct {
 	unsigned int devID;
 	volatile uint32_t *base; /* I2C registers base address */
 	int initialized;
-
-	handle_t lock;           /* I2C IRQ mutex */
-	handle_t cond;           /* I2C IRQ cond */
-	handle_t inth;           /* I2C IRQ handle */
-
+	handle_t lock; /* I2C IRQ mutex */
+	handle_t cond; /* I2C IRQ cond */
+	handle_t inth; /* I2C IRQ handle */
 	volatile uint32_t st;
 } i2c = { 0 };
-
 
 static int i2c_isr(unsigned int n, void *arg)
 {
@@ -351,6 +379,7 @@ int i2c_regRead(uint8_t dev_addr, uint8_t reg_addr, uint8_t *data_out, uint32_t 
 }
 
 
+#if defined(__CPU_ZYNQ7000)
 static void i2c_initCtrl(void)
 {
 	uint32_t reg = *(i2c.base + I2C_CR) & ~0xffff;
@@ -390,6 +419,110 @@ static int i2c_setPin(int pin, unsigned int cfg)
 }
 
 
+static int i2c_initClk(void)
+{
+	const i2c_info_t *info = &devsInfo[i2c.devID];
+
+	/* enable AMBA clock */
+	platformctl_t pctl;
+	pctl.type = pctl_ambaclock;
+	pctl.ambaclock.dev = info->clk;
+	pctl.ambaclock.state = 1;
+
+	return platformctl(&pctl);
+}
+
+
+static int i2c_reset(void)
+{
+	const i2c_info_t *info = &devsInfo[i2c.devID];
+
+	platformctl_t pctl;
+	int err;
+
+	pctl.action = pctl_get;
+	pctl.type = pctl_devreset;
+	pctl.devreset.dev = info->rst;
+	err = platformctl(&pctl);
+	if (err < 0) {
+		return err;
+	}
+
+	pctl.action = pctl_set;
+	pctl.devreset.state |= (1 << (i2c.devID + 2)) | (1 << i2c.devID);
+	err = platformctl(&pctl);
+	if (err < 0) {
+		return err;
+	}
+
+	pctl.devreset.state &= ~((1 << (i2c.devID + 2)) | (1 << i2c.devID));
+	return platformctl(&pctl);
+}
+
+#elif defined(__CPU_ZYNQMP)
+
+static void i2c_initCtrl(void)
+{
+	uint32_t reg = *(i2c.base + I2C_CR) & ~0xffff;
+
+	/* (20 000 000 Hz / (2.2 * (1 + 1)) * (49 + 1)) = 90,9 kHz */
+	reg |= (3 << 14) | (49 << 8);
+
+	/* clear FIFO, - 7bit addressing */
+	reg |= (1 << 6) | (1 << 2);
+
+	*(i2c.base + I2C_CR) = reg;
+
+	/* initialize timeout; wait 255 SCL cycles when the SCL is held Low, before generating a timeout interrupt. */
+	*(i2c.base + I2C_TIMEOUT) = 255;
+}
+
+
+static int i2c_setPin(int pin, unsigned int cfg)
+{
+	platformctl_t pctl;
+	pctl.action = pctl_set;
+	pctl.type = pctl_mio;
+	pctl.mio.pin = pin;
+	pctl.mio.l0 = pctl.mio.l1 = pctl.mio.l2 = 0;
+	pctl.mio.l3 = 0x2; /* Configure I2C pin using multiplexer */
+	pctl.mio.config = cfg;
+	return platformctl(&pctl);
+}
+
+
+static int i2c_initClk(void)
+{
+	const i2c_info_t *info = &devsInfo[i2c.devID];
+
+	/* Set IO_PLL as source clock and set divider:
+	 * IO_PLL / 50 :  1000 MHz / 50 = 20 MHz */
+	platformctl_t pctl;
+	pctl.action = pctl_set;
+	pctl.type = pctl_devclock;
+	pctl.devclock.dev = info->clk;
+	pctl.devclock.src = 0;
+	pctl.devclock.div0 = 50;
+	pctl.devclock.div1 = 0;
+	pctl.devclock.active = 0x1;
+	return platformctl(&pctl);
+}
+
+
+static int i2c_reset(void)
+{
+	const i2c_info_t *info = &devsInfo[i2c.devID];
+
+	platformctl_t pctl;
+	pctl.action = pctl_set;
+	pctl.type = pctl_devreset;
+	pctl.devreset.dev = info->rst;
+	pctl.devreset.state = 0;
+	return platformctl(&pctl);
+}
+#endif
+
+
 static int i2c_initPins(void)
 {
 	int err;
@@ -409,46 +542,6 @@ static int i2c_initPins(void)
 	}
 
 	return EOK;
-}
-
-
-static int i2c_initClk(void)
-{
-	platformctl_t pctl;
-
-	/* enable AMBA clock */
-	pctl.type = pctl_ambaclock;
-	pctl.ambaclock.dev = pctl_amba_i2c0_clk + i2c.devID;
-	pctl.ambaclock.state = 1;
-
-	return platformctl(&pctl);
-}
-
-
-static int i2c_reset(void)
-{
-	platformctl_t pctl;
-	int err;
-
-	pctl.action = pctl_get;
-	pctl.type = pctl_devreset;
-	pctl.devreset.dev = pctl_ctrl_i2c_rst;
-	err = platformctl(&pctl);
-	if (err < 0) {
-		return err;
-	}
-
-	pctl.action = pctl_set;
-	pctl.devreset.state |= (1 << (i2c.devID + 2)) | (1 << i2c.devID);
-	err = platformctl(&pctl);
-	if (err < 0) {
-		return err;
-	}
-
-	pctl.devreset.state &= ~((1 << (i2c.devID + 2)) | (1 << i2c.devID));
-	err = platformctl(&pctl);
-
-	return err;
 }
 
 
