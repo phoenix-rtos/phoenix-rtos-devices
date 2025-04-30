@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * Zynq-7000 I2C BUS driver
+ * Zynq7000 / ZynqMP I2C BUS driver
  *
  * Copyright 2021, 2022 Phoenix Systems
  * Author: Marek Bialowas, Hubert Buczyński
@@ -46,7 +46,7 @@ static int dev_ctl(msg_t *msg)
 
 static void thread(void *arg)
 {
-	uint32_t port = (uint32_t)arg;
+	uint32_t port = (uint32_t)(intptr_t)arg;
 	msg_t msg;
 	msg_rid_t rid;
 	int err;
@@ -127,7 +127,7 @@ int main(int argc, char **argv)
 	}
 
 	printf("i2c: initialized\n");
-	thread((void *)port);
+	thread((void *)(intptr_t)port);
 
 	printf("i2c: exiting\n");
 
