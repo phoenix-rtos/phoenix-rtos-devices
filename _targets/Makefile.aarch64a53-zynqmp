@@ -7,5 +7,6 @@
 #
 
 DEFAULT_COMPONENTS := zynq-uart zynq-flash zynqmp-can zynq-pwm uart16550
+DEFAULT_COMPONENTS += zynq-i2c
 
 DEFAULT_COMPONENTS += libzynqpwm
