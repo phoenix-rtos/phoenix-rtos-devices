@@ -19,7 +19,7 @@ SENSORHUB_DRIVERS_ALL :=
 ALL_SENSOR_MAKES := $(shell find . -mindepth 2 -name sensors.mk -not -path '*/.*')
 include $(ALL_SENSOR_MAKES)
 
-SENSORHUB_DRIVERS_ENABLED ?= baro_sim imu_sim mag_sim
+SENSORHUB_DRIVERS_ENABLED ?= baro_sim imu_sim mag_sim gps_sim
 SENSORHUB_DRIVERS_INTERNAL := $(filter $(SENSORHUB_DRIVERS_ENABLED), $(SENSORHUB_DRIVERS_ALL))
 SENSORHUB_DRIVERS_EXTERNAL := $(filter-out $(SENSORHUB_DRIVERS_INTERNAL), $(SENSORHUB_DRIVERS_ENABLED))
 $(info sensors enabled (internal [external]): $(SENSORHUB_DRIVERS_INTERNAL) [$(SENSORHUB_DRIVERS_EXTERNAL)])
