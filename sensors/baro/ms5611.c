@@ -18,9 +18,9 @@
 #include <sys/time.h>
 #include <sys/threads.h>
 #include <spi.h>
-#include <sensors-spi.h>
 
-#include "../sensors.h"
+#include <libsensors/sensor.h>
+#include <libsensors/spi/spi.h>
 
 /* MS5611 COMMANDS */
 

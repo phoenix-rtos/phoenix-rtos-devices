@@ -11,10 +11,10 @@
  * %LICENSE%
  */
 
-#include "simsensor_generic.h"
-
 #include "event_queue.h"
 #include "simsensor_reader.h"
+
+#include <libsensors/sim/simsensor.h>
 
 #include <stdlib.h>
 #include <errno.h>
