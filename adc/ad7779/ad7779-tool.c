@@ -38,10 +38,13 @@
 #define V_PGA 2
 #define I_PGA 8
 
-const static int adc_gain[] = { I_PGA, V_PGA, I_PGA, V_PGA, I_PGA, V_PGA, 1, 1 };
+const static int adc_gain_default[TOTAL_CHANNELS] = { I_PGA, V_PGA, I_PGA, V_PGA, I_PGA, V_PGA, 1, 1 };
 
 static struct {
 	struct {
+		int adc_gain[TOTAL_CHANNELS]; /* current ADC gain per channel */
+
+		/* sample buffers */
 		size_t size;
 		size_t nr;
 		volatile uint32_t *ptr[2];
@@ -113,18 +116,26 @@ static int adc_getConfig(uint32_t port, bool configDump)
 	if (adc_get(port, adc_dev_ctl__get_config, &ioctl) < 0) {
 		return 1;
 	}
-	if (configDump) {
-		unsigned int ch_cnt = ioctl.config.channels;
-		printf("config: sampling rate: %u, enabled ch: 0x%02x, ch_cnt=%u\n", ioctl.config.sampling_rate, ioctl.config.enabled_ch, ch_cnt);
 
-		for (unsigned int ch = 0; ch < ch_cnt; ++ch) {
-			if (adc_getChConfig(port, ch, &ioctl) < 0) {
-				return 1;
-			}
+	unsigned int ch_cnt = ioctl.config.channels;
+	assert(ch_cnt <= TOTAL_CHANNELS);
+
+	if (configDump) {
+		printf("config: sampling rate: %u, enabled ch: 0x%02x, ch_cnt=%u\n", ioctl.config.sampling_rate, ioctl.config.enabled_ch, ch_cnt);
+	}
+
+	for (unsigned int ch = 0; ch < ch_cnt; ++ch) {
+		if (adc_getChConfig(port, ch, &ioctl) < 0) {
+			return 1;
+		}
+		tool_common.config.adc_gain[ch] = ioctl.ch_config.gain;
+
+		if (configDump) {
 			printf("  [%u] gain=%u, mode=%s\n", ch, ioctl.ch_config.gain, ((ioctl.ch_config.meter_rx_mode != 0) ? "RX" : "REF"));
 		}
+	}
 
-
+	if (configDump) {
 		printf("ADC status registers: \n");
 		if (adc_get(port, adc_dev_ctl__status, &ioctl) < 0) {
 			return 1;
@@ -225,8 +236,8 @@ static int adc_reset(uint32_t port)
 			continue;
 		}
 
-		ioctl.gain.val = adc_gain[i];
-		log_verbose("set_channel_gain ch=%u\n", i);
+		ioctl.gain.val = adc_gain_default[i];
+		log_verbose("set_channel_gain ch=%u val=%u\n", i, ioctl.gain.val);
 		memcpy(msg.o.raw, &ioctl, sizeof(adc_dev_ctl_t));
 		if ((msgSend(port, &msg) < 0) || (msg.o.err != 0)) {
 			printf("sample: failed to set channel %d gain: %d\n", i, msg.o.err);
@@ -373,7 +384,7 @@ static int adc_read(uint32_t port, uint32_t readIntCnt, int streamFd, bool dumpS
 		}
 		for (int i = 0; i < TOTAL_CHANNELS; ++i) {
 			const float valMax = (uint32_t)(1 << 23) - 1;
-			const float voltMax = 1.65f / adc_gain[i];
+			const float voltMax = 1.65f / tool_common.config.adc_gain[i];
 
 			float avg = (float)sum[i] / sumcnt;
 			float ratio = avg / valMax;
