@@ -30,8 +30,6 @@
 
 #include <i2c.h>
 
-#include "si5345.h"
-
 #define SERDES_SIZE    0x20000
 #define SERDES_ADDRESS 0xfd400000
 
@@ -465,13 +463,6 @@ static int pcietest_initPcie(void)
 static int pcietest_init(void)
 {
 	int ret = 0;
-
-	/* Initialise PCI Express reference clock */
-	ret = si5345_initPcieClk();
-	if (ret != 0) {
-		printf("pcietest: fail to init si5345\n");
-		return ret;
-	}
 
 	/* Program PCI Express peripheral clock */
 	printf("pcietest: init PCI Express clock...\n");

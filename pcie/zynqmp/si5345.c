@@ -29,8 +29,6 @@
 
 #include <i2c.h>
 
-#include "si5345.h"
-
 #define SI5345_I2C_ADDRESS 0x69
 
 #define SI5345_PAGE_ADDRESS 0x01
@@ -752,4 +750,17 @@ int si5345_initPcieClk(void)
 
     /* Configure SI5345 */
 	return si5345_upload_config();
+}
+
+int main(int argc, char **argv)
+{
+	if (si5345_initPcieClk() != 0) {
+		fprintf(stderr, "si5345: failed to configure\n");
+		return EXIT_FAILURE;
+	}
+	else {
+		printf("si5345: configured successfully\n");
+	}
+
+	return EXIT_SUCCESS;
 }
