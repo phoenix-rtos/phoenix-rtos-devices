@@ -40,7 +40,7 @@
 #define PCIREG_ADDRESS 0xfd480000
 
 #define CFG_SIZE 0x10000000
-#define CFG_ADDRESS 0xE0000000
+#define CFG_ADDRESS 0x8000000000
 
 #define GIC_PCIE_INTX_IRQ 148
 
@@ -227,12 +227,18 @@ static int pcietest_initPcie(void)
 		return -1;
 	}
 
+	uint32_t ltsm = (readReg(pcie.pcireg, 0x228) >> 3);
+	printf("pcietest: ltsm 0x%x\n", ltsm);
+
 	/* Map the bridge register aperture */
 	writeReg(pcie.breg, E_BREG_BASE_LO, BREG_ADDRESS);
 	writeReg(pcie.breg, E_BREG_BASE_HI, 0x0);
 
 	/* Enable BREG */
 	writeReg(pcie.breg, E_BREG_CONTROL, 0x1);
+
+	ltsm = (readReg(pcie.pcireg, 0x228) >> 3);
+	printf("pcietest: ltsm 0x%x\n", ltsm);
 
 	/* Disable DMA */
 	writeRegMsk(pcie.breg, BRCFG_PCIE_RX0, 0x7, 0x7);
@@ -293,6 +299,9 @@ static int pcietest_initPcie(void)
 		}
 		usleep(100000);
 	}
+
+	ltsm = (readReg(pcie.pcireg, 0x228) >> 3);
+	printf("pcietest: ltsm 0x%x\n", ltsm);
 
 	if (pcie_link_up) {
 		printf("pcietest: pcie link up\n");
