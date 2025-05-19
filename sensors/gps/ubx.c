@@ -22,9 +22,10 @@
 #include <sys/time.h>
 #include <sys/threads.h>
 
-#include "common.h"
-#include "../sensors.h"
-#include "nmea.h"
+#include <libsensors/sensor.h>
+#include <libsensors/gps/receiver.h>
+#include <libsensors/gps/nmea.h>
+
 #include "ubx.h"
 
 #define ubx_STR "ubx:"

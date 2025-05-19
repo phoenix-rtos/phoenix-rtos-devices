@@ -21,8 +21,9 @@
 #include <termios.h>
 #include <stdlib.h>
 
-#include "nmea.h"
-#include "../sensors.h"
+#include <libsensors/sensor.h>
+
+#include <libsensors/gps/nmea.h>
 
 
 typedef struct {
