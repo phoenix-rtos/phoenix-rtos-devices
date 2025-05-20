@@ -752,8 +752,43 @@ int si5345_initPcieClk(void)
 	return si5345_upload_config();
 }
 
+
+static uint32_t readReg(uint32_t *base, uint32_t offset)
+{
+	return *((volatile uint32_t *)((char *)base + offset));
+}
+
+static void writeReg(uint32_t *base, uint32_t offset, uint32_t value)
+{
+	*((volatile uint32_t *)((char *)base + offset)) = value;
+}
+
+static void writeRegMsk(uint32_t *base, uint32_t offset, uint32_t clr, uint32_t set)
+{
+	uint32_t value = readReg(base, offset);
+	value &= ~clr;
+	value |= set;
+	writeReg(base, offset, value);
+}
+
 int main(int argc, char **argv)
 {
+
+	uint32_t *gpio = mmap(NULL, 0x1000, PROT_WRITE | PROT_READ,
+		MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, 0xFF0A0000U);
+	if (NULL == gpio) {
+		printf("fsbl: fail to map GPIO registers memory\n");
+	}
+
+	/* Set MIO31 direction as output */
+	writeRegMsk(gpio, 0x244, 0x20, 0x20);
+
+    /* Set MIO31 output enable */
+    writeRegMsk(gpio, 0x248, 0x20, 0x20);
+
+    /* Set MIO31 to LOW */
+	writeRegMsk(gpio, 0x44, 0x20, 0x00);
+
 	if (si5345_initPcieClk() != 0) {
 		fprintf(stderr, "si5345: failed to configure\n");
 		return EXIT_FAILURE;
@@ -761,6 +796,11 @@ int main(int argc, char **argv)
 	else {
 		printf("si5345: configured successfully\n");
 	}
+
+	/* Set MIO31 to HIGH */
+	writeRegMsk(gpio, 0x44, 0x20, 0x20);
+
+	munmap((void *)gpio, 0x1000);
 
 	return EXIT_SUCCESS;
 }

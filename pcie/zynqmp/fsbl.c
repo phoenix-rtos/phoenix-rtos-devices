@@ -2972,7 +2972,7 @@ unsigned long psuSerdesInitData(uint32_t *base)
 	/*
 	 * SERDES ILL CALIB
 	 */
-	serdes_illcalib(base, 0, 0, 0, 0, 0, 0, 1, 1);
+	//serdes_illcalib(base, 0, 0, 0, 0, 0, 0, 1, 1);
 
 	/*##################################################################### */
 
