@@ -11,4 +11,4 @@ DEFAULT_COMPONENTS += zynq-i2c
 
 DEFAULT_COMPONENTS += libzynqpwm
 
-DEFAULT_COMPONENTS += pcie si5345 fsbl
+DEFAULT_COMPONENTS += pcie si5345 fsbl status

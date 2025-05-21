@@ -12,6 +12,10 @@ NAME := fsbl
 LOCAL_SRCS := fsbl.c
 include $(binary.mk)
 
+NAME := status
+LOCAL_SRCS := status.c
+include $(binary.mk)
+
 NAME := si5345
 LOCAL_SRCS := si5345.c
 DEP_LIBS := i2c-common libi2c-msg
