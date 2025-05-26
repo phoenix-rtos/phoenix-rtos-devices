@@ -30,6 +30,14 @@
 
 #include <board_config.h>
 
+/*
+ * In this config file, ISEMPTY() macro is used with tokens which are never
+ * defined on their own as they are used later in token-paste macros (for
+ * example: `ISEMPTY(UART1_TX_PIN)`). Thus, they will emit -Wundef warnings.
+ * For a "temporary" workaround, they are silenced in this file.
+ */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wundef"
 
 #ifndef IMXRT_MULTI_PRIO
 #define IMXRT_MULTI_PRIO 2
@@ -1355,5 +1363,13 @@
 #endif
 
 #endif
+
+/* Pseudodev */
+
+#ifndef PSEUDODEV
+#define PSEUDODEV 0
+#endif
+
+#pragma GCC diagnostic pop
 
 #endif

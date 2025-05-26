@@ -619,8 +619,10 @@ int main(void)
 	oid_t kmsgctrl = { .port = common.uart_port, .id = id_kmsgctrl };
 	libklog_ctrlRegister(&kmsgctrl);
 
+#ifndef __CPU_IMXRT117X
 #if TRNG
 	trng_init();
+#endif
 #endif
 
 #if CM4
