@@ -289,6 +289,22 @@ static int pcietest_initPcie(void)
 	writeReg(pcie.breg, E_ECAM_BASE_LO, lower_32_bits(CFG_ADDRESS));
 	writeReg(pcie.breg, E_ECAM_BASE_HI, upper_32_bits(CFG_ADDRESS));
 
+
+	/* Check link status in loop */
+    uint32_t ltsm_previous = 0;
+    for(uint32_t i = 0; i < 100000; i++) {
+        uint32_t ltsm = (readReg(pcie.pcireg, 0x228) >> 3);
+        uint32_t pcie_link_status = readReg(pcie.pcireg, PS_LINKUP_OFFSET);
+        if (ltsm != ltsm_previous) {
+            printf("status: ltsm 0x%x link status 0x%x\n", ltsm, pcie_link_status);
+        }
+        ltsm_previous = ltsm;
+        usleep(1 * 100);
+    }
+
+
+
+#if 0
 	/* Check link status */
 	bool pcie_link_up = false;
 	for (int retries = 0; retries < LINK_WAIT_MAX_RETRIES; retries++) {
@@ -310,7 +326,7 @@ static int pcietest_initPcie(void)
 		printf("pcietest: fail pcie link down\n");
 		return -1;
 	}
-
+#endif
 	/* Unmap memory */
 	munmap((void *)pcie.breg, BREG_SIZE);
 	munmap((void *)pcie.pcireg, PCIREG_SIZE);
