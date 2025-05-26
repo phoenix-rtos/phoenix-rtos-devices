@@ -114,12 +114,14 @@ static void multi_dispatchMsg(msg_t *msg)
 			spi_handleMsg(msg, id);
 			break;
 
+#if CM4
 		case id_cm4_0:
 		case id_cm4_1:
 		case id_cm4_2:
 		case id_cm4_3:
 			cm4_handleMsg(msg);
 			break;
+#endif
 #endif
 
 		case id_i2c1:
@@ -133,7 +135,7 @@ static void multi_dispatchMsg(msg_t *msg)
 			i2c_handleMsg(msg, id);
 			break;
 
-#ifndef __CPU_IMXRT117X
+#if !defined(__CPU_IMXRT117X) && TRNG
 		case id_trng:
 			trng_handleMsg(msg);
 			break;
@@ -396,8 +398,6 @@ static int createDevFiles(void)
 	}
 #endif
 
-#ifdef __CPU_IMXRT117X
-
 #if SPI5
 	if (mkFile(&dir, id_spi5, "spi5", multi_port) < 0) {
 		return -1;
@@ -418,8 +418,6 @@ static int createDevFiles(void)
 			return -1;
 		}
 	}
-#endif
-
 #endif
 
 
@@ -448,9 +446,6 @@ static int createDevFiles(void)
 	}
 #endif
 
-
-#ifdef __CPU_IMXRT117X
-
 #if I2C5
 	if (mkFile(&dir, id_i2c5, "i2c5", multi_port) < 0) {
 		return -1;
@@ -463,10 +458,6 @@ static int createDevFiles(void)
 	}
 #endif
 
-#endif
-
-#ifndef __CPU_IMXRT117X
-
 #if TRNG
 	if (mkFile(&dir, id_trng, "random", multi_port) < 0) {
 		return -1;
@@ -476,8 +467,6 @@ static int createDevFiles(void)
 	if (mkFile(&dir, id_trng, "trng", multi_port) < 0) {
 		return -1;
 	}
-#endif
-
 #endif
 
 #if PCT2075

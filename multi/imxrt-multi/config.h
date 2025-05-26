@@ -30,6 +30,15 @@
 
 #include <board_config.h>
 
+/*
+ * In this config file, ISEMPTY() macro is used with tokens which are never
+ * defined on their own as they are used later in token-paste macros (for
+ * example: `ISEMPTY(UART1_TX_PIN)`). Thus, they will emit -Wundef warnings.
+ * For a "temporary" workaround, they are silenced in this file.
+ * Using #pragma only for ISEMPTY() macro definition is not enough.
+ */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wundef"
 
 #ifndef IMXRT_MULTI_PRIO
 #define IMXRT_MULTI_PRIO 2
@@ -705,7 +714,23 @@
 #endif /* #if UART12 */
 
 
-#else
+#else /* #ifdef __CPU_IMXRT117X */
+
+#ifdef UART9
+#error "UART9 is only available on IMXRT117x"
+#endif
+
+#ifdef UART10
+#error "UART10 is only available on IMXRT117x"
+#endif
+
+#ifdef UART11
+#error "UART11 is only available on IMXRT117x"
+#endif
+
+#ifdef UART12
+#error "UART12 is only available on IMXRT117x"
+#endif
 
 #define UART9           0
 #define UART9_BUFSIZE   0
@@ -1219,8 +1244,15 @@
 
 #endif /* #if SPI6 */
 
+#else /* #ifdef __CPU_IMXRT117X */
 
-#else
+#ifdef SPI5
+#error "SPI5 is only available on IMXRT117x"
+#endif
+
+#ifdef SPI6
+#error "SPI6 is only available on IMXRT117x"
+#endif
 
 #define SPI5 0
 #define SPI6 0
@@ -1267,6 +1299,19 @@
 #elif !ISBOOLEAN(I2C6)
 #error "I2C6 must have a value of 0, 1, or be undefined"
 #endif
+
+#else
+
+#ifdef I2C5
+#error "I2C5 is only available on IMXRT117x"
+#endif
+
+#ifdef I2C6
+#error "I2C6 is only available on IMXRT117x"
+#endif
+
+#define I2C5 0
+#define I2C6 0
 
 #endif /* #ifdef __CPU_IMXRT117X */
 
@@ -1325,9 +1370,20 @@
 
 #ifndef TRNG
 #define TRNG 0
+#elif !ISBOOLEAN(TRNG)
+#error "TRNG must have a value of 0, 1, or be undefined"
 #endif
 
+#else
+
+#ifdef TRNG
+#error "TRNG is not available on IMXRT117x"
+#endif
+
+#define TRNG 0
+
 #endif /* #ifndef __CPU_IMXRT117X */
+
 
 /* Temperature */
 
@@ -1341,10 +1397,6 @@
 #error "PCT2075_DEV_ADDR must be defined"
 #endif
 
-/* libdummyfs */
-#ifndef BUILTIN_DUMMYFS
-#define BUILTIN_DUMMYFS 0
-#endif
 
 /* Cortex M4 */
 
@@ -1352,8 +1404,48 @@
 
 #ifndef CM4
 #define CM4 1
+#elif !ISBOOLEAN(CM4)
+#error "CM4 must have a value of 0, 1, or be undefined"
 #endif
 
+#else
+
+#ifdef CM4
+#error "CM4 is only available on IMXRT117x"
 #endif
+
+#define CM4 0
+
+#endif /* #ifdef __CPU_IMXRT117X */
+
+
+/* libdummyfs */
+
+#ifndef BUILTIN_DUMMYFS
+#define BUILTIN_DUMMYFS 0
+#elif !ISBOOLEAN(BUILTIN_DUMMYFS)
+#error "BUILTIN_DUMMYFS must have a value of 0, 1, or be undefined"
+#endif
+
+
+/* libposixsrv */
+
+#ifndef BUILTIN_POSIXSRV
+#define BUILTIN_POSIXSRV 0
+#elif !ISBOOLEAN(BUILTIN_POSIXSRV)
+#error "BUILTIN_POSIXSRV must have a value of 0, 1, or be undefined"
+#endif
+
+
+/* Pseudodev */
+
+#ifndef PSEUDODEV
+#define PSEUDODEV 0
+#elif !ISBOOLEAN(PSEUDODEV)
+#error "PSEUDODEV must have a value of 0, 1, or be undefined"
+#endif
+
+
+#pragma GCC diagnostic pop
 
 #endif
