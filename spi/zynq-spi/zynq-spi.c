@@ -1,9 +1,9 @@
 /*
  * Phoenix-RTOS
  *
- * Zynq-7000 SPI server
+ * Zynq7000 / ZynqMP SPI server
  *
- * Copyright 2022 Phoenix Systems
+ * Copyright 2025 Phoenix Systems
  * Author: Lukasz Kosinski
  *
  * This file is part of Phoenix-RTOS.
@@ -80,7 +80,7 @@ static void spisrv_devctl(msg_t *msg)
 
 static void spisrv_msgthr(void *arg)
 {
-	unsigned int port = (unsigned int)arg;
+	unsigned int port = (unsigned int)(intptr_t)arg;
 	msg_rid_t rid;
 	msg_t msg;
 	int err;
@@ -91,7 +91,7 @@ static void spisrv_msgthr(void *arg)
 			if (err == -EINTR) {
 				continue;
 			}
-			printf("zynq7000-spi: failed to receive message for SPI%u controller, err: %s\n", spisrv_common.dev, strerror(err));
+			printf("zynq-spi: failed to receive message for SPI%u controller, err: %s\n", spisrv_common.dev, strerror(err));
 			break;
 		}
 
@@ -141,7 +141,7 @@ int main(int argc, char *argv[])
 
 	err = spi_init(dev);
 	if (err < 0) {
-		printf("zynq7000-spi: failed to initialize SPI%u controller, err: %s\n", dev, strerror(err));
+		printf("zynq-spi: failed to initialize SPI%u controller, err: %s\n", dev, strerror(err));
 		return EXIT_FAILURE;
 	}
 
@@ -152,7 +152,7 @@ int main(int argc, char *argv[])
 
 	err = portCreate(&oid.port);
 	if (err < 0) {
-		printf("zynq7000-spi: failed to create port for SPI%u controller, err: %s\n", dev, strerror(err));
+		printf("zynq-spi: failed to create port for SPI%u controller, err: %s\n", dev, strerror(err));
 		return EXIT_FAILURE;
 	}
 
@@ -161,7 +161,7 @@ int main(int argc, char *argv[])
 	oid.id = SPI_SS_EXTERNAL;
 	err = create_dev(&oid, devName);
 	if (err < 0) {
-		printf("zynq7000-spi: failed to create device file %s, err: %s\n", devName, strerror(err));
+		printf("zynq-spi: failed to create device file %s, err: %s\n", devName, strerror(err));
 		return EXIT_FAILURE;
 	}
 
@@ -175,13 +175,13 @@ int main(int argc, char *argv[])
 		oid.id = i;
 		err = create_dev(&oid, devName);
 		if (err < 0) {
-			printf("zynq7000-spi: failed to create device file %s, err: %s\n", devName, strerror(err));
+			printf("zynq-spi: failed to create device file %s, err: %s\n", devName, strerror(err));
 			return EXIT_FAILURE;
 		}
 	}
 
 	spisrv_common.dev = dev;
-	spisrv_msgthr((void *)oid.port);
+	spisrv_msgthr((void *)(intptr_t)oid.port);
 
 	return EXIT_SUCCESS;
 }

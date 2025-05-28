@@ -1,9 +1,9 @@
 /*
  * Phoenix-RTOS
  *
- * Zynq-7000 SPI controller (master mode only)
+ * Zynq7000 / ZynqMP SPI controller (master mode only)
  *
- * Copyright 2022 Phoenix Systems
+ * Copyright 2025 Phoenix Systems
  * Author: Lukasz Kosinski
  *
  * This file is part of Phoenix-RTOS.
@@ -22,9 +22,19 @@
 #include <sys/threads.h>
 #include <sys/types.h>
 
+#if defined(__CPU_ZYNQ7000)
 #include <phoenix/arch/armv7a/zynq7000/zynq7000.h>
+#elif defined(__CPU_ZYNQMP)
+#include <phoenix/arch/aarch64/zynqmp/zynqmp.h>
+#else
+#error "Unsupported platform"
+#endif
+
 #include <board_config.h>
 
+#ifndef SPI_ROUTED_VIA_PL
+#define SPI_ROUTED_VIA_PL 0
+#endif
 
 /* SPI registers */
 #define SPI_CR  0  /* Configuration register */
@@ -53,14 +63,22 @@
 
 
 /* MIO SPI pins configuration */
+#if defined(__CPU_ZYNQ7000)
 #define MIO_SCLK 0x22a0 /* SCLK - disable HSTL, LVCMOS18, SPI */
 #define MIO_MOSI 0x22a0 /* MOSI - same as SCLK */
 #define MIO_MISO 0x22a1 /* MISO - disable HSTL, LVCMOS18, SPI, disable output */
 #define MIO_SS   0x32a0 /* SS   - disable HSTL, enable pull-up resistor, LVCMOS18, SPI */
-
+#elif defined(__CPU_ZYNQMP)
+#define MIO_SCLK (PCTL_MIO_SLOW_nFAST)
+#define MIO_MOSI (PCTL_MIO_SLOW_nFAST)
+#define MIO_MISO (PCTL_MIO_SLOW_nFAST)
+#define MIO_SS   (PCTL_MIO_SLOW_nFAST)
+#endif
 
 typedef struct {
 	const unsigned int id;    /* SPI controller ID */
+	const unsigned int rst;   /* Reset subsystem peripheral ID */
+	const unsigned int clk;   /* Clocking subsystem peipheral ID */
 	const unsigned int irq;   /* SPI controller IRQ */
 	const addr_t paddr;       /* SPI controller base physical address */
 	const struct {            /* SPI MIO pins configuration */
@@ -76,9 +94,12 @@ typedef struct {
 
 
 /* SPI controllers */
+#if defined(__CPU_ZYNQ7000)
 static spi_t devs[] = {
 	{
-		.id = 0,             /* SPI0 */
+		.id = 0, /* SPI0 */
+		.rst = pctl_ctrl_spi_rst,
+		.clk = pctl_ctrl_spi_clk,
 		.irq = 58,           /* SPI0 IRQ */
 		.paddr = 0xe0006000, /* SPI0 base physical address */
 		.pins = {
@@ -91,7 +112,9 @@ static spi_t devs[] = {
 		},
 	},
 	{
-		.id = 1,             /* SPI1 */
+		.id = 1, /* SPI1 */
+		.rst = pctl_ctrl_spi_rst,
+		.clk = pctl_ctrl_spi_clk,
 		.irq = 81,           /* SPI1 IRQ */
 		.paddr = 0xe0007000, /* SPI1 base physical address */
 		.pins = {
@@ -104,6 +127,40 @@ static spi_t devs[] = {
 		},
 	},
 };
+#elif defined(__CPU_ZYNQMP)
+static spi_t devs[] = {
+	{
+		.id = 0,                       /* SPI0 */
+		.rst = pctl_devreset_lpd_spi0, /* Reset subsystem peripheral ID */
+		.clk = pctl_devclock_lpd_spi0, /* Clocking subsystem peipheral ID */
+		.irq = 51,                     /* SPI0 IRQ */
+		.paddr = 0xff040000,           /* SPI0 base physical address */
+		.pins = {
+			{ SPI0_SS0, MIO_SS },    /* SPI0 SS0 */
+			{ SPI0_SS1, MIO_SS },    /* SPI0 SS1 */
+			{ SPI0_SS2, MIO_SS },    /* SPI0 SS2 */
+			{ SPI0_SCLK, MIO_SCLK }, /* SPI0 SCLK */
+			{ SPI0_MOSI, MIO_MOSI }, /* SPI0 MOSI */
+			{ SPI0_MISO, MIO_MISO }, /* SPI0 MISO */
+		},
+	},
+	{
+		.id = 1,                       /* SPI1 */
+		.rst = pctl_devreset_lpd_spi1, /* Reset subsystem peripheral ID */
+		.clk = pctl_devclock_lpd_spi1, /* Clocking subsystem peipheral ID */
+		.irq = 52,                     /* SPI1 IRQ */
+		.paddr = 0xff050000,           /* SPI1 base physical address */
+		.pins = {
+			{ SPI1_SS0, MIO_SS },    /* SPI1 SS0 */
+			{ SPI1_SS1, MIO_SS },    /* SPI1 SS1 */
+			{ SPI1_SS2, MIO_SS },    /* SPI1 SS2 */
+			{ SPI1_SCLK, MIO_SCLK }, /* SPI1 SCLK */
+			{ SPI1_MOSI, MIO_MOSI }, /* SPI1 MOSI */
+			{ SPI1_MISO, MIO_MISO }, /* SPI1 MISO */
+		},
+	},
+};
+#endif
 
 
 static spi_t *spi_get(unsigned int dev)
@@ -272,33 +329,37 @@ int spi_setSpeed(unsigned int dev, unsigned int speed)
 
 static void spi_select(spi_t *spi, unsigned int ss, unsigned int state)
 {
-	unsigned int cfg;
-
-	/* Check for external SS control */
+	/* If slave select is externally controlled, omit this function */
 	if (ss == SPI_SS_EXTERNAL) {
 		return;
 	}
 
-	/* Raise SS line high */
-	if (state > 0) {
-		/* Deselect all */
-		ss = 15;
+	/* Map "CONFIG" register "CS" field value with desired slave select */
+	uint32_t cs_value = 0;
+	if (state == 1) {
+		cs_value = 0xf; /* No slave selected, all SS high */
 	}
-	/* Set SS line low */
 	else {
-		ss = (spi->pins[ss].pin - spi->id) % SPI_SS_COUNT;
-		/* SS0 -> 0 */
-		/* SS1 -> 1 */
-		/* SS2 -> 3 */
-		if (ss == 2) {
-			ss++;
-		}
+		switch (ss) {
+			case 0: {
+				cs_value = 0xe;
+			} break;
+			case 1: {
+				cs_value = 0xd;
+			} break;
+			case 2: {
+				cs_value = 0xb;
+			} break;
+			default: {
+				cs_value = 0xf; /* Error, should not enter here */
+			} break;
+		};
 	}
 
-	cfg = *(spi->base + SPI_CR);
+	/* Write new value into CS field */
+	uint32_t cfg = *(spi->base + SPI_CR);
 	cfg &= ~(15 << 10);
-	cfg |= (ss << 10);
-
+	cfg |= (cs_value << 10);
 	*(spi->base + SPI_CR) = cfg;
 }
 
@@ -373,14 +434,13 @@ int spi_xfer(unsigned int dev, unsigned int ss, const void *out, size_t olen, vo
 	return EOK;
 }
 
-
 static int spi_setPin(int pin, unsigned int cfg)
 {
 	platformctl_t pctl;
-
 	pctl.action = pctl_set;
 	pctl.type = pctl_mio;
 	pctl.mio.pin = pin;
+#if defined(__CPU_ZYNQ7000)
 	pctl.mio.disableRcvr = (cfg >> 13) & 1;
 	pctl.mio.pullup = (cfg >> 12) & 1;
 	pctl.mio.ioType = (cfg >> 9) & 7;
@@ -390,7 +450,11 @@ static int spi_setPin(int pin, unsigned int cfg)
 	pctl.mio.l1 = (cfg >> 2) & 1;
 	pctl.mio.l0 = (cfg >> 1) & 1;
 	pctl.mio.triEnable = (cfg >> 0) & 1;
-
+#elif defined(__CPU_ZYNQMP)
+	pctl.mio.l0 = pctl.mio.l1 = pctl.mio.l2 = 0;
+	pctl.mio.l3 = 0x4;
+	pctl.mio.config = cfg;
+#endif
 	return platformctl(&pctl);
 }
 
@@ -419,10 +483,11 @@ static int spi_initPins(spi_t *spi)
 static int spi_initClk(spi_t *spi)
 {
 	platformctl_t pctl;
+	pctl.type = pctl_devclock;
 	int err;
 
+#if defined(__CPU_ZYNQ7000)
 	pctl.action = pctl_get;
-	pctl.type = pctl_devclock;
 	err = platformctl(&pctl);
 	if (err < 0) {
 		return err;
@@ -443,7 +508,7 @@ static int spi_initClk(spi_t *spi)
 
 	/* Set reference clock to 200 MHz */
 	pctl.action = pctl_set;
-	pctl.devclock.dev = pctl_ctrl_spi_clk;
+	pctl.devclock.dev = spi->clk;
 	pctl.devclock.srcsel = 0;   /* IO PLL source clock (1000 MHz) */
 	pctl.devclock.divisor0 = 5; /* Divide by 5 */
 	err = platformctl(&pctl);
@@ -457,18 +522,32 @@ static int spi_initClk(spi_t *spi)
 	pctl.ambaclock.state = 1;
 	err = platformctl(&pctl);
 
+#elif defined(__CPU_ZYNQMP)
+	pctl.action = pctl_set;
+	/* Set IO_PLL as source clock and set divider:
+	 * IO_PLL / 5 :  1000 MHz / 5 = 200 MHz */
+	pctl.devclock.dev = spi->clk;
+	pctl.devclock.src = 0;
+	pctl.devclock.div0 = 5;
+	pctl.devclock.div1 = 0;
+	pctl.devclock.active = 0x1;
+	err = platformctl(&pctl);
+#endif
+
 	return err;
 }
 
 
 static int spi_reset(spi_t *spi)
 {
-	platformctl_t pctl;
 	int err;
 
-	pctl.action = pctl_get;
+	platformctl_t pctl;
 	pctl.type = pctl_devreset;
-	pctl.devreset.dev = pctl_ctrl_spi_rst;
+	pctl.devreset.dev = spi->rst;
+
+#if defined(__CPU_ZYNQ7000)
+	pctl.action = pctl_get;
 	err = platformctl(&pctl);
 	if (err < 0) {
 		return err;
@@ -484,6 +563,12 @@ static int spi_reset(spi_t *spi)
 	pctl.devreset.state &= ~((1 << (spi->id + 2)) | (1 << spi->id));
 	err = platformctl(&pctl);
 
+#elif defined(__CPU_ZYNQMP)
+	pctl.action = pctl_set;
+	pctl.devreset.state = 0;
+	err = platformctl(&pctl);
+#endif
+
 	return err;
 }
 
@@ -495,34 +580,44 @@ int spi_init(unsigned int dev)
 
 	spi = spi_get(dev);
 	if (spi == NULL) {
+		fprintf(stderr, "libzynq-spi: failed to find SPI instance\n");
 		return -ENODEV;
 	}
 
 	/* Reset controller */
 	err = spi_reset(spi);
 	if (err < 0) {
+		fprintf(stderr, "libzynq-spi: failed to perform reset\n");
 		return err;
 	}
 
 	/* Initialize clock */
 	err = spi_initClk(spi);
 	if (err < 0) {
+		fprintf(stderr, "libzynq-spi: failed to configure clock\n");
 		return err;
 	}
 
 	/* Configure pins */
+#if (SPI_ROUTED_VIA_PL != 1)
 	err = spi_initPins(spi);
 	if (err < 0) {
+		fprintf(stderr, "libzynq-spi: failed to initialize pins\n");
 		return err;
 	}
+#else
+	(void)spi_initPins;
+#endif
 
 	err = mutexCreate(&spi->lock);
 	if (err < 0) {
+		fprintf(stderr, "libzynq-spi: failed to init mutex\n");
 		return err;
 	}
 
 	err = condCreate(&spi->cond);
 	if (err < 0) {
+		fprintf(stderr, "libzynq-spi: failed to init cond. variable\n");
 		resourceDestroy(spi->lock);
 		return err;
 	}
@@ -532,6 +627,7 @@ int spi_init(unsigned int dev)
 	if (spi->base == MAP_FAILED) {
 		resourceDestroy(spi->cond);
 		resourceDestroy(spi->lock);
+		fprintf(stderr, "libzynq-spi: failed to map memory\n");
 		return -ENOMEM;
 	}
 
