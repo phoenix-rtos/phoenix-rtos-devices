@@ -30,6 +30,10 @@
 #include "zynqmp-can-priv.h"
 #include "zynqmp-can-if.h"
 
+#ifndef CAN_ROUTED_VIA_PL
+#define CAN_ROUTED_VIA_PL 0
+#endif
+
 /**
  * Watermark configuration for "TX FIFO empty elements above watermark" interrupt.
  * Setting this to low values (e.g., 1) reduces the blocking time for the sending function
