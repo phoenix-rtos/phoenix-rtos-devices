@@ -30,6 +30,10 @@
 
 #include <phoenix/ioctl.h>
 
+#ifndef PSEUDODEV
+#define PSEUDODEV 0
+#endif
+
 #if PSEUDODEV
 #include <pseudodev.h>
 #endif
