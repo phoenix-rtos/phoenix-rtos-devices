@@ -86,7 +86,7 @@ static uint32_t readReg(uint32_t *base, uint32_t offset)
 
 int main(int argc, char **argv)
 {
-	int ret = 0;
+	//int ret = 0;
 
 	uint32_t* pcireg = mmap(NULL, PCIREG_SIZE,
 		PROT_WRITE | PROT_READ,
