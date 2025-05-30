@@ -44,6 +44,9 @@
 #error "Unsupported platform"
 #endif
 
+#ifndef UART_CONSOLE_ROUTED_VIA_PL
+#define UART_CONSOLE_ROUTED_VIA_PL 0
+#endif
 
 #define UARTS_MAX_CNT 2
 #define UART_REF_CLK  50000000 /* 50 MHz */
