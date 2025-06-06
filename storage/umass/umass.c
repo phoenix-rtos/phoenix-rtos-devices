@@ -195,7 +195,7 @@ static int umass_registerfs(const char *name, uint8_t type, fs_mount_t mount, fs
 		return -ENOMEM;
 	}
 
-	strcpy(fs->name, name);
+	strncpy(fs->name, name, sizeof(fs->name) - 1);
 	fs->type = type;
 	fs->mount = mount;
 	fs->unmount = unmount;
@@ -434,7 +434,7 @@ static umass_fs_t *umass_getfs(const char *name)
 {
 	umass_fs_t fs;
 
-	strcpy(fs.name, name);
+	strncpy(fs.name, name, sizeof(fs.name) - 1);
 
 	return lib_treeof(umass_fs_t, node, lib_rbFind(&umass_common.fss, &fs.node));
 }
