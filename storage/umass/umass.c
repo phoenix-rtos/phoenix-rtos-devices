@@ -595,6 +595,7 @@ static int umass_mountFromDev(umass_dev_t *dev, const char *name, oid_t *oid)
 
 	err = fs->mount(oid, UMASS_SECTOR_SIZE, umass_read, umass_write, &dev->part.fdata);
 	if (err < 0) {
+		portDestroy(dev->part.port);
 		return err;
 	}
 	oid->id = err;
@@ -604,6 +605,7 @@ static int umass_mountFromDev(umass_dev_t *dev, const char *name, oid_t *oid)
 		dev->part.fs->unmount(dev->part.fdata);
 		dev->part.fs = NULL;
 		dev->part.fdata = NULL;
+		portDestroy(dev->part.port);
 		return err;
 	}
 
@@ -650,8 +652,8 @@ static void umass_fsthr(void *arg)
 
 		LIST_ADD(&umass_common.rqueue, req);
 
-		mutexUnlock(umass_common.rlock);
 		condSignal(umass_common.rcond);
+		mutexUnlock(umass_common.rlock);
 
 		if (umount != 0) {
 			endthread();
