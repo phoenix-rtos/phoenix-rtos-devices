@@ -41,8 +41,13 @@
 #include "umass.h"
 #include "scsi.h"
 
-#define UMASS_N_MSG_THREADS  2
-#define UMASS_N_POOL_THREADS 4
+#ifndef UMASS_N_MSG_THREADS
+#define UMASS_N_MSG_THREADS 2
+#endif
+
+#ifndef UMASS_N_POOL_THREADS
+#define UMASS_N_POOL_THREADS 2
+#endif
 
 #define UMASS_TRANSMIT_RETRIES 3
 #define UMASS_INIT_RETRIES     10
@@ -190,7 +195,7 @@ static int umass_registerfs(const char *name, uint8_t type, fs_mount_t mount, fs
 		return -ENOMEM;
 	}
 
-	strcpy(fs->name, name);
+	strncpy(fs->name, name, sizeof(fs->name) - 1);
 	fs->type = type;
 	fs->mount = mount;
 	fs->unmount = unmount;
@@ -429,7 +434,7 @@ static umass_fs_t *umass_getfs(const char *name)
 {
 	umass_fs_t fs;
 
-	strcpy(fs.name, name);
+	strncpy(fs.name, name, sizeof(fs.name) - 1);
 
 	return lib_treeof(umass_fs_t, node, lib_rbFind(&umass_common.fss, &fs.node));
 }
@@ -474,11 +479,8 @@ static int umass_readFromDev(umass_dev_t *dev, off_t offs, char *buf, size_t len
 	readcmd.length = htons((uint16_t)(len / UMASS_SECTOR_SIZE));
 
 	mutexLock(dev->lock);
-	ret = _umass_transmit(dev, &readcmd, sizeof(readcmd), dev->buffer, len, usb_dir_in);
-	if (ret > 0) {
-		memcpy(buf, dev->buffer, len);
-	}
-	else if (len > 0) {
+	ret = _umass_transmit(dev, &readcmd, sizeof(readcmd), buf, len, usb_dir_in);
+	if (ret <= 0 && len > 0) {
 		printf("read transmit failed for offs: %lld\n", offs);
 	}
 	mutexUnlock(dev->lock);
@@ -506,8 +508,7 @@ static int umass_writeToDev(umass_dev_t *dev, off_t offs, const char *buf, size_
 	writecmd.length = htons((uint16_t)(len / UMASS_SECTOR_SIZE));
 
 	mutexLock(dev->lock);
-	memcpy(dev->buffer, buf, len);
-	ret = _umass_transmit(dev, &writecmd, sizeof(writecmd), dev->buffer, len, usb_dir_out);
+	ret = _umass_transmit(dev, &writecmd, sizeof(writecmd), (char *)buf, len, usb_dir_out);
 	mutexUnlock(dev->lock);
 	if (ret < 0) {
 		fprintf(stderr, "write transmit failed for offs: %lld\n", offs);
@@ -588,6 +589,7 @@ static int umass_mountFromDev(umass_dev_t *dev, const char *name, oid_t *oid)
 
 	err = fs->mount(oid, UMASS_SECTOR_SIZE, umass_read, umass_write, &dev->part.fdata);
 	if (err < 0) {
+		portDestroy(dev->part.port);
 		return err;
 	}
 	oid->id = err;
@@ -597,6 +599,7 @@ static int umass_mountFromDev(umass_dev_t *dev, const char *name, oid_t *oid)
 		dev->part.fs->unmount(dev->part.fdata);
 		dev->part.fs = NULL;
 		dev->part.fdata = NULL;
+		portDestroy(dev->part.port);
 		return err;
 	}
 
@@ -623,7 +626,8 @@ static void umass_fsthr(void *arg)
 	int umount = 0, ret;
 
 	for (;;) {
-		req = (umass_req_t *)malloc(sizeof(umass_req_t));
+		/* TODO: use static requests buffer? */
+		req = malloc(sizeof(umass_req_t));
 		if (req == NULL) {
 			continue;
 		}
@@ -643,8 +647,8 @@ static void umass_fsthr(void *arg)
 
 		LIST_ADD(&umass_common.rqueue, req);
 
-		mutexUnlock(umass_common.rlock);
 		condSignal(umass_common.rcond);
+		mutexUnlock(umass_common.rlock);
 
 		if (umount != 0) {
 			endthread();
@@ -663,7 +667,7 @@ static void umass_poolthr(void *arg)
 		while (umass_common.rqueue == NULL) {
 			condWait(umass_common.rcond, umass_common.rlock, 0);
 		}
-		req = umass_common.rqueue->prev;
+		req = umass_common.rqueue;
 		LIST_REMOVE(&umass_common.rqueue, req);
 
 		mutexUnlock(umass_common.rlock);

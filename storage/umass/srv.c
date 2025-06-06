@@ -39,11 +39,6 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	/* Wait for console */
-	while (write(1, "", 0) < 0) {
-		usleep(50000);
-	}
-
 	if (argc > 1) {
 		/* Process command line options */
 		for (;;) {

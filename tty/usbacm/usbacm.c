@@ -103,7 +103,6 @@ typedef struct _usbacm_dev {
 static struct {
 	char msgstack[USBACM_N_MSG_THREADS][1024] __attribute__((aligned(8)));
 	usbacm_dev_t *devices;
-	unsigned drvport;
 	unsigned msgport;
 	handle_t lock;
 	int lastId;
@@ -224,7 +223,7 @@ static void usbacm_free(usbacm_dev_t *dev)
 }
 
 
-static void usbacm_freeAll(usbacm_dev_t **devices)
+static void _usbacm_freeAll(usbacm_dev_t **devices)
 {
 	usbacm_dev_t *next, *dev = *devices;
 
@@ -449,11 +448,7 @@ static usbacm_dev_t *usbacm_devAlloc(void)
 		dev->id = usbacm_common.devices->prev->id + 1;
 
 	dev->fileId = usbacm_common.lastId++;
-	dev->rfcnt = 1;
-
-	/* add this device prematurely to devices list, to mitigate race condition on
-	 * multiple concurrent insertions */
-	LIST_ADD(&usbacm_common.devices, dev);
+	dev->rfcnt = 0;
 	mutexUnlock(usbacm_common.lock);
 
 	snprintf(dev->path, sizeof(dev->path), "/dev/usbacm%u", dev->id);
@@ -750,13 +745,14 @@ static int usbacm_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion, u
 	} while (0);
 
 	if (err < 0) {
-		mutexLock(usbacm_common.lock);
-		/* remove the device from list, as it has been added there in devAlloc */
-		LIST_REMOVE(&usbacm_common.devices, dev);
-		mutexUnlock(usbacm_common.lock);
-		free(dev);
+		usbacm_free(dev);
 		return err;
 	}
+
+	mutexLock(usbacm_common.lock);
+	dev->rfcnt = 1;
+	LIST_ADD(&usbacm_common.devices, dev);
+	mutexUnlock(usbacm_common.lock);
 
 	fprintf(stdout, "usbacm: New device: %s\n", dev->path);
 
@@ -802,7 +798,7 @@ static int usbacm_handleDeletion(usb_driver_t *drv, usb_deletion_t *del)
 		dev = next;
 	} while (dev != usbacm_common.devices);
 
-	usbacm_freeAll(&usbacm_common.devicesToFree);
+	_usbacm_freeAll(&usbacm_common.devicesToFree);
 
 	mutexUnlock(usbacm_common.lock);
 
@@ -816,12 +812,6 @@ static int usbacm_init(usb_driver_t *drv, void *args)
 	int i;
 
 	usbacm_common.devicesToFree = NULL;
-
-	/* Port for communication with the USB stack */
-	if (portCreate(&usbacm_common.drvport) != 0) {
-		fprintf(stderr, "usbacm: Can't create port!\n");
-		return 1;
-	}
 
 	/* Port for communication with driver clients */
 	if (portCreate(&usbacm_common.msgport) != 0) {
