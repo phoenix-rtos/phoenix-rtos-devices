@@ -18,6 +18,7 @@
 #include <sys/threads.h>
 #include <sys/minmax.h>
 #include <poll.h>
+#include <posix/idtree.h>
 #include <posix/utils.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -65,7 +66,8 @@ enum { RxStopped = 0, RxRunning = 1, RxDisconnected = -1 };
 /* clang-format on */
 
 typedef struct _usbacm_dev {
-	struct _usbacm_dev *prev, *next;
+	idnode_t node; /* node.id is oid.id and ACM id (/dev/usbacm[ID]) */
+
 	usb_devinfo_t instance;
 
 	/* USB HOST related */
@@ -77,8 +79,6 @@ typedef struct _usbacm_dev {
 	int urbctrl;
 
 	char path[32];
-	unsigned int id; /* ACM id (/dev/usbacm[ID]) */
-	int fileId;      /* oid.id */
 
 	/* opened file state */
 	int flags;
@@ -102,11 +102,9 @@ typedef struct _usbacm_dev {
 
 static struct {
 	char msgstack[USBACM_N_MSG_THREADS][1024] __attribute__((aligned(8)));
-	usbacm_dev_t *devices;
+	idtree_t devices;
 	unsigned msgport;
 	handle_t lock;
-	int lastId;
-	usbacm_dev_t *devicesToFree;
 } usbacm_common;
 
 
@@ -170,18 +168,16 @@ static void usbacm_fifoPush(usbacm_dev_t *dev, const char *data, size_t size)
 static usbacm_dev_t *usbacm_getByPipe(int pipe)
 {
 	usbacm_dev_t *tmp, *dev = NULL;
+	rbnode_t *node;
 
 	mutexLock(usbacm_common.lock);
-	tmp = usbacm_common.devices;
-	if (tmp != NULL) {
-		do {
-			if (tmp->pipeBulkIN == pipe || tmp->pipeBulkOUT == pipe || tmp->pipeIntIN == pipe) {
-				dev = tmp;
-				dev->rfcnt++;
-				break;
-			}
-			tmp = tmp->next;
-		} while (tmp != usbacm_common.devices);
+	for (node = lib_rbMinimum(usbacm_common.devices.root); node != NULL; node = lib_rbNext(node)) {
+		tmp = lib_treeof(usbacm_dev_t, node, lib_treeof(idnode_t, linkage, node));
+		if (tmp->pipeBulkIN == pipe || tmp->pipeBulkOUT == pipe || tmp->pipeIntIN == pipe) {
+			dev = tmp;
+			dev->rfcnt++;
+			break;
+		}
 	}
 	mutexUnlock(usbacm_common.lock);
 
@@ -191,19 +187,12 @@ static usbacm_dev_t *usbacm_getByPipe(int pipe)
 
 static usbacm_dev_t *usbacm_get(int id)
 {
-	usbacm_dev_t *tmp, *dev = NULL;
+	usbacm_dev_t *dev;
 
 	mutexLock(usbacm_common.lock);
-	tmp = usbacm_common.devices;
-	if (tmp != NULL) {
-		do {
-			if (tmp->fileId == id) {
-				dev = tmp;
-				dev->rfcnt++;
-				break;
-			}
-			tmp = tmp->next;
-		} while (tmp != usbacm_common.devices);
+	dev = lib_treeof(usbacm_dev_t, node, idtree_find(&usbacm_common.devices, id));
+	if (dev != NULL) {
+		dev->rfcnt++;
 	}
 	mutexUnlock(usbacm_common.lock);
 
@@ -223,26 +212,10 @@ static void usbacm_free(usbacm_dev_t *dev)
 }
 
 
-static void _usbacm_freeAll(usbacm_dev_t **devices)
-{
-	usbacm_dev_t *next, *dev = *devices;
-
-	if (dev != NULL) {
-		do {
-			next = dev->next;
-			usbacm_free(dev);
-			dev = next;
-		} while (dev != *devices);
-	}
-
-	*devices = NULL;
-}
-
-
 static int _usbacm_put(usbacm_dev_t *dev)
 {
 	if (--dev->rfcnt == 0) {
-		LIST_REMOVE(&usbacm_common.devices, dev);
+		idtree_remove(&usbacm_common.devices, &dev->node);
 	}
 	return dev->rfcnt;
 }
@@ -431,31 +404,22 @@ static int usbacm_write(usbacm_dev_t *dev, const char *data, size_t len)
 }
 
 
-static usbacm_dev_t *usbacm_devAlloc(void)
+static usbacm_dev_t *_usbacm_devAlloc(void)
 {
 	usbacm_dev_t *dev;
 
-	if ((dev = calloc(1, sizeof(usbacm_dev_t))) == NULL) {
+	dev = calloc(1, sizeof(usbacm_dev_t));
+	if (dev == NULL) {
 		fprintf(stderr, "usbacm: Not enough memory\n");
 		return NULL;
 	}
 
-	mutexLock(usbacm_common.lock);
-	/* Get next device number */
-	if (usbacm_common.devices == NULL)
-		dev->id = 0;
-	else
-		dev->id = usbacm_common.devices->prev->id + 1;
+	if (idtree_alloc(&usbacm_common.devices, &dev->node) != 0) {
+		free(dev);
+		return NULL;
+	}
 
-	dev->fileId = usbacm_common.lastId++;
 	dev->rfcnt = 1;
-
-	/* add this device prematurely to devices list, to mitigate race condition on
-	 * multiple concurrent insertions */
-	LIST_ADD(&usbacm_common.devices, dev);
-	mutexUnlock(usbacm_common.lock);
-
-	snprintf(dev->path, sizeof(dev->path), "/dev/usbacm%u", dev->id);
 
 	return dev;
 }
@@ -674,8 +638,13 @@ static int usbacm_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion, u
 		return usb_modeswitchHandle(drv, insertion, mode);
 	}
 
-	if ((dev = usbacm_devAlloc()) == NULL)
+	mutexLock(usbacm_common.lock);
+
+	dev = _usbacm_devAlloc();
+	if (dev == NULL) {
+		mutexUnlock(usbacm_common.lock);
 		return -ENOMEM;
+	}
 
 	dev->instance = *insertion;
 	dev->drv = drv;
@@ -736,7 +705,9 @@ static int usbacm_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion, u
 		}
 
 		oid.port = usbacm_common.msgport;
-		oid.id = dev->fileId;
+		oid.id = idtree_id(&dev->node);
+
+		snprintf(dev->path, sizeof(dev->path), "/dev/usbacm%zu", oid.id);
 
 		err = create_dev(&oid, dev->path);
 		if (err != 0) {
@@ -749,10 +720,12 @@ static int usbacm_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion, u
 	} while (0);
 
 	if (err < 0) {
-		mutexLock(usbacm_common.lock);
-		/* remove the device from list, as it has been added there in devAlloc */
-		LIST_REMOVE(&usbacm_common.devices, dev);
-		mutexUnlock(usbacm_common.lock);
+		_usbacm_put(dev);
+	}
+
+	mutexUnlock(usbacm_common.lock);
+
+	if (err < 0) {
 		free(dev);
 		return err;
 	}
@@ -769,22 +742,20 @@ static int usbacm_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion, u
 
 static int usbacm_handleDeletion(usb_driver_t *drv, usb_deletion_t *del)
 {
-	usbacm_dev_t *next, *dev = usbacm_common.devices;
-	int cont = 1;
-
-	if (dev == NULL)
-		return 0;
+	rbnode_t *node, *next;
+	usbacm_dev_t *dev;
 
 	TRACE("handleDeletion");
 
 	mutexLock(usbacm_common.lock);
 
-	do {
-		next = dev->next;
+	node = lib_rbMinimum(usbacm_common.devices.root);
+	while (node != NULL) {
+		next = lib_rbNext(node);
+		dev = lib_treeof(usbacm_dev_t, node, lib_treeof(idnode_t, linkage, node));
+
 		if (dev->instance.bus == del->bus && dev->instance.dev == del->dev &&
 				dev->instance.interface == del->interface) {
-			if (dev == next)
-				cont = 0;
 
 			/* close pending transfers, reject new ones */
 			mutexLock(dev->rxLock);
@@ -793,15 +764,12 @@ static int usbacm_handleDeletion(usb_driver_t *drv, usb_deletion_t *del)
 			mutexUnlock(dev->rxLock);
 
 			if (_usbacm_put(dev) == 0) {
-				LIST_ADD(&usbacm_common.devicesToFree, dev);
+				usbacm_free(dev);
 			}
-			if (!cont)
-				break;
 		}
-		dev = next;
-	} while (dev != usbacm_common.devices);
 
-	_usbacm_freeAll(&usbacm_common.devicesToFree);
+		node = next;
+	}
 
 	mutexUnlock(usbacm_common.lock);
 
@@ -814,8 +782,6 @@ static int usbacm_init(usb_driver_t *drv, void *args)
 	int ret;
 	int i;
 
-	usbacm_common.devicesToFree = NULL;
-
 	/* Port for communication with driver clients */
 	if (portCreate(&usbacm_common.msgport) != 0) {
 		fprintf(stderr, "usbacm: Can't create port!\n");
@@ -827,7 +793,7 @@ static int usbacm_init(usb_driver_t *drv, void *args)
 		return 1;
 	}
 
-	usbacm_common.lastId = 1;
+	idtree_init(&usbacm_common.devices);
 
 	for (i = 0; i < USBACM_N_MSG_THREADS; i++) {
 		ret = beginthread(usbacm_msgthr, USBACM_MSG_PRIO, usbacm_common.msgstack[i], sizeof(usbacm_common.msgstack[i]), NULL);
