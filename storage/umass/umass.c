@@ -197,7 +197,8 @@ static int umass_registerfs(const char *name, uint8_t type, fs_mount_t mount, fs
 		return -ENOMEM;
 	}
 
-	strcpy(fs->name, name);
+	strncpy(fs->name, name, sizeof(fs->name));
+	fs->name[sizeof(fs->name) - 1] = '\0';
 	fs->type = type;
 	fs->mount = mount;
 	fs->unmount = unmount;
@@ -436,7 +437,8 @@ static umass_fs_t *umass_getfs(const char *name)
 {
 	umass_fs_t fs;
 
-	strcpy(fs.name, name);
+	strncpy(fs.name, name, sizeof(fs.name));
+	fs.name[sizeof(fs.name) - 1] = '\0';
 
 	return lib_treeof(umass_fs_t, node, lib_rbFind(&umass_common.fss, &fs.node));
 }
@@ -894,6 +896,7 @@ static int umass_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion, us
 		event->deviceCreated = true;
 		event->dev = oid;
 		strncpy(event->devPath, dev->path, sizeof(event->devPath));
+		event->devPath[sizeof(event->devPath) - 1] = '\0';
 	} while (0);
 
 	mutexUnlock(umass_common.lock);
