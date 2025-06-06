@@ -672,7 +672,12 @@ static void umass_poolthr(void *arg)
 		while (umass_common.rqueue == NULL) {
 			condWait(umass_common.rcond, umass_common.rlock, 0);
 		}
-		req = umass_common.rqueue->prev;
+
+		/*
+		 * FIFO - assumes LIST_ADD/REMOVE set the queue pointer to the
+		 * element added first
+		 */
+		req = umass_common.rqueue;
 		LIST_REMOVE(&umass_common.rqueue, req);
 
 		mutexUnlock(umass_common.rlock);
