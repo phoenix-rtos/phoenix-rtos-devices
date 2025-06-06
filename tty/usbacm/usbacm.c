@@ -448,11 +448,7 @@ static usbacm_dev_t *usbacm_devAlloc(void)
 		dev->id = usbacm_common.devices->prev->id + 1;
 
 	dev->fileId = usbacm_common.lastId++;
-	dev->rfcnt = 1;
-
-	/* add this device prematurely to devices list, to mitigate race condition on
-	 * multiple concurrent insertions */
-	LIST_ADD(&usbacm_common.devices, dev);
+	dev->rfcnt = 0;
 	mutexUnlock(usbacm_common.lock);
 
 	snprintf(dev->path, sizeof(dev->path), "/dev/usbacm%u", dev->id);
@@ -749,13 +745,14 @@ static int usbacm_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion, u
 	} while (0);
 
 	if (err < 0) {
-		mutexLock(usbacm_common.lock);
-		/* remove the device from list, as it has been added there in devAlloc */
-		LIST_REMOVE(&usbacm_common.devices, dev);
-		mutexUnlock(usbacm_common.lock);
-		free(dev);
+		usbacm_free(dev);
 		return err;
 	}
+
+	mutexLock(usbacm_common.lock);
+	dev->rfcnt = 1;
+	LIST_ADD(&usbacm_common.devices, dev);
+	mutexUnlock(usbacm_common.lock);
 
 	fprintf(stdout, "usbacm: New device: %s\n", dev->path);
 
