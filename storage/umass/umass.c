@@ -28,6 +28,8 @@
 
 #include <posix/idtree.h>
 
+#include <board_config.h>
+
 #define UMASS_DEBUG 0
 
 #ifdef UMASS_MOUNT_EXT2
@@ -41,8 +43,13 @@
 #include "umass.h"
 #include "scsi.h"
 
-#define UMASS_N_MSG_THREADS  2
-#define UMASS_N_POOL_THREADS 4
+#ifndef UMASS_N_MSG_THREADS
+#define UMASS_N_MSG_THREADS 2
+#endif
+
+#ifndef UMASS_N_POOL_THREADS
+#define UMASS_N_POOL_THREADS 2
+#endif
 
 #define UMASS_TRANSMIT_RETRIES 3
 #define UMASS_INIT_RETRIES     10
