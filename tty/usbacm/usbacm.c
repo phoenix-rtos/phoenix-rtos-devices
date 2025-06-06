@@ -103,7 +103,6 @@ typedef struct _usbacm_dev {
 static struct {
 	char msgstack[USBACM_N_MSG_THREADS][1024] __attribute__((aligned(8)));
 	usbacm_dev_t *devices;
-	unsigned drvport;
 	unsigned msgport;
 	handle_t lock;
 	int lastId;
@@ -224,7 +223,7 @@ static void usbacm_free(usbacm_dev_t *dev)
 }
 
 
-static void usbacm_freeAll(usbacm_dev_t **devices)
+static void _usbacm_freeAll(usbacm_dev_t **devices)
 {
 	usbacm_dev_t *next, *dev = *devices;
 
@@ -802,7 +801,7 @@ static int usbacm_handleDeletion(usb_driver_t *drv, usb_deletion_t *del)
 		dev = next;
 	} while (dev != usbacm_common.devices);
 
-	usbacm_freeAll(&usbacm_common.devicesToFree);
+	_usbacm_freeAll(&usbacm_common.devicesToFree);
 
 	mutexUnlock(usbacm_common.lock);
 
@@ -816,12 +815,6 @@ static int usbacm_init(usb_driver_t *drv, void *args)
 	int i;
 
 	usbacm_common.devicesToFree = NULL;
-
-	/* Port for communication with the USB stack */
-	if (portCreate(&usbacm_common.drvport) != 0) {
-		fprintf(stderr, "usbacm: Can't create port!\n");
-		return 1;
-	}
 
 	/* Port for communication with driver clients */
 	if (portCreate(&usbacm_common.msgport) != 0) {
