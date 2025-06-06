@@ -481,14 +481,12 @@ static int umass_readFromDev(umass_dev_t *dev, off_t offs, char *buf, size_t len
 	readcmd.length = htons((uint16_t)(len / UMASS_SECTOR_SIZE));
 
 	mutexLock(dev->lock);
-	ret = _umass_transmit(dev, &readcmd, sizeof(readcmd), dev->buffer, len, usb_dir_in);
-	if (ret > 0) {
-		memcpy(buf, dev->buffer, len);
-	}
-	else if (len > 0) {
+	ret = _umass_transmit(dev, &readcmd, sizeof(readcmd), buf, len, usb_dir_in);
+	mutexUnlock(dev->lock);
+
+	if (ret <= 0 && len > 0) {
 		printf("read transmit failed for offs: %lld\n", offs);
 	}
-	mutexUnlock(dev->lock);
 
 	return ret;
 }
@@ -513,8 +511,7 @@ static int umass_writeToDev(umass_dev_t *dev, off_t offs, const char *buf, size_
 	writecmd.length = htons((uint16_t)(len / UMASS_SECTOR_SIZE));
 
 	mutexLock(dev->lock);
-	memcpy(dev->buffer, buf, len);
-	ret = _umass_transmit(dev, &writecmd, sizeof(writecmd), dev->buffer, len, usb_dir_out);
+	ret = _umass_transmit(dev, &writecmd, sizeof(writecmd), (char *)buf, len, usb_dir_out);
 	mutexUnlock(dev->lock);
 	if (ret < 0) {
 		fprintf(stderr, "write transmit failed for offs: %lld\n", offs);
@@ -632,7 +629,8 @@ static void umass_fsthr(void *arg)
 	int umount = 0, ret;
 
 	for (;;) {
-		req = (umass_req_t *)malloc(sizeof(umass_req_t));
+		/* TODO: use static requests buffer? */
+		req = malloc(sizeof(umass_req_t));
 		if (req == NULL) {
 			continue;
 		}
