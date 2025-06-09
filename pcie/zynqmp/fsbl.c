@@ -34,16 +34,6 @@
 #define PCIREG_SIZE    0x1000
 #define PCIREG_ADDRESS 0xfd480000
 
-typedef struct {
-	uint32_t* serdes;
-	uint32_t* pci_reg; /* AXIPCIE_MAIN */
-	uint32_t* crf_apb; /* CRF APB */
-	uint32_t* crl_apb; /* CRL APB */
-	uint32_t* dp;  	   /* Display Port */
-} fsbl_t;
-
-static fsbl_t fsbl = {0};
-
 #define SERDES_L0_TX_ANA_TM_3                   0x000C
 #define SERDES_L0_TX_DIG_TM_61                  0x00F4
 #define SERDES_L0_TM_ANA_BYP_4                  0x1010
@@ -4065,212 +4055,6 @@ int main(int argc, char **argv)
 		usleep(10000);
 	}
 
-	/**
-	 * 1. FSBL calls psu_mio_init_data()
-	 *
-	 * - configure MIO0 ... MIO12 as QSPI (we do it in PLO)
-	 * - configure MIO13 ... MIO23 as SD0 (its TEBF0808 4GB eMMC, we dont use it yet)
-	 * - configure MIO24 ... MIO25 as GPIO connected to slave CPLD ("currently not used")
-	 * - configure MIO26 ... MIO29 as PJTAG connected to master CPLD (used to upgrade CPLD probably)
-	 * - configure MIO30 as GPIO connected to slave CPLD ("force reboot after FSBL-PLL config for PCIe")
-	 * - configure MIO31 as GPIO connected to slave CLPD ("PCIe reset")
-	 * - configure MIO38 ... MIO39 as I2C0
-	 * - configure MIO42 ... MIO43 as UART0
-	 * - configure MIO44 ... MIO51 as SD1 (its TE0807 128MB NOR FLASH, we dont use it __directly__ yet)
-	 * - configure MIO52 ... MIO63 as USB0
-	 * - configure MIO64 ... MIO75 as GEM RGMII
-	 * - configure MIO76 as GEM3 MDIO
-	 * - configure MIO77 as GEM3 Data input output
-	 *
-	 * - activate tri-state mode for pins MIO26, MIO27, MIO29 (all 3 pins used for PJTAG)
-	 * - activate tri-state mode for pins MIO42 (UART0) MIO44 (SD1), MIO45 (SD1),
-	 * - activate tri-state mode for pins MIO52, MIO53, MIO55 (all 3 pins used for USB0)
-	 * - activate tri-state mode for pins MIO70 ... MIO75 (all pins used for GEM RGMII)
-	 *
-	 * - set pin strength to 12mA (max) for MIO0 ... MIO25
-	 * - configure CMOS gates (not Schmitt gates) for MIO0 ... MIO25
-	 * - configure pull up (not down) for MIO0 ... MIO25
-	 * - enable pull up/down for MIO0 ... MIO25
-	 * - set fast slew rate for MIO0 ... MIO25
-	 *
-	 * - set pin strength to 12mA (max) for MIO26 ... MIO51
-	 * - configure CMOS gates (not Schmitt gates) for MIO26 ... MIO51
-	 * - configure pull up (not down) for MIO0 ... MIO43 (not for MIO44 ... MIO51 so SD1 pins)
-	 * - enable pull up/down for MIO26 ... MIO35 and MIO38 ... MIO43
-	 * - set fast slew rate for MIO26 ... MIO51
-	 *
-	 * - set pin strength to 12mA (max) for MIO52 ... MIO77
-	 * - configure CMOS gates (not Schmitt gates) for MIO52 ... MIO77
-	 * - configure pull up (not down) for MIO52 ... MIO77
-	 * - enable pull up/down for MIO52 ... MIO77
-	 * - set fast slew rate for MIO52 ... MIO77
-	 *
-	 * - turn off all loopbacks on MIO level (i2c0-i2c1, can0-can1, uart0-uart1, spi0-spi1)
-	 *
-	 * Summary:
-	 * - its safe to copy-paste whole config
-	 * - output pins setting is straigforward: maximum current limit + fast slew rate
-	 */
-
-	/**
-	 * 2. FSBL calls psu_peripherals_pre_init_data()
-	 *
-	 * - enable clock for PS SYSMON (clock from IO_PLL, div0 = 35, div1 = 1)
-	 * - assert QSPI reset
-	 */
-
-	/**
-	 * 3. FSBL calls psu_pll_init_data()
-	 *
-	 * - configure RPLL (33.33333 * 45) / 2 = 750 MHz
-	 * - configure RPLL_TO_FPD (750 MHz / 2) = 350 MHz
-	 *
-	 * - configure PS SYSMON divider to 35
-	 *
-	 * - configure IOPLL (33.33333 * 90) / 2 = 1500 MHz
-	 * - configure IOPLL_TO_FPD from IOPLL / 3 = 500 MHz
-	 *
-	 * - configure APLL (33.33333 * 63) = 1050 MHz
-	 * - configure APLL_TO_LPD from APLL 1050 MHz / 2 = 525 MHz
-	 *
-	 * - configure DPLL (33.33333 * 72) / 2 = 1200 MHz
-	 * - configure DPLL_TO_LPD from DPLL 1200 MHz / 3 = 400 MHz
-	 *
-	 * - configure VPLL (33.33333 * 90) = 1500 MHz
-	 * - configure VPLL_TO_LPD from VPLL 1500 / 3 = 500 MHz
-	 */
-
-	/**
-	 * 4. FSBL calls psu_clock_init_data()
-	 *
-	 * - clock GEM3_REF from IOPLL 1500 MHz / 12 = 125 MHz
-	 * - clock GEM_TSU_REF from IOPLL 1500 MHz / 6 = 250 MHz
-	 * - clock USB0_BUS_REF from IOPLL 1500 MHz / 6 = 250 MHz
-	 * - clock USB3_DUAL_REF from IOPLL 1500 MHz / 25 / 3 = 20 MHz
-	 * - clock QSPI_REF from IOPLL 1500 MHz / 5 = 300 MHz
-	 * - clock SDIO0_REF from IOPLL 1500 MHz / 8 = 187.5 MHz
-	 * - clock SDIO1_REF from IOPLL 1500 MHz / 8 = 187.5 MHz
-	 * - configure SDIO clock pins
-	 * - clock UART0_REF from IOPLL 1500 MHz / 15 = 100 MHz
-	 * - clock I2C0_REF from IOPLL 1500 MHz / 15 = 100 MHz
-	 * - clock CAN0_REF from IOPLL 1500 MHz / 15 = 100 MHz
-	 * - clock R5 from IOPLL 1500 MHz / 3 = 500 MHz
-	 * - clock IOU_SWITCH from IOPLL 1500 MHz / 6 = 250 MHz
-	 * - clock PCAP from IOPLL 1500 MHz / 8 = 187.5 MHz
-	 * - clock LPD_SWITCH from IOPLL 1500 MHz / 3 = 500 MHz
-	 * - clock LPD_LSBUS from IOPLL 1500 MHz / 15 = 100 MHz
-	 * - clock DBG_LPD from IOPLL 1500 MHz / 6 = 250 MHz
-	 * - clock ADMA_REF (LPD DMA) from IOPLL 1500 MHz / 3 = 500 MHz
-	 * - clock PL0_REF from IOPLL 1500 MHz / 15 = 100 MHz
-	 * - clock PL1_REF from IOPLL 1500 MHz / 60 = 25 MHz
-	 *
-	 * - lower PS SYSMON divider from 35 to 30
-	 *
-	 * - clock DLL (SDIO) to derive clock from IOPLL = 1500 MHZ
-	 * - clock TIMESTAMP from PSS_REF_CLOCK 33.33333 / 1 = 33.33333 MHz
-	 * - clock SATA_REF_CLOCK from IOPLL_TO_FPD 500 MHz / 2 = 250 MHz
-	 * - clock PCIE_REG from IOPLL_TO_FPD 500 MHz / 2 = 250 MHz
-	 * - clock DP_VIDEO from VPLL 1500 MHz / 5 = 300 MHz
-	 * - clock DP_AUDIO from RPLL_TO_FPD 375 MHz / 15 = 25 MHz
-	 * - clock DP_STC_REF from RPLL_TO_FPD 375.5 MHz / 14 = 26,78 MHz
-	 * - clock ACPU from APLL 1050 MHz / 1 = 1050 MHz
-	 * - clock DBG_FPD from IOPLL_TO_FPD 500 MHz / 2 = 250 MHz
-	 * - clock DDR_CTRL from DPLL 1200 MHz / 1 = 1200 MHz
-	 * - clock GPU_REF from DPLL 1200 MHz / 2 = 600 MHz
-	 * - clock FPD_DMA_REF from  DPLL 1200 MHz / 2 = 600 MHz
-	 * - clock DPD_DMA_REF from  DPLL 1200 MHz / 2 = 600 MHz
-	 * - clock TOPSW_MAIN from APLL 1050 MHz / 2 = 525 MHz
-	 * - clock TOPSW_LSBUS from IOPLL_TO_FPD 500 MHz / 5 = 100 MHz
-	 * - clock DBG_TSTMP from IOPLL_TO_FPD 500 MHz / 2 = 250 MHz
-	 * - clock all Triple Timers from APB Interconnect clock (LPD_APB_CLK, lpd_lsbus_clk)
-	 * - clock FPD_SLCR_WDT from internal APB clock
-	 * - clock IOU_SLCR_WDT from internal APB clock
-	 * - clock CSUPMU_WDT from internal APB clock
-	 */
-
-	/**
-	 * 5. FSBL calls psu_ddr_init_data() and psu_ddr_phybringup_data()
-	 *
-	 * - Analisys of this phase will be skipped since it is one of the most complex
-	 *   peripherals and I hope it does not interfere with PCI Express
-	 */
-
-	/**
-	 * 6. FSBL calls psu_peripherals_init_data()
-	 * - deassert reset (set to 0) for following peripherals:
-	 *   - SATA controller
-	 *   - GT (PS GTR)
-	 * 	 - GPU
-	 *   - GPU PP0
-	 *   - GPU PP1
-	 *   - FPD DMA
-	 *   - FPD SWDT
-	 *   - DP controller
-	 *   - PCIE CTRL
-	 *   - PCIE BRIDGE
-	 *   - PCIE CFG
-	 * - deassert reset (set to 0) for following peripherals:
-	 * 	 - LPD DMA controller
-	 *   - IOU CC controller
-	 *   - TIMESTAMP controller
-	 * - deassert reset (set to 0) for following peripherals:
-	 *   - OCM memory
-	 *   - RPU Power island
-	 *   - IPI
-	 *   - APM (Axi performance monitor)
-	 *   - RTC reset
-	 *   - SYSMON reset
-	 *   - LPD SWDT
-	 *   - FPD (entire FPD) reset
-	 *  - deassert reset (set to 0) for GEM3
-	 *  - deassert reset (set to 0) for QSPI
-	 *  - disable QSPI controller "tap delay"
-	 *  - deassert reset (set to 0) for USB0 APB Reset
-	 *  - deassert reset (set to 0) for SDIO0 and SDIO1
-	 *  - configure SD... (write to 8 registers in IOU SLCR register set)
-	 *  - deassert reset (set to 0) for CAN0, I2C0, CSU_SWDT controller,
-	 *  - deassert reset (set to 0) for TTC0, TTC1, TTC2, TTC3
-	 *  - deassert reset (set to 0) for UART0
-	 *  - configure UART0 with write to 4 registers
-	 *  - deassert reset (set to 0) for GPIO
-	 *  - Turn off TrustZone for LPD DMA (ADMA)
-	 */
-
-	/**
-	 * 7. FSBL prints "TE0807 TE_XFsbl_HookPsuInit_Custom" message
-	 * - set MIO30 and MIO31 gpio to LOW to reset USB and PCIE
-	 * - init I2C
-	 * - configure I2C multiplexer to access SI5345
-	 * - read SI5345 whoami register
-	 * - configure SI5345 (write about 380 registers over i2c)
-	 * - wait for SI5345 PLL Lock and clock ready, call si534x_status_wait()
-	 * - deassert reset from USB and PCIE
-	 * - wait 5ms
-	 */
-
-	/**
-	 * 8. FSBL calls psu_resetin_init_data()
-	 * - assert reset on:
-	 * 	- USB0 core reset
-	 * 	- USB0 hiber reset
-	 * 	- USB0 APB reset
-	 * - assert GEM controller 3 reset
-	 * - assert SATA reset
-	 * - assert reset on:
-	 * 	- PCIe Controller reset
-	 * 	- PCIe Bridge reset
-	 * 	- PCIe Configuration reset
-	 * - set DisplayPort PHY to unknown state (power down?)
-	 * - assert reset on DisplayPort GT
-	 */
-
-	/**
-	 * 9. Call to serdes_fixcal_code()
-	 * 10. Execute code copied from serdes_enb_coarse_saturation function
-	 *
-	 *
-	 */
-
 	/* SERDES registers memory */
 	uint32_t *serdes = mmap(NULL, SERDES_SIZE, PROT_WRITE | PROT_READ,
 			MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, SERDES_ADDRESS);
@@ -4295,10 +4079,10 @@ int main(int argc, char **argv)
 		return ret;
 	}
 
-	printf("fsbl: deassert reset on all related peripherals\n");
+	printf("fsbl: deassert reset on PS GTR\n");
 	ret = pcie_deassertAllResets();
 	if (ret != 0) {
-		printf("fsbl: fail to deassert reset on all related peripherals\n");
+		printf("fsbl: fail to deassert reset on PS GTR\n");
 		return ret;
 	}
 
