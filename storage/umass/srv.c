@@ -31,17 +31,13 @@ int main(int argc, char *argv[])
 {
 	int ret;
 	char c;
+	oid_t oid;
 	umass_args_t umass_args = { .mount_root = false };
 	usb_driver_t *driver = usb_registeredDriverPop();
 
 	if (driver == NULL) {
 		fprintf(stderr, "umass: no driver registered!");
 		return 1;
-	}
-
-	/* Wait for console */
-	while (write(1, "", 0) < 0) {
-		usleep(50000);
 	}
 
 	if (argc > 1) {
@@ -60,6 +56,13 @@ int main(int argc, char *argv[])
 					printHelp(argv[0]);
 					return 0;
 			}
+		}
+	}
+
+	if (!umass_args.mount_root) {
+		/* Wait for root filesystem if not responsible for mounting it */
+		while (lookup("/", NULL, &oid) < 0) {
+			usleep(10000);
 		}
 	}
 
