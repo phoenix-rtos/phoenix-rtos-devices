@@ -38,9 +38,11 @@
 #define IMR_THRE 0x02
 #define IMR_DR   0x01
 
-#define IIR_IRQPEND 0x01
-#define IIR_THRE    0x02
-#define IIR_DR      0x04
+#define IIR_IRQPEND 0x01 /* no interrupt pending (IIR bit 0 = 1) */
+#define IIR_THRE    0x02 /* transmitter holding register empty */
+#define IIR_DR      0x04 /* received data available */
+#define IIR_RLS     0x06 /* error or break condition flag (receiver line status) */
+#define IIR_CTOUT   0x0c /* character timeout */
 
 #define LCR_DLAB 0x80
 #define LCR_D8N1 0x03
@@ -50,6 +52,11 @@
 
 #define LSR_DR   0x01
 #define LSR_THRE 0x20
+#define LSR_ERR  0x9f /* line status register error bits mask */
+
+#define FCR_FEN  0x01 /* fifo enable */
+#define FCR_RXFR 0x02 /* rx fifo reset */
+#define FCR_TXFR 0x04 /* tx fifo reset */
 
 
 #endif

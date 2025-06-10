@@ -148,6 +148,7 @@ static void uart_intthr(void *arg)
 {
 	uart_t *uart = (uart_t *)arg;
 	uint8_t iir;
+	uint8_t lsr;
 
 	mutexLock(uart->mutex);
 	for (;;) {
@@ -155,21 +156,26 @@ static void uart_intthr(void *arg)
 			condWait(uart->intcond, uart->mutex, 0);
 		}
 
-		/* Receive */
-		if (iir & IIR_DR) {
-			while (uarthw_read(uart->hwctx, REG_LSR) & 0x1) {
+		/* Receive (character timeout flag covers Received Data Available status too) */
+		if (iir & IIR_CTOUT) {
+			/* check Line status Register, load into FIFO only when no error is indicated */
+			lsr = uarthw_read(uart->hwctx, REG_LSR);
+			lsr &= LSR_ERR;
+			if (lsr == LSR_DR) {
 				libtty_putchar(&uart->tty, uarthw_read(uart->hwctx, REG_RBR), NULL);
 			}
 		}
 
 		/* Transmit */
 		if (iir & IIR_THRE) {
-			if (libtty_txready(&uart->tty)) {
+			while (libtty_txready(&uart->tty)) {
+				/* check if transmitter register is empty */
+				while (!(uarthw_read(uart->hwctx, REG_LSR) & LSR_THRE))
+					;
 				uarthw_write(uart->hwctx, REG_THR, libtty_getchar(&uart->tty, NULL));
 			}
-			else {
-				uarthw_write(uart->hwctx, REG_IMR, IMR_DR);
-			}
+			/* trigger data ready interrupt flag set */
+			uarthw_write(uart->hwctx, REG_IMR, IMR_DR);
 		}
 	}
 }
@@ -357,7 +363,7 @@ static int _uart_init(uart_t *uart, unsigned int uartn, unsigned int speed)
 	uarthw_write(uart->hwctx, REG_LCR, LCR_D8N1);
 
 	/* Enable and configure FIFOs */
-	uarthw_write(uart->hwctx, REG_FCR, 0xa7);
+	uarthw_write(uart->hwctx, REG_FCR, FCR_FEN | FCR_RXFR | FCR_TXFR);
 
 	/* Enable hardware interrupts */
 	uarthw_write(uart->hwctx, REG_MCR, MCR_OUT2);
