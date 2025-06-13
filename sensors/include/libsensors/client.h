@@ -11,8 +11,8 @@
  * %LICENSE%
  */
 
-#ifndef _LIBSENSORS_H_
-#define _LIBSENSORS_H_
+#ifndef _LIBSENSORS_CLIENT_H_
+#define _LIBSENSORS_CLIENT_H_
 
 #include <stdint.h>
 #include <sys/ioctl.h>
