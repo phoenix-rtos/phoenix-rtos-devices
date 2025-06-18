@@ -414,7 +414,7 @@ static usbacm_dev_t *_usbacm_devAlloc(void)
 		return NULL;
 	}
 
-	if (idtree_alloc(&usbacm_common.devices, &dev->node) != 0) {
+	if (idtree_alloc(&usbacm_common.devices, &dev->node) < 0) {
 		free(dev);
 		return NULL;
 	}
