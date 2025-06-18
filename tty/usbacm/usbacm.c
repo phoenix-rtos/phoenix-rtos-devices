@@ -414,7 +414,7 @@ static usbacm_dev_t *_usbacm_devAlloc(void)
 		return NULL;
 	}
 
-	if (idtree_alloc(&usbacm_common.devices, &dev->node) != 0) {
+	if (idtree_alloc(&usbacm_common.devices, &dev->node) < 0) {
 		free(dev);
 		return NULL;
 	}
@@ -566,6 +566,7 @@ static void usbacm_msgthr(void *arg)
 		/* A device can be opened only by one process */
 		/* FIXME: allow mtClose with different PID (files closing on process exit have invalid PID value as of 2023-10-23) */
 		if (((msg.type != mtOpen) && (msg.type != mtClose)) && (msg.pid != dev->clientpid)) {
+			usbacm_put(dev);
 			msg.o.err = -EBUSY;
 			msgRespond(usbacm_common.msgport, &msg, rid);
 			continue;
@@ -707,7 +708,7 @@ static int usbacm_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion, u
 		oid.port = usbacm_common.msgport;
 		oid.id = idtree_id(&dev->node);
 
-		snprintf(dev->path, sizeof(dev->path), "/dev/usbacm%zu", oid.id);
+		snprintf(dev->path, sizeof(dev->path), "/dev/usbacm%d", idtree_id(&dev->node));
 
 		err = create_dev(&oid, dev->path);
 		if (err != 0) {
