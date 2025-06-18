@@ -708,7 +708,7 @@ static int usbacm_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion, u
 		oid.port = usbacm_common.msgport;
 		oid.id = idtree_id(&dev->node);
 
-		snprintf(dev->path, sizeof(dev->path), "/dev/usbacm%zu", oid.id);
+		snprintf(dev->path, sizeof(dev->path), "/dev/usbacm%d", idtree_id(&dev->node));
 
 		err = create_dev(&oid, dev->path);
 		if (err != 0) {
