@@ -566,6 +566,7 @@ static void usbacm_msgthr(void *arg)
 		/* A device can be opened only by one process */
 		/* FIXME: allow mtClose with different PID (files closing on process exit have invalid PID value as of 2023-10-23) */
 		if (((msg.type != mtOpen) && (msg.type != mtClose)) && (msg.pid != dev->clientpid)) {
+			usbacm_put(dev);
 			msg.o.err = -EBUSY;
 			msgRespond(usbacm_common.msgport, &msg, rid);
 			continue;
