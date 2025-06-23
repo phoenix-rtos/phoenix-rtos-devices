@@ -3,8 +3,8 @@
  *
  * USB EHCI host controller
  *
- * Copyright 2021 Phoenix Systems
- * Author: Maciej Purski
+ * Copyright 2021, 2024 Phoenix Systems
+ * Author: Maciej Purski, Adam Greloch
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -13,6 +13,18 @@
 
 #ifndef _USB_EHCI_H_
 #define _USB_EHCI_H_
+
+#define EHCI_DEBUG     0
+#define EHCI_DEBUG_IRQ 0
+#define EHCI_DEBUG_QTD 0
+
+#define LOG_TAG "ehci: "
+
+/* clang-format off */
+#define log_msg(fmt, ...) do { fprintf(stderr, LOG_TAG fmt "\n", ##__VA_ARGS__); } while (0)
+#define log_error(fmt, ...) do { log_msg("error: " fmt, ##__VA_ARGS__); } while (0)
+#define log_debug(fmt, ...) do { if (EHCI_DEBUG != 0) log_msg(fmt, ##__VA_ARGS__); } while (0)
+/* clang-format on */
 
 #define USBSTS_AS    (1 << 15)
 #define USBSTS_PS    (1 << 14)
@@ -29,10 +41,14 @@
 #define USBSTS_UEI   (1 << 1)
 #define USBSTS_UI    (1 << 0)
 
-#define EHCI_INTRMASK (USBSTS_PCI | USBSTS_UEI | USBSTS_UI)
+#define EHCI_INTRMASK (USBSTS_SEI | USBSTS_PCI | USBSTS_UEI | USBSTS_UI)
 
-#define USBCMD_ASE (1 << 5)
-#define USBCMD_IAA (1 << 6)
+#define USBCMD_RUN     (1 << 0)
+#define USBCMD_HCRESET (1 << 1)
+#define USBCMD_PSE     (1 << 4)
+#define USBCMD_ASE     (1 << 5)
+#define USBCMD_IAA     (1 << 6)
+#define USBCMD_LRESET  (1 << 7)
 
 #define PORTSC_PTS_1 (3 << 30)
 #define PORTSC_STS   (1 << 29)
@@ -108,6 +124,8 @@
 /* 'change' bits cleared by writing 1 */
 #define PORTSC_CBITS (PORTSC_CSC | PORTSC_PEC | PORTSC_OCC)
 
+#define HCCPARAMS_64BIT_ADDRS (1 << 0)
+
 
 #define EHCI_PAGE_SIZE        4096
 #define EHCI_PERIODIC_ALIGN   4096
@@ -116,6 +134,9 @@
 #define EHCI_MAX_QTD_POOL 20
 #define EHCI_MAX_QH_POOL  10
 
+
+/* clang-format off */
+#ifdef EHCI_IMX
 enum {
 	/* identification regs */
 	id = 0x0, hwgeneral, hwhost, hwdevice, hwtxbuf, hwrxbuf,
@@ -136,18 +157,38 @@ enum {
 	endptctrl2, endptctrl3, endptctrl4, endptctrl5, endptctrl6, endptctrl7,
 };
 
-
 enum { usb_otg1_ctrl = 0x200, usb_otg2_ctrl, usb_otg1_phy_ctrl = usb_otg2_ctrl + 5, usb_otg2_phy_ctrl };
 
 enum { ehci_item_itd = 0, ehci_item_qh, ehci_item_sitd, ehci_item_fstn };
+#else
+enum {
+	/* capability regs */
+	caplength = 0x0, hciversion = 0x0, hcsparams, hccparams,
+	hcspportroute1, hcspportroute2 /* hcspportroute is a 64-bit register */
+};
 
+enum {
+	/* operational regs */
+	usbcmd = 0x0, usbsts, usbintr, frindex, ctrldssegment,
+	periodiclistbase = 0x5, asynclistaddr,
+	configflag = 0x10, portsc1
+};
+#endif
+/* clang-format on */
+
+/* TODO: buf_hi is required only on ia32 if hcd is capable of 64-bit addressing
+ * Shrink it on smaller targets to save memory? */
 
 struct qtd {
 	uint32_t next;
 	uint32_t altnext;
 	uint32_t token;
 	uint32_t buf[5];
+	uint32_t buf_hi[5];
 };
+
+
+#define EHCI_QH_NBUFS 5
 
 
 struct qh {
@@ -159,7 +200,8 @@ struct qh {
 	uint32_t nextQtd;
 	uint32_t altnextQtd;
 	uint32_t token;
-	uint32_t buf[5];
+	uint32_t buf[EHCI_QH_NBUFS];
+	uint32_t buf_hi[EHCI_QH_NBUFS];
 };
 
 
@@ -184,6 +226,7 @@ typedef struct _ehci_qh {
 
 typedef struct {
 	char stack[1024] __attribute__((aligned(8)));
+
 	uint32_t *periodicList;
 	ehci_qh_t *asyncList;
 	ehci_qh_t **periodicNodes;
@@ -196,7 +239,9 @@ typedef struct {
 	handle_t irqCond, irqHandle, irqLock, asyncLock, periodicLock;
 	volatile unsigned portResetChange;
 	volatile unsigned status;
-	volatile unsigned portsc;
+
+	volatile uint32_t *base;
+	volatile uint32_t *opbase;
 } ehci_t;
 
 
