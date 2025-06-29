@@ -20,8 +20,7 @@
 #include <sys/threads.h>
 
 #include <zynq7000-gpio-msg.h>
-
-#include "sensors-spi.h"
+#include <libsensors/spi/spi.h>
 
 
 static struct {

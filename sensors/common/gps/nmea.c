@@ -17,7 +17,7 @@
 #include <errno.h>
 #include <math.h>
 
-#include "nmea.h"
+#include <libsensors/gps/nmea.h>
 
 
 /* Moves pointer to the n-th comma character in str (excluding the first character).
