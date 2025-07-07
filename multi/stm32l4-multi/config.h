@@ -241,6 +241,18 @@
 #define SPI3 0
 #endif
 
+#ifndef SPI4
+#define SPI4 0
+#endif
+
+#ifndef SPI5
+#define SPI5 0
+#endif
+
+#ifndef SPI6
+#define SPI6 0
+#endif
+
 #ifndef SPI1_USEDMA
 #define SPI1_USEDMA 0
 #endif
@@ -251,6 +263,18 @@
 
 #ifndef SPI3_USEDMA
 #define SPI3_USEDMA 0
+#endif
+
+#ifndef SPI4_USEDMA
+#define SPI4_USEDMA 0
+#endif
+
+#ifndef SPI5_USEDMA
+#define SPI5_USEDMA 0
+#endif
+
+#ifndef SPI6_USEDMA
+#define SPI6_USEDMA 0
 #endif
 
 

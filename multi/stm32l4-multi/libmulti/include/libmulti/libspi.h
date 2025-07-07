@@ -22,7 +22,11 @@
 
 
 typedef struct {
+#if defined(__CPU_STM32L4X6)
 	volatile uint16_t *base;
+#elif defined(__CPU_STM32N6)
+	volatile uint32_t *base;
+#endif
 	unsigned int spiNum;
 
 	unsigned char *ibuff;
