@@ -21,6 +21,9 @@
 #if defined(__CPU_STM32L4X6)
 #include "stm32l4x6_base.h"
 #include <phoenix/arch/armv7m/stm32/l4/stm32l4.h>
+#elif defined(__CPU_STM32N6)
+#include "stm32n6_base.h"
+#include <phoenix/arch/armv8m/stm32/n6/stm32n6.h>
 #else
 #error "Unknown platform"
 #endif
@@ -65,6 +68,9 @@ static inline int devClk(int dev, int state)
 	pctl.type = pctl_devclk;
 	pctl.devclk.dev = dev;
 	pctl.devclk.state = state;
+#if defined(__CPU_STM32N6)
+	pctl.devclk.lpState = state;
+#endif
 
 	ret = platformctl(&pctl);
 
