@@ -1,0 +1,5 @@
+file ~/Documents/phoenix-rtos-project/_build/riscv64-noelv-virtex/prog/grlib-can
+set arch auto
+target extended-remote :2222
+tui enable
+set output-radix 16
