@@ -1,7 +1,7 @@
 #
 # Makefile for Phoenix-RTOS 3 device drivers
 #
-# riscv64-noelv drivers
+# riscv64-grfpga drivers
 #
 # Copyright 2024 Phoenix Systems
 #
