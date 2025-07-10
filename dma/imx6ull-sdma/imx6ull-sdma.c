@@ -29,6 +29,7 @@
 #include <posix/utils.h>
 
 #include <phoenix/arch/armv7a/imx6ull/imx6ull.h>
+#include <board_config.h>
 
 #include "sdma-api.h"
 
@@ -51,17 +52,22 @@
 #define log_warn(fmt, ...)      do { log_printf(LOG_WARNING, COL_YELLOW fmt COL_NORMAL "\n", ##__VA_ARGS__); } while (0)
 #define log_error(fmt, ...)     do { log_printf(LOG_ERR, COL_RED fmt COL_NORMAL "\n", ##__VA_ARGS__); } while (0)
 
-#define NUM_OF_SDMA_CHANNELS    (32)
-#define NUM_OF_SDMA_REQUESTS    (48)
+#ifndef SDMA_MAIN_PRIO
+#define SDMA_MAIN_PRIO 2
+#endif
 
-#define NUM_OF_WORKER_THREADS   4 //(NUM_OF_SDMA_CHANNELS)
-#define WORKER_THD_PRIO         (3)
-#define WORKER_THD_STACK        (4096)
+#ifndef SDMA_WORKER_PRIO
+#define SDMA_WORKER_PRIO 3
+#endif
 
-#define STATS_THD_PRIO          (4)
-#define STATS_THD_STACK         (4096)
+#define NUM_OF_SDMA_CHANNELS (32)
+#define NUM_OF_SDMA_REQUESTS (48)
 
-#define MAIN_THD_PRIO           (2)
+#define NUM_OF_WORKER_THREADS 4  //(NUM_OF_SDMA_CHANNELS)
+#define WORKER_THD_STACK      (4096)
+
+#define STATS_THD_PRIO  (4)
+#define STATS_THD_STACK (4096)
 
 /* Buffer Descriptor Commands for Bootload scripts */
 #define SDMA_CMD_C0_SET_DM                      (0x1)
@@ -859,7 +865,7 @@ static int init(void)
 	}
 
 	for (i = 0; i < NUM_OF_WORKER_THREADS; i++)
-		beginthread(worker_thread, WORKER_THD_PRIO, common.worker_thd_stack[i], WORKER_THD_STACK, NULL);
+		beginthread(worker_thread, SDMA_WORKER_PRIO, common.worker_thd_stack[i], WORKER_THD_STACK, NULL);
 
 	if (common.stats_period_s > 0) {
 		beginthread(stats_thread, STATS_THD_PRIO, common.stats_thd_stack, STATS_THD_STACK, NULL);
@@ -1032,7 +1038,7 @@ int main(int argc, char *argv[])
 	int res, display_usage = 0;
 	oid_t root;
 
-	priority(MAIN_THD_PRIO);
+	priority(SDMA_MAIN_PRIO);
 
 	common.use_syslog = 0;
 	common.stats_period_s = 0; /* Don't print stats by default */
