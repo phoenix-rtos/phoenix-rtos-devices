@@ -1,3 +1,16 @@
+/*
+ * Phoenix-RTOS
+ *
+ * GRCANFD driver
+ *
+ * GRLIB CANFD driver header file
+ *
+ * Copyright 2025 Phoenix Systems
+ * Author: Mikolaj Matalowski
+ *
+ * %LICENSE%
+ */
+
 #ifndef GRLIB_CAN_H
 #define GRLIB_CAN_H
 
@@ -63,8 +76,8 @@
 #define GRLIB_CAN_rx_IRQ       (1u << 9)  /* Successful reception of the message */
 #define GRLIB_CAN_txEmpty_IRQ  (1u << 8)  /* Successful transmission of all messages */
 #define GRLIB_CAN_rxFull_IRQ   (1u << 7)  /* All stored frames read */
-#define GRLIB_CAN_txPtr_IRQ    (1u << 6)  /* TX buffer read and write pointer equal */
-#define GRLIB_CANrxPtr_IRQ     (1u << 5)  /* RX buffer read and write pointer equal */
+#define GRLIB_CAN_txPtr_IRQ    (1u << 6)  /* TX buffer read pointer equal to txIrq pointer*/
+#define GRLIB_CANrxPtr_IRQ     (1u << 5)  /* RX buffer write pointer equal to rxIrq pointer*/
 #define GRLIB_CAN_bmRdErr_IRQ  (1u << 4)  /* Error during AMBA read */
 #define GRLIB_CAN_bmWrErr      (1u << 3)  /* Error during AMBA write */
 #define GRLIB_CAN_or_IRQ       (1u << 2)  /* Over-run during reception */
@@ -186,13 +199,32 @@ typedef struct {
 	volatile uint32_t rxAccCode; /* RX channel acceptance code */
 } grlibCan_hwDev_t;
 
+#define RX_RST       0
+#define RX_EMPTY     1
+#define RX_RDY       2
+#define RX_ERR       3
+#define RX_NOT_EMPTY 4
+
+#define TX_RST       0
+#define TX_FULL      1
+#define TX_RDY       2
+#define TX_ERR       3
+#define TX_NOT_EMPTY 4
+
+#define GRLIB_CAN_TRANSACTION_NULL    0
+#define GRLIB_CAN_TRANSACTION_ONGOING 1
+#define GRLIB_CAN_TRANSATION_FINISHED 2
+#define GRLIB_CAN_TRANSATION_FAILED   3
+
 /* Structure used to handle devices within the driver */
 typedef struct {
 	int canId;
 	grlibCan_hwDev_t *device;
 
 	handle_t ctrlLock; /* Lock for configuration and control of the device */
-	handle_t cond;     /* Conditional passed to the interrupt */
+	handle_t txLock;
+	handle_t rxLock;
+	handle_t cond; /* Conditional passed to the interrupt */
 
 
 	volatile uint32_t recv;
@@ -202,10 +234,16 @@ typedef struct {
 	/* RX buffer */
 	volatile grlibCan_msg_t *rxBufAdd;
 	size_t rxBufSz;
+	uint32_t rxBufStatus;
+	uint32_t rxBusStatus;
+	uint32_t rxTransactionStatus;
 
 	/* TX buffer */
 	volatile grlibCan_msg_t *txBufAdd;
 	size_t txBufSz;
+	uint32_t txBufStatus;
+	uint32_t txBusStatus;
+	uint32_t txTransactionStatus;
 } grlibCan_dev_t;
 
 union {
@@ -215,7 +253,7 @@ union {
 		volatile uint16_t timConf;    /* Timing confguration */
 	} conf;                           /* Configuration for bd-rate of 115200 */
 	uint32_t reg;
-} defTimConfNom = { .reg = (15 << 16) | (40 << 10) | (14 << 5) | 14};
+} defTimConfNom = { .reg = (15 << 16) | (40 << 10) | (14 << 5) | 14 };
 
 union {
 	struct {
@@ -224,7 +262,7 @@ union {
 		volatile uint16_t timConf;    /* Timing confguration */
 	} conf;                           /* Configuration for bd-rate of 115200 */
 	uint32_t reg;
-} defTimConfData = { .reg = (15 << 16) | (40 << 10) | (8 << 5) | 8};
+} defTimConfData = { .reg = (15 << 16) | (40 << 10) | (8 << 5) | 8 };
 
 /* Driver status struct */
 typedef struct {
@@ -256,18 +294,22 @@ static int grlibCan_applyConfig(grlibCan_dev_t *dev, grlibCan_config_t *config);
 /* Normal interrupt handler */
 static int grlibCan_irqHandler(unsigned int irqNum, void *arg);
 /*  */
-/* static int grlibCan_transmitSync(grlibCan_dev_t dev, const uint8_t *buffer,
+static int grlibCan_transmitSync(grlibCan_dev_t *dev, const grlibCan_msg_t *buffer,
 		const uint32_t length);
 
-static int grlibCan_transmitAsync(grlibCan_dev_t dev, const uint8_t *buffer,
+static int grlibCan_transmitAsync(grlibCan_dev_t *dev, const grlibCan_msg_t *buffer,
 		const uint32_t length);
 
-static int grlibCan_recvSync(grlibCan_dev_t dev, uint8_t *buffer,
+static int grlibCan_recvSync(grlibCan_dev_t *dev, grlibCan_msg_t *buffer,
 		const uint32_t length);
 
-static int grlibCan_recvAsync(grlibCan_dev_t dev, uint8_t *buffer,
-		const uint32_t length); */
+static int grlibCan_recvAsync(grlibCan_dev_t *dev, grlibCan_msg_t *buffer,
+		const uint32_t length);
 
-static inline int grlibCan_popFrame(grlibCan_dev_t *dev, grlibCan_msg_t *msg, bool async);
-static inline int grlibCan_pushFrame(grlibCan_dev_t *dev, const grlibCan_msg_t *msg, bool async);
+/* Fragment and place date into CAN message */
+// static int grlibCan_prepareData(const uint8_t *buffer, const uint32_t len,
+// 		grlibCan_msg_t **packets, uint32_t *pLen);
+
+static inline int grlibCan_popFrame(grlibCan_dev_t *dev, grlibCan_msg_t *msg);
+static inline int grlibCan_pushFrame(grlibCan_dev_t *dev, const grlibCan_msg_t *msg);
 #endif
