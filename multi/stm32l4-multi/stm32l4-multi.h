@@ -61,7 +61,10 @@ typedef struct {
 /* GPIO */
 
 
-enum { gpioa = 0, gpiob, gpioc, gpiod, gpioe, gpiof, gpiog, gpioh, gpioi };
+/* clang-format off */
+enum { gpioa = 0, gpiob, gpioc, gpiod, gpioe, gpiof, gpiog, gpioh, gpioi,
+	gpioj, gpiok, gpiol, gpiom, gpion, gpioo, gpiop, gpioq };
+/* clang-format on */
 
 
 typedef struct {
