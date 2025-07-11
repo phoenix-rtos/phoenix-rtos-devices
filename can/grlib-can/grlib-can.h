@@ -229,21 +229,24 @@ typedef struct {
 
 	volatile uint32_t recv;
 	volatile uint32_t sent;
+	volatile uint32_t txErr;
+	volatile uint32_t rxMiss;
+	volatile uint32_t rxErrCntr;
+	volatile uint32_t overRun;
 	volatile uint32_t counter;
 
 	/* RX buffer */
-	volatile grlibCan_msg_t *rxBufAdd;
+	grlibCan_msg_t *rxBufAdd;
 	size_t rxBufSz;
-	uint32_t rxBufStatus;
-	uint32_t rxBusStatus;
-	uint32_t rxTransactionStatus;
+	volatile uint32_t rxBufStatus;
+	volatile uint32_t rxBusStatus;
 
 	/* TX buffer */
-	volatile grlibCan_msg_t *txBufAdd;
+	grlibCan_msg_t *txBufAdd;
 	size_t txBufSz;
-	uint32_t txBufStatus;
-	uint32_t txBusStatus;
-	uint32_t txTransactionStatus;
+	volatile uint32_t txBufStatus;
+	volatile uint32_t txBusStatus;
+	volatile uint32_t txTransactionStatus;
 } grlibCan_dev_t;
 
 union {
@@ -287,8 +290,6 @@ static int grlibCan_registerDevices(oid_t *port, grlibCan_dev_t *devices, uint32
 static void grlibCan_cleanupResources(grlibCan_dev_t *dev);
 /* */
 static int grlibCan_applyDefConf(grlibCan_dev_t *dev);
-/* Enable self loopback */
-static inline void grlibCan_enableSelfLb(grlibCan_dev_t *dev);
 /* Apply user config after initialization of the driver */
 static int grlibCan_applyConfig(grlibCan_dev_t *dev, grlibCan_config_t *config);
 /* Normal interrupt handler */

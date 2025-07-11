@@ -28,18 +28,19 @@
 #include <sys/types.h>
 #include <sys/threads.h>
 #include <posix/utils.h>
+#include <sys/time.h>
 #include <sys/mman.h>
 
 /* Local includes */
 #include "grlib-can.h"
 
-#pragma GCC optimize("Og")
+#pragma GCC optimize("O0")
 
-static void __attribute__((used)) debug_routine(void *args)
+void sendingThread(void *args)
 {
 	grlibCan_dev_t *dev = (grlibCan_dev_t *)args;
-
 	grlibCan_msg_t frame[GRLIB_CAN_DEF_CIRCBUFSZ * 2];
+
 	frame->frame.head = (1 << 18);
 	frame->frame.stat = 0x10u << 24u;
 	frame->frame.payload[0] = 0x0F;
@@ -49,18 +50,45 @@ static void __attribute__((used)) debug_routine(void *args)
 		frame[i].frame.payload[0] = 0x0F + i;
 	}
 
-	grlibCan_transmitSync(dev, frame, GRLIB_CAN_DEF_CIRCBUFSZ * 2);
+	usleep(1000000);
+	printf("Sending messages\n");
 
-	grlibCan_recvSync(dev, frame, 0);
-	grlibCan_transmitAsync(dev, frame, 0);
-	grlibCan_recvAsync(dev, frame, 0);
+	for (int i = 0; i < 10; i++) {
+		grlibCan_transmitSync(dev, frame, GRLIB_CAN_DEF_CIRCBUFSZ);
+	}
+
+	printf("Bursting finished\n");
+
+	for (;;) {
+		sleep(100000);
+	}
+}
+
+uint8_t stack[2048];
+
+static void __attribute__((used)) debug_routine(void *args)
+{
+	debug("Started debug routine\n");
+	usleep(1000000);
+	debug("debug routine\n");
+	grlibCan_dev_t *dev = (grlibCan_dev_t *)args;
+
+	grlibCan_msg_t frames[GRLIB_CAN_DEF_CIRCBUFSZ * 20];
+
+	beginthread(sendingThread, 4, stack, 2048, dev);
+
+	debug("Receiving frames\n");
+	int recved = grlibCan_recvSync(dev, frames, 160);
+
+	printf("Received: %d\n", recved);
+	//printf("Number of interrupt handler calls: %d, rxIRQ, %d\n", dev->counter, dev->recv);
+
+	// grlibCan_transmitAsync(dev, frames, 0);
+	// grlibCan_recvAsync(dev, frames, 0);
 
 	debug("Transmission successful\n");
 
-	{
-		char buf[100];
-		snprintf(buf, 100, "Send: %x, Recv: %x, Counter: %x\n", dev->sent, dev->recv, dev->counter);
-		debug(buf);
+	for (;;) {
 	}
 }
 
@@ -100,7 +128,7 @@ static int __attribute__((section(".interrupt"), aligned(0x1000))) grlibCan_irqH
 {
 	grlibCan_dev_t *dev = (grlibCan_dev_t *)arg;
 	volatile grlibCan_hwDev_t *device = dev->device;
-	volatile uint32_t pending = device->penIsrMsk;
+	volatile uint32_t pending = device->penIsr;
 
 	int ret = 0;
 
@@ -109,6 +137,7 @@ static int __attribute__((section(".interrupt"), aligned(0x1000))) grlibCan_irqH
 		ret = 1;
 		dev->rxBufStatus = RX_RDY;
 		dev->recv++;
+		dev->device->irqClrReg |= GRLIB_CAN_rx_IRQ;
 	}
 
 	if ((pending & GRLIB_CAN_tx_IRQ) != 0) {
@@ -116,19 +145,36 @@ static int __attribute__((section(".interrupt"), aligned(0x1000))) grlibCan_irqH
 		dev->txBufStatus = TX_RDY;
 		dev->sent++;
 	}
-
-	/* Handlers for ASYNC TX/RX */
 	if ((pending & GRLIB_CAN_txEmpty_IRQ) != 0) {
 		ret = 1;
 		dev->txBufStatus = TX_RDY;
 	}
 
 	if (((pending)&GRLIB_CAN_txPtr_IRQ) != 0) {
+		ret = 1;
 		dev->txTransactionStatus = GRLIB_CAN_TRANSATION_FINISHED;
 		dev->txBufStatus = TX_RST;
-		device->irqMskSet &= ~GRLIB_CAN_txPtr_IRQ;
 	}
 
+	if ((pending & GRLIB_CAN_txLoss_irq) != 0) {
+		dev->txErr++;
+	}
+
+	if ((pending & GRLIB_CAN_or_IRQ) != 0) {
+		dev->overRun++;
+	}
+
+	if ((pending & GRLIB_CAN_rxMiss_irq) != 0) {
+		dev->rxMiss++;
+	}
+
+	if ((pending & GRLIB_CAN_rxErrCnt_IRQ) != 0) {
+		dev->rxErrCntr++;
+	}
+
+	dev->counter++;
+
+	dev->device->irqClrReg = ~(GRLIB_CAN_rx_IRQ);
 
 	return ret;
 }
@@ -163,8 +209,9 @@ static int grlibCan_applyDefConf(grlibCan_dev_t *dev)
 	while ((device->ctrlReg & (1u << 1)) != 0) { }
 
 	/* Configure ids to listen to */
-	device->confReg |= (1 << 2) | (1 << 1) | (1 << 1) | (1 << 6) | (1 << 7);
-	// device->confReg &= ~((1 << 7) | (1 << 3) | 1);
+	device->confReg = 0;
+	device->confReg |= (1 << 2) | (1 << 1) | (1 << 1) | (1 << 6);
+
 	/* Do no compare on any bits - listen to all */
 	device->syncMask = (0u);
 	device->syncCode = ~(0u);
@@ -184,17 +231,26 @@ static int grlibCan_applyDefConf(grlibCan_dev_t *dev)
 	(void)pending;
 
 	/* Disable all interrupts */
-	device->irqMskSet = (device->irqMskSet & ~GRLIB_CAN_irqReg_MASK) |
-			((((uint32_t)0) & GRLIB_CAN_irqReg_MASK));
+	device->irqMskSet = GRLIB_CAN_txLoss_irq | GRLIB_CAN_or_IRQ |
+			GRLIB_CAN_rxErrCnt_IRQ | GRLIB_CAN_rxMiss_irq;
 
 	/* Configure TX channel */
+	device->txCtrlReg &= ~1;
+	while ((device->txCtrlReg & (1 << 1)) != 0) { }
+
+
 	device->txBufAdd = (uint32_t)va2pa((void *)dev->txBufAdd);
 	device->txBufSz = (uint32_t)((dev->txBufSz / 4) << 6);
 	device->txWrtPtr = 0;
 	device->txRdPtr = 0;
+
+	device->txCtrlReg &= ~(1 << 2);
 	device->txCtrlReg |= 1;
 
 	/* Configure RX channel */
+	device->rxCtrlReg &= ~1;
+	while ((device->rxCtrlReg & (1 << 1)) != 0) { }
+
 	device->rxBufAdd = (uint32_t)va2pa((void *)dev->rxBufAdd);
 	device->rxBufSz = (dev->rxBufSz / 4) << 6;
 	device->rxWrtPtr = 0;
@@ -202,18 +258,15 @@ static int grlibCan_applyDefConf(grlibCan_dev_t *dev)
 	/* Put all frames that we got from the bus into the buffer */
 	device->rxAccCode = (0u);
 	device->rxAccMask = (0u);
-	device->rxCtrlReg |= 1 | (1 << 3);
+
+	device->rxCtrlReg &= ~(1 << 3);
+	device->rxCtrlReg |= 1;
 
 	/* Turn codec back on */
 	device->ctrlReg |= 1;
 
 	mutexUnlock(dev->ctrlLock);
 	return 0;
-}
-
-static void grlibCan_enableSelfLb(grlibCan_dev_t *dev)
-{
-	dev->device->confReg = dev->device->confReg | (1 << 7) | (1 << 6);
 }
 
 static int __attribute__((used)) grlibCan_applyConfig(grlibCan_dev_t *dev, grlibCan_config_t *config)
@@ -258,19 +311,19 @@ static int grlibCan_transmitSync(grlibCan_dev_t *dev, const grlibCan_msg_t *buff
 
 	(void)mutexLock(dev->txLock);
 
-	char buf[100];
-
 	while (i < length) {
 		/* Check for bus status, if error return how many frames sent */
-		if (dev->txBufStatus == TX_ERR)
+		if (dev->txBufStatus == TX_ERR) {
+			(void)mutexUnlock(dev->txLock);
 			return -i;
+		}
 		/* While there is space in transmit buffer push frames */
-		while (dev->device->txWrtPtr != dev->device->txRdPtr) {
+		while (dev->device->txWrtPtr != (dev->device->txRdPtr > 1 ? dev->device->txRdPtr - 1 : dev->device->txBufSz - 1)) {
+			if (i == length) {
+				(void)mutexUnlock(dev->txLock);
+				return length;
+			}
 			(void)grlibCan_pushFrame(dev, &buffer[i]);
-
-			snprintf(buf, 100, "TX: %x\n", i);
-			debug(buf);
-
 			i++;
 		}
 
@@ -278,9 +331,9 @@ static int grlibCan_transmitSync(grlibCan_dev_t *dev, const grlibCan_msg_t *buff
 		dev->txBufStatus = TX_FULL;
 		dev->device->irqMskSet |= GRLIB_CAN_tx_IRQ;
 
-		while (dev->rxBufStatus == TX_FULL) {
-			/* Wait for interrupt to clear RX_FULL */
-			(void)condWait(dev->cond, dev->txLock, 10000);
+		while (dev->txBufStatus == TX_FULL) {
+			/* Wait for interrupt to clear TX_FULL */
+			int cRet = condWait(dev->cond, dev->txLock, 10000);
 		}
 
 		dev->device->irqMskSet &= ~GRLIB_CAN_tx_IRQ;
@@ -293,7 +346,7 @@ static int grlibCan_transmitSync(grlibCan_dev_t *dev, const grlibCan_msg_t *buff
 /* We could also return instantly with error if there is an ongoing transaction */
 /* Check if buffer is 1kB alligned? */
 /* Since buffer has to be prepared eariler by the driver from user request we mmap buffer */
-static int grlibCan_transmitAsync(grlibCan_dev_t *dev, const grlibCan_msg_t *buffer,
+static int __attribute__((used)) grlibCan_transmitAsync(grlibCan_dev_t *dev, const grlibCan_msg_t *buffer,
 		const uint32_t length)
 {
 	grlibCan_hwDev_t *device = dev->device;
@@ -335,8 +388,7 @@ static int grlibCan_recvSync(grlibCan_dev_t *dev, grlibCan_msg_t *buffer,
 		uint32_t length)
 {
 	uint32_t i = 0;
-
-	(void)mutexLock(dev->txLock);
+	(void)mutexLock(dev->rxLock);
 
 	while (i < length) {
 		/* Check for bus status, if error return how many frames read */
@@ -344,10 +396,15 @@ static int grlibCan_recvSync(grlibCan_dev_t *dev, grlibCan_msg_t *buffer,
 			(void)mutexUnlock(dev->rxLock);
 			return -i;
 		}
+
 		/* While there are frames to read, process them */
 		while (dev->device->rxRdPtr != dev->device->rxWrtPtr) {
+			if (i == length) {
+				(void)mutexUnlock(dev->rxLock);
+				return length;
+			}
 			/* Check if whole CAN frame can be processed */
-			uint32_t frame_len = ((dev->rxBufAdd[dev->device->rxRdPtr]).frame.stat >> 28);
+			uint32_t frame_len = ((dev->rxBufAdd[dev->device->rxRdPtr >> 4]).frame.stat >> 28);
 			if (frame_len > 8) {
 				/* Whole frame cannot be consumed */
 				if ((frame_len - 8) / sizeof(grlibCan_msg_t) >= length - i) {
@@ -365,6 +422,7 @@ static int grlibCan_recvSync(grlibCan_dev_t *dev, grlibCan_msg_t *buffer,
 			}
 			/* Read one packet */
 			(void)grlibCan_popFrame(dev, &buffer[i]);
+			dev->txErr = i;
 			i++;
 		}
 
@@ -373,10 +431,12 @@ static int grlibCan_recvSync(grlibCan_dev_t *dev, grlibCan_msg_t *buffer,
 		dev->device->irqMskSet |= GRLIB_CAN_rx_IRQ;
 
 		while (dev->rxBufStatus == RX_EMPTY) {
-			(void)condWait(dev->cond, dev->rxLock, 10000);
+			if(dev->device->rxRdPtr != dev->device->rxWrtPtr) break;
+			if(i == length) break;
+			int cRet = condWait(dev->cond, dev->rxLock, 100000);
 		}
 
-		dev->device->irqMskSet &= ~GRLIB_CAN_rx_IRQ;
+		dev->device->irqMskSet &= ~(GRLIB_CAN_rx_IRQ);
 	}
 
 	(void)mutexUnlock(dev->rxLock);
@@ -429,15 +489,15 @@ static int grlibCan_allocateBuffers(grlibCan_dev_t *dev, uint32_t bufLen)
 		return -EINVAL;
 	}
 
-	dev->txBufAdd = mmap(NULL, sizeof(grlibCan_msg_t) * bufLen,
+	dev->txBufAdd = mmap(NULL, _PAGE_SIZE,
 			PROT_WRITE | PROT_READ, MAP_UNCACHED | MAP_ANONYMOUS, -1, 0);
 	if (dev->txBufAdd == MAP_FAILED) {
 		return -ENOMEM;
 	}
 
-	dev->txBufSz = bufLen;
+	dev->txBufSz = (_PAGE_SIZE / (sizeof(grlibCan_msg_t) * 4)) * 4;
 
-	dev->rxBufAdd = mmap(NULL, sizeof(grlibCan_msg_t) * bufLen,
+	dev->rxBufAdd = mmap(NULL, _PAGE_SIZE,
 			PROT_WRITE | PROT_READ, MAP_UNCACHED | MAP_ANONYMOUS, -1, 0);
 	if (dev->rxBufAdd == MAP_FAILED) {
 		(void)munmap((void *)dev->txBufAdd, sizeof(grlibCan_msg_t) * dev->txBufSz);
@@ -445,7 +505,7 @@ static int grlibCan_allocateBuffers(grlibCan_dev_t *dev, uint32_t bufLen)
 		return -ENOMEM;
 	}
 
-	dev->rxBufSz = bufLen;
+	dev->rxBufSz = (_PAGE_SIZE / (sizeof(grlibCan_msg_t) * 4)) * 4;
 	return 0;
 }
 
@@ -457,10 +517,14 @@ static int grlibCan_allocateResources(grlibCan_dev_t *dev, uint32_t base, int id
 	dev->cond = (handle_t)-1;
 	dev->sent = 0;
 	dev->recv = 0;
+	dev->counter = 0;
 	dev->txBufAdd = MAP_FAILED;
 	dev->rxBufAdd = MAP_FAILED;
 	dev->txBufSz = 0;
 	dev->rxBufSz = 0;
+	dev->rxErrCntr = 0;
+	dev->rxMiss = 0;
+	dev->overRun = 0;
 
 #ifdef VERBOSE
 	debug("grlib-can: Initialized device struct\n");
