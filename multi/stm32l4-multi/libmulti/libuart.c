@@ -30,6 +30,9 @@
 
 #include "../config.h"
 #include "../common.h"
+#if defined(__CPU_STM32N6)
+#include "../rcc.h"
+#endif
 
 
 /* clang-format off */
@@ -37,14 +40,34 @@ enum { cr1 = 0, cr2, cr3, brr, gtpr, rtor, rqr, isr, icr, rdr, tdr };
 /* clang-format on */
 
 
+#if defined(__CPU_STM32L4X6)
+#define MAX_UARTS 5
+#elif defined(__CPU_STM32N6)
+#define MAX_UARTS 10
+#endif
+
+
 static struct {
 	size_t rxfifosz;
-} libuart_config[] = {
+} libuart_config[MAX_UARTS] = {
+#if defined(__CPU_STM32L4X6)
 	{ UART1_RXFIFOSZ },
 	{ UART2_RXFIFOSZ },
 	{ UART3_RXFIFOSZ },
 	{ UART4_RXFIFOSZ },
 	{ UART5_RXFIFOSZ },
+#elif defined(__CPU_STM32N6)
+	{ UART1_RXFIFOSZ },
+	{ UART2_RXFIFOSZ },
+	{ UART3_RXFIFOSZ },
+	{ UART4_RXFIFOSZ },
+	{ UART5_RXFIFOSZ },
+	{ UART6_RXFIFOSZ },
+	{ UART7_RXFIFOSZ },
+	{ UART8_RXFIFOSZ },
+	{ UART9_RXFIFOSZ },
+	{ UART10_RXFIFOSZ },
+#endif
 };
 
 
@@ -52,15 +75,33 @@ static const struct libuart_peripheralInfo {
 	volatile uint32_t *base;
 	int dev;
 	unsigned irq;
-} libuart_info[] = {
+#if defined(__CPU_STM32N6)
+	enum ipclks clksel;    /* Clock selector */
+	enum clock_ids clksrc; /* ID of source clock */
+#endif
+} libuart_info[MAX_UARTS] = {
+#if defined(__CPU_STM32L4X6)
 	{ USART1_BASE, pctl_usart1, usart1_irq },
 	{ USART2_BASE, pctl_usart2, usart2_irq },
 	{ USART3_BASE, pctl_usart3, usart3_irq },
 	{ UART4_BASE, pctl_uart4, uart4_irq },
 	{ UART5_BASE, pctl_uart5, uart5_irq },
+#elif defined(__CPU_STM32N6)
+	{ USART1_BASE, pctl_usart1, usart1_irq, pctl_ipclk_usart1sel, clkid_per },
+	{ USART2_BASE, pctl_usart2, usart2_irq, pctl_ipclk_usart2sel, clkid_per },
+	{ USART3_BASE, pctl_usart3, usart3_irq, pctl_ipclk_usart3sel, clkid_per },
+	{ UART4_BASE, pctl_uart4, uart4_irq, pctl_ipclk_uart4sel, clkid_per },
+	{ UART5_BASE, pctl_uart5, uart5_irq, pctl_ipclk_uart5sel, clkid_per },
+	{ USART6_BASE, pctl_usart6, usart6_irq, pctl_ipclk_usart6sel, clkid_per },
+	{ UART7_BASE, pctl_uart7, uart7_irq, pctl_ipclk_uart7sel, clkid_per },
+	{ UART8_BASE, pctl_uart8, uart8_irq, pctl_ipclk_uart8sel, clkid_per },
+	{ UART9_BASE, pctl_uart9, uart9_irq, pctl_ipclk_uart9sel, clkid_per },
+	{ USART10_BASE, pctl_usart10, usart10_irq, pctl_ipclk_usart10sel, clkid_per },
+#endif
 };
 
 
+#if defined(__CPU_STM32L4X6)
 static int libuart_clockSetup(const struct libuart_peripheralInfo *info, uint32_t *out)
 {
 	/* On this platform no extra information is used for clock setup */
@@ -68,6 +109,25 @@ static int libuart_clockSetup(const struct libuart_peripheralInfo *info, uint32_
 	*out = getCpufreq();
 	return EOK;
 }
+#elif defined(__CPU_STM32N6)
+static int libuart_clockSetup(const struct libuart_peripheralInfo *info, uint32_t *out)
+{
+	int ret;
+	ret = rcc_setClksel(info->clksel, info->clksrc);
+	if (ret < 0) {
+		return ret;
+	}
+
+	uint64_t freq;
+	ret = clockdef_getClock(info->clksrc, &freq);
+	if (ret < 0) {
+		return ret;
+	}
+
+	*out = (uint32_t)freq;
+	return ret;
+}
+#endif
 
 
 static inline size_t libuart_incrementWrap(size_t value, size_t size)
@@ -601,7 +661,10 @@ static int libuart_dmaInit(libuart_ctx *ctx, unsigned int uart)
 
 	ctx->type = uart_dma;
 
-	libdma_init();
+	err = libdma_init();
+	if (err < 0) {
+		return err;
+	}
 
 	if (ctx->data.dma.rxfifosz >= DMA_MAX_LEN) {
 		return -EINVAL;
