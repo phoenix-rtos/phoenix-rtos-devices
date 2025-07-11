@@ -34,10 +34,10 @@
 
 #define HASH_BASE ((void *)0x54020400)
 
-// #define I2C1_BASE ((void *)0x50005400)
-// #define I2C2_BASE ((void *)0x50005800)
-// #define I2C3_BASE ((void *)0x50005c00)
-// #define I2C4_BASE ((void *)0x56001c00)
+#define I2C1_BASE ((void *)0x50005400)
+#define I2C2_BASE ((void *)0x50005800)
+#define I2C3_BASE ((void *)0x50005c00)
+#define I2C4_BASE ((void *)0x56001c00)
 
 // #define I3C1_BASE ((void *)0x50006000)
 // #define I3C2_BASE ((void *)0x50006400)
