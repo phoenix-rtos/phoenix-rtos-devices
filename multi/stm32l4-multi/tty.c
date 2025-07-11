@@ -681,7 +681,11 @@ int tty_init(void)
 		}
 		else {
 			uint8_t *rxFifoBuf;
-			libdma_init();
+			err = libdma_init();
+			if (err < 0) {
+				return err;
+			}
+
 			err = libdma_acquirePeripheral(dma_uart, tty, &ctx->data.dma.per);
 			if (err < 0) {
 				return err;

@@ -37,14 +37,34 @@ enum { cr1 = 0, cr2, cr3, brr, gtpr, rtor, rqr, isr, icr, rdr, tdr };
 /* clang-format on */
 
 
+#if defined(__CPU_STM32L4X6)
+#define MAX_UARTS 5
+#elif defined(__CPU_STM32N6)
+#define MAX_UARTS 10
+#endif
+
+
 static struct {
 	size_t rxfifosz;
-} libuart_config[] = {
+} libuart_config[MAX_UARTS] = {
+#if defined(__CPU_STM32L4X6)
 	{ UART1_RXFIFOSZ },
 	{ UART2_RXFIFOSZ },
 	{ UART3_RXFIFOSZ },
 	{ UART4_RXFIFOSZ },
 	{ UART5_RXFIFOSZ },
+#elif defined(__CPU_STM32N6)
+	{ UART1_RXFIFOSZ },
+	{ UART2_RXFIFOSZ },
+	{ UART3_RXFIFOSZ },
+	{ UART4_RXFIFOSZ },
+	{ UART5_RXFIFOSZ },
+	{ UART6_RXFIFOSZ },
+	{ UART7_RXFIFOSZ },
+	{ UART8_RXFIFOSZ },
+	{ UART9_RXFIFOSZ },
+	{ UART10_RXFIFOSZ },
+#endif
 };
 
 
@@ -52,12 +72,25 @@ static const struct {
 	volatile uint32_t *base;
 	int dev;
 	unsigned irq;
-} libuart_info[] = {
+} libuart_info[MAX_UARTS] = {
+#if defined(__CPU_STM32L4X6)
 	{ USART1_BASE, pctl_usart1, usart1_irq },
 	{ USART2_BASE, pctl_usart2, usart2_irq },
 	{ USART3_BASE, pctl_usart3, usart3_irq },
 	{ UART4_BASE, pctl_uart4, uart4_irq },
 	{ UART5_BASE, pctl_uart5, uart5_irq },
+#elif defined(__CPU_STM32N6)
+	{ USART1_BASE, pctl_usart1, usart1_irq },
+	{ USART2_BASE, pctl_usart2, usart2_irq },
+	{ USART3_BASE, pctl_usart3, usart3_irq },
+	{ UART4_BASE, pctl_uart4, uart4_irq },
+	{ UART5_BASE, pctl_uart5, uart5_irq },
+	{ USART6_BASE, pctl_usart6, usart6_irq },
+	{ UART7_BASE, pctl_uart7, uart7_irq },
+	{ UART8_BASE, pctl_uart8, uart8_irq },
+	{ UART9_BASE, pctl_uart9, uart9_irq },
+	{ USART10_BASE, pctl_usart10, usart10_irq },
+#endif
 };
 
 
@@ -592,7 +625,10 @@ static int libuart_dmaInit(libuart_ctx *ctx, unsigned int uart)
 
 	ctx->type = uart_dma;
 
-	libdma_init();
+	err = libdma_init();
+	if (err < 0) {
+		return err;
+	}
 
 	if (ctx->data.dma.rxfifosz >= DMA_MAX_LEN) {
 		return -EINVAL;
