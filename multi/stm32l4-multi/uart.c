@@ -28,27 +28,37 @@
 #include "uart.h"
 #include "rcc.h"
 
-#define MAX_UART uart5
+#define UART1_POS  0
+#define UART2_POS  (UART1_POS + UART1)
+#define UART3_POS  (UART2_POS + UART2)
+#define UART4_POS  (UART3_POS + UART3)
+#define UART5_POS  (UART4_POS + UART4)
+#define UART6_POS  (UART5_POS + UART5)
+#define UART7_POS  (UART6_POS + UART6)
+#define UART8_POS  (UART7_POS + UART7)
+#define UART9_POS  (UART8_POS + UART8)
+#define UART10_POS (UART9_POS + UART9)
 
-#define UART1_POS 0
-#define UART2_POS (UART1_POS + UART1)
-#define UART3_POS (UART2_POS + UART2)
-#define UART4_POS (UART3_POS + UART3)
-#define UART5_POS (UART4_POS + UART4)
-
-#define N_ACTIVE_UART (UART1 + UART2 + UART3 + UART4 + UART5)
-
+#define N_ACTIVE_UART (UART1 + UART2 + UART3 + UART4 + UART5 + UART6 + UART7 + UART8 + UART9 + UART10)
 
 static libuart_ctx uart_common[N_ACTIVE_UART];
 
 
+#if defined(__CPU_STM32L4X6)
+#if (UART6 || UART7 || UART8 || UART9 || UART10)
+#error "Chosen UART not available on this platform"
+#endif
+
+#define MAX_UART uart5
 static const int uartEnabled[MAX_UART + 1] = { UART1, UART2, UART3, UART4, UART5 };
-
-
 static const int uartDMA[MAX_UART + 1] = { UART1_DMA, UART2_DMA, UART3_DMA, UART4_DMA, UART5_DMA };
-
-
 static const int uartPos[MAX_UART + 1] = { UART1_POS, UART2_POS, UART3_POS, UART4_POS, UART5_POS };
+#elif defined(__CPU_STM32N6)
+#define MAX_UART usart10
+static const int uartEnabled[MAX_UART + 1] = { UART1, UART2, UART3, UART4, UART5, UART6, UART7, UART8, UART9, UART10 };
+static const int uartDMA[MAX_UART + 1] = { UART1_DMA, UART2_DMA, UART3_DMA, UART4_DMA, UART5_DMA, UART6_DMA, UART7_DMA, UART8_DMA, UART9_DMA, UART10_DMA };
+static const int uartPos[MAX_UART + 1] = { UART1_POS, UART2_POS, UART3_POS, UART4_POS, UART5_POS, UART6_POS, UART7_POS, UART8_POS, UART9_POS, UART10_POS };
+#endif
 
 
 int uart_configure(int uart, char bits, char parity, unsigned int baud, char enable)

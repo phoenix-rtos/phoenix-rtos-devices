@@ -35,15 +35,28 @@
 #include "tty.h"
 #include "rcc.h"
 
+
+#if defined(__CPU_STM32L4X6)
+#if (TTY6 || TTY7 || TTY8 || TTY9 || TTY10)
+#error "Chosen UART not available on this platform"
+#endif
 #define MAX_UART uart5
+#elif defined(__CPU_STM32N6)
+#define MAX_UART usart10
+#endif
 
-#define TTY1_POS 0
-#define TTY2_POS (TTY1_POS + TTY1)
-#define TTY3_POS (TTY2_POS + TTY2)
-#define TTY4_POS (TTY3_POS + TTY3)
-#define TTY5_POS (TTY4_POS + TTY4)
+#define TTY1_POS  0
+#define TTY2_POS  (TTY1_POS + TTY1)
+#define TTY3_POS  (TTY2_POS + TTY2)
+#define TTY4_POS  (TTY3_POS + TTY3)
+#define TTY5_POS  (TTY4_POS + TTY4)
+#define TTY6_POS  (TTY5_POS + TTY5)
+#define TTY7_POS  (TTY6_POS + TTY6)
+#define TTY8_POS  (TTY7_POS + TTY7)
+#define TTY9_POS  (TTY8_POS + TTY8)
+#define TTY10_POS (TTY9_POS + TTY9)
 
-#define TTY_CNT (TTY1 + TTY2 + TTY3 + TTY4 + TTY5)
+#define TTY_CNT (TTY1 + TTY2 + TTY3 + TTY4 + TTY5 + TTY6 + TTY7 + TTY8 + TTY9 + TTY10)
 
 #define THREAD_POOL    3
 #define THREAD_STACKSZ 768
@@ -52,19 +65,25 @@
 #define IS_POWER_OF_TWO(n) ((n > 0) && (n & (n - 1)) == 0)
 
 #if (!IS_POWER_OF_TWO(TTY1_DMA_RXSZ)) || (!IS_POWER_OF_TWO(TTY2_DMA_RXSZ)) || \
-	(!IS_POWER_OF_TWO(TTY3_DMA_RXSZ)) || (!IS_POWER_OF_TWO(TTY4_DMA_RXSZ)) || \
-	(!IS_POWER_OF_TWO(TTY5_DMA_RXSZ))
+		(!IS_POWER_OF_TWO(TTY3_DMA_RXSZ)) || (!IS_POWER_OF_TWO(TTY4_DMA_RXSZ)) || \
+		(!IS_POWER_OF_TWO(TTY5_DMA_RXSZ)) || (!IS_POWER_OF_TWO(TTY6_DMA_RXSZ)) || \
+		(!IS_POWER_OF_TWO(TTY7_DMA_RXSZ)) || (!IS_POWER_OF_TWO(TTY8_DMA_RXSZ)) || \
+		(!IS_POWER_OF_TWO(TTY9_DMA_RXSZ)) || (!IS_POWER_OF_TWO(TTY10_DMA_RXSZ))
 #error "Size of RX DMA buffer has to be a power of two!"
 #endif
 
 #if (!IS_POWER_OF_TWO(TTY1_DMA_RXFIFOSZ)) || (!IS_POWER_OF_TWO(TTY2_DMA_RXFIFOSZ)) || \
-	(!IS_POWER_OF_TWO(TTY3_DMA_RXFIFOSZ)) || (!IS_POWER_OF_TWO(TTY4_DMA_RXFIFOSZ)) || \
-	(!IS_POWER_OF_TWO(TTY5_DMA_RXFIFOSZ))
+		(!IS_POWER_OF_TWO(TTY3_DMA_RXFIFOSZ)) || (!IS_POWER_OF_TWO(TTY4_DMA_RXFIFOSZ)) || \
+		(!IS_POWER_OF_TWO(TTY5_DMA_RXFIFOSZ)) || (!IS_POWER_OF_TWO(TTY6_DMA_RXFIFOSZ)) || \
+		(!IS_POWER_OF_TWO(TTY7_DMA_RXFIFOSZ)) || (!IS_POWER_OF_TWO(TTY8_DMA_RXFIFOSZ)) || \
+		(!IS_POWER_OF_TWO(TTY9_DMA_RXFIFOSZ)) || (!IS_POWER_OF_TWO(TTY10_DMA_RXFIFOSZ))
 #error "Size of RX DMA FIFO buffer has to be a power of two!"
 #endif
 
 #if (TTY1_DMA && !TTY1) || (TTY2_DMA && !TTY2) || (TTY3_DMA && !TTY3) || \
-	(TTY4_DMA && !TTY4) || (TTY5_DMA && !TTY5)
+		(TTY4_DMA && !TTY4) || (TTY5_DMA && !TTY5) || (TTY6_DMA && !TTY6) || \
+		(TTY7_DMA && !TTY7) || (TTY8_DMA && !TTY8) || (TTY9_DMA && !TTY9) || \
+		(TTY10_DMA && !TTY10)
 #error "DMA mode cannot be enabled on a disabled TTY!"
 #endif
 
@@ -138,6 +157,13 @@ static const struct {
 	{ TTY3, TTY3_DMA, TTY3_DMA_RXSZ, TTY3_DMA_RXFIFOSZ, TTY3_DMA_TXSZ, TTY3_POS, TTY3_LIBTTY_BUFSZ },
 	{ TTY4, TTY4_DMA, TTY4_DMA_RXSZ, TTY4_DMA_RXFIFOSZ, TTY4_DMA_TXSZ, TTY4_POS, TTY4_LIBTTY_BUFSZ },
 	{ TTY5, TTY5_DMA, TTY5_DMA_RXSZ, TTY5_DMA_RXFIFOSZ, TTY5_DMA_TXSZ, TTY5_POS, TTY5_LIBTTY_BUFSZ },
+#if defined(__CPU_STM32N6)
+	{ TTY6, TTY6_DMA, TTY6_DMA_RXSZ, TTY6_DMA_RXFIFOSZ, TTY6_DMA_TXSZ, TTY6_POS, TTY6_LIBTTY_BUFSZ },
+	{ TTY7, TTY7_DMA, TTY7_DMA_RXSZ, TTY7_DMA_RXFIFOSZ, TTY7_DMA_TXSZ, TTY7_POS, TTY7_LIBTTY_BUFSZ },
+	{ TTY8, TTY8_DMA, TTY8_DMA_RXSZ, TTY8_DMA_RXFIFOSZ, TTY8_DMA_TXSZ, TTY8_POS, TTY8_LIBTTY_BUFSZ },
+	{ TTY9, TTY9_DMA, TTY9_DMA_RXSZ, TTY9_DMA_RXFIFOSZ, TTY9_DMA_TXSZ, TTY9_POS, TTY9_LIBTTY_BUFSZ },
+	{ TTY10, TTY10_DMA, TTY10_DMA_RXSZ, TTY10_DMA_RXFIFOSZ, TTY10_DMA_TXSZ, TTY10_POS, TTY10_LIBTTY_BUFSZ },
+#endif
 };
 
 
@@ -145,12 +171,29 @@ static const struct tty_peripheralInfo {
 	volatile uint32_t *base;
 	int dev;
 	unsigned irq;
+#if defined(__CPU_STM32N6)
+	enum ipclks clksel;    /* Clock selector */
+	enum clock_ids clksrc; /* ID of source clock */
+#endif
 } ttyInfo[] = {
+#if defined(__CPU_STM32L4X6)
 	{ USART1_BASE, pctl_usart1, usart1_irq },
 	{ USART2_BASE, pctl_usart2, usart2_irq },
 	{ USART3_BASE, pctl_usart3, usart3_irq },
 	{ UART4_BASE, pctl_uart4, uart4_irq },
 	{ UART5_BASE, pctl_uart5, uart5_irq },
+#elif defined(__CPU_STM32N6)
+	{ USART1_BASE, pctl_usart1, usart1_irq, pctl_ipclk_usart1sel, clkid_per },
+	{ USART2_BASE, pctl_usart2, usart2_irq, pctl_ipclk_usart2sel, clkid_per },
+	{ USART3_BASE, pctl_usart3, usart3_irq, pctl_ipclk_usart3sel, clkid_per },
+	{ UART4_BASE, pctl_uart4, uart4_irq, pctl_ipclk_uart4sel, clkid_per },
+	{ UART5_BASE, pctl_uart5, uart5_irq, pctl_ipclk_uart5sel, clkid_per },
+	{ USART6_BASE, pctl_usart6, usart6_irq, pctl_ipclk_usart6sel, clkid_per },
+	{ UART7_BASE, pctl_uart7, uart7_irq, pctl_ipclk_uart7sel, clkid_per },
+	{ UART8_BASE, pctl_uart8, uart8_irq, pctl_ipclk_uart8sel, clkid_per },
+	{ UART9_BASE, pctl_uart9, uart9_irq, pctl_ipclk_uart9sel, clkid_per },
+	{ USART10_BASE, pctl_usart10, usart10_irq, pctl_ipclk_usart10sel, clkid_per },
+#endif
 };
 
 
@@ -162,6 +205,7 @@ enum { tty_parnone = 0, tty_pareven, tty_parodd };
 /* clang-format on */
 
 
+#if defined(__CPU_STM32L4X6)
 static int tty_clockSetup(const struct tty_peripheralInfo *info, uint32_t *out)
 {
 	/* On this platform no extra information is used for clock setup */
@@ -169,6 +213,25 @@ static int tty_clockSetup(const struct tty_peripheralInfo *info, uint32_t *out)
 	*out = getCpufreq();
 	return EOK;
 }
+#elif defined(__CPU_STM32N6)
+static int tty_clockSetup(const struct tty_peripheralInfo *info, uint32_t *out)
+{
+	int ret;
+	ret = rcc_setClksel(info->clksel, info->clksrc);
+	if (ret < 0) {
+		return ret;
+	}
+
+	uint64_t freq;
+	ret = clockdef_getClock(info->clksrc, &freq);
+	if (ret < 0) {
+		return ret;
+	}
+
+	*out = (uint32_t)freq;
+	return ret;
+}
+#endif
 
 
 static inline int tty_txready(tty_ctx_t *ctx)
@@ -668,7 +731,7 @@ int tty_init(void)
 	portCreate(&uart_common.port);
 	oid.port = uart_common.port;
 
-	for (tty = 0; tty <= MAX_UART - usart1; ++tty) {
+	for (tty = 0; tty < NELEMS(ttySetup); ++tty) {
 		if (ttySetup[tty].enabled == 0) {
 			continue;
 		}
@@ -705,7 +768,11 @@ int tty_init(void)
 		}
 		else {
 			uint8_t *rxFifoBuf;
-			libdma_init();
+			err = libdma_init();
+			if (err < 0) {
+				return err;
+			}
+
 			err = libdma_acquirePeripheral(dma_uart, tty, &ctx->data.dma.per);
 			if (err < 0) {
 				return err;

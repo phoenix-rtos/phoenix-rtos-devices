@@ -50,7 +50,9 @@
 
 
 #if (UART1 && TTY1) || (UART2 && TTY2) || (UART3 && TTY3) || \
-	(UART4 && TTY4) || (UART5 && TTY5)
+		(UART4 && TTY4) || (UART5 && TTY5) || (UART6 && TTY6) || \
+		(UART7 && TTY7) || (UART8 && TTY8) || (UART9 && TTY9) || \
+		(UART10 && TTY10)
 #error "Can't use UART as UART and TTY at the same time!"
 #endif
 
@@ -62,7 +64,12 @@
 		!(UART_CONSOLE_USER == 2 && (UART2 || TTY2)) && \
 		!(UART_CONSOLE_USER == 3 && (UART3 || TTY3)) && \
 		!(UART_CONSOLE_USER == 4 && (UART4 || TTY4)) && \
-		!(UART_CONSOLE_USER == 5 && (UART5 || TTY5))
+		!(UART_CONSOLE_USER == 5 && (UART5 || TTY5)) && \
+		!(UART_CONSOLE_USER == 6 && (UART6 || TTY6)) && \
+		!(UART_CONSOLE_USER == 7 && (UART7 || TTY7)) && \
+		!(UART_CONSOLE_USER == 8 && (UART8 || TTY8)) && \
+		!(UART_CONSOLE_USER == 9 && (UART9 || TTY9)) && \
+		!(UART_CONSOLE_USER == 10 && (UART10 || TTY10))
 #warning "Console enabled on disabled UART/TTY"
 #endif
 
@@ -70,7 +77,12 @@
 		(UART_CONSOLE_USER == 2 && TTY2) || \
 		(UART_CONSOLE_USER == 3 && TTY3) || \
 		(UART_CONSOLE_USER == 4 && TTY4) || \
-		(UART_CONSOLE_USER == 5 && TTY5))
+		(UART_CONSOLE_USER == 5 && TTY5) || \
+		(UART_CONSOLE_USER == 6 && TTY6) || \
+		(UART_CONSOLE_USER == 7 && TTY7) || \
+		(UART_CONSOLE_USER == 8 && TTY8) || \
+		(UART_CONSOLE_USER == 9 && TTY9) || \
+		(UART_CONSOLE_USER == 10 && TTY10))
 
 
 struct {
