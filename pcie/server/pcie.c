@@ -146,10 +146,13 @@ static void print_bars(void *ecam, uint8_t bus, uint8_t dev, uint8_t fn, uint8_t
 			if (is_64_bit) {
 				uint32_t bar_high = ecamRead32(ecam, bus, dev, fn, PCI_BAR0 + (i + 1) * 4);
 				addr |= ((uint64_t)bar_high) << 32;
-				i++;
+				// i++;
 			}
 			printf("pcie: BAR%d MEM 0x%016llx (%s)\n",
 					i, (unsigned long long)addr, is_64_bit ? "64-bit" : "32-bit");
+			if (is_64_bit) {
+				i++;
+			}
 		}
 	}
 }
