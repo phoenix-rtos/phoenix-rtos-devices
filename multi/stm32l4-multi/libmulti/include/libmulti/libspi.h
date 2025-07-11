@@ -23,6 +23,7 @@
 
 typedef struct {
 	volatile uint16_t *base;
+	unsigned int spiNum;
 
 	unsigned char *ibuff;
 	const unsigned char *obuff;
@@ -37,7 +38,7 @@ typedef struct {
 
 
 /* clang-format off */
-enum { spi1 = 0, spi2, spi3 };
+enum { spi1 = 0, spi2, spi3, spi4, spi5, spi6 };
 
 
 enum { spi_cmd = 0x1, spi_dummy = 0x2, /* 3-bits for SPI_ADDR* ,*/ spi_addrlsb = 0x20 };

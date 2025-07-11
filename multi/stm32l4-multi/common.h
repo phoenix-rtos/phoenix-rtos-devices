@@ -16,8 +16,14 @@
 
 #include <stdint.h>
 #include <stdio.h>
-#include <phoenix/arch/armv7m/stm32/l4/stm32l4.h>
 #include <sys/platform.h>
+
+#if defined(__CPU_STM32L4X6)
+#include "stm32l4x6_base.h"
+#include <phoenix/arch/armv7m/stm32/l4/stm32l4.h>
+#else
+#error "Unknown platform"
+#endif
 
 
 #define NELEMS(x) (sizeof(x) / sizeof(x[0]))
@@ -66,7 +72,7 @@ static inline int devClk(int dev, int state)
 }
 
 
-static inline int getCpufreq(void)
+static inline unsigned int getCpufreq(void)
 {
 	platformctl_t pctl;
 
