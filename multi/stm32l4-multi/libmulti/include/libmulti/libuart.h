@@ -24,6 +24,7 @@ typedef struct {
 	unsigned int baud;
 	volatile int enabled;
 	int bits;
+	unsigned int refclk;
 
 	enum {
 		uart_dma,

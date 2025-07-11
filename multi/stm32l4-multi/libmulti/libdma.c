@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Phoenix-RTOS
  *
  * STM32L4 DMA driver
@@ -27,7 +27,7 @@
 #define DMA_NUM_CONTROLLERS 2
 #define DMA_NUM_CHANNELS    7
 
-#define DMA_DMA2_ALT_IRQ_BASE 68
+#define DMA_DMA2_ALT_IRQ_BASE (dm2_ch6_irq - 16)
 
 struct {
 	volatile unsigned int *base;
@@ -80,7 +80,10 @@ static const struct libdma_per libdma_persUart[] = {
 static const struct {
 	uintptr_t base;
 	int irqBase;
-} dmainfo[DMA_NUM_CONTROLLERS] = { { 0x40020000, 11 }, { 0x40020400, 56 } };
+} dmainfo[DMA_NUM_CONTROLLERS] = {
+	{ (uintptr_t)DMA1_BASE, dma1_ch1_irq - 16 },
+	{ (uintptr_t)DMA2_BASE, dma2_ch1_irq - 16 },
+};
 
 
 static struct {

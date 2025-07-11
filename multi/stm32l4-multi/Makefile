@@ -7,12 +7,17 @@
 LOCAL_PATH := $(call my-dir)
 
 NAME := stm32l4-multi
-SRCS := $(wildcard $(LOCAL_PATH)*.c)
+
+LOCAL_SRCS = fs.c gpio.c i2c.c posixsrv.c rng.c rtc.c spi.c stm32l4-multi.c tty.c uart.c
+ifeq ($(TARGET_SUBFAMILY),stm32l4x6)
+  LOCAL_SRCS += adc_l4.c exti_l4.c flash.c rcc_l4.c
+endif
+
 LOCAL_HEADERS := stm32l4-multi.h
 DEP_LIBS := libstm32l4-multi libtty libklog
 LIBS := libdummyfs libklog libposixsrv
 
-# FIXME: adapt code to array-bounds checker 
+# FIXME: adapt code to array-bounds checker
 LOCAL_CFLAGS := -Wno-array-bounds
 
 include $(binary.mk)

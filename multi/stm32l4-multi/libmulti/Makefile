@@ -7,7 +7,12 @@
 LOCAL_PATH := $(call my-dir)
 
 NAME := libstm32l4-multi
-SRCS := $(wildcard $(LOCAL_PATH)*.c)
+
+LOCAL_SRCS = libhash.c libi2c.c libuart.c
+ifeq ($(TARGET_SUBFAMILY),stm32l4x6)
+  LOCAL_SRCS += libaes.c libdma.c libspi_l4.c
+endif
+
 DEPS := libtty
 
 include $(static-lib.mk)

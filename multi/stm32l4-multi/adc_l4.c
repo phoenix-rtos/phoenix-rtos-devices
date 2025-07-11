@@ -22,6 +22,7 @@
 #include "rcc.h"
 #include "stm32l4-multi.h"
 
+#define MAX_ADC adc3
 enum { adc1_offs = 0, adc2_offs = 64, adc3_offs = 128, common_offs = 192 };
 
 enum { isr = 0, ier, cr, cfgr, cfgr2, smpr1, smpr2, tr1 = smpr2 + 2, tr2, tr3, sqr1 = tr3 + 2, sqr2, sqr3, sqr4, dr,
@@ -171,6 +172,9 @@ unsigned short adc_conversion(int adc, char chan)
 {
 	unsigned short vref, val;
 	unsigned int out;
+	if (adc > MAX_ADC) {
+		return 0;
+	}
 
 	adc_wakeup(adc);
 	adc_calibration(adc);
@@ -205,12 +209,12 @@ int adc_init(void)
 {
 	int i;
 
-	adc_common.base = (void *)0x50040000;
+	adc_common.base = ADC_BASE;
 	devClk(pctl_adc, 1);
 
 	*(adc_common.base + common_ccr) = (1 << 22) | (0xe << 18) | (0x3 << 16) | (0xf << 8);
 
-	for (i = adc1; i <= adc3; ++i) {
+	for (i = adc1; i <= MAX_ADC; ++i) {
 		mutexCreate(&adc_common.lock[i]);
 		adc_wakeup(i);
 		adc_calibration(i);

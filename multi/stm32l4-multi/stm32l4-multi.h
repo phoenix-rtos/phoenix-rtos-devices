@@ -61,7 +61,13 @@ typedef struct {
 /* GPIO */
 
 
+/* clang-format off */
 enum { gpioa = 0, gpiob, gpioc, gpiod, gpioe, gpiof, gpiog, gpioh, gpioi };
+enum gpio_modes { gpio_mode_gpi = 0, gpio_mode_gpo = 1, gpio_mode_af = 2, gpio_mode_analog = 3};
+enum gpio_otypes { gpio_otype_pp = 0, gpio_otype_od = 1 };
+enum gpio_ospeeds { gpio_ospeed_low = 0, gpio_ospeed_med = 1, gpio_ospeed_hi = 2, gpio_ospeed_vhi = 3 };
+enum gpio_pupds { gpio_pupd_nopull = 0, gpio_pupd_pullup = 1, gpio_pupd_pulldn = 2};
+/* clang-format on */
 
 
 typedef struct {

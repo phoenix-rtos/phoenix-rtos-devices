@@ -120,15 +120,15 @@ int gpio_configPin(int port, char pin, char mode, char af, char otype, char ospe
 
 int gpio_init(void)
 {
-	gpio_common.base[0] = (void *)0x48000000;
-	gpio_common.base[1] = (void *)0x48000400;
-	gpio_common.base[2] = (void *)0x48000800;
-	gpio_common.base[3] = (void *)0x48000c00;
-	gpio_common.base[4] = (void *)0x48001000;
-	gpio_common.base[5] = (void *)0x48001400;
-	gpio_common.base[6] = (void *)0x48001800;
-	gpio_common.base[7] = (void *)0x48001c00;
-	gpio_common.base[8] = (void *)0x48002000;
+	gpio_common.base[0] = GPIOA_BASE;
+	gpio_common.base[1] = GPIOB_BASE;
+	gpio_common.base[2] = GPIOC_BASE;
+	gpio_common.base[3] = GPIOD_BASE;
+	gpio_common.base[4] = GPIOE_BASE;
+	gpio_common.base[5] = GPIOF_BASE;
+	gpio_common.base[6] = GPIOG_BASE;
+	gpio_common.base[7] = GPIOH_BASE;
+	gpio_common.base[8] = GPIOI_BASE;
 
 	gpio_common.enableMask = 0;
 	mutexCreate(&gpio_common.lock);

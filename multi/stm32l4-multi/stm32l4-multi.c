@@ -112,6 +112,7 @@ static void handleMsg(msg_t *msg)
 			err = syscfg_mapexti(imsg->exti_map.line, imsg->exti_map.port);
 			break;
 
+#if defined(__CPU_STM32L4X6)
 		case flash_get:
 			err = flash_readData(imsg->flash_addr, msg->o.data, msg->o.size);
 			break;
@@ -131,6 +132,20 @@ static void handleMsg(msg_t *msg)
 		case flash_info:
 			flash_getInfo(&omsg->flash_info);
 			break;
+
+		case otp_get:
+			err = flash_readOtp(imsg->otp_rw.offset, msg->o.data, msg->o.size);
+			break;
+
+		case otp_set:
+			if (imsg->otp_rw.magic == OTP_WRITE_MAGIC && msg->i.data != NULL) {
+				err = flash_writeOtp(imsg->otp_rw.offset, msg->i.data, msg->i.size);
+			}
+			else {
+				err = -EINVAL;
+			}
+			break;
+#endif
 
 		case rtc_setcal:
 			rtc_setCalib(imsg->rtc_calib);
@@ -205,19 +220,6 @@ static void handleMsg(msg_t *msg)
 
 		case uart_set:
 			err = uart_write(imsg->uart_set.uart, msg->i.data, msg->i.size);
-			break;
-
-		case otp_get:
-			err = flash_readOtp(imsg->otp_rw.offset, msg->o.data, msg->o.size);
-			break;
-
-		case otp_set:
-			if (imsg->otp_rw.magic == OTP_WRITE_MAGIC && msg->i.data != NULL) {
-				err = flash_writeOtp(imsg->otp_rw.offset, msg->i.data, msg->i.size);
-			}
-			else {
-				err = -EINVAL;
-			}
 			break;
 
 		case rng_get:
@@ -334,7 +336,9 @@ int main(void)
 	spi_init();
 	adc_init();
 	rtc_init();
+#if defined(__CPU_STM32L4X6)
 	flash_init();
+#endif
 	i2c_init();
 	uart_init();
 	rng_init();
