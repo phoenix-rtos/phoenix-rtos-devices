@@ -152,7 +152,7 @@ int rng_init(void)
 	/* Enable clock */
 	platformctl(&pctl);
 
-	rng_common.base = (void *)0x50060800;
+	rng_common.base = RNG_BASE;
 
 	if (mutexCreate(&rng_common.lock) < 0) {
 		return -1;

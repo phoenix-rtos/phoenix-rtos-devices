@@ -31,9 +31,9 @@ static const struct {
 	unsigned int pctl;
 	struct libdma *per;
 } spiinfo[] = {
-	{ 0x40013000, pctl_spi1 },
-	{ 0x40003800, pctl_spi2 },
-	{ 0x40003c00, pctl_spi3 }
+	{ (uintptr_t)SPI1_BASE, pctl_spi1 },
+	{ (uintptr_t)SPI2_BASE, pctl_spi2 },
+	{ (uintptr_t)SPI3_BASE, pctl_spi3 },
 };
 
 

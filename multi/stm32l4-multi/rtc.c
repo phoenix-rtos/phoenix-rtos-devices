@@ -362,7 +362,7 @@ int rtc_recallBackup(void *buff, size_t bufflen)
 
 int rtc_init(void)
 {
-	rtc_common.base = (void *)0x40002800;
+	rtc_common.base = RTC_BASE;
 
 	mutexCreate(&rtc_common.lock);
 

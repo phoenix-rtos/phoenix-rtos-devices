@@ -173,7 +173,7 @@ void libaes_processBlock(const unsigned char *in, unsigned char *out)
 
 int libaes_init(void)
 {
-	common.base = (void *)0x50060000;
+	common.base = AES_BASE;
 
 	devClk(pctl_aes, 1);
 

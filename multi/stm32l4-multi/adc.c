@@ -205,7 +205,7 @@ int adc_init(void)
 {
 	int i;
 
-	adc_common.base = (void *)0x50040000;
+	adc_common.base = ADC_BASE;
 	devClk(pctl_adc, 1);
 
 	*(adc_common.base + common_ccr) = (1 << 22) | (0xe << 18) | (0x3 << 16) | (0xf << 8);

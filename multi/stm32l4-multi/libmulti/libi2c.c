@@ -29,10 +29,10 @@ static const struct {
 	int irq_ev;
 	int irq_er;
 } i2cinfo[] = {
-	{ (void *)0x40005400, pctl_i2c1, i2c1_ev_irq, i2c1_er_irq },
-	{ (void *)0x40005800, pctl_i2c2, i2c2_ev_irq, i2c2_er_irq },
-	{ (void *)0x40005c00, pctl_i2c3, i2c3_ev_irq, i2c3_er_irq },
-	{ (void *)0x40008400, pctl_i2c4, i2c4_ev_irq, i2c4_er_irq }
+	{ I2C1_BASE, pctl_i2c1, i2c1_ev_irq, i2c1_er_irq },
+	{ I2C2_BASE, pctl_i2c2, i2c2_ev_irq, i2c2_er_irq },
+	{ I2C3_BASE, pctl_i2c3, i2c3_ev_irq, i2c3_er_irq },
+	{ I2C4_BASE, pctl_i2c4, i2c4_ev_irq, i2c4_er_irq }
 };
 
 

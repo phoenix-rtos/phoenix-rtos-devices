@@ -53,11 +53,11 @@ static const struct {
 	int dev;
 	unsigned irq;
 } libuart_info[] = {
-	{ (void *)0x40013800, pctl_usart1, usart1_irq },
-	{ (void *)0x40004400, pctl_usart2, usart2_irq },
-	{ (void *)0x40004800, pctl_usart3, usart3_irq },
-	{ (void *)0x40004c00, pctl_uart4, uart4_irq },
-	{ (void *)0x40005000, pctl_uart5, uart5_irq },
+	{ USART1_BASE, pctl_usart1, usart1_irq },
+	{ USART2_BASE, pctl_usart2, usart2_irq },
+	{ USART3_BASE, pctl_usart3, usart3_irq },
+	{ UART4_BASE, pctl_uart4, uart4_irq },
+	{ UART5_BASE, pctl_uart5, uart5_irq },
 };
 
 

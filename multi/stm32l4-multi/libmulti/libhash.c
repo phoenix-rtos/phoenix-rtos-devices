@@ -181,7 +181,7 @@ ssize_t libhash_finish(uint8_t *digest)
 
 int libhash_init(void)
 {
-	libhash_common.base = (void *)0x50060400;
+	libhash_common.base = HASH_BASE;
 
 	devClk(pctl_hash, 3);
 
