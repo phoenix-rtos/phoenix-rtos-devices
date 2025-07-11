@@ -48,7 +48,7 @@ static struct {
 };
 
 
-static const struct {
+static const struct libuart_peripheralInfo {
 	volatile uint32_t *base;
 	int dev;
 	unsigned irq;
@@ -59,6 +59,15 @@ static const struct {
 	{ UART4_BASE, pctl_uart4, uart4_irq },
 	{ UART5_BASE, pctl_uart5, uart5_irq },
 };
+
+
+static int libuart_clockSetup(const struct libuart_peripheralInfo *info, uint32_t *out)
+{
+	/* On this platform no extra information is used for clock setup */
+	(void)info;
+	*out = getCpufreq();
+	return EOK;
+}
 
 
 static inline size_t libuart_incrementWrap(size_t value, size_t size)
@@ -168,7 +177,7 @@ static void libuart_infiniteRxHandler(void *arg, int type)
 	bool overrun = false;
 	/* Check overrun */
 	if (((rxfifoprevend < rxfifopos) && ((rxfifopos < endPos) || (endPos < rxfifoprevend))) ||
-		((rxfifopos <= rxfifoprevend) && ((rxfifopos < endPos) && (endPos < rxfifoprevend)))) {
+			((rxfifopos <= rxfifoprevend) && ((rxfifopos < endPos) && (endPos < rxfifoprevend)))) {
 		rxfifopos = endPos;
 		overrun = true;
 	}
@@ -220,7 +229,7 @@ static void libuart_infiniteRxHandler(void *arg, int type)
 
 int libuart_configure(libuart_ctx *ctx, char bits, char parity, unsigned int baud, char enable)
 {
-	int err = EOK, baseClk = getCpufreq();
+	int err = EOK, baseClk = ctx->refclk;
 	unsigned int tcr1 = 0;
 	char tbits = bits;
 
@@ -671,6 +680,11 @@ int libuart_init(libuart_ctx *ctx, unsigned int uart, int dma)
 	}
 
 	devClk(libuart_info[uart].dev, 1);
+	err = libuart_clockSetup(&libuart_info[uart], &ctx->refclk);
+	if (err < 0) {
+		return err;
+	}
+
 	ctx->base = libuart_info[uart].base;
 
 	if (dma == 0) {

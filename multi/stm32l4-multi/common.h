@@ -72,7 +72,7 @@ static inline int devClk(int dev, int state)
 }
 
 
-static inline int getCpufreq(void)
+static inline unsigned int getCpufreq(void)
 {
 	platformctl_t pctl;
 
