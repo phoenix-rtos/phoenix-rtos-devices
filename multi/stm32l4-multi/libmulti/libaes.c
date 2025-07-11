@@ -12,6 +12,13 @@
 #include "../common.h"
 #include "libmulti/libaes.h"
 
+/* TODO: on STM32N6 there are two encryption peripherals:
+ * * current code can be easily adapted to drive the SAES peripheral, but SAES is painfully slow,
+ *   taking 480 AHB cycles per one block of AES-128 ECB (at 400 MHz AHB bus vs 600 MHz CPU).
+ * * new code should be written to support the CRYP peripheral,
+ *   which takes 14 AHB cycles to do one block of AES-128 ECB.
+ *   CRYP is also more powerful, with hardware support for CBC, CTR, GCM modes.
+ */
 
 enum { cr = 0, sr, dinr, doutr, keyr0, ivr0 = keyr0 + 4, keyr4 = ivr0 + 4, susp0r = keyr4 + 4 };
 
