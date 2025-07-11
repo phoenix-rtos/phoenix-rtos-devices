@@ -54,23 +54,23 @@
 #error "Can't use UART as UART and TTY at the same time!"
 #endif
 
-#ifndef UART_CONSOLE
-#error "UART_CONSOLE not specified"
+#ifndef UART_CONSOLE_USER
+#error "UART_CONSOLE_USER not specified"
 #endif
 
-#if !(UART_CONSOLE == 1 && (UART1 || TTY1)) && \
-	!(UART_CONSOLE == 2 && (UART2 || TTY2)) && \
-	!(UART_CONSOLE == 3 && (UART3 || TTY3)) && \
-	!(UART_CONSOLE == 4 && (UART4 || TTY4)) && \
-	!(UART_CONSOLE == 5 && (UART5 || TTY5))
+#if !(UART_CONSOLE_USER == 1 && (UART1 || TTY1)) && \
+		!(UART_CONSOLE_USER == 2 && (UART2 || TTY2)) && \
+		!(UART_CONSOLE_USER == 3 && (UART3 || TTY3)) && \
+		!(UART_CONSOLE_USER == 4 && (UART4 || TTY4)) && \
+		!(UART_CONSOLE_USER == 5 && (UART5 || TTY5))
 #warning "Console enabled on disabled UART/TTY"
 #endif
 
-#define CONSOLE_IS_TTY ((UART_CONSOLE == 1 && TTY1) || \
-	(UART_CONSOLE == 2 && TTY2) || \
-	(UART_CONSOLE == 3 && TTY3) || \
-	(UART_CONSOLE == 4 && TTY4) || \
-	(UART_CONSOLE == 5 && TTY5))
+#define CONSOLE_IS_TTY ((UART_CONSOLE_USER == 1 && TTY1) || \
+		(UART_CONSOLE_USER == 2 && TTY2) || \
+		(UART_CONSOLE_USER == 3 && TTY3) || \
+		(UART_CONSOLE_USER == 4 && TTY4) || \
+		(UART_CONSOLE_USER == 5 && TTY5))
 
 
 struct {
@@ -240,7 +240,7 @@ static ssize_t console_write(const char *str, size_t len, int mode)
 #if CONSOLE_IS_TTY
 	return tty_log(str, len);
 #else
-	return uart_write(UART_CONSOLE - 1, str, len);
+	return uart_write(UART_CONSOLE_USER - 1, str, len);
 #endif
 }
 
@@ -250,7 +250,7 @@ static ssize_t console_read(char *str, size_t bufflen, int mode)
 #if CONSOLE_IS_TTY
 	return -ENOSYS;
 #else
-	return uart_read(UART_CONSOLE - 1, str, bufflen, uart_mnormal, 0);
+	return uart_read(UART_CONSOLE_USER - 1, str, bufflen, uart_mnormal, 0);
 #endif
 }
 
