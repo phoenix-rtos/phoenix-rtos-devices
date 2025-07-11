@@ -80,6 +80,26 @@
 
 static void pcie_scanBus(void *ecam, uint8_t bus);
 
+static inline uint32_t combineBDF(uint8_t bus, uint8_t dev, uint8_t fn)
+{
+	return ((uint32_t)bus << ECAM_BUS_SHIFT) | ((uint32_t)dev << ECAM_DEV_SHIFT) | ((uint32_t)fn << ECAM_FUNC_SHIFT);
+}
+
+static inline uint8_t busFromBDF(uint32_t bdf)
+{
+	return bdf >> ECAM_BUS_SHIFT;
+}
+
+static inline uint8_t devFromBDF(uint32_t bdf)
+{
+	return (bdf >> ECAM_DEV_SHIFT) & ((1 << (ECAM_BUS_SHIFT - ECAM_DEV_SHIFT)) - 1);
+}
+
+static inline uint8_t funcFromBDF(uint32_t bdf)
+{
+	return (bdf >> ECAM_FUNC_SHIFT) & ((1 << (ECAM_DEV_SHIFT - ECAM_FUNC_SHIFT)) - 1);
+}
+
 
 static inline volatile uint32_t *ecamRegPtr(void *ecam, uint8_t bus, uint8_t dev, uint8_t fn, uint16_t reg)
 {
