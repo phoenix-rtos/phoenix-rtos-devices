@@ -112,6 +112,7 @@ static void handleMsg(msg_t *msg)
 			err = syscfg_mapexti(imsg->exti_map.line, imsg->exti_map.port);
 			break;
 
+#if defined(__CPU_STM32L4X6)
 		case flash_get:
 			err = flash_readData(imsg->flash_addr, msg->o.data, msg->o.size);
 			break;
@@ -131,6 +132,7 @@ static void handleMsg(msg_t *msg)
 		case flash_info:
 			flash_getInfo(&omsg->flash_info);
 			break;
+#endif
 
 		case rtc_setcal:
 			rtc_setCalib(imsg->rtc_calib);
@@ -334,7 +336,9 @@ int main(void)
 	spi_init();
 	adc_init();
 	rtc_init();
+#if defined(__CPU_STM32L4X6)
 	flash_init();
+#endif
 	i2c_init();
 	uart_init();
 	rng_init();

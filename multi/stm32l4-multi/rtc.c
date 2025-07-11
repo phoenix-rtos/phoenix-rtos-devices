@@ -31,6 +31,9 @@ enum { pwr_cr = 0, pwr_csr };
 enum { tr = 0, dr, cr, isr, prer, wutr, alrmar = wutr + 2, alrmbr, wpr, ssr, shiftr, tstr, tsdr, tsssr, calr,
 	tampcr, alrmassr, alrmbssr, or, bkp0r};
 
+#define RTC_EXTI_LINE 18
+#define RTC_INTERRUPT rtc_alarm_irq
+
 #define BACKUP1_ID_REG    bkp0r
 #define BACKUP_PAYLOAD_SZ RTC_BACKUP_SZ
 #define BACKUP2_ID_REG    (BACKUP1_ID_REG + (BACKUP_PAYLOAD_SZ / sizeof(uint32_t)) + 1)
@@ -48,7 +51,7 @@ struct {
 
 static int rtc_alarm_handler(unsigned int n, void *arg)
 {
-	exti_clear_irq(18);
+	exti_clear_irq(RTC_EXTI_LINE);
 	return -1;
 }
 
@@ -372,9 +375,9 @@ int rtc_init(void)
 
 	rtc_common.prediv_s = *(rtc_common.base + prer) & 0x7fff;
 
-	exti_configure(18, exti_irqevent, exti_rising);
+	exti_configure(RTC_EXTI_LINE, exti_irqevent, exti_rising);
 
-	interrupt(rtc_alarm_irq, rtc_alarm_handler, NULL, 0, NULL);
+	interrupt(RTC_INTERRUPT, rtc_alarm_handler, NULL, 0, NULL);
 
 	return EOK;
 }
