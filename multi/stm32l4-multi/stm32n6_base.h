@@ -32,7 +32,7 @@
 // #define GPIOP_BASE ((void *)0x56023c00)
 // #define GPIOQ_BASE ((void *)0x56024000)
 
-// #define HASH_BASE ((void *)0x54020400)
+#define HASH_BASE ((void *)0x54020400)
 
 // #define I2C1_BASE ((void *)0x50005400)
 // #define I2C2_BASE ((void *)0x50005800)
