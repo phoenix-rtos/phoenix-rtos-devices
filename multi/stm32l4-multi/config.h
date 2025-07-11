@@ -15,6 +15,9 @@
 
 #include <board_config.h>
 
+/* True if X is empty (has no value). The result in #if is valid only if defined(X) is true */
+#define ISEMPTY(X) ((0 - X - 1) == 1 && (X + 0) != -2)
+
 #ifndef MULTIDRV_INTERFACE_THREADS
 #define MULTIDRV_INTERFACE_THREADS 3
 #endif
@@ -85,7 +88,24 @@
 #define TTY5 0
 #endif
 
-/* UART_CONSOLE has to be specified in board_config.h */
+#if defined(UART_CONSOLE)
+#if !ISEMPTY(UART_CONSOLE)
+#if UART_CONSOLE <= 0
+#error "Invalid value for UART_CONSOLE"
+#endif
+#endif
+#endif
+
+#if defined(UART_CONSOLE_USER)
+#if !ISEMPTY(UART_CONSOLE_USER)
+#if (UART_CONSOLE_USER <= 0)
+#error "Invalid value for UART_CONSOLE_USER"
+#endif
+#endif
+#else
+#define UART_CONSOLE_USER UART_CONSOLE
+#endif
+
 
 #ifndef TTY1_DMA
 #define TTY1_DMA 0

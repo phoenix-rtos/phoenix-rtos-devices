@@ -530,7 +530,7 @@ static tty_ctx_t *tty_getCtx(id_t id)
 	tty_ctx_t *ctx = NULL;
 
 	if (id == 0) {
-		id = usart1 + UART_CONSOLE;
+		id = usart1 + UART_CONSOLE_USER;
 	}
 
 	id -= 1;
