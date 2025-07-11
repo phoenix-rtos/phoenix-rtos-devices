@@ -69,6 +69,8 @@
 
 #define PCI_HT_MULTI_FUNC 0x80
 
+#define PCI_BAR_MEM_MASK (~0x0fUL)
+#define PCI_BAR_IO_MASK  (~0x03UL)
 
 /* ECAM addressing */
 #define ECAM_BUS_SHIFT  20
