@@ -157,6 +157,67 @@ static void print_bars(void *ecam, uint8_t bus, uint8_t dev, uint8_t fn, uint8_t
 	}
 }
 
+static uint64_t maskToSize(uint64_t mask)
+{
+	// printf("DEBUG: Mask at calc: 0x%016llx\n", (unsigned long long)mask);
+	return mask & ~(mask - 1);
+}
+
+static uint32_t getSizeMask(void *ecam, uint8_t bus, uint8_t dev, uint8_t fn, int i)
+{
+	uint32_t orig, res;
+	uint32_t mask = ~0;
+	orig = ecamRead32(ecam, bus, dev, fn, PCI_BAR0 + i * 4);
+	ecamWrite32(ecam, bus, dev, fn, PCI_BAR0 + i * 4, mask);
+	res = ecamRead32(ecam, bus, dev, fn, PCI_BAR0 + i * 4);
+	ecamWrite32(ecam, bus, dev, fn, PCI_BAR0 + i * 4, orig);
+	return res;
+}
+
+
+static void check_bars(void *ecam, uint8_t bus, uint8_t dev, uint8_t fn, uint8_t hdr)
+{
+
+	printf("pcie-nwl: DEBUG - NOW CUSTOM HELPER FUNC\n");
+	const int bar_count = (hdr == 0x00) ? 6 : 2;
+
+	uint64_t size;
+
+	for (int i = 0; i < bar_count; ++i) {
+
+		uint32_t bar_low = ecamRead32(ecam, bus, dev, fn, PCI_BAR0 + i * 4);
+		if (bar_low == 0) {
+			continue;
+		}
+
+		if ((bar_low & 0x1) == 0x1) {
+			printf("pcie-nwl: BAR%d I/O 0x%08x\n", i, bar_low & ~0x3);
+			uint32_t bar_out = getSizeMask(ecam, bus, dev, fn, i);
+			printf("pcie_nwl: BAR%d I/O 0x%08x\n", i, bar_out);
+			size = maskToSize(bar_out & PCI_BAR_IO_MASK);
+			printf("pcie_nwl: BAR%d I/O requests size: 0x%016llx\n", i, (unsigned long long)size);
+		}
+		else {
+			bool is_64_bit = (bar_low & 0x4) == 0x4;
+
+			uint64_t addr = getSizeMask(ecam, bus, dev, fn, i);
+
+			if (is_64_bit) {
+				addr |= ((uint64_t)getSizeMask(ecam, bus, dev, fn, i + 1)) << 32;
+			}
+			printf("pcie-nwl: BAR%d MEM 0x%016llx (%s)\n",
+					i, (unsigned long long)addr, is_64_bit ? "64-bit" : "32-bit");
+			size = maskToSize(addr & PCI_BAR_MEM_MASK);
+			printf("pcie_nwl: BAR%d MEM requests size: 0x%016llx\n", i, (unsigned long long)size);
+
+			if (is_64_bit) {
+				i++;
+			}
+		}
+	}
+	printf("pcie-nwl: DEBUG - END CUSTOM HELPER FUNC\n");
+}
+
 
 static void print_capabilities(void *ecam, uint8_t bus, uint8_t dev, uint8_t fn)
 {
@@ -177,6 +238,99 @@ static void print_capabilities(void *ecam, uint8_t bus, uint8_t dev, uint8_t fn)
 		}
 		ptr = next;
 	}
+}
+
+static inline volatile uint32_t *memPtr(void *base, uint32_t off)
+{
+	return (volatile uint32_t *)((uintptr_t)base + (uintptr_t)off);
+}
+
+static inline uint32_t read32(void *base, uint32_t off)
+{
+	return *memPtr(base, off);
+}
+
+static inline void write32(void *base, uint32_t off, uint32_t val)
+{
+	*memPtr(base, off) = val;
+}
+
+// static inline uint16_t read16(void *base off)
+// {
+// 	uint32_t value_u32 = ecamRead32(ecam, bus, dev, fn, off);
+// 	if (off & 2) {
+// 		return value_u32 >> 16;
+// 	}
+// 	else {
+// 		return value_u32 & 0xffff;
+// 	}
+// }
+
+// static inline uint8_t ecamRead8(void *ecam, uint8_t bus, uint8_t dev, uint8_t fn, uint16_t off)
+// {
+// 	uint32_t value_u32 = ecamRead32(ecam, bus, dev, fn, off);
+// 	return (value_u32 >> ((off & 3) * 8)) & 0xff;
+// }
+
+
+static inline void readConfig1(uint32_t *barMem)
+{
+	uint32_t word = read32(barMem, 0x50);
+	uint8_t config1 = (word >> 16) & 0xff;
+	printf("Experimental config1 read = 0x%02x\n", config1);
+}
+
+static inline void checkTimer(uint32_t *barMem)
+{
+	write32(barMem, 0x48, 0);
+	usleep(500000);
+	uint32_t clockRead = read32(barMem, 0x48);
+	printf("Experimental clock read = 0x%08x\n", clockRead);
+}
+
+static inline void mapLedMem(void *ecam, uint8_t bus, uint8_t dev, uint8_t fn)
+{
+	int barIndex = 2;
+	uint64_t size = 0x1000;
+	// uint64_t size = 0x4000;
+	uint64_t barOffset = 0x600000000;
+
+	uint32_t lightLedMask = 3 << 22;
+	// uintptr_t *barOffset = 0x600000000;
+
+	uint32_t *barMem = mmap(NULL, size,
+			PROT_WRITE | PROT_READ,
+			MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS,
+			-1,
+			barOffset);
+
+	if (NULL == barMem) {
+		printf("pcie: fail to map BAR memory\n");
+		return;
+	}
+
+	write32(barMem, 0, 0);
+
+	ecamWrite32(ecam, bus, dev, fn, PCI_BAR0 + barIndex * 4, barOffset & 0xffffffff);
+	ecamWrite32(ecam, bus, dev, fn, PCI_BAR0 + (barIndex + 1) * 4, barOffset >> 32);
+
+	uint32_t id0123 = read32(barMem, 0);
+	printf("Experimental id0123s read = 0x%08x\n", id0123);
+	uint32_t id45 = read32(barMem, 0x4) & 0xffff;
+	printf("Experimental id45s read = 0x%04x\n", id45);
+
+	readConfig1(barMem);
+	uint32_t word = read32(barMem, 0x50);
+	write32(barMem, 0x50, word | lightLedMask);
+	readConfig1(barMem);
+
+	// if (false)
+	checkTimer(barMem);
+
+	ecamWrite32(ecam, bus, dev, fn, PCI_BAR0 + 2 * 4, 0);
+	ecamWrite32(ecam, bus, dev, fn, PCI_BAR0 + 3 * 4, 0);
+
+	munmap((void *)barMem, size);
 }
 
 
@@ -206,7 +360,12 @@ static void scanFunc(void *ecam, uint8_t bus, uint8_t *next_bus, uint8_t dev, ui
 
 	/* Print some info about this device */
 	print_bars(ecam, bus, dev, fun, hdr);
+	check_bars(ecam, bus, dev, fun, hdr);
 	print_capabilities(ecam, bus, dev, fun);
+
+	if (vendor == 0x10ec && device == 0x8168) {
+		mapLedMem(ecam, bus, dev, fun);
+	}
 
 	/* If this is a PCI-PCI bridge program buses and recurse */
 	if (hdr == 0x01) {
