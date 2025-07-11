@@ -101,32 +101,34 @@ static inline uint8_t funcFromBDF(uint32_t bdf)
 }
 
 
-static inline volatile uint32_t *ecamRegPtr(void *ecam, uint8_t bus, uint8_t dev, uint8_t fn, uint16_t reg)
+static inline volatile uint32_t *ecamRegPtr(void *ecam, uint32_t bdf, uint16_t reg)
 {
-	uintptr_t cfg_space_offset = ((uintptr_t)bus << ECAM_BUS_SHIFT) |
-			((uintptr_t)dev << ECAM_DEV_SHIFT) |
-			((uintptr_t)fn << ECAM_FUNC_SHIFT) |
-			(reg & 0xfff);
+	// uintptr_t cfg_space_offset = ((uintptr_t)bus << ECAM_BUS_SHIFT) |
+	// 		((uintptr_t)dev << ECAM_DEV_SHIFT) |
+	// 		((uintptr_t)fn << ECAM_FUNC_SHIFT) |
+	// 		(reg & 0xfff);
+
+	uintptr_t cfg_space_offset = ((uintptr_t)bdf) | (reg & 0xfff);
 
 	return (volatile uint32_t *)((uintptr_t)ecam + cfg_space_offset);
 }
 
 
-static inline uint32_t ecamRead32(void *ecam, uint8_t bus, uint8_t dev, uint8_t fn, uint16_t off)
+static inline uint32_t ecamRead32(void *ecam, uint32_t bdf, uint16_t off)
 {
-	return *ecamRegPtr(ecam, bus, dev, fn, off & ~0x3);
+	return *ecamRegPtr(ecam, bdf, off & ~0x3);
 }
 
 
-static inline void ecamWrite32(void *ecam, uint8_t bus, uint8_t dev, uint8_t fn, uint16_t off, uint32_t val)
+static inline void ecamWrite32(void *ecam, uint32_t bdf, uint16_t off, uint32_t val)
 {
-	*ecamRegPtr(ecam, bus, dev, fn, off & ~0x3) = val;
+	*ecamRegPtr(ecam, bdf, off & ~0x3) = val;
 }
 
 
-static inline uint16_t ecamRead16(void *ecam, uint8_t bus, uint8_t dev, uint8_t fn, uint16_t off)
+static inline uint16_t ecamRead16(void *ecam, uint32_t bdf, uint16_t off)
 {
-	uint32_t value_u32 = ecamRead32(ecam, bus, dev, fn, off);
+	uint32_t value_u32 = ecamRead32(ecam, bdf, off);
 	if (off & 2) {
 		return value_u32 >> 16;
 	}
@@ -136,14 +138,14 @@ static inline uint16_t ecamRead16(void *ecam, uint8_t bus, uint8_t dev, uint8_t 
 }
 
 
-static inline uint8_t ecamRead8(void *ecam, uint8_t bus, uint8_t dev, uint8_t fn, uint16_t off)
+static inline uint8_t ecamRead8(void *ecam, uint32_t bdf, uint16_t off)
 {
-	uint32_t value_u32 = ecamRead32(ecam, bus, dev, fn, off);
+	uint32_t value_u32 = ecamRead32(ecam, bdf, off);
 	return (value_u32 >> ((off & 3) * 8)) & 0xff;
 }
 
 
-static void print_bars(void *ecam, uint8_t bus, uint8_t dev, uint8_t fn, uint8_t hdr)
+static void print_bars(void *ecam, uint32_t bdf, uint8_t hdr)
 {
 	/* Choose number of bars depending on config type */
 	const int bar_count = (hdr == 0x00) ? 6 : 2;
@@ -151,7 +153,7 @@ static void print_bars(void *ecam, uint8_t bus, uint8_t dev, uint8_t fn, uint8_t
 	/* Read all bars */
 	for (int i = 0; i < bar_count; ++i) {
 
-		uint32_t bar_low = ecamRead32(ecam, bus, dev, fn, PCI_BAR0 + i * 4);
+		uint32_t bar_low = ecamRead32(ecam, bdf, PCI_BAR0 + i * 4);
 		if (bar_low == 0) {
 			continue;
 		}
@@ -164,7 +166,7 @@ static void print_bars(void *ecam, uint8_t bus, uint8_t dev, uint8_t fn, uint8_t
 			uint64_t addr = bar_low & ~0xf;
 
 			if (is_64_bit) {
-				uint32_t bar_high = ecamRead32(ecam, bus, dev, fn, PCI_BAR0 + (i + 1) * 4);
+				uint32_t bar_high = ecamRead32(ecam, bdf, PCI_BAR0 + (i + 1) * 4);
 				addr |= ((uint64_t)bar_high) << 32;
 				// i++;
 			}
@@ -183,19 +185,19 @@ static uint64_t maskToSize(uint64_t mask)
 	return mask & ~(mask - 1);
 }
 
-static uint32_t getSizeMask(void *ecam, uint8_t bus, uint8_t dev, uint8_t fn, int i)
+static uint32_t getSizeMask(void *ecam, uint32_t bdf, int i)
 {
 	uint32_t orig, res;
 	uint32_t mask = ~0;
-	orig = ecamRead32(ecam, bus, dev, fn, PCI_BAR0 + i * 4);
-	ecamWrite32(ecam, bus, dev, fn, PCI_BAR0 + i * 4, mask);
-	res = ecamRead32(ecam, bus, dev, fn, PCI_BAR0 + i * 4);
-	ecamWrite32(ecam, bus, dev, fn, PCI_BAR0 + i * 4, orig);
+	orig = ecamRead32(ecam, bdf, PCI_BAR0 + i * 4);
+	ecamWrite32(ecam, bdf, PCI_BAR0 + i * 4, mask);
+	res = ecamRead32(ecam, bdf, PCI_BAR0 + i * 4);
+	ecamWrite32(ecam, bdf, PCI_BAR0 + i * 4, orig);
 	return res;
 }
 
 
-static void check_bars(void *ecam, uint8_t bus, uint8_t dev, uint8_t fn, uint8_t hdr)
+static void check_bars(void *ecam, uint32_t bdf, uint8_t hdr)
 {
 
 	printf("pcie-nwl: DEBUG - NOW CUSTOM HELPER FUNC\n");
@@ -205,14 +207,14 @@ static void check_bars(void *ecam, uint8_t bus, uint8_t dev, uint8_t fn, uint8_t
 
 	for (int i = 0; i < bar_count; ++i) {
 
-		uint32_t bar_low = ecamRead32(ecam, bus, dev, fn, PCI_BAR0 + i * 4);
+		uint32_t bar_low = ecamRead32(ecam, bdf, PCI_BAR0 + i * 4);
 		if (bar_low == 0) {
 			continue;
 		}
 
 		if ((bar_low & 0x1) == 0x1) {
 			printf("pcie-nwl: BAR%d I/O 0x%08x\n", i, bar_low & ~0x3);
-			uint32_t bar_out = getSizeMask(ecam, bus, dev, fn, i);
+			uint32_t bar_out = getSizeMask(ecam, bdf, i);
 			printf("pcie_nwl: BAR%d I/O 0x%08x\n", i, bar_out);
 			size = maskToSize(bar_out & PCI_BAR_IO_MASK);
 			printf("pcie_nwl: BAR%d I/O requests size: 0x%016llx\n", i, (unsigned long long)size);
@@ -220,10 +222,10 @@ static void check_bars(void *ecam, uint8_t bus, uint8_t dev, uint8_t fn, uint8_t
 		else {
 			bool is_64_bit = (bar_low & 0x4) == 0x4;
 
-			uint64_t addr = getSizeMask(ecam, bus, dev, fn, i);
+			uint64_t addr = getSizeMask(ecam, bdf, i);
 
 			if (is_64_bit) {
-				addr |= ((uint64_t)getSizeMask(ecam, bus, dev, fn, i + 1)) << 32;
+				addr |= ((uint64_t)getSizeMask(ecam, bdf, i + 1)) << 32;
 			}
 			printf("pcie-nwl: BAR%d MEM 0x%016llx (%s)\n",
 					i, (unsigned long long)addr, is_64_bit ? "64-bit" : "32-bit");
@@ -239,19 +241,19 @@ static void check_bars(void *ecam, uint8_t bus, uint8_t dev, uint8_t fn, uint8_t
 }
 
 
-static void print_capabilities(void *ecam, uint8_t bus, uint8_t dev, uint8_t fn)
+static void print_capabilities(void *ecam, uint32_t bdf)
 {
 	/* Check if there is capabilities list */
-	uint16_t status = ecamRead16(ecam, bus, dev, fn, PCI_STATUS);
+	uint16_t status = ecamRead16(ecam, bdf, PCI_STATUS);
 	if (!(status & (1 << 4))) {
 		return;
 	}
 
 	/* Read capabilities list pointer */
-	uint8_t ptr = ecamRead8(ecam, bus, dev, fn, PCI_CAP_PTR);
+	uint8_t ptr = ecamRead8(ecam, bdf, PCI_CAP_PTR);
 	while (ptr >= 0x40) {
-		uint8_t cap_id = ecamRead8(ecam, bus, dev, fn, ptr);
-		uint8_t next = ecamRead8(ecam, bus, dev, fn, ptr + 1);
+		uint8_t cap_id = ecamRead8(ecam, bdf, ptr);
+		uint8_t next = ecamRead8(ecam, bdf, ptr + 1);
 		printf("pcie: CAP id 0x%02x address 0x%02x\n", cap_id, ptr);
 		if (next == 0) {
 			break;
@@ -277,7 +279,7 @@ static inline void write32(void *base, uint32_t off, uint32_t val)
 
 // static inline uint16_t read16(void *base off)
 // {
-// 	uint32_t value_u32 = ecamRead32(ecam, bus, dev, fn, off);
+// 	uint32_t value_u32 = ecamRead32(ecam, bdf, off);
 // 	if (off & 2) {
 // 		return value_u32 >> 16;
 // 	}
@@ -286,9 +288,9 @@ static inline void write32(void *base, uint32_t off, uint32_t val)
 // 	}
 // }
 
-// static inline uint8_t ecamRead8(void *ecam, uint8_t bus, uint8_t dev, uint8_t fn, uint16_t off)
+// static inline uint8_t ecamRead8(void *ecam, uint32_t bdf, uint16_t off)
 // {
-// 	uint32_t value_u32 = ecamRead32(ecam, bus, dev, fn, off);
+// 	uint32_t value_u32 = ecamRead32(ecam, bdf, off);
 // 	return (value_u32 >> ((off & 3) * 8)) & 0xff;
 // }
 
@@ -308,7 +310,7 @@ static inline void checkTimer(uint32_t *barMem)
 	printf("Experimental clock read = 0x%08x\n", clockRead);
 }
 
-static inline void mapLedMem(void *ecam, uint8_t bus, uint8_t dev, uint8_t fn)
+static inline void mapLedMem(void *ecam, uint32_t bdf)
 {
 	int barIndex = 2;
 	uint64_t size = 0x1000;
@@ -331,8 +333,8 @@ static inline void mapLedMem(void *ecam, uint8_t bus, uint8_t dev, uint8_t fn)
 
 	write32(barMem, 0, 0);
 
-	ecamWrite32(ecam, bus, dev, fn, PCI_BAR0 + barIndex * 4, barOffset & 0xffffffff);
-	ecamWrite32(ecam, bus, dev, fn, PCI_BAR0 + (barIndex + 1) * 4, barOffset >> 32);
+	ecamWrite32(ecam, bdf, PCI_BAR0 + barIndex * 4, barOffset & 0xffffffff);
+	ecamWrite32(ecam, bdf, PCI_BAR0 + (barIndex + 1) * 4, barOffset >> 32);
 
 	uint32_t id0123 = read32(barMem, 0);
 	printf("Experimental id0123s read = 0x%08x\n", id0123);
@@ -347,61 +349,63 @@ static inline void mapLedMem(void *ecam, uint8_t bus, uint8_t dev, uint8_t fn)
 	// if (false)
 	checkTimer(barMem);
 
-	ecamWrite32(ecam, bus, dev, fn, PCI_BAR0 + 2 * 4, 0);
-	ecamWrite32(ecam, bus, dev, fn, PCI_BAR0 + 3 * 4, 0);
+	ecamWrite32(ecam, bdf, PCI_BAR0 + 2 * 4, 0);
+	ecamWrite32(ecam, bdf, PCI_BAR0 + 3 * 4, 0);
 
 	munmap((void *)barMem, size);
 }
 
 
-static void scanFunc(void *ecam, uint8_t bus, uint8_t *next_bus, uint8_t dev, uint8_t fun)
+static void scanFunc(void *ecam, uint32_t bdf, uint8_t *next_bus)
 {
 	/* Read information about device */
-	uint16_t vendor = ecamRead16(ecam, bus, dev, fun, PCI_VENDOR_ID);
-	uint16_t device = ecamRead16(ecam, bus, dev, fun, PCI_DEVICE_ID);
-	uint32_t class24 = ecamRead32(ecam, bus, dev, fun, PCI_CLASSCODE);
+	uint16_t vendor = ecamRead16(ecam, bdf, PCI_VENDOR_ID);
+	uint16_t device = ecamRead16(ecam, bdf, PCI_DEVICE_ID);
+	uint32_t class24 = ecamRead32(ecam, bdf, PCI_CLASSCODE);
 	uint8_t classBase = class24 >> 24;
 	uint8_t classSub = (class24 >> 16) & 0xff;
 	uint8_t progIF = (class24 >> 8) & 0xff;
-	uint8_t hdr = ecamRead8(ecam, bus, dev, fun, PCI_HEADER_TYPE) & 0x7f;
+	uint8_t hdr = ecamRead8(ecam, bdf, PCI_HEADER_TYPE) & 0x7f;
 
 	printf("pcie: %02x:%02x.%u ven %04x dev %04x class %02x%02x%02x hdr 0x%02x\n",
-			bus, dev, fun,
+			busFromBDF(bdf), devFromBDF(bdf), funcFromBDF(bdf),
 			vendor, device,
 			classBase, classSub, progIF,
 			hdr);
 
 	/* Enable MEM-space and Bus Master if still disabled */
-	uint16_t cmd = ecamRead16(ecam, bus, dev, fun, PCI_COMMAND);
+	uint16_t cmd = ecamRead16(ecam, bdf, PCI_COMMAND);
 	if (!(cmd & (PCI_CMD_MEM_ENABLE | PCI_CMD_MASTER_ENABLE))) {
 		printf("pcie: enable memory space and bus master\n");
-		ecamWrite32(ecam, bus, dev, fun, PCI_COMMAND, cmd | PCI_CMD_MEM_ENABLE | PCI_CMD_MASTER_ENABLE);
+		ecamWrite32(ecam, bdf, PCI_COMMAND, cmd | PCI_CMD_MEM_ENABLE | PCI_CMD_MASTER_ENABLE);
 	}
 
 	/* Print some info about this device */
-	print_bars(ecam, bus, dev, fun, hdr);
-	check_bars(ecam, bus, dev, fun, hdr);
-	print_capabilities(ecam, bus, dev, fun);
+	print_bars(ecam, bdf, hdr);
+	check_bars(ecam, bdf, hdr);
+	print_capabilities(ecam, bdf);
 
 	if (vendor == 0x10ec && device == 0x8168) {
-		mapLedMem(ecam, bus, dev, fun);
+		mapLedMem(ecam, bdf);
 	}
+
+	uint8_t bus = busFromBDF(bdf);
 
 	/* If this is a PCI-PCI bridge program buses and recurse */
 	if (hdr == 0x01) {
-		uint8_t sec = ecamRead8(ecam, bus, dev, fun, PCI_SECONDARY_BUS);
+		uint8_t sec = ecamRead8(ecam, bdf, PCI_SECONDARY_BUS);
 		if (sec == 0) {
 			/* Bridge not yet configured, assign fresh numbers */
 			sec = (*next_bus)++;
-			uint32_t cur = ecamRead32(ecam, bus, dev, fun, PCI_PRIMARY_BUS) & 0xff000000;
+			uint32_t cur = ecamRead32(ecam, bdf, PCI_PRIMARY_BUS) & 0xff000000;
 			uint32_t val = cur |
 					((uint32_t)0xFF << 16) |
 					((uint32_t)sec << 8) |
 					bus;
-			ecamWrite32(ecam, bus, dev, fun, PCI_PRIMARY_BUS, val);
+			ecamWrite32(ecam, bdf, PCI_PRIMARY_BUS, val);
 		}
 
-		uint8_t sub = ecamRead8(ecam, bus, dev, fun, PCI_SUBORDINATE_BUS);
+		uint8_t sub = ecamRead8(ecam, bdf, PCI_SUBORDINATE_BUS);
 
 		printf("pcie: bridge bus primary %u secondary %u subordinate %u\n",
 				bus, sec, sub);
@@ -409,9 +413,9 @@ static void scanFunc(void *ecam, uint8_t bus, uint8_t *next_bus, uint8_t dev, ui
 		pcie_scanBus(ecam, sec);
 
 		/* After recursion write the real highest bus number reached */
-		uint32_t cur = ecamRead32(ecam, bus, dev, fun, PCI_PRIMARY_BUS) & 0xff00ffff;
+		uint32_t cur = ecamRead32(ecam, bdf, PCI_PRIMARY_BUS) & 0xff00ffff;
 		uint32_t val = cur | ((uint32_t)((*next_bus) - 1) << 16);
-		ecamWrite32(ecam, bus, dev, fun, PCI_PRIMARY_BUS, val);
+		ecamWrite32(ecam, bdf, PCI_PRIMARY_BUS, val);
 	}
 }
 
@@ -426,24 +430,26 @@ static void pcie_scanBus(void *ecam, uint8_t bus)
 		 * In case there is no device under certain identifier the bridge
 		 * returns all "ones" on read
 		 */
-		uint16_t vendor_id = ecamRead16(ecam, bus, dev, 0, PCI_VENDOR_ID);
+		uint32_t bdf = combineBDF(bus, dev, 0);
+		uint16_t vendor_id = ecamRead16(ecam, bdf, PCI_VENDOR_ID);
 		if (vendor_id == 0xffff) {
 			continue;
 		}
 
 		/* Scan first function of device */
-		scanFunc(ecam, bus, &next_bus, dev, 0);
+		scanFunc(ecam, bdf, &next_bus);
 
 		/* Check if this is multi function device and scan them */
-		bool multi = ecamRead8(ecam, bus, dev, 0, PCI_HEADER_TYPE) & PCI_HT_MULTI_FUNC;
+		bool multi = ecamRead8(ecam, bdf, PCI_HEADER_TYPE) & PCI_HT_MULTI_FUNC;
 		if (multi) {
 			printf("pcie: multiple func device %u\n", dev);
 			for (uint8_t fn = 1; fn < 8; fn++) {
-				vendor_id = ecamRead16(ecam, bus, dev, fn, PCI_VENDOR_ID);
+				bdf = combineBDF(bus, dev, fn);
+				vendor_id = ecamRead16(ecam, bdf, PCI_VENDOR_ID);
 				if (vendor_id == 0xffff) {
 					continue;
 				}
-				scanFunc(ecam, bus, &next_bus, dev, fn);
+				scanFunc(ecam, bdf, &next_bus);
 			}
 		}
 	}
