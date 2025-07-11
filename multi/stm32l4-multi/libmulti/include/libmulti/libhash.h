@@ -17,19 +17,30 @@
 #include <stdint.h>
 #include <unistd.h>
 
-#define LIBHASH_MD5_DIGESTSZ    (128 / 8)
-#define LIBHASH_SHA1_DIGESTSZ   (160 / 8)
-#define LIBHASH_SHA224_DIGESTSZ (224 / 8)
-#define LIBHASH_SHA256_DIGESTSZ (256 / 8)
+#define LIBHASH_MD5_DIGESTSZ        (128 / 8)
+#define LIBHASH_SHA1_DIGESTSZ       (160 / 8)
+#define LIBHASH_SHA224_DIGESTSZ     (224 / 8)
+#define LIBHASH_SHA256_DIGESTSZ     (256 / 8)
+#define LIBHASH_SHA384_DIGESTSZ     (384 / 8)
+#define LIBHASH_SHA512_224_DIGESTSZ (224 / 8)
+#define LIBHASH_SHA512_256_DIGESTSZ (256 / 8)
+#define LIBHASH_SHA512_DIGESTSZ     (512 / 8)
 
-/* clang-format off */
-typedef enum { libhash_sha1, libhash_sha224, libhash_sha256, libhash_md5 } libhash_algo_t;
-/* clang-format on */
+typedef enum {
+	libhash_sha1,
+	libhash_sha224,
+	libhash_sha256,
+	libhash_md5,
+	libhash_sha384,
+	libhash_sha512_224,
+	libhash_sha512_256,
+	libhash_sha512,
+} libhash_algo_t;
 
 int libhash_start(libhash_algo_t algorithm);
 
 
-ssize_t libhash_feed(void *buff, size_t size);
+ssize_t libhash_feed(const void *buff, size_t size);
 
 
 ssize_t libhash_finish(uint8_t *digest);

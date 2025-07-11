@@ -71,7 +71,7 @@ typedef struct {
 
 
 /* clang-format off */
-enum { usart1 = 0, usart2, usart3, uart4, uart5 };
+enum { usart1 = 0, usart2, usart3, uart4, uart5, usart6, uart7, uart8, uart9, usart10 };
 
 
 enum { uart_mnormal = 0, uart_mnblock };

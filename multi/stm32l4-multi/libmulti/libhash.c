@@ -34,7 +34,7 @@ static struct {
 } libhash_common;
 
 
-static inline uint32_t libhash_pack(uint8_t *in)
+static inline uint32_t libhash_pack(const uint8_t *in)
 {
 	return ((uint32_t)(in[0]) << 24) | ((uint32_t)(in[1]) << 16) | ((uint32_t)(in[2]) << 8) | (uint32_t)(in[3]);
 }
@@ -49,30 +49,63 @@ static inline void libhash_unpack(uint8_t *out, uint32_t in)
 }
 
 
-int libhash_start(libhash_algo_t algorithm)
+#if defined(__CPU_STM32L4X6)
+static int libhash_selectAlgorithm(libhash_algo_t algorithm, uint32_t *crValue)
 {
-	uint32_t t;
-
-	t = *(libhash_common.base + HASH_CR) & ~(0x53ffcU);
-
+	*crValue &= ~((1 << 18) | (1 << 7));
 	switch (algorithm) {
 		case libhash_sha1:
+			*crValue |= 0;
 			break;
 
 		case libhash_md5:
-			t |= 1 << 7;
+			*crValue |= 1 << 7;
 			break;
 
 		case libhash_sha224:
-			t |= 1 << 18;
+			*crValue |= 1 << 18;
 			break;
 
 		case libhash_sha256:
-			t |= (1 << 7) | (1 << 18);
+			*crValue |= (1 << 7) | (1 << 18);
 			break;
 
 		default:
 			return -EINVAL;
+	}
+
+	return 0;
+}
+#elif defined(__CPU_STM32N6)
+static int libhash_selectAlgorithm(libhash_algo_t algorithm, uint32_t *crValue)
+{
+	/* MD5 not supported on this device */
+	if ((algorithm == libhash_md5) || (algorithm < 0) || (algorithm > libhash_sha512)) {
+		return -EINVAL;
+	}
+
+	static const uint8_t lookup[] = {
+		[libhash_sha1] = 0x0,
+		[libhash_sha224] = 0x2,
+		[libhash_sha256] = 0x3,
+		[libhash_sha384] = 0xc,
+		[libhash_sha512_224] = 0xd,
+		[libhash_sha512_256] = 0xe,
+		[libhash_sha512] = 0xf,
+	};
+
+	*crValue &= ~(0xf << 17);
+	*crValue |= (uint32_t)lookup[algorithm] << 17;
+	return 0;
+}
+#endif
+
+
+int libhash_start(libhash_algo_t algorithm)
+{
+	uint32_t t = *(libhash_common.base + HASH_CR) & ~(0x13f7cU);
+	if (libhash_selectAlgorithm(algorithm, &t) < 0) {
+		return -EINVAL;
 	}
 
 	*(libhash_common.base + HASH_CR) = t | (1 << 2);
@@ -83,10 +116,10 @@ int libhash_start(libhash_algo_t algorithm)
 }
 
 
-ssize_t libhash_feed(void *buff, size_t size)
+ssize_t libhash_feed(const void *buff, size_t size)
 {
 	size_t chunk, written = 0, i;
-	uint8_t *data = buff;
+	const uint8_t *data = buff;
 
 	if (size == 0) {
 		return 0;
@@ -134,10 +167,18 @@ ssize_t libhash_feed(void *buff, size_t size)
 
 ssize_t libhash_finish(uint8_t *digest)
 {
-	size_t diglen, i;
-	uint32_t t;
+	static const uint8_t diglen_lookup[] = {
+		[libhash_sha1] = LIBHASH_SHA1_DIGESTSZ / 4,
+		[libhash_sha224] = LIBHASH_SHA224_DIGESTSZ / 4,
+		[libhash_sha256] = LIBHASH_SHA256_DIGESTSZ / 4,
+		[libhash_md5] = LIBHASH_MD5_DIGESTSZ / 4,
+		[libhash_sha384] = LIBHASH_SHA384_DIGESTSZ / 4,
+		[libhash_sha512_224] = LIBHASH_SHA512_224_DIGESTSZ / 4,
+		[libhash_sha512_256] = LIBHASH_SHA512_256_DIGESTSZ / 4,
+		[libhash_sha512] = LIBHASH_SHA512_DIGESTSZ / 4,
+	};
 
-	t = *(libhash_common.base + HASH_STR) & ~(0x11fU);
+	uint32_t t = *(libhash_common.base + HASH_STR) & ~(0x11fU);
 
 	if (libhash_common.remsz != 0) {
 		*(libhash_common.base + HASH_DIN) = libhash_pack(libhash_common.rem);
@@ -147,31 +188,16 @@ ssize_t libhash_finish(uint8_t *digest)
 	*(libhash_common.base + HASH_STR) = t;
 	*(libhash_common.base + HASH_STR) |= 1 << 8;
 
-	switch (libhash_common.algorithm) {
-		case libhash_md5:
-			diglen = LIBHASH_MD5_DIGESTSZ / 4;
-			break;
-
-		case libhash_sha1:
-			diglen = LIBHASH_SHA1_DIGESTSZ / 4;
-			break;
-
-		case libhash_sha224:
-			diglen = LIBHASH_SHA224_DIGESTSZ / 4;
-			break;
-
-		case libhash_sha256:
-			diglen = LIBHASH_SHA256_DIGESTSZ / 4;
-			break;
-
-		default:
-			return -EINVAL;
+	if ((libhash_common.algorithm < 0) || (libhash_common.algorithm > libhash_sha512)) {
+		return -EINVAL;
 	}
 
-	while (!(*(libhash_common.base + HASH_SR) & (1 << 1)))
-		;
+	while (!(*(libhash_common.base + HASH_SR) & (1 << 1))) {
+		/* Wait for calculation completion */
+	}
 
-	for (i = 0; i < diglen; ++i) {
+	size_t diglen = diglen_lookup[libhash_common.algorithm];
+	for (size_t i = 0; i < diglen; ++i) {
 		libhash_unpack(&digest[i * 4], *(libhash_common.base + HASH_HR0 + i));
 	}
 
@@ -182,8 +208,11 @@ ssize_t libhash_finish(uint8_t *digest)
 int libhash_init(void)
 {
 	libhash_common.base = HASH_BASE;
-
+#if defined(__CPU_STM32L4X6)
 	devClk(pctl_hash, 3);
+#elif defined(__CPU_STM32N6)
+	devClk(pctl_hash, 1);
+#endif
 
 	return EOK;
 }
