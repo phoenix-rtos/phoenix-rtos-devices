@@ -178,8 +178,8 @@ int exti_clear_irq(unsigned int line)
 
 int exti_init(void)
 {
-	exti_common.base = (void *)0x40010400;
-	exti_common.syscfg = (void *)0x40010000;
+	exti_common.base = EXTI_BASE;
+	exti_common.syscfg = SYSCFG_BASE;
 
 	mutexCreate(&exti_common.lock);
 

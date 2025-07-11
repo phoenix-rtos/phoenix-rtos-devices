@@ -18,7 +18,6 @@
 #include <sys/threads.h>
 #include <sys/platform.h>
 #include <sys/types.h>
-#include <phoenix/arch/armv7m/stm32/l4/stm32l4.h>
 
 #include "common.h"
 
@@ -152,7 +151,7 @@ int rng_init(void)
 	/* Enable clock */
 	platformctl(&pctl);
 
-	rng_common.base = (void *)0x50060800;
+	rng_common.base = RNG_BASE;
 
 	if (mutexCreate(&rng_common.lock) < 0) {
 		return -1;

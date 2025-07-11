@@ -365,9 +365,9 @@ ssize_t flash_erasePage(uint32_t offset)
 
 int flash_init(void)
 {
-	volatile unsigned int *syscfg = (void *)0x40010000;
+	volatile unsigned int *syscfg = SYSCFG_BASE;
 
-	flash_common.flash = (void *)0x40022000;
+	flash_common.flash = FLASH_BASE;
 
 	/* Check what flash bank is mapped at FLASH_PROGRAM_1_ADDR */
 	flash_common.bankflip = ((*syscfg & (1 << 8)) != 0) ? 1 : 0;

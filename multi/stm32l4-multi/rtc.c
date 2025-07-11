@@ -13,6 +13,7 @@
 
 
 #include <errno.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 #include <sys/threads.h>
@@ -25,18 +26,19 @@
 #include "stm32l4-multi.h"
 
 /* clang-format off */
-enum { pwr_cr = 0, pwr_csr };
-
-
 enum { tr = 0, dr, cr, isr, prer, wutr, alrmar = wutr + 2, alrmbr, wpr, ssr, shiftr, tstr, tsdr, tsssr, calr,
 	tampcr, alrmassr, alrmbssr, or, bkp0r};
+/* clang-format on */
+
+#define RTC_EXTI_LINE 18
+#define RTC_INTERRUPT rtc_alarm_irq
 
 #define BACKUP1_ID_REG    bkp0r
 #define BACKUP_PAYLOAD_SZ RTC_BACKUP_SZ
 #define BACKUP2_ID_REG    (BACKUP1_ID_REG + (BACKUP_PAYLOAD_SZ / sizeof(uint32_t)) + 1)
 #define ID_VALUE(id)      ((id) & 0xffff)
 #define ID_IS_VALID(id)   ((((id) >> 16) ^ ((id) & 0xffff)) == 0xffff)
-/* clang-format on */
+
 
 struct {
 	volatile unsigned int *base;
@@ -48,7 +50,7 @@ struct {
 
 static int rtc_alarm_handler(unsigned int n, void *arg)
 {
-	exti_clear_irq(18);
+	exti_clear_irq(RTC_EXTI_LINE);
 	return -1;
 }
 
@@ -183,6 +185,26 @@ int rtc_getTime(rtctimestamp_t *timestamp)
 }
 
 
+static void _rtc_initMode(bool enable)
+{
+	static const uint32_t reg_offs = isr;
+	static const uint32_t bit_initf = 1 << 6;
+	static const uint32_t bit_init = 1 << 7;
+	if (enable) {
+		if (!(*(rtc_common.base + reg_offs) & bit_initf)) {
+			*(rtc_common.base + reg_offs) |= bit_init;
+			dataBarier();
+			while (!(*(rtc_common.base + reg_offs) & bit_initf)) {
+				/* Wait for RTC to go into initialization state */
+			}
+		}
+	}
+	else {
+		*(rtc_common.base + reg_offs) &= ~bit_init;
+	}
+}
+
+
 int rtc_setTime(rtctimestamp_t *timestamp)
 {
 	unsigned int time, date;
@@ -193,21 +215,30 @@ int rtc_setTime(rtctimestamp_t *timestamp)
 	mutexLock(rtc_common.lock);
 	_rtc_unlock();
 
-	if (!(*(rtc_common.base + isr) & (1 << 6))) {
-		*(rtc_common.base + isr) |= (1 << 7);
-		dataBarier();
-		while (!(*(rtc_common.base + isr) & (1 << 6)));
-	}
-
+	_rtc_initMode(true);
 	*(rtc_common.base + tr) = time;
 	*(rtc_common.base + dr) = date;
-
-	*(rtc_common.base + isr) &= ~(1 << 7);
+	_rtc_initMode(false);
 
 	_rtc_lock();
 	mutexUnlock(rtc_common.lock);
 
 	return EOK;
+}
+
+
+static void _rtc_enableAlarm(bool enable)
+{
+	if (enable) {
+		/* Enable the alarm and its interrupt */
+		*(rtc_common.base + cr) |= (1 << 12) | (1 << 8);
+	}
+	else {
+		/* Disable the alarm. This clears RTC_ISR.ALR*F flags as a side effect */
+		*(rtc_common.base + cr) &= ~(1 << 8);
+		dataBarier();
+		while (!(*(rtc_common.base + isr) & 0x1));
+	}
 }
 
 
@@ -220,19 +251,14 @@ int rtc_setAlarm(rtctimestamp_t *timestamp)
 
 	mutexLock(rtc_common.lock);
 	_rtc_unlock();
-	/* Disable the alarm. This clears RTC_ISR.ALR*F flags as a side effect */
-	*(rtc_common.base + cr) &= ~(1 << 8);
-	dataBarier();
-	while (!(*(rtc_common.base + isr) & 0x1));
+	_rtc_enableAlarm(false);
 
 	/* Only hours, seconds, and subseconds are compared */
 	*(rtc_common.base + alrmassr) = (0xf << 24) | (ssec & 0x7fff);
 	*(rtc_common.base + alrmar) = (1 << 31) | time;
 
 	dataBarier();
-	/* Enable the alarm and its interrupt */
-	*(rtc_common.base + cr) |= (1 << 12) | (1 << 8);
-
+	_rtc_enableAlarm(true);
 	_rtc_lock();
 	mutexUnlock(rtc_common.lock);
 
@@ -362,7 +388,7 @@ int rtc_recallBackup(void *buff, size_t bufflen)
 
 int rtc_init(void)
 {
-	rtc_common.base = (void *)0x40002800;
+	rtc_common.base = RTC_BASE;
 
 	mutexCreate(&rtc_common.lock);
 
@@ -372,9 +398,9 @@ int rtc_init(void)
 
 	rtc_common.prediv_s = *(rtc_common.base + prer) & 0x7fff;
 
-	exti_configure(18, exti_irqevent, exti_rising);
+	exti_configure(RTC_EXTI_LINE, exti_irqevent, exti_rising);
 
-	interrupt(rtc_alarm_irq, rtc_alarm_handler, NULL, 0, NULL);
+	interrupt(RTC_INTERRUPT, rtc_alarm_handler, NULL, 0, NULL);
 
 	return EOK;
 }

@@ -35,6 +35,7 @@
 #include "tty.h"
 #include "rcc.h"
 
+#define MAX_UART uart5
 
 #define TTY1_POS 0
 #define TTY2_POS (TTY1_POS + TTY1)
@@ -78,6 +79,7 @@ typedef struct {
 	int bits;
 	int parity;
 	int baud;
+	uint32_t refclk;
 
 	handle_t cond;
 	handle_t inth;
@@ -141,12 +143,34 @@ static const struct {
 };
 
 
+static const struct tty_peripheralInfo {
+	volatile uint32_t *base;
+	int dev;
+	unsigned irq;
+} ttyInfo[] = {
+	{ USART1_BASE, pctl_usart1, usart1_irq },
+	{ USART2_BASE, pctl_usart2, usart2_irq },
+	{ USART3_BASE, pctl_usart3, usart3_irq },
+	{ UART4_BASE, pctl_uart4, uart4_irq },
+	{ UART5_BASE, pctl_uart5, uart5_irq },
+};
+
+
 /* clang-format off */
 enum { cr1 = 0, cr2, cr3, brr, gtpr, rtor, rqr, isr, icr, rdr, tdr };
 
 
 enum { tty_parnone = 0, tty_pareven, tty_parodd };
 /* clang-format on */
+
+
+static int tty_clockSetup(const struct tty_peripheralInfo *info, uint32_t *out)
+{
+	/* On this platform no extra information is used for clock setup */
+	(void)info;
+	*out = getCpufreq();
+	return EOK;
+}
 
 
 static inline int tty_txready(tty_ctx_t *ctx)
@@ -477,7 +501,7 @@ static void tty_setBaudrate(void *uart, speed_t baud)
 		*(ctx->base + cr1) &= ~1;
 		dataBarier();
 
-		*(ctx->base + brr) = getCpufreq() / baudr;
+		*(ctx->base + brr) = ctx->refclk / baudr;
 
 		*(ctx->base + icr) = -1;
 		(void)*(ctx->base + rdr);
@@ -513,7 +537,7 @@ static tty_ctx_t *tty_getCtx(id_t id)
 
 	id -= 1;
 
-	if ((id >= usart1) && (id <= uart5)) {
+	if ((id >= usart1) && (id <= MAX_UART)) {
 		ctx = &uart_common.ctx[ttySetup[id - usart1].pos];
 	}
 
@@ -632,29 +656,21 @@ int tty_init(void)
 	libtty_callbacks_t callbacks;
 	tty_ctx_t *ctx;
 	int err;
-	static const struct {
-		volatile uint32_t *base;
-		int dev;
-		unsigned irq;
-	} info[] = {
-		{ (void *)0x40013800, pctl_usart1, usart1_irq },
-		{ (void *)0x40004400, pctl_usart2, usart2_irq },
-		{ (void *)0x40004800, pctl_usart3, usart3_irq },
-		{ (void *)0x40004c00, pctl_uart4, uart4_irq },
-		{ (void *)0x40005000, pctl_uart5, uart5_irq },
-	};
 
 	portCreate(&uart_common.port);
 	oid.port = uart_common.port;
 
-	for (tty = 0; tty <= uart5 - usart1; ++tty) {
+	for (tty = 0; tty <= MAX_UART - usart1; ++tty) {
 		if (ttySetup[tty].enabled == 0) {
 			continue;
 		}
 
 		ctx = &uart_common.ctx[ttySetup[tty].pos];
 
-		devClk(info[tty].dev, 1);
+		devClk(ttyInfo[tty].dev, 1);
+		if (tty_clockSetup(&ttyInfo[tty], &ctx->refclk) < 0) {
+			return -1;
+		}
 
 		callbacks.arg = ctx;
 		callbacks.set_baudrate = tty_setBaudrate;
@@ -668,7 +684,7 @@ int tty_init(void)
 		mutexCreate(&ctx->irqlock);
 		condCreate(&ctx->cond);
 
-		ctx->base = info[tty].base;
+		ctx->base = ttyInfo[tty].base;
 		ctx->bits = -1;
 		ctx->parity = -1;
 		ctx->baud = -1;
@@ -724,11 +740,11 @@ int tty_init(void)
 		tty_setBaudrate(ctx, baudrate);
 
 		if (ttySetup[tty].dma == 0) {
-			interrupt(info[tty].irq, tty_irqHandler, (void *)ctx, ctx->cond, NULL);
+			interrupt(ttyInfo[tty].irq, tty_irqHandler, (void *)ctx, ctx->cond, NULL);
 			beginthread(tty_irqthread, 1, ctx->stack, sizeof(ctx->stack), (void *)ctx);
 		}
 		else {
-			interrupt(info[tty].irq, tty_irqHandlerDMA, (void *)ctx, ctx->cond, NULL);
+			interrupt(ttyInfo[tty].irq, tty_irqHandlerDMA, (void *)ctx, ctx->cond, NULL);
 			beginthread(tty_dmathread, 1, ctx->stack, sizeof(ctx->stack), (void *)ctx);
 		}
 

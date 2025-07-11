@@ -31,22 +31,10 @@ static const struct {
 	unsigned int pctl;
 	struct libdma *per;
 } spiinfo[] = {
-	{ 0x40013000, pctl_spi1 },
-	{ 0x40003800, pctl_spi2 },
-	{ 0x40003c00, pctl_spi3 }
+	{ (uintptr_t)SPI1_BASE, pctl_spi1 },
+	{ (uintptr_t)SPI2_BASE, pctl_spi2 },
+	{ (uintptr_t)SPI3_BASE, pctl_spi3 },
 };
-
-
-static int libspi_spino(libspi_ctx_t *ctx)
-{
-	if ((uintptr_t)ctx->base == spiinfo[0].base) {
-		return spi1;
-	}
-	if ((uintptr_t)ctx->base == spiinfo[1].base) {
-		return spi2;
-	}
-	return spi3;
-}
 
 
 static unsigned char libspi_readwrite(libspi_ctx_t *ctx, unsigned char txd)
@@ -163,7 +151,7 @@ int libspi_configure(libspi_ctx_t *ctx, char mode, char bdiv, int enable)
 {
 	unsigned int t;
 
-	devClk(spiinfo[libspi_spino(ctx) - spi1].pctl, 1);
+	devClk(spiinfo[ctx->spiNum - spi1].pctl, 1);
 	*(ctx->base + cr1) &= ~(1 << 6);
 	dataBarier();
 
@@ -176,7 +164,7 @@ int libspi_configure(libspi_ctx_t *ctx, char mode, char bdiv, int enable)
 	dataBarier();
 
 	if (enable == 0) {
-		devClk(spiinfo[libspi_spino(ctx) - spi1].pctl, 0);
+		devClk(spiinfo[ctx->spiNum - spi1].pctl, 0);
 	}
 
 	return EOK;
@@ -192,6 +180,7 @@ int libspi_init(libspi_ctx_t *ctx, unsigned int spi, int useDma)
 	}
 
 	ctx->base = (void *)spiinfo[spi - spi1].base;
+	ctx->spiNum = spi;
 
 	if (useDma != 0) {
 		libdma_init();
