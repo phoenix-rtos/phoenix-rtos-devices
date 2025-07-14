@@ -27,9 +27,14 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/threads.h>
-#include <posix/utils.h>
 #include <sys/time.h>
 #include <sys/mman.h>
+#include <posix/utils.h>
+
+/* Platform specific incldues */
+#include <sys/platform.h>
+#include <phoenix/gaisler/ambapp.h>
+#include <phoenix/arch/riscv64/riscv64.h>
 
 /* Local includes */
 #include "grlib-can.h"
@@ -39,87 +44,147 @@
 void sendingThread(void *args)
 {
 	grlibCan_dev_t *dev = (grlibCan_dev_t *)args;
-	grlibCan_msg_t frame[GRLIB_CAN_DEF_CIRCBUFSZ * 2];
+	grlibCan_msg_t frame[GRLIB_CAN_DEF_CIRCBUFSZ * 10];
 
 	frame->frame.head = (1 << 18);
 	frame->frame.stat = 0x10u << 24u;
 	frame->frame.payload[0] = 0x0F;
 
-	for (int i = 1; i < GRLIB_CAN_DEF_CIRCBUFSZ * 2; i++) {
+	for (int i = 1; i < GRLIB_CAN_DEF_CIRCBUFSZ * 10; i++) {
 		memcpy((void *)&frame[i], (void *)frame, sizeof(grlibCan_msg_t));
 		frame[i].frame.payload[0] = 0x0F + i;
 	}
 
-	usleep(1000000);
 	printf("Sending messages\n");
 
-	for (int i = 0; i < 10; i++) {
-		grlibCan_transmitSync(dev, frame, GRLIB_CAN_DEF_CIRCBUFSZ);
-	}
+	grlibCan_transmitSync(dev, frame, GRLIB_CAN_DEF_CIRCBUFSZ * 10);
+
+	grlibCan_transmitAsync(dev, frame, GRLIB_CAN_DEF_CIRCBUFSZ * 10);
 
 	printf("Bursting finished\n");
-
-	for (;;) {
-		sleep(100000);
-	}
+	endthread();
 }
 
-uint8_t stack[2048];
+uint8_t stack[4096];
 
-static void __attribute__((used)) debug_routine(void *args)
+static void __attribute__((used)) debug_routine(void *args, int num)
 {
 	debug("Started debug routine\n");
 	usleep(1000000);
-	debug("debug routine\n");
-	grlibCan_dev_t *dev = (grlibCan_dev_t *)args;
 
+	grlibCan_dev_t *dev = (grlibCan_dev_t *)args;
 	grlibCan_msg_t frames[GRLIB_CAN_DEF_CIRCBUFSZ * 20];
 
-	beginthread(sendingThread, 4, stack, 2048, dev);
+	for (int i = 0; i < num; i++) {
+		printf("Testing CAN%d\n", i);
+		beginthread(sendingThread, 4, stack, 4096, &dev[i]);
 
-	debug("Receiving frames\n");
-	int recved = grlibCan_recvSync(dev, frames, 160);
+		debug("Receiving frames\n");
+		usleep(20000);
+		int recved = grlibCan_recvAsync(&dev[i], frames, 160);
 
-	printf("Received: %d\n", recved);
-	//printf("Number of interrupt handler calls: %d, rxIRQ, %d\n", dev->counter, dev->recv);
-
-	// grlibCan_transmitAsync(dev, frames, 0);
-	// grlibCan_recvAsync(dev, frames, 0);
-
-	debug("Transmission successful\n");
+		printf("Received: %d\n", recved);
+		debug("Transmission successful\n");
+	}
 
 	for (;;) {
 	}
 }
 
+static int grlibCan_handleDevCtl(msg_t *msg, grlibCan_dev_t *device)
+{
+	grlibCan_devCtrl_t *idevctl = (grlibCan_devCtrl_t *)(msg->i.raw);
+	int ret;
+
+	switch (idevctl->type) {
+		case can_config:
+			if (msg->i.size < sizeof(grlibCan_config_t)) {
+				msg->o.err = -1;
+				return -1;
+			}
+			return grlibCan_applyConfig(device, (grlibCan_config_t *)msg->i.data);
+		case can_getStatus:
+			if (msg->i.size < sizeof(uint32_t)) {
+				msg->o.err = -1;
+				return -1;
+			}
+			msg->o.err = 0;
+			*(uint32_t *)(msg->o.data) = device->device->statReg;
+			msg->o.size = sizeof(uint32_t);
+			return 0;
+		case can_writeSync:
+			ret = grlibCan_transmitSync(device, (grlibCan_msg_t *)msg->i.data, (uint32_t)msg->i.size);
+			msg->o.err = ret;
+			return ret;
+		case can_readSync:
+			ret = grlibCan_recvSync(device, (grlibCan_msg_t *)msg->o.data, (uint32_t)msg->o.size);
+			msg->o.err = ret;
+			return ret;
+		case can_writeAsync:
+			ret = grlibCan_transmitAsync(device, (grlibCan_msg_t *)msg->i.data, (uint32_t)msg->i.size);
+			msg->o.err = ret;
+			return ret;
+		case can_readAsync:
+			ret = grlibCan_recvAsync(device, (grlibCan_msg_t *)msg->o.data, (uint32_t)msg->o.size);
+			msg->o.err = ret;
+			return ret;
+		default:
+			return -1;
+	}
+}
+
+static int grlibCan_dispatchMsg(msg_t *msg, grlibCan_dev_t *devices, int num)
+{
+	id_t id = msg->oid.id;
+	if (id < num && devices[id].canId != -1) {
+		return grlibCan_handleDevCtl(msg, &devices[id]);
+	}
+	return -1;
+}
 
 static void __attribute__((used)) grlibCan_messageThread(void *args)
 {
 	grlibCan_driver_t *driverInstance = (grlibCan_driver_t *)args;
-
-#ifdef VERBOSE
-	debug("grlib-can: Entered main message thread\n");
-#endif
+	grlibCan_dev_t *devices = driverInstance->devices;
+	int num = driverInstance->num;
 
 	msg_t msg;
 	msg_rid_t rid;
 
 	for (;;) {
-		while (msgRecv(driverInstance->port, &msg, &rid) < 0) {
-			switch (msg.type) {
-				case mtRead:
-				case mtWrite:
-				case mtDevCtl:
-
-					break;
-
-				default:
-					msg.o.err = -ENOSYS;
-					break;
-			}
-
-			msgRespond(driverInstance->port, &msg, rid);
+		while (msgRecv(driverInstance->port, &msg, &rid) < 0) { }
+		switch (msg.type) {
+			case mtDevCtl:
+				if (msg.oid.id < num && devices[msg.oid.id].canId != -1 && devices[msg.oid.id].ownerRid == rid) {
+					grlibCan_dispatchMsg(&msg, devices, num);
+				}
+				else {
+					msg.o.err = -EPERM;
+				}
+				break;
+			case mtOpen:
+				if (msg.oid.id < num && devices[msg.oid.id].canId != -1 && devices[msg.oid.id].ownerRid == 0) {
+					devices[msg.oid.id].ownerRid = rid;
+					msg.o.err = EOK;
+				}
+				else {
+					msg.o.err = -EBUSY;
+				}
+				break;
+			case mtClose:
+				if (msg.oid.id < num && devices[msg.oid.id].canId != -1 && devices[msg.oid.id].ownerRid == rid) {
+					devices[msg.oid.id].ownerRid = 0;
+				}
+				else {
+					msg.o.err = -EPERM;
+				}
+				break;
+			default:
+				msg.o.err = -ENOSYS;
+				break;
 		}
+
+		msgRespond(driverInstance->port, &msg, rid);
 	}
 }
 
@@ -332,8 +397,10 @@ static int grlibCan_transmitSync(grlibCan_dev_t *dev, const grlibCan_msg_t *buff
 		dev->device->irqMskSet |= GRLIB_CAN_tx_IRQ;
 
 		while (dev->txBufStatus == TX_FULL) {
+			if (i == length)
+				break;
 			/* Wait for interrupt to clear TX_FULL */
-			int cRet = condWait(dev->cond, dev->txLock, 10000);
+			(void)condWait(dev->cond, dev->txLock, 1000000);
 		}
 
 		dev->device->irqMskSet &= ~GRLIB_CAN_tx_IRQ;
@@ -343,45 +410,30 @@ static int grlibCan_transmitSync(grlibCan_dev_t *dev, const grlibCan_msg_t *buff
 	return i;
 }
 
-/* We could also return instantly with error if there is an ongoing transaction */
-/* Check if buffer is 1kB alligned? */
-/* Since buffer has to be prepared eariler by the driver from user request we mmap buffer */
-static int __attribute__((used)) grlibCan_transmitAsync(grlibCan_dev_t *dev, const grlibCan_msg_t *buffer,
+static int grlibCan_transmitAsync(grlibCan_dev_t *dev, const grlibCan_msg_t *buffer,
 		const uint32_t length)
 {
-	grlibCan_hwDev_t *device = dev->device;
+	uint32_t i = 0;
 
 	(void)mutexLock(dev->txLock);
 
-	/* Wait until controller clears TX buffer */
-	if (device->txRdPtr != device->txWrtPtr) {
-		dev->txBufStatus = TX_NOT_EMPTY;
-		device->irqMskSet |= GRLIB_CAN_txEmpty_IRQ;
-		while (dev->txBufStatus == TX_NOT_EMPTY) {
-			(void)condWait(dev->cond, dev->txLock, 10000);
+	/* Check for bus status, if error return how many frames sent */
+	if (dev->txBufStatus == TX_ERR) {
+		(void)mutexUnlock(dev->txLock);
+		return -i;
+	}
+	/* While there is space in transmit buffer push frames */
+	while (dev->device->txWrtPtr != (dev->device->txRdPtr > 1 ? dev->device->txRdPtr - 1 : dev->device->txBufSz - 1)) {
+		if (i == length) {
+			(void)mutexUnlock(dev->txLock);
+			return length;
 		}
+		(void)grlibCan_pushFrame(dev, &buffer[i]);
+		i++;
 	}
 
-	device->irqMskSet &= ~GRLIB_CAN_txEmpty_IRQ;
-
-	/* Turn off TX channel */
-	device->txCtrlReg &= 0;
-	/* Configure TX channel - map user provided buffer */
-	device->txBufAdd = (uint32_t)va2pa((void *)buffer);
-	/* Make sure all the data in the buffer is mapped */
-	device->txBufSz = (uint32_t)((length + 4 / 4) << 6);
-	device->txWrtPtr = length - 1;
-	device->txRdPtr = 0;
-
-	device->irqMskSet |= GRLIB_CAN_txPtr_IRQ;
-	device->txIrqReg = length - 1;
-
-	device->txCtrlReg |= 1;
-
-	dev->txTransactionStatus = GRLIB_CAN_TRANSACTION_ONGOING;
 	(void)mutexUnlock(dev->txLock);
-
-	return 0;
+	return i;
 }
 
 static int grlibCan_recvSync(grlibCan_dev_t *dev, grlibCan_msg_t *buffer,
@@ -431,9 +483,11 @@ static int grlibCan_recvSync(grlibCan_dev_t *dev, grlibCan_msg_t *buffer,
 		dev->device->irqMskSet |= GRLIB_CAN_rx_IRQ;
 
 		while (dev->rxBufStatus == RX_EMPTY) {
-			if(dev->device->rxRdPtr != dev->device->rxWrtPtr) break;
-			if(i == length) break;
-			int cRet = condWait(dev->cond, dev->rxLock, 100000);
+			// if (dev->device->rxRdPtr != dev->device->rxWrtPtr)
+			// 	break;
+			if (i == length)
+				break;
+			(void)condWait(dev->cond, dev->rxLock, 100000);
 		}
 
 		dev->device->irqMskSet &= ~(GRLIB_CAN_rx_IRQ);
@@ -452,12 +506,12 @@ static int grlibCan_recvAsync(grlibCan_dev_t *dev, grlibCan_msg_t *buffer,
 
 	if (dev->rxBufStatus == RX_ERR) {
 		(void)mutexUnlock(dev->rxLock);
-		return -i;
+		return -0xFF;
 	}
 	/* While there are frames to read, process them */
-	while (dev->device->rxRdPtr != dev->device->rxWrtPtr) {
+	while (dev->device->rxRdPtr != dev->device->rxWrtPtr && i < length) {
 		/* Check if whole CAN frame can be processed */
-		uint32_t frame_len = ((dev->rxBufAdd[dev->device->rxRdPtr]).frame.stat >> 28);
+		uint32_t frame_len = ((dev->rxBufAdd[dev->device->rxRdPtr >> 4]).frame.stat >> 28);
 		if (frame_len > 8) {
 			/* Whole frame cannot be consumed */
 			if ((frame_len - 8) / sizeof(grlibCan_msg_t) >= length - i) {
@@ -482,13 +536,8 @@ static int grlibCan_recvAsync(grlibCan_dev_t *dev, grlibCan_msg_t *buffer,
 	return i;
 }
 
-static int grlibCan_allocateBuffers(grlibCan_dev_t *dev, uint32_t bufLen)
+static int grlibCan_allocateBuffers(grlibCan_dev_t *dev)
 {
-	/* Circular buffer has to be of size that is multiple of 4*/
-	if (bufLen % 4 != 0 || bufLen < 4) {
-		return -EINVAL;
-	}
-
 	dev->txBufAdd = mmap(NULL, _PAGE_SIZE,
 			PROT_WRITE | PROT_READ, MAP_UNCACHED | MAP_ANONYMOUS, -1, 0);
 	if (dev->txBufAdd == MAP_FAILED) {
@@ -509,10 +558,9 @@ static int grlibCan_allocateBuffers(grlibCan_dev_t *dev, uint32_t bufLen)
 	return 0;
 }
 
-static int grlibCan_allocateResources(grlibCan_dev_t *dev, uint32_t base, int id)
+static int grlibCan_allocateResources(grlibCan_dev_t *dev, uintptr_t base, int id)
 {
-	dev->canId = id;
-	dev->device = MAP_FAILED;
+	dev->ownerRid = 0;
 	dev->ctrlLock = (handle_t)-1;
 	dev->cond = (handle_t)-1;
 	dev->sent = 0;
@@ -538,7 +586,7 @@ static int grlibCan_allocateResources(grlibCan_dev_t *dev, uint32_t base, int id
 		return -1;
 	}
 
-	if (grlibCan_allocateBuffers(dev, GRLIB_CAN_DEF_CIRCBUFSZ) < 0) {
+	if (grlibCan_allocateBuffers(dev) < 0) {
 		debug("grlib-can: Failed to allocate circular buffers\n");
 		return -1;
 	}
@@ -593,35 +641,39 @@ static int grlibCan_initDevices(grlibCan_dev_t *devices, int num, bool loopback)
 {
 	(void)loopback;
 
-	if (grlibCan_allocateResources(&devices[0], GRLIB_CAN0_BASE_ADD, 0) < 0) {
-		grlibCan_cleanupResources(&devices[0]);
-		return -1;
-	}
+	for (int i = 0; i < num; i++) {
+		if (devices[i].canId == -1)
+			continue;
 
-	if (interrupt(GRLIB_CAN0_IRQ, grlibCan_irqHandler,
-				(void *)&devices[0], devices[0].cond, NULL) < 0) {
-		debug("grlib-can: Failed to set up the interrupt\n");
-	}
+		if (grlibCan_allocateResources(&devices[i], (uintptr_t)devices[i].device, 0) < 0) {
+			grlibCan_cleanupResources(&devices[i]);
+			return -1;
+		}
 
-#ifdef VERBOSE
-	debug("grlib-can: Managed to register callback to device interrupt\n");
-#endif
-
-	/* Now having memory for all needed operations we can configure the device */
-	grlibCan_applyDefConf(&devices[0]);
+		if (interrupt(devices[i].irqNum, grlibCan_irqHandler,
+					(void *)&devices[i], devices[i].cond, NULL) < 0) {
+			debug("grlib-can: Failed to set up the interrupt\n");
+		}
 
 #ifdef VERBOSE
-	debug("grlib-can: Applied default config to the device\n");
+		debug("grlib-can: Managed to register callback to device interrupt\n");
 #endif
 
+		/* Now having memory for all needed operations we can configure the device */
+		grlibCan_applyDefConf(&devices[i]);
+
+#ifdef VERBOSE
+		debug("grlib-can: Applied default config to the device\n");
+#endif
+	}
 	return 0;
 }
 
-static int grlibCan_registerDevices(oid_t *port, grlibCan_dev_t *devices, uint32_t length)
+static int grlibCan_registerDevices(oid_t *oid, grlibCan_dev_t *devices, uint32_t length)
 {
 	oid_t dir;
 
-	while (lookup("/dev", NULL, &dir) < 0) {
+	while (lookup("/dev", &dir, NULL) < 0) {
 		usleep(100000);
 	}
 
@@ -631,10 +683,51 @@ static int grlibCan_registerDevices(oid_t *port, grlibCan_dev_t *devices, uint32
 			debug("grlib-can: Failed to create devices\n");
 			return -1;
 		}
+		oid->id = i;
+
+		// if (create_dev(oid, buf)) {
+		// 	debug("grlib-can: Failed to create devices\n");
+		// 	return -1;
+		// }
+
+		msg_t msg;
+
+		msg.type = mtCreate;
+		msg.oid = dir;
+		msg.i.create.type = otDev;
+		msg.i.create.mode = 0;
+		msg.i.create.dev.port = oid->port; /* Port number assigned by portCreate */
+		msg.i.create.dev.id = i;           /* Id assigned by the driver itself */
+		msg.i.data = buf;                  /* Filename */
+		msg.i.size = strlen(msg.i.data);
+		msg.o.data = NULL;
+		msg.o.size = 0;
+
+		msgSend(dir.port, &msg);
+	}
+
+	return 0;
+}
+
+static int grlibCan_unregisterDevices(oid_t *port, grlibCan_dev_t *devices, uint32_t length)
+{
+	oid_t dir;
+
+	while (lookup("/dev", NULL, &dir) < 0) {
+		usleep(100000);
+	}
+
+	for (int i = 0; i < length; i++) {
+		if (devices[i].canId == -1)
+			continue;
+		char buf[24];
+		if (snprintf(buf, sizeof(buf), "/dev/can%d", i) >= sizeof(buf)) {
+			printf("grlib-can: Failed to remove can%d\n", i);
+			continue;
+		}
 		port->id = i;
-		if (create_dev(port, buf)) {
-			debug("grlib-can: Failed to create devices\n");
-			return -1;
+		if (unlink(buf) < 0) {
+			printf("grlib-can: Failed to remove can%d\n", i);
 		}
 	}
 
@@ -645,41 +738,77 @@ int main(int argc, char **argv)
 {
 	debug("grlib-can: Started driver process\n");
 
-	oid_t port;
-	grlibCan_dev_t devices[GRLIB_CAN_NUM];
+	int detectedDevices = 0;
+	grlibCan_dev_t devices[GRLIB_MAX_CAN_DEVICES];
 
-	grlibCan_driver_t driverInstance = {
-		.devices = devices,
-		.port = *((uint32_t *)&port)
-	};
+	/* System query for number of GRCAN controllers and their properites */
+	for (unsigned int i = 0; i < GRLIB_MAX_CAN_DEVICES; i++) {
+		unsigned int id = i;
+
+		ambapp_dev_t dev = { .devId = CORE_ID_GRCANFD };
+		platformctl_t ctl = {
+			.action = pctl_get,
+			.type = pctl_ambapp,
+			.task.ambapp.dev = &dev,
+			.task.ambapp.instance = &id
+		};
+
+		if (platformctl(&ctl) < 0)
+			break;
+
+		detectedDevices++;
+
+		if (dev.bus == BUS_AMBA_AHB) {
+			devices[i].canId = -1;
+			devices[i].irqNum = 0;
+			devices[i].device = 0;
+			/* GRCANFD should be on APB bus */
+			continue;
+		}
+		else if (dev.bus == BUS_AMBA_APB) {
+			devices[i].canId = dev.devId;
+			devices[i].irqNum = dev.irqn;
+			devices[i].device = (grlibCan_hwDev_t *)dev.info.apb.base;
+		}
+	}
+
+	oid_t oid;
 
 	/* Create port for driver server*/
-	if (portCreate((uint32_t *)&port) < 0) {
+	if (portCreate(&oid.port) < 0) {
 		debug("grlib-can: Failed to create port\n");
 		return EXIT_FAILURE;
 	}
 
+	grlibCan_driver_t driverInstance = {
+		.devices = devices,
+		.port = oid.port,
+		.num = detectedDevices
+	};
+
 	/* Initialize CAN devices */
-	if (grlibCan_initDevices(devices, GRLIB_CAN_NUM, false) < 0) {
+	if (grlibCan_initDevices(driverInstance.devices, driverInstance.num, false) < 0) {
 		/* IDK - compiler wants uint32_t here, and casting not working */
-		portDestroy(*((uint32_t *)(&port)));
+		portDestroy(oid.port);
 		debug("grlib-can: Failed to initialize CAN devices\n");
 		return EXIT_FAILURE;
 	}
 
 	/* Register device and start thread */
-	if (grlibCan_registerDevices(&port, devices, 1) < 0) {
-		portDestroy(*((uint32_t *)(&port)));
-		grlibCan_cleanupResources(devices);
+	if (grlibCan_registerDevices(&oid, driverInstance.devices, driverInstance.num) < 0) {
+		portDestroy(oid.port);
+		for (int i = 0; i < driverInstance.num; i++)
+			grlibCan_cleanupResources(&devices[i]);
 		debug("grlib-can: Failed to register devices\n");
 		return EXIT_FAILURE;
 	}
 
-	// grlibCan_messageThread(&driverInstance);
-	debug_routine(devices);
+	grlibCan_messageThread(&driverInstance);
+	// debug_routine(driverInstance.devices, driverInstance.num);
 
-	grlibCan_cleanupResources(devices);
+	grlibCan_cleanupResources(driverInstance.devices);
 	portDestroy(driverInstance.port);
+	grlibCan_unregisterDevices(&oid, driverInstance.devices, driverInstance.num);
 
 	return 0;
 }

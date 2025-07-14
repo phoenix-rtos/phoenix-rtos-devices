@@ -18,22 +18,15 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <sys/types.h>
+#include <sys/msg.h>
 
 #define VERBOSE 1
 
 /* Memory used by DMA has to be alligned to 1kbyte segments (here used 4kbyte) */
 #define PAGE_ALIGN(addr) (((addr_t)(addr) + _PAGE_SIZE - 1) & ~(_PAGE_SIZE - 1))
 
-/* General definitions */
-#define GRLIB_CAN_NUM 2
-
-#define GRLIB_CAN0_BASE_ADD 0xff400000
-#define GRLIB_CAN1_BASE_ADD 0xff401000
-
-#define GRLIB_CAN0_IRQ 8
-#define GRLIB_CAN1_IRQ 9
-
 #define GRLIB_CAN_DEF_CIRCBUFSZ 16
+#define GRLIB_MAX_CAN_DEVICES   8
 
 /* Register masks definition */
 /* General register masks*/
@@ -219,6 +212,8 @@ typedef struct {
 /* Structure used to handle devices within the driver */
 typedef struct {
 	int canId;
+	msg_rid_t ownerRid;
+	unsigned int irqNum;
 	grlibCan_hwDev_t *device;
 
 	handle_t ctrlLock; /* Lock for configuration and control of the device */
@@ -271,7 +266,17 @@ union {
 typedef struct {
 	uint32_t port;
 	grlibCan_dev_t *devices;
+	int num;
 } grlibCan_driver_t;
+
+typedef struct {
+	enum { can_config = 0,
+		can_getStatus,
+		can_writeSync,
+		can_readSync,
+		can_writeAsync,
+		can_readAsync } type;
+} grlibCan_devCtrl_t;
 
 /* Shared functions*/
 
@@ -281,9 +286,9 @@ static void grlibCan_messageThread(void *arg);
 /* Create devices */
 static int grlibCan_initDevices(grlibCan_dev_t *dev, int num, bool loopback);
 /* */
-static int grlibCan_allocateResources(grlibCan_dev_t *dev, uint32_t base, int id);
+static int grlibCan_allocateResources(grlibCan_dev_t *dev, uintptr_t base, int id);
 /* */
-static int grlibCan_allocateBuffers(grlibCan_dev_t *dev, uint32_t bufLen);
+static int grlibCan_allocateBuffers(grlibCan_dev_t *dev);
 /* */
 static int grlibCan_registerDevices(oid_t *port, grlibCan_dev_t *devices, uint32_t length);
 /* */
@@ -292,7 +297,7 @@ static void grlibCan_cleanupResources(grlibCan_dev_t *dev);
 static int grlibCan_applyDefConf(grlibCan_dev_t *dev);
 /* Apply user config after initialization of the driver */
 static int grlibCan_applyConfig(grlibCan_dev_t *dev, grlibCan_config_t *config);
-/* Normal interrupt handler */
+/*  */
 static int grlibCan_irqHandler(unsigned int irqNum, void *arg);
 /*  */
 static int grlibCan_transmitSync(grlibCan_dev_t *dev, const grlibCan_msg_t *buffer,
