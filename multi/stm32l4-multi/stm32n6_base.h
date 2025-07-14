@@ -50,7 +50,7 @@
 
 // #define LPUART1_BASE ((void *)0x56000c00)
 
-// #define RNG_BASE ((void *)0x54020000)
+#define RNG_BASE ((void *)0x54020000)
 
 // #define RTC_BASE ((void *)0x56004000)
 
