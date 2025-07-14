@@ -11,6 +11,8 @@ NAME := libstm32l4-multi
 LOCAL_SRCS = libhash.c libi2c.c libspi.c libuart.c
 ifeq ($(TARGET_SUBFAMILY),stm32l4x6)
   LOCAL_SRCS += libaes.c libdma.c
+else ifeq ($(TARGET_SUBFAMILY),stm32n6)
+  LOCAL_SRCS += libgpdma.c
 endif
 
 DEPS := libtty
