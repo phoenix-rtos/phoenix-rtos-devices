@@ -50,6 +50,9 @@
 
 // #define LPUART1_BASE ((void *)0x56000c00)
 
+#define PWR_BASE ((void *)0x56024800)
+#define RCC_BASE ((void *)0x56028000)
+
 #define RNG_BASE ((void *)0x54020000)
 
 // #define RTC_BASE ((void *)0x56004000)
@@ -71,5 +74,6 @@
 #define UART8_BASE   ((void *)0x50007c00)
 #define UART9_BASE   ((void *)0x52001800)
 #define USART10_BASE ((void *)0x52001c00)
+
 
 #endif /* _STM32N6_BASE_H_ */
