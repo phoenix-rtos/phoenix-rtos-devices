@@ -19,6 +19,8 @@
 // #define ADC2_BASE ((void *)0x50022100)
 // #define ADC12_BASE ((void *)0x50022300)
 
+#define EXTI_BASE ((void *)0x56025000)
+
 #define GPIOA_BASE ((void *)0x56020000)
 #define GPIOB_BASE ((void *)0x56020400)
 #define GPIOC_BASE ((void *)0x56020800)
