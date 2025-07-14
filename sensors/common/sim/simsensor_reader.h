@@ -16,6 +16,7 @@
 #define SIMSENSOR_READER_H
 
 #include <time.h>
+#include <stdio.h>
 
 #include "event_queue.h"
 

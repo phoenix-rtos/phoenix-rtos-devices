@@ -18,9 +18,9 @@
 #include <sys/time.h>
 #include <sys/threads.h>
 #include <spi.h>
-#include <sensors-spi.h>
 
-#include "../sensors.h"
+#include <libsensors/sensor.h>
+#include <libsensors/spi/spi.h>
 
 /* self identification register */
 #define REG_WHOAMI     0x0f
