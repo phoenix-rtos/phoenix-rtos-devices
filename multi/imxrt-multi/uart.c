@@ -49,7 +49,7 @@
 
 
 #ifndef UART_RXFIFOSIZE
-#define UART_RXFIFOSIZE 128
+#define UART_RXFIFOSIZE 256
 #endif
 
 
