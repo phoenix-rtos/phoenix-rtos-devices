@@ -26,12 +26,23 @@
 #include "stm32l4-multi.h"
 
 /* clang-format off */
+#if defined(__CPU_STM32L4X6)
 enum { tr = 0, dr, cr, isr, prer, wutr, alrmar = wutr + 2, alrmbr, wpr, ssr, shiftr, tstr, tsdr, tsssr, calr,
 	tampcr, alrmassr, alrmbssr, or, bkp0r};
+#elif defined(__CPU_STM32N6)
+enum { tr = 0x0, dr, ssr, icsr, prer, wutr, cr, privcfgr, seccfgr, wpr, calr, shiftr, tstr, tsdr, tsssr,
+	alrmar = 0x10, alrmassr, alrmbr, alrmbssr, sr, misr, smisr, scr, alrabinr = 0x1c, alrbbinr };
+#endif
 /* clang-format on */
 
+#if defined(__CPU_STM32L4X6)
 #define RTC_EXTI_LINE 18
 #define RTC_INTERRUPT rtc_alarm_irq
+#elif defined(__CPU_STM32N6)
+/* On STM32N6 there are two RTC interrupts - secure and non-secure */
+#define RTC_EXTI_LINE 17
+#define RTC_INTERRUPT rtc_s_irq
+#endif
 
 #define BACKUP1_ID_REG    bkp0r
 #define BACKUP_PAYLOAD_SZ RTC_BACKUP_SZ
@@ -187,9 +198,16 @@ int rtc_getTime(rtctimestamp_t *timestamp)
 
 static void _rtc_initMode(bool enable)
 {
+#if defined(__CPU_STM32L4X6)
 	static const uint32_t reg_offs = isr;
 	static const uint32_t bit_initf = 1 << 6;
 	static const uint32_t bit_init = 1 << 7;
+#elif defined(__CPU_STM32N6)
+	static const uint32_t reg_offs = icsr;
+	static const uint32_t bit_initf = 1 << 6;
+	static const uint32_t bit_init = 1 << 7;
+#endif
+
 	if (enable) {
 		if (!(*(rtc_common.base + reg_offs) & bit_initf)) {
 			*(rtc_common.base + reg_offs) |= bit_init;
@@ -237,7 +255,11 @@ static void _rtc_enableAlarm(bool enable)
 		/* Disable the alarm. This clears RTC_ISR.ALR*F flags as a side effect */
 		*(rtc_common.base + cr) &= ~(1 << 8);
 		dataBarier();
+#if defined(__CPU_STM32L4X6)
 		while (!(*(rtc_common.base + isr) & 0x1));
+#elif defined(__CPU_STM32N6)
+		/* On STM32N6 the ALRAWF flag doesn't exist */
+#endif
 	}
 }
 
@@ -266,6 +288,7 @@ int rtc_setAlarm(rtctimestamp_t *timestamp)
 }
 
 
+#if defined(__CPU_STM32L4X6)
 static int rtc_getLastStorage(uint32_t *lastID)
 {
 	uint32_t id[2], valid = 0, num;
@@ -384,6 +407,20 @@ int rtc_recallBackup(void *buff, size_t bufflen)
 
 	return retval;
 }
+#elif defined(__CPU_STM32N6)
+int rtc_storeBackup(const void *buff, size_t bufflen)
+{
+	/* TODO: On STM32N6 backup memory is accessed in a different manner */
+	return -ENOSYS;
+}
+
+
+int rtc_recallBackup(void *buff, size_t bufflen)
+{
+	/* TODO: On STM32N6 backup memory is accessed in a different manner */
+	return -ENOSYS;
+}
+#endif
 
 
 int rtc_init(void)
