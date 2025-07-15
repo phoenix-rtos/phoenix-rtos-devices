@@ -3,7 +3,7 @@
  *
  * GRCANFD driver
  *
- * GRLIB CANFD driver source file
+ * GRLIB CANFD driver file
  *
  * Copyright 2025 Phoenix Systems
  * Author: Mikolaj Matalowski
@@ -19,6 +19,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <libklog.h>
+#include <float.h>
 
 #include <sys/debug.h>
 #include <sys/file.h>
@@ -32,164 +33,17 @@
 #include <posix/utils.h>
 
 /* Platform specific incldues */
+#define SYSCLK_FREQ (100 * 1000 * 1000)
+
 #include <sys/platform.h>
 #include <phoenix/gaisler/ambapp.h>
 #include <phoenix/arch/riscv64/riscv64.h>
 
 /* Local includes */
-#include "grlib-can.h"
-
-#pragma GCC optimize("O0")
-
-void sendingThread(void *args)
-{
-	grlibCan_dev_t *dev = (grlibCan_dev_t *)args;
-	grlibCan_msg_t frame[GRLIB_CAN_DEF_CIRCBUFSZ * 10];
-
-	frame->frame.head = (1 << 18);
-	frame->frame.stat = 0x10u << 24u;
-	frame->frame.payload[0] = 0x0F;
-
-	for (int i = 1; i < GRLIB_CAN_DEF_CIRCBUFSZ * 10; i++) {
-		memcpy((void *)&frame[i], (void *)frame, sizeof(grlibCan_msg_t));
-		frame[i].frame.payload[0] = 0x0F + i;
-	}
-
-	printf("Sending messages\n");
-
-	grlibCan_transmitSync(dev, frame, GRLIB_CAN_DEF_CIRCBUFSZ * 10);
-
-	grlibCan_transmitAsync(dev, frame, GRLIB_CAN_DEF_CIRCBUFSZ * 10);
-
-	printf("Bursting finished\n");
-	endthread();
-}
-
-uint8_t stack[4096];
-
-static void __attribute__((used)) debug_routine(void *args, int num)
-{
-	debug("Started debug routine\n");
-	usleep(1000000);
-
-	grlibCan_dev_t *dev = (grlibCan_dev_t *)args;
-	grlibCan_msg_t frames[GRLIB_CAN_DEF_CIRCBUFSZ * 20];
-
-	for (int i = 0; i < num; i++) {
-		printf("Testing CAN%d\n", i);
-		beginthread(sendingThread, 4, stack, 4096, &dev[i]);
-
-		debug("Receiving frames\n");
-		usleep(20000);
-		int recved = grlibCan_recvAsync(&dev[i], frames, 160);
-
-		printf("Received: %d\n", recved);
-		debug("Transmission successful\n");
-	}
-
-	for (;;) {
-	}
-}
-
-static int grlibCan_handleDevCtl(msg_t *msg, grlibCan_dev_t *device)
-{
-	grlibCan_devCtrl_t *idevctl = (grlibCan_devCtrl_t *)(msg->i.raw);
-	int ret;
-
-	switch (idevctl->type) {
-		case can_config:
-			if (msg->i.size < sizeof(grlibCan_config_t)) {
-				msg->o.err = -1;
-				return -1;
-			}
-			return grlibCan_applyConfig(device, (grlibCan_config_t *)msg->i.data);
-		case can_getStatus:
-			if (msg->i.size < sizeof(uint32_t)) {
-				msg->o.err = -1;
-				return -1;
-			}
-			msg->o.err = 0;
-			*(uint32_t *)(msg->o.data) = device->device->statReg;
-			msg->o.size = sizeof(uint32_t);
-			return 0;
-		case can_writeSync:
-			ret = grlibCan_transmitSync(device, (grlibCan_msg_t *)msg->i.data, (uint32_t)msg->i.size);
-			msg->o.err = ret;
-			return ret;
-		case can_readSync:
-			ret = grlibCan_recvSync(device, (grlibCan_msg_t *)msg->o.data, (uint32_t)msg->o.size);
-			msg->o.err = ret;
-			return ret;
-		case can_writeAsync:
-			ret = grlibCan_transmitAsync(device, (grlibCan_msg_t *)msg->i.data, (uint32_t)msg->i.size);
-			msg->o.err = ret;
-			return ret;
-		case can_readAsync:
-			ret = grlibCan_recvAsync(device, (grlibCan_msg_t *)msg->o.data, (uint32_t)msg->o.size);
-			msg->o.err = ret;
-			return ret;
-		default:
-			return -1;
-	}
-}
-
-static int grlibCan_dispatchMsg(msg_t *msg, grlibCan_dev_t *devices, int num)
-{
-	id_t id = msg->oid.id;
-	if (id < num && devices[id].canId != -1) {
-		return grlibCan_handleDevCtl(msg, &devices[id]);
-	}
-	return -1;
-}
-
-static void __attribute__((used)) grlibCan_messageThread(void *args)
-{
-	grlibCan_driver_t *driverInstance = (grlibCan_driver_t *)args;
-	grlibCan_dev_t *devices = driverInstance->devices;
-	int num = driverInstance->num;
-
-	msg_t msg;
-	msg_rid_t rid;
-
-	for (;;) {
-		while (msgRecv(driverInstance->port, &msg, &rid) < 0) { }
-		switch (msg.type) {
-			case mtDevCtl:
-				if (msg.oid.id < num && devices[msg.oid.id].canId != -1 && devices[msg.oid.id].ownerRid == rid) {
-					grlibCan_dispatchMsg(&msg, devices, num);
-				}
-				else {
-					msg.o.err = -EPERM;
-				}
-				break;
-			case mtOpen:
-				if (msg.oid.id < num && devices[msg.oid.id].canId != -1 && devices[msg.oid.id].ownerRid == 0) {
-					devices[msg.oid.id].ownerRid = rid;
-					msg.o.err = EOK;
-				}
-				else {
-					msg.o.err = -EBUSY;
-				}
-				break;
-			case mtClose:
-				if (msg.oid.id < num && devices[msg.oid.id].canId != -1 && devices[msg.oid.id].ownerRid == rid) {
-					devices[msg.oid.id].ownerRid = 0;
-				}
-				else {
-					msg.o.err = -EPERM;
-				}
-				break;
-			default:
-				msg.o.err = -ENOSYS;
-				break;
-		}
-
-		msgRespond(driverInstance->port, &msg, rid);
-	}
-}
+#include "grlib-can-core.h"
 
 /* Interrupt handler */
-static int __attribute__((section(".interrupt"), aligned(0x1000))) grlibCan_irqHandler(unsigned int irqNum, void *arg)
+int __attribute__((section(".interrupt"), aligned(0x1000))) grlibCan_irqHandler(unsigned int irqNum, void *arg)
 {
 	grlibCan_dev_t *dev = (grlibCan_dev_t *)arg;
 	volatile grlibCan_hwDev_t *device = dev->device;
@@ -244,7 +98,8 @@ static int __attribute__((section(".interrupt"), aligned(0x1000))) grlibCan_irqH
 	return ret;
 }
 
-static int grlibCan_popFrame(grlibCan_dev_t *dev, grlibCan_msg_t *msg)
+/* Pop one frame from RX channel */
+int grlibCan_popFrame(grlibCan_dev_t *dev, grlibCan_msg_t *msg)
 {
 	uint32_t rdPtr = (dev->device->rxRdPtr) >> 4;
 	(void)memcpy((void *)msg, (void *)(&dev->rxBufAdd[rdPtr]), sizeof(grlibCan_msg_t));
@@ -252,7 +107,8 @@ static int grlibCan_popFrame(grlibCan_dev_t *dev, grlibCan_msg_t *msg)
 	return 0;
 }
 
-static int grlibCan_pushFrame(grlibCan_dev_t *dev, const grlibCan_msg_t *msg)
+/* Push one frame into TX channel */
+int grlibCan_pushFrame(grlibCan_dev_t *dev, const grlibCan_msg_t *msg)
 {
 	uint32_t wrPtr = (dev->device->txWrtPtr) >> 4;
 	(void)memcpy((void *)(&dev->txBufAdd[wrPtr]), (void *)msg, sizeof(grlibCan_msg_t));
@@ -260,7 +116,42 @@ static int grlibCan_pushFrame(grlibCan_dev_t *dev, const grlibCan_msg_t *msg)
 	return 0;
 }
 
-static int grlibCan_applyDefConf(grlibCan_dev_t *dev)
+static inline double getBd_nom(uint32_t reg)
+{
+	uint32_t SC = (reg & GRLIB_CAN_timConf_MASK) >> 16;
+	uint32_t PS1 = (reg & ((~(uint32_t)0) >> 15)) >> 10;
+	uint32_t PS2 = (reg & ((~(uint32_t)0) >> 10)) >> 5;
+	uint32_t a = (SC + 1) * (PS1 + PS2 + 1);
+	return (double)(SYSCLK_FREQ) / ((double)a);
+}
+
+static inline double getBd_data(uint32_t reg)
+{
+	uint32_t SC = (reg & GRLIB_CAN_timConf_MASK) >> 16;
+	uint32_t PS1 = (reg & ((~(uint32_t)0) >> 14)) >> 10;
+	uint32_t PS2 = (reg & ((~(uint32_t)0) >> 9)) >> 5;
+	uint32_t a = (SC + 1) * (PS1 + PS2 + 1);
+	return (double)(SYSCLK_FREQ) / ((double)a);
+}
+
+void grlibCan_copyConfig(grlibCan_dev_t *device, grlibCan_config_t *config)
+{
+	config->conf = device->device->confReg;
+	config->syncMask = device->device->syncMask;
+	config->syncCode = device->device->syncCode;
+	config->nomBdRate = (uint32_t)getBd_nom(device->device->nomTimConf.reg);
+	config->dataBdRate = (uint32_t)getBd_data(device->device->dataTimConf.reg);
+
+	printf("grlib-can: %d : %d", config->nomBdRate, config->dataBdRate);
+
+	config->txCtrlReg = device->device->txCtrlReg;
+	config->rxCtrlReg = device->device->rxCtrlReg;
+	config->rxAccMask = device->device->rxAccMask;
+	config->rxAccCode = device->device->rxAccCode;
+}
+
+/* Apply default config */
+int grlibCan_applyDefConf(grlibCan_dev_t *dev)
 {
 	volatile grlibCan_hwDev_t *device = dev->device;
 
@@ -282,8 +173,8 @@ static int grlibCan_applyDefConf(grlibCan_dev_t *dev)
 	device->syncCode = ~(0u);
 
 	/* Set baud-rate for both nominal and data */
-	device->nomTimConf.reg = defTimConfNom.reg;
-	device->dataTimConf.reg = defTimConfData.reg;
+	device->nomTimConf.reg = grlibCan_setBdRateNom(125000.0);
+	device->dataTimConf.reg = grlibCan_setBdRateData(125000.0);
 
 	/* Here also delat compensation is to set up - implementation specific */
 
@@ -334,11 +225,14 @@ static int grlibCan_applyDefConf(grlibCan_dev_t *dev)
 	return 0;
 }
 
-static int __attribute__((used)) grlibCan_applyConfig(grlibCan_dev_t *dev, grlibCan_config_t *config)
+/* Apply user provided config */
+int grlibCan_applyConfig(grlibCan_dev_t *dev, grlibCan_config_t *config)
 {
 	grlibCan_hwDev_t *device = dev->device;
 
 	mutexLock(dev->ctrlLock);
+	mutexLock(dev->txLock);
+	mutexLock(dev->rxLock);
 
 	/* Turn off codec */
 	device->ctrlReg &= ~(1);
@@ -350,8 +244,8 @@ static int __attribute__((used)) grlibCan_applyConfig(grlibCan_dev_t *dev, grlib
 	device->syncCode = config->syncCode;
 
 	/* Set timing configuration */
-	device->nomTimConf.reg = config->nomBdRate;   /* Calculate valid baud rate */
-	device->dataTimConf.reg = config->dataBdRate; /* Calculate valid baud rate */
+	device->nomTimConf.reg = grlibCan_setBdRateNom((double)config->nomBdRate);
+	device->dataTimConf.reg = grlibCan_setBdRateData((double)config->dataBdRate);
 	device->transDelCompReg = config->transDelComp;
 
 	/* Set TX and RX config */
@@ -364,10 +258,13 @@ static int __attribute__((used)) grlibCan_applyConfig(grlibCan_dev_t *dev, grlib
 	device->ctrlReg |= 1;
 
 	mutexUnlock(dev->ctrlLock);
+	mutexUnlock(dev->txLock);
+	mutexUnlock(dev->rxLock);
 	return 0;
 }
 
-static int grlibCan_transmitSync(grlibCan_dev_t *dev, const grlibCan_msg_t *buffer,
+/* Transmit buffer of frames in blockig mode */
+int grlibCan_transmitSync(grlibCan_dev_t *dev, const grlibCan_msg_t *buffer,
 		const uint32_t length)
 {
 	if (dev->txTransactionStatus == GRLIB_CAN_TRANSACTION_ONGOING)
@@ -410,7 +307,8 @@ static int grlibCan_transmitSync(grlibCan_dev_t *dev, const grlibCan_msg_t *buff
 	return i;
 }
 
-static int grlibCan_transmitAsync(grlibCan_dev_t *dev, const grlibCan_msg_t *buffer,
+/* Transmit buffer of frames in non-blocking mode */
+int grlibCan_transmitAsync(grlibCan_dev_t *dev, const grlibCan_msg_t *buffer,
 		const uint32_t length)
 {
 	uint32_t i = 0;
@@ -436,7 +334,8 @@ static int grlibCan_transmitAsync(grlibCan_dev_t *dev, const grlibCan_msg_t *buf
 	return i;
 }
 
-static int grlibCan_recvSync(grlibCan_dev_t *dev, grlibCan_msg_t *buffer,
+/* Receive length frames in blocking mode */
+int grlibCan_recvSync(grlibCan_dev_t *dev, grlibCan_msg_t *buffer,
 		uint32_t length)
 {
 	uint32_t i = 0;
@@ -497,7 +396,8 @@ static int grlibCan_recvSync(grlibCan_dev_t *dev, grlibCan_msg_t *buffer,
 	return i;
 }
 
-static int grlibCan_recvAsync(grlibCan_dev_t *dev, grlibCan_msg_t *buffer,
+/* Receive at most length frames in non-blocking mode */
+int grlibCan_recvAsync(grlibCan_dev_t *dev, grlibCan_msg_t *buffer,
 		const uint32_t length)
 {
 	uint32_t i = 0;
@@ -536,7 +436,8 @@ static int grlibCan_recvAsync(grlibCan_dev_t *dev, grlibCan_msg_t *buffer,
 	return i;
 }
 
-static int grlibCan_allocateBuffers(grlibCan_dev_t *dev)
+/* Allocate TX/RX circular buffers */
+int grlibCan_allocateBuffers(grlibCan_dev_t *dev)
 {
 	dev->txBufAdd = mmap(NULL, _PAGE_SIZE,
 			PROT_WRITE | PROT_READ, MAP_UNCACHED | MAP_ANONYMOUS, -1, 0);
@@ -558,7 +459,8 @@ static int grlibCan_allocateBuffers(grlibCan_dev_t *dev)
 	return 0;
 }
 
-static int grlibCan_allocateResources(grlibCan_dev_t *dev, uintptr_t base, int id)
+/* Allocate resources for the devices */
+int grlibCan_allocateResources(grlibCan_dev_t *dev, uintptr_t base, int id)
 {
 	dev->ownerRid = 0;
 	dev->ctrlLock = (handle_t)-1;
@@ -574,9 +476,6 @@ static int grlibCan_allocateResources(grlibCan_dev_t *dev, uintptr_t base, int i
 	dev->rxMiss = 0;
 	dev->overRun = 0;
 
-#ifdef VERBOSE
-	debug("grlib-can: Initialized device struct\n");
-#endif
 	uintptr_t offset = (base & ~(_PAGE_SIZE - 1));
 	dev->device = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ,
 			MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, (off_t)offset);
@@ -618,7 +517,8 @@ static int grlibCan_allocateResources(grlibCan_dev_t *dev, uintptr_t base, int i
 	return 0;
 }
 
-static void grlibCan_cleanupResources(grlibCan_dev_t *dev)
+/* Cleanup resources */
+void grlibCan_cleanupResources(grlibCan_dev_t *dev)
 {
 	if (dev->device != MAP_FAILED) {
 		(void)munmap((void *)dev->device, _PAGE_SIZE);
@@ -637,10 +537,9 @@ static void grlibCan_cleanupResources(grlibCan_dev_t *dev)
 	}
 }
 
-static int grlibCan_initDevices(grlibCan_dev_t *devices, int num, bool loopback)
+/* Initialise devices */
+int grlibCan_initDevices(grlibCan_dev_t *devices, int num)
 {
-	(void)loopback;
-
 	for (int i = 0; i < num; i++) {
 		if (devices[i].canId == -1)
 			continue;
@@ -652,7 +551,9 @@ static int grlibCan_initDevices(grlibCan_dev_t *devices, int num, bool loopback)
 
 		if (interrupt(devices[i].irqNum, grlibCan_irqHandler,
 					(void *)&devices[i], devices[i].cond, NULL) < 0) {
+#ifdef VERBOSE
 			debug("grlib-can: Failed to set up the interrupt\n");
+#endif
 		}
 
 #ifdef VERBOSE
@@ -669,7 +570,8 @@ static int grlibCan_initDevices(grlibCan_dev_t *devices, int num, bool loopback)
 	return 0;
 }
 
-static int grlibCan_registerDevices(oid_t *oid, grlibCan_dev_t *devices, uint32_t length)
+/* Register devices in the file system */
+int grlibCan_registerDevices(oid_t *oid, grlibCan_dev_t *devices, uint32_t length)
 {
 	oid_t dir;
 
@@ -678,18 +580,12 @@ static int grlibCan_registerDevices(oid_t *oid, grlibCan_dev_t *devices, uint32_
 	}
 
 	for (int i = 0; i < length; i++) {
-		char buf[8];
+		char buf[24];
 		if (snprintf(buf, sizeof(buf), "can%d", i) >= sizeof(buf)) {
 			debug("grlib-can: Failed to create devices\n");
 			return -1;
 		}
-		oid->id = i;
-
-		// if (create_dev(oid, buf)) {
-		// 	debug("grlib-can: Failed to create devices\n");
-		// 	return -1;
-		// }
-
+		// oid->id = i;
 		msg_t msg;
 
 		msg.type = mtCreate;
@@ -704,12 +600,20 @@ static int grlibCan_registerDevices(oid_t *oid, grlibCan_dev_t *devices, uint32_
 		msg.o.size = 0;
 
 		msgSend(dir.port, &msg);
+
+		if (msg.o.err != EOK) {
+#ifdef VERBOSE
+			debug("grlib-can: Failed to create device file\n");
+#endif
+			return -1;
+		}
 	}
 
 	return 0;
 }
 
-static int grlibCan_unregisterDevices(oid_t *port, grlibCan_dev_t *devices, uint32_t length)
+/* Unregister devices from file system */
+int grlibCan_unregisterDevices(oid_t *port, grlibCan_dev_t *devices, uint32_t length)
 {
 	oid_t dir;
 
@@ -734,22 +638,82 @@ static int grlibCan_unregisterDevices(oid_t *port, grlibCan_dev_t *devices, uint
 	return 0;
 }
 
-int main(int argc, char **argv)
+static inline double getBd(uint16_t SC, uint16_t PS1, uint16_t PS2)
 {
-	debug("grlib-can: Started driver process\n");
+	uint32_t a = (SC + 1) * (PS1 + PS2 + 1);
+	return (double)(SYSCLK_FREQ) / ((double)a);
+}
+/* Search for most optimal configuration to set given baud rate */
+uint32_t grlibCan_setBdRateData(double dataBdRate)
+{
+	uint16_t optSC = 0;
+	uint16_t optPS1 = 0;
+	uint16_t optPS2 = 0;
+	double optDiff = DBL_MAX;
 
+	for (uint16_t SC = 0; SC <= 255; SC++) {
+		for (uint16_t PS1 = 1; PS1 <= 15; PS1++) {
+			for (uint16_t PS2 = 2; PS2 <= 8; PS2++) {
+				double diff = dataBdRate - getBd(SC, PS1, PS2);
+				if (diff < 0) {
+					diff = -diff;
+				}
+				if (diff < optDiff) {
+					optSC = SC;
+					optPS1 = PS1;
+					optPS2 = PS2;
+					optDiff = diff;
+				}
+				if (diff <= DBL_EPSILON)
+					break;
+			}
+		}
+	}
+
+	return (optSC << 16) | (optPS1 << 10) | (optPS2 << 5) | (optPS1 < optPS2 ? optPS1 : optPS2);
+}
+
+uint32_t grlibCan_setBdRateNom(double nomBdRate)
+{
+	uint16_t optSC = 0;
+	uint16_t optPS1 = 0;
+	uint16_t optPS2 = 0;
+	double optDiff = DBL_MAX;
+
+	for (int SC = 0; SC <= 255; SC++) {
+		for (int PS1 = 2; PS1 <= 63; PS1++) {
+			for (int PS2 = 2; PS2 <= 16; PS2++) {
+				double diff = nomBdRate - getBd(SC, PS1, PS2);
+				if (diff < 0) {
+					diff = -diff;
+				}
+				if (diff < optDiff) {
+					optSC = SC;
+					optPS1 = PS1;
+					optPS2 = PS2;
+					optDiff = diff;
+				}
+				if (diff <= DBL_EPSILON)
+					break;
+			}
+		}
+	}
+
+	return (optSC << 16) | (optPS1 << 10) | (optPS2 << 5) | (optPS1 < optPS2 ? optPS1 : optPS2 - 1);
+}
+
+int grlibCan_queryForDevices(grlibCan_dev_t *dev)
+{
 	int detectedDevices = 0;
-	grlibCan_dev_t devices[GRLIB_MAX_CAN_DEVICES];
-
 	/* System query for number of GRCAN controllers and their properites */
 	for (unsigned int i = 0; i < GRLIB_MAX_CAN_DEVICES; i++) {
 		unsigned int id = i;
 
-		ambapp_dev_t dev = { .devId = CORE_ID_GRCANFD };
+		ambapp_dev_t device = { .devId = CORE_ID_GRCANFD };
 		platformctl_t ctl = {
 			.action = pctl_get,
 			.type = pctl_ambapp,
-			.task.ambapp.dev = &dev,
+			.task.ambapp.dev = &device,
 			.task.ambapp.instance = &id
 		};
 
@@ -758,57 +722,18 @@ int main(int argc, char **argv)
 
 		detectedDevices++;
 
-		if (dev.bus == BUS_AMBA_AHB) {
-			devices[i].canId = -1;
-			devices[i].irqNum = 0;
-			devices[i].device = 0;
+		if (device.bus == BUS_AMBA_AHB) {
+			dev[i].canId = -1;
+			dev[i].irqNum = 0;
+			dev[i].device = 0;
 			/* GRCANFD should be on APB bus */
 			continue;
 		}
-		else if (dev.bus == BUS_AMBA_APB) {
-			devices[i].canId = dev.devId;
-			devices[i].irqNum = dev.irqn;
-			devices[i].device = (grlibCan_hwDev_t *)dev.info.apb.base;
+		else if (device.bus == BUS_AMBA_APB) {
+			dev[i].canId = device.devId;
+			dev[i].irqNum = device.irqn;
+			dev[i].device = (grlibCan_hwDev_t *)device.info.apb.base;
 		}
 	}
-
-	oid_t oid;
-
-	/* Create port for driver server*/
-	if (portCreate(&oid.port) < 0) {
-		debug("grlib-can: Failed to create port\n");
-		return EXIT_FAILURE;
-	}
-
-	grlibCan_driver_t driverInstance = {
-		.devices = devices,
-		.port = oid.port,
-		.num = detectedDevices
-	};
-
-	/* Initialize CAN devices */
-	if (grlibCan_initDevices(driverInstance.devices, driverInstance.num, false) < 0) {
-		/* IDK - compiler wants uint32_t here, and casting not working */
-		portDestroy(oid.port);
-		debug("grlib-can: Failed to initialize CAN devices\n");
-		return EXIT_FAILURE;
-	}
-
-	/* Register device and start thread */
-	if (grlibCan_registerDevices(&oid, driverInstance.devices, driverInstance.num) < 0) {
-		portDestroy(oid.port);
-		for (int i = 0; i < driverInstance.num; i++)
-			grlibCan_cleanupResources(&devices[i]);
-		debug("grlib-can: Failed to register devices\n");
-		return EXIT_FAILURE;
-	}
-
-	grlibCan_messageThread(&driverInstance);
-	// debug_routine(driverInstance.devices, driverInstance.num);
-
-	grlibCan_cleanupResources(driverInstance.devices);
-	portDestroy(driverInstance.port);
-	grlibCan_unregisterDevices(&oid, driverInstance.devices, driverInstance.num);
-
-	return 0;
+	return detectedDevices;
 }

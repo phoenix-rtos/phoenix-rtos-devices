@@ -6,4 +6,4 @@
 # Copyright 2024 Phoenix Systems
 #
 
-DEFAULT_COMPONENTS := grlib-uart flashdrv grlib-can
+DEFAULT_COMPONENTS := grlib-uart flashdrv grlib-can-driver can-test-app

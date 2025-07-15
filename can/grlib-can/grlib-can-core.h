@@ -3,7 +3,7 @@
  *
  * GRCANFD driver
  *
- * GRLIB CANFD driver header file
+ * GRLIB CANFD driver file
  *
  * Copyright 2025 Phoenix Systems
  * Author: Mikolaj Matalowski
@@ -11,14 +11,15 @@
  * %LICENSE%
  */
 
-#ifndef GRLIB_CAN_H
-#define GRLIB_CAN_H
+#ifndef GRLIB_CAN_CORE_H
+#define GRLIB_CAN_CORE_H
 
 /* temporary */
 #include <stdint.h>
 #include <stdbool.h>
 #include <sys/types.h>
-#include <sys/msg.h>
+
+#include "grlib-can-shared.h"
 
 #define VERBOSE 1
 
@@ -29,6 +30,7 @@
 #define GRLIB_MAX_CAN_DEVICES   8
 
 /* Register masks definition */
+
 /* General register masks*/
 #define GRLIB_CAN_confReg_MASK  0xFF
 #define GRLIB_CAN_ctrlReg_MASK  0x3
@@ -77,44 +79,23 @@
 #define GRLIB_CAN_busOff_IRQ   (1u << 1)  /* Bus-off condition */
 #define GRLIB_CAN_pass_IRQ     1u         /* Error-passive condition */
 
-/* This structure is either a CAN frame or pure payload */
-typedef struct
-{
-	union {
-		struct {
-			uint32_t head; /* Head contains CAN packet mode and IDs */
-			uint32_t stat;
+/* Buffer/TX/RX channel status definitions */
+#define RX_RST       0
+#define RX_EMPTY     1
+#define RX_RDY       2
+#define RX_ERR       3
+#define RX_NOT_EMPTY 4
 
-			uint8_t payload[8]; /* Payload */
-		} frame;
+#define TX_RST       0
+#define TX_FULL      1
+#define TX_RDY       2
+#define TX_ERR       3
+#define TX_NOT_EMPTY 4
 
-		uint8_t payload[16];
-	};
-} grlibCan_msg_t;
-
-typedef struct
-{
-	/* Base configuration */
-	uint32_t conf;
-	uint32_t syncMask;
-	uint32_t syncCode;
-
-	uint32_t nomBdRate;    /* Nominal baud-rate in kbps */
-	uint32_t dataBdRate;   /* Data transfer baud-rate in kbps */
-	uint32_t transDelComp; /* Tranmission delat compensation */
-
-	/* CANopen currentlly omited */
-
-	/* TX configuration */
-	uint32_t txCtrlReg;
-
-	/* RX configuration */
-	uint32_t rxCtrlReg;
-	uint32_t rxAccMask;
-	uint32_t rxAccCode;
-} grlibCan_config_t;
-
-/* Private structures used by the driver*/
+#define GRLIB_CAN_TRANSACTION_NULL    0
+#define GRLIB_CAN_TRANSACTION_ONGOING 1
+#define GRLIB_CAN_TRANSATION_FINISHED 2
+#define GRLIB_CAN_TRANSATION_FAILED   3
 
 /* Structure that follows GRCANFD register structure */
 typedef struct {
@@ -192,24 +173,6 @@ typedef struct {
 	volatile uint32_t rxAccCode; /* RX channel acceptance code */
 } grlibCan_hwDev_t;
 
-#define RX_RST       0
-#define RX_EMPTY     1
-#define RX_RDY       2
-#define RX_ERR       3
-#define RX_NOT_EMPTY 4
-
-#define TX_RST       0
-#define TX_FULL      1
-#define TX_RDY       2
-#define TX_ERR       3
-#define TX_NOT_EMPTY 4
-
-#define GRLIB_CAN_TRANSACTION_NULL    0
-#define GRLIB_CAN_TRANSACTION_ONGOING 1
-#define GRLIB_CAN_TRANSATION_FINISHED 2
-#define GRLIB_CAN_TRANSATION_FAILED   3
-
-/* Structure used to handle devices within the driver */
 typedef struct {
 	int canId;
 	msg_rid_t ownerRid;
@@ -244,78 +207,57 @@ typedef struct {
 	volatile uint32_t txTransactionStatus;
 } grlibCan_dev_t;
 
-union {
-	struct {
-		volatile const uint8_t rsrvd; /* Reserved */
-		volatile uint8_t scaler;      /* Scaler */
-		volatile uint16_t timConf;    /* Timing confguration */
-	} conf;                           /* Configuration for bd-rate of 115200 */
-	uint32_t reg;
-} defTimConfNom = { .reg = (15 << 16) | (40 << 10) | (14 << 5) | 14 };
-
-union {
-	struct {
-		volatile const uint8_t rsrvd; /* Reserved */
-		volatile uint8_t scaler;      /* Scaler */
-		volatile uint16_t timConf;    /* Timing confguration */
-	} conf;                           /* Configuration for bd-rate of 115200 */
-	uint32_t reg;
-} defTimConfData = { .reg = (15 << 16) | (40 << 10) | (8 << 5) | 8 };
-
-/* Driver status struct */
 typedef struct {
 	uint32_t port;
 	grlibCan_dev_t *devices;
 	int num;
 } grlibCan_driver_t;
 
-typedef struct {
-	enum { can_config = 0,
-		can_getStatus,
-		can_writeSync,
-		can_readSync,
-		can_writeAsync,
-		can_readAsync } type;
-} grlibCan_devCtrl_t;
-
-/* Shared functions*/
-
-/* Private functions used by driver*/
-/* Main routine of the driver*/
-static void grlibCan_messageThread(void *arg);
+/* Core driver functions */
 /* Create devices */
-static int grlibCan_initDevices(grlibCan_dev_t *dev, int num, bool loopback);
-/* */
-static int grlibCan_allocateResources(grlibCan_dev_t *dev, uintptr_t base, int id);
-/* */
-static int grlibCan_allocateBuffers(grlibCan_dev_t *dev);
-/* */
-static int grlibCan_registerDevices(oid_t *port, grlibCan_dev_t *devices, uint32_t length);
-/* */
-static void grlibCan_cleanupResources(grlibCan_dev_t *dev);
-/* */
-static int grlibCan_applyDefConf(grlibCan_dev_t *dev);
-/* Apply user config after initialization of the driver */
-static int grlibCan_applyConfig(grlibCan_dev_t *dev, grlibCan_config_t *config);
+int grlibCan_initDevices(grlibCan_dev_t *dev, int num);
+/* Allocate resources */
+int grlibCan_allocateResources(grlibCan_dev_t *dev, uintptr_t base, int id);
+/* Allocate TX/RX buffers */
+int grlibCan_allocateBuffers(grlibCan_dev_t *dev);
+/* Register devices on the system */
+int grlibCan_registerDevices(oid_t *port, grlibCan_dev_t *devices, uint32_t length);
+/* Cleanup resources */
+void grlibCan_cleanupResources(grlibCan_dev_t *dev);
 /*  */
-static int grlibCan_irqHandler(unsigned int irqNum, void *arg);
-/*  */
-static int grlibCan_transmitSync(grlibCan_dev_t *dev, const grlibCan_msg_t *buffer,
+void grlibCan_copyConfig(grlibCan_dev_t *device, grlibCan_config_t *config);
+/* Apply default config */
+int grlibCan_applyDefConf(grlibCan_dev_t *dev);
+/* Apply user provided config  */
+int grlibCan_applyConfig(grlibCan_dev_t *dev, grlibCan_config_t *config);
+/* Driver interrupt handler */
+int grlibCan_irqHandler(unsigned int irqNum, void *arg);
+/* Transmit buffer of frames in blocking mode */
+int grlibCan_transmitSync(grlibCan_dev_t *dev, const grlibCan_msg_t *buffer,
 		const uint32_t length);
-
-static int grlibCan_transmitAsync(grlibCan_dev_t *dev, const grlibCan_msg_t *buffer,
+/* Transmit buffer of frames in non-blocking mode */
+int grlibCan_transmitAsync(grlibCan_dev_t *dev, const grlibCan_msg_t *buffer,
 		const uint32_t length);
-
-static int grlibCan_recvSync(grlibCan_dev_t *dev, grlibCan_msg_t *buffer,
+/* Receive at most length frames in blocking mode */
+int grlibCan_recvSync(grlibCan_dev_t *dev, grlibCan_msg_t *buffer,
 		const uint32_t length);
-
-static int grlibCan_recvAsync(grlibCan_dev_t *dev, grlibCan_msg_t *buffer,
+/* Receive at most length frame in non-blocking mode */
+int grlibCan_recvAsync(grlibCan_dev_t *dev, grlibCan_msg_t *buffer,
 		const uint32_t length);
+/* Calculate register configuration for given baud rate */
+uint32_t grlibCan_setBdRateData(double dataBdRate);
 
+uint32_t grlibCan_setBdRateNom(double nomBdRate);
 /* Fragment and place date into CAN message */
-// static int grlibCan_prepareData(const uint8_t *buffer, const uint32_t len,
+// int  grlibCan_prepareData(const uint8_t *buffer, const uint32_t len,
 // 		grlibCan_msg_t **packets, uint32_t *pLen);
+/* */
+int grlibCan_unregisterDevices(oid_t *port, grlibCan_dev_t *devices, uint32_t length);
+/* Pop one CAN frame from circular buffer */
+int grlibCan_popFrame(grlibCan_dev_t *dev, grlibCan_msg_t *msg);
+/* Push one CAN frame to circular buffer */
+int grlibCan_pushFrame(grlibCan_dev_t *dev, const grlibCan_msg_t *msg);
+/* Use platformctl syscall to query system for GRCANFD controllers*/
+int grlibCan_queryForDevices(grlibCan_dev_t *dev);
 
-static inline int grlibCan_popFrame(grlibCan_dev_t *dev, grlibCan_msg_t *msg);
-static inline int grlibCan_pushFrame(grlibCan_dev_t *dev, const grlibCan_msg_t *msg);
 #endif

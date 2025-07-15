@@ -4,7 +4,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <libklog.h>
 
 #include <sys/debug.h>
 #include <sys/file.h>
@@ -17,32 +16,11 @@
 #include <sys/mman.h>
 #include <posix/utils.h>
 
-typedef struct
-{
-	union {
-		struct {
-			uint32_t head; /* Head contains CAN packet mode and IDs */
-			uint32_t stat;
-
-			uint8_t payload[8]; /* Payload */
-		} frame;
-
-		uint8_t payload[16];
-	};
-} grlibCan_msg_t;
-
-typedef struct {
-	enum { can_config = 0,
-		can_getStatus,
-		can_writeSync,
-		can_readSync,
-		can_writeAsync,
-		can_readAsync } type;
-} grlibCan_devCtrl_t;
+#include "grlib-can-if.h"
 
 int main(int argc, char **argv)
 {
-	char *canDevice = "/dev/can0";
+	char *canDevice = "/dev/can0?";
 	oid_t canDev;
 
 	while (lookup(canDevice, NULL, &canDev) < 0) {
@@ -50,21 +28,16 @@ int main(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
-	/* Opening CAN device */
-	msg_t msg = { 0 };
-	msg.type = mtOpen;
-	msg.oid.id = 0;
+	printf("Successfully checked CAN device oid\n");
 
-	printf("Sending message to open CAN device\n");
+	uint32_t status;
+	grlibCan_getStatus(canDev, &status);
+	printf("Can device status: %x\n", status);
 
-	if (msgSend(canDev.port, &msg) == 0) {
-		if (msg.o.err < 0) {
-			printf("Failed to acquire device\n");
-			return EXIT_FAILURE;
-		}
-	}
+	grlibCan_config_t config;
 
-	printf("Managed to open CAN device\n");
+	grlibCan_getConfig(canDev, &config);
+	printf("Can device baud rate - nom: %d, data: %d\n", config.nomBdRate, config.dataBdRate);
 
 	grlibCan_msg_t frames[10];
 
@@ -77,34 +50,14 @@ int main(int argc, char **argv)
 		frames[i].frame.payload[0] = 0x0F + i;
 	}
 
-	msg.type = mtDevCtl;
-	msg.i.size = 10;
-	msg.i.data = frames;
+	int ret = grlibCan_Send(canDev, frames, 10, true);
+	printf("Can device managed to send %d frames\n", ret);
 
-	grlibCan_devCtrl_t *p = (grlibCan_devCtrl_t *)msg.i.raw;
-	p->type = can_writeSync;
+	grlibCan_msg_t buf[10];
 
-	if (msgSend(canDev.port, &msg) < 0) {
-		printf("Failed to send message");
-	}
+	ret = grlibCan_Send(canDev, buf, 10, true);
+	printf("Can device managed to receive %d frames\n", ret);
 
-	printf("Device send: %d\n", msg.o.err);
-
-	grlibCan_msg_t ret[10];
-	msg.type = mtDevCtl;
-	msg.o.size = 10;
-	msg.o.data = (void *)ret;
-
-	p = (grlibCan_devCtrl_t *)msg.i.raw;
-	p->type = can_readAsync;
-
-	usleep(10000);
-
-	if (msgSend(canDev.port, &msg) < 0) {
-		printf("Failed to send message");
-	}
-
-	printf("Received from device %d\n", msg.o.err);
 
 	return EXIT_SUCCESS;
 }
