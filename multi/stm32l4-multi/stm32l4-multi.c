@@ -183,9 +183,11 @@ static void handleMsg(msg_t *msg)
 			err = rtc_storeBackup(msg->i.data, msg->i.size);
 			break;
 
+#if defined(__CPU_STM32L4X6)
 		case adc_get:
 			omsg->adc_valmv = adc_conversion(imsg->adc_get.adcno, imsg->adc_get.channel);
 			break;
+#endif
 
 		case spi_get:
 			err = spi_transaction(imsg->spi_rw.spi, spi_dir_read, imsg->spi_rw.cmd, imsg->spi_rw.addr,
@@ -346,7 +348,9 @@ int main(void)
 	tty_init();
 	gpio_init();
 	spi_init();
+#if defined(__CPU_STM32L4X6)
 	adc_init();
+#endif
 	rtc_init();
 #if defined(__CPU_STM32L4X6)
 	flash_init();

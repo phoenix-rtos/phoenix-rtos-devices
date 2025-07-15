@@ -8,9 +8,9 @@ LOCAL_PATH := $(call my-dir)
 
 NAME := stm32l4-multi
 
-LOCAL_SRCS = adc.c fs.c gpio.c i2c.c posixsrv.c rng.c rtc.c spi.c stm32l4-multi.c tty.c uart.c
+LOCAL_SRCS = fs.c gpio.c i2c.c posixsrv.c rng.c rtc.c spi.c stm32l4-multi.c tty.c uart.c
 ifeq ($(TARGET_SUBFAMILY),stm32l4x6)
-  LOCAL_SRCS += exti_l4.c flash.c rcc_l4.c
+  LOCAL_SRCS += adc.c exti_l4.c flash.c rcc_l4.c
 else ifeq ($(TARGET_SUBFAMILY),stm32n6)
   LOCAL_SRCS += clockdef_n6.c exti_n6.c rcc_n6.c
 endif
