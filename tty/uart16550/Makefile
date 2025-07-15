@@ -16,6 +16,8 @@ else ifeq ($(TARGET_SUBFAMILY),zynq7000)
   LOCAL_SRCS += uarthw-zynq.c
 else ifeq ($(TARGET_SUBFAMILY),zynqmp)
   LOCAL_SRCS += uarthw-zynq.c
+else ifeq ($(TARGET_SUBFAMILY),tda4vm)
+  LOCAL_SRCS += uarthw-tda4vm.c
 endif
 
 DEP_LIBS := libtty libklog
