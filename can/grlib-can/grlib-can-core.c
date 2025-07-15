@@ -118,18 +118,24 @@ int grlibCan_pushFrame(grlibCan_dev_t *dev, const grlibCan_msg_t *msg)
 
 static inline double getBd_nom(uint32_t reg)
 {
-	uint32_t SC = (reg & GRLIB_CAN_timConf_MASK) >> 16;
-	uint32_t PS1 = (reg & ((~(uint32_t)0) >> 15)) >> 10;
-	uint32_t PS2 = (reg & ((~(uint32_t)0) >> 10)) >> 5;
+	reg = reg >> 5;
+	uint32_t PS2 = reg & ((~(uint32_t)0) >> 27);
+	reg = reg >> 5;
+	uint32_t PS1 = reg & ((~(uint32_t)0) >> 26);
+	reg = reg >> 6;
+	uint32_t SC = reg & ((~(uint32_t)0) >> 24);
 	uint32_t a = (SC + 1) * (PS1 + PS2 + 1);
 	return (double)(SYSCLK_FREQ) / ((double)a);
 }
 
 static inline double getBd_data(uint32_t reg)
 {
-	uint32_t SC = (reg & GRLIB_CAN_timConf_MASK) >> 16;
-	uint32_t PS1 = (reg & ((~(uint32_t)0) >> 14)) >> 10;
-	uint32_t PS2 = (reg & ((~(uint32_t)0) >> 9)) >> 5;
+	reg = reg >> 5;
+	uint32_t PS2 = reg & ((~(uint32_t)0) >> 28);
+	reg = reg >> 5;
+	uint32_t PS1 = reg & ((~(uint32_t)0) >> 28);
+	reg = reg >> 6;
+	uint32_t SC = reg & ((~(uint32_t)0) >> 24);
 	uint32_t a = (SC + 1) * (PS1 + PS2 + 1);
 	return (double)(SYSCLK_FREQ) / ((double)a);
 }
