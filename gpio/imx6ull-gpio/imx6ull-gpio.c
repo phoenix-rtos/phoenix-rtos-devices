@@ -31,6 +31,10 @@
 #include "imx6ull-gpio.h"
 
 
+/* WARN: currently, only a single thread is supported */
+#define GPIO_THREADS_NO 1
+
+
 enum { gpio1 = 0, gpio2, gpio3, gpio4, gpio5, dir1, dir2, dir3, dir4, dir5 };
 
 
@@ -40,7 +44,9 @@ enum { dr = 0, gdir, psr, icr1, icr2, imr, isr, edge };
 struct {
 	struct {
 		volatile uint32_t *base;
+#if GPIO_THREADS_NO > 1
 		handle_t lock;
+#endif
 	} gpio[5];
 
 	uint32_t port;
@@ -102,10 +108,12 @@ int init(void)
 			return -1;
 		}
 
+#if GPIO_THREADS_NO > 1
 		if (mutexCreate(&common.gpio[i].lock) < 0) {
 			printf("gpiodrv: Could not create mutex for gpio%d\n", i + 1);
 			return -1;
 		}
+#endif
 	}
 
 	return 0;
@@ -117,9 +125,15 @@ int gpioread(int d, uint32_t *val)
 	if (d < gpio1 || d > gpio5)
 		return -EINVAL;
 
+#if GPIO_THREADS_NO > 1
 	mutexLock(common.gpio[d - gpio1].lock);
+#endif
+
 	(*val) = *(common.gpio[d - gpio1].base + dr);
+
+#if GPIO_THREADS_NO > 1
 	mutexUnlock(common.gpio[d - gpio1].lock);
+#endif
 
 	return EOK;
 }
@@ -132,10 +146,16 @@ int gpiowrite(int d, uint32_t val, uint32_t mask)
 	if (d < gpio1 || d > gpio5)
 		return -EINVAL;
 
+#if GPIO_THREADS_NO > 1
 	mutexLock(common.gpio[d - gpio1].lock);
+#endif
+
 	t = *(common.gpio[d - gpio1].base + dr) & ~(mask);
 	*(common.gpio[d - gpio1].base + dr) = t | (val & mask);
+
+#if GPIO_THREADS_NO > 1
 	mutexUnlock(common.gpio[d - gpio1].lock);
+#endif
 
 	return EOK;
 }
@@ -146,9 +166,15 @@ int gpiogetdir(int d, uint32_t *dir)
 	if (d < dir1 || d > dir5)
 		return -EINVAL;
 
+#if GPIO_THREADS_NO > 1
 	mutexLock(common.gpio[d - dir1].lock);
+#endif
+
 	*(dir) = *(common.gpio[d - dir1].base + gdir);
+
+#if GPIO_THREADS_NO > 1
 	mutexUnlock(common.gpio[d - dir1].lock);
+#endif
 
 	return EOK;
 }
@@ -161,10 +187,16 @@ int gpiosetdir(int d, uint32_t dir, uint32_t mask)
 	if (d < dir1 || d > dir5)
 		return -EINVAL;
 
+#if GPIO_THREADS_NO > 1
 	mutexLock(common.gpio[d - dir1].lock);
+#endif
+
 	t = *(common.gpio[d - dir1].base + gdir) & ~(mask);
 	*(common.gpio[d - dir1].base + gdir) = t | (dir & mask);
+
+#if GPIO_THREADS_NO > 1
 	mutexUnlock(common.gpio[d - dir1].lock);
+#endif
 
 	return EOK;
 }
