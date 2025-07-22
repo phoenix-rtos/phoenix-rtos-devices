@@ -62,6 +62,14 @@
 #define THREAD_STACKSZ 768
 #define THREAD_PRIO    1
 
+#if defined(__CPU_STM32L4X6)
+#define UART_FIFO_MODE 0
+#elif defined(__CPU_STM32N6)
+#define UART_FIFO_MODE 1
+#else
+#error "Unknown platform"
+#endif
+
 #define IS_POWER_OF_TWO(n) ((n > 0) && (n & (n - 1)) == 0)
 
 #if (!IS_POWER_OF_TWO(TTY1_DMA_RXSZ)) || (!IS_POWER_OF_TWO(TTY2_DMA_RXSZ)) || \
@@ -204,6 +212,23 @@ enum { cr1 = 0, cr2, cr3, brr, gtpr, rtor, rqr, isr, icr, rdr, tdr };
 enum { tty_parnone = 0, tty_pareven, tty_parodd };
 /* clang-format on */
 
+/* RX overrun interrupt */
+#define UART_CR1_OREIE (1 << 3) /* Enable */
+#define UART_ICR_ORE   (1 << 3) /* Clear */
+#define UART_ISR_ORE   (1 << 3) /* Status */
+
+/* RX (FIFO / register) not empty interrupt */
+#define UART_CR1_RXFNEIE (1 << 5) /* Enable */
+#define UART_ISR_RXFNE   (1 << 5) /* Status */
+
+/* TX (FIFO not full / register empty) interrupt */
+#define UART_CR1_TXFNFIE (1 << 7) /* Enable */
+#define UART_ISR_TXFNF   (1 << 7) /* Status */
+
+/* TX FIFO empty interrupt */
+#define UART_CR1_TXFEIE (1 << 30) /* Enable */
+#define UART_ISR_TXFE   (1 << 23) /* Status */
+
 
 #if defined(__CPU_STM32L4X6)
 static int tty_clockSetup(const struct tty_peripheralInfo *info, uint32_t *out)
@@ -236,25 +261,35 @@ static int tty_clockSetup(const struct tty_peripheralInfo *info, uint32_t *out)
 
 static inline int tty_txready(tty_ctx_t *ctx)
 {
-	return (*(ctx->base + isr) & (1 << 7)) ? 1 : 0;
+	return (*(ctx->base + isr) & UART_ISR_TXFNF) ? 1 : 0;
 }
 
 
 static int tty_irqHandler(unsigned int n, void *arg)
 {
 	tty_ctx_t *ctx = (tty_ctx_t *)arg;
-
-	if ((*(ctx->base + isr) & ((1 << 5) | (1 << 3))) != 0) {
-		/* Clear overrun error bit */
-		*(ctx->base + icr) |= (1 << 3);
-
+	uint32_t isr_val = *(ctx->base + isr);
+	while ((isr_val & UART_ISR_RXFNE) != 0) {
 		lf_fifo_push(&ctx->data.irq.rxFifo, *(ctx->base + rdr));
 		ctx->data.irq.rxready = 1;
+		isr_val = *(ctx->base + isr);
 	}
 
-	if (tty_txready(ctx) != 0) {
-		*(ctx->base + cr1) &= ~(1 << 7);
+	if ((isr_val & UART_ISR_ORE) != 0) {
+		/* Clear overrun error bit */
+		*(ctx->base + icr) |= UART_ICR_ORE;
 	}
+
+	if ((isr_val & UART_ISR_TXFNF) != 0) {
+		/* Disable interrupt until it is requested again */
+		*(ctx->base + cr1) &= ~UART_CR1_TXFNFIE;
+	}
+
+#if UART_FIFO_MODE
+	if ((isr_val & UART_ISR_TXFE) != 0) {
+		*(ctx->base + cr1) &= ~UART_CR1_TXFEIE;
+	}
+#endif
 
 	return 1;
 }
@@ -417,8 +452,8 @@ static void tty_irqthread(void *arg)
 			ctx->data.irq.rxready = 1;
 		}
 
-
-		if (libtty_txready(&ctx->ttyCommon) != 0) {
+		int txReady = 0;
+		while (libtty_txready(&ctx->ttyCommon) != 0) {
 			if (tty_txready(ctx) != 0) {
 				if (keptidle == 0) {
 					keptidle = 1;
@@ -427,10 +462,20 @@ static void tty_irqthread(void *arg)
 
 				/* TODO add small TX fifo that can be read directly from IRQ */
 				*(ctx->base + tdr) = libtty_getchar(&ctx->ttyCommon, NULL);
-				*(ctx->base + cr1) |= (1 << 7);
+			}
+			else {
+#if UART_FIFO_MODE
+				*(ctx->base + cr1) |= UART_CR1_TXFEIE;
+#else
+				*(ctx->base + cr1) |= UART_CR1_TXFNFIE;
+#endif
+				txReady = 1;
+				break;
 			}
 		}
-		else if (keptidle != 0) {
+
+
+		if ((txReady == 0) && (keptidle != 0)) {
 			keptidle = 0;
 			keepidle(0);
 		}
@@ -481,6 +526,9 @@ static int _tty_configure(tty_ctx_t *ctx, char bits, char parity, char enable)
 	if (err == EOK) {
 		*(ctx->base + cr1) &= ~1;
 		dataBarier();
+#if UART_FIFO_MODE
+		tcr1 |= (1 << 29); /* Activate FIFO mode */
+#endif
 		*(ctx->base + cr1) = tcr1;
 
 		if (parity == tty_parodd) {
@@ -497,8 +545,7 @@ static int _tty_configure(tty_ctx_t *ctx, char bits, char parity, char enable)
 			/* Enable transimitter and receiver (TE + RE) */
 			flags = (1 << 3) | (1 << 2);
 			if (ctx->type == tty_irq) {
-				/* Enable RXNE interrupt (RXNEIE) */
-				flags |= (1 << 5);
+				flags |= UART_CR1_RXFNEIE;
 			}
 			if (ctx->type == tty_dma) {
 				/* Idle line interrupt enable. */
@@ -571,7 +618,7 @@ static void tty_setBaudrate(void *uart, speed_t baud)
 		flags = (1 << 3) | (1 << 2);
 		if (ctx->type == tty_irq) {
 			/* Enable RXNE interrupt (RXNEIE) */
-			flags |= (1 << 5);
+			flags |= UART_CR1_RXFNEIE;
 		}
 		if (ctx->type == tty_dma) {
 			/* Idle line interrupt enable. */
