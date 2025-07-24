@@ -18,6 +18,9 @@
 #include <unistd.h>
 #include "libmulti/libi2c.h"
 #include "../common.h"
+#if defined(__CPU_STM32N6)
+#include "../rcc.h"
+#endif
 
 
 #define TIMEOUT (100 * 1000)
@@ -28,11 +31,22 @@ static const struct libi2c_peripheralInfo {
 	int clk;
 	int irq_ev;
 	int irq_er;
+#if defined(__CPU_STM32N6)
+	enum ipclks clksel;    /* Clock selector */
+	enum clock_ids clksrc; /* ID of source clock */
+#endif
 } i2cinfo[] = {
+#if defined(__CPU_STM32L4X6)
 	{ I2C1_BASE, pctl_i2c1, i2c1_ev_irq, i2c1_er_irq },
 	{ I2C2_BASE, pctl_i2c2, i2c2_ev_irq, i2c2_er_irq },
 	{ I2C3_BASE, pctl_i2c3, i2c3_ev_irq, i2c3_er_irq },
 	{ I2C4_BASE, pctl_i2c4, i2c4_ev_irq, i2c4_er_irq },
+#elif defined(__CPU_STM32N6)
+	{ I2C1_BASE, pctl_i2c1, i2c1_ev_irq, i2c1_er_irq, pctl_ipclk_i2c1sel, clkid_per },
+	{ I2C2_BASE, pctl_i2c2, i2c2_ev_irq, i2c2_er_irq, pctl_ipclk_i2c2sel, clkid_per },
+	{ I2C3_BASE, pctl_i2c3, i2c3_ev_irq, i2c3_er_irq, pctl_ipclk_i2c3sel, clkid_per },
+	{ I2C4_BASE, pctl_i2c4, i2c4_ev_irq, i2c4_er_irq, pctl_ipclk_i2c4sel, clkid_per },
+#endif
 };
 
 
@@ -41,6 +55,7 @@ enum { cr1 = 0, cr2, oar1, oar2, timingr, timeoutr, isr, icr, pecr, rxdr, txdr }
 enum { dir_read, dir_write };
 
 
+#if defined(__CPU_STM32L4X6)
 static int libi2c_clockSetup(const struct libi2c_peripheralInfo *info, uint32_t *out)
 {
 	/* On this platform no extra information is used for clock setup */
@@ -48,6 +63,25 @@ static int libi2c_clockSetup(const struct libi2c_peripheralInfo *info, uint32_t 
 	*out = getCpufreq();
 	return EOK;
 }
+#elif defined(__CPU_STM32N6)
+static int libi2c_clockSetup(const struct libi2c_peripheralInfo *info, uint32_t *out)
+{
+	int ret;
+	ret = rcc_setClksel(info->clksel, info->clksrc);
+	if (ret < 0) {
+		return ret;
+	}
+
+	uint64_t freq;
+	ret = clockdef_getClock(info->clksrc, &freq);
+	if (ret < 0) {
+		return ret;
+	}
+
+	*out = (uint32_t)freq;
+	return ret;
+}
+#endif
 
 
 static int libi2c_irqHandler(unsigned int n, void *arg)
