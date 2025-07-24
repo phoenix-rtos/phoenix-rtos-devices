@@ -50,7 +50,7 @@ ssize_t i2c_read(int i2c, unsigned char addr, void *buff, size_t len)
 	ssize_t ret;
 
 	if (i2c < i2c1 || i2c > i2c4 || !i2cConfig[i2c])
-		return -1;
+		return -EINVAL;
 
 	mutexLock(i2c_lock[i2cPos[i2c]]);
 	ret = libi2c_read(&i2c_ctx[i2cPos[i2c]], addr, buff, len);
@@ -65,7 +65,7 @@ ssize_t i2c_readReg(int i2c, unsigned char addr, unsigned char reg, void *buff, 
 	ssize_t ret;
 
 	if (i2c < i2c1 || i2c > i2c4 || !i2cConfig[i2c])
-		return -1;
+		return -EINVAL;
 
 	mutexLock(i2c_lock[i2cPos[i2c]]);
 	ret = libi2c_readReg(&i2c_ctx[i2cPos[i2c]], addr, reg, buff, len);
@@ -80,7 +80,7 @@ ssize_t i2c_write(int i2c, unsigned char addr, const void *buff, size_t len)
 	ssize_t ret;
 
 	if (i2c < i2c1 || i2c > i2c4 || !i2cConfig[i2c])
-		return -1;
+		return -EINVAL;
 
 	mutexLock(i2c_lock[i2cPos[i2c]]);
 	ret = libi2c_write(&i2c_ctx[i2cPos[i2c]], addr, buff, len);
@@ -95,7 +95,7 @@ ssize_t i2c_writeReg(int i2c, unsigned char addr, unsigned char reg, const void 
 	ssize_t ret;
 
 	if (i2c < i2c1 || i2c > i2c4 || !i2cConfig[i2c])
-		return -1;
+		return -EINVAL;
 
 	mutexLock(i2c_lock[i2cPos[i2c]]);
 	ret = libi2c_writeReg(&i2c_ctx[i2cPos[i2c]], addr, reg, buff, len);
