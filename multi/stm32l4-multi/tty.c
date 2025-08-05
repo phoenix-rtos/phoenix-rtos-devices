@@ -49,8 +49,6 @@
 #define THREAD_STACKSZ 768
 #define THREAD_PRIO    1
 
-#if TTY_CNT != 0
-
 #define IS_POWER_OF_TWO(n) ((n > 0) && (n & (n - 1)) == 0)
 
 #if (!IS_POWER_OF_TWO(TTY1_DMA_RXSZ)) || (!IS_POWER_OF_TWO(TTY2_DMA_RXSZ)) || \
@@ -630,12 +628,20 @@ static void tty_thread(void *arg)
 
 ssize_t tty_log(const char *str, size_t len)
 {
+	if (TTY_CNT == 0) {
+		return -EINVAL;
+	}
+
 	return libtty_write(&tty_getCtx(0)->ttyCommon, str, len, 0);
 }
 
 
 void tty_createDev(void)
 {
+	if (TTY_CNT == 0) {
+		return;
+	}
+
 	oid_t oid;
 
 	oid.port = uart_common.port;
@@ -643,12 +649,14 @@ void tty_createDev(void)
 	create_dev(&oid, _PATH_TTY);
 	create_dev(&oid, _PATH_CONSOLE);
 }
-#endif
 
 
 int tty_init(void)
 {
-#if TTY_CNT != 0
+	if (TTY_CNT == 0) {
+		return EOK;
+	}
+
 	unsigned int tty, i;
 	char fname[] = "uartx";
 	speed_t baudrate = B115200;
@@ -760,7 +768,4 @@ int tty_init(void)
 	}
 
 	return EOK;
-#else
-	return 0;
-#endif
 }

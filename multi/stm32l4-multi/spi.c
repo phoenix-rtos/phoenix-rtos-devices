@@ -29,31 +29,34 @@
 #include "rcc.h"
 #include "spi.h"
 
+#define MAX_SPI spi3
 
 #define SPI1_POS 0
 #define SPI2_POS (SPI1_POS + SPI1)
 #define SPI3_POS (SPI2_POS + SPI2)
 
+#define N_ACTIVE_SPI (SPI1 + SPI2 + SPI3)
 
-static libspi_ctx_t spi_common[SPI1 + SPI2 + SPI3];
-static handle_t spi_locks[SPI1 + SPI2 + SPI3];
-
-
-static const int spiConfig[] = { SPI1, SPI2, SPI3 };
+static libspi_ctx_t spi_common[N_ACTIVE_SPI];
+static handle_t spi_locks[N_ACTIVE_SPI];
 
 
-static const int spiPos[] = { SPI1_POS, SPI2_POS, SPI3_POS };
+static const int spiConfig[MAX_SPI + 1] = { SPI1, SPI2, SPI3 };
 
 
-static const int spiUseDma[] = { SPI1_USEDMA, SPI2_USEDMA, SPI3_USEDMA };
+static const int spiPos[MAX_SPI + 1] = { SPI1_POS, SPI2_POS, SPI3_POS };
+
+
+static const int spiUseDma[MAX_SPI + 1] = { SPI1_USEDMA, SPI2_USEDMA, SPI3_USEDMA };
 
 
 int spi_transaction(int spi, int dir, unsigned char cmd, unsigned int addr, unsigned char flags, unsigned char *ibuff, const unsigned char *obuff, size_t bufflen)
 {
 	int ret;
 
-	if (spi < spi1 || spi > spi3 || !spiConfig[spi])
+	if ((N_ACTIVE_SPI == 0) || (spi < spi1) || (spi > MAX_SPI) || (spiConfig[spi] == 0)) {
 		return -EINVAL;
+	}
 
 	mutexLock(spi_locks[spiPos[spi]]);
 	ret = libspi_transaction(&spi_common[spiPos[spi]], dir, cmd, addr, flags, ibuff, obuff, bufflen);
@@ -67,8 +70,9 @@ int spi_configure(int spi, char mode, char bdiv, int enable)
 {
 	int ret;
 
-	if (spi < spi1 || spi > spi3 || !spiConfig[spi])
+	if ((N_ACTIVE_SPI == 0) || (spi < spi1) || (spi > MAX_SPI) || (spiConfig[spi] == 0)) {
 		return -EINVAL;
+	}
 
 	mutexLock(spi_locks[spiPos[spi]]);
 	ret = libspi_configure(&spi_common[spiPos[spi]], mode, bdiv, enable);
@@ -81,10 +85,14 @@ int spi_configure(int spi, char mode, char bdiv, int enable)
 void spi_init(void)
 {
 	int spi;
+	if (N_ACTIVE_SPI == 0) {
+		return;
+	}
 
-	for (spi = 0; spi < 3; ++spi) {
-		if (!spiConfig[spi])
+	for (spi = 0; spi <= MAX_SPI; ++spi) {
+		if (!spiConfig[spi]) {
 			continue;
+		}
 
 		mutexCreate(&spi_locks[spiPos[spi]]);
 		libspi_init(&spi_common[spiPos[spi]], spi, spiUseDma[spi]);
