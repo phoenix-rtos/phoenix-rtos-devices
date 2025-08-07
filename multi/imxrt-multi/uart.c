@@ -231,8 +231,10 @@ static int uart_handleIntr(unsigned int n, void *arg)
 	uart_t *uart = (uart_t *)arg;
 	uint32_t status = *(uart->base + statr);
 
-	/* Disable interrupts, enabled in uart_intrThread */
-	*(uart->base + ctrlr) &= ~((1 << 27) | (1 << 26) | (1 << 25) | (1 << 23) | (1 << 22) | (1 << 21));
+	/* Disable interrupts: overrun, noise error, framing error, parity error, TX
+	   RX interrupt not disabled so no characters are lost
+	   Interrupts re-enabled in uart_intrThread */
+	*(uart->base + ctrlr) &= ~((1 << 27) | (1 << 26) | (1 << 25) | (1 << 23) | (1 << 22));
 
 	/* check for RX overrun */
 	if ((status & (1uL << 19u)) != 0u) {
@@ -267,7 +269,7 @@ static void uart_intrThread(void *arg)
 		/* wait for character or transmit data */
 		mutexLock(uart->lock);
 		while (lf_fifo_empty(&uart->rxFifoCtx) != 0) { /* nothing to RX */
-			uint32_t intrs = (1 << 27) | (1 << 26) | (1 << 25) | (1 << 21);
+			uint32_t intrs = (1 << 27) | (1 << 26) | (1 << 25);
 			if (libtty_txready(&uart->tty_common)) {          /* something to TX */
 				if (uart_getTXcount(uart) < uart->txFifoSz) { /* TX ready */
 					break;
