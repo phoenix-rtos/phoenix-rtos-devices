@@ -14,6 +14,7 @@
 #ifndef _LIBSENSORS_H_
 #define _LIBSENSORS_H_
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <sys/ioctl.h>
 #include <time.h>
@@ -30,6 +31,8 @@
 #define SENSOR_TYPE_TEMP     (1 << 5)
 #define SENSOR_TYPE_DIFFBARO (1 << 6)
 #define SENSOR_TYPE_SENSEKF  (1 << 7)
+#define SENSOR_TYPE_FSS      (1 << 8)
+#define SENSOR_TYPE_STAR     (1 << 9)
 
 
 typedef unsigned int sensor_type_t;
@@ -100,9 +103,9 @@ typedef struct {
 /* Magnetometer data */
 typedef struct {
 	uint32_t devId;
-	int16_t magX; /* value in 1E-7 [T] */
-	int16_t magY; /* value in 1E-7 [T] */
-	int16_t magZ; /* value in 1E-7 [T] */
+	int32_t magX; /* value in 1E-7 [T] */
+	int32_t magY; /* value in 1E-7 [T] */
+	int32_t magZ; /* value in 1E-7 [T] */
 	uint8_t reserved[2];
 } mag_data_t;
 
@@ -172,10 +175,26 @@ typedef struct {
 } sensEkf_data_t;
 
 
+/* Fine Sun Sensor data */
+typedef struct {
+	uint32_t devId;
+	bool valid;
+	double sunVec[3]; /* Sun versor in body frame */
+	double theta;     /* Off-boresight angle */
+} fss_data_t;
+
+
+typedef struct {
+	uint32_t devId;
+	bool valid;
+	double quat[4];
+} starTracker_data_t;
+
+
 /* Event data gets from sensor manager */
 typedef struct {
 	sensor_type_t type;
-	time_t timestamp;
+	uint64_t timestamp;
 
 	union {
 		accel_data_t accels;
@@ -186,6 +205,8 @@ typedef struct {
 		temp_data_t temp;
 		diffBaro_data_t diffBaro;
 		sensEkf_data_t sensEkf;
+		fss_data_t fss;
+		starTracker_data_t st;
 	};
 } sensor_event_t;
 
