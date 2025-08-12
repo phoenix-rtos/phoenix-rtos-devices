@@ -19,7 +19,6 @@
 #include <libmulti/libspi.h>
 #include <libmulti/libi2c.h>
 
-
 #define FLASH_REBOOT_MAGIC 0x88bb77aaUL
 #define OTP_WRITE_MAGIC    0x5d1a8712UL
 #define RTC_BACKUP_SZ      ((128 / 2) - 4)
@@ -29,7 +28,7 @@ enum { adc_get = 0, rtc_setcal, rtc_get, rtc_set, rtc_setalarm, i2c_get, i2c_get
 	i2c_set, i2c_setwreg, gpio_def, gpio_get, gpio_set, uart_def, uart_get, uart_set,
 	flash_get, flash_set, flash_info, spi_get, spi_set, spi_rw, spi_def, exti_def,
 	exti_map, otp_get, otp_set, rtc_setBackup, rtc_getBackup, flash_setRaw, flash_erase,
-	rng_get };
+	rng_get, pwm_def, pwm_setm, pwm_getm, pwm_getfreq, pwm_distim, pwm_dischn, pwm_bitseq };
 /* clang-format on */
 
 /* RTC */
@@ -136,13 +135,109 @@ typedef struct {
 } __attribute__((packed)) spidef_t;
 
 
+/* PWM */
+
+enum pwm_tim_ids {
+	pwm_tim1,
+	pwm_tim2,
+	pwm_tim3,
+	pwm_tim4,
+	pwm_tim5,
+	pwm_tim6,
+	pwm_tim7,
+	pwm_tim8,
+	pwm_tim9,
+	pwm_tim10,
+	pwm_tim11,
+	pwm_tim12,
+	pwm_tim13,
+	pwm_tim14,
+	pwm_tim15,
+	pwm_tim16,
+	pwm_tim17,
+	pwm_tim18,
+	pwm_tim_count
+};
+
+enum pwm_chn_ids {
+	pwm_ch1,
+	pwm_ch2,
+	pwm_ch3,
+	pwm_ch4,
+	pwm_ch1n,
+	pwm_ch2n,
+	pwm_ch3n,
+	pwm_ch4n,
+};
+
+typedef enum pwm_tim_ids pwm_tim_id_t;
+
+typedef enum pwm_chn_ids pwm_ch_id_t;
+
+typedef struct {
+	pwm_tim_id_t timer;
+	uint16_t prescaler;
+	uint32_t top;
+} __attribute__((packed)) pwmdef_t;
+
+
+typedef struct {
+	pwm_tim_id_t timer;
+	pwm_ch_id_t chn;
+	uint32_t compare;
+} __attribute__((packed)) pwmset_t;
+
+
+typedef struct {
+	pwm_tim_id_t timer;
+	pwm_ch_id_t chn;
+} __attribute__((packed)) pwmgeti_t;
+
+
+typedef struct {
+	uint32_t top;
+	uint32_t compare;
+} __attribute__((packed)) pwmgeto_t;
+
+
+typedef struct {
+	pwm_tim_id_t timer;
+} __attribute__((packed)) pwmfreq_t;
+
+
+typedef struct {
+	pwm_tim_id_t timer;
+} __attribute__((packed)) pwmdistim_t;
+
+
+typedef struct {
+	pwm_tim_id_t timer;
+	pwm_ch_id_t chn;
+} __attribute__((packed)) pwmdischn_t;
+
+
+typedef struct {
+	pwm_tim_id_t timer;
+	pwm_ch_id_t chn;
+	uint32_t compare0;
+	uint32_t compare1;
+	uint32_t nbits;
+	uint8_t *data;
+} __attribute__((packed)) pwmbitseq_t;
+
+
 /* EXTI */
 
 
-enum { exti_irq = 0, exti_event, exti_irqevent, exti_disabled };
+enum { exti_irq = 0,
+	exti_event,
+	exti_irqevent,
+	exti_disabled };
 
 
-enum { exti_rising = 0, exti_falling, exti_risingfalling };
+enum { exti_rising = 0,
+	exti_falling,
+	exti_risingfalling };
 
 
 typedef struct {
@@ -161,7 +256,9 @@ typedef struct {
 /* ADC */
 
 
-enum { adc1 = 0, adc2, adc3 };
+enum { adc1 = 0,
+	adc2,
+	adc3 };
 
 
 typedef struct {
@@ -213,6 +310,13 @@ typedef struct {
 		extimap_t exti_map;
 		otprw_t otp_rw;
 		unsigned int flash_addr;
+		pwmdef_t pwm_def;
+		pwmset_t pwm_set;
+		pwmgeti_t pwm_get;
+		pwmfreq_t pwm_freq;
+		pwmdistim_t pwm_distim;
+		pwmdischn_t pwm_dischn;
+		pwmbitseq_t pwm_bitseq;
 	};
 } __attribute__((packed)) multi_i_t;
 
@@ -223,6 +327,8 @@ typedef struct {
 		rtctimestamp_t rtc_timestamp;
 		unsigned int gpio_get;
 		flashinfo_t flash_info;
+		uint64_t pwm_basefreq;
+		pwmgeto_t pwm_get;
 	};
 } __attribute__((packed)) multi_o_t;
 

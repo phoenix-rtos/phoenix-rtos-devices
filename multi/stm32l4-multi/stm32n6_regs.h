@@ -351,4 +351,37 @@ enum adc_regs {
 	adc_or = 0x34,
 };
 
-#endif /* _STM32N6_REGS_H_ */
+
+enum tim_regs {
+	tim_cr1,
+	tim_cr2,
+	tim_smcr,
+	tim_dier,
+	tim_sr,
+	tim_egr,
+	tim_ccmr1,
+	tim_ccmr2,
+	tim_ccer,
+	tim_cnt,
+	tim_psc,
+	tim_arr,
+	tim_rcr,
+	tim_ccr1,
+	tim_ccr2,
+	tim_ccr3,
+	tim_ccr4,
+	tim_bdtr,
+	tim_ccr5,
+	tim_ccr6,
+	tim_ccmr3,
+	tim_dtr2,
+	tim_ecr,
+	tim_tisel,
+	tim_af1,
+	tim_af2,
+	tim_dcr,
+	tim_dmar,
+};
+
+
+#endif
