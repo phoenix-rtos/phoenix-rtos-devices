@@ -49,15 +49,19 @@
 #ifdef NDEBUG
 #define DEBUG(format, ...)
 #else
-#define DEBUG(format, ...) printf("%s: "format, drvname, ##__VA_ARGS__)
+#define DEBUG(format, ...) printf("%s: " format, drvname, ##__VA_ARGS__)
 #endif
 
-
+/* 'Barrier' is spelled with double r. Consider renaming the function */
 static inline void dataBarier(void)
 {
-	__asm__ volatile ("dmb");
+	__asm__ volatile("dmb");
 }
 
+static inline void syncBarrier(void)
+{
+	__asm__ volatile("dsb");
+}
 
 static inline int devClk(int dev, int state)
 {
