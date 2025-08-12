@@ -18,7 +18,7 @@
 #include <libmulti/libuart.h>
 #include <libmulti/libspi.h>
 #include <libmulti/libi2c.h>
-
+#include <libmulti/libpwm_n6.h>
 
 #define FLASH_REBOOT_MAGIC 0x88bb77aaUL
 #define OTP_WRITE_MAGIC    0x5d1a8712UL
@@ -29,7 +29,7 @@ enum { adc_get = 0, rtc_setcal, rtc_get, rtc_set, rtc_setalarm, i2c_get, i2c_get
 	i2c_set, i2c_setwreg, gpio_def, gpio_get, gpio_set, uart_def, uart_get, uart_set,
 	flash_get, flash_set, flash_info, spi_get, spi_set, spi_rw, spi_def, exti_def,
 	exti_map, otp_get, otp_set, rtc_setBackup, rtc_getBackup, flash_setRaw, flash_erase,
-	rng_get };
+	rng_get, pwm_def, pwm_setm, pwm_getm, pwm_getfreq };
 /* clang-format on */
 
 /* RTC */
@@ -136,13 +136,45 @@ typedef struct {
 } __attribute__((packed)) spidef_t;
 
 
+/* PWM */
+
+typedef struct {
+	pwm_tim_id_t timer;
+	uint32_t prescaler;
+	uint16_t top;
+} __attribute__((packed)) pwmdef_t;
+
+
+typedef struct {
+	pwm_tim_id_t timer;
+	pwm_ch_id_t chn;
+	uint16_t compare;
+} __attribute__((packed)) pwmset_t;
+
+
+typedef struct {
+	pwm_tim_id_t timer;
+	pwm_ch_id_t chn;
+} __attribute__((packed)) pwmget_t;
+
+
+typedef struct {
+	pwm_tim_id_t timer;
+} __attribute__((packed)) pwmfreq_t;
+
+
 /* EXTI */
 
 
-enum { exti_irq = 0, exti_event, exti_irqevent, exti_disabled };
+enum { exti_irq = 0,
+	exti_event,
+	exti_irqevent,
+	exti_disabled };
 
 
-enum { exti_rising = 0, exti_falling, exti_risingfalling };
+enum { exti_rising = 0,
+	exti_falling,
+	exti_risingfalling };
 
 
 typedef struct {
@@ -161,7 +193,9 @@ typedef struct {
 /* ADC */
 
 
-enum { adc1 = 0, adc2, adc3 };
+enum { adc1 = 0,
+	adc2,
+	adc3 };
 
 
 typedef struct {
@@ -213,6 +247,10 @@ typedef struct {
 		extimap_t exti_map;
 		otprw_t otp_rw;
 		unsigned int flash_addr;
+		pwmdef_t pwm_def;
+		pwmset_t pwm_set;
+		pwmget_t pwm_get;
+		pwmfreq_t pwm_freq;
 	};
 } __attribute__((packed)) multi_i_t;
 
@@ -223,6 +261,7 @@ typedef struct {
 		rtctimestamp_t rtc_timestamp;
 		unsigned int gpio_get;
 		flashinfo_t flash_info;
+		uint64_t pwm_bsfreq;
 	};
 } __attribute__((packed)) multi_o_t;
 

@@ -39,7 +39,6 @@
 #include "uart.h"
 #include "rng.h"
 
-
 #if ((MULTIDRV_INTERFACE_THREADS) < 2)
 #error "At least two interface threads required"
 #endif
@@ -238,6 +237,21 @@ static void handleMsg(msg_t *msg)
 			err = rng_read(msg->o.data, msg->o.size);
 			break;
 
+#if defined(__CPU_STM32N6)
+		case pwm_def:
+			err = pwm_configure(imsg->pwm_def.timer, imsg->pwm_def.prescaler, imsg->pwm_def.top);
+			break;
+		case pwm_setm:
+			err = pwm_set(imsg->pwm_set.timer, imsg->pwm_set.chn, imsg->pwm_set.compare);
+			break;
+		case pwm_getm:
+			// err = pwm_get(imsg->pwm_get.timer, imsg->pwm_get.chn);
+			break;
+		case pwm_getfreq:
+			omsg->pwm_bsfreq = pwm_getBaseFrequency(imsg->pwm_freq.timer);
+			break;
+#endif
+
 		default:
 			err = -EINVAL;
 			break;
@@ -355,9 +369,11 @@ int main(void)
 	uart_init();
 	rng_init();
 	libklog_init(log_write);
-
 #if BUILTIN_POSIXSRV
 	posixsrv_start();
+#endif
+#if defined(__CPU_STM32N6)
+	pwm_init();
 #endif
 
 	/* Do this after klog init to keep shell from overtaking klog */
