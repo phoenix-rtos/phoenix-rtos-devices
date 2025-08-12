@@ -15,6 +15,9 @@
 
 #include <board_config.h>
 
+/* True if X is empty (has no value). The result in #if is valid only if defined(X) is true */
+#define ISEMPTY(X) ((0 - X - 1) == 1 && (X + 0) != -2)
+
 #ifndef MULTIDRV_INTERFACE_THREADS
 #define MULTIDRV_INTERFACE_THREADS 3
 #endif
@@ -40,6 +43,26 @@
 #define UART5 0
 #endif
 
+#ifndef UART6
+#define UART6 0
+#endif
+
+#ifndef UART7
+#define UART7 0
+#endif
+
+#ifndef UART8
+#define UART8 0
+#endif
+
+#ifndef UART9
+#define UART9 0
+#endif
+
+#ifndef UART10
+#define UART10 0
+#endif
+
 #ifndef UART1_DMA
 #define UART1_DMA 0
 #endif
@@ -60,8 +83,30 @@
 #define UART5_DMA 0
 #endif
 
+#ifndef UART6_DMA
+#define UART6_DMA 0
+#endif
+
+#ifndef UART7_DMA
+#define UART7_DMA 0
+#endif
+
+#ifndef UART8_DMA
+#define UART8_DMA 0
+#endif
+
+#ifndef UART9_DMA
+#define UART9_DMA 0
+#endif
+
+#ifndef UART10_DMA
+#define UART10_DMA 0
+#endif
+
 #if (UART1_DMA && !UART1) || (UART2_DMA && !UART2) || (UART3_DMA && !UART3) || \
-	(UART4_DMA && !UART4) || (UART5_DMA && !UART5)
+		(UART4_DMA && !UART4) || (UART5_DMA && !UART5) || (UART6_DMA && !UART6) || \
+		(UART7_DMA && !UART7) || (UART8_DMA && !UART8) || (UART9_DMA && !UART9) || \
+		(UART10_DMA && !UART10)
 #error "DMA mode cannot be enabled on a disabled UART!"
 #endif
 
@@ -85,7 +130,44 @@
 #define TTY5 0
 #endif
 
-/* UART_CONSOLE has to be specified in board_config.h */
+#ifndef TTY6
+#define TTY6 0
+#endif
+
+#ifndef TTY7
+#define TTY7 0
+#endif
+
+#ifndef TTY8
+#define TTY8 0
+#endif
+
+#ifndef TTY9
+#define TTY9 0
+#endif
+
+#ifndef TTY10
+#define TTY10 0
+#endif
+
+#if defined(UART_CONSOLE)
+#if !ISEMPTY(UART_CONSOLE)
+#if UART_CONSOLE <= 0
+#error "Invalid value for UART_CONSOLE"
+#endif
+#endif
+#endif
+
+#if defined(UART_CONSOLE_USER)
+#if !ISEMPTY(UART_CONSOLE_USER)
+#if (UART_CONSOLE_USER <= 0)
+#error "Invalid value for UART_CONSOLE_USER"
+#endif
+#endif
+#else
+#define UART_CONSOLE_USER UART_CONSOLE
+#endif
+
 
 #ifndef TTY1_DMA
 #define TTY1_DMA 0
@@ -105,6 +187,26 @@
 
 #ifndef TTY5_DMA
 #define TTY5_DMA 0
+#endif
+
+#ifndef TTY6_DMA
+#define TTY6_DMA 0
+#endif
+
+#ifndef TTY7_DMA
+#define TTY7_DMA 0
+#endif
+
+#ifndef TTY8_DMA
+#define TTY8_DMA 0
+#endif
+
+#ifndef TTY9_DMA
+#define TTY9_DMA 0
+#endif
+
+#ifndef TTY10_DMA
+#define TTY10_DMA 0
 #endif
 
 #ifndef TTY1_DMA_RXSZ
@@ -127,6 +229,26 @@
 #define TTY5_DMA_RXSZ 32
 #endif
 
+#ifndef TTY6_DMA_RXSZ
+#define TTY6_DMA_RXSZ 32
+#endif
+
+#ifndef TTY7_DMA_RXSZ
+#define TTY7_DMA_RXSZ 32
+#endif
+
+#ifndef TTY8_DMA_RXSZ
+#define TTY8_DMA_RXSZ 32
+#endif
+
+#ifndef TTY9_DMA_RXSZ
+#define TTY9_DMA_RXSZ 32
+#endif
+
+#ifndef TTY10_DMA_RXSZ
+#define TTY10_DMA_RXSZ 32
+#endif
+
 #ifndef TTY1_DMA_RXFIFOSZ
 #define TTY1_DMA_RXFIFOSZ 64
 #endif
@@ -145,6 +267,26 @@
 
 #ifndef TTY5_DMA_RXFIFOSZ
 #define TTY5_DMA_RXFIFOSZ 64
+#endif
+
+#ifndef TTY6_DMA_RXFIFOSZ
+#define TTY6_DMA_RXFIFOSZ 64
+#endif
+
+#ifndef TTY7_DMA_RXFIFOSZ
+#define TTY7_DMA_RXFIFOSZ 64
+#endif
+
+#ifndef TTY8_DMA_RXFIFOSZ
+#define TTY8_DMA_RXFIFOSZ 64
+#endif
+
+#ifndef TTY9_DMA_RXFIFOSZ
+#define TTY9_DMA_RXFIFOSZ 64
+#endif
+
+#ifndef TTY10_DMA_RXFIFOSZ
+#define TTY10_DMA_RXFIFOSZ 64
 #endif
 
 #ifndef TTY1_DMA_TXSZ
@@ -167,6 +309,26 @@
 #define TTY5_DMA_TXSZ 64
 #endif
 
+#ifndef TTY6_DMA_TXSZ
+#define TTY6_DMA_TXSZ 64
+#endif
+
+#ifndef TTY7_DMA_TXSZ
+#define TTY7_DMA_TXSZ 64
+#endif
+
+#ifndef TTY8_DMA_TXSZ
+#define TTY8_DMA_TXSZ 64
+#endif
+
+#ifndef TTY9_DMA_TXSZ
+#define TTY9_DMA_TXSZ 64
+#endif
+
+#ifndef TTY10_DMA_TXSZ
+#define TTY10_DMA_TXSZ 64
+#endif
+
 #ifndef TTY1_LIBTTY_BUFSZ
 #define TTY1_LIBTTY_BUFSZ 512
 #endif
@@ -185,6 +347,26 @@
 
 #ifndef TTY5_LIBTTY_BUFSZ
 #define TTY5_LIBTTY_BUFSZ 512
+#endif
+
+#ifndef TTY6_LIBTTY_BUFSZ
+#define TTY6_LIBTTY_BUFSZ 512
+#endif
+
+#ifndef TTY7_LIBTTY_BUFSZ
+#define TTY7_LIBTTY_BUFSZ 512
+#endif
+
+#ifndef TTY8_LIBTTY_BUFSZ
+#define TTY8_LIBTTY_BUFSZ 512
+#endif
+
+#ifndef TTY9_LIBTTY_BUFSZ
+#define TTY9_LIBTTY_BUFSZ 512
+#endif
+
+#ifndef TTY10_LIBTTY_BUFSZ
+#define TTY10_LIBTTY_BUFSZ 512
 #endif
 
 #ifndef UART1_RXFIFOSZ
@@ -207,6 +389,26 @@
 #define UART5_RXFIFOSZ 64
 #endif
 
+#ifndef UART6_RXFIFOSZ
+#define UART6_RXFIFOSZ 64
+#endif
+
+#ifndef UART7_RXFIFOSZ
+#define UART7_RXFIFOSZ 64
+#endif
+
+#ifndef UART8_RXFIFOSZ
+#define UART8_RXFIFOSZ 64
+#endif
+
+#ifndef UART9_RXFIFOSZ
+#define UART9_RXFIFOSZ 64
+#endif
+
+#ifndef UART10_RXFIFOSZ
+#define UART10_RXFIFOSZ 64
+#endif
+
 
 /* SPI */
 #ifndef SPI1
@@ -221,6 +423,18 @@
 #define SPI3 0
 #endif
 
+#ifndef SPI4
+#define SPI4 0
+#endif
+
+#ifndef SPI5
+#define SPI5 0
+#endif
+
+#ifndef SPI6
+#define SPI6 0
+#endif
+
 #ifndef SPI1_USEDMA
 #define SPI1_USEDMA 0
 #endif
@@ -231,6 +445,18 @@
 
 #ifndef SPI3_USEDMA
 #define SPI3_USEDMA 0
+#endif
+
+#ifndef SPI4_USEDMA
+#define SPI4_USEDMA 0
+#endif
+
+#ifndef SPI5_USEDMA
+#define SPI5_USEDMA 0
+#endif
+
+#ifndef SPI6_USEDMA
+#define SPI6_USEDMA 0
 #endif
 
 

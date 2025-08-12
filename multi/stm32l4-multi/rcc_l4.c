@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * STM32L4 reset and clock controler driver
+ * STM32L4 reset and clock controller driver
  *
  * Copyright 2017, 2018, 2020 Phoenix Systems
  * Author: Aleksander Kaminski
@@ -69,8 +69,8 @@ void pwr_unlock(void)
 
 int rcc_init(void)
 {
-	rcc_common.base = (void *)0x40021000;
-	rcc_common.pwr = (void *)0x40007000;
+	rcc_common.base = RCC_BASE;
+	rcc_common.pwr = PWR_BASE;
 
 	mutexCreate(&rcc_common.lock);
 

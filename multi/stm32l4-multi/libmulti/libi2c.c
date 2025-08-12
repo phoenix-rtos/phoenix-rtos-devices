@@ -18,27 +18,70 @@
 #include <unistd.h>
 #include "libmulti/libi2c.h"
 #include "../common.h"
+#if defined(__CPU_STM32N6)
+#include "../rcc.h"
+#endif
 
 
 #define TIMEOUT (100 * 1000)
 
 
-static const struct {
+static const struct libi2c_peripheralInfo {
 	void *base;
 	int clk;
 	int irq_ev;
 	int irq_er;
+#if defined(__CPU_STM32N6)
+	enum ipclks clksel;    /* Clock selector */
+	enum clock_ids clksrc; /* ID of source clock */
+#endif
 } i2cinfo[] = {
-	{ (void *)0x40005400, pctl_i2c1, i2c1_ev_irq, i2c1_er_irq },
-	{ (void *)0x40005800, pctl_i2c2, i2c2_ev_irq, i2c2_er_irq },
-	{ (void *)0x40005c00, pctl_i2c3, i2c3_ev_irq, i2c3_er_irq },
-	{ (void *)0x40008400, pctl_i2c4, i2c4_ev_irq, i2c4_er_irq }
+#if defined(__CPU_STM32L4X6)
+	{ I2C1_BASE, pctl_i2c1, i2c1_ev_irq, i2c1_er_irq },
+	{ I2C2_BASE, pctl_i2c2, i2c2_ev_irq, i2c2_er_irq },
+	{ I2C3_BASE, pctl_i2c3, i2c3_ev_irq, i2c3_er_irq },
+	{ I2C4_BASE, pctl_i2c4, i2c4_ev_irq, i2c4_er_irq },
+#elif defined(__CPU_STM32N6)
+	{ I2C1_BASE, pctl_i2c1, i2c1_ev_irq, i2c1_er_irq, pctl_ipclk_i2c1sel, clkid_per },
+	{ I2C2_BASE, pctl_i2c2, i2c2_ev_irq, i2c2_er_irq, pctl_ipclk_i2c2sel, clkid_per },
+	{ I2C3_BASE, pctl_i2c3, i2c3_ev_irq, i2c3_er_irq, pctl_ipclk_i2c3sel, clkid_per },
+	{ I2C4_BASE, pctl_i2c4, i2c4_ev_irq, i2c4_er_irq, pctl_ipclk_i2c4sel, clkid_per },
+#endif
 };
 
 
 enum { cr1 = 0, cr2, oar1, oar2, timingr, timeoutr, isr, icr, pecr, rxdr, txdr };
 
 enum { dir_read, dir_write };
+
+
+#if defined(__CPU_STM32L4X6)
+static int libi2c_clockSetup(const struct libi2c_peripheralInfo *info, uint32_t *out)
+{
+	/* On this platform no extra information is used for clock setup */
+	(void)info;
+	*out = getCpufreq();
+	return EOK;
+}
+#elif defined(__CPU_STM32N6)
+static int libi2c_clockSetup(const struct libi2c_peripheralInfo *info, uint32_t *out)
+{
+	int ret;
+	ret = rcc_setClksel(info->clksel, info->clksrc);
+	if (ret < 0) {
+		return ret;
+	}
+
+	uint64_t freq;
+	ret = clockdef_getClock(info->clksrc, &freq);
+	if (ret < 0) {
+		return ret;
+	}
+
+	*out = (uint32_t)freq;
+	return ret;
+}
+#endif
 
 
 static int libi2c_irqHandler(unsigned int n, void *arg)
@@ -134,8 +177,9 @@ static ssize_t _libi2c_read(libi2c_ctx_t *ctx, unsigned char addr, void *buff, s
 	libi2c_transactionStart(ctx, addr, dir_read, len);
 
 	for (i = 0; i < len && !ctx->err; ++i) {
-		if (libi2c_waitForIrq(ctx) < 0) {
-			return -1;
+		int ret = libi2c_waitForIrq(ctx);
+		if (ret < 0) {
+			return ret;
 		}
 		((unsigned char *)buff)[i] = (unsigned char)(*(ctx->base + rxdr) & 0xff);
 	}
@@ -159,14 +203,15 @@ ssize_t libi2c_read(libi2c_ctx_t *ctx, unsigned char addr, void *buff, size_t le
 
 ssize_t libi2c_readReg(libi2c_ctx_t *ctx, unsigned char addr, unsigned char reg, void *buff, size_t len)
 {
-	ssize_t ret = -1;
+	ssize_t ret;
 
 	ctx->err = 0;
 	libi2c_start(ctx);
 	libi2c_transactionStart(ctx, addr, dir_write, 1);
 
 	*(ctx->base + txdr) = reg;
-	if ((libi2c_waitForIrq(ctx) >= 0) && (ctx->err == 0)) {
+	ret = libi2c_waitForIrq(ctx);
+	if ((ret >= 0) && (ctx->err == 0)) {
 		ret = _libi2c_read(ctx, addr, buff, len);
 	}
 	libi2c_stop(ctx);
@@ -233,7 +278,8 @@ ssize_t libi2c_writeReg(libi2c_ctx_t *ctx, unsigned char addr, unsigned char reg
 
 int libi2c_init(libi2c_ctx_t *ctx, int i2c)
 {
-	int cpuclk = getCpufreq(), presc;
+	int presc;
+	uint32_t refclk;
 	unsigned int t;
 
 	if (i2c < i2c1 || i2c > i2c4 || ctx == NULL) {
@@ -246,6 +292,9 @@ int libi2c_init(libi2c_ctx_t *ctx, int i2c)
 	ctx->clk = i2cinfo[i2c].clk;
 
 	devClk(ctx->clk, 1);
+	if (libi2c_clockSetup(&i2cinfo[i2c], &refclk) < 0) {
+		return -1;
+	}
 
 	mutexCreate(&ctx->irqlock);
 	condCreate(&ctx->irqcond);
@@ -259,7 +308,7 @@ int libi2c_init(libi2c_ctx_t *ctx, int i2c)
 	t = *(ctx->base + cr1) & ~0xfffdff;
 	*(ctx->base + cr1) = t | (1 << 12) | (0x7 << 8) | (1 << 7) | (1 << 6) | (1 << 4) | (1 << 2) | (1 << 1);
 
-	presc = ((cpuclk + 500 * 1000) / (1000 * 1000)) / 4;
+	presc = ((refclk + 500 * 1000) / (1000 * 1000)) / 4;
 	t = *(ctx->base + timingr) & ~((0xf << 18) | 0xffffff);
 	*(ctx->base + timingr) = t | (((presc & 0xf) << 28) | (0x4 << 20) | (0x2 << 16) | (0xf << 8) | 0x13);
 	dataBarier();

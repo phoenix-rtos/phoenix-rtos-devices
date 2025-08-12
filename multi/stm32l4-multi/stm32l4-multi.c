@@ -50,27 +50,39 @@
 
 
 #if (UART1 && TTY1) || (UART2 && TTY2) || (UART3 && TTY3) || \
-	(UART4 && TTY4) || (UART5 && TTY5)
+		(UART4 && TTY4) || (UART5 && TTY5) || (UART6 && TTY6) || \
+		(UART7 && TTY7) || (UART8 && TTY8) || (UART9 && TTY9) || \
+		(UART10 && TTY10)
 #error "Can't use UART as UART and TTY at the same time!"
 #endif
 
-#ifndef UART_CONSOLE
-#error "UART_CONSOLE not specified"
+#ifndef UART_CONSOLE_USER
+#error "UART_CONSOLE_USER not specified"
 #endif
 
-#if !(UART_CONSOLE == 1 && (UART1 || TTY1)) && \
-	!(UART_CONSOLE == 2 && (UART2 || TTY2)) && \
-	!(UART_CONSOLE == 3 && (UART3 || TTY3)) && \
-	!(UART_CONSOLE == 4 && (UART4 || TTY4)) && \
-	!(UART_CONSOLE == 5 && (UART5 || TTY5))
+#if !(UART_CONSOLE_USER == 1 && (UART1 || TTY1)) && \
+		!(UART_CONSOLE_USER == 2 && (UART2 || TTY2)) && \
+		!(UART_CONSOLE_USER == 3 && (UART3 || TTY3)) && \
+		!(UART_CONSOLE_USER == 4 && (UART4 || TTY4)) && \
+		!(UART_CONSOLE_USER == 5 && (UART5 || TTY5)) && \
+		!(UART_CONSOLE_USER == 6 && (UART6 || TTY6)) && \
+		!(UART_CONSOLE_USER == 7 && (UART7 || TTY7)) && \
+		!(UART_CONSOLE_USER == 8 && (UART8 || TTY8)) && \
+		!(UART_CONSOLE_USER == 9 && (UART9 || TTY9)) && \
+		!(UART_CONSOLE_USER == 10 && (UART10 || TTY10))
 #warning "Console enabled on disabled UART/TTY"
 #endif
 
-#define CONSOLE_IS_TTY ((UART_CONSOLE == 1 && TTY1) || \
-	(UART_CONSOLE == 2 && TTY2) || \
-	(UART_CONSOLE == 3 && TTY3) || \
-	(UART_CONSOLE == 4 && TTY4) || \
-	(UART_CONSOLE == 5 && TTY5))
+#define CONSOLE_IS_TTY ((UART_CONSOLE_USER == 1 && TTY1) || \
+		(UART_CONSOLE_USER == 2 && TTY2) || \
+		(UART_CONSOLE_USER == 3 && TTY3) || \
+		(UART_CONSOLE_USER == 4 && TTY4) || \
+		(UART_CONSOLE_USER == 5 && TTY5) || \
+		(UART_CONSOLE_USER == 6 && TTY6) || \
+		(UART_CONSOLE_USER == 7 && TTY7) || \
+		(UART_CONSOLE_USER == 8 && TTY8) || \
+		(UART_CONSOLE_USER == 9 && TTY9) || \
+		(UART_CONSOLE_USER == 10 && TTY10))
 
 
 struct {
@@ -112,6 +124,7 @@ static void handleMsg(msg_t *msg)
 			err = syscfg_mapexti(imsg->exti_map.line, imsg->exti_map.port);
 			break;
 
+#if defined(__CPU_STM32L4X6)
 		case flash_get:
 			err = flash_readData(imsg->flash_addr, msg->o.data, msg->o.size);
 			break;
@@ -131,6 +144,20 @@ static void handleMsg(msg_t *msg)
 		case flash_info:
 			flash_getInfo(&omsg->flash_info);
 			break;
+
+		case otp_get:
+			err = flash_readOtp(imsg->otp_rw.offset, msg->o.data, msg->o.size);
+			break;
+
+		case otp_set:
+			if (imsg->otp_rw.magic == OTP_WRITE_MAGIC && msg->i.data != NULL) {
+				err = flash_writeOtp(imsg->otp_rw.offset, msg->i.data, msg->i.size);
+			}
+			else {
+				err = -EINVAL;
+			}
+			break;
+#endif
 
 		case rtc_setcal:
 			rtc_setCalib(imsg->rtc_calib);
@@ -207,19 +234,6 @@ static void handleMsg(msg_t *msg)
 			err = uart_write(imsg->uart_set.uart, msg->i.data, msg->i.size);
 			break;
 
-		case otp_get:
-			err = flash_readOtp(imsg->otp_rw.offset, msg->o.data, msg->o.size);
-			break;
-
-		case otp_set:
-			if (imsg->otp_rw.magic == OTP_WRITE_MAGIC && msg->i.data != NULL) {
-				err = flash_writeOtp(imsg->otp_rw.offset, msg->i.data, msg->i.size);
-			}
-			else {
-				err = -EINVAL;
-			}
-			break;
-
 		case rng_get:
 			err = rng_read(msg->o.data, msg->o.size);
 			break;
@@ -238,7 +252,7 @@ static ssize_t console_write(const char *str, size_t len, int mode)
 #if CONSOLE_IS_TTY
 	return tty_log(str, len);
 #else
-	return uart_write(UART_CONSOLE - 1, str, len);
+	return uart_write(UART_CONSOLE_USER - 1, str, len);
 #endif
 }
 
@@ -248,7 +262,7 @@ static ssize_t console_read(char *str, size_t bufflen, int mode)
 #if CONSOLE_IS_TTY
 	return -ENOSYS;
 #else
-	return uart_read(UART_CONSOLE - 1, str, bufflen, uart_mnormal, 0);
+	return uart_read(UART_CONSOLE_USER - 1, str, bufflen, uart_mnormal, 0);
 #endif
 }
 
@@ -334,7 +348,9 @@ int main(void)
 	spi_init();
 	adc_init();
 	rtc_init();
+#if defined(__CPU_STM32L4X6)
 	flash_init();
+#endif
 	i2c_init();
 	uart_init();
 	rng_init();

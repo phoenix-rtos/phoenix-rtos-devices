@@ -36,36 +36,62 @@
 #include "rcc.h"
 
 
-#define TTY1_POS 0
-#define TTY2_POS (TTY1_POS + TTY1)
-#define TTY3_POS (TTY2_POS + TTY2)
-#define TTY4_POS (TTY3_POS + TTY3)
-#define TTY5_POS (TTY4_POS + TTY4)
+#if defined(__CPU_STM32L4X6)
+#if (TTY6 || TTY7 || TTY8 || TTY9 || TTY10)
+#error "Chosen UART not available on this platform"
+#endif
+#define MAX_UART uart5
+#elif defined(__CPU_STM32N6)
+#define MAX_UART usart10
+#endif
 
-#define TTY_CNT (TTY1 + TTY2 + TTY3 + TTY4 + TTY5)
+#define TTY1_POS  0
+#define TTY2_POS  (TTY1_POS + TTY1)
+#define TTY3_POS  (TTY2_POS + TTY2)
+#define TTY4_POS  (TTY3_POS + TTY3)
+#define TTY5_POS  (TTY4_POS + TTY4)
+#define TTY6_POS  (TTY5_POS + TTY5)
+#define TTY7_POS  (TTY6_POS + TTY6)
+#define TTY8_POS  (TTY7_POS + TTY7)
+#define TTY9_POS  (TTY8_POS + TTY8)
+#define TTY10_POS (TTY9_POS + TTY9)
+
+#define TTY_CNT (TTY1 + TTY2 + TTY3 + TTY4 + TTY5 + TTY6 + TTY7 + TTY8 + TTY9 + TTY10)
 
 #define THREAD_POOL    3
 #define THREAD_STACKSZ 768
 #define THREAD_PRIO    1
 
-#if TTY_CNT != 0
+#if defined(__CPU_STM32L4X6)
+#define UART_FIFO_MODE 0
+#elif defined(__CPU_STM32N6)
+#define UART_FIFO_MODE 1
+#else
+#error "Unknown platform"
+#endif
 
 #define IS_POWER_OF_TWO(n) ((n > 0) && (n & (n - 1)) == 0)
 
 #if (!IS_POWER_OF_TWO(TTY1_DMA_RXSZ)) || (!IS_POWER_OF_TWO(TTY2_DMA_RXSZ)) || \
-	(!IS_POWER_OF_TWO(TTY3_DMA_RXSZ)) || (!IS_POWER_OF_TWO(TTY4_DMA_RXSZ)) || \
-	(!IS_POWER_OF_TWO(TTY5_DMA_RXSZ))
+		(!IS_POWER_OF_TWO(TTY3_DMA_RXSZ)) || (!IS_POWER_OF_TWO(TTY4_DMA_RXSZ)) || \
+		(!IS_POWER_OF_TWO(TTY5_DMA_RXSZ)) || (!IS_POWER_OF_TWO(TTY6_DMA_RXSZ)) || \
+		(!IS_POWER_OF_TWO(TTY7_DMA_RXSZ)) || (!IS_POWER_OF_TWO(TTY8_DMA_RXSZ)) || \
+		(!IS_POWER_OF_TWO(TTY9_DMA_RXSZ)) || (!IS_POWER_OF_TWO(TTY10_DMA_RXSZ))
 #error "Size of RX DMA buffer has to be a power of two!"
 #endif
 
 #if (!IS_POWER_OF_TWO(TTY1_DMA_RXFIFOSZ)) || (!IS_POWER_OF_TWO(TTY2_DMA_RXFIFOSZ)) || \
-	(!IS_POWER_OF_TWO(TTY3_DMA_RXFIFOSZ)) || (!IS_POWER_OF_TWO(TTY4_DMA_RXFIFOSZ)) || \
-	(!IS_POWER_OF_TWO(TTY5_DMA_RXFIFOSZ))
+		(!IS_POWER_OF_TWO(TTY3_DMA_RXFIFOSZ)) || (!IS_POWER_OF_TWO(TTY4_DMA_RXFIFOSZ)) || \
+		(!IS_POWER_OF_TWO(TTY5_DMA_RXFIFOSZ)) || (!IS_POWER_OF_TWO(TTY6_DMA_RXFIFOSZ)) || \
+		(!IS_POWER_OF_TWO(TTY7_DMA_RXFIFOSZ)) || (!IS_POWER_OF_TWO(TTY8_DMA_RXFIFOSZ)) || \
+		(!IS_POWER_OF_TWO(TTY9_DMA_RXFIFOSZ)) || (!IS_POWER_OF_TWO(TTY10_DMA_RXFIFOSZ))
 #error "Size of RX DMA FIFO buffer has to be a power of two!"
 #endif
 
 #if (TTY1_DMA && !TTY1) || (TTY2_DMA && !TTY2) || (TTY3_DMA && !TTY3) || \
-	(TTY4_DMA && !TTY4) || (TTY5_DMA && !TTY5)
+		(TTY4_DMA && !TTY4) || (TTY5_DMA && !TTY5) || (TTY6_DMA && !TTY6) || \
+		(TTY7_DMA && !TTY7) || (TTY8_DMA && !TTY8) || (TTY9_DMA && !TTY9) || \
+		(TTY10_DMA && !TTY10)
 #error "DMA mode cannot be enabled on a disabled TTY!"
 #endif
 
@@ -78,6 +104,7 @@ typedef struct {
 	int bits;
 	int parity;
 	int baud;
+	uint32_t refclk;
 
 	handle_t cond;
 	handle_t inth;
@@ -138,6 +165,43 @@ static const struct {
 	{ TTY3, TTY3_DMA, TTY3_DMA_RXSZ, TTY3_DMA_RXFIFOSZ, TTY3_DMA_TXSZ, TTY3_POS, TTY3_LIBTTY_BUFSZ },
 	{ TTY4, TTY4_DMA, TTY4_DMA_RXSZ, TTY4_DMA_RXFIFOSZ, TTY4_DMA_TXSZ, TTY4_POS, TTY4_LIBTTY_BUFSZ },
 	{ TTY5, TTY5_DMA, TTY5_DMA_RXSZ, TTY5_DMA_RXFIFOSZ, TTY5_DMA_TXSZ, TTY5_POS, TTY5_LIBTTY_BUFSZ },
+#if defined(__CPU_STM32N6)
+	{ TTY6, TTY6_DMA, TTY6_DMA_RXSZ, TTY6_DMA_RXFIFOSZ, TTY6_DMA_TXSZ, TTY6_POS, TTY6_LIBTTY_BUFSZ },
+	{ TTY7, TTY7_DMA, TTY7_DMA_RXSZ, TTY7_DMA_RXFIFOSZ, TTY7_DMA_TXSZ, TTY7_POS, TTY7_LIBTTY_BUFSZ },
+	{ TTY8, TTY8_DMA, TTY8_DMA_RXSZ, TTY8_DMA_RXFIFOSZ, TTY8_DMA_TXSZ, TTY8_POS, TTY8_LIBTTY_BUFSZ },
+	{ TTY9, TTY9_DMA, TTY9_DMA_RXSZ, TTY9_DMA_RXFIFOSZ, TTY9_DMA_TXSZ, TTY9_POS, TTY9_LIBTTY_BUFSZ },
+	{ TTY10, TTY10_DMA, TTY10_DMA_RXSZ, TTY10_DMA_RXFIFOSZ, TTY10_DMA_TXSZ, TTY10_POS, TTY10_LIBTTY_BUFSZ },
+#endif
+};
+
+
+static const struct tty_peripheralInfo {
+	volatile uint32_t *base;
+	int dev;
+	unsigned irq;
+#if defined(__CPU_STM32N6)
+	enum ipclks clksel;    /* Clock selector */
+	enum clock_ids clksrc; /* ID of source clock */
+#endif
+} ttyInfo[] = {
+#if defined(__CPU_STM32L4X6)
+	{ USART1_BASE, pctl_usart1, usart1_irq },
+	{ USART2_BASE, pctl_usart2, usart2_irq },
+	{ USART3_BASE, pctl_usart3, usart3_irq },
+	{ UART4_BASE, pctl_uart4, uart4_irq },
+	{ UART5_BASE, pctl_uart5, uart5_irq },
+#elif defined(__CPU_STM32N6)
+	{ USART1_BASE, pctl_usart1, usart1_irq, pctl_ipclk_usart1sel, clkid_per },
+	{ USART2_BASE, pctl_usart2, usart2_irq, pctl_ipclk_usart2sel, clkid_per },
+	{ USART3_BASE, pctl_usart3, usart3_irq, pctl_ipclk_usart3sel, clkid_per },
+	{ UART4_BASE, pctl_uart4, uart4_irq, pctl_ipclk_uart4sel, clkid_per },
+	{ UART5_BASE, pctl_uart5, uart5_irq, pctl_ipclk_uart5sel, clkid_per },
+	{ USART6_BASE, pctl_usart6, usart6_irq, pctl_ipclk_usart6sel, clkid_per },
+	{ UART7_BASE, pctl_uart7, uart7_irq, pctl_ipclk_uart7sel, clkid_per },
+	{ UART8_BASE, pctl_uart8, uart8_irq, pctl_ipclk_uart8sel, clkid_per },
+	{ UART9_BASE, pctl_uart9, uart9_irq, pctl_ipclk_uart9sel, clkid_per },
+	{ USART10_BASE, pctl_usart10, usart10_irq, pctl_ipclk_usart10sel, clkid_per },
+#endif
 };
 
 
@@ -148,28 +212,84 @@ enum { cr1 = 0, cr2, cr3, brr, gtpr, rtor, rqr, isr, icr, rdr, tdr };
 enum { tty_parnone = 0, tty_pareven, tty_parodd };
 /* clang-format on */
 
+/* RX overrun interrupt */
+#define UART_CR1_OREIE (1 << 3) /* Enable */
+#define UART_ICR_ORE   (1 << 3) /* Clear */
+#define UART_ISR_ORE   (1 << 3) /* Status */
+
+/* RX (FIFO / register) not empty interrupt */
+#define UART_CR1_RXFNEIE (1 << 5) /* Enable */
+#define UART_ISR_RXFNE   (1 << 5) /* Status */
+
+/* TX (FIFO not full / register empty) interrupt */
+#define UART_CR1_TXFNFIE (1 << 7) /* Enable */
+#define UART_ISR_TXFNF   (1 << 7) /* Status */
+
+/* TX FIFO empty interrupt */
+#define UART_CR1_TXFEIE (1 << 30) /* Enable */
+#define UART_ISR_TXFE   (1 << 23) /* Status */
+
+
+#if defined(__CPU_STM32L4X6)
+static int tty_clockSetup(const struct tty_peripheralInfo *info, uint32_t *out)
+{
+	/* On this platform no extra information is used for clock setup */
+	(void)info;
+	*out = getCpufreq();
+	return EOK;
+}
+#elif defined(__CPU_STM32N6)
+static int tty_clockSetup(const struct tty_peripheralInfo *info, uint32_t *out)
+{
+	int ret;
+	ret = rcc_setClksel(info->clksel, info->clksrc);
+	if (ret < 0) {
+		return ret;
+	}
+
+	uint64_t freq;
+	ret = clockdef_getClock(info->clksrc, &freq);
+	if (ret < 0) {
+		return ret;
+	}
+
+	*out = (uint32_t)freq;
+	return ret;
+}
+#endif
+
 
 static inline int tty_txready(tty_ctx_t *ctx)
 {
-	return (*(ctx->base + isr) & (1 << 7)) ? 1 : 0;
+	return (*(ctx->base + isr) & UART_ISR_TXFNF) ? 1 : 0;
 }
 
 
 static int tty_irqHandler(unsigned int n, void *arg)
 {
 	tty_ctx_t *ctx = (tty_ctx_t *)arg;
-
-	if ((*(ctx->base + isr) & ((1 << 5) | (1 << 3))) != 0) {
-		/* Clear overrun error bit */
-		*(ctx->base + icr) |= (1 << 3);
-
+	uint32_t isr_val = *(ctx->base + isr);
+	while ((isr_val & UART_ISR_RXFNE) != 0) {
 		lf_fifo_push(&ctx->data.irq.rxFifo, *(ctx->base + rdr));
 		ctx->data.irq.rxready = 1;
+		isr_val = *(ctx->base + isr);
 	}
 
-	if (tty_txready(ctx) != 0) {
-		*(ctx->base + cr1) &= ~(1 << 7);
+	if ((isr_val & UART_ISR_ORE) != 0) {
+		/* Clear overrun error bit */
+		*(ctx->base + icr) |= UART_ICR_ORE;
 	}
+
+	if ((isr_val & UART_ISR_TXFNF) != 0) {
+		/* Disable interrupt until it is requested again */
+		*(ctx->base + cr1) &= ~UART_CR1_TXFNFIE;
+	}
+
+#if UART_FIFO_MODE
+	if ((isr_val & UART_ISR_TXFE) != 0) {
+		*(ctx->base + cr1) &= ~UART_CR1_TXFEIE;
+	}
+#endif
 
 	return 1;
 }
@@ -332,8 +452,8 @@ static void tty_irqthread(void *arg)
 			ctx->data.irq.rxready = 1;
 		}
 
-
-		if (libtty_txready(&ctx->ttyCommon) != 0) {
+		int txReady = 0;
+		while (libtty_txready(&ctx->ttyCommon) != 0) {
 			if (tty_txready(ctx) != 0) {
 				if (keptidle == 0) {
 					keptidle = 1;
@@ -342,10 +462,20 @@ static void tty_irqthread(void *arg)
 
 				/* TODO add small TX fifo that can be read directly from IRQ */
 				*(ctx->base + tdr) = libtty_getchar(&ctx->ttyCommon, NULL);
-				*(ctx->base + cr1) |= (1 << 7);
+			}
+			else {
+#if UART_FIFO_MODE
+				*(ctx->base + cr1) |= UART_CR1_TXFEIE;
+#else
+				*(ctx->base + cr1) |= UART_CR1_TXFNFIE;
+#endif
+				txReady = 1;
+				break;
 			}
 		}
-		else if (keptidle != 0) {
+
+
+		if ((txReady == 0) && (keptidle != 0)) {
 			keptidle = 0;
 			keepidle(0);
 		}
@@ -396,6 +526,9 @@ static int _tty_configure(tty_ctx_t *ctx, char bits, char parity, char enable)
 	if (err == EOK) {
 		*(ctx->base + cr1) &= ~1;
 		dataBarier();
+#if UART_FIFO_MODE
+		tcr1 |= (1 << 29); /* Activate FIFO mode */
+#endif
 		*(ctx->base + cr1) = tcr1;
 
 		if (parity == tty_parodd) {
@@ -412,8 +545,7 @@ static int _tty_configure(tty_ctx_t *ctx, char bits, char parity, char enable)
 			/* Enable transimitter and receiver (TE + RE) */
 			flags = (1 << 3) | (1 << 2);
 			if (ctx->type == tty_irq) {
-				/* Enable RXNE interrupt (RXNEIE) */
-				flags |= (1 << 5);
+				flags |= UART_CR1_RXFNEIE;
 			}
 			if (ctx->type == tty_dma) {
 				/* Idle line interrupt enable. */
@@ -477,7 +609,7 @@ static void tty_setBaudrate(void *uart, speed_t baud)
 		*(ctx->base + cr1) &= ~1;
 		dataBarier();
 
-		*(ctx->base + brr) = getCpufreq() / baudr;
+		*(ctx->base + brr) = ctx->refclk / baudr;
 
 		*(ctx->base + icr) = -1;
 		(void)*(ctx->base + rdr);
@@ -486,7 +618,7 @@ static void tty_setBaudrate(void *uart, speed_t baud)
 		flags = (1 << 3) | (1 << 2);
 		if (ctx->type == tty_irq) {
 			/* Enable RXNE interrupt (RXNEIE) */
-			flags |= (1 << 5);
+			flags |= UART_CR1_RXFNEIE;
 		}
 		if (ctx->type == tty_dma) {
 			/* Idle line interrupt enable. */
@@ -508,12 +640,12 @@ static tty_ctx_t *tty_getCtx(id_t id)
 	tty_ctx_t *ctx = NULL;
 
 	if (id == 0) {
-		id = usart1 + UART_CONSOLE;
+		id = usart1 + UART_CONSOLE_USER;
 	}
 
 	id -= 1;
 
-	if ((id >= usart1) && (id <= uart5)) {
+	if ((id >= usart1) && (id <= MAX_UART)) {
 		ctx = &uart_common.ctx[ttySetup[id - usart1].pos];
 	}
 
@@ -606,12 +738,20 @@ static void tty_thread(void *arg)
 
 ssize_t tty_log(const char *str, size_t len)
 {
+	if (TTY_CNT == 0) {
+		return -EINVAL;
+	}
+
 	return libtty_write(&tty_getCtx(0)->ttyCommon, str, len, 0);
 }
 
 
 void tty_createDev(void)
 {
+	if (TTY_CNT == 0) {
+		return;
+	}
+
 	oid_t oid;
 
 	oid.port = uart_common.port;
@@ -619,12 +759,14 @@ void tty_createDev(void)
 	create_dev(&oid, _PATH_TTY);
 	create_dev(&oid, _PATH_CONSOLE);
 }
-#endif
 
 
 int tty_init(void)
 {
-#if TTY_CNT != 0
+	if (TTY_CNT == 0) {
+		return EOK;
+	}
+
 	unsigned int tty, i;
 	char fname[] = "uartx";
 	speed_t baudrate = B115200;
@@ -632,29 +774,21 @@ int tty_init(void)
 	libtty_callbacks_t callbacks;
 	tty_ctx_t *ctx;
 	int err;
-	static const struct {
-		volatile uint32_t *base;
-		int dev;
-		unsigned irq;
-	} info[] = {
-		{ (void *)0x40013800, pctl_usart1, usart1_irq },
-		{ (void *)0x40004400, pctl_usart2, usart2_irq },
-		{ (void *)0x40004800, pctl_usart3, usart3_irq },
-		{ (void *)0x40004c00, pctl_uart4, uart4_irq },
-		{ (void *)0x40005000, pctl_uart5, uart5_irq },
-	};
 
 	portCreate(&uart_common.port);
 	oid.port = uart_common.port;
 
-	for (tty = 0; tty <= uart5 - usart1; ++tty) {
+	for (tty = 0; tty < NELEMS(ttySetup); ++tty) {
 		if (ttySetup[tty].enabled == 0) {
 			continue;
 		}
 
 		ctx = &uart_common.ctx[ttySetup[tty].pos];
 
-		devClk(info[tty].dev, 1);
+		devClk(ttyInfo[tty].dev, 1);
+		if (tty_clockSetup(&ttyInfo[tty], &ctx->refclk) < 0) {
+			return -1;
+		}
 
 		callbacks.arg = ctx;
 		callbacks.set_baudrate = tty_setBaudrate;
@@ -668,7 +802,7 @@ int tty_init(void)
 		mutexCreate(&ctx->irqlock);
 		condCreate(&ctx->cond);
 
-		ctx->base = info[tty].base;
+		ctx->base = ttyInfo[tty].base;
 		ctx->bits = -1;
 		ctx->parity = -1;
 		ctx->baud = -1;
@@ -681,7 +815,11 @@ int tty_init(void)
 		}
 		else {
 			uint8_t *rxFifoBuf;
-			libdma_init();
+			err = libdma_init();
+			if (err < 0) {
+				return err;
+			}
+
 			err = libdma_acquirePeripheral(dma_uart, tty, &ctx->data.dma.per);
 			if (err < 0) {
 				return err;
@@ -724,11 +862,11 @@ int tty_init(void)
 		tty_setBaudrate(ctx, baudrate);
 
 		if (ttySetup[tty].dma == 0) {
-			interrupt(info[tty].irq, tty_irqHandler, (void *)ctx, ctx->cond, NULL);
+			interrupt(ttyInfo[tty].irq, tty_irqHandler, (void *)ctx, ctx->cond, NULL);
 			beginthread(tty_irqthread, 1, ctx->stack, sizeof(ctx->stack), (void *)ctx);
 		}
 		else {
-			interrupt(info[tty].irq, tty_irqHandlerDMA, (void *)ctx, ctx->cond, NULL);
+			interrupt(ttyInfo[tty].irq, tty_irqHandlerDMA, (void *)ctx, ctx->cond, NULL);
 			beginthread(tty_dmathread, 1, ctx->stack, sizeof(ctx->stack), (void *)ctx);
 		}
 
@@ -744,7 +882,4 @@ int tty_init(void)
 	}
 
 	return EOK;
-#else
-	return 0;
-#endif
 }
