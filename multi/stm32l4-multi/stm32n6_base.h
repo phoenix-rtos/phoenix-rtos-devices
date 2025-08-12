@@ -68,4 +68,26 @@
 #define UART9_BASE   ((void *)0x52001800)
 #define USART10_BASE ((void *)0x52001c00)
 
+#define TIM9_BASE  ((void *)0x52004C00)
+#define TIM17_BASE ((void *)0x52004800)
+#define TIM16_BASE ((void *)0x52004400)
+#define TIM15_BASE ((void *)0x52004000)
+#define TIM18_BASE ((void *)0x52003C00)
+
+#define TIM8_BASE ((void *)0x52000400)
+#define TIM1_BASE ((void *)0x52000000)
+
+#define TIM11_BASE ((void *)0x50003400)
+#define TIM10_BASE ((void *)0x50003000)
+
+#define TIM14_BASE ((void *)0x50002000)
+#define TIM13_BASE ((void *)0x50001C00)
+#define TIM12_BASE ((void *)0x50001800)
+#define TIM7_BASE  ((void *)0x50001400)
+#define TIM6_BASE  ((void *)0x50001000)
+#define TIM5_BASE  ((void *)0x50000C00)
+#define TIM4_BASE  ((void *)0x50000800)
+#define TIM3_BASE  ((void *)0x50000400)
+#define TIM2_BASE  ((void *)0x50000000)
+
 #endif /* _STM32N6_BASE_H_ */
