@@ -212,6 +212,7 @@ static void uart_intThread(void *arg)
 		}
 
 		/* Transmit data until TX TTY buffer is empty or TX FIFO is full */
+		wake = 0;
 		while ((libtty_txready(&uart->tty) != 0) && ((*(uart->vbase + UART_STATUS) & TX_FIFO_FULL) == 0)) {
 			*(uart->vbase + UART_DATA) = libtty_popchar(&uart->tty);
 			wake = 1;
@@ -534,6 +535,7 @@ static int uart_setup(unsigned int n, speed_t baud, int raw)
 
 	*(uart->vbase + UART_CTRL) = 0;
 	*(uart->vbase + UART_SCALER) = 0;
+	*(uart->vbase + UART_STATUS) = 0;
 
 	/* Clear UART FIFO */
 	while ((*(uart->vbase + UART_STATUS) & DATA_READY) != 0) {
