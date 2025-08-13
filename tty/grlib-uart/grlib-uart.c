@@ -485,6 +485,7 @@ static int uart_init(unsigned int n, speed_t baud, int raw)
 
 	*(uart->base + uart_ctrl) = 0;
 	*(uart->base + uart_scaler) = 0;
+	*(uart->base + uart_status) = 0;
 
 	/* Clear UART FIFO */
 	while ((*(uart->base + uart_status) & (1 << 0)) != 0) {
