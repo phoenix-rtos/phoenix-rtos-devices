@@ -128,7 +128,6 @@ static int __attribute__((section(".interrupt"), aligned(0x1000))) uart_interrup
 static void uart_intThread(void *arg)
 {
 	uart_t *uart = (uart_t *)arg;
-	int wake;
 
 	mutexLock(uart->lock);
 
@@ -138,8 +137,19 @@ static void uart_intThread(void *arg)
 		}
 
 		/* Receive data until RX FIFO is not empty */
-		while ((*(uart->base + uart_status) & DATA_READY) != 0) {
-			libtty_putchar(&uart->tty, (*(uart->base + uart_data) & 0xff), NULL);
+		int wake = 0;
+		if ((*(uart->base + uart_status) & DATA_READY) != 0) {
+			int wakehelper;
+			libtty_putchar_lock(&uart->tty);
+			do {
+				libtty_putchar_unlocked(&uart->tty, (*(uart->base + uart_data) & 0xff), &wakehelper);
+				wake |= wakehelper;
+			} while ((*(uart->base + uart_status) & DATA_READY) != 0);
+			libtty_putchar_unlock(&uart->tty);
+
+			if (wake != 0) {
+				libtty_wake_reader(&uart->tty);
+			}
 		}
 
 		/* Transmit data until TX TTY buffer is empty or TX FIFO is full */
