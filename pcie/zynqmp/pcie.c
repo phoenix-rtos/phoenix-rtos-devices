@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <stdatomic.h>
 #include <string.h>
 #include <unistd.h>
 #include <endian.h>
@@ -35,6 +36,31 @@
 #define ECAM_DEV_SHIFT  15
 #define ECAM_FUNC_SHIFT 12
 
+// #define PCI_BAR0_ADD 0xB0000000
+// #define PCI_BAR1_ADD 0xB0010000
+// #define PCI_BAR2_ADD 0xB0020000
+// #define PCI_BAR3_ADD 0xB0030000
+// #define PCI_BAR4_ADD 0xB0040000
+// #define PCI_BAR5_ADD 0xB0050000
+/* Keep in mind this is permuted for some reason SMH... */
+/* Apparently we need both physical 32-bit and 64-bit addresses to properly map ranges */
+/* Now we will have only prefetchble 64-bit addresses and no others */
+#define PCI_BAR0_ADD 0x520000000
+#define PCI_BAR1_ADD 0x530000000
+#define PCI_BAR2_ADD 0x540000000
+#define PCI_BAR3_ADD 0x550000000
+#define PCI_BAR4_ADD 0x560000000
+#define PCI_BAR5_ADD 0x570000000
+
+uintptr_t bar_add[] = {
+	PCI_BAR0_ADD,
+	PCI_BAR1_ADD,
+	PCI_BAR2_ADD,
+	PCI_BAR3_ADD,
+	PCI_BAR4_ADD,
+	PCI_BAR5_ADD
+};
+
 #define PCI_VENDOR_ID     0x00
 #define PCI_DEVICE_ID     0x02
 #define PCI_COMMAND       0x04
@@ -54,12 +80,49 @@
 #define PCI_SECONDARY_BUS   0x19
 #define PCI_SUBORDINATE_BUS 0x1a
 
-static void pcie_scanBus(uint8_t bus, int depth);
+#define BAR0_PHYS_ADD 0xB0000000
+
+/* Adding read/write memory barriers */
+#define rmb() atomic_thread_fence(memory_order_acquire)
+#define wmb() atomic_thread_fence(memory_order_release)
+
+static void
+pcie_scanBus(uint8_t bus, int depth);
 
 static struct {
 	uint32_t *fpga_gpio;
 	uint32_t *pcie;
 } common;
+
+typedef struct {
+	/* Use to create linked list of detected devices */
+	struct pci_dev_t *next;
+	/* Geographical address of PCIe endpoint */
+	uint8_t bus;
+	uint8_t device;
+	uint8_t func;
+
+	/* Bar info */
+	uintptr_t bar0;
+	size_t bar0_len;
+
+	uintptr_t bar1_phys_add;
+	size_t bar1_len;
+
+	uintptr_t bar2_phys_add;
+	size_t bar2_len;
+
+	uintptr_t bar3_phys_add;
+	size_t bar3_len;
+
+	uintptr_t bar4_phys_add;
+	size_t bar4_len;
+
+	uintptr_t bar5_phys_add;
+	size_t bar5_len;
+} pci_dev_t;
+
+pci_dev_t device;
 
 typedef enum {
 	/* Detect substates */
@@ -172,7 +235,49 @@ static const char *ltssm_state2str(ltssm_state_t state)
 	return "Reserved/Unknown";
 }
 
-static inline volatile uint32_t *ecamRegPtr(uint8_t bus, uint8_t dev, uint8_t fn, uint16_t reg)
+/* Helper read/write functions that ensure memory ordering */
+uint32_t ioread32(uintptr_t ptr)
+{
+	rmb();
+	return *(uint32_t *)ptr;
+}
+
+uint16_t ioread16(uintptr_t ptr)
+{
+	rmb();
+	return *(uint16_t *)ptr;
+}
+
+uint8_t ioread8(uintptr_t ptr)
+{
+	rmb();
+	return *(uint8_t *)ptr;
+}
+
+void iowrite32(uint32_t val, uintptr_t ptr)
+{
+	*(uint32_t *)ptr = val;
+	wmb();
+}
+
+void iowrite16(uint16_t val, uintptr_t ptr)
+{
+	*(uint16_t *)ptr = val;
+	wmb();
+}
+
+void iowrite8(uint8_t val, uintptr_t ptr)
+{
+	*(uint8_t *)ptr = val;
+	wmb();
+}
+
+static void writeReg(uint32_t *base, uint32_t offset, uint32_t value)
+{
+	*((volatile uint32_t *)((char *)base + offset)) = value;
+}
+
+static volatile uint32_t *ecamRegPtr(uint8_t bus, uint8_t dev, uint8_t fn, uint16_t reg)
 {
 	uintptr_t cfg_space_offset = ((uintptr_t)bus << ECAM_BUS_SHIFT) |
 			((uintptr_t)dev << ECAM_DEV_SHIFT) |
@@ -182,17 +287,27 @@ static inline volatile uint32_t *ecamRegPtr(uint8_t bus, uint8_t dev, uint8_t fn
 	return (volatile uint32_t *)((uintptr_t)common.pcie + cfg_space_offset);
 }
 
-static inline uint32_t ecamRead32(uint8_t bus, uint8_t dev, uint8_t fn, uint16_t off)
+// static inline uintptr_t ecamRegPtr(uint8_t bus, uint8_t dev, uint8_t fn, uint16_t reg)
+// {
+// 	return (uintptr_t)common.pcie + (((uintptr_t)bus << ECAM_BUS_SHIFT) |
+// 			((uintptr_t)dev << ECAM_DEV_SHIFT) |
+// 			((uintptr_t)fn << ECAM_FUNC_SHIFT) |
+// 			(reg & 0xfffu));
+// }
+
+static uint32_t ecamRead32(uint8_t bus, uint8_t dev, uint8_t fn, uint16_t off)
 {
 	return *ecamRegPtr(bus, dev, fn, off & ~0x3u);
+	// return ioread32(ecamRegPtr(bus, dev, fn, off));
 }
 
-static inline void ecamWrite32(uint8_t bus, uint8_t dev, uint8_t fn, uint16_t off, uint32_t val)
+static void ecamWrite32(uint8_t bus, uint8_t dev, uint8_t fn, uint16_t off, uint32_t val)
 {
 	*ecamRegPtr(bus, dev, fn, off & ~0x3u) = val;
+	// iowrite32(val, ecamRegPtr(bus, dev, fn, off));
 }
 
-static inline uint16_t ecamRead16(uint8_t bus, uint8_t dev, uint8_t fn, uint16_t off)
+static uint16_t ecamRead16(uint8_t bus, uint8_t dev, uint8_t fn, uint16_t off)
 {
 	uint32_t value_u32 = ecamRead32(bus, dev, fn, off);
 	if (off & 2) {
@@ -209,10 +324,18 @@ static inline uint8_t ecamRead8(uint8_t bus, uint8_t dev, uint8_t fn, uint16_t o
 	return (value_u32 >> ((off & 3) * 8)) & 0xff;
 }
 
+/* Should probably split print bars into
+printing and actually mapping those to
+calling process. There is similar mechanism
+on Linux where driver has to acquire BARs */
+
 static void print_bars(uint8_t bus, uint8_t dev, uint8_t fn, uint8_t hdr, int depth)
 {
+	printf("pcie: Reading out BARs\n");
 	/* Choose number of bars depending on config type */
 	const int bar_count = (hdr == 0x00) ? 6 : 2;
+
+	int detected_bars = 0;
 
 	/* Read all bars */
 	for (int i = 0; i < bar_count; ++i) {
@@ -227,6 +350,7 @@ static void print_bars(uint8_t bus, uint8_t dev, uint8_t fn, uint8_t hdr, int de
 		}
 		else {
 			bool is_64_bit = (bar_low & 0x4) == 0x4;
+			bool prefetchble = (bar_low & (1 << 3)) != 0;
 			uint64_t addr = bar_low & ~0xfu;
 
 			if (is_64_bit) {
@@ -234,8 +358,81 @@ static void print_bars(uint8_t bus, uint8_t dev, uint8_t fn, uint8_t hdr, int de
 				addr |= ((uint64_t)bar_high) << 32;
 				i++;
 			}
+
+			/* We will now read out size of this BAR */
+			if (is_64_bit) {
+				ecamWrite32(bus, dev, fn, PCI_BAR0 + (i - 1) * 4, ~((uint32_t)0));
+				ecamWrite32(bus, dev, fn, PCI_BAR0 + i * 4, ~((uint32_t)0));
+
+				uint64_t bar_size = ecamRead32(bus, dev, fn, PCI_BAR0 + (i - 1) * 4);
+				bar_size |= (uint64_t)ecamRead32(bus, dev, fn, PCI_BAR0 + i * 4) << 32;
+
+				/* Ignore information bits */
+				bar_size &= ~(0b1111ul);
+				/* Negate result */
+				bar_size = ~bar_size;
+				/* Add one */
+				bar_size++;
+
+				device.bar0_len = bar_size;
+
+				printf("pcie: BAR%d size: %016llx, %s\n",
+						i - 1, (unsigned long long)bar_size,
+						prefetchble ? "(prefetchble)" : "(non-prefetchble)");
+
+				/* Inserting BAR address */
+				uintptr_t local_bar_add = bar_add[detected_bars++];
+				uint32_t low_add = (uint32_t)(local_bar_add & ~((uint32_t)0));
+				uint32_t high_add = (uint32_t)(local_bar_add >> 32);
+
+				ecamWrite32(bus, dev, fn, PCI_BAR0 + (i - 1) * 4, low_add);
+				ecamWrite32(bus, dev, fn, PCI_BAR0 + i * 4, high_add);
+
+				addr = (uint64_t)ecamRead32(bus, dev, fn, PCI_BAR0 + i * 4) << 32 |
+						ecamRead32(bus, dev, fn, PCI_BAR0 + (i - 1) * 4);
+			}
+			else {
+				ecamWrite32(bus, dev, fn, PCI_BAR0 + i * 4, ~((uint32_t)0));
+				uint32_t bar_size = ecamRead32(bus, dev, fn, PCI_BAR0 + i * 4);
+
+				device.bar0_len = bar_size;
+
+				printf("pcie: BAR%d size: %08x\n", i, (unsigned int)bar_size);
+
+				/* Inserting BAR address */
+				uint32_t local_bar_add = (uint32_t)bar_add[detected_bars++];
+
+				ecamWrite32(bus, dev, fn, PCI_BAR0 + i * 4, local_bar_add);
+
+				addr = ecamRead32(bus, dev, fn, PCI_BAR0 + i * 4);
+			}
+
+			if (i == 5)
+				continue;
+
+			writeReg(common.pcie, 0x148, 1);
+
+			addr = addr & ~(0xful);
+
 			printf("pcie: BAR%d MEM 0x%016llx (%s)\n",
-					i, (unsigned long long)addr, is_64_bit ? "64-bit" : "32-bit");
+					is_64_bit ? i - 1 : i, (unsigned long long)addr,
+					is_64_bit ? "64-bit" : "32-bit");
+			printf("Testing access to BAR%d\n", is_64_bit ? i - 1 : i);
+
+			void *device_bar_add = mmap(NULL, device.bar0_len, PROT_WRITE | PROT_READ,
+					MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, (off_t)addr);
+			if (device_bar_add != MAP_FAILED) {
+				uintptr_t phys_add = (uintptr_t)va2pa(device_bar_add);
+				printf("Reading from virt-add: 0x%lx, phys-add: %08lx\n", (uintptr_t)device_bar_add, (uintptr_t)phys_add);
+				printf("First 4 bytes of BAR%d: 0x%08x\n", is_64_bit ? i - 1 : i,
+						*(uint32_t *)device_bar_add + 16);
+			}
+			else {
+				printf("Failed to map BAR%d\n", is_64_bit ? i - 1 : i);
+			}
+
+			writeReg(common.pcie, 0x148, 0);
+			munmap(device_bar_add, device.bar0_len);
 		}
 	}
 }
@@ -263,6 +460,35 @@ static void print_capabilities(uint8_t bus, uint8_t dev, uint8_t fn, int depth)
 	}
 }
 
+#define PCIE_BRIDGE_COMMAND_OFF            0x4
+#define PCIE_BRIDGE_MEMBASE_OFF            020
+#define PCIE_BRIDGE_PREF_MEM_BASE_LOW_OFF  0x24
+#define PCIE_BRIDGE_PREF_MEM_BASE_HIGH_OFF 0x28
+#define PCIE_BRIDGE_PREF_MEM_LIM_OFF       0x2c
+
+static void pcie_configureBridge(uint8_t bus, uint8_t dev, uint8_t fun)
+{
+	printf("pcie: Detected device is a bridge...\n");
+	printf("pcie: For subordinate devices to work this has to be configured\n");
+
+	printf("pcie: Setting command register\n");
+	uint32_t temp = ecamRead32(bus, dev, fun, PCIE_BRIDGE_COMMAND_OFF);
+	temp |= 0x7; /* Enable I/O space, memory space and bus master */
+	ecamWrite32(bus, dev, fun, PCIE_BRIDGE_COMMAND_OFF, temp);
+
+	printf("pcie: Setting memory base and memory limit\n");
+	/* We will set only prefetchble base and limit upper (we have only 64-bit addresses now in bitstream) */
+	/* Check note next to definition of BAR addresses */
+	ecamWrite32(bus, dev, fun, PCIE_BRIDGE_PREF_MEM_BASE_LOW_OFF, 0x70002000);
+	ecamWrite32(bus, dev, fun, PCIE_BRIDGE_PREF_MEM_BASE_HIGH_OFF, (uint32_t)(PCI_BAR0_ADD >> 32));
+	ecamWrite32(bus, dev, fun, PCIE_BRIDGE_PREF_MEM_LIM_OFF, (uint32_t)(PCI_BAR5_ADD >> 32));
+
+	printf("pcie: Configured mem-pref-base:%08x\n", ecamRead32(bus, dev, fun, PCIE_BRIDGE_PREF_MEM_BASE_LOW_OFF));
+	printf("pcie: Configured mem-pref-base-high:%016lx, mem-pref-lim:%016lx\n",
+			(uint64_t)ecamRead32(bus, dev, fun, PCIE_BRIDGE_PREF_MEM_BASE_HIGH_OFF) << 32,
+			(uint64_t)ecamRead32(bus, dev, fun, PCIE_BRIDGE_PREF_MEM_LIM_OFF) << 32);
+}
+
 static void scanFunc(uint8_t bus, uint8_t dev, uint8_t fun, int depth)
 {
 	static uint8_t next_bus = 1;
@@ -287,6 +513,8 @@ static void scanFunc(uint8_t bus, uint8_t dev, uint8_t fun, int depth)
 		printf("pcie: ethernet controller detected\n");
 	}
 
+	ecamWrite32(bus, dev, fun, PCI_COMMAND, 0);
+
 	/* Enable MEM-space and Bus Master if still disabled */
 	uint16_t cmd = ecamRead16(bus, dev, fun, PCI_COMMAND);
 	if (!(cmd & (PCI_CMD_MEM | PCI_CMD_MASTER))) {
@@ -302,6 +530,9 @@ static void scanFunc(uint8_t bus, uint8_t dev, uint8_t fun, int depth)
 	if (hdr == 0x01) {
 		/* read once */
 		uint8_t sec = ecamRead8(bus, dev, fun, PCI_SECONDARY_BUS);
+
+		/* Configure bridge */
+		pcie_configureBridge(bus, dev, fun);
 
 		if (sec == 0) {
 			sec = next_bus++;
@@ -358,16 +589,11 @@ static void pcie_scanBus(uint8_t bus, int depth)
 	}
 }
 
-
 static uint32_t readReg(uint32_t *base, uint32_t offset)
 {
 	return *((volatile uint32_t *)((char *)base + offset));
 }
 
-static void writeReg(uint32_t *base, uint32_t offset, uint32_t value)
-{
-	*((volatile uint32_t *)((char *)base + offset)) = value;
-}
 
 static void writeRegMsk(uint32_t *base, uint32_t offset, uint32_t clr, uint32_t set)
 {
@@ -379,6 +605,7 @@ static void writeRegMsk(uint32_t *base, uint32_t offset, uint32_t clr, uint32_t 
 
 static void deassertAxiInterconnectsReset(void)
 {
+	printf("Deasserting AXI interconnect\n");
 	platformctl_t ctl3 = {
 		.action = pctl_set,
 		.type = pctl_devreset,
@@ -477,8 +704,17 @@ static phy_link_status checkLinkStatus(void)
 	return ret;
 }
 
+#define AXI_HPM1_FPD_REG 0x00FD615000
+
+#define AXI_WIDTH_CFG_32B  0x0
+#define AXI_WIDTH_CFG_64B  0x1
+#define AXI_WIDTH_CFG_128B 0x2
+
 int main(int argc, char **argv)
 {
+	printf("Entering PCIe test app\n");
+	usleep(10000);
+
 	/* Map memory */
 	common.fpga_gpio = mmap(NULL, 0x1000, PROT_WRITE | PROT_READ,
 			MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, 0xa0020000);
@@ -492,6 +728,21 @@ int main(int argc, char **argv)
 		printf("pcie: fail to map AXI PCIE bridge memory\n");
 		return -1;
 	}
+
+	volatile uint32_t *axi_slave1_width_reg = (volatile uint32_t *)mmap(NULL, 4, PROT_WRITE | PROT_READ,
+			MAP_PHYSMEM | MAP_ANONYMOUS, -1, AXI_HPM1_FPD_REG);
+
+	if (NULL == axi_slave1_width_reg) {
+		printf("pcie: mmap failed for this AXI width register\n");
+		return -1;
+	}
+
+	uint32_t configuration = (*axi_slave1_width_reg & ~((1 << 10) | (1 << 11))) | (AXI_WIDTH_CFG_128B << 10);
+	*axi_slave1_width_reg = configuration;
+
+	printf("Configuring AXI slave 1 FPD width: %x\n", *axi_slave1_width_reg);
+
+	printf("Managed to map PCIe bridge addresses\n");
 
 	/* Deassert reset on AXI Interconnect between PS and PL */
 	deassertAxiInterconnectsReset();
@@ -514,18 +765,20 @@ int main(int argc, char **argv)
 	phy_link_status phy_link_status = checkLinkStatus();
 	if (phy_link_status.link_up) {
 		printf("pcie: phy LINK UP, link rate: %u, link width x%u, ltssm state: %s\n",
-			phy_link_status.link_rate,
-			phy_link_status.link_width,
-			ltssm_state2str(phy_link_status.ltssm_state));
+				phy_link_status.link_rate,
+				phy_link_status.link_width,
+				ltssm_state2str(phy_link_status.ltssm_state));
 	}
 	else {
 		printf("pcie: PHY LINK DOWN, phy status reg: 0x%x\n", phy_link_status.raw_register_val);
 		return -1;
 	}
 
+	printf("Disable interrupts\n");
 	/* Disable interrupt */
 	writeReg(common.pcie, 0x13c, 0x0);
 
+	printf("Clear MSIx and legacy interrupts\n");
 	/* Clear pending interrupts */
 	writeRegMsk(common.pcie, 0x138, 0x0ff30fe9, 0x0ff30fe9);
 
@@ -533,6 +786,10 @@ int main(int argc, char **argv)
 	writeReg(common.pcie, 0x178, 0xffffffff);
 	writeReg(common.pcie, 0x17c, 0xffffffff);
 
+	/* Make sure that root complex is turned off */
+	writeReg(common.pcie, 0x148, 0);
+
+	printf("Scanning bus0...\n");
 	pcie_scanBus(0, 0);
 
 	munmap((void *)common.pcie, 0x10000000);
