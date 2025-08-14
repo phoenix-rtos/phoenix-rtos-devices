@@ -159,7 +159,7 @@ static void uart_intThread(void *arg)
 			wake = 1;
 		}
 
-		if (wake == 1) {
+		if (wake != 0) {
 			libtty_wake_writer(&uart->tty);
 		}
 
