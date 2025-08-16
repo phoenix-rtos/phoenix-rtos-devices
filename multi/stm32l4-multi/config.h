@@ -257,6 +257,14 @@
 #define BUILTIN_DUMMYFS 1
 #endif
 
+#ifndef DUMMYFS_AS_ROOT
+#define DUMMYFS_AS_ROOT 1 /* 0 - dummyfs is used only for devfs, 1 - dummyfs is used for root fs */
+#endif
+
+#ifndef BUILTIN_FLASH_SERVER
+#define BUILTIN_FLASH_SERVER 1
+#endif
+
 /* libposixsrv (disabled by default) */
 #ifndef BUILTIN_POSIXSRV
 #define BUILTIN_POSIXSRV 0
