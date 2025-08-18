@@ -241,7 +241,7 @@ static int libdma_transferTimeout(int dma, int channel, void *maddr, size_t len,
 	libdma_prepareTransfer(dma, channel, maddr, len, DMA_TCIE_FLAG);
 
 	condTimeout = timeout;
-	if (timeout > 0) {
+	if (timeout != 0) {
 		gettime(&now, NULL);
 		end = now + timeout;
 	}
