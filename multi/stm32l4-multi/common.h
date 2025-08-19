@@ -33,15 +33,15 @@
 
 
 #define max(a, b) ({ \
-	__typeof__ (a) _a = (a); \
-	__typeof__ (b) _b = (b); \
+	__typeof__(a) _a = (a); \
+	__typeof__(b) _b = (b); \
 	_a > _b ? _a : _b; \
 })
 
 
 #define min(a, b) ({ \
-	__typeof__ (a) _a = (a); \
-	__typeof__ (b) _b = (b); \
+	__typeof__(a) _a = (a); \
+	__typeof__(b) _b = (b); \
 	_a > _b ? _b : _a; \
 })
 
@@ -49,15 +49,19 @@
 #ifdef NDEBUG
 #define DEBUG(format, ...)
 #else
-#define DEBUG(format, ...) printf("%s: "format, drvname, ##__VA_ARGS__)
+#define DEBUG(format, ...) printf("%s: " format, drvname, ##__VA_ARGS__)
 #endif
 
 
 static inline void dataBarier(void)
 {
-	__asm__ volatile ("dmb");
+	__asm__ volatile("dmb");
 }
 
+static inline void syncBarrier(void)
+{
+	__asm__ volatile("dsb");
+}
 
 static inline int devClk(int dev, int state)
 {

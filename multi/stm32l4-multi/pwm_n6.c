@@ -12,15 +12,31 @@
  */
 
 
-#include <errno.h>
-#include "pwm_n6.h"
 #include <stdio.h>
+#include <errno.h>
+#include <sys/threads.h>
+#include <sys/interrupt.h>
+#include "pwm_n6.h"
+
 #include "common.h"
 
+/* Interrupt data for one timer */
+typedef struct pwm_irq_t {
+	unsigned int uevirq; /* Update Event interrupt request */
+	uint8_t initialized; /* Cond and mutex initialized */
+	uint8_t uevReceived;
+	handle_t uevlock;
+	handle_t uevcond;
+} pwm_irq_t;
+
+/* TODO: Consider moving all data related to a single timer to one struct.
+ * Downside is that it would be more annoying to innitialize the array of timer related data
+ */
 typedef struct pwm_common_t {
 	volatile uint32_t *const timBase[PWM_TIMER_NUM];
 	const uint8_t timChannelSet[PWM_TIMER_NUM];
-	uint16_t timArr[PWM_TIMER_NUM];
+	uint16_t timArr[PWM_TIMER_NUM];  /* Auto Reload Register (top) */
+	pwm_irq_t timIrq[PWM_TIMER_NUM]; /* Interrupt request data */
 } pwm_common_t;
 
 /* clang-format off */
@@ -62,7 +78,24 @@ static pwm_common_t pwm_common = {
 		(0x1 << pwm_ch1) | (0x1 << pwm_ch1n),                                           // TIM16
 		(0x1 << pwm_ch1) | (0x1 << pwm_ch1n),                                           // TIM17
 	},
-	.timArr = {}
+	.timArr = {},
+	.timIrq = {
+		{.uevirq = tim1_up_irq},
+		{.uevirq = tim2_irq},
+		{.uevirq = tim3_irq},
+		{.uevirq = tim4_irq},
+		{.uevirq = tim5_irq},
+		{.uevirq = tim8_up_irq},
+		{.uevirq = tim9_irq},
+		{.uevirq = tim10_irq},
+		{.uevirq = tim11_irq},
+		{.uevirq = tim12_irq},
+		{.uevirq = tim13_irq},
+		{.uevirq = tim14_irq},
+		{.uevirq = tim15_irq},
+		{.uevirq = tim16_irq},
+		{.uevirq = tim17_irq},
+	},
 };
 /* clang-format on */
 
@@ -98,22 +131,88 @@ static int pwm_channelHasComplement(pwm_tim_id_t timer, pwm_ch_id_t chn)
 }
 
 
+static int pwm_updateEventIrq(unsigned int n, void *arg)
+{
+	/* Cursed pointer to int cast */
+	// pwm_tim_id_t timer = (pwm_tim_id_t)arg;
+	// *(pwm_common.timBase[timer] + tim_sr) &= ~0x1;
+	// pwm_common.timIrq[timer].uevReceived = 1;
+	// printf("Interrupt received\n");
+	// return 0;
+	*(pwm_common.timBase[pwm_tim1] + tim_sr) &= ~0x1;
+	return 0;
+}
+
+
 // static void pwm_enable(pwm_tim_id_t timer, pwm_ch_id_t chn)
 // {
 // 	return;
 // }
+__attribute__((unused)) static void pwm_printRegisters(pwm_tim_id_t timer)
+{
+	/* Assume correct timer */
+	printf("tim_cr1: %x\n", *((volatile uint16_t *)(pwm_common.timBase[timer] + tim_cr1)));
+	printf("tim_cr2: %x\n", *(pwm_common.timBase[timer] + tim_cr2));
+	printf("tim_smcr: %x\n", *(pwm_common.timBase[timer] + tim_smcr));
+	printf("tim_dier: %x\n", *(pwm_common.timBase[timer] + tim_dier));
+	printf("tim_sr: %x\n", *(pwm_common.timBase[timer] + tim_sr));
+	printf("tim_egr: %x\n", *((volatile uint16_t *)(pwm_common.timBase[timer] + tim_egr)));
+	printf("tim_ccmr1: %x\n", *(pwm_common.timBase[timer] + tim_ccmr1));
+	printf("tim_ccmr2: %x\n", *(pwm_common.timBase[timer] + tim_ccmr2));
+	printf("tim_ccer: %x\n", *(pwm_common.timBase[timer] + tim_ccer));
+	printf("tim_cnt: %x\n", *(pwm_common.timBase[timer] + tim_cnt));
+	printf("tim_psc: %x\n", *((volatile uint16_t *)(pwm_common.timBase[timer] + tim_psc)));
+	printf("tim_arr: %x\n", *(pwm_common.timBase[timer] + tim_arr));
+	printf("tim_rcr: %x\n", *((volatile uint16_t *)(pwm_common.timBase[timer] + tim_rcr)));
+	printf("tim_ccr1: %x\n", *(pwm_common.timBase[timer] + tim_ccr1));
+	printf("tim_ccr2: %x\n", *(pwm_common.timBase[timer] + tim_ccr2));
+	printf("tim_ccr3: %x\n", *(pwm_common.timBase[timer] + tim_ccr3));
+	printf("tim_ccr4: %x\n", *(pwm_common.timBase[timer] + tim_ccr4));
+	printf("tim_bdtr: %x\n", *(pwm_common.timBase[timer] + tim_bdtr));
+	printf("tim_ccr5: %x\n", *(pwm_common.timBase[timer] + tim_ccr5));
+	printf("tim_ccr6: %x\n", *(pwm_common.timBase[timer] + tim_ccr6));
+	printf("tim_ccmr3: %x\n", *(pwm_common.timBase[timer] + tim_ccmr3));
+	printf("tim_dtr2: %x\n", *(pwm_common.timBase[timer] + tim_dtr2));
+	printf("tim_ecr: %x\n", *(pwm_common.timBase[timer] + tim_ecr));
+	printf("tim_tisel: %x\n", *(pwm_common.timBase[timer] + tim_tisel));
+	printf("tim_af1: %x\n", *(pwm_common.timBase[timer] + tim_af1));
+	printf("tim_af2: %x\n", *(pwm_common.timBase[timer] + tim_af2));
+	printf("tim_dcr: %x\n", *(pwm_common.timBase[timer] + tim_dcr));
+	printf("tim_dmar: %x\n", *(pwm_common.timBase[timer] + tim_dmar));
+}
 
-// /* Returns errors */
-// static int pwm_disable(pwm_tim_id_t timer)
-// {
-// 	int res;
-// 	if ((res = pwm_validateTimer(timer)) < 0) {
-// 		return res;
-// 	}
 
-// 	/* Clear CEN in CR1 */
-// 	*(pwm_common.timBase[timer] + tim_cr1) &= ~(0x1);
-// }
+/* Returns errors */
+int pwm_disableTimer(pwm_tim_id_t timer)
+{
+	int res;
+	if ((res = pwm_validateTimer(timer)) < 0) {
+		return res;
+	}
+
+	/* Clear CEN in CR1 */
+	*(pwm_common.timBase[timer] + tim_cr1) &= ~(0x1);
+	return EOK;
+}
+
+
+int pwm_disableChannel(pwm_tim_id_t timer, pwm_ch_id_t chn)
+{
+	int res;
+	if ((res = pwm_validateTimer(timer)) < 0) {
+		return res;
+	}
+	if ((res = pwm_validateChannel(timer, chn)) < 0) {
+		return res;
+	}
+
+	/* Disable the channel. Clear CCxE in CCER */
+	*(pwm_common.timBase[timer] + tim_ccer) &= ~(0x1 << PWM_CCER_CCE_OFF(chn));
+	if (pwm_channelHasComplement(timer, chn)) {
+		*(pwm_common.timBase[timer] + tim_ccer) &= ~(0x1 << PWM_CCER_CCNE_OFF(chn));
+	}
+	return EOK;
+}
 
 
 uint64_t pwm_getBaseFrequency(pwm_tim_id_t timer)
@@ -129,38 +228,76 @@ int pwm_configure(pwm_tim_id_t timer, uint32_t prescaler, uint16_t top)
 {
 	/* TODO: For now assuming full configuration such as in TIM1/TIM8.
 	 * Later check if each step makes sense for simpler timers and 'if out' advanced configuration
-	 * TODO: Ask somebody if its ok to set a 16 bit register () via a u32 pointer or if it's gonna result in setting reserved bits
+	 * NOTE: CR1, EGR, PSC, RCR are 16 bit registers!!! (In TIM1/8)
 	 */
 	int res;
-	uint32_t t;
+	uint16_t t16;
 	if ((res = pwm_validateTimer(timer)) < 0) {
 		return res;
 	}
 
+	if (!pwm_common.timIrq[timer].initialized) {
+		// mutexCreate(&pwm_common.timIrq[timer].uevlock);
+		// condCreate(&pwm_common.timIrq[timer].uevcond);
+		// interrupt(pwm_common.timIrq[timer].uevirq, pwm_updateEventIrq, (void*)timer, pwm_common.timIrq[timer].uevcond, NULL);
+		// pwm_common.timIrq[timer].initialized = 1;
+	}
+
 	/* In CR1 set prescaler, countermode, autoreload, clockdivision, repetition counter */
-	t = *(pwm_common.timBase[timer] + tim_cr1);
+	t16 = *((volatile uint16_t *)(pwm_common.timBase[timer] + tim_cr1));
 	/* Set counter mode UP in CR1 => clear DIR and CMS */
-	t &= ~((0x3 << 5) | (0x1 << 4));
+	t16 &= ~((0x3 << 5) | (0x1 << 4));
 	/* Set clock division 1 in CR1 => clear CKD */
-	t &= ~(0x3 << 8);
-	*(pwm_common.timBase[timer] + tim_cr1) = t;
+	t16 &= ~(0x3 << 8);
+	*((volatile uint16_t *)(pwm_common.timBase[timer] + tim_cr1)) = t16;
+
+	/* In AF1/2 disable break input */
+	*(pwm_common.timBase[timer] + tim_af1) &= ~0x1;
+	*(pwm_common.timBase[timer] + tim_af2) &= ~0x1;
+	// syncBarrier();
+
+	/* Enable autoreload buffering in CR1 ARPE */
+	*((volatile uint16_t *)(pwm_common.timBase[timer] + tim_cr1)) |= (0x1 << 7);
+	// syncBarrier();
 
 	/* Set autoreload in ARR */
 	pwm_common.timArr[timer] = top;
 	*(pwm_common.timBase[timer] + tim_arr) = top;
 
 	/* Set prescaler in PSC */
-	*(pwm_common.timBase[timer] + tim_psc) = prescaler;
+	*((volatile uint16_t *)(pwm_common.timBase[timer] + tim_psc)) = prescaler;
 	/* Set repetition counter to 0 in RCR */  // only if it exists in this timer
-	*(pwm_common.timBase[timer] + tim_rcr) = 0;
+	*((volatile uint16_t *)(pwm_common.timBase[timer] + tim_rcr)) = 0;
 
+	/* Enable update event interrupt */
+	*(pwm_common.timBase[timer] + tim_dier) |= 0x1;
+
+	// syncBarrier();
 	/* Generate update event (UG bit in EGR) to reload prescaler and repetition counter */
 	*(pwm_common.timBase[timer] + tim_egr) |= 0x1;
 
-	/* Enable buffering in CR1 ARPE */
-	*((volatile uint16_t *)(pwm_common.timBase[timer] + tim_cr1)) |= (0x1 << 7);
+	/* Wait for update event to load prescaler and arr */
+	// mutexLock(pwm_common.timIrq[timer].uevlock);
+	// //(*(pwm_common.timBase[timer] + tim_arr) & 0xFFFF) != top
+	// while (pwm_common.timIrq[timer].uevReceived == 0) {
+	// 	condWait(pwm_common.timIrq[timer].uevcond, pwm_common.timIrq[timer].uevlock, 0);
+	// }
+	// pwm_common.timIrq[timer].uevReceived = 0;
+	// mutexUnlock(pwm_common.timIrq[timer].uevlock);
 
-	printf("DEBUG: CR1=%x\n", *(pwm_common.timBase[timer] + tim_cr1));
+	mutexLock(pwm_common.timIrq[timer].uevlock);
+	//(*(pwm_common.timBase[timer] + tim_arr) & 0xFFFF) != top
+	while ((*(pwm_common.timBase[timer] + tim_arr) & 0xFFFF) != top) {
+		condWait(pwm_common.timIrq[timer].uevcond, pwm_common.timIrq[timer].uevlock, 0);
+	}
+	pwm_common.timIrq[timer].uevReceived = 0;
+	mutexUnlock(pwm_common.timIrq[timer].uevlock);
+
+	syncBarrier();
+	pwm_printRegisters(timer);
+
+	// syncBarrier();
+	// printf("DEBUG: CR1=%x\n", *(pwm_common.timBase[timer] + tim_cr1));
 	return EOK;
 }
 
@@ -171,85 +308,107 @@ int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint16_t compare)
 	/* For now this function reconfigures the entire channel each time it's called.
 	 * In the future change it so that it only changes parameters once running
 	 */
-	int res;
-	volatile uint32_t *reg;
-	uint32_t tmpcr2, tmpccmr, tmpccer, tmpbdtr;
+	// int res;
+	// volatile uint32_t *reg;
+	// uint32_t tmpcr2, tmpccmr, tmpccer, tmpbdtr;
 
-	/* Validate channel/timer compatibility */
-	if ((res = pwm_validateChannel(timer, chn)) < 0) {
-		return res;
-	}
-	if (compare > pwm_common.timArr[timer]) {
-		return -EINVAL;
-	}
+	// /* Validate channel/timer compatibility */
+	// if ((res = pwm_validateChannel(timer, chn)) < 0) {
+	// 	return res;
+	// }
+	// if (compare > pwm_common.timArr[timer]) {
+	// 	return -EINVAL;
+	// }
 
-	/* Set output channel preloading in CCMRx OCyPE */
-	reg = (pwm_common.timBase[timer] + PWM_CCMR_REG(chn));
-	*reg |= (0x1 << PWM_CCMR_OCPE_OFF(chn));
-	/* TODO: Find out what's the deal with channel 5,6. Why are they not in the pin table, but in the register description? */
+	// /* Set output channel preloading in CCMRx OCyPE */
+	// reg = (pwm_common.timBase[timer] + PWM_CCMR_REG(chn));
+	// *reg |= (0x1 << PWM_CCMR_OCPE_OFF(chn));
+	// /* TODO: Find out what's the deal with channel 5,6. Why are they not in the pin table, but in the register description? */
 
-	/* Disable the channel. Clear CCxE in CCER */
-	*(pwm_common.timBase[timer] + tim_ccer) &= ~(0x1 << PWM_CCER_CCE_OFF(chn));
-	if (pwm_channelHasComplement(timer, chn)) {
-		*(pwm_common.timBase[timer] + tim_ccer) &= ~(0x1 << PWM_CCER_CCNE_OFF(chn));
-	}
+	// syncBarrier();
 
-	// NOTE: For OC with compliments enabling also requires a trillion other bits in BDTR or sth
-	tmpcr2 = *(pwm_common.timBase[timer] + tim_cr2);
-	tmpccmr = *(pwm_common.timBase[timer] + PWM_CCMR_REG(chn));
-	tmpccer = *(pwm_common.timBase[timer] + tim_ccer);
+	// /* Disable the channel. Clear CCxE in CCER */
+	// *(pwm_common.timBase[timer] + tim_ccer) &= ~(0x1 << PWM_CCER_CCE_OFF(chn));
+	// if (pwm_channelHasComplement(timer, chn)) {
+	// 	*(pwm_common.timBase[timer] + tim_ccer) &= ~(0x1 << PWM_CCER_CCNE_OFF(chn));
+	// }
 
-	// NOTE: CCMR works differently on TIM10-14 :(
-	/* Set channel as output. Clear CCyS */
-	tmpccmr &= ~(0x3 << PWM_CCMR_CCS_OFF(chn));
-	/* Set output compare mode to PWM 1 mode (0110 bits 16, 6:4)*/
-	tmpccmr = (tmpccmr & ~((0x1 << PWM_CCMR_OCMH_OFF(chn)) | (0x7 << PWM_CCMR_OCML_OFF(chn))));
-	tmpccmr |= (0x6 << PWM_CCMR_OCML_OFF(chn));
-	/* Set output compare polarity to active high (0)*/
-	tmpccer &= ~(0x1 << PWM_CCER_CCP_OFF(chn));
+	// syncBarrier();
 
-	if (pwm_channelHasComplement(timer, chn)) {
-		/* Disable the complimentary channel */
-		tmpccer &= ~(0x1 << PWM_CCER_CCNE_OFF(chn));
-		/* Set complimentary output polarity (to active high) */
-		tmpccer &= ~(0x1 << PWM_CCER_CCNP_OFF(chn));
-		/* Set output idle state to low */
-		tmpcr2 &= ~(0x1 << PWM_CR2_OIS_OFF(chn));
-		/* Set complimentary output idle state to low */
-		tmpcr2 &= ~(0x1 << PWM_CR2_OISN_OFF(chn));
-	}
+	// // NOTE: For OC with complements enabling also requires a trillion other bits in BDTR or sth
+	// tmpcr2 = *(pwm_common.timBase[timer] + tim_cr2);
+	// tmpccmr = *(pwm_common.timBase[timer] + PWM_CCMR_REG(chn));
+	// tmpccer = *(pwm_common.timBase[timer] + tim_ccer);
 
-	*(pwm_common.timBase[timer] + tim_cr2) = tmpcr2;
-	*(pwm_common.timBase[timer] + PWM_CCMR_REG(chn)) = tmpccmr;
-	/* Set compare value in CCRx */
-	*(pwm_common.timBase[timer] + PWM_CCR_REG(chn)) = compare;
-	*(pwm_common.timBase[timer] + tim_ccer) = tmpccer;
+	// // NOTE: CCMR works differently on TIM10-14 :(
+	// /* Set channel as output. Clear CCyS */
+	// tmpccmr &= ~(0x3 << PWM_CCMR_CCS_OFF(chn));
+	// /* Set output compare mode to PWM 1 mode (0110 bits 16, 6:4)*/
+	// tmpccmr &= ~((0x1 << PWM_CCMR_OCMH_OFF(chn)) | (0x7 << PWM_CCMR_OCML_OFF(chn)));
+	// tmpccmr |= (0x6 << PWM_CCMR_OCML_OFF(chn));
+	// /* Set output compare polarity to active high (0)*/
+	// tmpccer &= ~(0x1 << PWM_CCER_CCP_OFF(chn));
 
-	/* Disable fast output */
-	*(pwm_common.timBase[timer] + PWM_CCMR_REG(chn)) &= ~(0x1 << PWM_CCMR_OCFE_OFF(chn));
-	/* Set master-slave mode to disabled (I think?) For now TIM1/8 */
-	*(pwm_common.timBase[timer] + tim_cr2) &= ~((0xF << 4) | (0xF << 20) | (0x1 << 25));
-	*(pwm_common.timBase[timer] + tim_smcr) &= ~(0x1 << 7);
+	// // This isn't necessarily a check if complement exists, but if there is break mode
+	// if (pwm_channelHasComplement(timer, chn)) {
+	// 	/* Disable the complementary channel */
+	// 	tmpccer &= ~(0x1 << PWM_CCER_CCNE_OFF(chn));
+	// 	/* Set complementary output polarity (to active high) */
+	// 	tmpccer &= ~(0x1 << PWM_CCER_CCNP_OFF(chn));
+	// 	/* Set output idle state to low */
+	// 	tmpcr2 &= ~(0x1 << PWM_CR2_OIS_OFF(chn));
+	// 	/* Set complementary output idle state to low */
+	// 	tmpcr2 &= ~(0x1 << PWM_CR2_OISN_OFF(chn));
+	// }
 
-	/* Initialize BDTR register. We don't need the dead time feature. */
-	tmpbdtr = 0;
-	tmpbdtr |= (0x1 << 13) | (0x1 << 25);
-	*(pwm_common.timBase[timer] + tim_bdtr) = tmpbdtr;
+	// *(pwm_common.timBase[timer] + tim_cr2) = tmpcr2;
+	// *(pwm_common.timBase[timer] + PWM_CCMR_REG(chn)) = tmpccmr;
+	// /* Set compare value in CCRx */
+	// *(pwm_common.timBase[timer] + PWM_CCR_REG(chn)) = compare;
+	// *(pwm_common.timBase[timer] + tim_ccer) = tmpccer;
 
-	// Also simplify control flow when the pwm channel is already set, to just modify the compare value
+	// syncBarrier();
 
-	/* Enable campture/compare interrupt */
-	*(pwm_common.timBase[timer] + tim_dier) |= (0x1 << PWM_DIER_CCIE_OFF(chn));
-	/* Enable output channel (and it's compliment) */
-	*(pwm_common.timBase[timer] + tim_ccer) |= (0x1 << PWM_CCER_CCE_OFF(chn));
-	if (pwm_channelHasComplement(timer, chn)) {
-		*(pwm_common.timBase[timer] + tim_ccer) |= (0x1 << PWM_CCER_CCNE_OFF(chn));
-	}
-	/* Enable counter if disabled (CR1 CER) */
-	*(pwm_common.timBase[timer] + tim_cr1) |= 0x1;
-	/* Force an update event */
-	*(pwm_common.timBase[timer] + tim_egr) |= 0x1;
+	// /* Disable fast output */
+	// *(pwm_common.timBase[timer] + PWM_CCMR_REG(chn)) &= ~(0x1 << PWM_CCMR_OCFE_OFF(chn));
+	// /* Set master-slave mode to disabled (I think?) For now TIM1/8 */
+	// *(pwm_common.timBase[timer] + tim_cr2) &= ~((0x7 << 4) | (0xF << 20) | (0x1 << 25));
+	// *(pwm_common.timBase[timer] + tim_smcr) &= ~(0x1 << 7);
 
+	// /* Initialize BDTR register. We don't need the dead time feature. */
+	// tmpbdtr = 0;
+	// tmpbdtr |= (0x1 << 13) | (0x1 << 25);
+	// /* Enable main output (MOE) */
+	// tmpbdtr |= (0x1 << 15);
+	// *(pwm_common.timBase[timer] + tim_bdtr) = tmpbdtr;
+
+	// syncBarrier();
+	// // Also simplify control flow when the pwm channel is already set, to just modify the compare value
+
+	// /* Enable capture/compare interrupt */
+	// // *(pwm_common.timBase[timer] + tim_dier) |= (0x1 << PWM_DIER_CCIE_OFF(chn));
+	// /* Enable output channel (and it's complement) */
+	// *(pwm_common.timBase[timer] + tim_ccer) |= (0x1 << PWM_CCER_CCE_OFF(chn));
+	// if (pwm_channelHasComplement(timer, chn)) {
+	// 	*(pwm_common.timBase[timer] + tim_ccer) |= (0x1 << PWM_CCER_CCNE_OFF(chn));
+	// }
+
+	// syncBarrier();
+	// /* Enable counter if disabled (CR1 CER) */
+	// *(pwm_common.timBase[timer] + tim_cr1) |= 0x1;
+	// /* Force an update event */
+	// *(pwm_common.timBase[timer] + tim_egr) |= 0x1;
+
+	// for (int i = 0; i < 100; i++) {
+	// 	printf("CNT: %u\n", *(pwm_common.timBase[timer] + tim_cnt));
+	// }
+
+
+	// for (int i = 0; i < 100; i++) {
+	// 	printf("dupa nr %i\n", i);
+	// }
+	// pwm_printRegisters(timer);
+	// syncBarrier();
 	return EOK;
 }
 
@@ -269,5 +428,9 @@ int pwm_setBitSequence(void)
 
 void pwm_init(void)
 {
+	mutexCreate(&pwm_common.timIrq[pwm_tim1].uevlock);
+	condCreate(&pwm_common.timIrq[pwm_tim1].uevcond);
+	interrupt(pwm_common.timIrq[pwm_tim1].uevirq, pwm_updateEventIrq, (void *)NULL, pwm_common.timIrq[pwm_tim1].uevcond, NULL);
+	pwm_common.timIrq[pwm_tim1].initialized = 1;
 	return;
 }

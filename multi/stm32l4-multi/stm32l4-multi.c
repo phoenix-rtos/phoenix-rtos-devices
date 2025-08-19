@@ -250,6 +250,12 @@ static void handleMsg(msg_t *msg)
 		case pwm_getfreq:
 			omsg->pwm_bsfreq = pwm_getBaseFrequency(imsg->pwm_freq.timer);
 			break;
+		case pwm_distim:
+			err = pwm_disableTimer(imsg->pwm_distim.timer);
+			break;
+		case pwm_dischn:
+			err = pwm_disableChannel(imsg->pwm_dischn.timer, imsg->pwm_dischn.chn);
+			break;
 #endif
 
 		default:

@@ -74,4 +74,10 @@ int pwm_setBitSequence(void);
 
 void pwm_init(void);
 
+
+int pwm_disableTimer(pwm_tim_id_t timer);
+
+
+int pwm_disableChannel(pwm_tim_id_t timer, pwm_ch_id_t chn);
+
 #endif /* #idndef PWM_N6_H_ */
