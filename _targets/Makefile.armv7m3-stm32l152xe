@@ -1,0 +1,12 @@
+#
+# Makefile for Phoenix-RTOS 3 device drivers
+#
+# STM32 drivers
+#
+# Copyright 2019, 2020 Phoenix Systems
+#
+
+# FIXME: on STM32L1 TARGET, __TARGET and __CPU are not supported
+CFLAGS += -DTARGET_STM32 -DTARGET_STM32L1
+
+DEFAULT_COMPONENTS := stm32l1-multi

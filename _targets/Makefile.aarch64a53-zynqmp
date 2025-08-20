@@ -8,10 +8,6 @@
 
 DEFAULT_COMPONENTS := zynq-uart zynq-flash zynqmp-can zynq-pwm uart16550
 DEFAULT_COMPONENTS += zynq-i2c zynq-spi
-<<<<<<< HEAD
 DEFAULT_COMPONENTS += librcpwm
 DEFAULT_COMPONENTS += libsensorsclient libsensors sensors
 DEFAULT_COMPONENTS += pcie
-=======
-DEFAULT_COMPONENTS += libzynqpwm pcie
->>>>>>> 8ef253a (pcie: zynq mp axi bridge driver)
