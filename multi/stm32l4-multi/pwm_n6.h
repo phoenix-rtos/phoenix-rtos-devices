@@ -83,7 +83,7 @@ uint64_t pwm_getBaseFrequency(pwm_tim_id_t timer);
 
 
 /* Returns errors */
-int pwm_configure(pwm_tim_id_t timer, uint32_t prescaler, uint16_t top);
+int pwm_configure(pwm_tim_id_t timer, uint16_t prescaler, uint16_t top);
 
 
 /* Returns errors */

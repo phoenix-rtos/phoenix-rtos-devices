@@ -131,15 +131,12 @@ static int pwm_channelHasComplement(pwm_tim_id_t timer, pwm_ch_id_t chn)
 }
 
 
-static int pwm_updateEventIrq(unsigned int n, void *arg)
+__attribute__((unused)) static int pwm_updateEventIrq(unsigned int n, void *arg)
 {
 	/* Cursed pointer to int cast */
-	// pwm_tim_id_t timer = (pwm_tim_id_t)arg;
-	// *(pwm_common.timBase[timer] + tim_sr) &= ~0x1;
-	// pwm_common.timIrq[timer].uevReceived = 1;
-	// printf("Interrupt received\n");
-	// return 0;
+	// pwm_tim_id_t timer = pwm_tim1;
 	*(pwm_common.timBase[pwm_tim1] + tim_sr) &= ~0x1;
+	pwm_common.timIrq[pwm_tim1].uevReceived = 1;
 	return 0;
 }
 
@@ -224,7 +221,7 @@ uint64_t pwm_getBaseFrequency(pwm_tim_id_t timer)
 
 
 /* Configure a compatible timer for pwm. Returns errors */
-int pwm_configure(pwm_tim_id_t timer, uint32_t prescaler, uint16_t top)
+int pwm_configure(pwm_tim_id_t timer, uint16_t prescaler, uint16_t top)
 {
 	/* TODO: For now assuming full configuration such as in TIM1/TIM8.
 	 * Later check if each step makes sense for simpler timers and 'if out' advanced configuration
@@ -232,16 +229,17 @@ int pwm_configure(pwm_tim_id_t timer, uint32_t prescaler, uint16_t top)
 	 */
 	int res;
 	uint16_t t16;
+	// uint32_t t32;
 	if ((res = pwm_validateTimer(timer)) < 0) {
 		return res;
 	}
 
-	if (!pwm_common.timIrq[timer].initialized) {
-		// mutexCreate(&pwm_common.timIrq[timer].uevlock);
-		// condCreate(&pwm_common.timIrq[timer].uevcond);
-		// interrupt(pwm_common.timIrq[timer].uevirq, pwm_updateEventIrq, (void*)timer, pwm_common.timIrq[timer].uevcond, NULL);
-		// pwm_common.timIrq[timer].initialized = 1;
-	}
+	// if (!pwm_common.timIrq[timer].initialized) {
+	// 	mutexCreate(&pwm_common.timIrq[timer].uevlock);
+	// 	condCreate(&pwm_common.timIrq[timer].uevcond);
+	// 	res = interrupt(pwm_common.timIrq[timer].uevirq, pwm_updateEventIrq, (void*)timer, pwm_common.timIrq[timer].uevcond, NULL);
+	// 	pwm_common.timIrq[timer].initialized = 1;
+	// }
 
 	/* In CR1 set prescaler, countermode, autoreload, clockdivision, repetition counter */
 	t16 = *((volatile uint16_t *)(pwm_common.timBase[timer] + tim_cr1));
@@ -256,45 +254,46 @@ int pwm_configure(pwm_tim_id_t timer, uint32_t prescaler, uint16_t top)
 	*(pwm_common.timBase[timer] + tim_af2) &= ~0x1;
 	// syncBarrier();
 
-	/* Enable autoreload buffering in CR1 ARPE */
-	*((volatile uint16_t *)(pwm_common.timBase[timer] + tim_cr1)) |= (0x1 << 7);
-	// syncBarrier();
-
 	/* Set autoreload in ARR */
 	pwm_common.timArr[timer] = top;
-	*(pwm_common.timBase[timer] + tim_arr) = top;
+	*(pwm_common.timBase[timer] + tim_arr) = 0;
 
 	/* Set prescaler in PSC */
 	*((volatile uint16_t *)(pwm_common.timBase[timer] + tim_psc)) = prescaler;
 	/* Set repetition counter to 0 in RCR */  // only if it exists in this timer
 	*((volatile uint16_t *)(pwm_common.timBase[timer] + tim_rcr)) = 0;
+	printf("top: %08x\n", top);
 
 	/* Enable update event interrupt */
-	*(pwm_common.timBase[timer] + tim_dier) |= 0x1;
+	// *(pwm_common.timBase[timer] + tim_dier) |= 0x1;
 
-	// syncBarrier();
 	/* Generate update event (UG bit in EGR) to reload prescaler and repetition counter */
-	*(pwm_common.timBase[timer] + tim_egr) |= 0x1;
+	*((volatile uint16_t *)(pwm_common.timBase[timer] + tim_egr)) |= 0x1;
+
+	/* Enable autoreload buffering in CR1 ARPE */
+	*((volatile uint16_t *)(pwm_common.timBase[timer] + tim_cr1)) |= (0x1 << 7);
+
+	syncBarrier();
 
 	/* Wait for update event to load prescaler and arr */
+
 	// mutexLock(pwm_common.timIrq[timer].uevlock);
 	// //(*(pwm_common.timBase[timer] + tim_arr) & 0xFFFF) != top
-	// while (pwm_common.timIrq[timer].uevReceived == 0) {
+	// while ((*(pwm_common.timBase[timer] + tim_arr) & 0xFFFF) != top) {
+	// 	// printf("ARR: %08x\n", *(pwm_common.timBase[timer] + tim_arr) & 0xFFFF);
 	// 	condWait(pwm_common.timIrq[timer].uevcond, pwm_common.timIrq[timer].uevlock, 0);
 	// }
 	// pwm_common.timIrq[timer].uevReceived = 0;
 	// mutexUnlock(pwm_common.timIrq[timer].uevlock);
+	// while ((*(pwm_common.timBase[timer] + tim_arr) & 0xFFFF) != top)
+	// {
+	// 	printf("ARR: %08x\n", *(pwm_common.timBase[timer] + tim_arr) & 0xFFFF);
+	// }
+	// while (*((volatile uint16_t *)(pwm_common.timBase[timer] + tim_psc)) != prescaler)
+	// 	;
 
-	mutexLock(pwm_common.timIrq[timer].uevlock);
-	//(*(pwm_common.timBase[timer] + tim_arr) & 0xFFFF) != top
-	while ((*(pwm_common.timBase[timer] + tim_arr) & 0xFFFF) != top) {
-		condWait(pwm_common.timIrq[timer].uevcond, pwm_common.timIrq[timer].uevlock, 0);
-	}
-	pwm_common.timIrq[timer].uevReceived = 0;
-	mutexUnlock(pwm_common.timIrq[timer].uevlock);
-
-	syncBarrier();
-	pwm_printRegisters(timer);
+	// syncBarrier();
+	// pwm_printRegisters(timer);
 
 	// syncBarrier();
 	// printf("DEBUG: CR1=%x\n", *(pwm_common.timBase[timer] + tim_cr1));
@@ -428,9 +427,17 @@ int pwm_setBitSequence(void)
 
 void pwm_init(void)
 {
-	mutexCreate(&pwm_common.timIrq[pwm_tim1].uevlock);
-	condCreate(&pwm_common.timIrq[pwm_tim1].uevcond);
-	interrupt(pwm_common.timIrq[pwm_tim1].uevirq, pwm_updateEventIrq, (void *)NULL, pwm_common.timIrq[pwm_tim1].uevcond, NULL);
-	pwm_common.timIrq[pwm_tim1].initialized = 1;
+	/* If I initialize the cond/mutex/interrupt only when they are needed, it doesn't work. */
+	// for (pwm_tim_id_t tim = 0; tim < PWM_TIMER_NUM; tim++) {
+	// 	mutexCreate(&pwm_common.timIrq[tim].uevlock);
+	// 	condCreate(&pwm_common.timIrq[tim].uevcond);
+	// 	interrupt(pwm_common.timIrq[tim].uevirq, pwm_updateEventIrq, NULL, pwm_common.timIrq[tim].uevcond, NULL);
+	// 	pwm_common.timIrq[tim].initialized = 1;
+	// }
+	// mutexCreate(&pwm_common.timIrq[pwm_tim1].uevlock);
+	// condCreate(&pwm_common.timIrq[pwm_tim1].uevcond);
+	// interrupt(tim1_up_irq, pwm_updateEventIrq, (void *)NULL, pwm_common.timIrq[pwm_tim1].uevcond, NULL);
+	// pwm_common.timIrq[pwm_tim1].initialized = 1;
+
 	return;
 }
