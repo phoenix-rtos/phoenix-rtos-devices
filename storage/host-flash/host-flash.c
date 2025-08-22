@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
+#include <assert.h>
 
 #include "host-flash.h"
 
@@ -33,48 +34,75 @@ static struct {
 } hostflash_common;
 
 
+static ssize_t hostflash_safeRead(void *buff, size_t bufflen, off_t offset)
+{
+	int ret = lseek(hostflash_common.filefd, offset, SEEK_SET);
+	if (ret < 0) {
+		return (ssize_t)ret;
+	}
+
+	int readsz = 0;
+	ssize_t len;
+	do {
+		len = read(hostflash_common.filefd, (char *)buff + readsz, bufflen - readsz);
+		if (len < 0) {
+			if (errno == EINTR) {
+				continue;
+			}
+			return len;
+		}
+		readsz += len;
+	} while ((len > 0) && (readsz != bufflen));
+
+	return readsz;
+}
+
+
+static ssize_t hostflash_safeWrite(const void *buff, size_t bufflen, off_t offset)
+{
+	int ret = lseek(hostflash_common.filefd, offset, SEEK_SET);
+	if (ret < 0) {
+		return (ssize_t)ret;
+	}
+
+	int writesz = 0;
+	ssize_t len;
+	do {
+		len = write(hostflash_common.filefd, (char *)buff + writesz, bufflen - writesz);
+		if (len < 0) {
+			if (errno == EINTR) {
+				continue;
+			}
+			return len;
+		}
+		writesz += len;
+	} while ((len > 0) && (writesz != bufflen));
+
+	return writesz;
+}
+
+
 ssize_t hostflash_read(struct _meterfs_devCtx_t *devCtx, off_t offs, void *buff, size_t bufflen)
 {
-	ssize_t stat;
-	int readsz = 0;
-
-	(void)devCtx;
-
 	if ((devCtx == NULL) || (devCtx->state == 0) || ((offs + bufflen) > hostflash_common.flashsz)) {
 		return -EINVAL;
 	}
 
-	while ((stat = pread(hostflash_common.filefd, (void *)((char *)buff + readsz), bufflen - readsz, offs + readsz)) != 0) {
-		if (stat < 0) {
-			if (errno == EINTR) {
-				continue;
-			}
-
-			return stat;
-		}
-
-		readsz += stat;
-		if (readsz == bufflen) {
-			break;
-		}
-	}
-
-	return readsz;
+	return hostflash_safeRead(buff, bufflen, offs);
 }
 
 
 ssize_t hostflash_write(struct _meterfs_devCtx_t *devCtx, off_t offs, const void *buff, size_t bufflen)
 {
 	char tempTab[256];
-	size_t wrote = 0, i;
-	int len;
-	ssize_t stat, readsz;
+	size_t wrote = 0;
 
 	if ((devCtx == NULL) || (devCtx->state == 0) || ((offs + bufflen) > hostflash_common.flashsz)) {
 		return -EINVAL;
 	}
 
 	while (wrote != bufflen) {
+		size_t len;
 		if ((bufflen - wrote) >= sizeof(tempTab)) {
 			len = sizeof(tempTab);
 		}
@@ -82,27 +110,20 @@ ssize_t hostflash_write(struct _meterfs_devCtx_t *devCtx, off_t offs, const void
 			len = bufflen - wrote;
 		}
 
-		readsz = hostflash_read(devCtx, offs + wrote, tempTab, len);
+		ssize_t readsz = hostflash_safeRead(tempTab, len, offs + wrote);
 		if (readsz <= 0) {
 			return readsz;
 		}
 
-		for (i = 0; i < readsz; i++) {
-			tempTab[i] = tempTab[i] & *((const char *)buff + wrote + i);
+		for (ssize_t i = 0; i < readsz; i++) {
+			tempTab[i] &= *((const char *)buff + wrote + i);
 		}
 
-		len = 0;
-		while (len != readsz) {
-			stat = pwrite(hostflash_common.filefd, &tempTab, readsz - len, offs + wrote + len);
-			if (stat < 0) {
-				if (errno == EINTR)
-					continue;
-
-				return stat;
-			}
-			len += stat;
+		ssize_t stat = hostflash_safeWrite(tempTab, readsz, offs + wrote);
+		if (stat < 0) {
+			return stat;
 		}
-		wrote += len;
+		wrote += stat;
 	}
 
 	return (ssize_t)wrote;
@@ -112,10 +133,6 @@ ssize_t hostflash_write(struct _meterfs_devCtx_t *devCtx, off_t offs, const void
 int hostflash_sectorErase(struct _meterfs_devCtx_t *devCtx, off_t offs)
 {
 	char tempTab[256];
-	ssize_t len = sizeof(tempTab);
-	size_t erased = 0;
-	unsigned int sectorAddr;
-	int stat;
 
 	if ((devCtx == NULL) || (devCtx->state == 0) || (offs >= hostflash_common.flashsz)) {
 		return -EINVAL;
@@ -123,24 +140,15 @@ int hostflash_sectorErase(struct _meterfs_devCtx_t *devCtx, off_t offs)
 
 	(void)memset(tempTab, 0xff, sizeof(tempTab));
 
-	sectorAddr = (offs / hostflash_common.sectorsz) * hostflash_common.sectorsz;
+	off_t sectorAddr = (offs / hostflash_common.sectorsz) * hostflash_common.sectorsz;
 
-	while (erased != hostflash_common.sectorsz) {
-		stat = pwrite(hostflash_common.filefd, tempTab, len, sectorAddr + erased);
+	assert(hostflash_common.sectorsz % sizeof(tempTab) == 0);
+
+	for (size_t erased = 0; erased < hostflash_common.sectorsz; erased += sizeof(tempTab)) {
+		ssize_t stat = hostflash_safeWrite(tempTab, sizeof(tempTab), sectorAddr + erased);
 		if (stat < 0) {
-			if (errno == EINTR) {
-				continue;
-			}
-
-			return stat;
+			return (int)stat;
 		}
-
-		len -= stat;
-		if (len == 0) {
-			len = sizeof(tempTab);
-		}
-
-		erased += stat;
 	}
 
 	return 0;
