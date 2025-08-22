@@ -72,7 +72,7 @@ int pwm_get(pwm_tim_id_t timer, pwm_ch_id_t chn);
 int pwm_setBitSequence(void);
 
 
-void pwm_init(void);
+int pwm_init(void);
 
 
 int pwm_disableTimer(pwm_tim_id_t timer);
