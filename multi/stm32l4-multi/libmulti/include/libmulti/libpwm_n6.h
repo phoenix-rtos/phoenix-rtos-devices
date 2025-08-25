@@ -37,16 +37,11 @@ enum pwm_tim_ids {
 	pwm_tim17,
 };
 
-/* Only primary channels (0-3) are meant to be used directly */
 enum pwm_chn_ids {
 	pwm_ch1,
 	pwm_ch2,
 	pwm_ch3,
 	pwm_ch4,
-	pwm_ch1n,
-	pwm_ch2n,
-	pwm_ch3n,
-	pwm_ch4n,
 };
 
 typedef enum pwm_tim_ids pwm_tim_id_t;
@@ -57,11 +52,11 @@ typedef enum pwm_chn_ids pwm_ch_id_t;
 uint64_t pwm_getBaseFrequency(pwm_tim_id_t timer);
 
 
-/* Returns errors */
+/* Configure a TIMx peripheral for PWM generation. Disable timer first if running. Returns errors */
 int pwm_configure(pwm_tim_id_t timer, uint16_t prescaler, uint16_t top);
 
 
-/* Returns errors */
+/* Set compare value for a specific channel on configured timer. Returns errors */
 int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint16_t compare);
 
 
@@ -74,10 +69,10 @@ int pwm_setBitSequence(void);
 
 int pwm_init(void);
 
-
+/* Disable timer, together with all enabled channels. Returns errors */
 int pwm_disableTimer(pwm_tim_id_t timer);
 
-
+/* Disable a specific PWM channel. */
 int pwm_disableChannel(pwm_tim_id_t timer, pwm_ch_id_t chn);
 
 #endif /* #idndef PWM_N6_H_ */

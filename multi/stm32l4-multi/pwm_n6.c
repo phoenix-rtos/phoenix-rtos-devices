@@ -25,7 +25,7 @@
 #include <sys/pwman.h>
 #include "pwm_n6.h"
 
-#include <unistd.h>
+// #include <unistd.h>
 
 #include "common.h"
 
@@ -150,6 +150,34 @@ static int pwm_channelHasComplement(pwm_tim_id_t timer, pwm_ch_id_t chn)
 }
 
 
+static void pwm_disableMasterSlave(pwm_tim_id_t timer)
+{
+	uint32_t cr2 = 0;
+	uint32_t smcr = (0x7) | (0x1 << 7) | (0x1 << 16);
+	/* Assume timer/channel is already correct */
+	if ((0x1 << timer) & 0x6D80) {
+		return;
+	}
+	/* Clear MSM and SMS in SMCR */
+	while ((*(pwm_common.timBase[timer] + tim_smcr) & smcr) != 0)
+		*(pwm_common.timBase[timer] + tim_smcr) &= ~smcr;
+	/* TIM1/8 */
+	if ((0x1 << timer) & 0x21) {
+		cr2 = (0x7 << 4) | (0xF << 20) | (0x1 << 25);
+	}
+	/* TIM2..5 */
+	else if ((0x1 << timer) & 0x1e) {
+		cr2 = (0x7 << 4) | (0x1 << 25);
+	}
+	/* TIM9/12/15 */
+	else if ((0x1 << timer) & 0x1240) {
+		cr2 = 0x7 << 4;
+	}
+	while ((*(pwm_common.timBase[timer] + tim_cr2) & cr2) != 0)
+		*(pwm_common.timBase[timer] + tim_cr2) &= ~cr2;
+}
+
+
 static int pwm_updateEventIrq(unsigned int n, void *arg)
 {
 	/* Cursed pointer to int cast */
@@ -218,8 +246,16 @@ __attribute__((unused)) static void pwm_printRegisters(pwm_tim_id_t timer)
 int pwm_disableTimer(pwm_tim_id_t timer)
 {
 	int res;
+
 	if ((res = pwm_validateTimer(timer)) < 0) {
 		return res;
+	}
+
+	/* Disable all enabled channels */
+	for (pwm_ch_id_t chn = 0; i < PWM_CHN_NUM; i++) {
+		if (pwm_common.timChnOn[timer] & (0x1 << chn)) {
+			pwm_disableChannel(timer, chn);
+		}
 	}
 
 	/* Clear CEN in CR1 */
@@ -229,7 +265,7 @@ int pwm_disableTimer(pwm_tim_id_t timer)
 	return EOK;
 }
 
-
+/* Returns errors */
 int pwm_disableChannel(pwm_tim_id_t timer, pwm_ch_id_t chn)
 {
 	int res;
@@ -295,8 +331,11 @@ int pwm_configure(pwm_tim_id_t timer, uint16_t prescaler, uint16_t top)
 	__asm__ volatile("nop");
 	t16 = *((pwm_common.timBase[timer] + tim_cr1));
 	syncBarrier();
+
 	/* Set counter mode UP in CR1 => clear DIR and CMS */
-	t16 &= ~((0x3 << 5) | (0x1 << 4));
+	if (PWM_TIM_COUNTER_MODE_SELECT(timer)) {
+		t16 &= ~((0x3 << 5) | (0x1 << 4));
+	}
 	/* Set clock division 1 in CR1 => clear CKD */
 	t16 &= ~(0x3 << 8);
 	/* Disable counter */
@@ -307,11 +346,14 @@ int pwm_configure(pwm_tim_id_t timer, uint16_t prescaler, uint16_t top)
 	syncBarrier();
 
 	/* In AF1/2 disable break input */
-	while ((*(pwm_common.timBase[timer] + tim_af1) & 0x1) != 0)
-		*(pwm_common.timBase[timer] + tim_af1) &= ~0x1;
-
-	while ((*(pwm_common.timBase[timer] + tim_af2) & 0x1) != 0)
-		*(pwm_common.timBase[timer] + tim_af2) &= ~0x1;
+	if (PWM_TIM_BREAK1_MODE(timer)) {
+		while ((*(pwm_common.timBase[timer] + tim_af1) & 0x1) != 0)
+			*(pwm_common.timBase[timer] + tim_af1) &= ~0x1;
+	}
+	if (PWM_TIM_BREAK2_MODE(timer)) {
+		while ((*(pwm_common.timBase[timer] + tim_af2) & 0x1) != 0)
+			*(pwm_common.timBase[timer] + tim_af2) &= ~0x1;
+	}
 
 	/* Set autoreload in ARR */
 	pwm_common.timArr[timer] = top;
@@ -323,9 +365,11 @@ int pwm_configure(pwm_tim_id_t timer, uint16_t prescaler, uint16_t top)
 	while (*(pwm_common.timBase[timer] + tim_psc) != prescaler)
 		*(pwm_common.timBase[timer] + tim_psc) = prescaler;
 
-	/* Set repetition counter to 0 in RCR */  // only if it exists in this timer
-	while (*(pwm_common.timBase[timer] + tim_rcr) != 0)
-		*(pwm_common.timBase[timer] + tim_rcr) = 0;
+	/* Set repetition counter to 0 in RCR */
+	if (PWM_TIM_REP_COUNTER(timer)) {
+		while (*(pwm_common.timBase[timer] + tim_rcr) != 0)
+			*(pwm_common.timBase[timer] + tim_rcr) = 0;
+	}
 
 	syncBarrier();
 
@@ -369,13 +413,9 @@ int pwm_configure(pwm_tim_id_t timer, uint16_t prescaler, uint16_t top)
 /* Set output pwm channel on configured timer. Returns errors */
 int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint16_t compare)
 {
-	/* For now this function reconfigures the entire channel each time it's called.
-	 * In the future change it so that it only changes parameters once running
-	 */
 	int res;
 	volatile uint32_t *reg;
 	uint32_t tmpcr2 = 0, tmpccmr = 0, tmpccer = 0, tmpbdtr = 0;
-	(void)tmpbdtr;
 	/* Validate channel/timer compatibility */
 	if ((res = pwm_validateChannel(timer, chn)) < 0) {
 		return res;
@@ -394,6 +434,7 @@ int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint16_t compare)
 	reg = (pwm_common.timBase[timer] + PWM_CCMR_REG(chn));
 	while ((*reg & (0x1 << PWM_CCMR_OCPE_OFF(chn))) == 0)
 		*reg |= (0x1 << PWM_CCMR_OCPE_OFF(chn));
+
 	/* TODO: Find out what's the deal with channel 5,6. Why are they not in the pin table, but in the register description? */
 
 	syncBarrier();
@@ -408,7 +449,6 @@ int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint16_t compare)
 
 	syncBarrier();
 
-	// NOTE: For OC with complements enabling also requires a trillion other bits in BDTR or sth
 	__asm__ volatile("nop");
 	__asm__ volatile("nop");
 	__asm__ volatile("nop");
@@ -428,7 +468,6 @@ int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint16_t compare)
 	tmpccer = *(pwm_common.timBase[timer] + tim_ccer);
 	syncBarrier();
 
-	// NOTE: CCMR works differently on TIM10-14 :(
 	/* Set channel as output. Clear CCyS */
 	tmpccmr &= ~(0x3 << PWM_CCMR_CCS_OFF(chn));
 	/* Set output compare mode to PWM 1 mode (0110 bits 16, 6:4)*/
@@ -447,42 +486,42 @@ int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint16_t compare)
 		tmpcr2 &= ~(0x1 << PWM_CR2_OIS_OFF(chn));
 		/* Set complementary output idle state to low */
 		tmpcr2 &= ~(0x1 << PWM_CR2_OISN_OFF(chn));
+
+		while (*(pwm_common.timBase[timer] + tim_cr2) != tmpcr2)
+			*(pwm_common.timBase[timer] + tim_cr2) = tmpcr2;
 	}
 
-	while (*(pwm_common.timBase[timer] + tim_cr2) != tmpcr2)
-		*(pwm_common.timBase[timer] + tim_cr2) = tmpcr2;
+	/* Write changes */
 	while (*(pwm_common.timBase[timer] + PWM_CCMR_REG(chn)) != tmpccmr)
 		*(pwm_common.timBase[timer] + PWM_CCMR_REG(chn)) = tmpccmr;
+	while (*(pwm_common.timBase[timer] + tim_ccer) != tmpccer)
+		*(pwm_common.timBase[timer] + tim_ccer) = tmpccer;
 	/* Set compare value in CCRx */
 	while (*(pwm_common.timBase[timer] + PWM_CCR_REG(chn)) != compare)
 		*(pwm_common.timBase[timer] + PWM_CCR_REG(chn)) = compare;
-	while (*(pwm_common.timBase[timer] + tim_ccer) != tmpccer)
-		*(pwm_common.timBase[timer] + tim_ccer) = tmpccer;
 
 	syncBarrier();
 
 	/* Disable fast output */
 	while ((*(pwm_common.timBase[timer] + PWM_CCMR_REG(chn)) & (0x1 << PWM_CCMR_OCFE_OFF(chn))) != 0)
 		*(pwm_common.timBase[timer] + PWM_CCMR_REG(chn)) &= ~(0x1 << PWM_CCMR_OCFE_OFF(chn));
-	/* Set master-slave mode to disabled (I think?) For now TIM1/8 */
-	while ((*(pwm_common.timBase[timer] + tim_cr2) & ((0x7 << 4) | (0xF << 20) | (0x1 << 25))) != 0)
-		*(pwm_common.timBase[timer] + tim_cr2) &= ~((0x7 << 4) | (0xF << 20) | (0x1 << 25));
-	while ((*(pwm_common.timBase[timer] + tim_smcr) & (0x1 << 7)) != 0)
-		*(pwm_common.timBase[timer] + tim_smcr) &= ~(0x1 << 7);
 
-	/* Initialize BDTR register. We don't need the dead time feature. */
-	tmpbdtr = 0;
-	tmpbdtr |= (0x1 << 13) | (0x1 << 25);
-	/* Enable main output (MOE) */
-	tmpbdtr |= (0x1 << 15);
-	while (*(pwm_common.timBase[timer] + tim_bdtr) != tmpbdtr)
-		*(pwm_common.timBase[timer] + tim_bdtr) = tmpbdtr;
+	pwm_disableMasterSlave(timer);
+
+	/* Initialize BDTR register. Dead time feature is unnecessary. Disable breaks */
+	if (PWM_TIM_BREAK1_MODE(timer) || PWM_TIM_BREAK2_MODE(timer)) {
+		tmpbdtr = 0;
+		/* Enable main output (MOE) */
+		tmpbdtr |= (0x1 << 15);
+		while (*(pwm_common.timBase[timer] + tim_bdtr) != tmpbdtr)
+			*(pwm_common.timBase[timer] + tim_bdtr) = tmpbdtr;
+	}
 
 	syncBarrier();
-	// // Also simplify control flow when the pwm channel is already set, to just modify the compare value
 
 	// /* Enable capture/compare interrupt */
 	// *(pwm_common.timBase[timer] + tim_dier) |= (0x1 << PWM_DIER_CCIE_OFF(chn));
+
 	/* Enable output channel (and it's complement) */
 	while ((*(pwm_common.timBase[timer] + tim_ccer) & (0x1 << PWM_CCER_CCE_OFF(chn))) == 0)
 		*(pwm_common.timBase[timer] + tim_ccer) |= (0x1 << PWM_CCER_CCE_OFF(chn));
@@ -497,6 +536,7 @@ int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint16_t compare)
 		*(pwm_common.timBase[timer] + tim_cr1) |= 0x1;
 
 	syncBarrier();
+
 	/* Force an update event */
 	__asm__ volatile("nop");
 	__asm__ volatile("nop");
@@ -506,8 +546,8 @@ int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint16_t compare)
 
 	syncBarrier();
 
-	/* Notify that channel is on */
-	pwm_common.timChnOn[timer] |= (0x1 << pwm_ch1);
+	/* Mark that channel is on */
+	pwm_common.timChnOn[timer] |= (0x1 << chn);
 	return EOK;
 }
 
@@ -515,6 +555,17 @@ int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint16_t compare)
 /* Returns current duty cycle percentage. Or errors */
 int pwm_get(pwm_tim_id_t timer, pwm_ch_id_t chn)
 {
+	int res;
+	if ((res = pwm_validateTimer(timer)) < 0) {
+		return res;
+	}
+	if ((res = pwm_validateChannel(timer, chn)) < 0) {
+		return res;
+	}
+	if ((pwm_common.timChnOn[timer] & (0x1 << chn)) == 0) {
+		return -EPERM;
+	}
+	/* Load top and compare. Return compare/top */
 	return -ENOSYS;
 }
 
@@ -539,12 +590,28 @@ int pwm_init(void)
 	/* Calculate the required slowdown factor */
 	// pwm_common.requiredNops = 2 * (hclkFreq / timgFreq);
 
+	/* NOTE: Should enabling the device clocks be done on the fly, or as part of the config? */
+
+	// platformctl_t pctl = {
+	// 	.action = pctl_set,
+	// 	.type = pctl_devclk,
+	// 	.devclk = {
+	// 		.dev = pctl_tim1,
+	// 		.state = 1,
+	// 		.lpState = 1,
+	// 	}
+	// };
+
+	// if (platformctl(&pctl) < 0) {
+	// 	printf("pctl failed\n");  // Debug only
+	// 	return -1;
+	// }
 
 	platformctl_t pctl = {
 		.action = pctl_set,
 		.type = pctl_devclk,
 		.devclk = {
-			.dev = pctl_tim1,
+			.dev = pctl_tim12,
 			.state = 1,
 			.lpState = 1,
 		}
@@ -559,7 +626,7 @@ int pwm_init(void)
 		.action = pctl_get,
 		.type = pctl_devclk,
 		.devclk = {
-			.dev = pctl_tim1 }
+			.dev = pctl_tim12 }
 	};
 
 	if (platformctl(&pctl1) < 0) {
@@ -567,7 +634,7 @@ int pwm_init(void)
 		return -1;
 	}
 
-	printf("TIM1 clock: %u %u\n", pctl1.devclk.state, pctl1.devclk.lpState);
+	printf("TIM12 clock: %u %u\n", pctl1.devclk.state, pctl1.devclk.lpState);
 
 	return 0;
 }

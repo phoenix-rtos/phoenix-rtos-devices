@@ -43,6 +43,13 @@
 
 #define PWM_DIER_CCIE_OFF(chn_id) (1 + (chn_id))
 
+/* Discriminate timer types and features */
+#define PWM_TIM_COUNTER_MODE_SELECT(tim_id) (((0x1 << (tim_id)) & 0x3F) != 0)
+#define PWM_TIM_BREAK1_MODE(tim_id) (((0x1 << (tim_id)) & 0x7021) != 0)
+#define PWM_TIM_BREAK2_MODE(tim_id) (((0x1 << (tim_id)) & 0x21) != 0)
+#define PWM_TIM_REP_COUNTER(tim_id) (((0x1 << (tim_id)) & 0x7021) != 0)
+// #define PWM_TIM_MASTER1_MODE(tim_id) ((0x1 << (tim_id)) & )
+
 /* Basic timers TIM6/TIM7/TIM18 not available for PWM */
 enum pwm_tim_ids {
 	pwm_tim1,
