@@ -262,5 +262,10 @@
 #define BUILTIN_POSIXSRV 0
 #endif
 
+/* libcoredumpsrv */
+#ifndef BUILTIN_COREDUMPSRV
+#define BUILTIN_COREDUMPSRV 1
+#endif
+
 
 #endif
