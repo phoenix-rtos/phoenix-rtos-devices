@@ -45,9 +45,9 @@
 
 /* Discriminate timer types and features */
 #define PWM_TIM_COUNTER_MODE_SELECT(tim_id) (((0x1 << (tim_id)) & 0x3F) != 0)
-#define PWM_TIM_BREAK1_MODE(tim_id) (((0x1 << (tim_id)) & 0x7021) != 0)
-#define PWM_TIM_BREAK2_MODE(tim_id) (((0x1 << (tim_id)) & 0x21) != 0)
-#define PWM_TIM_REP_COUNTER(tim_id) (((0x1 << (tim_id)) & 0x7021) != 0)
+#define PWM_TIM_BREAK1_MODE(tim_id)         (((0x1 << (tim_id)) & 0x7021) != 0)
+#define PWM_TIM_BREAK2_MODE(tim_id)         (((0x1 << (tim_id)) & 0x21) != 0)
+#define PWM_TIM_REP_COUNTER(tim_id)         (((0x1 << (tim_id)) & 0x7021) != 0)
 // #define PWM_TIM_MASTER1_MODE(tim_id) ((0x1 << (tim_id)) & )
 
 /* Basic timers TIM6/TIM7/TIM18 not available for PWM */
@@ -89,19 +89,16 @@ typedef enum pwm_chn_ids pwm_ch_id_t;
 uint64_t pwm_getBaseFrequency(pwm_tim_id_t timer);
 
 
-/* Returns errors */
 int pwm_configure(pwm_tim_id_t timer, uint16_t prescaler, uint16_t top);
 
 
-/* Returns errors */
 int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint16_t compare);
 
 
-/* Returns current duty cycle percentage. Or errors */
-int pwm_get(pwm_tim_id_t timer, pwm_ch_id_t chn);
+int pwm_get(pwm_tim_id_t timer, pwm_ch_id_t chn, uint16_t *top, uint16_t *compare);
 
 
-int pwm_setBitSequence(void);
+int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, uint16_t compare0, uint16_t compare1, uint32_t nbits, uint8_t *data);
 
 
 int pwm_init(void);

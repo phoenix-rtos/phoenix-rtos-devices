@@ -11,12 +11,6 @@
  * %LICENSE%
  */
 
-/* IMPORTANT NOTE:
- * The TIMG timer feeding TIMx peripherals is clocked at 1/4 of the HCLK (cpu),
- * furthermore TIMx is connected via APB which causes register writes to be lost,
- * as they are coming in too fast. For that reason, writes have to be guarded by while loops. (temporary fix)
- * Also, for now the driver is not synchronized, consider adding channel/timer level locking.
- */
 
 #include <stdio.h>
 #include <errno.h>
@@ -25,17 +19,36 @@
 #include <sys/pwman.h>
 #include "pwm_n6.h"
 
-// #include <unistd.h>
-
 #include "common.h"
+
+#include <unistd.h>
+#include <stdlib.h>
+#include <time.h>
+
+
+#define PWM_IRQ_INITIALIZED (0x1 << 0)
+#define PWM_IRQ_UEVRECIEVED (0x1 << 1)
+#define PWM_IRQ_DSHOT_UEV   (0x1 << 2) /* IRQ used to reconfigure duty cycle */
+#define PWM_IRQ_DSHOT_END   (0x1 << 3) /* DSHOT bit sequence complete */
+
+
+/* Save dshot context to avoid having to malloc a buffor of compare values */
+typedef struct pwm_dshot_ctx_t {
+	pwm_ch_id_t chn;   /* Channel used for pwm */
+	uint16_t compare0; /* Compare val if 0 bit */
+	uint16_t compare1; /* Compare val if 1 bit */
+	uint32_t bitSize;  /* Number of bits in sequence */
+	uint32_t bitPos;   /* Current bit to process */
+	uint8_t *data;     /* Array of data bits */
+} pwm_dshot_ctx_t;
 
 /* Interrupt data for one timer */
 typedef struct pwm_irq_t {
 	unsigned int uevirq; /* Update Event interrupt request */
-	uint8_t initialized; /* Cond and mutex initialized */
-	uint8_t uevReceived;
+	uint32_t flags;
 	handle_t uevlock;
 	handle_t uevcond;
+	pwm_dshot_ctx_t dshot;
 } pwm_irq_t;
 
 /* TODO: Consider moving all data related to a single timer to one struct.
@@ -46,7 +59,7 @@ typedef struct pwm_common_t {
 	const uint8_t timChannelSet[PWM_TIMER_NUM];
 	uint16_t timArr[PWM_TIMER_NUM];  /* Auto Reload Register (top) */
 	pwm_irq_t timIrq[PWM_TIMER_NUM]; /* Interrupt request data */
-	uint8_t timChnOn[PWM_TIMER_NUM]; /* Is given channel on (0x1 << channel_id)*/
+	uint8_t timChnOn[PWM_TIMER_NUM]; /* Is given channel on (0x1 << channel_id) */
 } pwm_common_t;
 
 /* clang-format off */
@@ -159,8 +172,7 @@ static void pwm_disableMasterSlave(pwm_tim_id_t timer)
 		return;
 	}
 	/* Clear MSM and SMS in SMCR */
-	while ((*(pwm_common.timBase[timer] + tim_smcr) & smcr) != 0)
-		*(pwm_common.timBase[timer] + tim_smcr) &= ~smcr;
+	*(pwm_common.timBase[timer] + tim_smcr) &= ~smcr;
 	/* TIM1/8 */
 	if ((0x1 << timer) & 0x21) {
 		cr2 = (0x7 << 4) | (0xF << 20) | (0x1 << 25);
@@ -173,31 +185,45 @@ static void pwm_disableMasterSlave(pwm_tim_id_t timer)
 	else if ((0x1 << timer) & 0x1240) {
 		cr2 = 0x7 << 4;
 	}
-	while ((*(pwm_common.timBase[timer] + tim_cr2) & cr2) != 0)
-		*(pwm_common.timBase[timer] + tim_cr2) &= ~cr2;
+	*(pwm_common.timBase[timer] + tim_cr2) &= ~cr2;
 }
 
 
-static int pwm_updateEventIrq(unsigned int n, void *arg)
+__attribute__((unused)) static int pwm_updateEventIrq(unsigned int n, void *arg)
 {
 	/* Cursed pointer to int cast */
 	pwm_tim_id_t timer = (pwm_tim_id_t)arg;
-	/* Disable interrupts by clearing UIE */
-	while ((*(pwm_common.timBase[timer] + tim_dier) & 0x1) != 0) {
+
+	/* If irq doesn't come from DSHOT, didsable future UEV interrupts. Clear UIE */
+	if (!(pwm_common.timIrq[timer].flags & PWM_IRQ_DSHOT_UEV)) {
 		*(pwm_common.timBase[timer] + tim_dier) &= ~0x1;
-		*(pwm_common.timBase[timer] + tim_dier) &= ~0x1;
-		*(pwm_common.timBase[timer] + tim_dier) &= ~0x1;
-		*(pwm_common.timBase[timer] + tim_sr) &= ~0x1;
 	}
+	else {
+		pwm_ch_id_t chn = pwm_common.timIrq[timer].dshot.chn;
+		/* If last bit then preload compare value to 0 to end the sequence */
+		if (pwm_common.timIrq[timer].dshot.bitPos > pwm_common.timIrq[timer].dshot.bitSize - 1) {
+			/* Also preload compare value of 0 to make sure the signal ends after the last bit */
+			*(pwm_common.timBase[timer] + PWM_CCR_REG(chn)) = 0;
+			pwm_common.timIrq[timer].dshot.bitPos++;
+		}
+		/* If the last bit was already emitted, can safely disable further UEV IRQ */
+		else if (pwm_common.timIrq[timer].dshot.bitPos > pwm_common.timIrq[timer].dshot.bitSize) {
+			*(pwm_common.timBase[timer] + tim_dier) &= ~0x1;
+			pwm_common.timIrq[timer].flags |= PWM_IRQ_DSHOT_END;
+		}
+		else {
+			/* Preload next compare value on the correct channel. */
+			uint32_t bitPos = pwm_common.timIrq[timer].dshot.bitPos;
+			uint8_t bit = (*(pwm_common.timIrq[timer].dshot.data + bitPos / 8) >> (bitPos & 0x7)) & 0x1;
+			uint16_t compare = (bit == 0) ? pwm_common.timIrq[timer].dshot.compare0 : pwm_common.timIrq[timer].dshot.compare1;
+			*(pwm_common.timBase[timer] + PWM_CCR_REG(chn)) = compare;
+			pwm_common.timIrq[timer].dshot.bitPos++;
+		}
+	}
+
 	/* Clear UIF in SR */
-	while ((*(pwm_common.timBase[timer] + tim_sr) & 0x1) != 0) {
-		*(pwm_common.timBase[timer] + tim_sr) &= ~0x1;
-		*(pwm_common.timBase[timer] + tim_sr) &= ~0x1;
-		*(pwm_common.timBase[timer] + tim_sr) &= ~0x1;
-		*(pwm_common.timBase[timer] + tim_sr) &= ~0x1;
-	}
-	pwm_common.timIrq[timer].uevReceived = 1;
-	// printf("INTR\n"); // DEBUG
+	*(pwm_common.timBase[timer] + tim_sr) &= ~0x1;
+	pwm_common.timIrq[timer].flags |= PWM_IRQ_UEVRECIEVED;
 	return 0;
 }
 
@@ -252,7 +278,7 @@ int pwm_disableTimer(pwm_tim_id_t timer)
 	}
 
 	/* Disable all enabled channels */
-	for (pwm_ch_id_t chn = 0; i < PWM_CHN_NUM; i++) {
+	for (pwm_ch_id_t chn = 0; chn < PWM_CHN_NUM; chn++) {
 		if (pwm_common.timChnOn[timer] & (0x1 << chn)) {
 			pwm_disableChannel(timer, chn);
 		}
@@ -277,11 +303,9 @@ int pwm_disableChannel(pwm_tim_id_t timer, pwm_ch_id_t chn)
 	}
 
 	/* Disable the channel. Clear CCxE in CCER */
-	while ((*(pwm_common.timBase[timer] + tim_ccer) & (0x1 << PWM_CCER_CCE_OFF(chn))) != 0)
-		*(pwm_common.timBase[timer] + tim_ccer) &= ~(0x1 << PWM_CCER_CCE_OFF(chn));
+	*(pwm_common.timBase[timer] + tim_ccer) &= ~(0x1 << PWM_CCER_CCE_OFF(chn));
 	if (pwm_channelHasComplement(timer, chn)) {
-		while ((*(pwm_common.timBase[timer] + tim_ccer) & (0x1 << PWM_CCER_CCNE_OFF(chn))) != 0)
-			*(pwm_common.timBase[timer] + tim_ccer) &= ~(0x1 << PWM_CCER_CCNE_OFF(chn));
+		*(pwm_common.timBase[timer] + tim_ccer) &= ~(0x1 << PWM_CCER_CCNE_OFF(chn));
 	}
 	/* Notify that channel is closed */
 	pwm_common.timChnOn[timer] &= ~(0x1 << pwm_ch1);
@@ -294,6 +318,21 @@ uint64_t pwm_getBaseFrequency(pwm_tim_id_t timer)
 	uint64_t baseFreq = 0ull;
 	clockdef_getClock(clkid_timg, &baseFreq);
 	return baseFreq;
+}
+
+
+__attribute__((unused)) static void pwm_apbTest(pwm_tim_id_t timer, uint16_t prescaler, uint16_t top)
+{
+	srand((unsigned)time(NULL));
+	uint16_t val = rand() & 0xFFFF;
+	printf("Rand value: 0x%04x\n", val);
+	*((volatile uint32_t *)0x5200002c) = val;
+
+	syncBarrier();
+
+	sleep(2);
+
+	pwm_printRegisters(timer);
 }
 
 
@@ -312,11 +351,11 @@ int pwm_configure(pwm_tim_id_t timer, uint16_t prescaler, uint16_t top)
 		return res;
 	}
 
-	if (!pwm_common.timIrq[timer].initialized) {
+	if (!(pwm_common.timIrq[timer].flags & PWM_IRQ_INITIALIZED)) {
 		mutexCreate(&pwm_common.timIrq[timer].uevlock);
 		condCreate(&pwm_common.timIrq[timer].uevcond);
-		res = interrupt(pwm_common.timIrq[timer].uevirq, pwm_updateEventIrq, (void *)timer, pwm_common.timIrq[timer].uevcond, NULL);
-		pwm_common.timIrq[timer].initialized = 1;
+		interrupt(pwm_common.timIrq[timer].uevirq, pwm_updateEventIrq, (void *)timer, pwm_common.timIrq[timer].uevcond, NULL);
+		pwm_common.timIrq[timer].flags |= PWM_IRQ_INITIALIZED;
 	}
 
 	/* Fail if one of the channels hasn't been disabled */
@@ -325,10 +364,6 @@ int pwm_configure(pwm_tim_id_t timer, uint16_t prescaler, uint16_t top)
 	}
 
 	/* In CR1 set prescaler, countermode, autoreload, clockdivision, repetition counter */
-	__asm__ volatile("nop");
-	__asm__ volatile("nop");
-	__asm__ volatile("nop");
-	__asm__ volatile("nop");
 	t16 = *((pwm_common.timBase[timer] + tim_cr1));
 	syncBarrier();
 
@@ -341,54 +376,43 @@ int pwm_configure(pwm_tim_id_t timer, uint16_t prescaler, uint16_t top)
 	/* Disable counter */
 	t16 &= ~0x1;
 
-	while (*(pwm_common.timBase[timer] + tim_cr1) != t16)
-		*(pwm_common.timBase[timer] + tim_cr1) = t16;
+	*(pwm_common.timBase[timer] + tim_cr1) = t16;
 	syncBarrier();
 
 	/* In AF1/2 disable break input */
 	if (PWM_TIM_BREAK1_MODE(timer)) {
-		while ((*(pwm_common.timBase[timer] + tim_af1) & 0x1) != 0)
-			*(pwm_common.timBase[timer] + tim_af1) &= ~0x1;
+		*(pwm_common.timBase[timer] + tim_af1) &= ~0x1;
 	}
 	if (PWM_TIM_BREAK2_MODE(timer)) {
-		while ((*(pwm_common.timBase[timer] + tim_af2) & 0x1) != 0)
-			*(pwm_common.timBase[timer] + tim_af2) &= ~0x1;
+		*(pwm_common.timBase[timer] + tim_af2) &= ~0x1;
 	}
 
 	/* Set autoreload in ARR */
 	pwm_common.timArr[timer] = top;
 
-	while (*(pwm_common.timBase[timer] + tim_arr) != top)
-		*(pwm_common.timBase[timer] + tim_arr) = top;
+	*(pwm_common.timBase[timer] + tim_arr) = top;
 
 	/* Set prescaler in PSC */
-	while (*(pwm_common.timBase[timer] + tim_psc) != prescaler)
-		*(pwm_common.timBase[timer] + tim_psc) = prescaler;
+	*(pwm_common.timBase[timer] + tim_psc) = prescaler;
 
 	/* Set repetition counter to 0 in RCR */
 	if (PWM_TIM_REP_COUNTER(timer)) {
-		while (*(pwm_common.timBase[timer] + tim_rcr) != 0)
-			*(pwm_common.timBase[timer] + tim_rcr) = 0;
+		*(pwm_common.timBase[timer] + tim_rcr) = 0;
 	}
 
 	syncBarrier();
 
 	/* Enable update event interrupt */
-	while ((*(pwm_common.timBase[timer] + tim_dier) & 0x1) == 0)
-		*(pwm_common.timBase[timer] + tim_dier) |= 0x1;
+	*(pwm_common.timBase[timer] + tim_dier) |= 0x1;
 
 	syncBarrier();
 	/* Generate update event (UG bit in EGR) to reload prescaler and repetition counter */
-	__asm__ volatile("nop");
-	__asm__ volatile("nop");
-	__asm__ volatile("nop");
-	__asm__ volatile("nop");
 	*(pwm_common.timBase[timer] + tim_egr) |= 0x1;
+
 	syncBarrier();
 
 	/* Enable autoreload buffering in CR1 ARPE */
-	while ((*(pwm_common.timBase[timer] + tim_cr1) & (0x1 << 7)) == 0)
-		*(pwm_common.timBase[timer] + tim_cr1) |= (0x1 << 7);
+	*(pwm_common.timBase[timer] + tim_cr1) |= (0x1 << 7);
 
 	syncBarrier();
 
@@ -397,12 +421,10 @@ int pwm_configure(pwm_tim_id_t timer, uint16_t prescaler, uint16_t top)
 	/* Wait for update event to load prescaler and arr */
 	keepidle(1);
 	mutexLock(pwm_common.timIrq[timer].uevlock);
-	//(*(pwm_common.timBase[timer] + tim_arr) & 0xFFFF) != top
-	while (pwm_common.timIrq[timer].uevReceived == 0) {
-		// printf("ARR: %08x\n", *(pwm_common.timBase[timer] + tim_arr) & 0xFFFF);
+	while (!(pwm_common.timIrq[timer].flags & PWM_IRQ_UEVRECIEVED)) {
 		condWait(pwm_common.timIrq[timer].uevcond, pwm_common.timIrq[timer].uevlock, 0);
 	}
-	pwm_common.timIrq[timer].uevReceived = 0;
+	pwm_common.timIrq[timer].flags &= ~PWM_IRQ_UEVRECIEVED;
 	mutexUnlock(pwm_common.timIrq[timer].uevlock);
 	keepidle(0);
 
@@ -425,48 +447,29 @@ int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint16_t compare)
 	}
 	/* If channel is on, then only reconfigure compare value */
 	if (pwm_common.timChnOn[timer] & (0x1 << chn)) {
-		while (*(pwm_common.timBase[timer] + PWM_CCR_REG(chn)) != compare)
-			*(pwm_common.timBase[timer] + PWM_CCR_REG(chn)) = compare;
+		*(pwm_common.timBase[timer] + PWM_CCR_REG(chn)) = compare;
 		return EOK;
 	}
 
 	/* Set output channel preloading in CCMRx OCyPE */
 	reg = (pwm_common.timBase[timer] + PWM_CCMR_REG(chn));
-	while ((*reg & (0x1 << PWM_CCMR_OCPE_OFF(chn))) == 0)
-		*reg |= (0x1 << PWM_CCMR_OCPE_OFF(chn));
+	*reg |= (0x1 << PWM_CCMR_OCPE_OFF(chn));
 
 	/* TODO: Find out what's the deal with channel 5,6. Why are they not in the pin table, but in the register description? */
 
 	syncBarrier();
 
 	/* Disable the channel. Clear CCxE in CCER */
-	while ((*(pwm_common.timBase[timer] + tim_ccer) & (0x1 << PWM_CCER_CCE_OFF(chn))) != 0)
-		*(pwm_common.timBase[timer] + tim_ccer) &= ~(0x1 << PWM_CCER_CCE_OFF(chn));
+	*(pwm_common.timBase[timer] + tim_ccer) &= ~(0x1 << PWM_CCER_CCE_OFF(chn));
 	if (pwm_channelHasComplement(timer, chn)) {
-		while ((*(pwm_common.timBase[timer] + tim_ccer) & (0x1 << PWM_CCER_CCNE_OFF(chn))) != 0)
-			*(pwm_common.timBase[timer] + tim_ccer) &= ~(0x1 << PWM_CCER_CCNE_OFF(chn));
+		*(pwm_common.timBase[timer] + tim_ccer) &= ~(0x1 << PWM_CCER_CCNE_OFF(chn));
 	}
 
 	syncBarrier();
 
-	__asm__ volatile("nop");
-	__asm__ volatile("nop");
-	__asm__ volatile("nop");
-	__asm__ volatile("nop");
 	tmpcr2 = *(pwm_common.timBase[timer] + tim_cr2);
-	syncBarrier();
-	__asm__ volatile("nop");
-	__asm__ volatile("nop");
-	__asm__ volatile("nop");
-	__asm__ volatile("nop");
 	tmpccmr = *(pwm_common.timBase[timer] + PWM_CCMR_REG(chn));
-	syncBarrier();
-	__asm__ volatile("nop");
-	__asm__ volatile("nop");
-	__asm__ volatile("nop");
-	__asm__ volatile("nop");
 	tmpccer = *(pwm_common.timBase[timer] + tim_ccer);
-	syncBarrier();
 
 	/* Set channel as output. Clear CCyS */
 	tmpccmr &= ~(0x3 << PWM_CCMR_CCS_OFF(chn));
@@ -487,24 +490,19 @@ int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint16_t compare)
 		/* Set complementary output idle state to low */
 		tmpcr2 &= ~(0x1 << PWM_CR2_OISN_OFF(chn));
 
-		while (*(pwm_common.timBase[timer] + tim_cr2) != tmpcr2)
-			*(pwm_common.timBase[timer] + tim_cr2) = tmpcr2;
+		*(pwm_common.timBase[timer] + tim_cr2) = tmpcr2;
 	}
 
 	/* Write changes */
-	while (*(pwm_common.timBase[timer] + PWM_CCMR_REG(chn)) != tmpccmr)
-		*(pwm_common.timBase[timer] + PWM_CCMR_REG(chn)) = tmpccmr;
-	while (*(pwm_common.timBase[timer] + tim_ccer) != tmpccer)
-		*(pwm_common.timBase[timer] + tim_ccer) = tmpccer;
+	*(pwm_common.timBase[timer] + PWM_CCMR_REG(chn)) = tmpccmr;
+	*(pwm_common.timBase[timer] + tim_ccer) = tmpccer;
 	/* Set compare value in CCRx */
-	while (*(pwm_common.timBase[timer] + PWM_CCR_REG(chn)) != compare)
-		*(pwm_common.timBase[timer] + PWM_CCR_REG(chn)) = compare;
+	*(pwm_common.timBase[timer] + PWM_CCR_REG(chn)) = compare;
 
 	syncBarrier();
 
 	/* Disable fast output */
-	while ((*(pwm_common.timBase[timer] + PWM_CCMR_REG(chn)) & (0x1 << PWM_CCMR_OCFE_OFF(chn))) != 0)
-		*(pwm_common.timBase[timer] + PWM_CCMR_REG(chn)) &= ~(0x1 << PWM_CCMR_OCFE_OFF(chn));
+	*(pwm_common.timBase[timer] + PWM_CCMR_REG(chn)) &= ~(0x1 << PWM_CCMR_OCFE_OFF(chn));
 
 	pwm_disableMasterSlave(timer);
 
@@ -513,36 +511,60 @@ int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint16_t compare)
 		tmpbdtr = 0;
 		/* Enable main output (MOE) */
 		tmpbdtr |= (0x1 << 15);
-		while (*(pwm_common.timBase[timer] + tim_bdtr) != tmpbdtr)
-			*(pwm_common.timBase[timer] + tim_bdtr) = tmpbdtr;
+		*(pwm_common.timBase[timer] + tim_bdtr) = tmpbdtr;
 	}
 
 	syncBarrier();
 
-	// /* Enable capture/compare interrupt */
-	// *(pwm_common.timBase[timer] + tim_dier) |= (0x1 << PWM_DIER_CCIE_OFF(chn));
-
 	/* Enable output channel (and it's complement) */
-	while ((*(pwm_common.timBase[timer] + tim_ccer) & (0x1 << PWM_CCER_CCE_OFF(chn))) == 0)
-		*(pwm_common.timBase[timer] + tim_ccer) |= (0x1 << PWM_CCER_CCE_OFF(chn));
+	*(pwm_common.timBase[timer] + tim_ccer) |= (0x1 << PWM_CCER_CCE_OFF(chn));
 	if (pwm_channelHasComplement(timer, chn)) {
-		while ((*(pwm_common.timBase[timer] + tim_ccer) & (0x1 << PWM_CCER_CCNE_OFF(chn))) == 0)
-			*(pwm_common.timBase[timer] + tim_ccer) |= (0x1 << PWM_CCER_CCNE_OFF(chn));
+		*(pwm_common.timBase[timer] + tim_ccer) |= (0x1 << PWM_CCER_CCNE_OFF(chn));
+	}
+
+	syncBarrier();
+	/* Enable update event interrupt */
+	*(pwm_common.timBase[timer] + tim_dier) |= 0x1;
+
+	/* Temporarily clear the DSHOT_UEV flag to run the regular UEV handler */
+	uint32_t oldflags = pwm_common.timIrq[timer].flags;
+	pwm_common.timIrq[timer].flags &= ~PWM_IRQ_DSHOT_UEV;
+	syncBarrier();
+
+	/* Force an update event */
+	*(pwm_common.timBase[timer] + tim_egr) |= 0x1;
+
+	/* Wait for the update event */
+	keepidle(1);
+	mutexLock(pwm_common.timIrq[timer].uevlock);
+	while (!(pwm_common.timIrq[timer].flags & PWM_IRQ_UEVRECIEVED)) {
+		condWait(pwm_common.timIrq[timer].uevcond, pwm_common.timIrq[timer].uevlock, 0);
+	}
+	pwm_common.timIrq[timer].flags &= ~PWM_IRQ_UEVRECIEVED;
+	mutexUnlock(pwm_common.timIrq[timer].uevlock);
+	keepidle(0);
+
+	syncBarrier();
+	/* Restore the old flags */
+	pwm_common.timIrq[timer].flags = oldflags;
+	syncBarrier();
+	/* Enable subsequent UEV interrupts if in dshot mode */
+	if (pwm_common.timIrq[timer].flags & PWM_IRQ_DSHOT_UEV) {
+		*(pwm_common.timBase[timer] + tim_dier) |= 0x1;
+	}
+
+	/* Preload the second compare value if in dshot mode */
+	if (pwm_common.timIrq[timer].flags & PWM_IRQ_DSHOT_UEV) {
+		uint32_t bitPos = pwm_common.timIrq[timer].dshot.bitPos;
+		uint8_t bit = (*(pwm_common.timIrq[timer].dshot.data + bitPos / 8) >> (bitPos & 0x7)) & 0x1;
+		compare = (bit == 0) ? pwm_common.timIrq[timer].dshot.compare0 : pwm_common.timIrq[timer].dshot.compare1;
+		*(pwm_common.timBase[timer] + PWM_CCR_REG(chn)) = compare;
+		pwm_common.timIrq[timer].dshot.bitPos++;
 	}
 
 	syncBarrier();
 	/* Enable counter if disabled (CR1 CER) */
-	while (((*pwm_common.timBase[timer] + tim_cr1) & (0x1)) == 0)
-		*(pwm_common.timBase[timer] + tim_cr1) |= 0x1;
-
-	syncBarrier();
-
-	/* Force an update event */
-	__asm__ volatile("nop");
-	__asm__ volatile("nop");
-	__asm__ volatile("nop");
-	__asm__ volatile("nop");
-	*(pwm_common.timBase[timer] + tim_egr) |= 0x1;
+	*(pwm_common.timBase[timer] + tim_cr1) |= 0x1;
 
 	syncBarrier();
 
@@ -553,7 +575,7 @@ int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint16_t compare)
 
 
 /* Returns current duty cycle percentage. Or errors */
-int pwm_get(pwm_tim_id_t timer, pwm_ch_id_t chn)
+int pwm_get(pwm_tim_id_t timer, pwm_ch_id_t chn, uint16_t *top, uint16_t *compare)
 {
 	int res;
 	if ((res = pwm_validateTimer(timer)) < 0) {
@@ -566,18 +588,66 @@ int pwm_get(pwm_tim_id_t timer, pwm_ch_id_t chn)
 		return -EPERM;
 	}
 	/* Load top and compare. Return compare/top */
-	return -ENOSYS;
+	*top = *(pwm_common.timBase[timer] + tim_arr);
+	*compare = *(pwm_common.timBase[timer] + PWM_CCR_REG(chn));
+	return EOK;
 }
 
 
-int pwm_setBitSequence(void)
+int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, uint16_t compare0, uint16_t compare1, uint32_t nbits, uint8_t *data)
 {
-	return -ENOSYS;
+	int res;
+	uint16_t firstCompare;
+	if ((res = pwm_validateTimer(timer)) < 0) {
+		return res;
+	}
+	if ((res = pwm_validateChannel(timer, chn)) < 0) {
+		return res;
+	}
+	if (nbits < 2) {
+		return -EINVAL;
+	}
+	pwm_common.timIrq[timer].dshot = (pwm_dshot_ctx_t) {
+		.chn = chn,
+		.bitPos = 1, /* The first compare value is passed via pwm_set parameter */
+		.bitSize = nbits,
+		.compare0 = compare0,
+		.compare1 = compare1,
+		.data = data
+	};
+	pwm_common.timIrq[timer].flags |= PWM_IRQ_DSHOT_UEV;
+	pwm_common.timIrq[timer].flags &= ~PWM_IRQ_DSHOT_END;
+
+	syncBarrier();
+
+	firstCompare = (((*data) & 0x1) == 0) ? compare0 : compare1;
+	pwm_set(timer, chn, firstCompare);
+
+
+	/* Wait for the DSHOT sequence to end */
+	keepidle(1);
+	mutexLock(pwm_common.timIrq[timer].uevlock);
+	while (!(pwm_common.timIrq[timer].flags & PWM_IRQ_DSHOT_END)) {
+		condWait(pwm_common.timIrq[timer].uevcond, pwm_common.timIrq[timer].uevlock, 0);
+	}
+	pwm_common.timIrq[timer].flags &= ~PWM_IRQ_UEVRECIEVED;
+	pwm_common.timIrq[timer].flags &= ~PWM_IRQ_DSHOT_UEV;
+	pwm_common.timIrq[timer].flags &= ~PWM_IRQ_DSHOT_END;
+	mutexUnlock(pwm_common.timIrq[timer].uevlock);
+	keepidle(0);
+
+	pwm_disableChannel(timer, chn);
+
+	return EOK;
 }
 
 
 int pwm_init(void)
 {
+	/* Temporary. Reconfigure TIMG clock prescaler */
+	volatile uint32_t *rcc = RCC_BASE;
+	*(rcc + rcc_cfgr2) &= ~(0x3 << 24);
+
 	uint64_t timgFreq, hclkFreq;
 	if (clockdef_getClock(clkid_timg, &timgFreq) < 0) {
 		return -1;
@@ -586,6 +656,9 @@ int pwm_init(void)
 	if (clockdef_getClock(clkid_hclk, &hclkFreq) < 0) {
 		return -1;
 	}
+
+	// printf("TIMG: %llu MHz\n", timgFreq / 1000000);
+	// printf("HCLK: %llu MHz\n", hclkFreq / 1000000);
 
 	/* Calculate the required slowdown factor */
 	// pwm_common.requiredNops = 2 * (hclkFreq / timgFreq);
@@ -611,7 +684,7 @@ int pwm_init(void)
 		.action = pctl_set,
 		.type = pctl_devclk,
 		.devclk = {
-			.dev = pctl_tim12,
+			.dev = pctl_tim1,
 			.state = 1,
 			.lpState = 1,
 		}
@@ -626,7 +699,7 @@ int pwm_init(void)
 		.action = pctl_get,
 		.type = pctl_devclk,
 		.devclk = {
-			.dev = pctl_tim12 }
+			.dev = pctl_tim1 }
 	};
 
 	if (platformctl(&pctl1) < 0) {
@@ -634,7 +707,7 @@ int pwm_init(void)
 		return -1;
 	}
 
-	printf("TIM12 clock: %u %u\n", pctl1.devclk.state, pctl1.devclk.lpState);
+	printf("TIM1 clock: %u %u\n", pctl1.devclk.state, pctl1.devclk.lpState);
 
 	return 0;
 }

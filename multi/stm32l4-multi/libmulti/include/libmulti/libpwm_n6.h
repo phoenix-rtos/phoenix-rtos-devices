@@ -49,10 +49,11 @@ typedef enum pwm_tim_ids pwm_tim_id_t;
 typedef enum pwm_chn_ids pwm_ch_id_t;
 
 
+/* Get the base clock frequency for a given timer */
 uint64_t pwm_getBaseFrequency(pwm_tim_id_t timer);
 
 
-/* Configure a TIMx peripheral for PWM generation. Disable timer first if running. Returns errors */
+/* Configure a TIMx peripheral for PWM generation. User should disable timer first if running. Returns errors */
 int pwm_configure(pwm_tim_id_t timer, uint16_t prescaler, uint16_t top);
 
 
@@ -61,18 +62,22 @@ int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint16_t compare);
 
 
 /* Returns current duty cycle percentage. Or errors */
-int pwm_get(pwm_tim_id_t timer, pwm_ch_id_t chn);
+int pwm_get(pwm_tim_id_t timer, pwm_ch_id_t chn, uint16_t *top, uint16_t *compare);
 
 
-int pwm_setBitSequence(void);
+/* Creates PWM bit sequence with given compare values. Configure the timer first. The data buffer must be at least nbits/8 bytes long. Only one active bit sequence per channel. */
+int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, uint16_t compare0, uint16_t compare1, uint32_t nbits, uint8_t *data);
 
 
 int pwm_init(void);
 
+
 /* Disable timer, together with all enabled channels. Returns errors */
 int pwm_disableTimer(pwm_tim_id_t timer);
 
+
 /* Disable a specific PWM channel. */
 int pwm_disableChannel(pwm_tim_id_t timer, pwm_ch_id_t chn);
+
 
 #endif /* #idndef PWM_N6_H_ */
