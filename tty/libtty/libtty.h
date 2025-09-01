@@ -139,6 +139,7 @@ static inline int libtty_baudrate_to_int(speed_t baudrate)
 		case B19200: return 19200;
 		case B38400: return 38400;
 		case B57600: return 57600;
+		case B100000: return 100000;
 		case B115200: return 115200;
 		case B230400: return 230400;
 		case B460800: return 460800;
@@ -161,6 +162,7 @@ static inline speed_t libtty_int_to_baudrate(int baudrate)
 		case 19200: return B19200;
 		case 38400: return B38400;
 		case 57600: return B57600;
+		case 100000: return B100000;
 		case 115200: return B115200;
 		case 230400: return B230400;
 		case 460800: return B460800;
