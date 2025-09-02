@@ -18,7 +18,6 @@
 #include <libmulti/libuart.h>
 #include <libmulti/libspi.h>
 #include <libmulti/libi2c.h>
-#include <libmulti/libpwm_n6.h>
 
 #define FLASH_REBOOT_MAGIC 0x88bb77aaUL
 #define OTP_WRITE_MAGIC    0x5d1a8712UL
@@ -138,17 +137,54 @@ typedef struct {
 
 /* PWM */
 
+enum pwm_tim_ids {
+	pwm_tim1,
+	pwm_tim2,
+	pwm_tim3,
+	pwm_tim4,
+	pwm_tim5,
+	pwm_tim6,
+	pwm_tim7,
+	pwm_tim8,
+	pwm_tim9,
+	pwm_tim10,
+	pwm_tim11,
+	pwm_tim12,
+	pwm_tim13,
+	pwm_tim14,
+	pwm_tim15,
+	pwm_tim16,
+	pwm_tim17,
+	pwm_tim18,
+	pwm_tim_count
+};
+
+enum pwm_chn_ids {
+	pwm_ch1,
+	pwm_ch2,
+	pwm_ch3,
+	pwm_ch4,
+	pwm_ch1n,
+	pwm_ch2n,
+	pwm_ch3n,
+	pwm_ch4n,
+};
+
+typedef enum pwm_tim_ids pwm_tim_id_t;
+
+typedef enum pwm_chn_ids pwm_ch_id_t;
+
 typedef struct {
 	pwm_tim_id_t timer;
-	uint32_t prescaler;
-	uint16_t top;
+	uint16_t prescaler;
+	uint32_t top;
 } __attribute__((packed)) pwmdef_t;
 
 
 typedef struct {
 	pwm_tim_id_t timer;
 	pwm_ch_id_t chn;
-	uint16_t compare;
+	uint32_t compare;
 } __attribute__((packed)) pwmset_t;
 
 
@@ -159,8 +195,8 @@ typedef struct {
 
 
 typedef struct {
-	uint16_t top;
-	uint16_t compare;
+	uint32_t top;
+	uint32_t compare;
 } __attribute__((packed)) pwmgeto_t;
 
 
@@ -183,8 +219,8 @@ typedef struct {
 typedef struct {
 	pwm_tim_id_t timer;
 	pwm_ch_id_t chn;
-	uint16_t compare0;
-	uint16_t compare1;
+	uint32_t compare0;
+	uint32_t compare1;
 	uint32_t nbits;
 	uint8_t *data;
 } __attribute__((packed)) pwmbitseq_t;

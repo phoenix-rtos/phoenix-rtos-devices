@@ -39,6 +39,10 @@
 #include "uart.h"
 #include "rng.h"
 
+#if defined(__CPU_STM32N6)
+#include "pwm_n6.h"
+#endif
+
 #if ((MULTIDRV_INTERFACE_THREADS) < 2)
 #error "At least two interface threads required"
 #endif
@@ -245,7 +249,7 @@ static void handleMsg(msg_t *msg)
 			err = pwm_set(imsg->pwm_set.timer, imsg->pwm_set.chn, imsg->pwm_set.compare);
 			break;
 		case pwm_getm:
-			uint16_t compare, top;
+			uint32_t compare, top;
 			err = pwm_get(imsg->pwm_get.timer, imsg->pwm_get.chn, &top, &compare);
 			omsg->pwm_get.top = top;
 			omsg->pwm_get.compare = compare;
