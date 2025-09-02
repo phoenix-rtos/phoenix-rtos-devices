@@ -352,21 +352,20 @@ enum adc_regs {
 };
 
 
-/* Different timers might have different register be 16 or 32 bit */
 enum tim_regs {
-	tim_cr1, /* 16 bit on TIM1/8 */
+	tim_cr1,
 	tim_cr2,
 	tim_smcr,
 	tim_dier,
 	tim_sr,
-	tim_egr, /* 16 bit on TIM1/8 */
+	tim_egr,
 	tim_ccmr1,
 	tim_ccmr2,
 	tim_ccer,
 	tim_cnt,
-	tim_psc, /* 16 bit on TIM1/8 */
+	tim_psc,
 	tim_arr,
-	tim_rcr, /* 16 bit on TIM1/8 */
+	tim_rcr,
 	tim_ccr1,
 	tim_ccr2,
 	tim_ccr3,

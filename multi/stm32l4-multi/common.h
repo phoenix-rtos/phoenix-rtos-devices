@@ -52,7 +52,7 @@
 #define DEBUG(format, ...) printf("%s: " format, drvname, ##__VA_ARGS__)
 #endif
 
-
+/* 'Barrier' is spelled with double r. Consider renaming the function */
 static inline void dataBarier(void)
 {
 	__asm__ volatile("dmb");

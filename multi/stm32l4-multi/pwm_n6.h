@@ -25,11 +25,11 @@
 #define PWM_CHN_NUM   4
 
 #define PWM_CCMR_REG(chn_id)      (((chn_id) <= 1) ? (tim_ccmr1) : (tim_ccmr2))
-#define PWM_CCMR_OCPE_OFF(chn_id) (3 + 8 * ((chn_id) & 0x1))
-#define PWM_CCMR_CCS_OFF(chn_id)  (8 * ((chn_id) & 0x1))
-#define PWM_CCMR_OCMH_OFF(chn_id) (16 + 8 * ((chn_id) & 0x1))
-#define PWM_CCMR_OCML_OFF(chn_id) (4 + 8 * ((chn_id) & 0x1))
-#define PWM_CCMR_OCFE_OFF(chn_id) (2 + 8 * ((chn_id) & 0x1))
+#define PWM_CCMR_OCPE_OFF(chn_id) (3 + 8 * ((chn_id) & 1))
+#define PWM_CCMR_CCS_OFF(chn_id)  (8 * ((chn_id) & 1))
+#define PWM_CCMR_OCMH_OFF(chn_id) (16 + 8 * ((chn_id) & 1))
+#define PWM_CCMR_OCML_OFF(chn_id) (4 + 8 * ((chn_id) & 1))
+#define PWM_CCMR_OCFE_OFF(chn_id) (2 + 8 * ((chn_id) & 1))
 
 #define PWM_CCER_CCE_OFF(chn_id)  (4 * (chn_id))
 #define PWM_CCER_CCNE_OFF(chn_id) (2 + 4 * (chn_id))
@@ -44,11 +44,14 @@
 #define PWM_DIER_CCIE_OFF(chn_id) (1 + (chn_id))
 
 /* Discriminate timer types and features */
-#define PWM_TIM_COUNTER_MODE_SELECT(tim_id) (((0x1 << (tim_id)) & 0x3F) != 0)
-#define PWM_TIM_BREAK1_MODE(tim_id)         (((0x1 << (tim_id)) & 0x7021) != 0)
-#define PWM_TIM_BREAK2_MODE(tim_id)         (((0x1 << (tim_id)) & 0x21) != 0)
-#define PWM_TIM_REP_COUNTER(tim_id)         (((0x1 << (tim_id)) & 0x7021) != 0)
-// #define PWM_TIM_MASTER1_MODE(tim_id) ((0x1 << (tim_id)) & )
+#define PWM_TIM_COUNTER_MODE_SELECT(tim_id) (((1 << (tim_id)) & 0x3F) != 0)
+#define PWM_TIM_BREAK1_MODE(tim_id)         (((1 << (tim_id)) & 0x7021) != 0)
+#define PWM_TIM_BREAK2_MODE(tim_id)         (((1 << (tim_id)) & 0x21) != 0)
+#define PWM_TIM_REP_COUNTER(tim_id)         (((1 << (tim_id)) & 0x7021) != 0)
+
+#define PWM_TIM_ADVANCED ((1))
+
+// #define PWM_TIM_MASTER1_MODE(tim_id) ((1 << (tim_id)) & )
 
 /* Basic timers TIM6/TIM7/TIM18 not available for PWM */
 enum pwm_tim_ids {
@@ -57,6 +60,8 @@ enum pwm_tim_ids {
 	pwm_tim3,
 	pwm_tim4,
 	pwm_tim5,
+	pwm_tim6,
+	pwm_tim7,
 	pwm_tim8,
 	pwm_tim9,
 	pwm_tim10,
@@ -67,6 +72,7 @@ enum pwm_tim_ids {
 	pwm_tim15,
 	pwm_tim16,
 	pwm_tim17,
+	pwm_tim_count
 };
 
 /* Only primary channels (0-3) are meant to be used directly */
