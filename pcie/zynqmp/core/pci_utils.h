@@ -16,6 +16,10 @@
 #include <stdint.h>
 #include <stdatomic.h>
 
+struct device{
+    void *dirver_data;
+};
+
 /* Adding read/write memory barriers */
 #define rmb() atomic_thread_fence(memory_order_acquire)
 #define wmb() atomic_thread_fence(memory_order_release)

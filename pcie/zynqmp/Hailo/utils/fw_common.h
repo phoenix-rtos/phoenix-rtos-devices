@@ -1,0 +1,20 @@
+// SPDX-License-Identifier: GPL-2.0
+/**
+ * Copyright (c) 2019-2025 Hailo Technologies Ltd. All rights reserved.
+ **/
+
+#ifndef _HAILO_LINUX_COMMON_H_
+#define _HAILO_LINUX_COMMON_H_
+
+#include "../common/hailo_ioctl_common.h"
+#include "../phoenix/phoenix_completion.h"
+
+struct hailo_notification_wait {
+    struct list_head    notification_wait_list;
+    int                 tgid;
+    struct file*        filp;
+    struct completion 	notification_completion;
+    bool                is_disabled;
+};
+
+#endif /* _HAILO_LINUX_COMMON_H_ */

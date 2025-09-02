@@ -4,7 +4,7 @@
  * ZynqMP PCI Express driver
  *
  * Copyright 2025 Phoenix Systems
- * Author: Mikolaj Matalowski
+ * Author: Dariusz Sabala, Mikolaj Matalowski
  *
  * %LICENSE%
  */
@@ -40,9 +40,9 @@ void pci_enumerateRoot(uint32_t *pcie, pci_dev_t *root, uint8_t bus, int depth)
 
 		base_function->vid = vendor_id;
 		base_function->pid = product_id;
-		base_function->bus = bus;
-		base_function->dev = dev;
-		base_function->func = 0;
+		base_function->bus_no = bus;
+		base_function->dev_no = dev;
+		base_function->func_no = 0;
 		last = base_function;
 
 		/* Scan first function of device */
@@ -65,9 +65,9 @@ void pci_enumerateRoot(uint32_t *pcie, pci_dev_t *root, uint8_t bus, int depth)
 					return;
 				}
 
-				additional_function->bus = bus;
-				additional_function->dev = dev;
-				additional_function->func = fn;
+				additional_function->bus_no = bus;
+				additional_function->dev_no = dev;
+				additional_function->func_no = fn;
 				last->next = additional_function;
 				last = additional_function;
 
@@ -79,9 +79,9 @@ void pci_enumerateRoot(uint32_t *pcie, pci_dev_t *root, uint8_t bus, int depth)
 
 void pci_scanFunc(uint32_t *pcie, pci_dev_t *device, int depth)
 {
-	uint8_t bus = device->bus;
-	uint8_t dev = device->dev;
-	uint8_t fun = device->func;
+	uint8_t bus = device->bus_no;
+	uint8_t dev = device->dev_no;
+	uint8_t fun = device->func_no;
 
 	/* Read informations about device */
 	uint16_t vid = ecamRead16((uintptr_t)pcie, bus, dev, fun, PCI_VENDOR_ID);
@@ -125,9 +125,9 @@ void pci_configureBridge(uint32_t *pcie, pci_dev_t *device, int depth)
 {
 	static uint8_t next_bus = 1;
 
-	uint8_t bus = device->bus;
-	uint8_t dev = device->dev;
-	uint8_t fun = device->func;
+	uint8_t bus = device->bus_no;
+	uint8_t dev = device->dev_no;
+	uint8_t fun = device->func_no;
 
 	/* read once */
 	uint8_t sec = ecamRead8((uintptr_t)pcie, bus, dev, fun, PCI_SECONDARY_BUS);
@@ -187,9 +187,9 @@ void pci_configureBridge(uint32_t *pcie, pci_dev_t *device, int depth)
 
 void pci_mapBARsPhysAddToBridge(uint32_t *pcie, pci_dev_t *device)
 {
-	uint8_t bus = device->bus;
-	uint8_t dev = device->dev;
-	uint8_t fun = device->func;
+	uint8_t bus = device->bus_no;
+	uint8_t dev = device->dev_no;
+	uint8_t fun = device->func_no;
 	/* Map physical address range for I/O BARs*/
 	/* Currently mapping for I/O BARs is not supported */
 	/* I/0 BARs are largely deprecated */
@@ -207,9 +207,9 @@ void pci_mapBARsPhysAddToBridge(uint32_t *pcie, pci_dev_t *device)
 
 void pci_configureCapBridge(uint32_t *pcie, pci_dev_t *device)
 {
-	uint8_t bus = device->bus;
-	uint8_t dev = device->dev;
-	uint8_t fun = device->func;
+	uint8_t bus = device->bus_no;
+	uint8_t dev = device->dev_no;
+	uint8_t fun = device->func_no;
 
 	/* Check if there is capabilities list */
 	uint16_t status = ecamRead16((uintptr_t)pcie, bus, dev, fun, PCI_STATUS);
@@ -238,9 +238,9 @@ void pci_configureCapBridge(uint32_t *pcie, pci_dev_t *device)
 
 void pci_bridgeEnable(uint32_t *pcie, pci_dev_t *device)
 {
-	uint8_t bus = device->bus;
-	uint8_t dev = device->dev;
-	uint8_t fun = device->func;
+	uint8_t bus = device->bus_no;
+	uint8_t dev = device->dev_no;
+	uint8_t fun = device->func_no;
 
 	/* Enable I/O, memory and bus master */
 	uint32_t ret = ecamRead32((uintptr_t)pcie, bus, dev, fun, PCI_BRIDGE_CMD);
@@ -256,9 +256,9 @@ void pci_configureEndpoint(uint32_t *pcie, pci_dev_t *device)
 
 void pci_configureEndpointBARs(uint32_t *pcie, pci_dev_t *device)
 {
-	uint8_t bus = device->bus;
-	uint8_t dev = device->dev;
-	uint8_t fun = device->func;
+	uint8_t bus = device->bus_no;
+	uint8_t dev = device->dev_no;
+	uint8_t fun = device->func_no;
 
 	const int bar_count = (ecamRead8((uintptr_t)pcie, bus, dev, fun, PCI_HEADER_TYPE) & 0x7f) == 0 ? 6 : 2;
 
@@ -379,9 +379,9 @@ void pci_configureEndpointBARs(uint32_t *pcie, pci_dev_t *device)
 
 void pci_enableEndpoint(uint32_t *pcie, pci_dev_t *device)
 {
-	uint8_t bus = device->bus;
-	uint8_t dev = device->dev;
-	uint8_t fun = device->func;
+	uint8_t bus = device->bus_no;
+	uint8_t dev = device->dev_no;
+	uint8_t fun = device->func_no;
 
 	uint16_t cmd = ecamRead16((uintptr_t)pcie, bus, dev, fun, PCI_COMMAND);
 	ecamWrite32((uintptr_t)pcie, bus, dev, fun, PCI_COMMAND, cmd | 0x4 | 0x2 | 0x1 | 0x40 | 0x100);
@@ -394,7 +394,136 @@ void pci_enableRootComplex(uint32_t *pcie)
 	writeReg(pcie, 0x148, 1);
 }
 
+void pci_dumpBAR(pci_dev_t *device, int bar_number)
+{
+	for (int i = 0; i < device->size[bar_number] / 4; i++) {
+		uint32_t data = *((volatile uint32_t *)device->bar[bar_number] + i);
+		printf("%lx : %0x\n", (uint64_t)va2pa((uint32_t *)device->bar[bar_number] + i), data);
+	}
+}
+
+int pci_irqHandler(unsigned int no, void *data)
+{
+	/* What exactly should this handler do? */
+	return 0;
+}
+
 /* This section implements debug printing functions */
+
+void pci_prepareAXI()
+{
+	/* Fix AXI configuration */
+	volatile uint32_t *axi_slave1_width_reg = (volatile uint32_t *)mmap(NULL, 4, PROT_WRITE | PROT_READ,
+			MAP_PHYSMEM | MAP_ANONYMOUS, -1, AXI_HPM1_FPD_REG);
+	if (NULL == axi_slave1_width_reg) {
+		printf("pcie: mmap failed for this AXI width register\n");
+		return;
+	}
+
+	uint32_t configuration = (*axi_slave1_width_reg & ~((1 << 10) | (1 << 11))) | (AXI_WIDTH_CFG_128B << 10);
+
+	*axi_slave1_width_reg = configuration;
+	wmb();
+
+	munmap((void *)axi_slave1_width_reg, 4);
+}
+
+static void deassertAxiInterconnectsReset(void)
+{
+	printf("Deasserting AXI interconnect\n");
+	platformctl_t ctl3 = {
+		.action = pctl_set,
+		.type = pctl_devreset,
+		.devreset.dev = pctl_devreset_fpd_s_axi_hpc_0_fpd,
+		.devreset.state = 0,
+	};
+	int ret = platformctl(&ctl3);
+	if (ret != 0) {
+		printf("pcie: fail to deassert reset\n");
+	}
+
+	ctl3.devreset.dev = pctl_devreset_fpd_s_axi_hpc_1_fpd;
+	ret = platformctl(&ctl3);
+	if (ret != 0) {
+		printf("pcie: fail to deassert reset\n");
+	}
+
+	ctl3.devreset.dev = pctl_devreset_fpd_s_axi_hp_0_fpd;
+	ret = platformctl(&ctl3);
+	if (ret != 0) {
+		printf("pcie: fail to deassert reset\n");
+	}
+
+	ctl3.devreset.dev = pctl_devreset_fpd_s_axi_hp_1_fpd;
+	ret = platformctl(&ctl3);
+	if (ret != 0) {
+		printf("pcie: fail to deassert reset\n");
+	}
+
+	ctl3.devreset.dev = pctl_devreset_fpd_s_axi_hpc_2_fpd;
+	ret = platformctl(&ctl3);
+	if (ret != 0) {
+		printf("pcie: fail to deassert reset\n");
+	}
+
+	ctl3.devreset.dev = pctl_devreset_fpd_s_axi_hpc_3_fpd;
+	ret = platformctl(&ctl3);
+	if (ret != 0) {
+		printf("pcie: fail to deassert reset\n");
+	}
+}
+
+void pci_resetAXIandRC(uint32_t *gpioBase)
+{
+	/* Deassert reset on AXI Interconnect between PS and PL */
+	deassertAxiInterconnectsReset();
+	usleep(3 * 1000);
+
+	/* Assert PCI Express pin for some time */
+	writeReg(gpioBase, 0x08, 0x0);
+	usleep(100 * 1000);
+
+	/* Deassert PCI Express reset pin */
+	writeReg(gpioBase, 0x08, 0x1);
+	/* Let PCI Express node initialise */
+	usleep(100 * 1000);
+
+	/* Deassert reset on AXI PCI Express bridge IP Core */
+	writeReg(gpioBase, 0x08, 0x3);
+	/* Let bridge turn link up */
+	usleep(100 * 1000);
+}
+
+void pci_readBridgeInfoReg(uint32_t *pcie)
+{
+	uint32_t bridge_info = readReg(pcie, 0x130);
+
+	bool gen2_capable = bridge_info & 0x1;
+	bool root_port_present = bridge_info & 0x2;
+	bool gen3_capable = bridge_info & 0x4;
+
+	char *gen_cap = NULL;
+	if (gen3_capable) {
+		gen_cap = "PCI Express 3";
+	}
+	else if (gen2_capable) {
+		gen_cap = "PCI Express 2";
+	}
+	else {
+		gen_cap = "Unknown";
+	}
+
+	char *root_port_present_text = NULL;
+	if (root_port_present) {
+		root_port_present_text = "present";
+	}
+	else {
+		root_port_present_text = "not present";
+	}
+
+	printf("pcie: bridge generation: %s, root port: %s\n",
+			gen_cap, root_port_present_text);
+}
 
 void pci_printTree(pci_dev_t *root, int depth)
 {
@@ -403,9 +532,9 @@ void pci_printTree(pci_dev_t *root, int depth)
 	}
 
 	for (int i = 0; i < depth; i++) {
-		printf("%0*s", depth, "\t");
+		printf("%*s", depth, "\t");
 	}
-	printf("-%d:%d.%d\n", root->bus, root->dev, root->func);
+	printf("-%d:%d.%d\n", root->bus_no, root->dev_no, root->func_no);
 
 	pci_dev_t *child = root->child;
 	while (child != NULL) {
@@ -439,9 +568,9 @@ pci_dev_t *pci_getDevFromTree(pci_dev_t *root, uint32_t vid, uint32_t pid)
 
 void pci_printBARs(uint32_t *pcie, pci_dev_t *device)
 {
-	uint8_t bus = device->bus;
-	uint8_t dev = device->dev;
-	uint8_t fun = device->func;
+	uint8_t bus = device->bus_no;
+	uint8_t dev = device->dev_no;
+	uint8_t fun = device->func_no;
 
 	const int bar_count = (ecamRead8((uintptr_t)pcie, bus, dev, fun, PCI_HEADER_TYPE) & 0x7f) == 0 ? 6 : 2;
 
@@ -476,9 +605,9 @@ void pci_printBARs(uint32_t *pcie, pci_dev_t *device)
 
 void print_capabilities(uint32_t *pcie, pci_dev_t *device)
 {
-	uint8_t bus = device->bus;
-	uint8_t dev = device->dev;
-	uint8_t fun = device->func;
+	uint8_t bus = device->bus_no;
+	uint8_t dev = device->dev_no;
+	uint8_t fun = device->func_no;
 
 	/* Check if there is capabilities list */
 	uint16_t status = ecamRead16((uintptr_t)pcie, bus, dev, fun, PCI_STATUS);

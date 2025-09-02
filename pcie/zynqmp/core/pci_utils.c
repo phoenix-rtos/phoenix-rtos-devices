@@ -4,7 +4,7 @@
  * ZynqMP PCI Express driver
  *
  * Copyright 2025 Phoenix Systems
- * Author: Mikolaj Matalowski
+ * Author: Dariusz Sabala, Mikolaj Matalowski
  *
  * %LICENSE%
  */
