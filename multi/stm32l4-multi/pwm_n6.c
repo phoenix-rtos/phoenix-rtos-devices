@@ -253,16 +253,16 @@ __attribute__((unused)) static int pwm_updateEventIrq(unsigned int n, void *arg)
 	}
 	else {
 		pwm_ch_id_t chn = dshot->chn;
+		/* If the last bit was already emitted, can safely disable further UEV IRQ */
+		if (dshot->bitPos > dshot->bitSize) {
+			*(base + tim_dier) &= ~1u;
+			irq->flags |= PWM_IRQ_DSHOT_END;
+		}
 		/* If last bit then preload compare value to 0 to end the sequence */
-		if (dshot->bitPos > dshot->bitSize - 1) {
+		else if (dshot->bitPos > dshot->bitSize - 1) {
 			/* Also preload compare value of 0 to make sure the signal ends after the last bit */
 			*(base + PWM_CCR_REG(chn)) = 0;
 			dshot->bitPos++;
-		}
-		/* If the last bit was already emitted, can safely disable further UEV IRQ */
-		else if (dshot->bitPos > dshot->bitSize) {
-			*(base + tim_dier) &= ~1u;
-			irq->flags |= PWM_IRQ_DSHOT_END;
 		}
 		else {
 			/* Preload next compare value on the correct channel. */
@@ -319,15 +319,13 @@ __attribute__((unused)) static void pwm_printRegisters(pwm_tim_id_t timer)
 /* Returns errors */
 int pwm_disableTimer(pwm_tim_id_t timer)
 {
-	int res;
-
-	if ((res = pwm_validateTimer(timer)) < 0) {
+	int res = pwm_validateTimer(timer);
+	if (res < 0) {
 		return res;
 	}
-
 	/* Disable all enabled channels */
 	for (pwm_ch_id_t chn = 0; chn < PWM_CHN_NUM; chn++) {
-		if (pwm_common.timer[timer].channelOn & (1 << chn)) {
+		if (((pwm_common.timer[timer].channelOn >> chn) & 1) != 0) {
 			pwm_disableChannel(timer, chn);
 		}
 	}
@@ -341,11 +339,12 @@ int pwm_disableTimer(pwm_tim_id_t timer)
 /* Returns errors */
 int pwm_disableChannel(pwm_tim_id_t timer, pwm_ch_id_t chn)
 {
-	int res;
-	if ((res = pwm_validateTimer(timer)) < 0) {
+	int res = pwm_validateTimer(timer);
+	if (res < 0) {
 		return res;
 	}
-	if ((res = pwm_validateChannel(timer, chn)) < 0) {
+	res = pwm_validateChannel(timer, chn);
+	if (res < 0) {
 		return res;
 	}
 
@@ -390,13 +389,12 @@ int pwm_configure(pwm_tim_id_t timer, uint16_t prescaler, uint32_t top)
 	 * NOTE: APB clocking mismatch with HCLK cause unreliavble reads and writes.
 	 */
 
-	int res;
 	uint16_t t16;
 	volatile uint32_t *base;
 	pwm_irq_t *irq;
+	int res = pwm_validateTimer(timer);
 
-	// TODO: misra!
-	if ((res = pwm_validateTimer(timer)) < 0) {
+	if (res < 0) {
 		return res;
 	}
 	if ((((PWM_TIM_32BIT >> timer) & 1) == 0) && ((top & 0xFFFF0000) != 0)) {
@@ -408,7 +406,7 @@ int pwm_configure(pwm_tim_id_t timer, uint16_t prescaler, uint32_t top)
 		devClk(pwm_setup.timer[timer].pctl, 1);
 		pwm_common.timer[timer].devOn = 1;
 	}
-	if (!(irq->flags & PWM_IRQ_INITIALIZED)) {
+	if ((irq->flags & PWM_IRQ_INITIALIZED) == 0) {
 		mutexCreate(&irq->uevlock);
 		condCreate(&irq->uevcond);
 		interrupt(pwm_setup.timer[timer].uevirq, pwm_updateEventIrq, (void *)timer, irq->uevcond, NULL);
@@ -473,8 +471,6 @@ int pwm_configure(pwm_tim_id_t timer, uint16_t prescaler, uint32_t top)
 
 	dataBarier();
 
-	printf("Locking...\n");
-
 	/* Wait for update event to load prescaler and arr */
 	mutexLock(irq->uevlock);
 	while (!(irq->flags & PWM_IRQ_UEVRECIEVED)) {
@@ -490,17 +486,18 @@ int pwm_configure(pwm_tim_id_t timer, uint16_t prescaler, uint32_t top)
 /* Set output pwm channel on configured timer. Returns errors */
 int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t compare)
 {
-	int res;
 	volatile uint32_t *reg;
 	uint32_t tmpcr2 = 0, tmpccmr = 0, tmpccer = 0, tmpbdtr = 0;
 	volatile uint32_t *base;
 	pwm_irq_t *irq;
 	pwm_dshot_ctx_t *dshot;
 
-	if ((res = pwm_validateTimer(timer)) < 0) {
+	int res = pwm_validateTimer(timer);
+	if (res < 0) {
 		return res;
 	}
-	if ((res = pwm_validateChannel(timer, chn)) < 0) {
+	res = pwm_validateChannel(timer, chn);
+	if (res < 0) {
 		return res;
 	}
 	if ((((PWM_TIM_32BIT >> timer) & 1) == 0) && ((compare & 0xFFFF0000) != 0)) {
@@ -514,7 +511,7 @@ int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t compare)
 	dshot = &irq->dshot;
 
 	/* If channel is on, then only reconfigure compare value */
-	if (pwm_common.timer[timer].channelOn & (1 << chn)) {
+	if (((pwm_common.timer[timer].channelOn >> chn) & 1) != 0) {
 		*(base + PWM_CCR_REG(chn)) = compare;
 		return EOK;
 	}
@@ -615,12 +612,12 @@ int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t compare)
 	irq->flags = oldflags;
 	dataBarier();
 	/* Enable subsequent UEV interrupts if in dshot mode */
-	if (irq->flags & PWM_IRQ_DSHOT_UEV) {
+	if ((irq->flags & PWM_IRQ_DSHOT_UEV) != 0) {
 		*(base + tim_dier) |= 0x1;
 	}
 
 	/* Preload the second compare value if in dshot mode */
-	if (irq->flags & PWM_IRQ_DSHOT_UEV) {
+	if ((irq->flags & PWM_IRQ_DSHOT_UEV) != 0) {
 		uint8_t bit = ((dshot->data[dshot->bitPos / 8]) >> (dshot->bitPos % 8)) & 1;
 		compare = (bit == 0) ? dshot->compare0 : dshot->compare1;
 		*(base + PWM_CCR_REG(chn)) = compare;
@@ -642,14 +639,15 @@ int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t compare)
 /* Returns current duty cycle percentage. Or errors */
 int pwm_get(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t *top, uint32_t *compare)
 {
-	int res;
-	if ((res = pwm_validateTimer(timer)) < 0) {
+	int res = pwm_validateTimer(timer);
+	if (res < 0) {
 		return res;
 	}
-	if ((res = pwm_validateChannel(timer, chn)) < 0) {
+	res = pwm_validateChannel(timer, chn);
+	if (res < 0) {
 		return res;
 	}
-	if ((pwm_common.timer[timer].channelOn & (1 << chn)) == 0) {
+	if (((pwm_common.timer[timer].channelOn >> chn) & 1) == 0) {
 		return -EPERM;
 	}
 	/* Load top and compare. Return compare/top */
@@ -665,10 +663,12 @@ int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t compare0, u
 	uint16_t firstCompare;
 	pwm_irq_t *irq;
 	pwm_dshot_ctx_t *dshot;
-	if ((res = pwm_validateTimer(timer)) < 0) {
+	res = pwm_validateTimer(timer);
+	if (res < 0) {
 		return res;
 	}
-	if ((res = pwm_validateChannel(timer, chn)) < 0) {
+	res = pwm_validateChannel(timer, chn);
+	if (res < 0) {
 		return res;
 	}
 	if ((((PWM_TIM_32BIT >> timer) & 1) == 0) && (((compare0 & 0xFFFF0000) != 0) || ((compare1 & 0xFFFF0000) != 0))) {
@@ -697,10 +697,9 @@ int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t compare0, u
 
 	/* Wait for the DSHOT sequence to end */
 	mutexLock(irq->uevlock);
-	while (!(irq->flags & PWM_IRQ_DSHOT_END)) {
+	while ((irq->flags & PWM_IRQ_DSHOT_END) == 0) {
 		condWait(irq->uevcond, irq->uevlock, 0);
 	}
-	irq->flags &= ~PWM_IRQ_UEVRECIEVED;
 	irq->flags &= ~PWM_IRQ_DSHOT_UEV;
 	irq->flags &= ~PWM_IRQ_DSHOT_END;
 	mutexUnlock(irq->uevlock);
