@@ -327,7 +327,7 @@ typedef struct {
 		rtctimestamp_t rtc_timestamp;
 		unsigned int gpio_get;
 		flashinfo_t flash_info;
-		uint64_t pwm_bsfreq;
+		uint64_t pwm_basefreq;
 		pwmgeto_t pwm_get;
 	};
 } __attribute__((packed)) multi_o_t;

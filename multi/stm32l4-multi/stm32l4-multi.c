@@ -249,13 +249,13 @@ static void handleMsg(msg_t *msg)
 			err = pwm_set(imsg->pwm_set.timer, imsg->pwm_set.chn, imsg->pwm_set.compare);
 			break;
 		case pwm_getm:
-			uint32_t compare, top;
+			uint32_t compare = 0, top = 0;
 			err = pwm_get(imsg->pwm_get.timer, imsg->pwm_get.chn, &top, &compare);
 			omsg->pwm_get.top = top;
 			omsg->pwm_get.compare = compare;
 			break;
 		case pwm_getfreq:
-			omsg->pwm_bsfreq = pwm_getBaseFrequency(imsg->pwm_freq.timer);
+			omsg->pwm_basefreq = pwm_getBaseFrequency(imsg->pwm_freq.timer);
 			break;
 		case pwm_distim:
 			err = pwm_disableTimer(imsg->pwm_distim.timer);
