@@ -80,8 +80,9 @@
 typedef struct {
 	spimsg_ctx_t spiCtx;
 	oid_t spiSS;
-	sensor_event_t evtAccel;
-	sensor_event_t evtGyro;
+	sensor_event_t *evtAccel;
+	sensor_event_t *evtGyro;
+	sensor_event_t evt[2];
 	uint8_t lpfSel;
 	char stack[512] __attribute__((aligned(8)));
 } mpu6000_ctx_t;
@@ -189,73 +190,66 @@ static int mpu6000_hwSetup(mpu6000_ctx_t *ctx)
 }
 
 
-static void mpu6000_threadPublish(void *data)
+int mpu6000_read(const sensor_info_t *info, const sensor_event_t **evt)
 {
-	static uint32_t dAngleX = 0, dAngleY = 0, dAngleZ = 0;
-	static int32_t lastGyroX = 0, lastGyroY = 0, lastGyroZ = 0;
-	static time_t tStampLast;
+	mpu6000_ctx_t *ctx = info->ctx;
 
 	const uint8_t obuf = REG_DATA_OUT_ALL | SPI_READ_BIT;
-	sensor_info_t *info = (sensor_info_t *)data;
-	mpu6000_ctx_t *ctx = info->ctx;
 	uint8_t ibuf[SENSOR_OUTPUT_SIZE] = { 0 };
 	time_t tStamp;
-	float step;
 	int err;
 
-	gettime(&tStampLast, NULL);
+	/* data read */
+	err = sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, &obuf, sizeof(obuf), ibuf, sizeof(ibuf), sizeof(obuf));
+	gettime(&tStamp, NULL);
 
-	/* TODO: SPI speed bottleneck: MPU6000 SPI accepts <1MHz CLK writes, but <20MHz CLK reads; runtime SPI CLK setup unavailable */
-	ctx->spiCtx.speed = 10000000;
+	if (err < 0) {
+		fprintf(stderr, "mpu6000 read: %d\n", err);
+		return -1;
+	}
+
+	/* Common package: gyro and accel utilize the same temperature reading */
+	ctx->evtAccel->accels.temp = translateTemp(ibuf[6], ibuf[7]);
+	ctx->evtGyro->gyro.temp = ctx->evtAccel->accels.temp;
+
+	ctx->evtAccel->accels.accelX = translateAcc(ibuf[0], ibuf[1]);
+	ctx->evtAccel->accels.accelY = translateAcc(ibuf[2], ibuf[3]);
+	ctx->evtAccel->accels.accelZ = translateAcc(ibuf[4], ibuf[5]);
+	ctx->evtAccel->timestamp = tStamp;
+
+	ctx->evtGyro->gyro.gyroX = translateGyr(ibuf[8], ibuf[9]);
+	ctx->evtGyro->gyro.gyroY = translateGyr(ibuf[10], ibuf[11]);
+	ctx->evtGyro->gyro.gyroZ = translateGyr(ibuf[12], ibuf[13]);
+	ctx->evtGyro->timestamp = tStamp;
+
+	if (evt != NULL) {
+		*evt = &ctx->evt[0];
+	}
+
+	return 2;
+}
+
+
+static void mpu6000_threadPublish(void *data)
+{
+	sensor_info_t *info = (sensor_info_t *)data;
+	mpu6000_ctx_t *ctx = info->ctx;
 
 	while (1) {
 		/* odr is set to 952, thus 1ms wait is satisfactory */
 		usleep(1000);
 
-		/* data read */
-		err = sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, &obuf, sizeof(obuf), ibuf, sizeof(ibuf), sizeof(obuf));
-		gettime(&tStamp, NULL);
-
-		if (err < 0) {
+		if (mpu6000_read(info, NULL) < 0) {
 			continue;
 		}
 
-		/* Common package: gyro and accel utilize the same temperature reading */
-		ctx->evtAccel.accels.temp = translateTemp(ibuf[6], ibuf[7]);
-		ctx->evtGyro.gyro.temp = ctx->evtAccel.accels.temp;
-
-		ctx->evtAccel.accels.accelX = translateAcc(ibuf[0], ibuf[1]);
-		ctx->evtAccel.accels.accelY = translateAcc(ibuf[2], ibuf[3]);
-		ctx->evtAccel.accels.accelZ = translateAcc(ibuf[4], ibuf[5]);
-		ctx->evtAccel.timestamp = tStamp;
-
-		ctx->evtGyro.gyro.gyroX = translateGyr(ibuf[8], ibuf[9]);
-		ctx->evtGyro.gyro.gyroY = translateGyr(ibuf[10], ibuf[11]);
-		ctx->evtGyro.gyro.gyroZ = translateGyr(ibuf[12], ibuf[13]);
-		ctx->evtGyro.timestamp = tStamp;
-
-		/* Integration of current measurement */
-		step = (tStamp - tStampLast) / 2000.f; /* dividing by (1000 * 2) for correct unit and avg. of current and last measurement */
-		dAngleX += (uint32_t)((ctx->evtGyro.gyro.gyroX + lastGyroX) * step);
-		dAngleY += (uint32_t)((ctx->evtGyro.gyro.gyroY + lastGyroY) * step);
-		dAngleZ += (uint32_t)((ctx->evtGyro.gyro.gyroZ + lastGyroZ) * step);
-
-		ctx->evtGyro.gyro.dAngleX = dAngleX;
-		ctx->evtGyro.gyro.dAngleY = dAngleY;
-		ctx->evtGyro.gyro.dAngleZ = dAngleZ;
-
-		tStampLast = tStamp;
-		lastGyroX = ctx->evtGyro.gyro.gyroX;
-		lastGyroY = ctx->evtGyro.gyro.gyroY;
-		lastGyroZ = ctx->evtGyro.gyro.gyroZ;
-
-		sensors_publish(info->id, &ctx->evtGyro);
-		sensors_publish(info->id, &ctx->evtAccel);
+		sensors_publish(info->id, ctx->evtGyro);
+		sensors_publish(info->id, ctx->evtAccel);
 	}
 }
 
 
-static int mpu6000_start(sensor_info_t *info)
+int mpu6000_start(sensor_info_t *info)
 {
 	int err;
 	mpu6000_ctx_t *ctx = (mpu6000_ctx_t *)info->ctx;
@@ -269,7 +263,15 @@ static int mpu6000_start(sensor_info_t *info)
 }
 
 
-static int mpu6000_alloc(sensor_info_t *info, const char *args)
+int mpu6000_dealloc(sensor_info_t *info)
+{
+	free((mpu6000_ctx_t *)info->ctx);
+
+	return 0;
+}
+
+
+int mpu6000_alloc(sensor_info_t *info, const char *args)
 {
 	mpu6000_ctx_t *ctx;
 	char *ss, *lpfChr;
@@ -282,10 +284,13 @@ static int mpu6000_alloc(sensor_info_t *info, const char *args)
 		return -ENOMEM;
 	}
 
-	ctx->evtAccel.type = SENSOR_TYPE_ACCEL;
-	ctx->evtAccel.accels.devId = info->id;
-	ctx->evtGyro.type = SENSOR_TYPE_GYRO;
-	ctx->evtGyro.gyro.devId = info->id;
+	ctx->evtAccel = &ctx->evt[0];
+	ctx->evtGyro = &ctx->evt[1];
+
+	ctx->evtAccel->type = SENSOR_TYPE_ACCEL;
+	ctx->evtAccel->accels.devId = info->id;
+	ctx->evtGyro->type = SENSOR_TYPE_GYRO;
+	ctx->evtGyro->gyro.devId = info->id;
 
 	/* filling sensor info structure */
 	info->ctx = ctx;
@@ -328,6 +333,9 @@ static int mpu6000_alloc(sensor_info_t *info, const char *args)
 		return -1;
 	}
 
+	/* TODO: SPI speed bottleneck: MPU6000 SPI accepts <1MHz CLK writes, but <20MHz CLK reads; runtime SPI CLK setup unavailable */
+	ctx->spiCtx.speed = 10000000;
+
 	return EOK;
 }
 
@@ -337,7 +345,9 @@ void __attribute__((constructor)) mpu6000_register(void)
 	static sensor_drv_t sensor = {
 		.name = "mpu6000",
 		.alloc = mpu6000_alloc,
-		.start = mpu6000_start
+		.dealloc = mpu6000_dealloc,
+		.start = mpu6000_start,
+		.read = mpu6000_read
 	};
 
 	sensors_register(&sensor);
