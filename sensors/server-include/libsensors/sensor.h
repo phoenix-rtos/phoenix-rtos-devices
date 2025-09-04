@@ -39,7 +39,15 @@ typedef struct {
 typedef struct {
 	char name[16];                                       /* device name */
 	int (*alloc)(sensor_info_t *info, const char *args); /* alloc sensor and initialize driver */
+	int (*dealloc)(sensor_info_t *info);                 /* deallocate sensor */
 	int (*start)(sensor_info_t *info);                   /* start measurement thread */
+
+	/**
+	 * Reads data from the device. Pointer to read data is stored in evt.
+	 * Returns number of read data samples, or -1 on error.
+	 */
+	int (*read)(const sensor_info_t *info, const sensor_event_t **evt);
+
 	rbnode_t node;
 } sensor_drv_t;
 
