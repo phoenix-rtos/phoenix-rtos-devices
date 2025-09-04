@@ -57,6 +57,18 @@ typedef irqreturn_t (*irq_handler_t)(int, void *);
 #define PCI_64P_BAR_BA    PCI_BAR0_ADD
 #define PCI_64P_BAR_LIMIT PCI_BAR5_ADD
 
+/* Address ranges for MSI */
+/* Keep in mid that those will be intercepted by root complex */
+/* so those will never end up on interconnect, nor will they */
+/* be translated by any IOMMU mechanism. This address has to */
+/* be 4KiB alligned. */
+/* TBH this can stay as 0 for now. AFAIK this does not matter since */
+/* since it will never end up on interconnect */
+/* For now we will leave here 8KiB address range for MSI, */
+/* this allows for 4K MSI interrupt sources (this is limit for Xlinix RC) */
+#define PCI_MSI_BA 0x0ul
+#define PCI_MSI_LIMIT 0x1000ul
+
 /* PCIe bridge (type 1 header) offsets */
 #define PCI_BRIDGE_VID            0x00
 #define PCI_BRIDGE_CMD            0x04
@@ -147,6 +159,10 @@ void pci_enableRootComplex(uint32_t *pcie);
 void pci_dumpBAR(pci_dev_t *device, int bar_number);
 /* Generic PCI interrupt handler */
 int pci_irqHandler(unsigned int no, void *data);
+/* */
+void pci_enableTimeoutTLP(uint32_t *pcie, pci_dev_t *dev);
+/* Find offset from BDF ecam addresing at which capability with ID resides, if fail return 0 */
+uint16_t pci_findCapability(uint32_t *pcie, pci_dev_t *dev, uint32_t id);
 
 /* Will return valid base address for I/O BAR */
 uintptr_t pci_getNextIORange(size_t bar_length);
@@ -156,5 +172,7 @@ uintptr_t pci_getNext32RangeNonPref(size_t bar_length);
 uintptr_t pci_getNext32Range(size_t bar_length);
 /* Will return valid physical base address for 64-bit prefetchble BAR*/
 uintptr_t pci_getNext64Range(size_t bar_length);
+/* */
+unsigned long pci_getNextMSIadd();
 
 #endif

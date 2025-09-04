@@ -110,6 +110,8 @@ void pci_scanFunc(uint32_t *pcie, pci_dev_t *device, int depth)
 	/* If this is a PCI-PCI bridge program buses and recurse */
 	if (hdr == 0x01) {
 		pci_configureBridge(pcie, device, depth);
+		/* Make sure to enable reporting of timeout on TLP while configuring bridge */
+		pci_enableTimeoutTLP(pcie, device);
 	}
 	else {
 		/* If this is a PCI endpoint, configure device and return */
@@ -180,6 +182,10 @@ void pci_configureBridge(uint32_t *pcie, pci_dev_t *device, int depth)
 
 	writeReg(pcie, 0x230, (uint32_t)(PCI_BAR0_ADD >> 32));
 	writeReg(pcie, 0x234, (uint32_t)(PCI_BAR0_ADD & ~0u));
+
+	/* Write address range for MSI */
+	writeReg(pcie, 0x14C, (uint32_t)(PCI_MSI_BA >> 32));
+	writeReg(pcie, 0x150, (uint32_t)(PCI_MSI_BA & ~0x0u));
 
 	pci_bridgeEnable(pcie, device);
 }
@@ -405,6 +411,70 @@ void pci_dumpBAR(pci_dev_t *device, int bar_number)
 int pci_irqHandler(unsigned int no, void *data)
 {
 	/* What exactly should this handler do? */
+	return 0;
+}
+
+void pci_enableTimeoutTLP(uint32_t *pcie, pci_dev_t *device)
+{
+	uint8_t bus = device->bus_no;
+	uint8_t dev = device->dev_no;
+	uint8_t fun = device->func_no;
+
+	/* Check if there is capabilities list */
+	uint16_t status = ecamRead16((uintptr_t)pcie, bus, dev, fun, PCI_STATUS);
+	if (!(status & (1 << 4))) {
+		return;
+	}
+
+	/* Read capabilities list pointer */
+	uint8_t ptr = ecamRead8((uintptr_t)pcie, bus, dev, fun, PCI_CAP_PTR);
+	while (ptr >= 0x40) {
+		uint8_t cap_id = ecamRead8((uintptr_t)pcie, bus, dev, fun, ptr);
+		uint8_t next = ecamRead8((uintptr_t)pcie, bus, dev, fun, ptr + 1);
+
+		/* If this is AER capability structure - enable reporting */
+		if (cap_id == 0x01) {
+			printf("pcie: Current value of AER UEMR is 0x%x\n", ecamRead32((uintptr_t)pcie, bus, dev, fun, (ptr + 0x08)));
+			ecamWrite32((uintptr_t)pcie, bus, dev, fun, ptr + 0x08, ~(1u << 14));
+			printf("pcie: Updated value of AER UEMR is 0x%x\n", ecamRead32((uintptr_t)pcie, bus, dev, fun, (ptr + 0x08)));
+		}
+
+		if (next == 0) {
+			break;
+		}
+		ptr = next;
+	}
+}
+
+/* Return offset from on ECAM where capability with specified ID resides */
+uint16_t pci_findCapability(uint32_t *pcie, pci_dev_t *device, uint32_t id)
+{
+	uint8_t bus = device->bus_no;
+	uint8_t dev = device->dev_no;
+	uint8_t fun = device->func_no;
+
+	/* Check if there is capabilities list */
+	uint16_t status = ecamRead16((uintptr_t)pcie, bus, dev, fun, PCI_STATUS);
+	if (!(status & (1 << 4))) {
+		return 0;
+	}
+
+	/* Read capabilities list pointer */
+	uint8_t ptr = ecamRead8((uintptr_t)pcie, bus, dev, fun, PCI_CAP_PTR);
+	while (ptr >= 0x40) {
+		uint8_t cap_id = ecamRead8((uintptr_t)pcie, bus, dev, fun, ptr);
+		uint8_t next = ecamRead8((uintptr_t)pcie, bus, dev, fun, ptr + 1);
+
+		if (cap_id == id) {
+			return ptr;
+		}
+
+		if (next == 0) {
+			break;
+		}
+		ptr = next;
+	}
+
 	return 0;
 }
 
@@ -694,4 +764,16 @@ uintptr_t pci_getNext64Range(size_t bar_length)
 		return ret;
 	}
 	return (uintptr_t)-1;
+}
+
+unsigned long pci_getNextMSIadd()
+{
+	/* This is purely incrementing allocation */
+	static uint64_t ptr = PCI_MSI_BA;
+	if(ptr < PCI_MSI_LIMIT){
+		unsigned long ret = ptr;
+		ptr += 4;
+		return ret;
+	}
+	return (unsigned long)-1;
 }

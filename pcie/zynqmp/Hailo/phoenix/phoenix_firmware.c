@@ -10,6 +10,7 @@ int request_firmware_direct(const struct firmware **firmware, const char *file_n
     struct firmware *helper = *firmware;
 
 
+    hailo_notice(NULL, "Trying to open: %s\n", file_name);
     FILE *f = fopen(file_name, "rb");
     if(NULL == f){
         pr_err("Failed to open firmware file\n");
@@ -23,6 +24,8 @@ int request_firmware_direct(const struct firmware **firmware, const char *file_n
 
     size_t file_size = ftell(f);
 
+    hailo_notice(NULL, "Size of file is %ld bytes\n", file_size);
+
     (helper)->data = (u8*)malloc(file_size);
 
     if(NULL == (helper)->data){
@@ -31,12 +34,16 @@ int request_firmware_direct(const struct firmware **firmware, const char *file_n
     }
 
     fseek(f, 0, 0);
-    (helper)->size = fread((helper)->data, file_size, file_size, f);
+    (helper)->size = fread((helper)->data, 1, file_size, f);
+
+    hailo_notice(NULL, "Managed to read out %lu bytes\n", helper->size);
 
     if((helper)->size != file_size){
         pr_err("Failed to read whole firmware file %s:%s\n", __FILE__, __func__);
         return -1;
     }
+
+    hailo_notice(NULL, "Managed to read whole firmware into the buffer (%lu)\n", helper->size);
 
 	return 0;
 }

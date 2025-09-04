@@ -1,5 +1,6 @@
 #include "phoenix_wrappers.h"
 #include <sys/interrupt.h>
+#include "phoenix_log.h"
 
 uint32_t *phoenix_wrapper_pci_base = NULL;
 
@@ -135,35 +136,73 @@ void pci_set_drvdata(struct pci_dev *dev, void *data)
 	dev->dev.dirver_data = data;
 }
 
-void *pci_get_drvdata(struct pci_dev *dev){
+void *pci_get_drvdata(struct pci_dev *dev)
+{
 	return dev->dev.dirver_data;
 }
 
-int pci_set_power_state(struct pci_dev *dev, uint32_t state){
+int pci_set_power_state(struct pci_dev *dev, uint32_t state)
+{
 	/* For now do nothing, keep device in full-power L0 state */
 	/* ID of power managment capability structure is 0x01 */
 	return 0;
 }
 
-void pci_disable_device(struct pci_dev *dev){
+void pci_disable_device(struct pci_dev *dev)
+{
 	/* Ignore for now */
 	return;
 }
 
-void pci_disable_msi(struct pci_dev *dev){
+void pci_disable_msi(struct pci_dev *dev)
+{
 	/* For now since root complex keeps interrupts as disabled, disabling interrupts on the side of the device is sufficent */
-    /* ID of MSI-X capability structure is 0x11 */
+	/* ID of MSI-X capability structure is 0x11 and 0x05 for MSI */
 	return;
 }
 
 void free_irq(uint32_t irq, void *p)
 {
-    /* Clear stuff */
-    return;
+	/* Clear stuff */
+	return;
 }
 
-int pci_enable_msi(struct pci_dev *dev)
+#define PCI_CAP_MSI_ID 0x05
+
+int pci_enable_msi(struct pci_dev *device)
 {
+	uint8_t bus = device->bus_no;
+	uint8_t dev = device->dev_no;
+	uint8_t fun = device->func_no;
+
+	uint16_t capability = pci_findCapability(phoenix_wrapper_pci_base, device, PCI_CAP_MSI_ID);
+	if (capability == 0) {
+		hailo_err(dev, "Failed to find MSI capability structure\n");
+		return -1;
+	}
+
+	/* Configure MSI capability structure */
+	/* Make sure to disable INTx */
+	uint16_t cmd = ecamRead16((uintptr_t)phoenix_wrapper_pci_base, bus, dev, fun, PCI_COMMAND);
+	cmd |= 1 << 10; /* Disable assertion of INTx line */
+	ecamWrite32((uintptr_t)phoenix_wrapper_pci_base, bus, dev, fun, PCI_COMMAND, cmd);
+
+	uint32_t r1 = ecamRead32((uintptr_t)phoenix_wrapper_pci_base, bus, dev, fun, capability);
+	hailo_info(dev, "Managed to find MSI capability: 0x%x\n", r1);
+	/* Enable generation of MSI message */
+	r1 |= 1 << 16;
+	/* Set addres to which MSI message shall be targeted, must match one configured in RC */
+	uint64_t msiAdd = pci_getNextMSIadd();
+	uint32_t msiLowAdd = (uint32_t)(msiAdd & ~0x0u);
+	uint32_t msiHighAdd = (uint32_t)(msiAdd >> 32);
+	/* For now some random recognizable value, in the future we need ID for each device with MSI */
+	uint32_t msiPayload = 0xFAFA;
+
+	ecamWrite32((uintptr_t)phoenix_wrapper_pci_base, bus, dev, fun, capability, r1);
+	ecamWrite32((uintptr_t)phoenix_wrapper_pci_base, bus, dev, fun, capability + 0x4, msiLowAdd);
+	ecamWrite32((uintptr_t)phoenix_wrapper_pci_base, bus, dev, fun, capability + 0x8, msiHighAdd);
+	ecamWrite32((uintptr_t)phoenix_wrapper_pci_base, bus, dev, fun, capability + 0xC, msiPayload);
+
 	return 0;
 }
 

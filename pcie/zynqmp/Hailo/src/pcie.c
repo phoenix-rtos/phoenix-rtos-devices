@@ -17,7 +17,7 @@
 #include "../vdma/vdma.h"
 #include "fops.h"
 #include "nnc.h"
-//#include "soc.h"
+// #include "soc.h"
 
 #include "../phoenix/phoenix_comp.h"
 #include "../phoenix/phoenix_list.h"
@@ -65,402 +65,413 @@ static struct semaphore g_hailo_add_board_mutex;
 
 bool power_mode_enabled(void)
 {
-    return g_is_power_mode_enabled;
+	return g_is_power_mode_enabled;
 }
 
 int hailo_enable_interrupts(struct hailo_pcie_board *board)
 {
-    int err = 0;
+	int err = 0;
 
-    if (board->interrupts_enabled) {
-        hailo_crit(board, "Failed enabling interrupts (already enabled)\n");
-        return -EINVAL;
-    }
+	if (board->interrupts_enabled) {
+		hailo_crit(board, "Failed enabling interrupts (already enabled)\n");
+		return -EINVAL;
+	}
 
-    // TODO HRT-2253: use new api for enabling msi: (pci_alloc_irq_vectors)
-    if ((err = pci_enable_msi(board->pDev))) {
-        hailo_err(board, "Failed to enable MSI %d\n", err);
-        return err;
-    }
-    hailo_info(board, "Enabled MSI interrupt\n");
+	/* Small note:
+	Here Hailo driver will enable MSI on RC side, and later thinking it was enabled,
+	it will enable generation of MSI interrupts on endpoint side. Since we currentlly
+	do not support configuration of MSI, when endpoint signals MSI (which means it 
+	generates a TLP), we will not get MSI interrupt but unexpected completion.
+	*/
 
-    err = request_irq(board->pDev, hailo_irqhandler, HAILO_IRQ_FLAGS, DRIVER_NAME, board);
-    if (err) {
-        hailo_err(board, "request_irq failed %d\n", err);
-        pci_disable_msi(board->pDev);
-        return err;
-    }
-    hailo_info(board, "irq enabled %u\n", board->pDev->irq);
+	// TODO HRT-2253: use new api for enabling msi: (pci_alloc_irq_vectors)
+	if ((err = pci_enable_msi(board->pDev))) {
+		hailo_err(board, "Failed to enable MSI %d\n", err);
+		return err;
+	}
+	hailo_info(board, "Enabled MSI interrupt\n");
 
-    hailo_pcie_enable_interrupts(&board->pcie_resources);
+	err = request_irq(board->pDev, hailo_irqhandler, HAILO_IRQ_FLAGS, DRIVER_NAME, board);
+	if (err) {
+		hailo_err(board, "request_irq failed %d\n", err);
+		pci_disable_msi(board->pDev);
+		return err;
+	}
+	hailo_info(board, "irq enabled %u\n", board->pDev->irq);
 
-    board->interrupts_enabled = true;
-    return 0;
+	hailo_pcie_enable_interrupts(&board->pcie_resources);
+
+	board->interrupts_enabled = true;
+	return 0;
 }
 
 
 void hailo_disable_interrupts(struct hailo_pcie_board *board)
 {
-    // Sanity Check
-    if ((NULL == board) || (NULL == board->pDev)) {
-        pr_err("Failed to access board or device\n");
-        return;
-    }
+	// Sanity Check
+	if ((NULL == board) || (NULL == board->pDev)) {
+		pr_err("Failed to access board or device\n");
+		return;
+	}
 
-    if (!board->interrupts_enabled) {
-        return;
-    }
+	if (!board->interrupts_enabled) {
+		return;
+	}
 
-    board->interrupts_enabled = false;
-    hailo_pcie_disable_interrupts(&board->pcie_resources);
-    free_irq(board->pDev->irq, board);
-    pci_disable_msi(board->pDev);
+	board->interrupts_enabled = false;
+	hailo_pcie_disable_interrupts(&board->pcie_resources);
+	free_irq(board->pDev->irq, board);
+	pci_disable_msi(board->pDev);
 }
 
 static void hailo_bar_iounmap(struct pci_dev *pdev, struct hailo_resource *resource)
 {
-    if (resource->address) {
-        pci_iounmap(pdev, (void*)resource->address);
-        resource->address = 0;
-        resource->size = 0;
-    }
+	if (resource->address) {
+		pci_iounmap(pdev, (void *)resource->address);
+		resource->address = 0;
+		resource->size = 0;
+	}
 }
 
 static void pcie_resources_release(struct pci_dev *pdev, struct hailo_pcie_resources *resources)
 {
-    hailo_bar_iounmap(pdev, &resources->config);
-    hailo_bar_iounmap(pdev, &resources->vdma_registers);
-    hailo_bar_iounmap(pdev, &resources->fw_access);
-    pci_release_regions(pdev);
+	hailo_bar_iounmap(pdev, &resources->config);
+	hailo_bar_iounmap(pdev, &resources->vdma_registers);
+	hailo_bar_iounmap(pdev, &resources->fw_access);
+	pci_release_regions(pdev);
 }
 
-static void hailo_pcie_remove_board(struct hailo_pcie_board* pBoard)
+static void hailo_pcie_remove_board(struct hailo_pcie_board *pBoard)
 {
-    down(&g_hailo_add_board_mutex);
-    if (pBoard)
-    {
-        list_del(&pBoard->board_list);
-    }
-    up(&g_hailo_add_board_mutex);
+	down(&g_hailo_add_board_mutex);
+	if (pBoard) {
+		list_del(&pBoard->board_list);
+	}
+	up(&g_hailo_add_board_mutex);
 }
 
-static void hailo_pcie_insert_board(struct hailo_pcie_board* pBoard)
+static void hailo_pcie_insert_board(struct hailo_pcie_board *pBoard)
 {
-    u32 index = 0;
-    struct hailo_pcie_board *pCurrent, *pNext;
+	u32 index = 0;
+	struct hailo_pcie_board *pCurrent, *pNext;
 
 
-    down(&g_hailo_add_board_mutex);
-    if ( list_empty(&g_hailo_board_list)  ||
-            list_first_entry(&g_hailo_board_list, struct hailo_pcie_board, board_list)->board_index > 0)
-    {
-        pBoard->board_index = 0;
-        list_add(&pBoard->board_list, &g_hailo_board_list);
+	down(&g_hailo_add_board_mutex);
+	if (list_empty(&g_hailo_board_list) ||
+			list_first_entry(&g_hailo_board_list, struct hailo_pcie_board, board_list)->board_index > 0) {
+		pBoard->board_index = 0;
+		list_add(&pBoard->board_list, &g_hailo_board_list);
 
-        up(&g_hailo_add_board_mutex);
-        return;
-    }
+		up(&g_hailo_add_board_mutex);
+		return;
+	}
 
-    list_for_each_entry_safe(pCurrent, pNext, &g_hailo_board_list, board_list)
-    {
-        index = pCurrent->board_index+1;
-        if( list_is_last(&pCurrent->board_list, &g_hailo_board_list) || (index != pNext->board_index))
-        {
-            break;
-        }
-    }
+	list_for_each_entry_safe(pCurrent, pNext, &g_hailo_board_list, board_list)
+	{
+		index = pCurrent->board_index + 1;
+		if (list_is_last(&pCurrent->board_list, &g_hailo_board_list) || (index != pNext->board_index)) {
+			break;
+		}
+	}
 
-    pBoard->board_index = index;
-    list_add(&pBoard->board_list, &pCurrent->board_list);
+	pBoard->board_index = index;
+	list_add(&pBoard->board_list, &pCurrent->board_list);
 
-    up(&g_hailo_add_board_mutex);
+	up(&g_hailo_add_board_mutex);
 
-    return;
+	return;
 }
 
 static bool wait_for_firmware_completion(struct completion *completion, unsigned int msecs)
 {
-    return (0 != wait_for_completion_timeout(completion, msecs_to_jiffies(msecs)));
+	return (0 != wait_for_completion_timeout(completion, msecs_to_jiffies(msecs)));
 }
 
 static int hailo_pcie_soft_reset(struct hailo_pcie_board *board)
 {
-    bool completion_result = false;
-    int err = 0;
+	bool completion_result = false;
+	int err = 0;
 
-    hailo_pcie_write_firmware_soft_reset(&board->pcie_resources);
+	hailo_pcie_write_firmware_soft_reset(&board->pcie_resources);
 
-    reinit_completion(&board->soft_reset.reset_completed);
+	reinit_completion(&board->soft_reset.reset_completed);
 
-    // Wait for response
-    completion_result =
-        wait_for_firmware_completion(&board->soft_reset.reset_completed, msecs_to_jiffies(FIRMWARE_WAIT_TIMEOUT_MS));
-    if (completion_result == false) {
-        hailo_warn(board, "hailo reset firmware, timeout waiting for shutdown response (timeout_ms=%d)\n", FIRMWARE_WAIT_TIMEOUT_MS);
-        err = -ETIMEDOUT;
-        return err;
-    }
+	// Wait for response
+	completion_result =
+			wait_for_firmware_completion(&board->soft_reset.reset_completed, msecs_to_jiffies(FIRMWARE_WAIT_TIMEOUT_MS));
+	if (completion_result == false) {
+		hailo_warn(board, "hailo reset firmware, timeout waiting for shutdown response (timeout_ms=%d)\n", FIRMWARE_WAIT_TIMEOUT_MS);
+		err = -ETIMEDOUT;
+		return err;
+	}
 
-    if (!hailo_pcie_wait_for_boot(&board->pcie_resources)) {
-        hailo_warn(board, "couldn't wait for bootloader\n");
-        return -ETIMEDOUT;
-    }
+	if (!hailo_pcie_wait_for_boot(&board->pcie_resources)) {
+		hailo_warn(board, "couldn't wait for bootloader\n");
+		return -ETIMEDOUT;
+	}
 
-    hailo_notice(board, "soft reset finished\n");
-    return err;
+	hailo_notice(board, "soft reset finished\n");
+	return err;
 }
 
 static int load_nnc_firmware(struct hailo_pcie_board *board)
 {
-    u32 boot_status = 0;
-    int err = 0;
-    struct device *dev = &board->pDev->dev;
+	u32 boot_status = 0;
+	int err = 0;
+	struct device *dev = &board->pDev->dev;
 
-    if (hailo_pcie_is_firmware_loaded(&board->pcie_resources)) {
-        if (support_soft_reset) {
-            err = hailo_pcie_soft_reset(board);
-            if (err < 0) {
-                hailo_dev_err(dev, "Failed hailo pcie soft reset. err %d\n", err);
-                return 0;
-            }
-            hailo_dev_notice(dev, "Soft reset done\n");
-        } else {
-            hailo_dev_warn(dev, "NNC Firmware batch was already loaded\n");
-            return 0;
-        }
-    }
+	if (hailo_pcie_is_firmware_loaded(&board->pcie_resources)) {
+		if (support_soft_reset) {
+			err = hailo_pcie_soft_reset(board);
+			if (err < 0) {
+				hailo_dev_err(dev, "Failed hailo pcie soft reset. err %d\n", err);
+				return 0;
+			}
+			hailo_dev_notice(dev, "Soft reset done\n");
+		}
+		else {
+			hailo_dev_warn(dev, "NNC Firmware batch was already loaded\n");
+			return 0;
+		}
+	}
 
-    init_completion(&board->fw_boot.fw_loaded_completion);
+	init_completion(&board->fw_boot.fw_loaded_completion);
 
-    err = hailo_pcie_write_firmware_batch(dev, &board->pcie_resources, FIRST_STAGE);
-    if (err < 0) {
-        hailo_dev_err(dev, "Failed writing NNC firmware files. err %d\n", err);
-        return err;
-    }
+	err = hailo_pcie_write_firmware_batch(dev, &board->pcie_resources, FIRST_STAGE);
+	if (err < 0) {
+		hailo_dev_err(dev, "Failed writing NNC firmware files. err %d\n", err);
+		return err;
+	}
 
-    if (!wait_for_firmware_completion(&board->fw_boot.fw_loaded_completion, hailo_pcie_get_loading_stage_info(board->pcie_resources.board_type, FIRST_STAGE)->timeout)) {
-        boot_status = hailo_get_boot_status(&board->pcie_resources);
-        hailo_dev_err(dev, "Timeout waiting for NNC firmware file, boot status %u\n", boot_status);
-        return -ETIMEDOUT;
-    }
+	if (!wait_for_firmware_completion(&board->fw_boot.fw_loaded_completion, hailo_pcie_get_loading_stage_info(board->pcie_resources.board_type, FIRST_STAGE)->timeout)) {
+		boot_status = hailo_get_boot_status(&board->pcie_resources);
+		hailo_dev_err(dev, "Timeout waiting for NNC firmware file, boot status %u\n", boot_status);
+		return -ETIMEDOUT;
+	}
 
-    hailo_dev_notice(dev, "NNC Firmware loaded successfully\n");
+	hailo_dev_notice(dev, "NNC Firmware loaded successfully\n");
 
-    return 0;
+	return 0;
 }
 
 static int load_firmware(struct hailo_pcie_board *board)
 {
-    switch (board->pcie_resources.accelerator_type) {
-    case HAILO_ACCELERATOR_TYPE_SOC:
-        //return load_soc_firmware(board, &board->pcie_resources, &board->pDev->dev, &board->fw_boot.fw_loaded_completion);
-		pr_err("This accelerator type is not support by current port of the driver\n");
-		return -EINVAL;
-    case HAILO_ACCELERATOR_TYPE_NNC:
-        return load_nnc_firmware(board);
-    default:
-        hailo_err(board, "Invalid board type %d\n", board->pcie_resources.accelerator_type);
-        return -EINVAL;
-    }
+	switch (board->pcie_resources.accelerator_type) {
+		case HAILO_ACCELERATOR_TYPE_SOC:
+			// return load_soc_firmware(board, &board->pcie_resources, &board->pDev->dev, &board->fw_boot.fw_loaded_completion);
+			pr_err("This accelerator type is not support by current port of the driver\n");
+			return -EINVAL;
+		case HAILO_ACCELERATOR_TYPE_NNC:
+			return load_nnc_firmware(board);
+		default:
+			hailo_err(board, "Invalid board type %d\n", board->pcie_resources.accelerator_type);
+			return -EINVAL;
+	}
 }
 
 static int hailo_pcie_disable_aspm(struct hailo_pcie_board *board, u16 state, bool locked)
 {
-    struct pci_dev *pdev = board->pDev;
-    // struct pci_dev *parent = pdev->bus->self;
+	struct pci_dev *pdev = board->pDev;
+	// struct pci_dev *parent = pdev->bus->self;
 	struct pci_dev *parent = pdev->parent;
-    u16 aspm_dis_mask = 0;
-    u16 pdev_aspmc = 0;
-    u16 parent_aspmc = 0;
-    int err = 0;
+	u16 aspm_dis_mask = 0;
+	u16 pdev_aspmc = 0;
+	u16 parent_aspmc = 0;
+	int err = 0;
 
-    switch (state) {
-    case PCIE_LINK_STATE_L0S:
-        aspm_dis_mask |= PCI_EXP_LNKCTL_ASPM_L0S;
-        break;
-    case PCIE_LINK_STATE_L1:
-        aspm_dis_mask |= PCI_EXP_LNKCTL_ASPM_L1;
-        break;
-    default:
-        break;
-    }
+	switch (state) {
+		case PCIE_LINK_STATE_L0S:
+			aspm_dis_mask |= PCI_EXP_LNKCTL_ASPM_L0S;
+			break;
+		case PCIE_LINK_STATE_L1:
+			aspm_dis_mask |= PCI_EXP_LNKCTL_ASPM_L1;
+			break;
+		default:
+			break;
+	}
 
-    err = pcie_capability_read_word(pdev, PCI_EXP_LNKCTL, &pdev_aspmc);
-    if (err < 0) {
-        hailo_err(board, "Couldn't read LNKCTL capability\n");
-        return err;
-    }
+	err = pcie_capability_read_word(pdev, PCI_EXP_LNKCTL, &pdev_aspmc);
+	if (err < 0) {
+		hailo_err(board, "Couldn't read LNKCTL capability\n");
+		return err;
+	}
 
-    pdev_aspmc &= PCI_EXP_LNKCTL_ASPMC;
+	pdev_aspmc &= PCI_EXP_LNKCTL_ASPMC;
 
-    if (parent) {
-        err = pcie_capability_read_word(parent, PCI_EXP_LNKCTL, &parent_aspmc);
-        if (err < 0) {
-            hailo_err(board, "Couldn't read slot LNKCTL capability\n");
-            return err;
-        }
-        parent_aspmc &= PCI_EXP_LNKCTL_ASPMC;
-    }
+	if (parent) {
+		err = pcie_capability_read_word(parent, PCI_EXP_LNKCTL, &parent_aspmc);
+		if (err < 0) {
+			hailo_err(board, "Couldn't read slot LNKCTL capability\n");
+			return err;
+		}
+		parent_aspmc &= PCI_EXP_LNKCTL_ASPMC;
+	}
 
-    hailo_notice(board, "Disabling ASPM %s %s\n",
-        (aspm_dis_mask & PCI_EXP_LNKCTL_ASPM_L0S) ? "L0s" : "",
-        (aspm_dis_mask & PCI_EXP_LNKCTL_ASPM_L1) ? "L1" : "");
+	hailo_notice(board, "Disabling ASPM %s %s\n",
+			(aspm_dis_mask & PCI_EXP_LNKCTL_ASPM_L0S) ? "L0s" : "",
+			(aspm_dis_mask & PCI_EXP_LNKCTL_ASPM_L1) ? "L1" : "");
 
-    // Disable L0s even if it is currently disabled as ASPM states can be enabled by the kernel when changing power modes
+	// Disable L0s even if it is currently disabled as ASPM states can be enabled by the kernel when changing power modes
 #ifdef CONFIG_PCIEASPM
-    if (locked) {
-        // Older kernel versions (<5.2.21) don't return value for this functions, so we try manual disabling anyway
-        (void)pci_disable_link_state_locked(pdev, state);
-    } else {
-        (void)pci_disable_link_state(pdev, state);
-    }
+	if (locked) {
+		// Older kernel versions (<5.2.21) don't return value for this functions, so we try manual disabling anyway
+		(void)pci_disable_link_state_locked(pdev, state);
+	}
+	else {
+		(void)pci_disable_link_state(pdev, state);
+	}
 
-    /* Double-check ASPM control.  If not disabled by the above, the
-     * BIOS is preventing that from happening (or CONFIG_PCIEASPM is
-     * not enabled); override by writing PCI config space directly.
-     */
-    err = pcie_capability_read_word(pdev, PCI_EXP_LNKCTL, &pdev_aspmc);
-    if (err < 0) {
-        hailo_err(board, "Couldn't read LNKCTL capability\n");
-        return err;
-    }
-    pdev_aspmc &= PCI_EXP_LNKCTL_ASPMC;
+	/* Double-check ASPM control.  If not disabled by the above, the
+	 * BIOS is preventing that from happening (or CONFIG_PCIEASPM is
+	 * not enabled); override by writing PCI config space directly.
+	 */
+	err = pcie_capability_read_word(pdev, PCI_EXP_LNKCTL, &pdev_aspmc);
+	if (err < 0) {
+		hailo_err(board, "Couldn't read LNKCTL capability\n");
+		return err;
+	}
+	pdev_aspmc &= PCI_EXP_LNKCTL_ASPMC;
 
-    if (!(aspm_dis_mask & pdev_aspmc)) {
-        hailo_notice(board, "Successfully disabled ASPM %s %s\n",
-            (aspm_dis_mask & PCI_EXP_LNKCTL_ASPM_L0S) ? "L0s" : "",
-            (aspm_dis_mask & PCI_EXP_LNKCTL_ASPM_L1) ? "L1" : "");
-        return 0;
-    }
+	if (!(aspm_dis_mask & pdev_aspmc)) {
+		hailo_notice(board, "Successfully disabled ASPM %s %s\n",
+				(aspm_dis_mask & PCI_EXP_LNKCTL_ASPM_L0S) ? "L0s" : "",
+				(aspm_dis_mask & PCI_EXP_LNKCTL_ASPM_L1) ? "L1" : "");
+		return 0;
+	}
 #endif
 
-    /* Both device and parent should have the same ASPM setting.
-     * Disable ASPM in downstream component first and then upstream.
-     */
-    err = pcie_capability_clear_word(pdev, PCI_EXP_LNKCTL, aspm_dis_mask);
-    if (err < 0) {
-        hailo_err(board, "Couldn't read LNKCTL capability\n");
-        return err;
-    }
-    if (parent) {
-        err = pcie_capability_clear_word(parent, PCI_EXP_LNKCTL, aspm_dis_mask);
-        if (err < 0) {
-            hailo_err(board, "Couldn't read slot LNKCTL capability\n");
-            return err;
-        }
-    }
-    hailo_notice(board, "Manually disabled ASPM %s %s\n",
-        (aspm_dis_mask & PCI_EXP_LNKCTL_ASPM_L0S) ? "L0s" : "",
-        (aspm_dis_mask & PCI_EXP_LNKCTL_ASPM_L1) ? "L1" : "");
+	/* Both device and parent should have the same ASPM setting.
+	 * Disable ASPM in downstream component first and then upstream.
+	 */
+	err = pcie_capability_clear_word(pdev, PCI_EXP_LNKCTL, aspm_dis_mask);
+	if (err < 0) {
+		hailo_err(board, "Couldn't read LNKCTL capability\n");
+		return err;
+	}
+	if (parent) {
+		err = pcie_capability_clear_word(parent, PCI_EXP_LNKCTL, aspm_dis_mask);
+		if (err < 0) {
+			hailo_err(board, "Couldn't read slot LNKCTL capability\n");
+			return err;
+		}
+	}
+	hailo_notice(board, "Manually disabled ASPM %s %s\n",
+			(aspm_dis_mask & PCI_EXP_LNKCTL_ASPM_L0S) ? "L0s" : "",
+			(aspm_dis_mask & PCI_EXP_LNKCTL_ASPM_L1) ? "L1" : "");
 
-    return 0;
+	return 0;
 }
 
 static int hailo_activate_board(struct hailo_pcie_board *board)
 {
-    int err = 0;
-    ktime_t start_time = 0, end_time = 0;
+	int err = 0;
+	ktime_t start_time = 0, end_time = 0;
 
-    (void)hailo_pcie_disable_aspm(board, PCIE_LINK_STATE_L0S, false);
+	(void)hailo_pcie_disable_aspm(board, PCIE_LINK_STATE_L0S, false);
 
-    err = hailo_enable_interrupts(board);
-    if (err < 0) {
-        hailo_err(board, "Failed enabling interrupts %d\n", err);
-        return err;
-    }
+	err = hailo_enable_interrupts(board);
+	if (err < 0) {
+		hailo_err(board, "Failed enabling interrupts %d\n", err);
+		return err;
+	}
 
-    // Set is_in_boot for fimware loading for interrupt handler
-    board->fw_boot.is_in_boot = true;
+	// Set is_in_boot for fimware loading for interrupt handler
+	board->fw_boot.is_in_boot = true;
 
-    start_time = ktime_get();
-    err = load_firmware(board);
-    end_time = ktime_get();
-    hailo_notice(board, "FW loaded, took %lld ms\n", ktime_to_ms(ktime_sub(end_time, start_time)));
+	hailo_notice(board, "Board boot status (pre-firmware) is %d\n", hailo_get_boot_status(&board->pcie_resources));
+	start_time = ktime_get();
+	err = load_firmware(board);
+	end_time = ktime_get();
+	hailo_notice(board, "FW loaded, took %lld ms\n", ktime_to_ms(ktime_sub(end_time, start_time)));
 
-    board->fw_boot.is_in_boot = false;
+	board->fw_boot.is_in_boot = false;
 
-    if (err < 0) {
-        hailo_err(board, "Firmware load failed\n");
-        hailo_disable_interrupts(board);
-        return err;
-    }
+	if (err < 0) {
+		hailo_err(board, "Firmware load failed\n");
+		hailo_disable_interrupts(board);
+		return err;
+	}
 
-    if (HAILO_ACCELERATOR_TYPE_SOC == board->pcie_resources.accelerator_type) {
-        // err = hailo_soc_get_driver_info(board);
-        // if (err < 0) {
-        //     hailo_err(board, "hailo_soc_get_driver_info has failed with err %d\n", err);
-        // }
+
+	if (HAILO_ACCELERATOR_TYPE_SOC == board->pcie_resources.accelerator_type) {
+		// err = hailo_soc_get_driver_info(board);
+		// if (err < 0) {
+		//     hailo_err(board, "hailo_soc_get_driver_info has failed with err %d\n", err);
+		// }
 		pr_err("This accelerator type is not supported by current driver port\n");
-    }
+	}
 
-    hailo_disable_interrupts(board);
-    if (power_mode_enabled()) {
-        // Setting the device to low power state, until the user opens the device
-        hailo_info(board, "Power change state  to PCI_D3hot\n");
-        err = pci_set_power_state(board->pDev, PCI_D3hot);
-        if (err < 0) {
-            hailo_err(board, "Set power state failed %d\n", err);
-            return err;
-        }
-    }
+	hailo_info(board, "%s\n", hailo_pcie_is_firmware_loaded(&board->pcie_resources) ? "Firmware is loaded" : "Firmware is not loaded");
 
-    return 0;
+	hailo_disable_interrupts(board);
+	if (power_mode_enabled()) {
+		// Setting the device to low power state, until the user opens the device
+		hailo_info(board, "Power change state  to PCI_D3hot\n");
+		err = pci_set_power_state(board->pDev, PCI_D3hot);
+		if (err < 0) {
+			hailo_err(board, "Set power state failed %d\n", err);
+			return err;
+		}
+	}
+
+	return 0;
 }
 
 static int hailo_get_allocation_mode(struct pci_dev *pdev, enum hailo_allocation_mode *allocation_mode)
 {
-    // Check if module paramater was given to override driver choice
-    if (HAILO_NO_FORCE_BUFFER != force_allocation_from_driver) {
-        if (HAILO_FORCE_BUFFER_FROM_USERSPACE == force_allocation_from_driver) {
-            *allocation_mode = HAILO_ALLOCATION_MODE_USERSPACE;
-            pci_notice(pdev, "Probing: Using userspace allocated vdma buffers\n");
-        }
-        else if (HAILO_FORCE_BUFFER_FROM_DRIVER == force_allocation_from_driver) {
-            *allocation_mode = HAILO_ALLOCATION_MODE_DRIVER;
-            pci_notice(pdev, "Probing: Using driver allocated vdma buffers\n");
-        }
-        else {
-            pci_err(pdev, "Invalid value for force allocation driver paramater - value given: %d!\n",
-                force_allocation_from_driver);
-            return -EINVAL;
-        }
+	// Check if module paramater was given to override driver choice
+	if (HAILO_NO_FORCE_BUFFER != force_allocation_from_driver) {
+		if (HAILO_FORCE_BUFFER_FROM_USERSPACE == force_allocation_from_driver) {
+			*allocation_mode = HAILO_ALLOCATION_MODE_USERSPACE;
+			pci_notice(pdev, "Probing: Using userspace allocated vdma buffers\n");
+		}
+		else if (HAILO_FORCE_BUFFER_FROM_DRIVER == force_allocation_from_driver) {
+			*allocation_mode = HAILO_ALLOCATION_MODE_DRIVER;
+			pci_notice(pdev, "Probing: Using driver allocated vdma buffers\n");
+		}
+		else {
+			pci_err(pdev, "Invalid value for force allocation driver paramater - value given: %d!\n",
+					force_allocation_from_driver);
+			return -EINVAL;
+		}
 
-        return 0;
-    }
+		return 0;
+	}
 
-    if (is_kmalloc_dma_capable(&pdev->dev)) {
-        *allocation_mode = HAILO_ALLOCATION_MODE_USERSPACE;
-        pci_notice(pdev, "Probing: Using userspace allocated vdma buffers\n");
-    } else {
-        *allocation_mode = HAILO_ALLOCATION_MODE_DRIVER;
-        pci_notice(pdev, "Probing: Using driver allocated vdma buffers\n");
-    }
+	if (is_kmalloc_dma_capable(&pdev->dev)) {
+		*allocation_mode = HAILO_ALLOCATION_MODE_USERSPACE;
+		pci_notice(pdev, "Probing: Using userspace allocated vdma buffers\n");
+	}
+	else {
+		*allocation_mode = HAILO_ALLOCATION_MODE_DRIVER;
+		pci_notice(pdev, "Probing: Using driver allocated vdma buffers\n");
+	}
 
-    return 0;
+	return 0;
 }
 
 static void update_channel_interrupts(struct hailo_vdma_controller *controller,
-    size_t engine_index, u32 channels_bitmap)
+		size_t engine_index, u32 channels_bitmap)
 {
-    struct hailo_pcie_board *board = (struct hailo_pcie_board*) dev_get_drvdata(controller->dev);
-    if (engine_index >= board->vdma.vdma_engines_count) {
-        hailo_err(board, "Invalid engine index %zu", engine_index);
-        return;
-    }
+	struct hailo_pcie_board *board = (struct hailo_pcie_board *)dev_get_drvdata(controller->dev);
+	if (engine_index >= board->vdma.vdma_engines_count) {
+		hailo_err(board, "Invalid engine index %zu", engine_index);
+		return;
+	}
 
-    hailo_pcie_update_channel_interrupts_mask(&board->pcie_resources, channels_bitmap);
+	hailo_pcie_update_channel_interrupts_mask(&board->pcie_resources, channels_bitmap);
 }
 
 static struct hailo_vdma_controller_ops pcie_vdma_controller_ops = {
-    .update_channel_interrupts = update_channel_interrupts,
+	.update_channel_interrupts = update_channel_interrupts,
 };
 
 static int hailo_pcie_vdma_controller_init(struct hailo_vdma_controller *controller,
-    struct device *dev, struct hailo_resource *vdma_registers)
+		struct device *dev, struct hailo_resource *vdma_registers)
 {
-    const size_t engines_count = 1;
-    return hailo_vdma_controller_init(controller, dev, &hailo_pcie_vdma_hw,
-        &pcie_vdma_controller_ops, vdma_registers, engines_count);
+	const size_t engines_count = 1;
+	return hailo_vdma_controller_init(controller, dev, &hailo_pcie_vdma_hw,
+			&pcie_vdma_controller_ops, vdma_registers, engines_count);
 }
 
 int hailo_get_desc_page_size(struct pci_dev *pdev, u32 *out_page_size)
@@ -648,7 +659,7 @@ int hailo_pcie_probe(struct pci_dev *pDev)
 
 	// Init both soc and nnc, since the interrupts are shared.
 	hailo_nnc_init(&pBoard->nnc);
-	//hailo_soc_init(&pBoard->soc);
+	// hailo_soc_init(&pBoard->soc);
 
 	init_completion(&pBoard->driver_down.reset_completed);
 	init_completion(&pBoard->soft_reset.reset_completed);
@@ -673,6 +684,7 @@ int hailo_pcie_probe(struct pci_dev *pDev)
 	// (we will always use at least 1 channel which is LSB in the bitmap)
 	pBoard->fw_boot.boot_used_channel_bitmap = (1 << 0);
 	memset(&pBoard->fw_boot.boot_dma_state, 0, sizeof(pBoard->fw_boot.boot_dma_state));
+	hailo_info(NULL, "%s\n", hailo_pcie_is_firmware_loaded(&pBoard->pcie_resources) ? "Firmware is loaded" : "Firmware is not loaded");
 	err = hailo_activate_board(pBoard);
 	if (err < 0) {
 		hailo_err(pBoard, "Failed activating board %d\n", err);
@@ -682,20 +694,6 @@ int hailo_pcie_probe(struct pci_dev *pDev)
 	/* Keep track on the device, in order, to be able to remove it later */
 	pci_set_drvdata(pDev, pBoard);
 	hailo_pcie_insert_board(pBoard);
-
-	// /* Create dynamically the device node*/
-	// char_device = device_create_with_groups(chardev_class, NULL,
-	// 		MKDEV(char_major, pBoard->board_index),
-	// 		pBoard,
-	// 		g_hailo_dev_groups,
-	// 		DEVICE_NODE_NAME "%d", pBoard->board_index);
-	// if (IS_ERR(char_device)) {
-	// 	hailo_err(pBoard, "Failed creating dynamic device %d\n", pBoard->board_index);
-	// 	err = PTR_ERR(char_device);
-	// 	goto probe_remove_board;
-	// }
-
-	hailo_notice(pBoard, "Probing: Added board %0x-%0x, /dev/hailo%d\n", pDev->vendor, pDev->device, pBoard->board_index);
 
 	return 0;
 
@@ -715,52 +713,3 @@ probe_exit:
 
 	return err;
 }
-
-// void hailo_pcie_remove(struct pci_dev *pDev)
-// {
-// 	struct hailo_pcie_board *pBoard = (struct hailo_pcie_board *)pci_get_drvdata(pDev);
-
-// 	pci_notice(pDev, "Remove: Releasing board\n");
-
-// 	if (pBoard) {
-
-// 		// lock board to wait for any pending operations and for synchronization with open
-// 		down(&pBoard->mutex);
-
-
-// 		// remove board from active boards list
-// 		hailo_pcie_remove_board(pBoard);
-
-
-// 		/* Delete the device node */
-// 		device_destroy(chardev_class, MKDEV(char_major, pBoard->board_index));
-
-// 		// disable interrupts - will only disable if they have not been disabled in release already
-// 		hailo_disable_interrupts(pBoard);
-
-// 		pcie_resources_release(pBoard->pDev, &pBoard->pcie_resources);
-
-// 		// deassociate device from board to be picked up by char device
-// 		pBoard->pDev = NULL;
-
-// 		pBoard->vdma.dev = NULL;
-
-// 		pci_disable_device(pDev);
-
-// 		pci_set_drvdata(pDev, NULL);
-
-// 		hailo_nnc_finalize(&pBoard->nnc);
-
-// 		up(&pBoard->mutex);
-
-// 		if (0 == atomic_read(&pBoard->ref_count)) {
-// 			// nobody has the board open - free
-// 			pci_notice(pDev, "Remove: Freed board, /dev/hailo%d\n", pBoard->board_index);
-// 			kfree(pBoard);
-// 		}
-// 		else {
-// 			// board resources are freed on last close
-// 			pci_notice(pDev, "Remove: Scheduled for board removal, /dev/hailo%d\n", pBoard->board_index);
-// 		}
-// 	}
-// }

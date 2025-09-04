@@ -49,12 +49,12 @@ void *dev_get_drvdata(struct device *dev)
 
 ktime_t ktime_get(void)
 {
-	return clock() / (CLOCKS_PER_SEC / 1000);
+	return clock();
 }
 
 long long ktime_to_ms(ktime_t a)
 {
-	return a;
+	return a / (CLOCKS_PER_SEC / 1000);
 }
 
 ktime_t ktime_sub(ktime_t a, ktime_t b){
