@@ -37,9 +37,10 @@ typedef struct {
 
 /* Basic operations on sensors */
 typedef struct {
-	char name[16];                                       /* device name */
-	int (*alloc)(sensor_info_t *info, const char *args); /* alloc sensor and initialize driver */
-	int (*start)(sensor_info_t *info);                   /* start measurement thread */
+	char name[16];                                                /* device name */
+	int (*alloc)(sensor_info_t *info, const char *args);          /* alloc sensor and initialize driver */
+	int (*start)(sensor_info_t *info);                            /* start measurement thread */
+	int (*read)(sensor_info_t *info, const sensor_event_t **evt); /* reads data from device */
 	rbnode_t node;
 } sensor_drv_t;
 

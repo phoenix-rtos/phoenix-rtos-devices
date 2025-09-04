@@ -23,6 +23,7 @@ include $(static-lib.mk)
 # TDK IvenSense MPU6000 imu sensor
 NAME := mpu6000
 SENSORHUB_DRIVERS_ALL += $(NAME)
-LOCAL_SRCS := mpu6000.c
+LOCAL_SRCS := mpu6000/hub.c mpu6000/sensor.c
+LOCAL_HEADERS := mpu6000/sensor.h
 DEPS := $(SENSORHUB_COMMON_DEPS)
 include $(static-lib.mk)
