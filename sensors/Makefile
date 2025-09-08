@@ -6,16 +6,22 @@
 
 LOCAL_PATH := $(call my-dir)
 
-# Sensors Server and Sensor Client API Library
+# Sensors Server Library
 # FIXME: need platform specific dependency of libzynq7000-gpio-msg
 NAME := libsensors
 LOCAL_HEADERS_DIR := server-include
 SRCS := $(wildcard $(LOCAL_PATH)common/*/*.c)
-DEPS := libzynq7000-gpio-msg libspi-msg
+DEPS := libzynq7000-gpio-msg libspi-msg libsensorsclient
+include $(static-lib.mk)
+
+# Sensor Client API
+# Separated for use on host applications
+NAME := libsensorsclient
+LOCAL_HEADERS_DIR := client-include
 include $(static-lib.mk)
 
 # Sensors application
-SENSORHUB_COMMON_DEPS := libzynq7000-gpio-msg libspi-msg libsensors
+SENSORHUB_COMMON_DEPS := libzynq7000-gpio-msg libspi-msg libsensors libsensorsclient
 SENSORHUB_DRIVERS_ALL :=
 
 ALL_SENSOR_MAKES := $(shell find . -mindepth 2 -name sensors.mk -not -path '*/.*')
