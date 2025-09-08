@@ -10,7 +10,7 @@ LOCAL_PATH := $(call my-dir)
 # FIXME: need platform specific dependency of libzynq7000-gpio-msg
 NAME := libsensors
 LOCAL_HEADERS_DIR := server-include
-SRCS := $(wildcard $(LOCAL_PATH)common/*/*.c)
+SRCS := $(wildcard $(LOCAL_PATH)common/*/*.c) $(LOCAL_PATH)locsensor.c
 DEPS := libzynq7000-gpio-msg libspi-msg libsensorsclient
 include $(static-lib.mk)
 
