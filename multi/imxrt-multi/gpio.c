@@ -175,17 +175,20 @@ int gpio_init(void)
 	pctl.devclock.state = clk_state_run;
 
 	for (i = 0; i < sizeof(clocks) / sizeof(clocks[0]); ++i) {
-		if (clocks[i] < 0)
+		if (clocks[i] < 0) {
 			continue;
+		}
 
 		pctl.devclock.dev = clocks[i];
-		if (platformctl(&pctl) < 0)
+		if (platformctl(&pctl) < 0) {
 			return -1;
+		}
 	}
 #endif
 
-	for (i = 0; i < sizeof(gpio_common.base) / sizeof(gpio_common.base[0]); ++i)
+	for (i = 0; i < sizeof(gpio_common.base) / sizeof(gpio_common.base[0]); ++i) {
 		gpio_common.base[i] = (void *)addresses[i];
+	}
 
 	return 0;
 }

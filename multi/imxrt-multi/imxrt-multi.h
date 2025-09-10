@@ -44,7 +44,10 @@ enum { id_console = 0, id_uart1, id_uart2, id_uart3, id_uart4, id_uart5, id_uart
 
 
 typedef struct {
-	enum { gpio_set_port = 0, gpio_get_port, gpio_set_dir, gpio_get_dir } type;
+	enum { gpio_set_port = 0,
+		gpio_get_port,
+		gpio_set_dir,
+		gpio_get_dir } type;
 
 	union {
 		struct {
@@ -58,7 +61,6 @@ typedef struct {
 		} dir;
 	};
 } gpio_t;
-
 
 
 /* SPI */

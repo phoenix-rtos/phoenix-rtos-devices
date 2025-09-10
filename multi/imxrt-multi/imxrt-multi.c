@@ -49,14 +49,14 @@
 #endif
 
 #define MULTI_THREADS_NO 2
-#define UART_THREADS_NO 2
+#define UART_THREADS_NO  2
 
 #define STACKSZ 1024
 
 
 struct {
 	uint32_t uart_port;
-	char stack[MULTI_THREADS_NO + UART_THREADS_NO - 1][STACKSZ] __attribute__ ((aligned(8)));
+	char stack[MULTI_THREADS_NO + UART_THREADS_NO - 1][STACKSZ] __attribute__((aligned(8)));
 } common;
 
 
