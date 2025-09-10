@@ -13,7 +13,6 @@
  */
 
 #include <errno.h>
-#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -37,12 +36,8 @@
 
 #define KMSG_CTRL_ID 100
 
-#define SW_BUF_SIZE 64
-
 typedef struct {
 	uint8_t hwctx[64];
-	uint8_t buf[SW_BUF_SIZE];
-	volatile unsigned int buf_i;
 
 	unsigned int init;
 	unsigned int clk;
@@ -133,99 +128,46 @@ static void set_cflag(void *_uart, tcflag_t *cflag)
 static void signal_txready(void *arg)
 {
 	uart_t *uart = (uart_t *)arg;
+
+	uarthw_write(uart->hwctx, REG_IMR, IMR_THRE | IMR_DR);
 	condSignal(uart->intcond);
 }
 
 #ifdef __TARGET_RISCV64
-__attribute__((section(".interrupt"), aligned(0x1000))) static int uart_interrupt(unsigned int n, void *arg)
-{
-	/* RISC-V platform is very special in how it handles memory during interrupts.
-	 * Due to this the uart_interrupt function cannot call uarthw_* functions.
-	 * Fortunately the UART IRQ on this platform is edge-triggered so we can just
-	 * exit interrupt, signal uart->intcond and main thread will handle the rest.
-	 */
-	uart_t *uart = (uart_t *)arg;
-	return uart->intcond;
-}
-#else
-static int uart_interrupt(unsigned int n, void *arg)
-{
-	uart_t *uart = (uart_t *)arg;
-
-	/* Caution: implementation-dependent behavior!
-	 * On some UARTs masking interrupts after an interrupt has been asserted
-	 * does not de-assert the IRQ line. In this case it is necessary to handle
-	 * the interrupt's cause fully within the ISR (e.g. reading the whole FIFO).
-	 * On other UARTs masking interrupts de-asserts IRQ and changes the value of IIR.
-	 * To handle this case we read IIR before masking interrupts. Note that in this
-	 * case the FIFO will not be fully read within the ISR.
-	 */
-	uint8_t iir = uarthw_read(uart->hwctx, REG_IIR);
-	uarthw_write(uart->hwctx, REG_IMR, 0);
-	unsigned int i = uart->buf_i;
-	do {
-		uint8_t intr_type = (iir >> 1) & 0x7;
-		if ((intr_type == IIR_CODE_DR) || (intr_type == IIR_CODE_RTO)) {
-			uint8_t c = uarthw_read(uart->hwctx, REG_RBR);
-			if (i < SW_BUF_SIZE) {
-				uart->buf[i] = c;
-				i++;
-			}
-		}
-		else if (intr_type == IIR_CODE_LS) {
-			uarthw_read(uart->hwctx, REG_LSR);
-		}
-		else if (intr_type == IIR_CODE_MS) {
-			uarthw_read(uart->hwctx, REG_MSR);
-		}
-
-		iir = uarthw_read(uart->hwctx, REG_IIR);
-	} while ((iir & IIR_IRQPEND) == 0);
-
-	uart->buf_i = i;
-	return uart->intcond;
-}
+__attribute__((section(".interrupt"), aligned(0x1000)))
 #endif
+static int
+uart_interrupt(unsigned int n, void *arg)
+{
+	return ((uart_t *)arg)->intcond;
+}
 
 
 static void uart_intthr(void *arg)
 {
 	uart_t *uart = (uart_t *)arg;
-	uint8_t target_imr = IMR_DR;
+	uint8_t iir;
 
 	mutexLock(uart->mutex);
 	for (;;) {
-		uarthw_write(uart->hwctx, REG_IMR, target_imr);
-		condWait(uart->intcond, uart->mutex, 0);
-		/* For the following part the interrupt needs to be masked */
-		uarthw_write(uart->hwctx, REG_IMR, 0);
-
-		/* Empty received buffer */
-		unsigned int buf_i = uart->buf_i;
-		for (unsigned int i = 0; i < buf_i; i++) {
-			libtty_putchar(&uart->tty, uart->buf[i], NULL);
+		while ((iir = uarthw_read(uart->hwctx, REG_IIR)) & IIR_IRQPEND) {
+			condWait(uart->intcond, uart->mutex, 0);
 		}
 
-		uart->buf_i = 0;
-		/* Depending on implementation we may have more characters in hardware FIFO */
-		while ((uarthw_read(uart->hwctx, REG_LSR) & LSR_DR) != 0) {
-			libtty_putchar(&uart->tty, uarthw_read(uart->hwctx, REG_RBR), NULL);
+		/* Receive */
+		if (iir & IIR_DR) {
+			while (uarthw_read(uart->hwctx, REG_LSR) & 0x1) {
+				libtty_putchar(&uart->tty, uarthw_read(uart->hwctx, REG_RBR), NULL);
+			}
 		}
 
-		/* Check for transmit */
-		while (1) {
-			if (libtty_txready(&uart->tty) != 0) {
-				if ((uarthw_read(uart->hwctx, REG_LSR) & LSR_THRE) != 0) {
-					uarthw_write(uart->hwctx, REG_THR, libtty_getchar(&uart->tty, NULL));
-				}
-				else {
-					target_imr |= IMR_THRE;
-					break;
-				}
+		/* Transmit */
+		if (iir & IIR_THRE) {
+			if (libtty_txready(&uart->tty)) {
+				uarthw_write(uart->hwctx, REG_THR, libtty_getchar(&uart->tty, NULL));
 			}
 			else {
-				target_imr &= ~IMR_THRE;
-				break;
+				uarthw_write(uart->hwctx, REG_IMR, IMR_DR);
 			}
 		}
 	}
@@ -399,7 +341,6 @@ static int _uart_init(uart_t *uart, unsigned int uartn, unsigned int speed)
 		return err;
 	}
 
-	uart->buf_i = 0;
 	condCreate(&uart->intcond);
 	mutexCreate(&uart->mutex);
 
@@ -421,7 +362,7 @@ static int _uart_init(uart_t *uart, unsigned int uartn, unsigned int speed)
 	uarthw_write(uart->hwctx, REG_MCR, MCR_OUT2);
 
 	/* Set interrupt mask */
-	uarthw_write(uart->hwctx, REG_IMR, 0);
+	uarthw_write(uart->hwctx, REG_IMR, IMR_DR);
 
 	return EOK;
 }
