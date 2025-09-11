@@ -20,13 +20,13 @@
 #include <string.h>
 #include <sys/types.h>
 #include <phoenix/gaisler/ambapp.h>
+#include <spacewire.h>
 
 
 /* clang-format off */
 /* IDs of special files OIDs */
 enum { id_gpio0 = 0, id_gpio1, id_spi0, id_spi1, id_uart0, id_uart1, id_uart2, id_uart3, id_uart4,
 	id_uart5, id_console, id_adc0, id_adc1, id_adc2, id_adc3, id_adc4, id_adc5, id_adc6, id_adc7,
-	id_spw0, id_spw1, id_spw2, id_spw3, id_spw4, id_spw5,
 	id_pseudoNull, id_pseudoZero, id_pseudoFull, id_pseudoRandom, id_kmsgctrl };
 /* clang-format on */
 
@@ -157,55 +157,6 @@ typedef struct {
 #define SPW_RX_FLG_HCRC (1 << 29)  /* Header CRC error */
 #define SPW_RX_FLG_EEP  (1 << 28)  /* EEP termination */
 #define SPW_RX_LEN_MSK  0x1ffffffu /* Packet length mask */
-
-
-typedef struct {
-	const uint8_t *hdr;
-	const uint8_t *data;
-	uint32_t dataLen;
-	uint32_t flags;
-} spw_txPacket_t;
-
-
-typedef struct {
-	uint8_t *buf;
-	uint32_t flags;
-} spw_rxPacket_t;
-
-
-typedef struct {
-	struct {
-		uint8_t addr;
-		uint8_t mask;
-	} node;
-	struct {
-		uint8_t addr;
-		uint8_t mask;
-		uint32_t flags;
-	} dma;
-} spw_config_t;
-
-
-typedef struct {
-	/* clang-format off */
-	enum { spw_config = 0, spw_rxConfig, spw_rx, spw_tx } type;
-	/* clang-format on */
-	union {
-		spw_config_t config;
-		struct {
-			size_t nPackets;
-		} rxConfig;
-		struct {
-			size_t firstDesc;
-			size_t nPackets;
-		} rx;
-		struct {
-			size_t nPackets;
-			bool async;
-		} tx;
-	} task;
-
-} spw_t;
 
 
 /* MULTI */
