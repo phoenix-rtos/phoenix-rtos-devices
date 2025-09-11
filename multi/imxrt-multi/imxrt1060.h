@@ -70,9 +70,9 @@
 #define GPIO4_BASE ((void *)0x401c4000)
 #define GPIO5_BASE ((void *)0x400c0000)
 #define GPIO6_BASE ((void *)0x42000000)
-#define GPIO7_BASE ((void *)0x42040000)
-#define GPIO8_BASE ((void *)0x42080000)
-#define GPIO9_BASE ((void *)0x420c0000)
+#define GPIO7_BASE ((void *)0x42004000)
+#define GPIO8_BASE ((void *)0x42008000)
+#define GPIO9_BASE ((void *)0x4200c000)
 
 #define GPIO10_BASE NULL
 #define GPIO11_BASE NULL
