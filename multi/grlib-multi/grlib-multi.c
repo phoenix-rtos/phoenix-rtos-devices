@@ -40,7 +40,7 @@
 
 #include "adc.h"
 #include "gpio.h"
-#include "spacewire.h"
+#include "libgrspw.h"
 #include "spi.h"
 #include "uart.h"
 #include "grlib-multi.h"
