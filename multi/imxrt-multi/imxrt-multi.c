@@ -78,7 +78,7 @@ static inline int multi2pseudo(id_t id)
 #endif
 
 
-static void multi_dispatchMsg(msg_t *msg)
+static void multi_dispatchMsg(msg_t *msg, msg_rid_t rid)
 {
 	id_t id = msg->oid.id;
 
@@ -98,7 +98,7 @@ static void multi_dispatchMsg(msg_t *msg)
 		case id_gpio12:
 		case id_gpio13:
 #endif
-			gpio_handleMsg(msg, id);
+			gpio_handleMsg(msg, rid, id);
 			break;
 
 		case id_spi1:
@@ -496,7 +496,11 @@ static void multi_thread(void *arg)
 			case mtGetAttr:
 			case mtSetAttr:
 			case mtDevCtl:
-				multi_dispatchMsg(&msg);
+				multi_dispatchMsg(&msg, rid);
+				if (msg.o.err == EWOULDBLOCK) {
+					/* msgRespond in driver */
+					continue;
+				}
 				break;
 
 			case mtCreate:
