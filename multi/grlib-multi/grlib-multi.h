@@ -143,9 +143,15 @@ typedef struct {
 } multi_i_t;
 
 
+_Static_assert(sizeof(multi_i_t) <= sizeof(((msg_t *)0)->i.raw), "multi_i_t exceeds size of msg.i.raw");
+
+
 typedef struct {
 	unsigned int val;
 } multi_o_t;
+
+
+_Static_assert(sizeof(multi_o_t) <= sizeof(((msg_t *)0)->o.raw), "multi_o_t exceeds size of msg.o.raw");
 
 
 #pragma pack(pop)
