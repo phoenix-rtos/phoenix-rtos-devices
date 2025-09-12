@@ -6,4 +6,4 @@
 # Copyright 2025 Phoenix Systems
 #
 
-DEFAULT_COMPONENTS := grlib-uart
+DEFAULT_COMPONENTS := grlib-uart grlib-can-core grlib-can-driver can-sender-stress can-receiver-stress can-test-app
