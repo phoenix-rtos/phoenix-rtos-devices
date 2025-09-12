@@ -106,9 +106,15 @@ typedef struct {
 } spw_t;
 
 
+_Static_assert(sizeof(spw_t) <= sizeof(((msg_t *)0)->i.raw), "spw_t exceeds size of msg.i.raw");
+
+
 typedef struct {
 	unsigned int val;
 } spw_o_t;
+
+
+_Static_assert(sizeof(spw_o_t) <= sizeof(((msg_t *)0)->o.raw), "spw_t exceeds size of msg.o.raw");
 
 
 static inline size_t spw_spwSerializeTxMsg(uint32_t flags, uint32_t dataLen, const uint8_t *hdr, const uint8_t *data, uint8_t *buf, size_t bufsz)
