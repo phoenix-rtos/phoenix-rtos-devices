@@ -19,6 +19,12 @@ LOCAL_SRCS := lis2mdl.c
 DEPS := $(SENSORHUB_COMMON_DEPS)
 include $(static-lib.mk)
 
+# STM LIS2MDL sensor
+NAME := lis2mdl_multi
+SENSORHUB_DRIVERS_ALL += $(NAME)
+LOCAL_SRCS := lis2mdl_multi.c
+DEPS := $(SENSORHUB_COMMON_DEPS)
+include $(static-lib.mk)
 
 # STM lsm9dsxx magnetometer part sensor
 NAME := lsm9dsxx_mag
