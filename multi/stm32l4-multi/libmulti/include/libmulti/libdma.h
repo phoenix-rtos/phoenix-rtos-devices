@@ -22,10 +22,10 @@
 
 
 /* clang-format off */
-enum { dma_per2mem = 0, dma_mem2per };
+enum { dma_per2mem = 0, dma_mem2per, dma_mem2mem };
 
 
-enum { dma_spi = 0, dma_uart };
+enum { dma_spi = 0, dma_uart, dma_tim_upd };
 
 
 enum { dma_ht = (1 << 0), dma_tc = (1 << 1) };

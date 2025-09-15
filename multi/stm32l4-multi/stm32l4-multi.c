@@ -350,6 +350,7 @@ int main(void)
 	rtc_init();
 #if defined(__CPU_STM32L4X6)
 	flash_init();
+	pwm_init();
 #endif
 	i2c_init();
 	uart_init();
@@ -372,7 +373,7 @@ int main(void)
 	create_dev(&oid, "multi");
 
 	printf("multidrv: Started\n");
-
+	libdma_init();
 	for (i = 0; i < THREADS_NO - 1; ++i)
 		beginthread(thread, THREADS_PRIORITY, common.stack[i], STACKSZ, (void *)i);
 
