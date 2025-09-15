@@ -19,6 +19,8 @@
 
 #define EXTI_BASE ((void *)0x56025000)
 
+#define GPDMA_BASE ((void *)0x50021000)
+
 #define GPIOA_BASE ((void *)0x56020000)
 #define GPIOB_BASE ((void *)0x56020400)
 #define GPIOC_BASE ((void *)0x56020800)
@@ -33,6 +35,8 @@
 #define GPIOQ_BASE ((void *)0x56024000)
 
 #define HASH_BASE ((void *)0x54020400)
+
+#define HPDMA_BASE ((void *)0x58020000)
 
 #define I2C1_BASE ((void *)0x50005400)
 #define I2C2_BASE ((void *)0x50005800)

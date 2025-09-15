@@ -98,6 +98,26 @@ static unsigned char *libspi_fifoDrain(volatile uint32_t *base, unsigned char *i
 }
 
 
+static int libspi_transactionDMA(libspi_ctx_t *ctx, size_t ignoreBytes, unsigned char *ibuff, const unsigned char *obuff, size_t bufflen)
+{
+	int ret;
+	*(ctx->base + spi_cr1) |= 1 << 9;
+	ret = libdma_transfer(ctx->per, ibuff, obuff, bufflen);
+
+	*(ctx->base + spi_cr1) |= 1 << 10; /* Set CSUSP bit */
+	dataBarier();
+	/* This should return quickly, if there were no errors all data has been transferred by now */
+	while ((*(ctx->base + spi_sr) & (1 << 11)) == 0) {
+		/* Wait for SUSP flag */
+	}
+
+	*(ctx->base + spi_ifcr) = (1 << 11); /* Clear SUSP flag */
+	*(ctx->base + spi_cr1) &= ~1;
+	dataBarier();
+	return ret;
+}
+
+
 int libspi_transaction(libspi_ctx_t *ctx, int dir, unsigned char cmd, unsigned int addr, unsigned char flags, unsigned char *ibuff, const unsigned char *obuff, size_t bufflen)
 {
 	unsigned int addrsz = (flags >> SPI_ADDRSHIFT) & SPI_ADDRMASK;
@@ -142,6 +162,11 @@ int libspi_transaction(libspi_ctx_t *ctx, int dir, unsigned char cmd, unsigned i
 		*txData = 0;
 	}
 
+	/* TODO: to support transactions with preamble, multi-buffer DMA transactions will be necessary */
+	if ((ctx->per != NULL) && (ignoreBytes == 0)) {
+		return libspi_transactionDMA(ctx, ignoreBytes, ibuff, obuff, bufflen);
+	}
+
 	size_t txLen = bufflen;
 	size_t rxLen = bufflen;
 	/* Pre-fill the FIFO before we start transaction */
@@ -163,8 +188,6 @@ int libspi_transaction(libspi_ctx_t *ctx, int dir, unsigned char cmd, unsigned i
 	}
 
 	/* Disable SPI */
-	*(ctx->base + spi_cr1) &= ~(1 << 9);
-	dataBarier();
 	*(ctx->base + spi_cr1) &= ~1;
 	dataBarier();
 
@@ -182,7 +205,18 @@ int libspi_configure(libspi_ctx_t *ctx, char mode, char bdiv, int enable)
 
 	uint32_t bdiv_bits = ((((uint32_t)bdiv) & 0x7) << 28);
 	uint32_t dma_bits = (ctx->per != NULL) ? (0x3 << 14) : 0; /* Enable TX and RX DMA */
-	uint32_t fifoThr_bits = ((spiInfo[ctx->spiNum - spi1].fifoThr - 1) & 0xf) << 5;
+	uint32_t fifoThr_bits;
+	if (ctx->per == NULL) {
+		fifoThr_bits = ((spiInfo[ctx->spiNum - spi1].fifoThr - 1) & 0xf) << 5;
+	}
+	else {
+		/* TODO: when DMA is used, notify DMA after every byte.
+		 * This results in worse performance at high baud rates, but otherwise RX DMA may never be requested
+		 * for final bytes. A solution to that would be to set TSIZE in SPI_CR2, but that would limit transactions
+		 * to 0xFFFE bytes for full-featured instances or 0x3FE bytes for limited instances. */
+		fifoThr_bits = 0;
+	}
+
 	v = *(ctx->base + spi_cfg1);
 	v &= ~0xf05fc3ff;
 	v |=
@@ -235,8 +269,14 @@ int libspi_init(libspi_ctx_t *ctx, unsigned int spi, int useDma)
 	}
 
 	if (useDma != 0) {
-		/* TODO: support DMA transfers */
-		return -1;
+		libdma_init();
+		int err = libdma_acquirePeripheral(dma_spi, spi - spi1, &ctx->per);
+		if (err < 0) {
+			return err;
+		}
+
+		libdma_configurePeripheral(ctx->per, dma_mem2per, dma_priorityMedium, (void *)(ctx->base + spi_txdr), 0x0, 0x0, 0x1, 0x0, NULL);
+		libdma_configurePeripheral(ctx->per, dma_per2mem, dma_priorityMedium, (void *)(ctx->base + spi_rxdr), 0x0, 0x0, 0x1, 0x0, NULL);
 	}
 	else {
 		ctx->per = NULL;
