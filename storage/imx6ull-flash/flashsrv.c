@@ -392,7 +392,7 @@ static int flashsrv_devReadRaw(id_t id, flash_i_devctl_t *idevctl, char *data)
 			break;
 		}
 
-		memcpy(data, strg->dev->ctx->databuf, rawPagesz);
+		memcpy(data + tempsz, strg->dev->ctx->databuf, rawPagesz);
 		rawoffs += rawPagesz;
 		tempsz += rawPagesz;
 	}
