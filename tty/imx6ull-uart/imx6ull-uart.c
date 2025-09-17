@@ -469,11 +469,10 @@ static void set_mux(int dev_no, int use_rts_cts)
 }
 
 
-static void set_baudrate(void *_uart, speed_t baud)
+static void set_baudrate(void *_uart, int baud_rate)
 {
 	int md, in, div, res;
 
-	int baud_rate = libtty_baudrate_to_int(baud);
 	uart_t *uartptr = (uart_t *)_uart;
 
 	if (baud_rate == 0) {
@@ -591,7 +590,7 @@ int main(int argc, char **argv)
 	char uartn[sizeof("uartx") + 1];
 	oid_t dev;
 	int err;
-	speed_t baud = B115200;
+	int baud = 115200;
 	int parity = 0;
 	int is_cooked = 1;
 	int use_rts_cts = 0;
@@ -615,7 +614,7 @@ int main(int argc, char **argv)
 	else if ((argc >= 6) && (argc <= 8)) {
 		is_cooked = atoi(argv[1]);
 		uart.dev_no = atoi(argv[2]);
-		baud = libtty_int_to_baudrate(atoi(argv[3]));
+		baud = atoi(argv[3]);
 		parity = atoi(argv[4]);
 		use_rts_cts = atoi(argv[5]);
 
@@ -644,12 +643,12 @@ int main(int argc, char **argv)
 		openlog(LOG_TAG, LOG_NDELAY, LOG_DAEMON);
 	}
 
-	if (baud < 0) {
+	if (libtty_int_to_baudrate(baud) < 0) {
 		printf("Invalid baud rate!\n");
 		print_usage(argv[0]);
 		return 1;
 	}
-	uart.tty_common.term.c_ispeed = uart.tty_common.term.c_ospeed = baud;
+	uart.tty_common.term.c_ispeed = uart.tty_common.term.c_ospeed = libtty_int_to_baudrate(baud);
 
 	if ((parity < 0) || (parity > 2)) {
 		printf("Invalid parity!\n");
