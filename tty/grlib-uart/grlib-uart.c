@@ -505,7 +505,7 @@ static int uart_init(unsigned int n, int baud, int raw)
 	/* normal mode, 1 stop bit, no parity, 8 bits */
 	uart_setCFlag(uart, &uart->tty.term.c_cflag);
 
-	uart->tty.term.c_ispeed = uart->tty.term.c_ospeed = libtty_int_to_baudrate(baud);
+	uart->tty.term.c_ispeed = uart->tty.term.c_ospeed = baud;
 	uart_setBaudrate(uart, baud);
 	*(uart->base + uart_ctrl) = RX_INT | RX_EN | TX_EN;
 
@@ -538,7 +538,7 @@ int main(int argc, char **argv)
 			switch (c) {
 				case 'b':
 					baud = atoi(optarg);
-					if (libtty_int_to_baudrate(baud) < 0) {
+					if (baud <= 0) {
 						debug("grlib-uart: wrong baudrate value\n");
 						return EXIT_FAILURE;
 					}

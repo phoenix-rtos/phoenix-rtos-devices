@@ -545,7 +545,7 @@ static int uart_setup(unsigned int n, int baud, int raw)
 	/* normal mode, 1 stop bit, no parity, 8 bits */
 	uart_setCFlag(uart, &uart->tty.term.c_cflag);
 
-	uart->tty.term.c_ispeed = uart->tty.term.c_ospeed = libtty_int_to_baudrate(baud);
+	uart->tty.term.c_ispeed = uart->tty.term.c_ospeed = baud;
 	uart_setBaudrate(uart, baud);
 
 	if (info[n].useDma == 1) {

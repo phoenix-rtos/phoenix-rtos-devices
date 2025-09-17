@@ -570,7 +570,7 @@ static int uart_init(unsigned int n, int baud, int raw)
 	/* Enable RX FIFO trigger */
 	*(uart->base + ier) = (1 << 0);
 
-	uart->tty.term.c_ispeed = uart->tty.term.c_ospeed = libtty_int_to_baudrate(baud);
+	uart->tty.term.c_ispeed = uart->tty.term.c_ospeed = baud;
 	uart_setBaudrate(uart, baud);
 
 	beginthread(uart_intThread, 4, &uart->stack, sizeof(uart->stack), (void *)uart);
