@@ -177,7 +177,7 @@ static int rtt_initOne(rtt_t *uart, int chn, unsigned char *buf)
 
 	ret = (ret == 0) ? mutexCreate(&uart->lock) : ret;
 	/* TODO: calculate approx. baud rate based on buffer size and polling rate */
-	ret = (ret == 0) ? libtty_init(&uart->tty_common, &callbacks, TTY_BUF_SIZE, libtty_int_to_baudrate(115200)) : ret;
+	ret = (ret == 0) ? libtty_init(&uart->tty_common, &callbacks, TTY_BUF_SIZE, 115200) : ret;
 
 	return ret;
 }

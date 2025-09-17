@@ -284,10 +284,10 @@ static void uart_dmaThread(void *arg)
 }
 
 
-static void uart_setBaudrate(void *data, speed_t speed)
+static void uart_setBaudrate(void *data, int speed)
 {
 	uart_t *uart = (uart_t *)data;
-	uint32_t scaler = (UART_CLK / (libtty_baudrate_to_int(speed) * 8 + 7));
+	uint32_t scaler = (UART_CLK / (speed * 8 + 7));
 
 	*(uart->vbase + UART_SCALER) = scaler;
 }
@@ -466,7 +466,7 @@ static int uart_irqSetup(unsigned int n, uart_t *uart)
 }
 
 
-static int uart_setup(unsigned int n, speed_t baud, int raw)
+static int uart_setup(unsigned int n, int baud, int raw)
 {
 	libtty_callbacks_t callbacks;
 	uart_t *uart = &uart_common.uart[n];
@@ -545,7 +545,7 @@ static int uart_setup(unsigned int n, speed_t baud, int raw)
 	/* normal mode, 1 stop bit, no parity, 8 bits */
 	uart_setCFlag(uart, &uart->tty.term.c_cflag);
 
-	uart->tty.term.c_ispeed = uart->tty.term.c_ospeed = baud;
+	uart->tty.term.c_ispeed = uart->tty.term.c_ospeed = libtty_int_to_baudrate(baud);
 	uart_setBaudrate(uart, baud);
 
 	if (info[n].useDma == 1) {
@@ -639,7 +639,7 @@ int uart_createDevs(oid_t *oid)
 int uart_init(void)
 {
 	int raw = 0;
-	speed_t baud = B115200;
+	int baud = 115200;
 
 	for (unsigned int n = 0; n < UART_MAX_CNT; n++) {
 		if (info[n].active == 0) {

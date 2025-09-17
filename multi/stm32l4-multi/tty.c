@@ -599,10 +599,9 @@ static void tty_setCflag(void *uart, tcflag_t *cflag)
 }
 
 
-static void tty_setBaudrate(void *uart, speed_t baud)
+static void tty_setBaudrate(void *uart, int baudr)
 {
 	tty_ctx_t *ctx = (tty_ctx_t *)uart;
-	int baudr = libtty_baudrate_to_int(baud);
 	int flags;
 
 	if (ctx->baud != baudr) {
@@ -769,7 +768,7 @@ int tty_init(void)
 
 	unsigned int tty, i;
 	char fname[] = "uartx";
-	speed_t baudrate = B115200;
+	int baudrate = 115200;
 	oid_t oid;
 	libtty_callbacks_t callbacks;
 	tty_ctx_t *ctx;
