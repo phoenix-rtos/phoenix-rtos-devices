@@ -416,14 +416,13 @@ static uint32_t calculate_baudrate(uint32_t baud)
 }
 
 
-static void set_baudrate(void *_uart, speed_t baud)
+static void set_baudrate(void *_uart, int baud)
 {
 	uint32_t reg = 0, t;
-	int b;
 	uart_t *uartptr = (uart_t *)_uart;
 
-	if ((b = libtty_baudrate_to_int(baud)) > 0)
-		reg = calculate_baudrate((uint32_t)b);
+	if (baud > 0)
+		reg = calculate_baudrate((uint32_t)baud);
 
 	/* disable TX and RX */
 	*(uartptr->base + ctrlr) &= ~((1 << 19) | (1 << 18));
@@ -978,7 +977,7 @@ int uart_init(void)
 		callbacks.set_cflag = set_cflag;
 		callbacks.signal_txready = signal_txready;
 
-		if (libtty_init(&uart->tty_common, &callbacks, tty_bufsz[dev], libtty_int_to_baudrate(default_baud[dev])) < 0) {
+		if (libtty_init(&uart->tty_common, &callbacks, tty_bufsz[dev], default_baud[dev]) < 0) {
 			return -1;
 		}
 

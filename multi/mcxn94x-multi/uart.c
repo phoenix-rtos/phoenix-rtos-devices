@@ -285,12 +285,11 @@ static uint32_t calculate_baudrate(uint32_t baud)
 }
 
 
-static void set_baudrate(void *_uart, speed_t baud)
+static void set_baudrate(void *_uart, int b)
 {
 	uint32_t reg = 0, t;
 	uart_t *uartptr = (uart_t *)_uart;
 
-	int b = libtty_baudrate_to_int(baud);
 	if (b > 0) {
 		reg = calculate_baudrate((uint32_t)b);
 	}
@@ -449,7 +448,7 @@ static int uart_init(unsigned int minor)
 	callbacks.set_cflag = set_cflag;
 	callbacks.signal_txready = signal_txready;
 
-	if (libtty_init(&uart->tty_common, &callbacks, tty_bufsz[minor], libtty_int_to_baudrate(default_baud[minor])) < 0) {
+	if (libtty_init(&uart->tty_common, &callbacks, tty_bufsz[minor], default_baud[minor]) < 0) {
 		resourceDestroy(uart->cond);
 		resourceDestroy(uart->lock);
 		return -1;

@@ -164,10 +164,10 @@ static void uart_intThread(void *arg)
 }
 
 
-static void uart_setBaudrate(void *data, speed_t speed)
+static void uart_setBaudrate(void *data, int speed)
 {
 	uart_t *uart = (uart_t *)data;
-	uint32_t div = UART_CLK / libtty_baudrate_to_int(speed);
+	uint32_t div = UART_CLK / speed;
 
 	*(uart->base + bauddiv) = div;
 }
@@ -283,7 +283,7 @@ static void uart_mkDev(unsigned int id)
 }
 
 
-static int uart_init(unsigned int n, speed_t baud, int raw)
+static int uart_init(unsigned int n, int baud, int raw)
 {
 	uart_t *uart = &uart_common.uart;
 	uart->base = info[n].base;
@@ -320,7 +320,7 @@ static int uart_init(unsigned int n, speed_t baud, int raw)
 
 	*(uart->base + ctrl) = 0;
 
-	uart->tty.term.c_ispeed = uart->tty.term.c_ospeed = baud;
+	uart->tty.term.c_ispeed = uart->tty.term.c_ospeed = libtty_int_to_baudrate(baud);
 	uart_setBaudrate(uart, baud);
 	*(uart->base + ctrl) = TX_EN | RX_EN | RX_INT_EN;
 
@@ -345,7 +345,7 @@ static void uart_usage(const char *progname)
 int main(int argc, char **argv)
 {
 	int uartn = UART_CONSOLE_USER;
-	speed_t baud = B115200;
+	int baud = 115200;
 	int raw = 0;
 
 	if (argc > 1) {
@@ -357,8 +357,8 @@ int main(int argc, char **argv)
 
 			switch (c) {
 				case 'b':
-					baud = libtty_int_to_baudrate(atoi(optarg));
-					if (baud == (speed_t)-1) {
+					baud = atoi(optarg);
+					if (libtty_int_to_baudrate(baud) < 0) {
 						debug("cmsdk-apbuart: wrong baudrate value\n");
 						return EXIT_FAILURE;
 					}

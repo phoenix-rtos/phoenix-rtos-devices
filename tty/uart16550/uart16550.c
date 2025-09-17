@@ -78,11 +78,10 @@ static uart_t *uart_get(oid_t *oid)
 }
 
 
-static void set_baudrate(void *_uart, speed_t baud)
+static void set_baudrate(void *_uart, int baud_rate)
 {
 	uint8_t reg;
 	uart_t *uart = (uart_t *)_uart;
-	int32_t baud_rate = libtty_baudrate_to_int(baud);
 
 	if (baud_rate <= 0) {
 		return;
@@ -395,7 +394,7 @@ static int _uart_init(uart_t *uart, unsigned int uartn, unsigned int speed)
 	callbacks.set_cflag = set_cflag;
 	callbacks.signal_txready = signal_txready;
 
-	err = libtty_init(&uart->tty, &callbacks, _PAGE_SIZE, libtty_int_to_baudrate(speed));
+	err = libtty_init(&uart->tty, &callbacks, _PAGE_SIZE, speed);
 	if (err < 0) {
 		return err;
 	}
