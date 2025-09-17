@@ -98,7 +98,7 @@ static void spw_thread(void *arg)
 			case mtWrite:
 			case mtOpen:
 			case mtClose:
-				msg.o.err = EOK;
+				msg.o.err = 0;
 				break;
 
 			default:
