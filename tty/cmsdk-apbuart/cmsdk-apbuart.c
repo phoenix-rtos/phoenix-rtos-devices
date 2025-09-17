@@ -320,7 +320,7 @@ static int uart_init(unsigned int n, int baud, int raw)
 
 	*(uart->base + ctrl) = 0;
 
-	uart->tty.term.c_ispeed = uart->tty.term.c_ospeed = libtty_int_to_baudrate(baud);
+	uart->tty.term.c_ispeed = uart->tty.term.c_ospeed = baud;
 	uart_setBaudrate(uart, baud);
 	*(uart->base + ctrl) = TX_EN | RX_EN | RX_INT_EN;
 
@@ -358,7 +358,7 @@ int main(int argc, char **argv)
 			switch (c) {
 				case 'b':
 					baud = atoi(optarg);
-					if (libtty_int_to_baudrate(baud) < 0) {
+					if (baud <= 0) {
 						debug("cmsdk-apbuart: wrong baudrate value\n");
 						return EXIT_FAILURE;
 					}
