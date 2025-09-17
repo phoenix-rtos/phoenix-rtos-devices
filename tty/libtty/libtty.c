@@ -19,6 +19,7 @@
 
 #include <sys/ioctl.h>
 #include <sys/threads.h>
+#include <sys/termios.h>
 #include <termios.h>
 #include <poll.h>
 #include <signal.h>
@@ -494,6 +495,10 @@ int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const
 			termios_print_flags(&tty->term);
 			break;
 		}
+		case TCSETBR:
+			log_ioctl("TCSETBR (%ld)", (long)in_arg);
+			CALLBACK(set_baudrate, (long)in_arg);
+			break;
 		case TCGETS:
 			log_ioctl("TCGETS (%s)", ((tty->term.c_lflag & ICANON) ? "cooked" : "raw"));
 			*out_arg = (const void *)&tty->term;
