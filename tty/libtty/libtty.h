@@ -31,7 +31,7 @@ struct libtty_callbacks_s {
 	void *arg; /* argument to be passed to each of the callbacks */
 
 	/* HW configuration */
-	void (*set_baudrate)(void *arg, speed_t baudrate);
+	void (*set_baudrate)(void *arg, int baudrate);
 	void (*set_cflag)(void *arg, tcflag_t *cflag);
 
 	/* at least one character ready to be sent */
@@ -81,7 +81,7 @@ static inline void libtty_read_state_init(libtty_read_state_t *st)
 
 
 /* bufsize: TX/RX buffer size - has to be power of 2 ! */
-int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned int bufsize, speed_t speed);
+int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned int bufsize, int speed);
 int libtty_destroy(libtty_common_t *tty);
 int libtty_close(libtty_common_t *tty);
 

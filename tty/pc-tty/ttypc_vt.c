@@ -692,7 +692,7 @@ void ttypc_vt_destroy(ttypc_vt_t *vt)
 }
 
 
-static void _ttypc_vt_setbaudrate(void *arg, speed_t baud)
+static void _ttypc_vt_setbaudrate(void *arg, int baud)
 {
 	/* TODO */
 }
@@ -763,7 +763,7 @@ int ttypc_vt_init(ttypc_t *ttypc, unsigned int ttybuffsz, ttypc_vt_t *vt)
 		}
 	}
 
-	if ((err = libtty_init(&vt->tty, &cb, ttybuffsz, TTYDEF_SPEED)) < 0) {
+	if ((err = libtty_init(&vt->tty, &cb, ttybuffsz, libtty_baudrate_to_int(TTYDEF_SPEED))) < 0) {
 		resourceDestroy(vt->lock);
 		munmap(vt->mem, ttybuffsz);
 		if (SCRB_PAGES) {
