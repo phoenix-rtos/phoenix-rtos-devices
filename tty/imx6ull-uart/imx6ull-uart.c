@@ -643,12 +643,12 @@ int main(int argc, char **argv)
 		openlog(LOG_TAG, LOG_NDELAY, LOG_DAEMON);
 	}
 
-	if (libtty_int_to_baudrate(baud) < 0) {
+	if (baud <= 0) {
 		printf("Invalid baud rate!\n");
 		print_usage(argv[0]);
 		return 1;
 	}
-	uart.tty_common.term.c_ispeed = uart.tty_common.term.c_ospeed = libtty_int_to_baudrate(baud);
+	uart.tty_common.term.c_ispeed = uart.tty_common.term.c_ospeed = baud;
 
 	if ((parity < 0) || (parity > 2)) {
 		printf("Invalid parity!\n");
