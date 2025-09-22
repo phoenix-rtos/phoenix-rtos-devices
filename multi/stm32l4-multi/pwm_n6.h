@@ -74,8 +74,13 @@ int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t compare);
 int pwm_get(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t *top, uint32_t *compare);
 
 
-/* Creates PWM bit sequence with given compare values. Configure the timer first. The data buffer must be at least nbits/8 bytes long. Only one active bit sequence per channel. */
-int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t compare0, uint32_t compare1, uint32_t nbits, uint8_t *data);
+/* Transmits a bit sequence according to a list of compare values. Configure a timer first.
+ * NOTE: For now only one DSHOT bit sequence per timer at once (both IRQ and DMA modes)
+ * data - buffer of compare values, each n bytes wide, where n=datasize
+ * nbits - number of bits to transmit
+ * datasize - number of bytes per compare value in data (1,2,4)
+ */
+int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t nbits, uint8_t datasize, int flags);
 
 
 int pwm_init(void);

@@ -18,7 +18,7 @@
 #include <string.h>
 
 #include "../common.h"
-#include "libmulti/libpwm_n6.h"
+#include "../stm32l4-multi.h"
 #include "libmulti/libdma.h"
 
 #define DMA_CTRL_GPDMA1     0

@@ -264,8 +264,8 @@ static void handleMsg(msg_t *msg)
 			err = pwm_disableChannel(imsg->pwm_dischn.timer, imsg->pwm_dischn.chn);
 			break;
 		case pwm_bitseq:
-			err = pwm_setBitSequence(imsg->pwm_bitseq.timer, imsg->pwm_bitseq.chn, imsg->pwm_bitseq.compare0,
-					imsg->pwm_bitseq.compare1, imsg->pwm_bitseq.nbits, imsg->pwm_bitseq.data);
+			err = pwm_setBitSequence(imsg->pwm_bitseq.timer, imsg->pwm_bitseq.chn, imsg->pwm_bitseq.data,
+					imsg->pwm_bitseq.nbits, imsg->pwm_bitseq.datasize, imsg->pwm_bitseq.flags);
 			break;
 #endif
 
