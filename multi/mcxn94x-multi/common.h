@@ -22,6 +22,9 @@
 #define NELEMS(x) (sizeof(x) / sizeof(*(x)))
 
 
+#define ALIGN_ADDR(addr, align) ((align) ? (((addr) + ((align) - 1)) & ~((align) - 1)) : (addr))
+
+
 static inline void common_dataBarrier(void)
 {
 	__asm__ volatile ("dmb");
@@ -39,5 +42,7 @@ static inline void common_instrBarrier(void)
 	__asm__ volatile ("isb");
 }
 
+
+int common_setClock(int dev, int sel, int div, int enable);
 
 #endif

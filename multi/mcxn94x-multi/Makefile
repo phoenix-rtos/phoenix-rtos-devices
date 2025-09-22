@@ -8,7 +8,7 @@ NAME := mcxn94x-multi
 
 LOCAL_PATH := $(call my-dir)
 
-LOCAL_SRCS = mcxn94x-multi.c dev.c cpu.c dummyfs.c uart.c
+LOCAL_SRCS = mcxn94x-multi.c common.c cpu.c dev.c dummyfs.c pipe.c uart.c
 DEP_LIBS := libtty libklog libpseudodev
 LIBS := libdummyfs libklog libpseudodev libposixsrv
 
