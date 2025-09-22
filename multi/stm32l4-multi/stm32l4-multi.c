@@ -89,7 +89,7 @@
 
 
 struct {
-	char stack[THREADS_NO - 1][STACKSZ] __attribute__((aligned(8)));
+	char stack[THREADS_NO - 1][STACKSZ] __attribute__ ((aligned(8)));
 
 	unsigned int port;
 } common;
@@ -192,17 +192,17 @@ static void handleMsg(msg_t *msg)
 
 		case spi_get:
 			err = spi_transaction(imsg->spi_rw.spi, spi_dir_read, imsg->spi_rw.cmd, imsg->spi_rw.addr,
-					imsg->spi_rw.flags, msg->o.data, NULL, msg->o.size);
+				imsg->spi_rw.flags, msg->o.data, NULL, msg->o.size);
 			break;
 
 		case spi_set:
 			err = spi_transaction(imsg->spi_rw.spi, spi_dir_write, imsg->spi_rw.cmd, imsg->spi_rw.addr,
-					imsg->spi_rw.flags, NULL, msg->i.data, msg->i.size);
+				imsg->spi_rw.flags, NULL, msg->i.data, msg->i.size);
 			break;
 
 		case spi_rw:
 			err = spi_transaction(imsg->spi_rw.spi, spi_dir_readwrite, imsg->spi_rw.cmd, imsg->spi_rw.addr,
-					imsg->spi_rw.flags, msg->o.data, msg->i.data, (msg->i.size > msg->o.size) ? msg->o.size : msg->i.size);
+				imsg->spi_rw.flags, msg->o.data, msg->i.data, (msg->i.size > msg->o.size) ? msg->o.size : msg->i.size);
 			break;
 
 		case spi_def:
@@ -211,7 +211,7 @@ static void handleMsg(msg_t *msg)
 
 		case gpio_def:
 			err = gpio_configPin(imsg->gpio_def.port, imsg->gpio_def.pin, imsg->gpio_def.mode,
-					imsg->gpio_def.af, imsg->gpio_def.otype, imsg->gpio_def.ospeed, imsg->gpio_def.pupd);
+				imsg->gpio_def.af, imsg->gpio_def.otype, imsg->gpio_def.ospeed, imsg->gpio_def.pupd);
 			break;
 
 		case gpio_get:
@@ -225,12 +225,12 @@ static void handleMsg(msg_t *msg)
 
 		case uart_def:
 			err = uart_configure(imsg->uart_def.uart, imsg->uart_def.bits, imsg->uart_def.parity,
-					imsg->uart_def.baud, imsg->uart_def.enable);
+				imsg->uart_def.baud, imsg->uart_def.enable);
 			break;
 
 		case uart_get:
 			err = uart_read(imsg->uart_get.uart, msg->o.data, msg->o.size,
-					imsg->uart_get.mode, imsg->uart_get.timeout);
+				imsg->uart_get.mode, imsg->uart_get.timeout);
 			break;
 
 		case uart_set:
@@ -264,8 +264,8 @@ static void handleMsg(msg_t *msg)
 			err = pwm_disableChannel(imsg->pwm_dischn.timer, imsg->pwm_dischn.chn);
 			break;
 		case pwm_bitseq:
-			err = pwm_setBitSequence(imsg->pwm_bitseq.timer, imsg->pwm_bitseq.chn, imsg->pwm_bitseq.compare0,
-					imsg->pwm_bitseq.compare1, imsg->pwm_bitseq.nbits, imsg->pwm_bitseq.data);
+			err = pwm_setBitSequence(imsg->pwm_bitseq.timer, imsg->pwm_bitseq.chn, imsg->pwm_bitseq.data,
+				imsg->pwm_bitseq.nbits, imsg->pwm_bitseq.datasize, imsg->pwm_bitseq.flags);
 			break;
 #endif
 
@@ -386,6 +386,7 @@ int main(void)
 	uart_init();
 	rng_init();
 	libklog_init(log_write);
+
 #if BUILTIN_POSIXSRV
 	posixsrv_start();
 #endif

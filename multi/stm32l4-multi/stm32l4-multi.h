@@ -19,6 +19,7 @@
 #include <libmulti/libspi.h>
 #include <libmulti/libi2c.h>
 
+
 #define FLASH_REBOOT_MAGIC 0x88bb77aaUL
 #define OTP_WRITE_MAGIC    0x5d1a8712UL
 #define RTC_BACKUP_SZ      ((128 / 2) - 4)
@@ -219,25 +220,20 @@ typedef struct {
 typedef struct {
 	pwm_tim_id_t timer;
 	pwm_ch_id_t chn;
-	uint32_t compare0;
-	uint32_t compare1;
+	void *data;
 	uint32_t nbits;
-	uint8_t *data;
+	uint8_t datasize;
+	int flags;
 } __attribute__((packed)) pwmbitseq_t;
 
 
 /* EXTI */
 
 
-enum { exti_irq = 0,
-	exti_event,
-	exti_irqevent,
-	exti_disabled };
+enum { exti_irq = 0, exti_event, exti_irqevent, exti_disabled };
 
 
-enum { exti_rising = 0,
-	exti_falling,
-	exti_risingfalling };
+enum { exti_rising = 0, exti_falling, exti_risingfalling };
 
 
 typedef struct {
@@ -256,9 +252,7 @@ typedef struct {
 /* ADC */
 
 
-enum { adc1 = 0,
-	adc2,
-	adc3 };
+enum { adc1 = 0, adc2, adc3 };
 
 
 typedef struct {
