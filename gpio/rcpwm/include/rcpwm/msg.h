@@ -11,25 +11,25 @@
  * %LICENSE%
  */
 
-#ifndef ZYNQ_PWM_PRIV_H
-#define ZYNQ_PWM_PRIV_H
+#ifndef RCPWM_PRIV_H
+#define RCPWM_PRIV_H
 
 #include <stdint.h>
 #include <sys/msg.h>
 
 
 typedef struct {
-	enum { zynqpwm_msgSet,
-		zynqpwm_msgGet } type;
+	enum { rcpwm_msgSet,
+		rcpwm_msgGet } type;
 	uint32_t compval[8];
 	uint8_t mask;
-} zynqpwm_imsg_t;
+} rcpwm_imsg_t;
 
 
 typedef struct {
 	int err;
 	uint32_t compval[8];
-} zynqpwm_omsg_t;
+} rcpwm_omsg_t;
 
 
 #endif

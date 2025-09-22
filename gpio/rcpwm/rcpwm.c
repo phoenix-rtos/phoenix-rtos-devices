@@ -13,16 +13,16 @@
 
 #include <sys/msg.h>
 #include <string.h>
-#include "zynq-pwm-priv.h"
-#include "zynq-pwm-msg.h"
+#include <rcpwm/api.h>
+#include <rcpwm/msg.h>
 
 
-int zynqpwm_set(oid_t *oid, uint32_t compval[ZYNQ_PWM_CHANNELS], uint8_t mask)
+int rcpwm_set(oid_t *oid, uint32_t compval[RCPWM_CHANNELS], uint8_t mask)
 {
 	int ret;
 	msg_t msg;
-	zynqpwm_imsg_t *i = (zynqpwm_imsg_t *)msg.i.raw;
-	zynqpwm_omsg_t *o = (zynqpwm_omsg_t *)msg.o.raw;
+	rcpwm_imsg_t *i = (rcpwm_imsg_t *)msg.i.raw;
+	rcpwm_omsg_t *o = (rcpwm_omsg_t *)msg.o.raw;
 
 	msg.i.data = NULL;
 	msg.i.size = 0;
@@ -30,7 +30,7 @@ int zynqpwm_set(oid_t *oid, uint32_t compval[ZYNQ_PWM_CHANNELS], uint8_t mask)
 	msg.o.size = 0;
 
 	msg.type = mtDevCtl;
-	i->type = zynqpwm_msgSet;
+	i->type = rcpwm_msgSet;
 	i->mask = mask;
 	msg.oid = *oid;
 	memcpy(i->compval, compval, sizeof(i->compval));
@@ -44,12 +44,12 @@ int zynqpwm_set(oid_t *oid, uint32_t compval[ZYNQ_PWM_CHANNELS], uint8_t mask)
 }
 
 
-int zynqpwm_get(oid_t *oid, uint32_t compval[ZYNQ_PWM_CHANNELS])
+int rcpwm_get(oid_t *oid, uint32_t compval[RCPWM_CHANNELS])
 {
 	int ret;
 	msg_t msg;
-	zynqpwm_imsg_t *i = (zynqpwm_imsg_t *)msg.i.raw;
-	zynqpwm_omsg_t *o = (zynqpwm_omsg_t *)msg.o.raw;
+	rcpwm_imsg_t *i = (rcpwm_imsg_t *)msg.i.raw;
+	rcpwm_omsg_t *o = (rcpwm_omsg_t *)msg.o.raw;
 
 	msg.i.data = NULL;
 	msg.i.size = 0;
@@ -57,7 +57,7 @@ int zynqpwm_get(oid_t *oid, uint32_t compval[ZYNQ_PWM_CHANNELS])
 	msg.o.size = 0;
 
 	msg.type = mtDevCtl;
-	i->type = zynqpwm_msgGet;
+	i->type = rcpwm_msgGet;
 	msg.oid = *oid;
 	ret = msgSend(oid->port, &msg);
 	if (ret >= 0) {
