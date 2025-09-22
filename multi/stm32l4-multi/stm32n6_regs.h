@@ -384,4 +384,4 @@ enum tim_regs {
 };
 
 
-#endif
+#endif /* _STM32N6_REGS_H_ */

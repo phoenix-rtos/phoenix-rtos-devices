@@ -56,13 +56,12 @@
 #define PWM_TIM_NO_MASTER_SLAVE ((1 << pwm_tim10) | (1 << pwm_tim11) | (1 << pwm_tim13) | (1 << pwm_tim14) | (1 << pwm_tim16) | (1 << pwm_tim17))
 #define PWM_TIM_32BIT           ((1 << pwm_tim2) | (1 << pwm_tim3) | (1 << pwm_tim4) | (1 << pwm_tim5))
 
-// #define PWM_TIM_MASTER1_MODE(tim_id) ((1 << (tim_id)) & )
 
-/* Get the base clock frequency for a given timer */
+/* Get the base clock frequency for a given timer. Returns 0 upon error. */
 uint64_t pwm_getBaseFrequency(pwm_tim_id_t timer);
 
 
-/* Configure a TIMx peripheral for PWM generation. User should disable timer first if running. Returns errors */
+/* Configure a TIMx peripheral for PWM generation. User should disable timer first if already running. Returns errors */
 int pwm_configure(pwm_tim_id_t timer, uint16_t prescaler, uint32_t top);
 
 
@@ -74,8 +73,13 @@ int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t compare);
 int pwm_get(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t *top, uint32_t *compare);
 
 
-/* Creates PWM bit sequence with given compare values. Configure the timer first. The data buffer must be at least nbits/8 bytes long. Only one active bit sequence per channel. */
-int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t compare0, uint32_t compare1, uint32_t nbits, uint8_t *data);
+/* Transmits a bit sequence according to a list of compare values. Configure a timer first.
+ * NOTE: For now only one DSHOT bit sequence per timer at once (both IRQ and DMA modes)
+ * data - buffer of compare values, each n bytes wide, where n=datasize
+ * nbits - number of bits to transmit
+ * datasize - number of bytes per compare value in data (1,2,4)
+ */
+int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t nbits, uint8_t datasize, int flags);
 
 
 int pwm_init(void);
@@ -88,4 +92,4 @@ int pwm_disableTimer(pwm_tim_id_t timer);
 /* Disable a specific PWM channel. */
 int pwm_disableChannel(pwm_tim_id_t timer, pwm_ch_id_t chn);
 
-#endif /* #idndef PWM_N6_H_ */
+#endif /* #ifndef PWM_N6_H_ */

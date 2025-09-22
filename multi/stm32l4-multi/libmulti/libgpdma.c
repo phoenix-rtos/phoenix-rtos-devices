@@ -16,6 +16,7 @@
 #include <stdbool.h>
 
 #include "../common.h"
+#include "../stm32l4-multi.h"
 #include "libmulti/libdma.h"
 
 #define DMA_CTRL_GPDMA1     0
@@ -308,6 +309,18 @@ typedef struct {
 	uint32_t llr;
 } libdma_chn_setup_t;
 
+static const struct libdma_perSetup libdma_persTimUpd[] = {
+	[pwm_tim1] = { .dma = DMA_CTRL_GPDMA1, .requests = { dma_req_invalid, dma_req_tim1_upd }, .portPer = 1, .portMem = 0, .valid = 1 },
+	[pwm_tim2] = { .dma = DMA_CTRL_GPDMA1, .requests = { dma_req_invalid, dma_req_tim2_upd }, .portPer = 1, .portMem = 0, .valid = 1 },
+	[pwm_tim3] = { .dma = DMA_CTRL_GPDMA1, .requests = { dma_req_invalid, dma_req_tim3_upd }, .portPer = 1, .portMem = 0, .valid = 1 },
+	[pwm_tim4] = { .dma = DMA_CTRL_GPDMA1, .requests = { dma_req_invalid, dma_req_tim4_upd }, .portPer = 1, .portMem = 0, .valid = 1 },
+	[pwm_tim5] = { .dma = DMA_CTRL_GPDMA1, .requests = { dma_req_invalid, dma_req_tim5_upd }, .portPer = 1, .portMem = 0, .valid = 1 },
+	[pwm_tim8] = { .dma = DMA_CTRL_GPDMA1, .requests = { dma_req_invalid, dma_req_tim8_upd }, .portPer = 1, .portMem = 0, .valid = 1 },
+	[pwm_tim15] = { .dma = DMA_CTRL_GPDMA1, .requests = { dma_req_invalid, dma_req_tim15_upd }, .portPer = 1, .portMem = 0, .valid = 1 },
+	[pwm_tim16] = { .dma = DMA_CTRL_GPDMA1, .requests = { dma_req_invalid, dma_req_tim16_upd }, .portPer = 1, .portMem = 0, .valid = 1 },
+	[pwm_tim17] = { .dma = DMA_CTRL_GPDMA1, .requests = { dma_req_invalid, dma_req_tim17_upd }, .portPer = 1, .portMem = 0, .valid = 1 },
+};
+
 
 static const struct dma_setup {
 	volatile uint32_t *base;
@@ -478,6 +491,10 @@ int libdma_acquirePeripheral(int per, unsigned int num, const struct libdma_per 
 	else if (per == dma_uart) {
 		setupsSize = sizeof(libdma_persUart) / sizeof(libdma_persUart[0]);
 		setups = libdma_persUart;
+	}
+	else if (per == dma_tim_upd) {
+		setupsSize = sizeof(libdma_persTimUpd) / sizeof(libdma_persTimUpd[0]);
+		setups = libdma_persTimUpd;
 	}
 	else {
 		return -EINVAL;
