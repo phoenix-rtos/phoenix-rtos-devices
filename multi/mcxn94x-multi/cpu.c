@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * MCX N94x M33 CPU core driver
+ * MCX N94x M33 Mailbox core driver
  *
  * Copyright 2025 Phoenix Systems
  * Author: Daniel Sawka
@@ -23,8 +23,10 @@
 #include <sys/msg.h>
 #include <sys/platform.h>
 #include <sys/threads.h>
+#include <sys/types.h>
 
-#include <libtty-lf-fifo.h>
+#define LF_FIFO_CACHELINE 4
+#include <lf-fifo.h>
 
 #include "common.h"
 #include "dev.h"
@@ -42,6 +44,7 @@ enum {
 static struct {
 	uint8_t rxBuf[64];
 	lf_fifo_t rxFifo;
+
 	handle_t rxLock;
 	handle_t txLock;
 	handle_t irqLock;
@@ -59,23 +62,37 @@ static int mailbox_irqHandler(unsigned int n, void *arg)
 	size_t consumed = 0;
 	uint32_t value = REG_IRQ(common.coreidSelf, reg_irq);
 
-	if (value != 0) {
-		REG_IRQ(common.coreidSelf, reg_irq_clr) = value;
+	if (value == 0) {
+		return -1;
+	}
 
-		size_t rxLen = (value >> 24) & 0x3;
+	REG_IRQ(common.coreidSelf, reg_irq_clr) = value;
 
-		for (; consumed < rxLen; consumed++) {
-			uint8_t byte = (value >> (8 * consumed)) & 0xff;
+	/* Currently, ctl bit is only used for notifications (via cond), ignoring additional data bytes */
+	if (value & (1 << 26)) {
+		return 1;
+	}
 
-			/* TODO: Data is overwritten if rx fifo is full. Consider disabling
-			the interrupt somehow and leaving the value in the register until
-			the application reads from rx fifo. Also, fifo needs to be more
-			generic and at least have function to get its current length. */
-			lf_fifo_push(&common.rxFifo, byte);
-		}
+	size_t rxLen = (value >> 24) & 0x3;
+
+	/* Data which does not fit the buffer is lost */
+	/* TODO: Consider disabling the interrupt somehow and leaving the value
+	in the register until the application reads from rx fifo */
+	for (; consumed < rxLen && lf_fifo_free(&common.rxFifo) > 0; consumed++) {
+		uint8_t byte = (value >> (8 * consumed)) & 0xff;
+		lf_fifo_push(&common.rxFifo, byte);
 	}
 
 	return (consumed > 0) ? 1 : -1;
+}
+
+
+int cpu_waitForEvent(uint32_t timeoutUs)
+{
+	mutexLock(common.irqLock);
+	int res = condWait(common.rxCond, common.irqLock, timeoutUs);
+	mutexUnlock(common.irqLock);
+	return res;
 }
 
 
@@ -91,25 +108,16 @@ static ssize_t fifoRead(unsigned char *buf, size_t size, bool blocking)
 	mutexLock(common.rxLock);
 
 	while (bytesRead < size) {
-		mutexLock(common.irqLock);
-		while (lf_fifo_empty(&common.rxFifo) != 0) {
+		while (lf_fifo_empty(&common.rxFifo)) {
 			if (!blocking) {
-				mutexUnlock(common.irqLock);
 				mutexUnlock(common.rxLock);
 				return (bytesRead > 0) ? (ssize_t)bytesRead : -EAGAIN;
 			}
-			condWait(common.rxCond, common.irqLock, 0);
-		}
-		mutexUnlock(common.irqLock);
 
-		while (bytesRead < size) {
-			if (lf_fifo_pop(&common.rxFifo, &buf[bytesRead]) != 0) {
-				bytesRead += 1;
-			}
-			else {
-				break;
-			}
+			cpu_waitForEvent(0);
 		}
+
+		bytesRead += lf_fifo_pop_many(&common.rxFifo, &buf[bytesRead], size - bytesRead);
 	}
 
 	mutexUnlock(common.rxLock);
@@ -118,18 +126,19 @@ static ssize_t fifoRead(unsigned char *buf, size_t size, bool blocking)
 }
 
 
-static ssize_t fifoWrite(const unsigned char *buf, size_t len, bool blocking)
+ssize_t cpu_fifoWrite(const unsigned char *buf, size_t len, bool blocking, uint8_t ctl)
 {
 	size_t bytesWritten = 0;
+	bool sendCtl = (ctl != 0);
 
-	if (buf == NULL || len == 0) {
+	if ((buf == NULL || len == 0) && !sendCtl) {
 		return -EINVAL;
 	}
 
 	/* Synchronize multiple writers */
 	mutexLock(common.txLock);
 
-	while (bytesWritten < len) {
+	while (bytesWritten < len || sendCtl) {
 		if (!blocking && REG_IRQ(common.coreidRemote, reg_irq) != 0u) {
 			mutexUnlock(common.txLock);
 			return (bytesWritten > 0) ? bytesWritten : -EAGAIN;
@@ -137,11 +146,12 @@ static ssize_t fifoWrite(const unsigned char *buf, size_t len, bool blocking)
 
 		while (blocking && REG_IRQ(common.coreidRemote, reg_irq) != 0u) {
 			; /* Wait until the other CPU reads IRQx register */
+			  /* TODO: Add some fancy acknowledgement protocol to avoid busy waiting here */
 		}
 
-		/* Message structure: MSB[ 6b reserved | 2b len(data) | 24b data ]LSB */
-		uint32_t value = 0;
-		size_t toWrite = min(len - (size_t)bytesWritten, 3);
+		/* Message structure: MSB[ 6b ctl | 2b len(data) | 24b data ]LSB */
+		uint32_t value = (uint32_t)ctl << 26;
+		size_t toWrite = min(len - bytesWritten, 3);
 
 		for (size_t i = 0; i < toWrite; i++) {
 			value |= (uint32_t)buf[bytesWritten] << (8 * i);
@@ -151,6 +161,7 @@ static ssize_t fifoWrite(const unsigned char *buf, size_t len, bool blocking)
 		value |= ((uint32_t)toWrite & 0x3) << 24;
 
 		REG_IRQ(common.coreidRemote, reg_irq_set) = value;
+		sendCtl = false;
 	}
 
 	mutexUnlock(common.txLock);
@@ -163,7 +174,7 @@ static int fifoPollStatus(void)
 {
 	int revents = 0;
 
-	if (lf_fifo_empty(&common.rxFifo) == 0) {
+	if (!lf_fifo_empty(&common.rxFifo)) {
 		revents |= POLLIN | POLLRDNORM;
 	}
 
@@ -193,11 +204,11 @@ static void cpu_handleMsg(msg_t *msg, msg_rid_t rid, unsigned int major, unsigne
 
 		case mtWrite:
 			blocking = ((msg->i.io.mode & O_NONBLOCK) == 0u);
-			msg->o.err = fifoWrite(msg->i.data, msg->i.size, blocking);
+			msg->o.err = cpu_fifoWrite(msg->i.data, msg->i.size, blocking, 0);
 			break;
 
 		case mtRead:
-			blocking = ((msg->i.io.mode & O_NONBLOCK) != 0u);
+			blocking = ((msg->i.io.mode & O_NONBLOCK) == 0u);
 			msg->o.err = fifoRead(msg->o.data, msg->o.size, blocking);
 			break;
 
@@ -222,6 +233,7 @@ static void cpu_handleMsg(msg_t *msg, msg_rid_t rid, unsigned int major, unsigne
 static void cpu_init(void)
 {
 	common.mailbox = (void *)0x400b2000;
+	common_setClock(pctl_mailbox, -1, -1, 1);
 
 	lf_fifo_init(&common.rxFifo, common.rxBuf, sizeof(common.rxBuf));
 
@@ -243,7 +255,7 @@ static void cpu_init(void)
 }
 
 
-static void __attribute__((constructor)) cpu_register(void)
+static void __attribute__((constructor(1000))) cpu_register(void)
 {
 	cpu_init();
 
