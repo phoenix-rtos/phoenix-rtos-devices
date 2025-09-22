@@ -7,6 +7,6 @@
 #
 
 DEFAULT_COMPONENTS := zynq-uart uart16550 zynq-pwm zynq7000-xgpio zynq-spi zynq7000-xspi zynq7000-gpio
-DEFAULT_COMPONENTS += libflashdrv-zynq zynq-flash test_flashdrv libspi-msg libzynq7000-gpio-msg libzynqpwm
+DEFAULT_COMPONENTS += libflashdrv-zynq zynq-flash test_flashdrv libspi-msg libzynq7000-gpio-msg librcpwm
 DEFAULT_COMPONENTS += libsensors sensors libsensorsclient
 DEFAULT_COMPONENTS += zynq-i2c zynq7000-sdcard

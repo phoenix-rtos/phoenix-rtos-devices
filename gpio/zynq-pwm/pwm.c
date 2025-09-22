@@ -22,7 +22,7 @@
 #include <posix/utils.h>
 #include <sys/mman.h>
 
-#include "zynq-pwm-priv.h"
+#include <rcpwm/msg.h>
 
 #define ROOTFS_WAIT 1
 #define PRIORITY    2
@@ -75,8 +75,8 @@ static void pwm_thread(void *arg)
 	uint32_t val;
 	int ret;
 	char buff[16];
-	zynqpwm_imsg_t *iptr = (zynqpwm_imsg_t *)msg.i.raw;
-	zynqpwm_omsg_t *optr = (zynqpwm_omsg_t *)msg.o.raw;
+	rcpwm_imsg_t *iptr = (rcpwm_imsg_t *)msg.i.raw;
+	rcpwm_omsg_t *optr = (rcpwm_omsg_t *)msg.o.raw;
 	size_t i;
 
 	(void)arg;
@@ -144,13 +144,13 @@ static void pwm_thread(void *arg)
 				break;
 
 			case mtDevCtl:
-				if (iptr->type == zynqpwm_msgGet) {
+				if (iptr->type == rcpwm_msgGet) {
 					for (i = 0; i < sizeof(optr->compval) / sizeof(*optr->compval); ++i) {
 						pwm_read(&pwm_common.channel[i], &optr->compval[i]);
 					}
 					ret = i;
 				}
-				else if (iptr->type == zynqpwm_msgSet) {
+				else if (iptr->type == rcpwm_msgSet) {
 					ret = 0;
 					for (i = 0; i < sizeof(iptr->compval) / sizeof(*iptr->compval); ++i) {
 						if ((iptr->mask & (1 << i)) != 0) {
