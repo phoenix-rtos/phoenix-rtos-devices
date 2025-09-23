@@ -6,4 +6,4 @@
 # Copyright 2025 Phoenix Systems
 #
 
-DEFAULT_COMPONENTS := grlib-uart grspw2 grspwrtr
+DEFAULT_COMPONENTS := grlib-uart grspw2 grspwrtr grspfi
