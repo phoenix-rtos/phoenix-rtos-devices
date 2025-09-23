@@ -46,18 +46,18 @@
 
 #define PAGE_ALIGN(addr) (((addr_t)(addr) + _PAGE_SIZE - 1) & ~(_PAGE_SIZE - 1))
 
-#define SPW_THREADS_NO 4
-#define SPW_STACKSZ    4096
-#define SPW_PRIO       3
+#define GRSPW_THREADS_NO 4
+#define GRSPW_STACKSZ    4096
+#define GRSPW_PRIO       3
 
 
 static struct {
-	oid_t spwOid;
-	char spwStack[SPW_THREADS_NO][SPW_STACKSZ];
-} spw_common;
+	oid_t oid;
+	char stack[GRSPW_THREADS_NO][GRSPW_STACKSZ];
+} grspw_common;
 
 
-static void spw_dispatchMsg(msg_t *msg)
+static void grspw_dispatchMsg(msg_t *msg)
 {
 	id_t id = msg->oid.id;
 
@@ -78,7 +78,7 @@ static void spw_dispatchMsg(msg_t *msg)
 }
 
 
-static void spw_thread(void *arg)
+static void grspw_thread(void *arg)
 {
 	(void)arg;
 
@@ -86,12 +86,12 @@ static void spw_thread(void *arg)
 	msg_rid_t rid;
 
 	for (;;) {
-		while (msgRecv(spw_common.spwOid.port, &msg, &rid) < 0) {
+		while (msgRecv(grspw_common.oid.port, &msg, &rid) < 0) {
 		}
 
 		switch (msg.type) {
 			case mtDevCtl:
-				spw_dispatchMsg(&msg);
+				grspw_dispatchMsg(&msg);
 				break;
 
 			case mtRead:
@@ -106,7 +106,7 @@ static void spw_thread(void *arg)
 				break;
 		}
 
-		msgRespond(spw_common.spwOid.port, &msg, rid);
+		msgRespond(grspw_common.oid.port, &msg, rid);
 	}
 }
 
@@ -115,7 +115,7 @@ int main(void)
 {
 	oid_t oid;
 
-	if (portCreate(&spw_common.spwOid.port) < 0) {
+	if (portCreate(&grspw_common.oid.port) < 0) {
 		LOG_ERROR("Failed to create port\n");
 		return EXIT_FAILURE;
 	}
@@ -126,24 +126,24 @@ int main(void)
 	}
 
 	if (spw_init() < 0) {
-		portDestroy(spw_common.spwOid.port);
+		portDestroy(grspw_common.oid.port);
 		LOG_ERROR("Failed to initialize SpaceWire\n");
 		return EXIT_FAILURE;
 	}
 
-	if (spw_createDevs(&spw_common.spwOid) < 0) {
-		portDestroy(spw_common.spwOid.port);
+	if (spw_createDevs(&grspw_common.oid) < 0) {
+		portDestroy(grspw_common.oid.port);
 		LOG_ERROR("Failed to create SpaceWire devices");
 		return EXIT_FAILURE;
 	}
 
-	for (int i = 0; i < SPW_THREADS_NO - 1; i++) {
-		beginthread(spw_thread, SPW_PRIO, spw_common.spwStack[i], SPW_STACKSZ, NULL);
+	for (int i = 0; i < GRSPW_THREADS_NO - 1; i++) {
+		beginthread(grspw_thread, GRSPW_PRIO, grspw_common.stack[i], GRSPW_STACKSZ, NULL);
 	}
 
 	LOG("initialized");
-	priority(SPW_PRIO);
-	spw_thread(NULL);
+	priority(GRSPW_PRIO);
+	grspw_thread(NULL);
 
 	return 0;
 }
