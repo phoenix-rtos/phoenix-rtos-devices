@@ -59,7 +59,7 @@ static spiketty_t *spiketty_get(oid_t *oid)
 }
 
 
-static void set_baudrate(void *arg, speed_t baud)
+static void set_baudrate(void *arg, int baud)
 {
 	/* TODO */
 }

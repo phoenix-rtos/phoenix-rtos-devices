@@ -165,14 +165,13 @@ static void uart_intThread(void *arg)
  *  baud_rate = ref_clk / (bgen * (bdiv + 1))
  *  bgen: 2 - 65535
  *  bdiv: 4 - 255                             */
-static void uart_setBaudrate(void *data, speed_t speed)
+static void uart_setBaudrate(void *data, int baudrate)
 {
 	uint32_t bestDiff, diff;
 	uint32_t calcBaudrate;
 	uint32_t bdiv, bgen, bestBdiv = 4, bestBgen = 2;
 
 	uart_t *uart = (uart_t *)data;
-	int baudrate = libtty_baudrate_to_int(speed);
 
 	bestDiff = (uint32_t)baudrate;
 
@@ -508,7 +507,7 @@ static int uart_initClk(int n)
 #endif
 
 
-static int uart_init(unsigned int n, speed_t baud, int raw)
+static int uart_init(unsigned int n, int baud, int raw)
 {
 	libtty_callbacks_t callbacks;
 	uart_t *uart = &uart_common.uart;
@@ -596,15 +595,15 @@ int main(int argc, char **argv)
 {
 	/* Default console configuration */
 	int uartn = UART_CONSOLE_USER;
-	speed_t baud = B115200;
+	int baud = 115200;
 	int c, raw = 0;
 
 	if (argc > 1) {
 		while ((c = getopt(argc, argv, "n:b:rh")) != -1) {
 			switch (c) {
 				case 'b':
-					baud = libtty_int_to_baudrate(atoi(optarg));
-					if (baud == (speed_t)-1) {
+					baud = atoi(optarg);
+					if (baud <= 0) {
 						debug("zynq-uart: wrong baudrate value\n");
 						return EXIT_FAILURE;
 					}

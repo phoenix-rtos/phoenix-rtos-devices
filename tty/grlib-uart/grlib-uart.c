@@ -174,10 +174,10 @@ static void uart_intThread(void *arg)
 }
 
 
-static void uart_setBaudrate(void *data, speed_t speed)
+static void uart_setBaudrate(void *data, int speed)
 {
 	uart_t *uart = (uart_t *)data;
-	uint32_t scaler = (UART_CLK / (libtty_baudrate_to_int(speed) * 8 + 7));
+	uint32_t scaler = (UART_CLK / (speed * 8 + 7));
 
 	*(uart->base + uart_scaler) = scaler;
 }
@@ -420,7 +420,7 @@ static int uart_iomuxInit(unsigned int n)
 }
 
 
-static int uart_init(unsigned int n, speed_t baud, int raw)
+static int uart_init(unsigned int n, int baud, int raw)
 {
 	uart_t *uart = &uart_common.uart;
 
@@ -530,15 +530,15 @@ static void uart_usage(const char *progname)
 int main(int argc, char **argv)
 {
 	int uartn = UART_CONSOLE_USER;
-	speed_t baud = B115200;
+	int baud = 115200;
 	int c, raw = 0;
 
 	if (argc > 1) {
 		while ((c = getopt(argc, argv, "n:b:rh")) != -1) {
 			switch (c) {
 				case 'b':
-					baud = libtty_int_to_baudrate(atoi(optarg));
-					if (baud == (speed_t)-1) {
+					baud = atoi(optarg);
+					if (baud <= 0) {
 						debug("grlib-uart: wrong baudrate value\n");
 						return EXIT_FAILURE;
 					}

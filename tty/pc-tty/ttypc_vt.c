@@ -692,7 +692,7 @@ void ttypc_vt_destroy(ttypc_vt_t *vt)
 }
 
 
-static void _ttypc_vt_setbaudrate(void *arg, speed_t baud)
+static void _ttypc_vt_setbaudrate(void *arg, int baud)
 {
 	/* TODO */
 }

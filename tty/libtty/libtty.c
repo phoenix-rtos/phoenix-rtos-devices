@@ -208,10 +208,14 @@ void libtty_wake_writer(libtty_common_t *tty)
 }
 
 
-int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned int bufsize, speed_t speed)
+int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned int bufsize, int speed)
 {
 	/* bufsize must be a power of 2 */
 	if (bufsize == 0 || (bufsize & (bufsize - 1)) != 0) {
+		return -1;
+	}
+
+	if (speed < 0) {
 		return -1;
 	}
 
@@ -471,9 +475,8 @@ int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const
 			}
 
 			if (temp_term.c_ospeed != tty->term.c_ospeed) {
-				log_info("old baud: %u (B%u), new_baud: %u (B%u)",
-					tty->term.c_ospeed, libtty_baudrate_to_int(tty->term.c_ospeed),
-					temp_term.c_ospeed, libtty_baudrate_to_int(temp_term.c_ospeed));
+				log_info("old baud: %u, new_baud: %u",
+						tty->term.c_ospeed, temp_term.c_ospeed);
 				CALLBACK(set_baudrate, temp_term.c_ospeed);
 			}
 
