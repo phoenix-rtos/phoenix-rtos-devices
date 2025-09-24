@@ -244,7 +244,7 @@ static int spw_buffersAlloc(spw_dev_t *dev)
 		return -ENOMEM;
 	}
 
-	return EOK;
+	return 0;
 }
 
 
@@ -600,7 +600,7 @@ static int spw_configure(spw_dev_t *dev, const spw_config_t *config)
 
 	(void)mutexUnlock(dev->ctrlLock);
 
-	return EOK;
+	return 0;
 }
 
 
@@ -894,5 +894,5 @@ int spw_init(void)
 			return -1;
 		}
 	}
-	return EOK;
+	return 0;
 }
