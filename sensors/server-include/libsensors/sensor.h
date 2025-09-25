@@ -3,8 +3,8 @@
  *
  * Sensor Manager
  *
- * Copyright 2022 Phoenix Systems
- * Author: Hubert Buczynski
+ * Copyright 2022-2025 Phoenix Systems
+ * Author: Hubert Buczynski, Mateusz Niewiadomski
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -15,9 +15,11 @@
 #define _LIBSENSORS_SENSOR_H_
 
 #include <libsensors/client.h>
+#include <libsensors/bus.h>
 
 #include <sys/rb.h>
 #include <posix/idtree.h>
+#include <spi-msg.h>
 
 
 #define THREAD_PRIORITY_MSGSRV 3 /* priority of messaging server of sensorhub */
@@ -30,6 +32,7 @@ typedef struct {
 	sensor_type_t types; /* supported sensor types */
 	const char *drv;     /* device driver name */
 	void *ctx;           /* internal context for a specific sensor */
+	sensor_bus_t bus;    /* bus operands of that sensor */
 
 	idnode_t node;
 } sensor_info_t;
