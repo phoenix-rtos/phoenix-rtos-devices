@@ -131,26 +131,45 @@ static int lis2mdl_hwSetup(lis2mdl_ctx_t *ctx)
 }
 
 
-static void lis2mdl_threadPublish(void *data)
+int lis2mdl_read(const sensor_info_t *info, const sensor_event_t **evt)
 {
-	int err;
-	sensor_info_t *info = (sensor_info_t *)data;
 	lis2mdl_ctx_t *ctx = info->ctx;
 	uint8_t ibuf[SENSOR_OUTPUT_SIZE] = { 0 };
 	const uint8_t obuf = REG_DATA_OUT | SPI_READ_BIT;
+	int err;
+
+	err = sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, &obuf, sizeof(obuf), ibuf, sizeof(ibuf), sizeof(obuf));
+
+	if (err < 0) {
+		fprintf(stderr, "lis2mdl read: %d\n", err);
+		return -1;
+	}
+
+	gettime(&(ctx->evt.timestamp), NULL);
+	ctx->evt.mag.magX = translateMag(ibuf[1], ibuf[0]);
+	ctx->evt.mag.magY = -translateMag(ibuf[3], ibuf[2]); /* minus accounts for non right-handness of measurement */
+	ctx->evt.mag.magZ = translateMag(ibuf[5], ibuf[4]);
+
+	if (evt != NULL) {
+		*evt = &ctx->evt;
+	}
+
+	return 1;
+}
+
+
+static void lis2mdl_threadPublish(void *data)
+{
+	sensor_info_t *info = (sensor_info_t *)data;
 
 	while (1) {
 		usleep(100 * 1000);
 
-		err = sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, &obuf, sizeof(obuf), ibuf, sizeof(ibuf), sizeof(obuf));
-
-		if (err >= 0) {
-			gettime(&(ctx->evt.timestamp), NULL);
-			ctx->evt.mag.magX = translateMag(ibuf[1], ibuf[0]);
-			ctx->evt.mag.magY = -translateMag(ibuf[3], ibuf[2]); /* minus accounts for non right-handness of measurement */
-			ctx->evt.mag.magZ = translateMag(ibuf[5], ibuf[4]);
-			sensors_publish(info->id, &ctx->evt);
+		if (lis2mdl_read(info, NULL) < 0) {
+			continue;
 		}
+
+		sensors_publish(info->id, &ctx->evt);
 	}
 }
 
@@ -166,6 +185,14 @@ static int lis2mdl_start(sensor_info_t *info)
 	}
 
 	return err;
+}
+
+
+int lis2mdl_dealloc(sensor_info_t *info)
+{
+	free((lis2mdl_ctx_t *)info->ctx);
+
+	return 0;
 }
 
 
@@ -220,7 +247,9 @@ void __attribute__((constructor)) lis2mdl_mag_register(void)
 	static sensor_drv_t sensor = {
 		.name = "lis2mdl",
 		.alloc = lis2mdl_alloc,
-		.start = lis2mdl_start
+		.dealloc = lis2mdl_dealloc,
+		.start = lis2mdl_start,
+		.read = lis2mdl_read
 	};
 
 	sensors_register(&sensor);
