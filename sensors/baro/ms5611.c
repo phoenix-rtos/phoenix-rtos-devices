@@ -20,7 +20,7 @@
 #include <spi.h>
 
 #include <libsensors/sensor.h>
-#include <libsensors/spi/spi.h>
+#include <libsensors/bus.h>
 
 /* MS5611 COMMANDS */
 
@@ -58,8 +58,6 @@
 
 
 typedef struct {
-	spimsg_ctx_t spiCtx;
-	oid_t spiSS;
 	sensor_event_t evtBaro;
 	uint16_t prom[PROM_SIZE]; /* Prom memory: [ reserved, C1, C2, C3, C4, C5, C6, CRC ] */
 	char stack[512] __attribute__((aligned(8)));
@@ -100,20 +98,20 @@ uint8_t ms5611_crc4(const uint16_t *prom)
 
 
 /* Sends conversion request `convCmd`, waits `usDelat` for conversion and reads ADC to `res` */
-static int ms5611_measure(ms5611_ctx_t *ctx, uint8_t convCmd, time_t usDelay, uint32_t *res)
+static int ms5611_measure(sensor_bus_t *bus, uint8_t convCmd, time_t usDelay, uint32_t *res)
 {
 	static const uint8_t readCmd = CMD_READ_ADC;
 	uint32_t tmp;
 	uint8_t val[3];
 
-	if (sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, &convCmd, sizeof(convCmd), NULL, 0, 0) < 0) {
+	if (bus->ops.bus_xfer(bus, &convCmd, sizeof(convCmd), NULL, 0, 0) < 0) {
 		fprintf(stderr, "ms5611: failed conv. request\n");
 		return -1;
 	}
 
 	usleep(usDelay);
 
-	if (sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, &readCmd, sizeof(readCmd), val, sizeof(val), sizeof(readCmd)) < 0) {
+	if (bus->ops.bus_xfer(bus, &readCmd, sizeof(readCmd), val, sizeof(val), sizeof(readCmd)) < 0) {
 		fprintf(stderr, "ms5611: adc read failed\n");
 		return -1;
 	}
@@ -144,7 +142,7 @@ static void ms5611_publishthr(void *data)
 	int64_t off, sens;
 
 	/* Initialize temperature with too big delay for certain response */
-	while (ms5611_measure(ctx, (CMD_CVRT_TEMP | CVRT_OSR_4096), OSR_4096_SLEEP * 2, &D2) < 0) {
+	while (ms5611_measure(&info->bus, (CMD_CVRT_TEMP | CVRT_OSR_4096), OSR_4096_SLEEP * 2, &D2) < 0) {
 		usleep(10000);
 		if (++cnt >= HW_ERROR_REP) {
 			cnt = 0;
@@ -159,7 +157,7 @@ static void ms5611_publishthr(void *data)
 
 	while (1) {
 		/* Read pressure */
-		if (ms5611_measure(ctx, (CMD_CVRT_PRESS | CVRT_OSR_4096), OSR_4096_SLEEP, &D1) < 0) {
+		if (ms5611_measure(&info->bus, (CMD_CVRT_PRESS | CVRT_OSR_4096), OSR_4096_SLEEP, &D1) < 0) {
 			usleep(1000);
 			if (++cnt >= HW_ERROR_REP) {
 				cnt = 0;
@@ -171,7 +169,7 @@ static void ms5611_publishthr(void *data)
 		gettime(&now, NULL);
 
 		/* Read temperature. Does not repeat failed read - fall back to old temperature */
-		if (ms5611_measure(ctx, (CMD_CVRT_TEMP | CVRT_OSR_1024), OSR_1024_SLEEP, &D2) == 0) {
+		if (ms5611_measure(&info->bus, (CMD_CVRT_TEMP | CVRT_OSR_1024), OSR_1024_SLEEP, &D2) == 0) {
 			/* Translate temperature */
 			dT = (int32_t)D2 - (((int32_t)ctx->prom[5]) << 8);  /* dT = D2 - C5 * 2^8 */
 			temp = 2000 + ((dT * (int64_t)ctx->prom[6]) >> 23); /* TEMP = 2000 + dT * C6 / 2^23 */
@@ -196,13 +194,13 @@ static void ms5611_publishthr(void *data)
 }
 
 
-static int ms5611_hwSetup(ms5611_ctx_t *ctx)
+static int ms5611_hwSetup(ms5611_ctx_t *ctx, sensor_bus_t *bus)
 {
 	uint8_t cmd, i;
 
 	/* Reset ms5611 sequence */
 	cmd = CMD_RESET;
-	if (sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, &cmd, sizeof(cmd), NULL, 0, 0) < 0) {
+	if (bus->ops.bus_xfer(bus, &cmd, sizeof(cmd), NULL, 0, 0) < 0) {
 		fprintf(stderr, "ms5611: failed to reset device\n");
 		return -1;
 	}
@@ -211,7 +209,7 @@ static int ms5611_hwSetup(ms5611_ctx_t *ctx)
 	/* PROM reading */
 	for (i = 0; i < PROM_SIZE; i++) {
 		cmd = CMD_READ_PROM | (i << 1); /* LSB of prom address is always 0 */
-		if (sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, &cmd, sizeof(cmd), &ctx->prom[i], sizeof(ctx->prom[i]), sizeof(cmd)) < 0) {
+		if (bus->ops.bus_xfer(bus, &cmd, sizeof(cmd), &ctx->prom[i], sizeof(ctx->prom[i]), sizeof(cmd)) < 0) {
 			fprintf(stderr, "ms5611: failed read PROM C%i\n", i + 1);
 			return -1;
 		}
@@ -261,24 +259,18 @@ static int ms5611_alloc(sensor_info_t *info, const char *args)
 	info->ctx = ctx;
 	info->types = SENSOR_TYPE_BARO;
 
-	ctx->spiCtx.mode = SPI_MODE3;
-	ctx->spiCtx.speed = 10000000;
-
 	ss = strchr(args, ':');
 	if (ss != NULL) {
 		*(ss++) = '\0';
 	}
 
-	/* initialize SPI device communication */
-	err = sensorsspi_open(args, ss, &ctx->spiCtx.oid, &ctx->spiSS);
+	err = sensor_bus_genericSpiSetup(&info->bus, args, ss, (int)10e7, SPI_MODE3);
 	if (err < 0) {
-		printf("ms5611: Can`t initialize SPI device\n");
-		free(ctx);
-		return err;
+		printf("ms5611: failed spi setup: %d\n", err);
 	}
 
 	/* hardware setup of Barometer */
-	if (ms5611_hwSetup(ctx) < 0) {
+	if (ms5611_hwSetup(ctx, &info->bus) < 0) {
 		printf("ms5611: failed to setup device\n");
 		free(ctx);
 		return -1;

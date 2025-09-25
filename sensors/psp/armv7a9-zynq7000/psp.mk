@@ -1,0 +1,1 @@
+PSP_DEP_LIBS := libzynq7000-gpio-msg libspi-msg

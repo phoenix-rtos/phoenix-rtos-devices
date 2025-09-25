@@ -2,9 +2,9 @@
  * Phoenix-RTOS
  *
  * Driver for IMU lsm9dsxx
- * 
+ *
  * lsm9dsxx is preset to:
- *  - output data rate (ODR) to 952Hz 
+ *  - output data rate (ODR) to 952Hz
  *  - accelerometer range to +-8G
  *  - gyroscope range to +-2000dps
  *
@@ -25,7 +25,7 @@
 #include <string.h>
 
 #include <libsensors/sensor.h>
-#include <libsensors/spi/spi.h>
+#include <libsensors/bus.h>
 
 /* self-identification register of magnetometer */
 #define REG_WHOAMI     0x0f
@@ -76,8 +76,6 @@
 
 
 typedef struct {
-	spimsg_ctx_t spiCtx;
-	oid_t spiSS;
 	sensor_event_t evt;
 	char stack[512] __attribute__((aligned(8)));
 } lsm9dsxx_ctx_t;
@@ -94,22 +92,22 @@ static int16_t translateMag(uint8_t hbyte, uint8_t lbyte)
 }
 
 
-static int spiWriteReg(lsm9dsxx_ctx_t *ctx, uint8_t regAddr, uint8_t regVal)
+static int spiWriteReg(sensor_bus_t *bus, uint8_t regAddr, uint8_t regVal)
 {
 	unsigned char cmd[2] = { regAddr, regVal };
 
-	return sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, cmd, sizeof(cmd), NULL, 0, sizeof(cmd));
+	return bus->ops.bus_xfer(bus, cmd, sizeof(cmd), NULL, 0, sizeof(cmd));
 }
 
 
-static int lsm9dsxx_whoamiCheck(lsm9dsxx_ctx_t *ctx)
+static int lsm9dsxx_whoamiCheck(sensor_bus_t *bus)
 {
 	uint8_t cmd, val;
 	int err;
 
 	cmd = REG_WHOAMI | SPI_READ_BIT;
 	val = 0;
-	err = sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, &cmd, sizeof(cmd), &val, sizeof(val), sizeof(cmd));
+	err = bus->ops.bus_xfer(bus, &cmd, sizeof(cmd), &val, sizeof(val), sizeof(cmd));
 	if ((err < 0) || (val != REG_VAL_WHOAMI)) {
 		return -1;
 	}
@@ -118,29 +116,29 @@ static int lsm9dsxx_whoamiCheck(lsm9dsxx_ctx_t *ctx)
 }
 
 
-static int lsm9dsxx_hwSetup(lsm9dsxx_ctx_t *ctx)
+static int lsm9dsxx_hwSetup(sensor_bus_t *bus)
 {
-	if (lsm9dsxx_whoamiCheck(ctx) != 0) {
+	if (lsm9dsxx_whoamiCheck(bus) != 0) {
 		printf("lsm9dsxx_mag: cannot read/wrong WHOAMI returned!\n");
 		return -1;
 	}
 
 	/* output data rate to 80Hz + high performance mode to X and Y axis */
-	if (spiWriteReg(ctx, REG_CTRL_REG1_M, (VAL_CTRL_REG1_M_XYHIGH_PERF_MODE | VAL_CTRL_REG1_M_ODR_80)) < 0) {
+	if (spiWriteReg(bus, REG_CTRL_REG1_M, (VAL_CTRL_REG1_M_XYHIGH_PERF_MODE | VAL_CTRL_REG1_M_ODR_80)) < 0) {
 		return -1;
 	}
 	/* scale +-4 gauss (same as default, written just for clarity) */
-	if (spiWriteReg(ctx, REG_CTRL_REG2_M, VAL_CTRL_REG2_M_FS_4) < 0) {
+	if (spiWriteReg(bus, REG_CTRL_REG2_M, VAL_CTRL_REG2_M_FS_4) < 0) {
 		return -1;
 	}
 	/* high performance mode for Z axis */
-	if (spiWriteReg(ctx, REG_CTRL_REG4_M, VAL_CTRL_REG4_M_ZHIGH_PERF_MODE) < 0) {
+	if (spiWriteReg(bus, REG_CTRL_REG4_M, VAL_CTRL_REG4_M_ZHIGH_PERF_MODE) < 0) {
 		return -1;
 	}
 	usleep(10 * 1000);
 
 	/* continuous measurement mode */
-	if (spiWriteReg(ctx, REG_CTRL_REG3_M, (VAL_CTRL_REG3_M_MD_CONTINUOUS)) < 0) {
+	if (spiWriteReg(bus, REG_CTRL_REG3_M, (VAL_CTRL_REG3_M_MD_CONTINUOUS)) < 0) {
 		return -1;
 	}
 	usleep(100 * 1000);
@@ -149,28 +147,46 @@ static int lsm9dsxx_hwSetup(lsm9dsxx_ctx_t *ctx)
 }
 
 
-static void lsm9dsxx_threadPublish(void *data)
+static int lsm9dsxx_read(const sensor_info_t *info, const sensor_event_t **evt)
 {
 	int err;
-	sensor_info_t *info = (sensor_info_t *)data;
 	lsm9dsxx_ctx_t *ctx = info->ctx;
 	uint8_t ibuf[SENSOR_OUTPUT_SIZE] = { 0 };
 	uint8_t obuf;
 
+	obuf = REG_DATA_OUT | SPI_READ_BIT | SPI_AUTOADDRINCR_BIT;
+	err = info->bus.ops.bus_xfer(&info->bus, &obuf, sizeof(obuf), ibuf, sizeof(ibuf), sizeof(obuf));
+
+	if (err < 0) {
+		return -1;
+	}
+
+	gettime(&(ctx->evt.timestamp), NULL);
+	ctx->evt.mag.magX = translateMag(ibuf[1], ibuf[0]);
+	ctx->evt.mag.magY = translateMag(ibuf[3], ibuf[2]);
+	ctx->evt.mag.magZ = translateMag(ibuf[5], ibuf[4]);
+
+	if (evt != NULL) {
+		*evt = &ctx->evt;
+	}
+
+	return 1;
+}
+
+
+static void lsm9dsxx_threadPublish(void *data)
+{
+	sensor_info_t *info = (sensor_info_t *)data;
+	lsm9dsxx_ctx_t *ctx = info->ctx;
+
 	while (1) {
 		usleep(1000 * 1000 / 64);
 
-		obuf = REG_DATA_OUT | SPI_READ_BIT | SPI_AUTOADDRINCR_BIT;
-		err = sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, &obuf, sizeof(obuf), ibuf, sizeof(ibuf), sizeof(obuf));
-
-		if (err >= 0) {
-			gettime(&(ctx->evt.timestamp), NULL);
-			ctx->evt.mag.magX = translateMag(ibuf[1], ibuf[0]);
-			ctx->evt.mag.magY = translateMag(ibuf[3], ibuf[2]);
-			ctx->evt.mag.magZ = translateMag(ibuf[5], ibuf[4]);
-
-			sensors_publish(info->id, &ctx->evt);
+		if (lsm9dsxx_read(info, NULL) < 0) {
+			continue;
 		}
+
+		sensors_publish(info->id, &ctx->evt);
 	}
 }
 
@@ -186,6 +202,14 @@ static int lsm9dsxx_start(sensor_info_t *info)
 	}
 
 	return err;
+}
+
+
+static int lsm9dsxx_dealloc(sensor_info_t *info)
+{
+	free((lsm9dsxx_ctx_t *)info->ctx);
+
+	return 0;
 }
 
 
@@ -208,25 +232,20 @@ static int lsm9dsxx_alloc(sensor_info_t *info, const char *args)
 	info->ctx = ctx;
 	info->types = SENSOR_TYPE_MAG;
 
-	ctx->spiCtx.mode = SPI_MODE3;
-	ctx->spiCtx.speed = 10000000;
-
 	ss = strchr(args, ':');
 	if (ss != NULL) {
 		*(ss++) = '\0';
 	}
 
-	/* initialize SPI device communication */
-	err = sensorsspi_open(args, ss, &ctx->spiCtx.oid, &ctx->spiSS);
+	err = sensor_bus_genericSpiSetup(&info->bus, args, ss, (int)10e7, SPI_MODE3);
 	if (err < 0) {
-		printf("lps25xx: Can`t initialize SPI device\n");
-		free(ctx);
-		return err;
+		printf("lsm9dsxx_mag: failed spi setup: %d\n", err);
 	}
 
 	/* hardware setup of imu */
-	if (lsm9dsxx_hwSetup(ctx) < 0) {
+	if (lsm9dsxx_hwSetup(&info->bus) < 0) {
 		printf("lsm9dsxx_mag: failed to setup device\n");
+		info->bus.ops.bus_close(&info->bus);
 		free(ctx);
 		return -1;
 	}
@@ -240,7 +259,9 @@ void __attribute__((constructor)) lsm9dsxx_mag_register(void)
 	static sensor_drv_t sensor = {
 		.name = "lsm9dsxx_mag",
 		.alloc = lsm9dsxx_alloc,
-		.start = lsm9dsxx_start
+		.dealloc = lsm9dsxx_dealloc,
+		.start = lsm9dsxx_start,
+		.read = lsm9dsxx_read
 	};
 
 	sensors_register(&sensor);

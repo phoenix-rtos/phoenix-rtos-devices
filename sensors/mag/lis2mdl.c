@@ -20,7 +20,7 @@
 #include <string.h>
 
 #include <libsensors/sensor.h>
-#include <libsensors/spi/spi.h>
+#include <libsensors/bus.h>
 
 /* self-identification register of magnetometer */
 #define REG_WHOAMI 0x4f
@@ -54,8 +54,6 @@
 
 
 typedef struct {
-	spimsg_ctx_t spiCtx;
-	oid_t spiSS;
 	sensor_event_t evt;
 	char stack[512] __attribute__((aligned(8)));
 } lis2mdl_ctx_t;
@@ -81,22 +79,23 @@ static int16_t translateMag(uint8_t hbyte, uint8_t lbyte)
 }
 
 
-static int spiWriteReg(lis2mdl_ctx_t *ctx, uint8_t regAddr, uint8_t regVal)
+static int spiWriteReg(sensor_bus_t *bus, uint8_t regAddr, uint8_t regVal)
 {
 	unsigned char cmd[2] = { regAddr, regVal };
 
-	return sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, cmd, sizeof(cmd), NULL, 0, sizeof(cmd));
+	return bus->ops.bus_xfer(bus, cmd, sizeof(cmd), NULL, 0, sizeof(cmd));
 }
 
 
-static int lis2mdl_whoamiCheck(lis2mdl_ctx_t *ctx)
+static int lis2mdl_whoamiCheck(sensor_bus_t *bus)
 {
 	uint8_t cmd, val;
 	int err;
 
 	cmd = REG_WHOAMI | SPI_READ_BIT;
 	val = 0;
-	err = sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, &cmd, sizeof(cmd), &val, sizeof(val), sizeof(cmd));
+
+	err = bus->ops.bus_xfer(bus, &cmd, sizeof(cmd), &val, sizeof(val), sizeof(cmd));
 	if ((err < 0) || (val != VAL_WHOAMI)) {
 		fprintf(stderr, "whoami %x %x\n", val, VAL_WHOAMI);
 		return -1;
@@ -106,24 +105,24 @@ static int lis2mdl_whoamiCheck(lis2mdl_ctx_t *ctx)
 }
 
 
-static int lis2mdl_hwSetup(lis2mdl_ctx_t *ctx)
+static int lis2mdl_hwSetup(sensor_bus_t *bus)
 {
 	/* LIS2MDL has 3-wire SPI on power-up. Enable 4-wire SPI */
-	if (spiWriteReg(ctx, REG_CFG_REG_C, VAL_CFG_REG_C_I2C_DIS | VAL_CFG_REG_C_4WSPI) < 0) {
+	if (spiWriteReg(bus, REG_CFG_REG_C, VAL_CFG_REG_C_I2C_DIS | VAL_CFG_REG_C_4WSPI) < 0) {
 		return -1;
 	}
 	usleep(1000);
 
-	if (lis2mdl_whoamiCheck(ctx) != 0) {
+	if (lis2mdl_whoamiCheck(bus) != 0) {
 		printf("lis2mdl: cannot read/wrong WHOAMI returned!\n");
 		return -1;
 	}
 
-	if (spiWriteReg(ctx, REG_CFG_REG_A, VAL_CFG_REG_A_ODR_100HZ | VAL_CFG_REG_A_MD_CONTINUOUS | VAL_CFG_REG_A_COMP_TEMP_EN) < 0) {
+	if (spiWriteReg(bus, REG_CFG_REG_A, VAL_CFG_REG_A_ODR_100HZ | VAL_CFG_REG_A_MD_CONTINUOUS | VAL_CFG_REG_A_COMP_TEMP_EN) < 0) {
 		return -1;
 	}
 
-	if (spiWriteReg(ctx, REG_CFG_REG_B, VAL_CFG_REG_B_LPF_ON) < 0) {
+	if (spiWriteReg(bus, REG_CFG_REG_B, VAL_CFG_REG_B_LPF_ON) < 0) {
 		return -1;
 	}
 
@@ -131,26 +130,45 @@ static int lis2mdl_hwSetup(lis2mdl_ctx_t *ctx)
 }
 
 
-static void lis2mdl_threadPublish(void *data)
+static int lis2mdl_read(const sensor_info_t *info, const sensor_event_t **evt)
 {
 	int err;
-	sensor_info_t *info = (sensor_info_t *)data;
 	lis2mdl_ctx_t *ctx = info->ctx;
 	uint8_t ibuf[SENSOR_OUTPUT_SIZE] = { 0 };
 	const uint8_t obuf = REG_DATA_OUT | SPI_READ_BIT;
 
+	err = info->bus.ops.bus_xfer(&info->bus, &obuf, sizeof(obuf), ibuf, sizeof(ibuf), sizeof(obuf));
+
+	if (err < 0) {
+		return -1;
+	}
+
+	gettime(&(ctx->evt.timestamp), NULL);
+	ctx->evt.mag.magX = translateMag(ibuf[1], ibuf[0]);
+	ctx->evt.mag.magY = -translateMag(ibuf[3], ibuf[2]); /* minus accounts for non right-handness of measurement */
+	ctx->evt.mag.magZ = translateMag(ibuf[5], ibuf[4]);
+
+	if (evt != NULL) {
+		*evt = &ctx->evt;
+	}
+
+	return 1;
+}
+
+
+static void lis2mdl_threadPublish(void *data)
+{
+	sensor_info_t *info = (sensor_info_t *)data;
+	lis2mdl_ctx_t *ctx = info->ctx;
+
 	while (1) {
 		usleep(100 * 1000);
 
-		err = sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, &obuf, sizeof(obuf), ibuf, sizeof(ibuf), sizeof(obuf));
-
-		if (err >= 0) {
-			gettime(&(ctx->evt.timestamp), NULL);
-			ctx->evt.mag.magX = translateMag(ibuf[1], ibuf[0]);
-			ctx->evt.mag.magY = -translateMag(ibuf[3], ibuf[2]); /* minus accounts for non right-handness of measurement */
-			ctx->evt.mag.magZ = translateMag(ibuf[5], ibuf[4]);
-			sensors_publish(info->id, &ctx->evt);
+		if (lis2mdl_read(info, NULL) < 0) {
+			continue;
 		}
+
+		sensors_publish(info->id, &ctx->evt);
 	}
 }
 
@@ -166,6 +184,14 @@ static int lis2mdl_start(sensor_info_t *info)
 	}
 
 	return err;
+}
+
+
+static int lis2mdl_dealloc(sensor_info_t *info)
+{
+	free((lis2mdl_ctx_t *)info->ctx);
+
+	return 0;
 }
 
 
@@ -188,25 +214,20 @@ static int lis2mdl_alloc(sensor_info_t *info, const char *args)
 	info->ctx = ctx;
 	info->types = SENSOR_TYPE_MAG;
 
-	ctx->spiCtx.mode = SPI_MODE3;
-	ctx->spiCtx.speed = 10000000;
-
 	ss = strchr(args, ':');
 	if (ss != NULL) {
 		*(ss++) = '\0';
 	}
 
-	/* initialize SPI device communication */
-	err = sensorsspi_open(args, ss, &ctx->spiCtx.oid, &ctx->spiSS);
+	err = sensor_bus_genericSpiSetup(&info->bus, args, ss, (int)10e7, SPI_MODE3);
 	if (err < 0) {
-		printf("lis2mdl: Can`t initialize SPI device\n");
-		free(ctx);
-		return err;
+		printf("lis2mdl: failed spi setup: %d\n", err);
 	}
 
 	/* hardware setup of imu */
-	if (lis2mdl_hwSetup(ctx) < 0) {
+	if (lis2mdl_hwSetup(&info->bus) < 0) {
 		printf("lis2mdl: failed to setup device\n");
+		info->bus.ops.bus_close(&info->bus);
 		free(ctx);
 		return -1;
 	}
@@ -220,7 +241,9 @@ void __attribute__((constructor)) lis2mdl_mag_register(void)
 	static sensor_drv_t sensor = {
 		.name = "lis2mdl",
 		.alloc = lis2mdl_alloc,
-		.start = lis2mdl_start
+		.dealloc = lis2mdl_dealloc,
+		.start = lis2mdl_start,
+		.read = lis2mdl_read
 	};
 
 	sensors_register(&sensor);
