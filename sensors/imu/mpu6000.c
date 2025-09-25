@@ -20,7 +20,6 @@
 #include <string.h>
 
 #include <libsensors/sensor.h>
-#include <libsensors/spi/spi.h>
 
 /* self-identification register */
 #define REG_WHOAMI 0x75
@@ -78,8 +77,6 @@
 #define TEMP_OFFSET          (36530 + 273150) /* sensor offset + celsius2kelvin offset */
 
 typedef struct {
-	spimsg_ctx_t spiCtx;
-	oid_t spiSS;
 	sensor_event_t *evtAccel;
 	sensor_event_t *evtGyro;
 	sensor_event_t evt[2];
@@ -117,22 +114,22 @@ static uint32_t translateTemp(uint8_t hbyte, uint8_t lbyte)
 }
 
 
-static int spiWriteReg(mpu6000_ctx_t *ctx, uint8_t regAddr, uint8_t regVal)
+static int spiWriteReg(sensor_bus_t *bus, uint8_t regAddr, uint8_t regVal)
 {
 	unsigned char cmd[2] = { (regAddr & 0x7F), regVal }; /* write bit set to regAddr */
 
-	return sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, cmd, sizeof(cmd), NULL, 0, sizeof(cmd));
+	return bus->ops.bus_xfer(bus, cmd, sizeof(cmd), NULL, 0, sizeof(cmd));
 }
 
 
-static int mpu6000_whoamiCheck(mpu6000_ctx_t *ctx)
+static int mpu6000_whoamiCheck(sensor_bus_t *bus)
 {
 	uint8_t cmd, val;
 	int err;
 
 	cmd = REG_WHOAMI | SPI_READ_BIT;
 	val = 0;
-	err = sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, &cmd, sizeof(cmd), &val, sizeof(val), sizeof(cmd));
+	err = bus->ops.bus_xfer(bus, &cmd, sizeof(cmd), &val, sizeof(val), sizeof(cmd));
 	if ((err < 0) || (val != VAL_WHOAMI)) {
 		return -1;
 	}
@@ -141,48 +138,48 @@ static int mpu6000_whoamiCheck(mpu6000_ctx_t *ctx)
 }
 
 
-static int mpu6000_hwSetup(mpu6000_ctx_t *ctx)
+static int mpu6000_hwSetup(sensor_bus_t *bus, mpu6000_ctx_t *ctx)
 {
-	if (mpu6000_whoamiCheck(ctx) != 0) {
+	if (mpu6000_whoamiCheck(bus) != 0) {
 		printf("mpu6000: cannot read/wrong WHOAMI returned!\n");
 		return -1;
 	}
 
 	/* Reset procedure according to "MPU-6000/MPU-6050 Register Map and Descriptions", section 4.28 */
-	if (spiWriteReg(ctx, REG_PWR_MGMT_1, VAL_PWR_MGMT_1_DEVICE_RESET) < 0) {
+	if (spiWriteReg(bus, REG_PWR_MGMT_1, VAL_PWR_MGMT_1_DEVICE_RESET) < 0) {
 		return -1;
 	}
 	usleep(100 * 1000);
-	if (spiWriteReg(ctx, REG_SIGNAL_PATH_RESET, VAL_SIGNAL_PATH_RESET_ACCEL_RESET | VAL_SIGNAL_PATH_RESET_GYRO_RESET | VAL_SIGNAL_PATH_RESET_TEMP_RESET) < 0) {
+	if (spiWriteReg(bus, REG_SIGNAL_PATH_RESET, VAL_SIGNAL_PATH_RESET_ACCEL_RESET | VAL_SIGNAL_PATH_RESET_GYRO_RESET | VAL_SIGNAL_PATH_RESET_TEMP_RESET) < 0) {
 		return -1;
 	}
 	usleep(100 * 1000);
 
 	/* Wake up the device. Writing 0 unsets DEVICE_RESET, SLEEP, CYCLE, TEMP_DIS bits */
-	if (spiWriteReg(ctx, REG_PWR_MGMT_1, (0 | VAL_PWR_MGMT_1_CLKSEL_PLL_Z)) < 0) {
+	if (spiWriteReg(bus, REG_PWR_MGMT_1, (0 | VAL_PWR_MGMT_1_CLKSEL_PLL_Z)) < 0) {
 		return -1;
 	}
 
 	/* Disabling I2C */
-	if (spiWriteReg(ctx, REG_USER_CTRL, VAL_USER_CTRL_I2C_IF_DIS) < 0) {
+	if (spiWriteReg(bus, REG_USER_CTRL, VAL_USER_CTRL_I2C_IF_DIS) < 0) {
 		return -1;
 	}
 
 	/* Sampling rate and LPF config */
-	if (spiWriteReg(ctx, REG_CONFIG, ctx->lpfSel) < 0) {
+	if (spiWriteReg(bus, REG_CONFIG, ctx->lpfSel) < 0) {
 		return -1;
 	}
 
-	if (spiWriteReg(ctx, REG_SMPRT_DIV, VAL_SMPRT_DIV_1) < 0) {
+	if (spiWriteReg(bus, REG_SMPRT_DIV, VAL_SMPRT_DIV_1) < 0) {
 		return -1;
 	}
 
 	/* Sensor ranges setup */
-	if (spiWriteReg(ctx, REG_GYRO_CONFIG, VAL_GYRO_CONFIG_FS_SEL_2000DPS) < 0) {
+	if (spiWriteReg(bus, REG_GYRO_CONFIG, VAL_GYRO_CONFIG_FS_SEL_2000DPS) < 0) {
 		return -1;
 	}
 
-	if (spiWriteReg(ctx, REG_ACCEL_CONFIG, VAL_ACCEL_CONFIG_AFS_SEL_8G) < 0) {
+	if (spiWriteReg(bus, REG_ACCEL_CONFIG, VAL_ACCEL_CONFIG_AFS_SEL_8G) < 0) {
 		return -1;
 	}
 
@@ -190,9 +187,16 @@ static int mpu6000_hwSetup(mpu6000_ctx_t *ctx)
 }
 
 
+static void mpu6000_busDealloc(sensor_bus_t *bus)
+{
+	bus->ops.bus_close(bus);
+}
+
+
 int mpu6000_read(const sensor_info_t *info, const sensor_event_t **evt)
 {
 	mpu6000_ctx_t *ctx = info->ctx;
+	const sensor_bus_t *bus = &info->bus;
 
 	const uint8_t obuf = REG_DATA_OUT_ALL | SPI_READ_BIT;
 	uint8_t ibuf[SENSOR_OUTPUT_SIZE] = { 0 };
@@ -200,7 +204,7 @@ int mpu6000_read(const sensor_info_t *info, const sensor_event_t **evt)
 	int err;
 
 	/* data read */
-	err = sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, &obuf, sizeof(obuf), ibuf, sizeof(ibuf), sizeof(obuf));
+	err = bus->ops.bus_xfer(bus, &obuf, sizeof(obuf), ibuf, sizeof(ibuf), sizeof(obuf));
 	gettime(&tStamp, NULL);
 
 	if (err < 0) {
@@ -296,9 +300,6 @@ int mpu6000_alloc(sensor_info_t *info, const char *args)
 	info->ctx = ctx;
 	info->types = SENSOR_TYPE_ACCEL | SENSOR_TYPE_GYRO;
 
-	ctx->spiCtx.mode = SPI_MODE3;
-	ctx->spiCtx.speed = 1000000;
-
 	ss = strchr(args, ':');
 	if (ss != NULL) {
 		*(ss++) = '\0';
@@ -318,23 +319,28 @@ int mpu6000_alloc(sensor_info_t *info, const char *args)
 	}
 	ctx->lpfSel = lpfSel;
 
-	/* initialize SPI device communication */
-	err = sensorsspi_open(args, ss, &ctx->spiCtx.oid, &ctx->spiSS);
+	err = sensor_bus_genericSpiSetup(&info->bus, args, ss, (int)10e6, SPI_MODE3);
 	if (err < 0) {
-		printf("mpu6000: Can`t initialize SPI device\n");
-		free(ctx);
-		return err;
-	}
-
-	/* hardware setup of imu */
-	if (mpu6000_hwSetup(ctx) < 0) {
-		printf("mpu6000: failed to setup device\n");
+		printf("mpu6000: failed spi setup: %d\n", err);
 		free(ctx);
 		return -1;
 	}
 
-	/* TODO: SPI speed bottleneck: MPU6000 SPI accepts <1MHz CLK writes, but <20MHz CLK reads; runtime SPI CLK setup unavailable */
-	ctx->spiCtx.speed = 10000000;
+	/* hardware setup of imu */
+	if (mpu6000_hwSetup(&info->bus, ctx) < 0) {
+		printf("mpu6000: failed to setup device\n");
+		mpu6000_busDealloc(&info->bus);
+		free(ctx);
+		return -1;
+	}
+
+	/**
+	 * TODO: SPI speed bottleneck: MPU6000 SPI accepts <1MHz CLK writes, but <20MHz CLK reads;
+	 * If this fails, only print warning as sensor will work ok
+	 */
+	if (info->bus.ops.bus_cfg(&info->bus, (int)10e7, SPI_MODE3) < 0) {
+		printf("mpu6000: clk not at high speed\n");
+	}
 
 	return EOK;
 }

@@ -19,31 +19,17 @@
 
 
 /**
- * Performs a read  operation on sensors specified by `info`.
+ * Finds a driver specified by `name`. Returns NULL if not found.
  */
-int locsensor_read(const sensor_info_t *info, const sensor_event_t **evt);
+const sensor_drv_t *locsensors_find(const char *name);
 
 
 /**
- * Finds a sensor of specific type (e.g SENSOR_TYPE_ACCEL | SENSOR_TYPE_GYRO for 6dof IMU).
- */
-const sensor_info_t *locsensor_find(int types, int n);
-
-
-/**
- * Deallocates all allocated local sensors
- */
-void locsensor_dealloc(void);
-
-
-/**
- * Allocates all local sensors from `args` which are auto-registered from
- * sensor libraries dependencies.
+ * Function registers "drv" as local driver.
  *
- * Returns 0 on successful allocation of all sensors specified by "args".
- * Returns -1 on error.
+ * Not meant to be used by application
  */
-int locsensor_alloc(char *args);
+void locsensors_register(const sensor_drv_t *drv);
 
 
 /**
@@ -53,13 +39,6 @@ int locsensor_alloc(char *args);
  * #TODO: This function is stub-implemented, no publishig is done!
  */
 int locsensors_publish(unsigned int devId, const sensor_event_t *event);
-
-
-/**
- * Function registers "drv" as local driver.
- * Function meant to be used as remapping from generic "sensor_register()"
- */
-void locsensors_register(const sensor_drv_t *drv);
 
 
 #endif

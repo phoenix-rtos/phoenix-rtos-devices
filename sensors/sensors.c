@@ -23,7 +23,10 @@
 #include <sys/threads.h>
 
 #include <libsensors/sensor.h>
-#include <libsensors/spi/spi.h>
+#include <libsensors/bus.h>
+
+#include "psp/psp.h"
+
 
 #define CLIENT_SET_ID(id) (id + 1)
 #define CLIENT_GET_ID(id) (id - 1)
@@ -446,6 +449,30 @@ static int sensors_initEvts(int devsz)
 }
 
 
+static void sensors_busDealloc(sensor_bus_t *bus)
+{
+	bsp_busDealloc(bus);
+}
+
+
+static int sensors_busAlloc(sensor_bus_t *bus, const char *args)
+{
+	enum sensor_bus_type type;
+
+	if (strstr(args, "/dev/spi") != NULL) {
+		type = bus_spi;
+	}
+	else if (strstr(args, "/dev/i2c") != NULL) {
+		type = bus_i2c;
+	}
+	else {
+		return -ENODEV;
+	}
+
+	return psp_busAlloc(bus, type);
+}
+
+
 static int sensors_drvInit(const char *name, const char *args)
 {
 	int res;
@@ -464,8 +491,16 @@ static int sensors_drvInit(const char *name, const char *args)
 		return -ENOMEM;
 	}
 
+	res = sensors_busAlloc(&info->bus, args);
+	if (res < 0) {
+		free(info);
+		fprintf(stderr, "sensors: cannot allocate bus for %s, err: %d\n", name, res);
+		return res;
+	}
+
 	res = drv->alloc(info, args);
 	if (res < 0) {
+		sensors_busDealloc(&info->bus);
 		free(info);
 		fprintf(stderr, "sensors: cannot allocate sensor %s, err: %d\n", name, res);
 		return res;
@@ -473,6 +508,7 @@ static int sensors_drvInit(const char *name, const char *args)
 
 	res = idtree_alloc(&sensors_common.infos, &info->node);
 	if (res < 0) {
+		sensors_busDealloc(&info->bus);
 		free(info);
 		fprintf(stderr, "sensors: cannot add sensor %s, to tree - err: %d\n", name, res);
 		return res;
@@ -600,12 +636,6 @@ int main(int argc, char **argv)
 	int devsz, res;
 
 	res = mutexCreate(&sensors_common.cLock);
-	if (res < 0) {
-		sensors_cleanup(0);
-		return EXIT_FAILURE;
-	}
-
-	res = sensorsspi_init();
 	if (res < 0) {
 		sensors_cleanup(0);
 		return EXIT_FAILURE;
