@@ -145,28 +145,45 @@ static int lps25xx_hwSetup(sensor_bus_t *bus)
 }
 
 
-static void lps25xx_publishthr(void *data)
+static int lps25xx_read(const sensor_info_t *info, const sensor_event_t **evt)
 {
 	int err;
-	sensor_info_t *info = (sensor_info_t *)data;
 	lps25xx_ctx_t *ctx = info->ctx;
 	uint8_t ibuf[SENSOR_OUTPUT_SIZE] = { 0 };
 	uint8_t obuf;
 
+	obuf = REG_DATA_OUT | SPI_READ_BIT | SPI_AUTOADDRINCR_BIT;
+	err = info->bus.ops.bus_xfer(&info->bus, &obuf, sizeof(obuf), ibuf, sizeof(ibuf), sizeof(obuf));
+
+	if (err < 0) {
+		return -1;
+	}
+
+	gettime(&(ctx->evtBaro.timestamp), NULL);
+	ctx->evtBaro.baro.pressure = translatePress(ibuf[0], ibuf[1], ibuf[2]);
+	ctx->evtBaro.baro.temp = translateTemp(ibuf[4], ibuf[3]);
+
+	if (evt != NULL) {
+		*evt = &ctx->evtBaro;
+	}
+
+	return 1;
+}
+
+
+static void lps25xx_publishthr(void *data)
+{
+	sensor_info_t *info = (sensor_info_t *)data;
+	lps25xx_ctx_t *ctx = info->ctx;
+
 	while (1) {
-		/* ODR set to 25Hz */
 		usleep(40 * 1000);
 
-		obuf = REG_DATA_OUT | SPI_READ_BIT | SPI_AUTOADDRINCR_BIT;
-		err = info->bus.ops.bus_xfer(&info->bus, &obuf, sizeof(obuf), ibuf, sizeof(ibuf), sizeof(obuf));
-
-		if (err >= 0) {
-			gettime(&(ctx->evtBaro.timestamp), NULL);
-			ctx->evtBaro.baro.pressure = translatePress(ibuf[0], ibuf[1], ibuf[2]);
-			ctx->evtBaro.baro.temp = translateTemp(ibuf[4], ibuf[3]);
-
-			sensors_publish(info->id, &ctx->evtBaro);
+		if (lps25xx_read(info, NULL) < 0) {
+			continue;
 		}
+
+		sensors_publish(info->id, &ctx->evtBaro);
 	}
 }
 
@@ -182,6 +199,14 @@ static int lps25xx_start(sensor_info_t *info)
 	}
 
 	return err;
+}
+
+
+static int lps25xx_dealloc(sensor_info_t *info)
+{
+	free((lps25xx_ctx_t *)info->ctx);
+
+	return 0;
 }
 
 
@@ -230,7 +255,9 @@ void __attribute__((constructor)) lps25xx_register(void)
 	static sensor_drv_t sensor = {
 		.name = "lps25xx",
 		.alloc = lps25xx_alloc,
-		.start = lps25xx_start
+		.dealloc = lps25xx_dealloc,
+		.start = lps25xx_start,
+		.read = lps25xx_read
 	};
 
 	sensors_register(&sensor);

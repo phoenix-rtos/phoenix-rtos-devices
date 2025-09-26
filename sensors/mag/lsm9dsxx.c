@@ -147,28 +147,46 @@ static int lsm9dsxx_hwSetup(sensor_bus_t *bus)
 }
 
 
-static void lsm9dsxx_threadPublish(void *data)
+static int lsm9dsxx_read(const sensor_info_t *info, const sensor_event_t **evt)
 {
 	int err;
-	sensor_info_t *info = (sensor_info_t *)data;
 	lsm9dsxx_ctx_t *ctx = info->ctx;
 	uint8_t ibuf[SENSOR_OUTPUT_SIZE] = { 0 };
 	uint8_t obuf;
 
+	obuf = REG_DATA_OUT | SPI_READ_BIT | SPI_AUTOADDRINCR_BIT;
+	err = info->bus.ops.bus_xfer(&info->bus, &obuf, sizeof(obuf), ibuf, sizeof(ibuf), sizeof(obuf));
+
+	if (err < 0) {
+		return -1;
+	}
+
+	gettime(&(ctx->evt.timestamp), NULL);
+	ctx->evt.mag.magX = translateMag(ibuf[1], ibuf[0]);
+	ctx->evt.mag.magY = translateMag(ibuf[3], ibuf[2]);
+	ctx->evt.mag.magZ = translateMag(ibuf[5], ibuf[4]);
+
+	if (evt != NULL) {
+		*evt = &ctx->evt;
+	}
+
+	return 1;
+}
+
+
+static void lsm9dsxx_threadPublish(void *data)
+{
+	sensor_info_t *info = (sensor_info_t *)data;
+	lsm9dsxx_ctx_t *ctx = info->ctx;
+
 	while (1) {
 		usleep(1000 * 1000 / 64);
 
-		obuf = REG_DATA_OUT | SPI_READ_BIT | SPI_AUTOADDRINCR_BIT;
-		err = info->bus.ops.bus_xfer(&info->bus, &obuf, sizeof(obuf), ibuf, sizeof(ibuf), sizeof(obuf));
-
-		if (err >= 0) {
-			gettime(&(ctx->evt.timestamp), NULL);
-			ctx->evt.mag.magX = translateMag(ibuf[1], ibuf[0]);
-			ctx->evt.mag.magY = translateMag(ibuf[3], ibuf[2]);
-			ctx->evt.mag.magZ = translateMag(ibuf[5], ibuf[4]);
-
-			sensors_publish(info->id, &ctx->evt);
+		if (lsm9dsxx_read(info, NULL) < 0) {
+			continue;
 		}
+
+		sensors_publish(info->id, &ctx->evt);
 	}
 }
 
@@ -184,6 +202,14 @@ static int lsm9dsxx_start(sensor_info_t *info)
 	}
 
 	return err;
+}
+
+
+static int lsm9dsxx_dealloc(sensor_info_t *info)
+{
+	free((lsm9dsxx_ctx_t *)info->ctx);
+
+	return 0;
 }
 
 
@@ -233,7 +259,9 @@ void __attribute__((constructor)) lsm9dsxx_mag_register(void)
 	static sensor_drv_t sensor = {
 		.name = "lsm9dsxx_mag",
 		.alloc = lsm9dsxx_alloc,
-		.start = lsm9dsxx_start
+		.dealloc = lsm9dsxx_dealloc,
+		.start = lsm9dsxx_start,
+		.read = lsm9dsxx_read
 	};
 
 	sensors_register(&sensor);

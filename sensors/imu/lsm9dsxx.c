@@ -100,8 +100,9 @@
 
 
 typedef struct {
-	sensor_event_t evtAccel;
-	sensor_event_t evtGyro;
+	sensor_event_t *evtAccel;
+	sensor_event_t *evtGyro;
+	sensor_event_t evt[2];
 	char stack[512] __attribute__((aligned(8)));
 } lsm9dsxx_ctx_t;
 
@@ -186,76 +187,71 @@ static int lsm9dsxx_hwSetup(sensor_bus_t *bus)
 }
 
 
-static void lsm9dsxx_threadPublish(void *data)
+int lsm9dsxx_read(const sensor_info_t *info, const sensor_event_t **evt)
 {
-	static uint32_t dAngleX = 0, dAngleY = 0, dAngleZ = 0;
-	static int32_t lastGyroX = 0, lastGyroY = 0, lastGyroZ = 0;
-	static time_t lastGyroTime;
-
 	int err;
 	time_t tstamp_gyro, tstamp_accl;
-	float step;
-	sensor_info_t *info = (sensor_info_t *)data;
+
 	lsm9dsxx_ctx_t *ctx = info->ctx;
 	uint8_t ibuf[SENSOR_OUTPUT_SIZE] = { 0 };
 	uint8_t obuf;
-
-	gettime(&lastGyroTime, NULL);
 
 	/*
 	 * TODO: Temperature read not implemented!
 	 * If gyro read is extended temperature may be read at once (temp. registers are close to gyro registers).
 	 */
-	ctx->evtAccel.accels.temp = 0;
-	ctx->evtGyro.gyro.temp = 0;
+	ctx->evtAccel->accels.temp = 0;
+	ctx->evtGyro->gyro.temp = 0;
+
+	/* accel read */
+	obuf = REG_DATA_OUT_ACCL | SPI_READ_BIT;
+	err = info->bus.ops.bus_xfer(&info->bus, &obuf, sizeof(obuf), ibuf, sizeof(ibuf), sizeof(obuf));
+	gettime(&tstamp_accl, NULL);
+
+	if (err >= 0) {
+		/* minus accounts for non right-handness of lsm9dsxx accelerometer frame of reference */
+		ctx->evtAccel->accels.accelX = -translateAcc(ibuf[1], ibuf[0]);
+		ctx->evtAccel->accels.accelY = translateAcc(ibuf[3], ibuf[2]);
+		ctx->evtAccel->accels.accelZ = translateAcc(ibuf[5], ibuf[4]);
+		ctx->evtAccel->timestamp = tstamp_accl;
+	}
+
+	/* gyroscope read */
+	obuf = REG_DATA_OUT_GYRO | SPI_READ_BIT;
+	err = info->bus.ops.bus_xfer(&info->bus, &obuf, sizeof(obuf), ibuf, sizeof(ibuf), sizeof(obuf));
+	gettime(&tstamp_gyro, NULL);
+
+	if (err >= 0) {
+		/* minus accounts for non right-handness of lsm9dsxx gyroscope frame of reference */
+		ctx->evtGyro->gyro.gyroX = -translateGyr(ibuf[1], ibuf[0]);
+		ctx->evtGyro->gyro.gyroY = translateGyr(ibuf[3], ibuf[2]);
+		ctx->evtGyro->gyro.gyroZ = translateGyr(ibuf[5], ibuf[4]);
+		ctx->evtGyro->timestamp = tstamp_gyro;
+	}
+
+	if (evt != NULL) {
+		*evt = &ctx->evt[0];
+	}
+
+	return 2;
+}
+
+
+static void lsm9dsxx_threadPublish(void *data)
+{
+	sensor_info_t *info = (sensor_info_t *)data;
+	lsm9dsxx_ctx_t *ctx = info->ctx;
 
 	while (1) {
 		/* odr is set to 952, thus 1ms wait is satisfactory */
 		usleep(1000);
 
-		/* accel read */
-		obuf = REG_DATA_OUT_ACCL | SPI_READ_BIT;
-		err = info->bus.ops.bus_xfer(&info->bus, &obuf, sizeof(obuf), ibuf, sizeof(ibuf), sizeof(obuf));
-		gettime(&tstamp_accl, NULL);
-
-		if (err >= 0) {
-			/* minus accounts for non right-handness of lsm9dsxx accelerometer frame of reference */
-			ctx->evtAccel.accels.accelX = -translateAcc(ibuf[1], ibuf[0]);
-			ctx->evtAccel.accels.accelY = translateAcc(ibuf[3], ibuf[2]);
-			ctx->evtAccel.accels.accelZ = translateAcc(ibuf[5], ibuf[4]);
-			ctx->evtAccel.timestamp = tstamp_accl;
-			sensors_publish(info->id, &ctx->evtAccel);
+		if (lsm9dsxx_read(info, NULL) < 0) {
+			continue;
 		}
 
-		/* gyroscope read */
-		obuf = REG_DATA_OUT_GYRO | SPI_READ_BIT;
-		err = info->bus.ops.bus_xfer(&info->bus, &obuf, sizeof(obuf), ibuf, sizeof(ibuf), sizeof(obuf));
-		gettime(&tstamp_gyro, NULL);
-
-		if (err >= 0) {
-			/* minus accounts for non right-handness of lsm9dsxx gyroscope frame of reference */
-			ctx->evtGyro.gyro.gyroX = -translateGyr(ibuf[1], ibuf[0]);
-			ctx->evtGyro.gyro.gyroY = translateGyr(ibuf[3], ibuf[2]);
-			ctx->evtGyro.gyro.gyroZ = translateGyr(ibuf[5], ibuf[4]);
-			ctx->evtGyro.timestamp = tstamp_gyro;
-
-			/* Integration of current measurement */
-			step = (tstamp_gyro - lastGyroTime) / 2000.f; /* dividing by (1000 * 2) for correct unit and avg. of current and last measurement */
-			dAngleX += (uint32_t)((ctx->evtGyro.gyro.gyroX + lastGyroX) * step);
-			dAngleY += (uint32_t)((ctx->evtGyro.gyro.gyroY + lastGyroY) * step);
-			dAngleZ += (uint32_t)((ctx->evtGyro.gyro.gyroZ + lastGyroZ) * step);
-
-			ctx->evtGyro.gyro.dAngleX = dAngleX;
-			ctx->evtGyro.gyro.dAngleY = dAngleY;
-			ctx->evtGyro.gyro.dAngleZ = dAngleZ;
-
-			lastGyroTime = tstamp_gyro;
-			lastGyroX = ctx->evtGyro.gyro.gyroX;
-			lastGyroY = ctx->evtGyro.gyro.gyroY;
-			lastGyroZ = ctx->evtGyro.gyro.gyroZ;
-
-			sensors_publish(info->id, &ctx->evtGyro);
-		}
+		sensors_publish(info->id, ctx->evtGyro);
+		sensors_publish(info->id, ctx->evtAccel);
 	}
 }
 
@@ -274,6 +270,14 @@ static int lsm9dsxx_start(sensor_info_t *info)
 }
 
 
+static int lsm9dsxx_dealloc(sensor_info_t *info)
+{
+	free((lsm9dsxx_ctx_t *)info->ctx);
+
+	return 0;
+}
+
+
 static int lsm9dsxx_alloc(sensor_info_t *info, const char *args)
 {
 	lsm9dsxx_ctx_t *ctx;
@@ -286,10 +290,13 @@ static int lsm9dsxx_alloc(sensor_info_t *info, const char *args)
 		return -ENOMEM;
 	}
 
-	ctx->evtAccel.type = SENSOR_TYPE_ACCEL;
-	ctx->evtAccel.accels.devId = info->id;
-	ctx->evtGyro.type = SENSOR_TYPE_GYRO;
-	ctx->evtGyro.gyro.devId = info->id;
+	ctx->evtAccel = &ctx->evt[0];
+	ctx->evtGyro = &ctx->evt[1];
+
+	ctx->evtAccel->type = SENSOR_TYPE_ACCEL;
+	ctx->evtAccel->accels.devId = info->id;
+	ctx->evtGyro->type = SENSOR_TYPE_GYRO;
+	ctx->evtGyro->gyro.devId = info->id;
 
 	/* filling sensor info structure */
 	info->ctx = ctx;
@@ -322,7 +329,9 @@ void __attribute__((constructor)) lsm9dsxx_register(void)
 	static sensor_drv_t sensor = {
 		.name = "lsm9dsxx",
 		.alloc = lsm9dsxx_alloc,
-		.start = lsm9dsxx_start
+		.dealloc = lsm9dsxx_dealloc,
+		.start = lsm9dsxx_start,
+		.read = lsm9dsxx_read
 	};
 
 	sensors_register(&sensor);
