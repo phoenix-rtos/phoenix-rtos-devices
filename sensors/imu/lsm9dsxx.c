@@ -25,7 +25,7 @@
 #include <string.h>
 
 #include <libsensors/sensor.h>
-#include <libsensors/spi/spi.h>
+#include <libsensors/bus.h>
 
 /* self-identification register of magnetometer */
 #define REG_WHOAMI     0x0f
@@ -100,8 +100,6 @@
 
 
 typedef struct {
-	spimsg_ctx_t spiCtx;
-	oid_t spiSS;
 	sensor_event_t evtAccel;
 	sensor_event_t evtGyro;
 	char stack[512] __attribute__((aligned(8)));
@@ -126,22 +124,22 @@ static int32_t translateAcc(uint8_t hbyte, uint8_t lbyte)
 }
 
 
-static int spiWriteReg(lsm9dsxx_ctx_t *ctx, uint8_t regAddr, uint8_t regVal)
+static int spiWriteReg(sensor_bus_t *bus, uint8_t regAddr, uint8_t regVal)
 {
 	unsigned char cmd[2] = { (regAddr & 0x7F), regVal }; /* write bit set to regAddr */
 
-	return sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, cmd, sizeof(cmd), NULL, 0, sizeof(cmd));
+	return bus->ops.bus_xfer(bus, cmd, sizeof(cmd), NULL, 0, sizeof(cmd));
 }
 
 
-static int lsm9dsxx_whoamiCheck(lsm9dsxx_ctx_t *ctx)
+static int lsm9dsxx_whoamiCheck(sensor_bus_t *bus)
 {
 	uint8_t cmd, val;
 	int err;
 
 	cmd = REG_WHOAMI | SPI_READ_BIT;
 	val = 0;
-	err = sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, &cmd, sizeof(cmd), &val, sizeof(val), sizeof(cmd));
+	err = bus->ops.bus_xfer(bus, &cmd, sizeof(cmd), &val, sizeof(val), sizeof(cmd));
 	if ((err < 0) || (val != REG_VAL_WHOAMI)) {
 		return -1;
 	}
@@ -150,36 +148,36 @@ static int lsm9dsxx_whoamiCheck(lsm9dsxx_ctx_t *ctx)
 }
 
 
-static int lsm9dsxx_hwSetup(lsm9dsxx_ctx_t *ctx)
+static int lsm9dsxx_hwSetup(sensor_bus_t *bus)
 {
-	if (lsm9dsxx_whoamiCheck(ctx) != 0) {
+	if (lsm9dsxx_whoamiCheck(bus) != 0) {
 		printf("lsm9dsxx: cannot read/wrong WHOAMI returned!\n");
 		return -1;
 	}
 
 	/* auto increment + SW reset */
-	if (spiWriteReg(ctx, REG_CTRL_REG8, 0x05) < 0) {
+	if (spiWriteReg(bus, REG_CTRL_REG8, 0x05) < 0) {
 		return -1;
 	}
 	usleep(1000 * 100);
 
 	/* ranges and sampling of accelerometer and gyro, accelerometer LPF */
-	if (spiWriteReg(ctx, REG_CTRL_REG1_G, (VAL_CTRL_REG1_G_ODR_G_952HZ | VAL_CTRL_REG1_G_FS_G_2000 | VAL_CTRL_REG1_G_BW_MAX)) < 0) {
+	if (spiWriteReg(bus, REG_CTRL_REG1_G, (VAL_CTRL_REG1_G_ODR_G_952HZ | VAL_CTRL_REG1_G_FS_G_2000 | VAL_CTRL_REG1_G_BW_MAX)) < 0) {
 		return -1;
 	}
-	if (spiWriteReg(ctx, REG_CTRL_REG6_XL, (VAL_CTRL_REG6_XL_ODR_XL_952 | VAL_CTRL_REG6_XL_FS_8G | VAL_CTRL_REG6_XL_BW_SCAL_ODR | VAL_CTRL_REG6_XL_BW_XL_50HZ)) < 0) {
+	if (spiWriteReg(bus, REG_CTRL_REG6_XL, (VAL_CTRL_REG6_XL_ODR_XL_952 | VAL_CTRL_REG6_XL_FS_8G | VAL_CTRL_REG6_XL_BW_SCAL_ODR | VAL_CTRL_REG6_XL_BW_XL_50HZ)) < 0) {
 		return -1;
 	}
-	if (spiWriteReg(ctx, REG_CTRL_REG2_G, VAL_CTRL_REG2_G_OUT_SEL_LPF2_DISABLE) < 0) {
+	if (spiWriteReg(bus, REG_CTRL_REG2_G, VAL_CTRL_REG2_G_OUT_SEL_LPF2_DISABLE) < 0) {
 		return -1;
 	}
 	usleep(1000 * 100);
 
 	/* enabling sensors */
-	if (spiWriteReg(ctx, REG_CTRL_REG5_XL, (VAL_CTRL_REG5_XL_ENABLE)) < 0) {
+	if (spiWriteReg(bus, REG_CTRL_REG5_XL, (VAL_CTRL_REG5_XL_ENABLE)) < 0) {
 		return -1;
 	}
-	if (spiWriteReg(ctx, CTRL_REG4, (CTRL_REG4_G_ENABLE)) < 0) {
+	if (spiWriteReg(bus, CTRL_REG4, (CTRL_REG4_G_ENABLE)) < 0) {
 		return -1;
 	}
 	usleep(1000 * 100);
@@ -217,7 +215,7 @@ static void lsm9dsxx_threadPublish(void *data)
 
 		/* accel read */
 		obuf = REG_DATA_OUT_ACCL | SPI_READ_BIT;
-		err = sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, &obuf, sizeof(obuf), ibuf, sizeof(ibuf), sizeof(obuf));
+		err = info->bus.ops.bus_xfer(&info->bus, &obuf, sizeof(obuf), ibuf, sizeof(ibuf), sizeof(obuf));
 		gettime(&tstamp_accl, NULL);
 
 		if (err >= 0) {
@@ -231,7 +229,7 @@ static void lsm9dsxx_threadPublish(void *data)
 
 		/* gyroscope read */
 		obuf = REG_DATA_OUT_GYRO | SPI_READ_BIT;
-		err = sensorsspi_xfer(&ctx->spiCtx, &ctx->spiSS, &obuf, sizeof(obuf), ibuf, sizeof(ibuf), sizeof(obuf));
+		err = info->bus.ops.bus_xfer(&info->bus, &obuf, sizeof(obuf), ibuf, sizeof(ibuf), sizeof(obuf));
 		gettime(&tstamp_gyro, NULL);
 
 		if (err >= 0) {
@@ -297,25 +295,20 @@ static int lsm9dsxx_alloc(sensor_info_t *info, const char *args)
 	info->ctx = ctx;
 	info->types = SENSOR_TYPE_ACCEL | SENSOR_TYPE_GYRO;
 
-	ctx->spiCtx.mode = SPI_MODE3;
-	ctx->spiCtx.speed = 10000000;
-
 	ss = strchr(args, ':');
 	if (ss != NULL) {
 		*(ss++) = '\0';
 	}
 
-	/* initialize SPI device communication */
-	err = sensorsspi_open(args, ss, &ctx->spiCtx.oid, &ctx->spiSS);
+	err = sensor_bus_genericSpiSetup(&info->bus, args, ss, (int)10e7, SPI_MODE3);
 	if (err < 0) {
-		printf("lsm9dsxx: Can`t initialize SPI device\n");
-		free(ctx);
-		return err;
+		printf("lsm9dsxx: failed spi setup: %d\n", err);
 	}
 
 	/* hardware setup of imu */
-	if (lsm9dsxx_hwSetup(ctx) < 0) {
+	if (lsm9dsxx_hwSetup(&info->bus) < 0) {
 		printf("lsm9dsxx: failed to setup device\n");
+		info->bus.ops.bus_close(&info->bus);
 		free(ctx);
 		return -1;
 	}

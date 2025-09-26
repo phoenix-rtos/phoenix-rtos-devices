@@ -19,7 +19,6 @@
 
 #include <sys/rb.h>
 #include <posix/idtree.h>
-#include <spi-msg.h>
 
 
 #define THREAD_PRIORITY_MSGSRV 3 /* priority of messaging server of sensorhub */

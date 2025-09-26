@@ -193,27 +193,6 @@ static void mpu6000_busDealloc(sensor_bus_t *bus)
 }
 
 
-static int mpu6000_busSetup(sensor_bus_t *bus, const char *spiDev, const char *ss)
-{
-	/* MPU6000 driver supports only SPI communication */
-	if (bus->bustype != bus_spi) {
-		return -ENODEV;
-	}
-
-	/* initialize SPI device communication */
-	if (bus->ops.bus_open(bus, spiDev, ss) < 0) {
-		return -1;
-	}
-
-	if (bus->ops.bus_cfg(bus, (int)10e6, SPI_MODE3) < 0) {
-		mpu6000_busDealloc(bus);
-		return -2;
-	}
-
-	return 0;
-}
-
-
 int mpu6000_read(const sensor_info_t *info, const sensor_event_t **evt)
 {
 	mpu6000_ctx_t *ctx = info->ctx;
@@ -340,7 +319,7 @@ int mpu6000_alloc(sensor_info_t *info, const char *args)
 	}
 	ctx->lpfSel = lpfSel;
 
-	err = mpu6000_busSetup(&info->bus, args, ss);
+	err = sensor_bus_genericSpiSetup(&info->bus, args, ss, (int)10e6, SPI_MODE3);
 	if (err < 0) {
 		printf("mpu6000: failed spi setup: %d\n", err);
 	}

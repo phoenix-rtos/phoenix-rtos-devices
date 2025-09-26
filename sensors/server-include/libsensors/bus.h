@@ -70,4 +70,20 @@ typedef struct _sensor_bus_t {
 	} ctx;
 } sensor_bus_t;
 
+
+/**
+ * Generic SPI setup wrapper
+ * 
+ * Uses operands from `bus` to open bus and configure speed and mode.
+ * More exotic setup scenario may self-implement this wrapper if needed.
+ * 
+ * Returns:
+ * 0 - on success.
+ * (-1) - if bus type is not SPI.
+ * (-2) - bus open fail.
+ * (-3) - bus cofigure fail
+ */
+extern int sensor_bus_genericSpiSetup(sensor_bus_t *bus, const char *spiDev, const char *ss, int speed, char mode);
+
+
 #endif
