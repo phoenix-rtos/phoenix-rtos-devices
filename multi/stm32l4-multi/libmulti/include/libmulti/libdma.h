@@ -38,6 +38,9 @@ enum { dma_modeNormal = 0, dma_modeNoBlock };
 /* clang-format on */
 
 
+typedef void libdma_callback_t(void *arg, int type);
+
+
 /* NOTE: Synchronization on an individual channel must be done externally by the user. */
 
 
@@ -87,5 +90,24 @@ int libdma_acquirePeripheral(int per, unsigned int num, const struct libdma_per 
 
 int libdma_init(void);
 
+typedef struct {
+	void *buf;
+	size_t bufSize;
+	uint8_t elSize;
+	uint8_t burstSize;
+	uint8_t increment;
+	uint8_t isCached;
+} dma_transfer_buffer_t;
+typedef struct {
+	void *addr;
+	uint8_t elSize;
+	uint8_t burstSize;
+	uint8_t increment;
+} dma_peripheral_config_t;
+int libxpdma_acquirePeripheral(int per, unsigned int num, const struct libdma_per **perP);
+int libxpdma_configureChannel(const struct libdma_per *per, int dir, handle_t *cond);
+int libxpdma_configurePeripheral(const struct libdma_per *per, int dir, const dma_peripheral_config_t *cfg);
+int libxpdma_configureMemory(const struct libdma_per *per, int dir, int isCircular, const dma_transfer_buffer_t *buffers, size_t n_buffers);
+void libxpdma_DEBUGPrintTransaction(const struct libdma_per *per, int dir);
 
 #endif

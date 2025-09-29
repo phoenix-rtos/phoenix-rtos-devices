@@ -38,6 +38,7 @@
 #include "tty.h"
 #include "uart.h"
 #include "rng.h"
+#include "libmulti/libdma.h"
 
 #if defined(__CPU_STM32N6)
 #include "pwm_n6.h"
@@ -409,6 +410,77 @@ int main(void)
 
 	for (i = 0; i < THREADS_NO - 1; ++i)
 		beginthread(thread, THREADS_PRIORITY, common.stack[i], STACKSZ, (void *)i);
+
+#define CHECK(x) \
+	do { \
+		int ret = x; \
+		if (ret < 0) { \
+			printf("error %d line %d\n", ret, __LINE__); \
+		} \
+	} while (0)
+	libdma_init();  // DEBUG ONLY
+	const struct libdma_per *per;
+	CHECK(libxpdma_acquirePeripheral(dma_spi, 0, &per));
+	CHECK(libxpdma_configureChannel(per, dma_per2mem, NULL));
+	static const dma_peripheral_config_t perconf = {
+		.addr = (void *)0xabadcafe,
+		.elSize = 2,
+		.burstSize = 1,
+		.increment = 0,
+	};
+	CHECK(libxpdma_configurePeripheral(per, dma_per2mem, &perconf));
+	static const dma_transfer_buffer_t buf[] = {
+		{
+			.buf = (void *)0xdeadbeef,
+			.bufSize = 0x42,
+			.elSize = 1,
+			.burstSize = 1,
+			.increment = 1,
+			.isCached = 0,
+		},
+		{
+			.buf = (void *)0xdead0004,
+			.bufSize = 0x12,
+			.elSize = 2,
+			.burstSize = 1,
+			.increment = 1,
+			.isCached = 1,
+		},
+		{
+			.buf = (void *)0xdead0007,
+			.bufSize = 0x4,
+			.elSize = 2,
+			.burstSize = 1,
+			.increment = 1,
+			.isCached = 1,
+		},
+		{
+			.buf = (void *)0xdead0008,
+			.bufSize = 0x4,
+			.elSize = 2,
+			.burstSize = 1,
+			.increment = 1,
+			.isCached = 0,
+		},
+		{
+			.buf = (void *)0xdead0009,
+			.bufSize = 0x4,
+			.elSize = 2,
+			.burstSize = 1,
+			.increment = 1,
+			.isCached = 1,
+		},
+		{
+			.buf = (void *)0xdead0009,
+			.bufSize = 0x4,
+			.elSize = 2,
+			.burstSize = 1,
+			.increment = 1,
+			.isCached = 1,
+		},
+	};
+	CHECK(libxpdma_configureMemory(per, dma_per2mem, 0, buf, sizeof(buf) / sizeof(buf[0])));
+	libxpdma_DEBUGPrintTransaction(per, dma_per2mem);
 
 	thread((void *)i);
 
