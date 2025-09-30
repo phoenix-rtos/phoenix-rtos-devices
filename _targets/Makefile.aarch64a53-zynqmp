@@ -9,3 +9,4 @@
 DEFAULT_COMPONENTS := zynq-uart zynq-flash zynqmp-can zynq-pwm uart16550
 DEFAULT_COMPONENTS += zynq-i2c zynq-spi
 DEFAULT_COMPONENTS += libzynqpwm
+DEFAULT_COMPONENTS += axi-i2c-test mipi-driver i2cdetect

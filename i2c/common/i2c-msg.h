@@ -7,6 +7,7 @@
 enum {
 	i2c_devctl_bus_write, /* input params: dev_addr, *data, len */
 	i2c_devctl_bus_read,  /* input params: dev_addr, *data, len */
+	i2c_devctl_reg_write, /* input params: dev_addr, reg_addr, *data, len */
 	i2c_devctl_reg_read   /* input params: dev_addr, reg_addr, *data, len */
 };
 

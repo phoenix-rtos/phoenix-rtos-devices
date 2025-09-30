@@ -4,7 +4,7 @@
  * Xilinx/AMD AXI I2C (axi_iic) BUS driver
  *
  * Copyright 2021, 2022, 2025 Phoenix Systems
- * Author: Marek Bialowas, Hubert Buczyński, Kamil Ber
+ * Author: Marek Bialowas, Hubert Buczyński, Kamil Ber, Krzysztof Szostek
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -24,89 +24,19 @@
 #include <i2c-msg.h>
 
 
-static int dev_ctl(msg_t *msg)
-{
-	i2c_devctl_t *in = (i2c_devctl_t *)msg->i.raw;
-
-	switch (in->i.type) {
-		case i2c_devctl_bus_write:
-			return i2c_busWrite(in->i.dev_addr, msg->i.data, msg->i.size);
-
-		case i2c_devctl_bus_read:
-			return i2c_busRead(in->i.dev_addr, msg->o.data, msg->o.size);
-
-		case i2c_devctl_reg_read:
-			return i2c_regRead(in->i.dev_addr, in->i.reg_addr, msg->o.data, msg->o.size);
-
-		default:
-			return -EINVAL;
-	}
-}
-
-
-static void thread(void *arg)
-{
-	uint32_t port = (uint32_t)(intptr_t)arg;
-	msg_t msg;
-	msg_rid_t rid;
-	int err;
-
-	for (;;) {
-		err = msgRecv(port, &msg, &rid);
-		if (err < 0) {
-			printf("i2c: msgRecv returned error: %s\n", strerror(-err));
-			if (err == -EINTR) {
-				continue;
-			}
-			else {
-				break; /* EINVAL (invalid/closed port) or ENOMEM - fatal error */
-			}
-		}
-
-		switch (msg.type) {
-			case mtOpen:
-			case mtClose:
-				msg.o.err = EOK;
-				break;
-
-			case mtRead:
-			case mtWrite:
-				msg.o.err = -EINVAL;
-				break;
-
-			case mtDevCtl:
-				msg.o.err = dev_ctl(&msg);
-				break;
-
-			default:
-				msg.o.err = -ENOSYS;
-				break;
-		}
-
-		msgRespond(port, &msg, rid);
-	}
-}
-
-
-static void print_usage(const char *progname)
-{
-	printf("Usage: %s [i2c_bus_no <0,1>]\n", progname);
-}
-
-
-int main(int argc, char **argv)
+int standard_proc(unsigned int dev_no)
 {
 	oid_t dev;
-	unsigned int dev_no;
+	// unsigned int dev_no;
 	uint32_t port;
 	char devname[sizeof("i2cX")];
 
-	if (argc != 2) {
-		print_usage(argv[0]);
-		return 1;
-	}
+	// if (argc != 2) {
+	// 	print_usage(argv[0]);
+	// 	return 1;
+	// }
 
-	dev_no = atoi(argv[1]);
+	// dev_no = atoi(argv[1]);
 	if (i2c_init(dev_no) < 0) {
 		printf("i2c: initialization failed\n");
 		return 1;
@@ -126,10 +56,10 @@ int main(int argc, char **argv)
 		return 3;
 	}
 
-	printf("i2c: initialized\n");
-	thread((void *)(intptr_t)port);
+	// printf("i2c: initialized\n");
+	// thread((void *)(intptr_t)port);
 
-	printf("i2c: exiting\n");
+	// printf("i2c: exiting\n");
 
 	return 0;
 }

@@ -4,19 +4,20 @@
  * Xilinx/AMD AXI_I2C (axi_iic) driver
  *
  * Copyright 2025 Phoenix Systems
- * Author: Kamil Ber
+ * Author: Kamil Ber, Krzysztof Szostek
  *
  * This file is part of Phoenix-RTOS.
  *
  * %LICENSE%
  */
 
+#include <stdio.h>
 #include <sys/mman.h>
 #include <sys/msg.h>
 #include <sys/platform.h>
 #include <sys/threads.h>
 #include <sys/interrupt.h>
-#include <sys/mman.h>
+#include <posix/utils.h>
 
 #include <stdint.h>
 #include <unistd.h>
@@ -33,74 +34,27 @@
 
 #include <board_config.h>
 
-/* I2C registers, from PG090 Table 4 */
-#define I2C_REG_GIE						(0x01C/4)
-#define I2C_REG_ISR						(0x020/4)
-#define I2C_REG_IER						(0x028/4)
-#define I2C_REG_SOFTR					(0x040/4)
-#define I2C_REG_CR						(0x100/4)
-#define I2C_REG_SR						(0x104/4)
-#define I2C_REG_TX_FIFO				(0x108/4)
-#define I2C_REG_RX_FIFO				(0x10C/4)
-#define I2C_REG_ADR						(0x110/4)
-#define I2C_REG_TX_FIFO_OCY		(0x114/4)
-#define I2C_REG_RX_FIFO_OCY		(0x118/4)
-#define I2C_REG_TEN_ADR				(0x11C/4)
-#define I2C_REG_RX_FIFO_PIRQ	(0x120/4)
-#define I2C_REG_GPO						(0x124/4)
-#define I2C_REG_TSUSTA				(0x128/4)
-#define I2C_REG_TSUSTO				(0x12C/4)
-#define I2C_REG_THDSTA				(0x130/4)
-#define I2C_REG_TSUDAT				(0x134/4)
-#define I2C_REG_TBUF					(0x138/4)
-#define I2C_REG_THIGH					(0x13C/4)
-#define I2C_REG_TLOW					(0x140/4)
-#define I2C_REG_THDDAT				(0x144/4)
-
-#define GIE_EN									31
-
-#define ISR_ARB_LOST						0
-#define ISR_TX_ERR_OR_COMPLETE	1
-#define ISR_TX_FIFO_EMPY				2
-#define ISR_RX_FIFO_FULL				3
-#define ISR_BUS_NOT_BUSY				4
-#define ISR_ADDR_AS_SLAVE				5
-#define ISR_NOT_ADDR_AS_SLAVE		6
-#define ISR_TX_FIFO_HALF_EMPTY	7
-
-#define CR_EN									0
-#define CR_TX_FIFO_RST				1
-#define CR_TX									3
-#define CR_MSMS								2
-#define CR_TXAK								4
-#define CR_RSTA								5
-
-#define SR_ABGC								0
-#define SR_AAS								1
-#define SR_BB									2
-#define SR_SRW								3
-#define SR_TX_FIFO_FULL				4
-#define SR_RX_FIFO_FULL				5
-#define SR_RX_FIFO_EMPTY			6
-#define SR_TX_FIFO_EMPTY			7
+#include "axi-i2c-regs.h"
+#include "axi-irq-ctrl-regs.h"
 
 
-#define I2C_FIFO_DEPTH				16
+#define I2C_FIFO_DEPTH 16
 /* TODO: not used in this version*/
-#define I2C_TRANS_SIZE_MAX		16
+#define I2C_TRANS_SIZE_MAX 16
 
 typedef struct {
-	unsigned int irq;	/* I2C controller IRQ */
+	unsigned int irq; /* I2C controller IRQ */
 	struct {
-		int clk_freq;		/* Frequency of Clock, in Hz */
-		int i2c_freq;		/* Frequency of I2C BUSm in Hz */
-		int tsusta;			/* TSUSTA timing in ns (tsusta + tr) */
-		int tsusto;			/* TSUSTO timing in ns (tsusto + tr) */
-		int thdsta;			/* THDSTA timing in ns (thdsta + tf) */
-		int tsudat;			/* TSUDAT timing in ns (tsudat + tf) */
-		int tbuf;				/* TSUDAT timing in ns */
+		int clk_freq; /* Frequency of Clock, in Hz */
+		int i2c_freq; /* Frequency of I2C BUSm in Hz */
+		int tsusta;   /* TSUSTA timing in ns (tsusta + tr) */
+		int tsusto;   /* TSUSTO timing in ns (tsusto + tr) */
+		int thdsta;   /* THDSTA timing in ns (thdsta + tf) */
+		int tsudat;   /* TSUDAT timing in ns (tsudat + tf) */
+		int tbuf;     /* TSUDAT timing in ns */
 	} timings;
-	addr_t paddr;			/* I2C controller base physical address */
+	addr_t paddr; /* I2C controller base physical address */
+	addr_t irq_addr;
 } i2c_info_t;
 
 /* Timings from IMX219 from IMX219 PG:
@@ -120,7 +74,8 @@ typedef struct {
 static const i2c_info_t devsInfo[] = {
 	{
 		.irq = 121,
-		.paddr = 0xe0004000,
+		.paddr = 0xA0030000,
+    .irq_addr = 0xA0000000,
 		.timings = {
 			.clk_freq = 100000000,
 			.i2c_freq = 100000,
@@ -133,7 +88,8 @@ static const i2c_info_t devsInfo[] = {
 	},
 	{
 		.irq = 122,
-		.paddr = 0xe0005000,
+		.paddr = 0xA0030000,
+    .irq_addr = 0xA0000000,
 		.timings = {
 			.clk_freq = 100000000,
 			.i2c_freq = 100000,
@@ -150,11 +106,12 @@ static const i2c_info_t devsInfo[] = {
 
 static struct {
 	unsigned int devID;
-	volatile uint32_t *base; /* I2C registers base address */
+	volatile uint32_t *base;     /* I2C registers base address */
+	volatile uint32_t *irq_addr; /* AXI_IRQ controller */
 	int initialized;
-	handle_t lock; 		/* I2C IRQ mutex */
-	handle_t cond; 		/* I2C IRQ cond */
-	handle_t inth; 		/* I2C IRQ handle */
+	handle_t lock; /* I2C IRQ mutex */
+	handle_t cond; /* I2C IRQ cond */
+	handle_t inth; /* I2C IRQ handle */
 	volatile uint32_t st;
 } i2c = { 0 };
 
@@ -166,8 +123,9 @@ static struct {
 
 static int i2c_isr(unsigned int n, void *arg)
 {
-
 	uint32_t reg;
+
+	*(i2c.irq_addr + 0x14) = 0x2;
 
 	i2c.st = *(i2c.base + I2C_REG_ISR) & *(i2c.base + I2C_REG_IER);
 
@@ -178,50 +136,50 @@ static int i2c_isr(unsigned int n, void *arg)
 	*(i2c.base + I2C_REG_ISR) = i2c.st;
 
 	/* arbitration lost */
-	if (i2c.st & (1 << ISR_ARB_LOST)) {
+	if (i2c.st & ISR_ARB_LOST) {
 		/* from pg090: Firmware must respond by first clearing the Control Register (CR) MSMS bit*/
-		reg = *(i2c.base + I2C_REG_CR) & ~(1 << CR_MSMS);
-		
+		reg = *(i2c.base + I2C_REG_CR) & ~CR_MSMS;
+
 		*(i2c.base + I2C_REG_CR) = reg;
-		/* From pg090: this bit must be set to flush the FIFO if either 
-		 * (a) arbitration is lost or 
+		/* From pg090: this bit must be set to flush the FIFO if either
+		 * (a) arbitration is lost or
 		 * (b) if a transmit error occurs.
-		*/
-		*(i2c.base + I2C_REG_CR) = reg | (1 << CR_TX_FIFO_RST); 
-		*(i2c.base + I2C_REG_CR) = reg & ~(1 << CR_TX_FIFO_RST);
-		
-		*(i2c.base + I2C_REG_IER) &= ~(1 << ISR_ARB_LOST);
+		 */
+		*(i2c.base + I2C_REG_CR) = reg | CR_TX_FIFO_RST;
+		*(i2c.base + I2C_REG_CR) = reg & ~CR_TX_FIFO_RST;
+
+		*(i2c.base + I2C_REG_IER) &= ~ISR_ARB_LOST;
 	}
 
-	
+
 	/* tx fifo empty (tx error or receivecompletion) */
-	if (i2c.st & (1 << ISR_TX_ERR_OR_COMPLETE)) {
-		*(i2c.base + I2C_REG_IER) &= ~(1 << ISR_TX_ERR_OR_COMPLETE);
+	if (i2c.st & ISR_TX_ERR_OR_COMPLETE) {
+		*(i2c.base + I2C_REG_IER) &= ~ISR_TX_ERR_OR_COMPLETE;
 	}
 	/* tx fifo empty (receive underflow) */
-	else if (i2c.st & (1 << ISR_RX_FIFO_FULL)) {
+	else if (i2c.st & ISR_RX_FIFO_FULL) {
 		/* first, need to clear the RX FULL status!!!*/
-		*(i2c.base + I2C_REG_IER) &= ~(1 << ISR_RX_FIFO_FULL);
+		*(i2c.base + I2C_REG_IER) &= ~ISR_RX_FIFO_FULL;
 	}
 	/* rx fifo full (receive underflow) */
-	else if (i2c.st & (1 << ISR_TX_FIFO_EMPY)) {
-		*(i2c.base + I2C_REG_IER) &= ~(1 << ISR_TX_FIFO_EMPY);
+	else if (i2c.st & ISR_TX_FIFO_EMPTY) {
+		*(i2c.base + I2C_REG_IER) &= ~ISR_TX_FIFO_EMPTY;
 	}
 	/* bus not busy */
-	else if (i2c.st & (1 << ISR_BUS_NOT_BUSY)) {
-		*(i2c.base + I2C_REG_IER) &= ~(1 << ISR_BUS_NOT_BUSY);
+	else if (i2c.st & ISR_BUS_NOT_BUSY) {
+		*(i2c.base + I2C_REG_IER) &= ~ISR_BUS_NOT_BUSY;
 	}
 	/* addressed as a slave */
-	else if (i2c.st & (1 << ISR_ADDR_AS_SLAVE)) {
-		*(i2c.base + I2C_REG_IER) &= ~(1 << ISR_ADDR_AS_SLAVE);
+	else if (i2c.st & ISR_ADDR_AS_SLAVE) {
+		*(i2c.base + I2C_REG_IER) &= ~ISR_ADDR_AS_SLAVE;
 	}
 	/* not addressed as a slave */
-	else if (i2c.st & (1 << ISR_NOT_ADDR_AS_SLAVE)) {
-		*(i2c.base + I2C_REG_IER) &= ~(1 << ISR_NOT_ADDR_AS_SLAVE);
-	}  
+	else if (i2c.st & ISR_NOT_ADDR_AS_SLAVE) {
+		*(i2c.base + I2C_REG_IER) &= ~ISR_NOT_ADDR_AS_SLAVE;
+	}
 	/* tx fifo half empty */
-	else if (i2c.st & (1 << ISR_TX_FIFO_HALF_EMPTY)) {
-		*(i2c.base + I2C_REG_IER) &= ~(1 << ISR_TX_FIFO_HALF_EMPTY);
+	else if (i2c.st & ISR_TX_FIFO_HALF_EMPTY) {
+		*(i2c.base + I2C_REG_IER) &= ~ISR_TX_FIFO_HALF_EMPTY;
 	}
 
 	return 1;
@@ -230,7 +188,7 @@ static int i2c_isr(unsigned int n, void *arg)
 
 static inline int i2c_isBusBusy(void)
 {
-	return *(i2c.base + I2C_REG_SR) & (1 << SR_BB);
+	return *(i2c.base + I2C_REG_SR) & SR_BB;
 }
 
 
@@ -268,36 +226,17 @@ static inline void i2c_clearIrqSt(void)
 }
 
 
-static int i2c_trxComplete(void)
+static inline void writeToFIFO(uint8_t data)
 {
-	int ret = EOK;
-	const time_t timeoutUs = 3000;
-
-	mutexLock(i2c.lock);
-	
-	/* wait for data or completion irq */
-	while ((i2c.st & ((1 << ISR_TX_FIFO_EMPY) | (1 << ISR_RX_FIFO_FULL))) == 0) {
-		if (condWait(i2c.cond, i2c.lock, timeoutUs) == -ETIME) {
-			ret = -ETIMEDOUT;
-			break;
-		}
-
-		/* TX Error (no slave os NACK from slave), receive underflow, arbitration lost */
-		if (i2c.st & ((1 << ISR_TX_ERR_OR_COMPLETE) | (1 << ISR_RX_FIFO_FULL) | (1 << ISR_ARB_LOST)) ) {
-			ret = -EIO;
-		}
-	}
-	i2c.st = 0;
-	mutexUnlock(i2c.lock);
-
-	return ret;
+	*(i2c.base + I2C_REG_TX_FIFO) = data;
+	printf("Writing to TX_FIFO: 0x%02x\n", data);
 }
 
 
-int i2c_busWrite(uint8_t dev_addr, const uint8_t *data, uint32_t len)
+int i2c_regWrite16(uint8_t dev_addr, uint16_t reg_addr, uint8_t *data, uint32_t len)
 {
-	unsigned int fifoAvail;
-	int i, ret = EOK, lenDone = 0, start = 1;
+	int ret = EOK;
+	volatile uint32_t *base = i2c.base;
 
 	if (i2c.initialized == 0) {
 		return -EIO;
@@ -315,255 +254,116 @@ int i2c_busWrite(uint8_t dev_addr, const uint8_t *data, uint32_t len)
 		return -EBUSY;
 	}
 
-	/* clear FIFO, enable ACK (0 = active) */
-	*(i2c.base + I2C_REG_CR) = (1 < CR_TX_FIFO_RST) | (1 < CR_EN);
-	*(i2c.base + I2C_REG_CR) = (1 < CR_EN);
+	*(base + I2C_REG_CR) = CR_EN | CR_TX_FIFO_RST;
+	*(base + I2C_REG_CR) = CR_EN;
 
 	i2c_clearIrqSt();
+	/*
+	 * Set Rx FIFO Occupancy depth to throttle at first byte (after reset = 0)
+	 * */
+	*(base + I2C_REG_RX_FIFO_PIRQ) = 15;
 
-	while ((len - lenDone) > 1) {
+	*(base + I2C_REG_TX_FIFO) = (dev_addr << 1);
+	*(base + I2C_REG_TX_FIFO) = (reg_addr >> 8) & 0xff;
+	*(base + I2C_REG_TX_FIFO) = reg_addr & 0xff;
 
-		/* Master Transmitter with a Repeated Start, addr needs 
-		 * to be transmitted with each chunk 
-		 */
-		*(i2c.base + I2C_REG_TX_FIFO) = (dev_addr << 1);
+	/* Enable interrupts, arbitration lost, tx overflow, transfer NACK,
+	 * completion irq, bus not busy
+	 */
+	*(i2c.base + I2C_REG_IER) = ISR_TX_FIFO_EMPTY;
 
-		/* write data to FIFO */
-		fifoAvail = I2C_FIFO_DEPTH - *(i2c.base + I2C_REG_TX_FIFO_OCY);
-		for (i = 0; i < fifoAvail && (len - lenDone++) > 1; ++i) {
-			*(i2c.base + I2C_REG_TX_FIFO) = *(data++);
-		}
-
-		/* Enable interrupts, arbitration lost, tx overflow, transfer NACK, 
-		 * completion irq, bus not busy 
-		 */
-		i2c_clearIrq((1 << ISR_TX_FIFO_EMPY));
-		 *(i2c.base + I2C_REG_IER) = (1 << ISR_RX_FIFO_FULL) | (1 << ISR_TX_FIFO_EMPY) | 
-									(1 << ISR_TX_ERR_OR_COMPLETE) | (1 << ISR_ARB_LOST);
-		
-
-		/* start TX */
-		if (start == 1) {
-			*(i2c.base + I2C_REG_CR) = (1 << CR_MSMS) | (1 << CR_TX) | (1 < CR_EN);
-			start = 0;
-		}
-		else {
-			*(i2c.base + I2C_REG_CR) = (1 << CR_RSTA) | (1 << CR_MSMS) | (1 << CR_TX) | (1 < CR_EN);
-		}
-
-		ret = i2c_trxComplete();
-		if (ret < 0) {
-			break;
-		}
+	*(base + I2C_REG_CR) = CR_EN | CR_MSMS | CR_TX;
+	usleep(1);
+	if (ret < 0) {
+		return ret;
 	}
-	/* last byte for which MSMS will be cleared and the STOP generated*/
-	if (ret >= 0) {
-		*(i2c.base + I2C_REG_CR) = (1 << CR_TX) | (1 < CR_EN);
-		*(i2c.base + I2C_REG_TX_FIFO) = *(data++);
-	}  
+	*(base + I2C_REG_CR) = CR_EN | CR_TX;
+	*(base + I2C_REG_TX_FIFO) = *data;
+
 	/* arbitration lost, tx overflow, transfer NACK, completion irq, bus not busy */
-	*(i2c.base + I2C_REG_IER) = (1 << ISR_RX_FIFO_FULL) | (1 << ISR_TX_FIFO_EMPY) | 
-								(1 << ISR_TX_ERR_OR_COMPLETE) | (1 << ISR_ARB_LOST);
-	i2c_clearIrq((1 << ISR_TX_FIFO_EMPY));
+	*(i2c.base + I2C_REG_IER) = ISR_RX_FIFO_FULL | ISR_TX_FIFO_EMPTY |
+			ISR_TX_ERR_OR_COMPLETE | ISR_ARB_LOST;
+	i2c_clearIrq(ISR_TX_FIFO_EMPTY);
 
 	/* disable interrupts */
 	*(i2c.base + I2C_REG_IER) = 0;
 
-	return ret;
-}
-
-
-static int i2c_transferRead(uint8_t dev_addr, uint8_t *buff, uint32_t len, uint8_t start, uint8_t stop)
-{
-	/* this function performs read in chunks of up to 16B with Repeated starts in between */
-	int ret = EOK, i, size;
-	uint32_t reg;
-
-	if (len > 16) {
-		return -EINVAL;
-	}
-
-	if (len > 2) {
-		size = len-1;
-	} 	
-	else {
-		size = 1;
-	}
-	*(i2c.base + I2C_REG_RX_FIFO_PIRQ) = size-1;
- 
-	/* set slave address and start transmission */
-	*(i2c.base + I2C_REG_TX_FIFO) = (dev_addr << 1) | 1;
-	i2c_clearIrq((1 << ISR_RX_FIFO_FULL));
-	/* arbitration lost, tx overflow, transfer NACK, completion irq, bus not busy */
-	*(i2c.base + I2C_REG_IER) = (1 << ISR_RX_FIFO_FULL) | (1 << ISR_TX_FIFO_EMPY) | 
-								(1 << ISR_TX_ERR_OR_COMPLETE) | (1 << ISR_ARB_LOST);
-
-	/* write address of address */
-	if (start == 1) {
-		reg = (1 << CR_MSMS) | (1 < CR_EN);
-	} else {
-		reg = (1 << CR_RSTA) | (1 << CR_MSMS) | (1 < CR_EN);
-	}
-	*(i2c.base + I2C_REG_CR) = reg;
-
-	/* wait for completion of address transmission*/
-	ret = i2c_trxComplete();
-	if (ret < 0) {
-		return ret;
-	}
-	i2c_clearIrq((1 << ISR_TX_FIFO_EMPY));
-	*(i2c.base + I2C_REG_IER) = (1 << ISR_RX_FIFO_FULL) | (1 << ISR_TX_ERR_OR_COMPLETE) | 
-								(1 << ISR_ARB_LOST);
-
-
-	/* lasta byte, no-ack, len = 1 case*/
-	if (len == 1) { 
-		reg |= (1 << CR_TXAK);
-		if (stop == 1) {
-			reg &= ~(1 << CR_MSMS);
-		}
-	}
-	
-	/* wait for reception of len-1 bytes*/
-	ret = i2c_trxComplete();
-	if (ret < 0) {
-		return ret;
-	}
-	
-
-	/* lasta byte, no-ack, len > 1 case*/
-	if (len > 1) {
-		reg |= (1 << CR_TXAK);
-		if (stop == 1) {
-			reg &= ~(1 << CR_MSMS);
-		}
-		*(i2c.base + I2C_REG_CR) = reg;
-	}
-	
-	/* read len-1 bytes from fifo*/
-	for (i = 0; i < size; ++i) {
-		*(buff++) = *(i2c.base + I2C_REG_RX_FIFO);
-	}
-	i2c_clearIrq((1 << ISR_RX_FIFO_FULL));
-	*(i2c.base + I2C_REG_IER) = (1 << ISR_RX_FIFO_FULL) | (1 << ISR_TX_ERR_OR_COMPLETE) | 
-								(1 << ISR_ARB_LOST);
-
-	if (len > 1) {
-		/* wait for reception of last byte*/
-		ret = i2c_trxComplete();
-		if (ret < 0) {
-			return ret;
-		}
-		/* read last byte from fifo*/
-		*(buff++) = *(i2c.base + I2C_REG_RX_FIFO);
-		i2c_clearIrq((1 << ISR_RX_FIFO_FULL));
-		*(i2c.base + I2C_REG_IER) = (1 << ISR_RX_FIFO_FULL) | (1 << ISR_TX_ERR_OR_COMPLETE) | 
-									(1 << ISR_ARB_LOST);
-
-	}
+	usleep(1);
 
 	return ret;
 }
 
-
-int i2c_busRead(uint8_t dev_addr, uint8_t *data_out, uint32_t len)
+int i2c_regRead16(uint8_t dev_addr, uint16_t reg_addr, uint8_t *data_out, uint32_t len)
 {
-	int ret = EOK, size = 0, bytes2Read, start = 1, stop = 0;
+	int ret = 0;
+	volatile uint32_t *base = i2c.base;
+	*(base + I2C_REG_CR) = CR_EN | CR_TX_FIFO_RST;
+	*(base + I2C_REG_CR) = CR_EN;
 
-	if (i2c.initialized == 0) {
-		return -EIO;
-	}
+	/*
+	 * Set Rx FIFO Occupancy depth to throttle at first byte (after reset = 0)
+	 * */
+	*(base + I2C_REG_RX_FIFO_PIRQ) = 0;
 
-	if (data_out == NULL) {
-		return -EINVAL;
-	}
+	*(base + I2C_REG_TX_FIFO) = (dev_addr << 1);
+	*(base + I2C_REG_TX_FIFO) = (reg_addr >> 8) & 0xff;
+	*(base + I2C_REG_TX_FIFO) = reg_addr & 0xff;
 
-	if (len == 0) {
-		return 0;
-	}
+	*(base + I2C_REG_CR) = CR_EN | CR_MSMS | CR_TX;
+	usleep(1);
+	*(base + I2C_REG_CR) = CR_EN | CR_MSMS | CR_RSTA | CR_TXAK;
+	*(base + I2C_REG_TX_FIFO) = (dev_addr << 1) | 1;
+	usleep(1);
+	*(base + I2C_REG_CR) = CR_EN;
 
-	if (i2c_isBusBusy() == 1) {
-		return -EBUSY;
-	}
-
-	*(i2c.base + I2C_REG_CR) |= (1 << CR_EN);
-
-	i2c_clearIrqSt();
-
-	do {
-		bytes2Read = (len - size >= I2C_FIFO_DEPTH) ? I2C_FIFO_DEPTH : (len - size);
-		if (bytes2Read < I2C_FIFO_DEPTH) {
-			stop = 1;
-		}
-
-		ret = i2c_transferRead(dev_addr, data_out, bytes2Read, start, stop);
-		if (ret < 0) {
-			break;
-		}
-		start = 0;
-
-		data_out += bytes2Read;
-		size += bytes2Read;
-	} while (size < len);
-
-	/* disable interrupts */
-	*(i2c.base + I2C_REG_IER) = 0;
-
+	*data_out = *(base + I2C_REG_RX_FIFO);
 	return ret;
-}
-
-
-int i2c_regRead(uint8_t dev_addr, uint8_t reg_addr, uint8_t *data_out, uint32_t len)
-{
-	int ret;
-
-	ret = i2c_busWrite(dev_addr, &reg_addr, sizeof(reg_addr));
-	if (ret < 0) {
-		return ret;
-	}
-
-	return i2c_busRead(dev_addr, data_out, len);
 }
 
 
 static void i2c_initCtrl(void)
 {
-	
+
 	/* Depth of RX fifo for interrupt generation*/
 	*(i2c.base + I2C_REG_RX_FIFO_PIRQ) = I2C_FIFO_DEPTH - 1;
 
 	/* clear TX and RX fifos */
-	*(i2c.base + I2C_REG_CR) = (1 < CR_TX_FIFO_RST);
+	*(i2c.base + I2C_REG_CR) = CR_EN | CR_TX_FIFO_RST;
 
 	/* enable controller */
-	*(i2c.base + I2C_REG_CR) = (1 < CR_EN);
+	*(i2c.base + I2C_REG_CR) = CR_EN;
 
 	/* enable interrupts */
-	*(i2c.base + I2C_REG_GIE) = (1 < GIE_EN);
+	// *(i2c.base + I2C_REG_GIE) = GIE_EN;
+	*(i2c.base + I2C_REG_GIE) = 0;
+
+	/* reset GPO - necessary to see devices */
+	*(i2c.base + I2C_REG_GPO) = 0;
+	usleep(1000);
+	*(i2c.base + I2C_REG_GPO) = 1;
 
 	i2c_clearIrqSt();
-
 }
 
 
-static int i2c_initClk(void)
+int i2c_initClk(void)
 {
 	int reg;
 	const i2c_info_t *info = &devsInfo[i2c.devID];
 
 	/* SCL low/high -> in number of input clock cycles*/
-	reg = info->timings.clk_freq / (2 * info->timings.i2c_freq) - 7 ;
+	reg = info->timings.clk_freq / (2 * info->timings.i2c_freq) - 7;
 	if (reg == 0) {
 		return -EINVAL;
-	} 
+	}
 	*(i2c.base + I2C_REG_THIGH) = reg;
 	*(i2c.base + I2C_REG_TLOW) = reg;
 
 	/* this div can lead to a significant error, however it ensures
-	 * set timings are slower than the I2C spec in worst case 
+	 * set timings are slower than the I2C spec in worst case
 	 */
 	reg = 1000000000 / info->timings.clk_freq;
-	
+
 	*(i2c.base + I2C_REG_TSUSTA) = info->timings.tsusta / reg;
 	*(i2c.base + I2C_REG_TSUSTO) = info->timings.tsusto / reg;
 	*(i2c.base + I2C_REG_THDSTA) = info->timings.thdsta / reg;
@@ -573,39 +373,35 @@ static int i2c_initClk(void)
 	return EOK;
 }
 
+static void i2c_initIrq(unsigned int dev_no)
+{
+	// TODO: Macro these values.
+	// TODO: This function should be put in another file as a separate component.
+	*(i2c.irq_addr + AXI_REG_IER) = 0x1f;
+	*(i2c.irq_addr + AXI_REG_MER) = AXI_MER_ME | AXI_MER_HIE;
+	*(i2c.irq_addr + AXI_REG_ILR) = 0x05;
+	if (0)
+		interrupt(devsInfo[dev_no].irq, i2c_isr, NULL, i2c.cond, &i2c.inth);
+}
 
 static int i2c_reset(void)
 {
 	/* from pg090: write 0xA to reset registers to their default states.*/
-	*(i2c.base + I2C_REG_SOFTR) = 0xA;
-	*(i2c.base + I2C_REG_SOFTR) = 0xA;
-	
+	*(i2c.base + I2C_REG_SOFTR) = 0xA;  // Ekhm, we assume that i2c is initialized
+
 	return EOK;
 }
 
 
 int i2c_init(unsigned int dev_no)
 {
-	int err;
+	int err = EOK;
 
 	if (dev_no >= sizeof(devsInfo) / sizeof(devsInfo[0])) {
 		return -ENODEV;
 	}
 
 	i2c.devID = dev_no;
-
-	/* reset controller */
-	err = i2c_reset();
-	if (err < 0) {
-		return err;
-	}
-
-	/* initialize clock */
-	err = i2c_initClk();
-	if (err < 0) {
-		return err;
-	}
-
 
 	err = mutexCreate(&i2c.lock);
 	if (err < 0) {
@@ -626,10 +422,30 @@ int i2c_init(unsigned int dev_no)
 		return -ENOMEM;
 	}
 
+	i2c.irq_addr = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, devsInfo[dev_no].irq_addr);
+	if (i2c.base == MAP_FAILED) {
+		resourceDestroy(i2c.cond);
+		resourceDestroy(i2c.lock);
+		return -ENOMEM;
+	}
+
+	err = i2c_reset();
+	if (err < 0) {
+		return err;
+	}
+
+	/* initialize clock */
+	err = i2c_initClk();
+	if (err < 0) {
+		return err;
+	}
+
 	/* controller initialization */
 	i2c_initCtrl();
 
-	interrupt(devsInfo[dev_no].irq, i2c_isr, NULL, i2c.cond, &i2c.inth);
+	/* interrupts initialization */
+	i2c_initIrq(dev_no);
+
 
 	i2c.initialized = 1;
 

@@ -23,8 +23,21 @@ extern int i2c_busWrite(uint8_t dev_addr, const uint8_t *data, uint32_t len);
 /* Performs i2c generic read operation from the given slave device. */
 extern int i2c_busRead(uint8_t dev_addr, uint8_t *data_out, uint32_t len);
 
+/* Performs i2c register write operation from the given slave device */
+extern int i2c_regWrite(uint8_t dev_addr, uint8_t reg_addr, uint8_t *data, uint32_t len);
 
-/* Performs i2c regiester read operation from the given slave device */
+/* Performs i2c register read operation from the given slave device */
 extern int i2c_regRead(uint8_t dev_addr, uint8_t reg_addr, uint8_t *data_out, uint32_t len);
 
+/* Performs i2c register write operation from the given slave device */
+extern int i2c_regWrite16(uint8_t dev_addr, uint16_t reg_addr, uint8_t *data, uint32_t len);
+
+/* Performs i2c register read operation from the given slave device */
+extern int i2c_regRead16(uint8_t dev_addr, uint16_t reg_addr, uint8_t *data_out, uint32_t len);
+
+/* Performs i2c register write operation from the given slave device */
+extern int i2c_regWrite32(uint8_t dev_addr, uint32_t reg_addr, uint8_t *data, uint32_t len);
+
+/* Performs i2c register read operation from the given slave device */
+extern int i2c_regRead32(uint8_t dev_addr, uint32_t reg_addr, uint8_t *data_out, uint32_t len);
 #endif /* _PHOENIX_I2C_H */
