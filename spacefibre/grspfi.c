@@ -139,6 +139,41 @@ static struct {
 } spfi_common;
 
 
+#define SPFI_RX_DESC_DCRC    (1u << 31)   /* data crc error */
+#define SPFI_RX_DESC_HCRC    (1u << 30)   /* header crc error */
+#define SPFI_RX_DESC_TRUNC   (1u << 29)   /* packet truncated */
+#define SPFI_RX_DESC_EEP     (1u << 28)   /* Error End of Packet termination */
+#define SPFI_RX_DESC_IE      (1u << 27)   /* IE - interrupt enable */
+#define SPFI_RX_DESC_WR      (1u << 26)   /* WR -wrap - the next descriptor used will be the first one */
+#define SPFI_RX_DESC_EN      (1u << 25)   /* EN - enable descriptor*/
+#define SPFI_RX_DESC_LEN     (0x1ffffffu) /* packet length */
+#define SPFI_RX_DESC_USR_MSK (SPFI_RX_DESC_TRUNC | SPFI_RX_DESC_DCRC | SPFI_RX_DESC_HCRC | SPFI_RX_DESC_EEP | SPFI_RX_DESC_LEN)
+
+
+typedef struct {
+	volatile uint32_t ctrl;
+	uint32_t addr; /* RX buff phy addr - must be word aligned */
+} spfi_rxDesc_t;
+
+
+#define SPFI_TX_DESC_DCRC    (1u << 17)   /* append data CRT */
+#define SPFI_TX_DESC_HCRC    (1u << 16)   /* append header CRC */
+#define SPFI_TX_DESC_NON_CRC (0xfu << 12) /* non-CRC bytes */
+#define SPFI_TX_DESC_IE      (1u << 10)   /* IE -interrupt enable */
+#define SPFI_TX_DESC_WR      (1u << 9)    /* WR -wrap - the next descriptor used will be the first one */
+#define SPFI_TX_DESC_EN      (1u << 8)    /* EN -enable descriptor */
+#define SPFI_TX_DESC_HDR_LEN (0xffu)      /* header length*/
+#define SPFI_TX_DESC_USR_MSK (SPFI_TX_DESC_DCRC | SPFI_TX_DESC_HCRC | SPFI_TX_DESC_NON_CRC | SPFI_TX_DESC_HDR_LEN)
+
+
+typedef struct {
+	volatile uint32_t ctrl;
+	uint32_t hdrAddr;   /* TX header buff phy addr - does not have to be word aligned */
+	uint32_t packetLen; /* TX packet length in bytes (without header) */
+	uint32_t dataAddr;  /* TX data buff phy addr - does not have to be word aligned */
+} spfi_txDesc_t;
+
+
 static int spfi_set_vc(spfi_dev_t *dev, uint8_t dma, uint32_t vc)
 {
 	if (dma >= SPFI_DMA_CH) {
