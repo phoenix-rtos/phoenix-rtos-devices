@@ -9,7 +9,7 @@
 DEFAULT_COMPONENTS := imxrt-multi
 
 ifneq (, $(findstring 117, $(TARGET)))
-  DEFAULT_COMPONENTS += libusbclient imxrt-flash cdc-demo imxrt117x-otp libusbehci umass libusbdrv-umass usbacm libusbdrv-usbacm
+  DEFAULT_COMPONENTS += libusbclient imxrt-flash cdc-demo imxrt117x-otp libusbehci umass libusbdrv-umass usbacm libusbdrv-usbacm usbwlan libusbdrv-usbwlan
 else ifneq (, $(findstring 105, $(TARGET)))
   # placeholder
 else ifneq (, $(findstring 106, $(TARGET)))
