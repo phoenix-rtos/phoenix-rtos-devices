@@ -544,8 +544,13 @@ static int spw_rxConfigure(spw_dev_t *dev, size_t *firstDesc, const size_t nPack
 
 
 /* Read from RX buffers */
-static int spw_rxRead(spw_dev_t *dev, size_t firstDesc, uint8_t *buf, size_t bufsz, const size_t nPackets)
+static int spw_rxRead(spw_dev_t *dev, uint8_t *buf, size_t bufsz, size_t *readCnt, const spw_t *ictl)
 {
+	size_t firstDesc = ictl->task.rx.firstDesc;
+	const size_t nPackets = ictl->task.rx.nPackets;
+	const uint32_t timeoutUs = ictl->task.rx.timeoutUs;
+	int err = 0;
+
 	if ((firstDesc >= SPW_RX_DESC_CNT) || (nPackets > SPW_RX_DESC_CNT)) {
 		return -EINVAL;
 	}
@@ -577,16 +582,41 @@ static int spw_rxRead(spw_dev_t *dev, size_t firstDesc, uint8_t *buf, size_t buf
 			buf += rxLen;
 			bufsz -= rxLen;
 			cnt++;
-			condSignal(dev->rxAckCond);
 		}
 		else {
-			(void)condWait(dev->cond, dev->rxLock, 0);
+			condSignal(dev->rxAckCond);
+			if (condWait(dev->cond, dev->rxLock, timeoutUs) == -ETIME) {
+				TRACE("packet: %zu timeout: %uus", firstDesc, timeoutUs);
+
+				dev->vbase[DMA_CTRL] &= ~DMA_CTRL_RE;
+
+				/* ack unused descriptors */
+				while ((firstDesc < lastDesc) || wrapped) {
+					dev->rxAcknowledged[firstDesc] = true;
+					dev->rxDesc[firstDesc].ctrl = 0;
+
+					size_t next = (firstDesc + 1) % SPW_RX_DESC_CNT;
+					if ((next == 0) && wrapped) {
+						wrapped = false;
+					}
+					firstDesc = next;
+				}
+
+				/* move DMA pointer to skip timeouted descriptors */
+				dev->vbase[DMA_RX_DESC] = va2pa((void *)&dev->rxDesc[lastDesc]);
+				dev->vbase[DMA_CTRL] |= DMA_CTRL_RE;
+
+				err = -ETIME;
+				break;
+			}
 		}
 	}
 
 	(void)mutexUnlock(dev->rxLock);
+	condSignal(dev->rxAckCond);
 
-	return cnt;
+	*readCnt = cnt;
+	return err;
 }
 
 
@@ -628,7 +658,7 @@ static void spw_handleDevCtl(msg_t *msg, int dev)
 			break;
 
 		case spw_rx:
-			msg->o.err = spw_rxRead(spw, ictl->task.rx.firstDesc, msg->o.data, msg->o.size, ictl->task.rx.nPackets);
+			msg->o.err = spw_rxRead(spw, msg->o.data, msg->o.size, &octl->val, ictl);
 			break;
 
 		case spw_tx:
