@@ -670,6 +670,9 @@ int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t
 	if (nbits > MAX_DSHOT_DMA) {
 		return -EINVAL;
 	}
+	if (((PWM_TIM_DMA >> timer) & 1) == 0) {
+		return -EINVAL;
+	}
 
 	mutexLock(pwm_common.dmalock);
 
