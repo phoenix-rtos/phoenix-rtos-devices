@@ -19,4 +19,10 @@ LOCAL_HEADERS := stm32l4-multi.h
 DEP_LIBS := libstm32l4-multi libtty libklog
 LIBS := libdummyfs libklog libposixsrv
 
+ifeq ($(COREDUMP_DISABLE),1)
+	LOCAL_CFLAGS += -DBUILTIN_COREDUMPSRV=0
+else
+	LIBS += libcoredumpsrv
+endif
+
 include $(binary.mk)
