@@ -184,7 +184,6 @@ typedef struct {
 	size_t lastTxDesc;
 	size_t nextRxDesc;
 
-	bool txWaited[SPW_TX_DESC_CNT];
 	bool rxAcknowledged[SPW_RX_DESC_CNT];
 
 	handle_t ctrlLock;
@@ -319,7 +318,11 @@ __attribute__((section(".interrupt"), aligned(0x1000))) static int spw_irqHandle
 
 static int spw_transmit(spw_dev_t *dev, const uint8_t *buf, size_t bufsz, const size_t nPackets, bool async)
 {
-	if (nPackets > SPW_TX_DESC_CNT) {
+	if ((buf == NULL) || (bufsz < SPW_TX_MIN_BUFSZ)) {
+		return -EINVAL;
+	}
+
+	if (!async && (nPackets > SPW_TX_DESC_CNT)) {
 		return -EINVAL;
 	}
 
@@ -334,7 +337,7 @@ static int spw_transmit(spw_dev_t *dev, const uint8_t *buf, size_t bufsz, const 
 
 	for (size_t cnt = 0; cnt < nPackets; cnt++) {
 		(void)mutexLock(dev->txIrqLock);
-		while ((dev->txDescFree == 0) || dev->txWaited[dev->lastTxDesc]) {
+		while (dev->txDescFree == 0) {
 			/* Wait for free descriptor or for packet to be acknowledged */
 			(void)condWait(dev->cond, dev->txIrqLock, 0);
 		}
@@ -351,88 +354,6 @@ static int spw_transmit(spw_dev_t *dev, const uint8_t *buf, size_t bufsz, const 
 			/* Wrap around */
 			desc->ctrl |= TX_DESC_WR;
 		}
-
-		/* on riscv64 pa can exceed 32 bits */
-		uintptr_t pa = va2pa((void *)packet.hdr);
-		if ((pa & ~SPW_ADDR_MASK) != 0) {
-			LOG_ERROR("DMA addr 0x%" PRIxPTR "exceeds 32-bit limit", pa);
-			return -EINVAL;
-		}
-		desc->hdrAddr = pa;
-
-		pa = va2pa((void *)packet.data);
-		if ((pa & ~SPW_ADDR_MASK) != 0) {
-			LOG_ERROR("DMA addr 0x%" PRIxPTR "exceeds 32-bit limit", pa);
-			return -EINVAL;
-		}
-		desc->dataAddr = pa;
-		desc->packetLen = packet.dataLen;
-
-		/* Everything is set up, enable descriptor */
-		desc->ctrl |= TX_DESC_EN;
-
-
-		/* Start transmission */
-		dev->vbase[DMA_CTRL] |= DMA_CTRL_TE;
-
-		dev->lastTxDesc = (dev->lastTxDesc + 1) % SPW_TX_DESC_CNT;
-	}
-
-	TRACE("Packets set up");
-
-	/* Wait for transmission to finish */
-	while ((firstDesc <= lastDesc) || wrapped) {
-		if ((dev->txDesc[firstDesc].ctrl & TX_DESC_EN) == 0) {
-			dev->txWaited[firstDesc] = false;
-			size_t next = (firstDesc + 1) % SPW_TX_DESC_CNT;
-			if ((next == 0) && wrapped) {
-				wrapped = false;
-			}
-			firstDesc = next;
-		}
-		else {
-			(void)mutexLock(dev->txIrqLock);
-			(void)condWait(dev->cond, dev->txIrqLock, 0);
-			(void)mutexUnlock(dev->txIrqLock);
-		}
-	}
-
-	TRACE("Packets sent");
-
-	(void)mutexUnlock(dev->txLock);
-
-	return nPackets;
-}
-
-
-/* Starts transmission and returns */
-static int spw_transmitAsync(spw_dev_t *dev, const uint8_t *buf, const size_t nPackets)
-{
-	(void)mutexLock(dev->txLock);
-
-	TRACE("nPackets: %zu", nPackets);
-
-	/* Setup descriptors */
-	for (size_t cnt = 0; cnt < nPackets; cnt++) {
-		(void)mutexLock(dev->txIrqLock);
-		while ((dev->txDescFree == 0) || dev->txWaited[dev->lastTxDesc]) {
-			/* Wait for free descriptor or for packet to be acknowledged */
-			(void)condWait(dev->cond, dev->txIrqLock, 0);
-		}
-		dev->txDescFree--;
-		(void)mutexUnlock(dev->txIrqLock);
-
-		volatile spw_txDesc_t *desc = &dev->txDesc[dev->lastTxDesc];
-
-		spw_txPacket_t packet;
-		buf += spw_txMsgToPacket(buf, &packet);
-		/* Interrupt after each packet transmitted */
-		desc->ctrl = (packet.flags & TX_DESC_USR_MSK) | TX_DESC_IE;
-		if (dev->lastTxDesc == SPW_TX_DESC_CNT - 1) {
-			/* Wrap around */
-			desc->ctrl |= TX_DESC_WR;
-		}
-		desc->packetLen = packet.dataLen;
 
 		uint8_t hdrLen = packet.flags & TX_DESC_HDR_LEN;
 		volatile void *txBuff = dev->txBuff[dev->lastTxDesc];
@@ -454,11 +375,11 @@ static int spw_transmitAsync(spw_dev_t *dev, const uint8_t *buf, const size_t nP
 			return -EINVAL;
 		}
 		desc->dataAddr = pa;
+		desc->packetLen = packet.dataLen;
 
 		/* Everything is set up, enable descriptor */
 		desc->ctrl |= TX_DESC_EN;
 
-		dev->txWaited[dev->lastTxDesc] = false;
 
 		/* Start transmission */
 		dev->vbase[DMA_CTRL] |= DMA_CTRL_TE;
@@ -466,25 +387,29 @@ static int spw_transmitAsync(spw_dev_t *dev, const uint8_t *buf, const size_t nP
 		dev->lastTxDesc = (dev->lastTxDesc + 1) % SPW_TX_DESC_CNT;
 	}
 
+	if (!async) {
+		/* Wait for transmission to finish */
+		while ((firstDesc <= lastDesc) || wrapped) {
+			if ((dev->txDesc[firstDesc].ctrl & TX_DESC_EN) == 0) {
+				size_t next = (firstDesc + 1) % SPW_TX_DESC_CNT;
+				if ((next == 0) && wrapped) {
+					wrapped = false;
+				}
+				firstDesc = next;
+			}
+			else {
+				(void)mutexLock(dev->txIrqLock);
+				(void)condWait(dev->cond, dev->txIrqLock, 0);
+				(void)mutexUnlock(dev->txIrqLock);
+			}
+		}
+	}
+
 	TRACE("Packets set up");
 
 	(void)mutexUnlock(dev->txLock);
 
 	return nPackets;
-}
-
-
-static int spw_transmit(spw_dev_t *dev, const uint8_t *buf, const size_t bufsz, const size_t nPackets, bool async)
-{
-	if ((buf == NULL) || (bufsz < SPW_TX_MIN_BUFSZ)) {
-		return -EINVAL;
-	}
-
-	if (nPackets == 0) {
-		return 0;
-	}
-
-	return async ? spw_transmitAsync(dev, buf, nPackets) : spw_transmitWait(dev, buf, nPackets);
 }
 
 
