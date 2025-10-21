@@ -30,12 +30,6 @@
 #define USE_DSHOT_DMA 1
 #define MAX_DSHOT_DMA 32
 
-#define PWM_IRQ_INITIALIZED (1 << 0)
-#define PWM_IRQ_UEVRECEIVED (1 << 1)
-#define PWM_IRQ_DSHOT_UEV   (1 << 2) /* IRQ used to reconfigure duty cycle */
-#define PWM_IRQ_DSHOT_END   (1 << 3) /* DSHOT bit sequence complete */
-
-
 /* Data used in IRQ dshot. Limited to one channel per timer. */
 typedef struct {
 	pwm_ch_id_t chn;  /* Channel used for pwm */
@@ -47,7 +41,10 @@ typedef struct {
 
 /* Interrupt data for one timer */
 typedef struct {
-	volatile uint32_t flags;
+	bool flag_initialized;
+	volatile uint32_t flag_uevreceived;
+	volatile uint32_t flag_dshot_uev; /* IRQ used to reconfigure duty cycle */
+	volatile uint32_t flag_dshot_end; /* DSHOT bit sequence complete */
 	handle_t uevlock;
 	handle_t uevcond;
 #if USE_DSHOT_DMA == 0
@@ -268,7 +265,7 @@ static void pwm_disableMasterSlave(pwm_tim_id_t timer)
 }
 
 
-__attribute__((unused)) static int pwm_updateEventIrq(unsigned int n, void *arg)
+static int pwm_updateEventIrq(unsigned int n, void *arg)
 {
 	/* Cursed pointer to int cast */
 	pwm_tim_id_t timer = (pwm_tim_id_t)arg;
@@ -279,7 +276,7 @@ __attribute__((unused)) static int pwm_updateEventIrq(unsigned int n, void *arg)
 #endif
 
 	/* If irq isn't used to load next DSHOT bit, didsable future UEV interrupts. */
-	if (!(irq->flags & PWM_IRQ_DSHOT_UEV)) {
+	if (!irq->flag_dshot_uev) {
 		*(base + tim_dier) &= ~1u;
 	}
 	else {
@@ -288,7 +285,7 @@ __attribute__((unused)) static int pwm_updateEventIrq(unsigned int n, void *arg)
 		/* If the last bit was already emitted, can safely disable further UEV IRQ */
 		if (dshot->bitPos > dshot->bitSize) {
 			*(base + tim_dier) &= ~1u;
-			irq->flags |= PWM_IRQ_DSHOT_END;
+			irq->flag_dshot_end = 1;
 		}
 		/* If last bit then preload compare value to 0 to end the sequence */
 		else if (dshot->bitPos > dshot->bitSize - 1) {
@@ -305,7 +302,7 @@ __attribute__((unused)) static int pwm_updateEventIrq(unsigned int n, void *arg)
 
 	/* Clear UIF in SR */
 	*(base + tim_sr) &= ~1u;
-	irq->flags |= PWM_IRQ_UEVRECEIVED;
+	irq->flag_uevreceived = 1;
 	return 0;
 }
 
@@ -389,11 +386,11 @@ int pwm_configure(pwm_tim_id_t timer, uint16_t prescaler, uint32_t top)
 		devClk(pwm_setup.timer[timer].pctl, 1);
 		pwm_common.timer[timer].devOn = 1;
 	}
-	if ((irq->flags & PWM_IRQ_INITIALIZED) == 0) {
+	if (!irq->flag_initialized) {
 		mutexCreate(&irq->uevlock);
 		condCreate(&irq->uevcond);
+		irq->flag_initialized = true;
 		interrupt(pwm_setup.timer[timer].uevirq, pwm_updateEventIrq, (void *)timer, irq->uevcond, NULL);
-		irq->flags |= PWM_IRQ_INITIALIZED;
 	}
 
 	/* Fail if one of the channels hasn't been disabled */
@@ -456,10 +453,10 @@ int pwm_configure(pwm_tim_id_t timer, uint16_t prescaler, uint32_t top)
 
 	/* Wait for update event to load prescaler and arr */
 	mutexLock(irq->uevlock);
-	while (!(irq->flags & PWM_IRQ_UEVRECEIVED)) {
+	while (!irq->flag_uevreceived) {
 		condWait(irq->uevcond, irq->uevlock, 0);
 	}
-	irq->flags &= ~PWM_IRQ_UEVRECEIVED;
+	irq->flag_uevreceived = 0;
 	mutexUnlock(irq->uevlock);
 
 	return EOK;
@@ -578,8 +575,8 @@ int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t compare)
 	*(base + tim_dier) |= 0x1;
 
 	/* Temporarily clear the DSHOT_UEV flag to run the regular UEV handler */
-	uint32_t oldflags = irq->flags;
-	irq->flags &= ~PWM_IRQ_DSHOT_UEV;
+	uint32_t oldflag = irq->flag_dshot_uev;
+	irq->flag_dshot_uev = 0;
 	dataBarier();
 
 	/* Force an update event */
@@ -587,25 +584,25 @@ int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t compare)
 
 	/* Wait for the update event */
 	mutexLock(irq->uevlock);
-	while (!(irq->flags & PWM_IRQ_UEVRECEIVED)) {
+	while (!irq->flag_uevreceived) {
 		condWait(irq->uevcond, irq->uevlock, 0);
 	}
-	irq->flags &= ~PWM_IRQ_UEVRECEIVED;
+	irq->flag_uevreceived = 0;
 	mutexUnlock(irq->uevlock);
 
 	dataBarier();
 	/* Restore the old flags */
-	irq->flags = oldflags;
+	irq->flag_dshot_uev = oldflag;
 	dataBarier();
 
 #if USE_DSHOT_DMA == 0
 	/* Enable subsequent UEV interrupts if in dshot mode */
-	if ((irq->flags & PWM_IRQ_DSHOT_UEV) != 0) {
+	if (irq->flag_dshot_uev) {
 		*(base + tim_dier) |= 0x1;
 	}
 
 	/* Preload the second compare value if in dshot mode */
-	if ((irq->flags & PWM_IRQ_DSHOT_UEV) != 0) {
+	if (irq->flag_dshot_uev)
 		*(base + PWM_CCR_REG(chn)) = pwm_getUserCompareVal(dshot->data, dshot->bitPos, dshot->dataSize);
 		dshot->bitPos++;
 	}
@@ -737,8 +734,8 @@ int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t
 		.data = data,
 		.dataSize = datasize
 	};
-	irq->flags |= PWM_IRQ_DSHOT_UEV;
-	irq->flags &= ~PWM_IRQ_DSHOT_END;
+	irq->flag_dshot_uev = 1;
+	irq->flag_dshot_end = 0;
 
 	dataBarier();
 
@@ -747,11 +744,11 @@ int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t
 
 	/* Wait for the DSHOT sequence to end */
 	mutexLock(irq->uevlock);
-	while ((irq->flags & PWM_IRQ_DSHOT_END) == 0) {
+	while (!irq->flag_dshot_end) {
 		condWait(irq->uevcond, irq->uevlock, 0);
 	}
-	irq->flags &= ~PWM_IRQ_DSHOT_UEV;
-	irq->flags &= ~PWM_IRQ_DSHOT_END;
+	irq->flag_dshot_uev = 0;
+	irq->flag_dshot_end = 0;
 	mutexUnlock(irq->uevlock);
 #endif
 	pwm_disableChannel(timer, chn);
