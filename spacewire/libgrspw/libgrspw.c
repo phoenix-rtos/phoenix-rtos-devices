@@ -234,12 +234,12 @@ static int spw_buffersAlloc(spw_dev_t *dev)
 
 	dev->rxDesc = (void *)((addr_t)dev->txDesc + sizeof(spw_txDesc_t) * SPW_TX_DESC_CNT);
 
-	dev->rxBuff = mmap(NULL, MAX_PACKET_LEN * SPW_RX_DESC_CNT, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_ANONYMOUS, -1, 0);
+	dev->rxBuff = mmap(NULL, MAX_PACKET_LEN * SPW_RX_DESC_CNT, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_ANONYMOUS | MAP_CONTIGUOUS, -1, 0);
 	if (dev->rxBuff == MAP_FAILED) {
 		return -ENOMEM;
 	}
 
-	dev->txBuff = mmap(NULL, MAX_PACKET_LEN * SPW_TX_DESC_CNT, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_ANONYMOUS, -1, 0);
+	dev->txBuff = mmap(NULL, MAX_PACKET_LEN * SPW_TX_DESC_CNT, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_ANONYMOUS | MAP_CONTIGUOUS, -1, 0);
 	if (dev->txBuff == MAP_FAILED) {
 		return -ENOMEM;
 	}
@@ -317,8 +317,7 @@ __attribute__((section(".interrupt"), aligned(0x1000))) static int spw_irqHandle
 /* Operations on device */
 
 
-/* Blocks execution until all packets are transmitted. */
-static int spw_transmitWait(spw_dev_t *dev, const uint8_t *buf, const size_t nPackets)
+static int spw_transmit(spw_dev_t *dev, const uint8_t *buf, size_t bufsz, const size_t nPackets, bool async)
 {
 	if (nPackets > SPW_TX_DESC_CNT) {
 		return -EINVAL;
@@ -372,7 +371,6 @@ static int spw_transmitWait(spw_dev_t *dev, const uint8_t *buf, const size_t nPa
 		/* Everything is set up, enable descriptor */
 		desc->ctrl |= TX_DESC_EN;
 
-		dev->txWaited[dev->lastTxDesc] = true;
 
 		/* Start transmission */
 		dev->vbase[DMA_CTRL] |= DMA_CTRL_TE;
