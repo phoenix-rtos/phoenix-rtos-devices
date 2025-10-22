@@ -109,7 +109,9 @@
 #define SPW_TX_DESC_CNT 64
 
 /* Sensible maximum value */
-#define MAX_PACKET_LEN 1024
+#ifndef SPW_MAX_PACKET_LEN
+#define SPW_MAX_PACKET_LEN 1024
+#endif
 
 
 /* RX descriptor ctrl bits:
@@ -194,8 +196,8 @@ typedef struct {
 	handle_t cond;
 	handle_t rxAckCond;
 
-	volatile uint8_t (*txBuff)[MAX_PACKET_LEN];
-	volatile uint8_t (*rxBuff)[MAX_PACKET_LEN];
+	volatile uint8_t (*txBuff)[SPW_MAX_PACKET_LEN];
+	volatile uint8_t (*rxBuff)[SPW_MAX_PACKET_LEN];
 	volatile spw_txDesc_t *txDesc;
 	volatile spw_rxDesc_t *rxDesc;
 } spw_dev_t;
@@ -233,12 +235,12 @@ static int spw_buffersAlloc(spw_dev_t *dev)
 
 	dev->rxDesc = (void *)((addr_t)dev->txDesc + sizeof(spw_txDesc_t) * SPW_TX_DESC_CNT);
 
-	dev->rxBuff = mmap(NULL, MAX_PACKET_LEN * SPW_RX_DESC_CNT, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_ANONYMOUS | MAP_CONTIGUOUS, -1, 0);
+	dev->rxBuff = mmap(NULL, SPW_MAX_PACKET_LEN * SPW_RX_DESC_CNT, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_ANONYMOUS | MAP_CONTIGUOUS, -1, 0);
 	if (dev->rxBuff == MAP_FAILED) {
 		return -ENOMEM;
 	}
 
-	dev->txBuff = mmap(NULL, MAX_PACKET_LEN * SPW_TX_DESC_CNT, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_ANONYMOUS | MAP_CONTIGUOUS, -1, 0);
+	dev->txBuff = mmap(NULL, SPW_MAX_PACKET_LEN * SPW_TX_DESC_CNT, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_ANONYMOUS | MAP_CONTIGUOUS, -1, 0);
 	if (dev->txBuff == MAP_FAILED) {
 		return -ENOMEM;
 	}
@@ -250,10 +252,10 @@ static int spw_buffersAlloc(spw_dev_t *dev)
 static void spw_buffersFree(spw_dev_t *dev)
 {
 	if (dev->txBuff != MAP_FAILED) {
-		(void)munmap((void *)dev->txBuff, MAX_PACKET_LEN * SPW_TX_DESC_CNT);
+		(void)munmap((void *)dev->txBuff, SPW_MAX_PACKET_LEN * SPW_TX_DESC_CNT);
 	}
 	if (dev->rxBuff != MAP_FAILED) {
-		(void)munmap((void *)dev->rxBuff, MAX_PACKET_LEN * SPW_RX_DESC_CNT);
+		(void)munmap((void *)dev->rxBuff, SPW_MAX_PACKET_LEN * SPW_RX_DESC_CNT);
 	}
 	if (dev->txDesc != MAP_FAILED) {
 		size_t descSz = PAGE_ALIGN(sizeof(spw_txDesc_t) * SPW_TX_DESC_CNT + sizeof(spw_rxDesc_t) * SPW_RX_DESC_CNT);
@@ -671,7 +673,7 @@ static int spw_defaultConfig(spw_dev_t *dev)
 	dev->vbase[SPW_CTRL] |= SPW_CTRL_LS;
 
 	dev->vbase[DMA_CTRL] |= DMA_CTRL_RI | DMA_CTRL_TI;
-	dev->vbase[DMA_RX_LEN] = MAX_PACKET_LEN;
+	dev->vbase[DMA_RX_LEN] = SPW_MAX_PACKET_LEN;
 
 	uintptr_t pa = va2pa((void *)dev->txDesc);
 	if ((pa & ~SPW_ADDR_MASK) != 0) {
