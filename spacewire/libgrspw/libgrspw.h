@@ -96,6 +96,7 @@ typedef struct {
 		struct {
 			size_t firstDesc;
 			size_t nPackets;
+			uint32_t timeoutUs;
 		} rx;
 		struct {
 			size_t nPackets;
