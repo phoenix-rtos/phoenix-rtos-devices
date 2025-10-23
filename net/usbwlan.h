@@ -18,7 +18,7 @@
 
 typedef struct {
 	/* clang-format off */
-	enum { usbwlan_dl, usbwlan_ctrl_in, usbwlan_ctrl_out, usbwlan_reg_read, usbwlan_reg_write } type;
+	enum { usbwlan_dl, usbwlan_ctrl_in, usbwlan_ctrl_out, usbwlan_reg_read, usbwlan_reg_write, usbwlan_abort } type;
 	/* clang-format on */
 
 	union {
