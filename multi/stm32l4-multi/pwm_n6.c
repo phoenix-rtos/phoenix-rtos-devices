@@ -602,7 +602,7 @@ int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t compare)
 	}
 
 	/* Preload the second compare value if in dshot mode */
-	if (irq->flag_dshot_uev)
+	if (irq->flag_dshot_uev) {
 		*(base + PWM_CCR_REG(chn)) = pwm_getUserCompareVal(dshot->data, dshot->bitPos, dshot->dataSize);
 		dshot->bitPos++;
 	}
@@ -650,9 +650,6 @@ int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t
 	if (res < 0) {
 		return res;
 	}
-	if (nbits < 2) {
-		return -EINVAL;
-	}
 	if (data == NULL) {
 		return -EINVAL;
 	}
@@ -662,6 +659,11 @@ int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t
 	if ((datasize == 4) && (((PWM_TIM_32BIT >> timer) & 1) == 0)) {
 		return -EINVAL;
 	}
+	if (nbits == 0) {
+		/* Treat as no-op */
+		return EOK;
+	}
+
 #if USE_DSHOT_DMA
 	/* Limit number of bits so we don't overflow the buffer */
 	if (nbits > MAX_DSHOT_DMA) {
@@ -706,8 +708,8 @@ int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t
 	}
 
 	/* Add two "idle" values at the end of the DMA buffer.
-	 * One value is necessary because after DMA writes the last compare value, `libdma_tx` exits and we disable the timer
-	 * immediately without waiting for the final cycle to finish.
+	 * One value is necessary because after DMA writes the last compare value, `libdma_tx` exits and user may
+	 * disable the timer immediately without waiting for the final cycle to finish.
 	 * Another value is added because compare values are "delayed" - a write to the CCR register after an update event
 	 * will not take effect immediately, but during the next cycle.
 	 * Without those two "idle" values, the last value would not be transmitted and second-to-last value
@@ -723,6 +725,7 @@ int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t
 	/* TODO: we can calculate a timeout here */
 	libdma_tx(pwm_common.timer[timer].dma_per[chn], pwm_common.dmaTransferBuffer, (nbits + 2) * 4, 0, 0);
 	/* TODO: we may need to wait for the last cycle to finish */
+	mutexUnlock(pwm_common.dmalock);
 #else
 	uint16_t firstCompare;
 	pwm_irq_t *irq = &pwm_common.timer[timer].irq;
@@ -751,10 +754,7 @@ int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t
 	irq->flag_dshot_end = 0;
 	mutexUnlock(irq->uevlock);
 #endif
-	pwm_disableChannel(timer, chn);
-#if USE_DSHOT_DMA
-	mutexUnlock(pwm_common.dmalock);
-#endif
+
 	return EOK;
 }
 
