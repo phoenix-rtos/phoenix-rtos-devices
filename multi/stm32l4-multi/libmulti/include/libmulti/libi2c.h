@@ -23,6 +23,7 @@ typedef struct {
 	volatile unsigned int *base;
 	volatile int err;
 	int clk;
+	uint32_t refclk_freq;
 
 	handle_t irqlock;
 	handle_t irqcond;
@@ -30,6 +31,13 @@ typedef struct {
 
 
 enum { i2c1 = 0, i2c2, i2c3, i2c4 };
+
+
+enum libi2c_speed {
+	libi2c_speed_standard = 0, /* Standard mode, 100 kHz */
+	libi2c_speed_fast,         /* Fast mode, 400 kHz */
+	libi2c_speed_fastplus,     /* Fast Plus mode, 1 MHz */
+};
 
 
 ssize_t libi2c_read(libi2c_ctx_t *ctx, unsigned char addr, void *buff, size_t len);
