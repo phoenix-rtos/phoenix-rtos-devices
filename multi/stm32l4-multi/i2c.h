@@ -31,6 +31,9 @@ ssize_t i2c_write(int i2c, unsigned char addr, const void *buff, size_t len);
 ssize_t i2c_writeReg(int i2c, unsigned char addr, unsigned char reg, const void *buff, size_t len);
 
 
+int i2c_setSpeed(int i2c, uint32_t speed, int rise_time);
+
+
 void i2c_init(void);
 
 
