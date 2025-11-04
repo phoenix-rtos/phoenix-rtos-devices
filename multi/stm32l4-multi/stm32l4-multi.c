@@ -49,7 +49,7 @@
 
 #define THREADS_NO       MULTIDRV_INTERFACE_THREADS
 #define THREADS_PRIORITY 1
-#define STACKSZ          640
+#define STACKSZ          MULTIDRV_STACKSZ
 
 
 #if (UART1 && TTY1) || (UART2 && TTY2) || (UART3 && TTY3) || \
