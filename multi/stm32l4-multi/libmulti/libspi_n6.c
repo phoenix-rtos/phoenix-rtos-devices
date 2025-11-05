@@ -27,8 +27,10 @@
 
 #define MAX_SPI spi6
 
-#define SR_TXC    (1 << 12) /* TX FIFO empty */
-#define SR_TXP    (1 << 1)  /* TX FIFO below threshold */
+#define SR_TXC    (1 << 12) /* Transaction complete */
+#define SR_SUSP   (1 << 11) /* Master mode suspended */
+#define SR_OVR    (1 << 6)  /* RX FIFO overrun */
+#define SR_TXP    (1 << 1)  /* TX FIFO free space at or above threshold */
 #define SR_RXP    (1 << 0)  /* RX FIFO above threshold */
 #define SR_RXWNE  (1 << 15) /* RX FIFO contains at least 4 bytes */
 #define SR_RXPLVL (3 << 13) /* Number of frames in RX FIFO (if < 4 bytes) */
@@ -41,60 +43,33 @@ static const struct libspi_peripheralInfo {
 	unsigned int dev;
 	enum ipclks clksel;    /* Clock selector */
 	enum clock_ids clksrc; /* ID of source clock */
-	uint32_t fifoThr;      /* Desired FIFO threshold (FIFO size differs on some instances) */
+	uint32_t fifoSize;
 } spiInfo[MAX_SPI - spi1 + 1] = {
-	{ (uintptr_t)SPI1_BASE, pctl_spi1, pctl_ipclk_spi1sel, clkid_per, 8 },
-	{ (uintptr_t)SPI2_BASE, pctl_spi2, pctl_ipclk_spi2sel, clkid_per, 8 },
-	{ (uintptr_t)SPI3_BASE, pctl_spi3, pctl_ipclk_spi3sel, clkid_per, 8 },
-	{ (uintptr_t)SPI4_BASE, pctl_spi4, pctl_ipclk_spi4sel, clkid_per, 4 },
-	{ (uintptr_t)SPI5_BASE, pctl_spi5, pctl_ipclk_spi5sel, clkid_per, 4 },
-	{ (uintptr_t)SPI6_BASE, pctl_spi6, pctl_ipclk_spi6sel, clkid_per, 8 },
+	{ (uintptr_t)SPI1_BASE, pctl_spi1, pctl_ipclk_spi1sel, clkid_per, 16 },
+	{ (uintptr_t)SPI2_BASE, pctl_spi2, pctl_ipclk_spi2sel, clkid_per, 16 },
+	{ (uintptr_t)SPI3_BASE, pctl_spi3, pctl_ipclk_spi3sel, clkid_per, 16 },
+	{ (uintptr_t)SPI4_BASE, pctl_spi4, pctl_ipclk_spi4sel, clkid_per, 8 },
+	{ (uintptr_t)SPI5_BASE, pctl_spi5, pctl_ipclk_spi5sel, clkid_per, 8 },
+	{ (uintptr_t)SPI6_BASE, pctl_spi6, pctl_ipclk_spi6sel, clkid_per, 16 },
 };
 
 
-static const unsigned char *libspi_fifoFill(volatile uint32_t *base, const unsigned char *obuff, size_t *size_ptr)
+static void libspi_suspendController(libspi_ctx_t *ctx)
 {
-	volatile uint8_t *txData = (void *)(base + spi_txdr);
-	while (*size_ptr > 0) {
-		if ((*(base + spi_sr) & SR_TXP) == 0) {
-			return obuff;
-		}
-
-		if (obuff == NULL) {
-			*txData = 0;
-		}
-		else {
-			*txData = *obuff;
-			obuff++;
-		}
-
-		(*size_ptr)--;
+	dataBarier();
+	if ((*(ctx->base + spi_sr) & SR_TXC) != 0) {
+		/* Controller is already stopped */
+		return;
 	}
 
-	return obuff;
-}
-
-
-static unsigned char *libspi_fifoDrain(volatile uint32_t *base, unsigned char *ibuff, size_t *size_ptr)
-{
-	volatile uint8_t *rxData = (void *)(base + spi_rxdr);
-	while (*size_ptr > 0) {
-		if ((*(base + spi_sr) & SR_RXNE) == 0) {
-			return ibuff;
-		}
-
-		if (ibuff == NULL) {
-			(void)*rxData;
-		}
-		else {
-			*ibuff = *rxData;
-			ibuff++;
-		}
-
-		(*size_ptr)--;
+	*(ctx->base + spi_cr1) |= 1 << 10; /* Set CSUSP bit */
+	dataBarier();
+	/* This should return quickly, if there were no errors all data has been transferred by now */
+	while ((*(ctx->base + spi_sr) & SR_SUSP) == 0) {
+		/* Wait for SUSP flag */
 	}
 
-	return ibuff;
+	*(ctx->base + spi_ifcr) = SR_SUSP;
 }
 
 
@@ -104,17 +79,16 @@ static int libspi_transactionDMA(libspi_ctx_t *ctx, size_t ignoreBytes, unsigned
 	*(ctx->base + spi_cr1) |= 1 << 9;
 	ret = libdma_transfer(ctx->per, ibuff, obuff, bufflen);
 
-	*(ctx->base + spi_cr1) |= 1 << 10; /* Set CSUSP bit */
-	dataBarier();
-	/* This should return quickly, if there were no errors all data has been transferred by now */
-	while ((*(ctx->base + spi_sr) & (1 << 11)) == 0) {
-		/* Wait for SUSP flag */
-	}
-
-	*(ctx->base + spi_ifcr) = (1 << 11); /* Clear SUSP flag */
+	libspi_suspendController(ctx);
 	*(ctx->base + spi_cr1) &= ~1;
 	dataBarier();
 	return ret;
+}
+
+
+static inline uint8_t libspi_getByteOrZero(const uint8_t *buff, size_t i)
+{
+	return (buff == NULL) ? 0 : buff[i];
 }
 
 
@@ -136,6 +110,7 @@ int libspi_transaction(libspi_ctx_t *ctx, int dir, unsigned char cmd, unsigned i
 
 	/* TX/RX data register need to be accessed as 8-bit */
 	volatile uint8_t *txData = (volatile uint8_t *)(ctx->base + spi_txdr);
+	volatile uint8_t *rxData = (volatile uint8_t *)(ctx->base + spi_rxdr);
 
 	/* Send command, address and dummy bytes if requested.
 	 * They can be sent all at once because FIFO is large enough (at least 8 bytes) */
@@ -167,20 +142,51 @@ int libspi_transaction(libspi_ctx_t *ctx, int dir, unsigned char cmd, unsigned i
 		return libspi_transactionDMA(ctx, ignoreBytes, ibuff, obuff, bufflen);
 	}
 
-	size_t txLen = bufflen;
-	size_t rxLen = bufflen;
-	/* Pre-fill the FIFO before we start transaction */
-	obuff = libspi_fifoFill(ctx->base, obuff, &txLen);
+	uint32_t fifoSize = spiInfo[ctx->spiNum - spi1].fifoSize;
+	size_t transactionLength = bufflen + ignoreBytes;
+	size_t rx_i = 0;
+	size_t tx_i = 0;
+	bool overflow = false;
+
+	/* Fill up TX FIFO to the limit */
+	while (((tx_i + ignoreBytes) < fifoSize) && (tx_i < bufflen)) {
+		*txData = libspi_getByteOrZero(obuff, tx_i);
+		tx_i++;
+	}
+
 	/* Start transaction */
 	*(ctx->base + spi_cr1) |= 1 << 9;
-	while ((txLen > 0) || (rxLen > 0)) {
-		obuff = libspi_fifoFill(ctx->base, obuff, &txLen);
-		if (ignoreBytes > 0) {
-			libspi_fifoDrain(ctx->base, NULL, &ignoreBytes);
+	while (rx_i < transactionLength) {
+		/* We ignore the hardware TXP flag because when FIFO threshold is set to 1 byte it's misleading.
+		 * If we followed it, we could put enough data into TX FIFO that we would overflow RX FIFO.
+		 * Instead we simply put 1 byte into TX FIFO for every byte we pop from RX FIFO. */
+		uint32_t status = *(ctx->base + spi_sr);
+		if ((status & SR_OVR) != 0) {
+			overflow = true;
+			break;
 		}
-		else {
-			ibuff = libspi_fifoDrain(ctx->base, ibuff, &rxLen);
+
+		if ((status & SR_RXNE) != 0) {
+			if ((ibuff != NULL) && (rx_i >= ignoreBytes)) {
+				ibuff[rx_i - ignoreBytes] = *rxData;
+			}
+			else {
+				(void)*rxData;
+			}
+
+			rx_i++;
+			if (tx_i < bufflen) {
+				*txData = libspi_getByteOrZero(obuff, tx_i);
+				tx_i++;
+			}
 		}
+	}
+
+	if (overflow) {
+		libspi_suspendController(ctx);
+		*(ctx->base + spi_cr1) &= ~1;
+		dataBarier();
+		return -EIO;
 	}
 
 	while ((*(ctx->base + spi_sr) & SR_TXC) == 0) {
@@ -203,11 +209,21 @@ int libspi_configure(libspi_ctx_t *ctx, char mode, char bdiv, int enable)
 	*(ctx->base + spi_cr1) &= ~1;
 	dataBarier();
 
-	uint32_t bdiv_bits = ((((uint32_t)bdiv) & 0x7) << 28);
+	uint32_t bdiv_bits;
+	if (bdiv == spi_bdiv_1) {
+		bdiv_bits = (1u << 31);
+	}
+	else if (bdiv <= spi_bdiv_256) {
+		bdiv_bits = ((((uint32_t)bdiv) & 0x7) << 28);
+	}
+	else {
+		return -EINVAL;
+	}
+
 	uint32_t dma_bits = (ctx->per != NULL) ? (0x3 << 14) : 0; /* Enable TX and RX DMA */
 	uint32_t fifoThr_bits;
-	if (ctx->per == NULL) {
-		fifoThr_bits = ((spiInfo[ctx->spiNum - spi1].fifoThr - 1) & 0xf) << 5;
+	if ((ctx->per == NULL) && (spiInfo[ctx->spiNum - spi1].fifoSize >= 2)) {
+		fifoThr_bits = (((spiInfo[ctx->spiNum - spi1].fifoSize / 2) - 1) & 0xf) << 5;
 	}
 	else {
 		/* TODO: when DMA is used, notify DMA after every byte.
