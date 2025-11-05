@@ -151,6 +151,10 @@ int libspi_configure(libspi_ctx_t *ctx, char mode, char bdiv, int enable)
 {
 	unsigned int t;
 
+	if (bdiv > spi_bdiv_256) {
+		return -EINVAL;
+	}
+
 	devClk(spiinfo[ctx->spiNum - spi1].pctl, 1);
 	*(ctx->base + cr1) &= ~(1 << 6);
 	dataBarier();

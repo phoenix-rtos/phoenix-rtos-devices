@@ -51,7 +51,7 @@ enum { spi_cmd = 0x1, spi_dummy = 0x2, /* 3-bits for SPI_ADDR* ,*/ spi_addrlsb =
 enum { spi_dir_read = 0, spi_dir_write, spi_dir_readwrite };
 
 
-enum { spi_bdiv_2 = 0, spi_bdiv_4, spi_bdiv_8, spi_bdiv_16, spi_bdiv_32, spi_bdiv_64, spi_bdiv_128, spi_bdiv_256 };
+enum { spi_bdiv_2 = 0, spi_bdiv_4, spi_bdiv_8, spi_bdiv_16, spi_bdiv_32, spi_bdiv_64, spi_bdiv_128, spi_bdiv_256, spi_bdiv_1 };
 /* clang-format on */
 
 
