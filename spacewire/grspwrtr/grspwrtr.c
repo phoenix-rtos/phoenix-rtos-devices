@@ -47,13 +47,14 @@
 #define BITS(start, end)       (((1u << ((end) - (start) + 1u)) - 1u) << (start))              /* bitmask for bits in provided range (inclusive) */
 
 struct spwrtr_regs {
-	uint32_t rtr_rtpmap[256];      /* routing table port map (addr under index 0 is restricted) */
-	uint32_t rtr_rtactrl[256];     /* routing table addr ctrl, (addr under index 0 is restricted) */
-	uint32_t rtr_pctrlcfg;         /* port ctrl, port 0 */
+	uint32_t rtr_rtpmap[256];  /* routing table port map (addr under index 0 is restricted) */
+	uint32_t rtr_rtactrl[256]; /* routing table addr ctrl, (addr under index 0 is restricted) */
+	union {
+		uint32_t rtr_pctrlcfg;     /* port ctrl, port 0 */
 #define SPWRTR_PCTRLCFG_PL BIT(17) /* port link enable */
 #define SPWRTR_PCTRLCFG_TS BIT(16) /* time-code send enable */
 #define SPWRTR_PCTRLCFG_TR BIT(9)  /* time-code receive enable */
-	uint32_t rtr_pctrl[31];        /* port ctrl, ports 1-31 */
+		uint32_t rtr_pctrl[32];    /* port ctrl, ports 1-31 */
 #define SPWRTR_PCTRL_RD_SHIFT 24
 #define SPWRTR_PCTRL_RD_MASK  BITS(SPWRTR_PCTRL_RD_SHIFT, 31) /* run state clock divisor */
 #define SPWRTR_PCTRL_ST       BIT(21)                         /* status transmission enable */
@@ -77,15 +78,17 @@ struct spwrtr_regs {
 #define SPWRTR_PCTRL_AS       BIT(2)                          /* auto-start enable */
 #define SPWRTR_PCTRL_LS       BIT(1)                          /* link start */
 #define SPWRTR_PCTRL_LD       BIT(0)                          /* link disable */
-	uint32_t rtr_pstscfg;                                     /* port status, port 0 */
-#define SPWRTR_PSTSCFG_EO       BIT(31)                       /* early EOP */
-#define SPWRTR_PSTSCFG_EE       BIT(30)                       /* early EEP */
-#define SPWRTR_PSTSCFG_PL       BIT(29)                       /* packet length truncation */
-#define SPWRTR_PSTSCFG_TT       BIT(28)                       /* time-code */
-#define SPWRTR_PSTSCFG_PT       BIT(27)                       /* packet type error */
-#define SPWRTR_PSTSCFG_HC       BIT(26)                       /* header crc error */
-#define SPWRTR_PSTSCFG_PI       BIT(25)                       /* protocol id error */
-#define SPWRTR_PSTSCFG_CE       BIT(24)                       /* clear error code */
+	};
+	union {
+		uint32_t rtr_pstscfg;           /* port status, port 0 */
+#define SPWRTR_PSTSCFG_EO       BIT(31) /* early EOP */
+#define SPWRTR_PSTSCFG_EE       BIT(30) /* early EEP */
+#define SPWRTR_PSTSCFG_PL       BIT(29) /* packet length truncation */
+#define SPWRTR_PSTSCFG_TT       BIT(28) /* time-code */
+#define SPWRTR_PSTSCFG_PT       BIT(27) /* packet type error */
+#define SPWRTR_PSTSCFG_HC       BIT(26) /* header crc error */
+#define SPWRTR_PSTSCFG_PI       BIT(25) /* protocol id error */
+#define SPWRTR_PSTSCFG_CE       BIT(24) /* clear error code */
 #define SPWRTR_PSTSCFG_EC_SHIFT 20
 #define SPWRTR_PSTSCFG_EC_MASK  BITS(SPWRTR_PSTSCFG_EC_SHIFT, 23) /* error code */
 #define SPWRTR_PSTSCFG_TS       BIT(18)                           /* timeout spill */
@@ -94,11 +97,37 @@ struct spwrtr_regs {
 #define SPWRTR_PSTSCFG_IP_MASK  BITS(SPWRTR_PSTSCFG_IP_SHIFT, 11) /* input port */
 #define SPWRTR_PSTSCFG_CP       BIT(4)                            /* clear spw plug&play error code */
 #define SPWRTR_PSTSCFG_PC_MASK  BITS(0, 11)                       /* spw plug&play error code */
-	uint32_t rtr_psts[31];                                        /* port status, ports 1-31 */
-	uint32_t rtr_ptimer[32];                                      /* port timer reload */
-	uint32_t rtr_pctrl2cfg;                                       /* port ctrl2, port 0 */
-	uint32_t rtr_pctrl2[31];                                      /* port ctrl2, ports 1-31 */
-	uint32_t rtr_rtrcfg;                                          /* router cfg/status */
+		uint32_t rtr_psts[32];                                    /* port status, ports 1-31 */
+#define SPWRTR_PSTS_PL       BIT(29)                              /* packet length truncation */
+#define SPWRTR_PSTS_TT       BIT(28)                              /* time-code */
+#define SPWRTR_PSTS_RS       BIT(27)                              /* RMAP/P&P spill */
+#define SPWRTR_PSTS_SR       BIT(26)                              /* Spill-if-not-ready */
+#define SPWRTR_PSTS_LR       BIT(22)                              /* link-start-on-request status */
+#define SPWRTR_PSTS_SP       BIT(21)                              /* spill status */
+#define SPWRTR_PSTS_AC       BIT(20)                              /* active status */
+#define SPWRTR_PSTS_AP       BIT(19)                              /* active port */
+#define SPWRTR_PSTS_TS       BIT(18)                              /* timeout spill */
+#define SPWRTR_PSTS_ME       BIT(17)                              /* port buffer error */
+#define SPWRTR_PSTS_TF       BIT(16)                              /* transmit FIFO full */
+#define SPWRTR_PSTS_RE       BIT(15)                              /* receive FIFO empty */
+#define SPWRTR_PSTS_LS_SHIFT 12
+#define SPWRTR_PSTS_LS_MASK  BITS(SPWRTR_PSTS_LS_SHIFT, 14) /* link state */
+#define SPWRTR_PSTS_IP_SHIFT 7
+#define SPWRTR_PSTS_IP_MASK  BITS(SPWRTR_PSTS_IP_SHIFT, 11) /* input port */
+#define SPWRTR_PSTS_PR       BIT(6)                         /* port receive busy */
+#define SPWRTR_PSTS_PB       BIT(5)                         /* port transmit busy */
+#define SPWRTR_PSTS_IA       BIT(4)                         /* invalid address */
+#define SPWRTR_PSTS_CE       BIT(3)                         /* credit error */
+#define SPWRTR_PSTS_ER       BIT(2)                         /* escape error */
+#define SPWRTR_PSTS_DE       BIT(1)                         /* disconnect error */
+#define SPWRTR_PSTS_PE       BIT(0)                         /* parity error */
+	};
+	uint32_t rtr_ptimer[32]; /* port timer reload */
+	union {
+		uint32_t rtr_pctrl2cfg;  /* port ctrl2, port 0 */
+		uint32_t rtr_pctrl2[32]; /* port ctrl2, ports 1-31 */
+	};
+	uint32_t rtr_rtrcfg; /* router cfg/status */
 #define SPWRTR_RTCFG_RS BIT(7)
 	uint32_t rtr_tc;        /* time-code */
 	uint32_t rtr_ver;       /* version/instance ID */
