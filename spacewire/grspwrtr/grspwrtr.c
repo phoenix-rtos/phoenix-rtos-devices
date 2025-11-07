@@ -129,42 +129,6 @@ struct spwrtr_regs {
 	};
 	uint32_t rtr_rtrcfg; /* router cfg/status */
 #define SPWRTR_RTCFG_RS BIT(7)
-	uint32_t rtr_tc;        /* time-code */
-	uint32_t rtr_ver;       /* version/instance ID */
-	uint32_t rtr_idiv;      /* init divisor */
-	uint32_t rtr_cfgwe;     /* cfg write enable */
-	uint32_t rtr_prescaler; /* timer prescaler reload */
-	uint32_t rtr_imask;     /* interrupt mask */
-	uint32_t rtr_ipmask;    /* interrupt port mask */
-	uint32_t rtr_pip;       /* port interrupt pending */
-	uint32_t rtr_icodegen;  /* interrupt code generation */
-	uint32_t rtr_isr0;      /* int code distr ISR 0-31 */
-	uint32_t rtr_isr1;      /* int code distr ISR 32-63 */
-	uint32_t rtr_isrtimer;  /* ISR timer reload */
-	uint32_t rtr_aitimer;   /* ACK-to-INT timer reload */
-	uint32_t rtr_isrctimer; /* ISR change timer reload */
-	R_RESERVED(0xA3C, 0xA40);
-	uint32_t rtr_lrunstat; /* link running status */
-	uint32_t rtr_cap;      /* capability */
-	R_RESERVED(0xA48, 0xA50);
-	uint32_t rtr_pnpvend;    /* PnP dev vendor/product ID */
-	uint32_t rtr_pnpuvend;   /* PnP unit vendor/product ID */
-	uint32_t rtr_pnpusn;     /* PnP unit serial number */
-	uint32_t rtr_pnpnetdisc; /* PnP port net discovery enable */
-	R_RESERVED(0xA60, 0xC10);
-	uint32_t rtr_ocharcnt[31]; /* outgoing char counter */
-	uint32_t rtr_icharcnt[31]; /* incoming char counter */
-	uint32_t rtr_opktcnt[31];  /* outgoing packet counter */
-	uint32_t rtr_ipktcnt[31];  /* incoming packet counter */
-	uint32_t rtr_maxplen[32];  /* maximum packet length */
-	uint32_t rtr_credcnt[31];  /* credit counter */
-	uint32_t rtr_gpo[4];       /* general purpose out 128 bits */
-	uint32_t rtr_gpi[4];       /* general purpose in 128 bits */
-	R_RESERVED(0x1000, 0x1004);
-	uint32_t rtr_rtcomb_phy[31];  /* combined rt, addr 1-31 */
-	uint32_t rtr_rtcomb_log[224]; /* combined rt, addr 32-255 */
-	R_RESERVED(0x1400, 0x2000);
-	uint32_t rtr_apbarea[1024]; /* APB address area */
 };
 
 
