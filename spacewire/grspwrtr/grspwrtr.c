@@ -51,9 +51,9 @@ struct spwrtr_regs {
 	uint32_t rtr_rtactrl[256]; /* routing table addr ctrl, (addr under index 0 is restricted) */
 	union {
 		uint32_t rtr_pctrlcfg;     /* port ctrl, port 0 */
-#define SPWRTR_PCTRLCFG_PL BIT(17) /* port link enable */
-#define SPWRTR_PCTRLCFG_TS BIT(16) /* time-code send enable */
-#define SPWRTR_PCTRLCFG_TR BIT(9)  /* time-code receive enable */
+#define SPWRTR_PCTRLCFG_PL BIT(17) /* packet len truncation */
+#define SPWRTR_PCTRLCFG_TS BIT(16) /* time-code truncation */
+#define SPWRTR_PCTRLCFG_TR BIT(9)  /* timer enable */
 		uint32_t rtr_pctrl[32];    /* port ctrl, ports 1-31 */
 #define SPWRTR_PCTRL_RD_SHIFT 24
 #define SPWRTR_PCTRL_RD_MASK  BITS(SPWRTR_PCTRL_RD_SHIFT, 31) /* run state clock divisor */
