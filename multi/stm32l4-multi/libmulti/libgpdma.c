@@ -248,6 +248,15 @@ enum xpdma_padalign_swd {
 #define XPDMA_ERRFLAGS (XPDMA_USEF | XPDMA_ULEF | XPDMA_DTEF)
 #define XPDMA_IDLEF    (1 << 0) /* Channel idle */
 
+#define XPDMA_CxLLR_UT1 (1 << 31)
+#define XPDMA_CxLLR_UT2 (1 << 30)
+#define XPDMA_CxLLR_UB1 (1 << 29)
+#define XPDMA_CxLLR_USA (1 << 28)
+#define XPDMA_CxLLR_UDA (1 << 27)
+#define XPDMA_CxLLR_UT3 (1 << 26) /* 2D DMA only */
+#define XPDMA_CxLLR_UB2 (1 << 25) /* 2D DMA only */
+#define XPDMA_CxLLR_ULL (1 << 16)
+
 #define DMA_USE_TC_IRQ        (1 << 0)
 #define DMA_USE_HT_IRQ        (1 << 1)
 #define DMA_CIRCULAR          (1 << 2)
@@ -422,6 +431,18 @@ static void libdma_cacheOpPer2Mem(void *addr, size_t sz)
 	pctl.type = pctl_cleanInvalDCache;
 	pctl.opDCache.addr = addr;
 	pctl.opDCache.sz = sz;
+	platformctl(&pctl);
+}
+
+
+static void libdma_setLBAR(int dma, int chn, void *addr)
+{
+	platformctl_t pctl;
+	pctl.action = pctl_set;
+	pctl.type = pctl_dmaLinkBaseAddr;
+	pctl.dmaLinkBaseAddr.dev = dma_setup[dma].pctl;
+	pctl.dmaLinkBaseAddr.channel = chn;
+	pctl.dmaLinkBaseAddr.addr = ((uint32_t)addr) & 0xffff0000;
 	platformctl(&pctl);
 }
 
@@ -647,19 +668,31 @@ static void libdma_prepareTransfer(int dma, int chn, void *maddr, size_t len, in
 		cxtr1 &= ~XPDMA_CXTR1_DINC;
 	}
 
+	uint32_t *addrReg;
+	uint32_t updateFlags;
 	if ((sChn->cx.tr2 & XPDMA_CXTR2_MEM2PER) != 0) {
-		sChn->cx.sar = (uint32_t)maddr;
+		addrReg = &sChn->cx.sar;
+		updateFlags = XPDMA_CxLLR_USA;
 	}
 	else {
-		sChn->cx.dar = (uint32_t)maddr;
+		addrReg = &sChn->cx.dar;
+		updateFlags = XPDMA_CxLLR_UDA;
 	}
 
-	sChn->cx.tr2 &= ~XPDMA_CXTR2_TCEM_MASK;
-	sChn->cx.tr2 |= ((flags & DMA_CIRCULAR) != 0) ? XPDMA_CXTR2_TCEM_EACH_LL : XPDMA_CXTR2_TCEM_LAST_LL;
+	*addrReg = (uint32_t)maddr;
 	sChn->cx.br1 = len;
-	sChn->cx.llr = 0; /* Link register == 0 (no list in memory) */
+	sChn->cx.tr2 &= ~XPDMA_CXTR2_TCEM_MASK;
+	if ((flags & DMA_CIRCULAR) != 0) {
+		sChn->cx.tr2 |= XPDMA_CXTR2_TCEM_EACH_LL;
+		sChn->cx.llr = updateFlags | ((uint32_t)addrReg & 0xffff);
+		libdma_setLBAR(dma, chn, addrReg);
+		libdma_cacheOpMem2Per(addrReg, sizeof(*addrReg));
+	}
+	else {
+		sChn->cx.tr2 |= XPDMA_CXTR2_TCEM_LAST_LL;
+		sChn->cx.llr = 0;
+	}
 
-	*(chnBase + xpdma_cxlbar) = 0; /* Linked-list base address (unused) */
 	*(chnBase + xpdma_cxfcr) = XPDMA_ALLFLAGS;
 	*(chnBase + xpdma_cxtr1) = cxtr1;
 	*(chnBase + xpdma_cxtr2) = sChn->cx.tr2;
@@ -913,7 +946,23 @@ int libdma_rxAsync(const struct libdma_per *per, void *rxMAddr, size_t len, vola
 
 int libdma_infiniteRxAsync(const struct libdma_per *per, void *rxMAddr, size_t len, void fn(void *arg, int type), void *arg)
 {
-	return -ENOSYS;
+	int dma = per->setup->dma;
+	int chn = per->chns[dma_per2mem];
+
+	if ((len > DMA_MAX_LEN) || (chn == DMA_NUM_CHANNELS)) {
+		return -EINVAL;
+	}
+
+	if ((rxMAddr == NULL) || (len == 0)) {
+		libdma_cleanupTransfer(dma, chn);
+	}
+	else {
+		dma_ctrl[dma].chns[chn].cb = fn;
+		dma_ctrl[dma].chns[chn].cb_arg = arg;
+		libdma_prepareTransfer(dma, chn, rxMAddr, len, DMA_USE_TC_IRQ | DMA_USE_HT_IRQ | DMA_CIRCULAR);
+	}
+
+	return 0;
 }
 
 
