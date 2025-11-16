@@ -379,7 +379,7 @@ enum tim_regs {
 	tim_tisel,
 	tim_af1,
 	tim_af2,
-	tim_dcr,
+	tim_dcr = 0xf7,
 	tim_dmar,
 };
 
