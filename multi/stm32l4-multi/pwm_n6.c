@@ -30,6 +30,8 @@
 #define USE_DSHOT_DMA 1
 #define MAX_DSHOT_DMA 32
 
+#define TIM_DIER_UDE (1 << 8) /* Update DMA request enable */
+
 /* Data used in IRQ dshot. Limited to one channel per timer. */
 typedef struct {
 	pwm_ch_id_t chn;  /* Channel used for pwm */
@@ -179,7 +181,6 @@ static const struct {
 static struct {
 	pwm_tim_data_t timer[pwm_tim_count];
 #if USE_DSHOT_DMA
-	uint32_t dmaTransferBuffer[MAX_DSHOT_DMA + 2];
 	handle_t dmalock;
 #endif
 } pwm_common;
@@ -639,6 +640,33 @@ int pwm_get(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t *top, uint32_t *compar
 	return EOK;
 }
 
+static int pwm_initDMAChannel(pwm_tim_id_t timer, pwm_ch_id_t chn)
+{
+	int res = libxpdma_acquirePeripheral(dma_tim_upd, timer, 0, &(pwm_common.timer[timer].dma_per[chn]));
+	if ((res < 0) || (pwm_common.timer[timer].dma_per[chn] == NULL)) {
+		return res;
+	}
+
+	/* You're supposed to set control DMA-TIM transfers via TIM_DCR and TIM_DMAR registers
+	 * but that failed in testing, so we just give DMA the destination address directly. */
+	volatile uint32_t *destination = pwm_setup.timer[timer].base + PWM_CCR_REG(chn);
+	res = (res < 0) ? res : libxpdma_configureChannel(pwm_common.timer[timer].dma_per[chn], dma_mem2per, dma_priorityVeryHigh, NULL);
+	libdma_peripheral_config_t cfg = {
+		.addr = (void *)destination,
+		.elSize_log = (((PWM_TIM_32BIT >> timer) & 1) != 0) ? 2 : 1,
+		.burstSize = 1,
+		.increment = 0,
+	};
+
+	res = (res < 0) ? res : libxpdma_configurePeripheral(pwm_common.timer[timer].dma_per[chn], dma_mem2per, &cfg);
+	if (res < 0) {
+		return res;
+	}
+
+	*(pwm_setup.timer[timer].base + tim_dier) |= TIM_DIER_UDE;
+	return res;
+}
+
 int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t nbits, uint8_t datasize, int flags)
 {
 	int res;
@@ -665,66 +693,52 @@ int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t
 	}
 
 #if USE_DSHOT_DMA
-	/* Limit number of bits so we don't overflow the buffer */
-	if (nbits > MAX_DSHOT_DMA) {
-		return -EINVAL;
-	}
-
 	mutexLock(pwm_common.dmalock);
-
-	for (unsigned int i = 0; i < nbits; i++) {
-		pwm_common.dmaTransferBuffer[i] = pwm_getUserCompareVal(data, i, datasize);
+	const struct libdma_per *per = pwm_common.timer[timer].dma_per[chn];
+	if (per == NULL) {
+		res = (res < 0) ? res : pwm_initDMAChannel(timer, chn);
+		per = pwm_common.timer[timer].dma_per[chn];
 	}
 
-	if (pwm_common.timer[timer].dma_per[chn] == NULL) {
-		int ret = libdma_acquirePeripheral(dma_tim_upd, timer, &(pwm_common.timer[timer].dma_per[chn]));
-		if ((ret < 0) || (pwm_common.timer[timer].dma_per[chn] == NULL)) {
-			mutexUnlock(pwm_common.dmalock);
-			return ret;
-		}
-
-		int pSize = (((PWM_TIM_32BIT >> timer) & 1) != 0) ? 2 : 1;
-		/* You're supposed to set control DMA-TIM transfers via TIM_DCR and TIM_DMAR registers
-		 * but that failed in testing, so we just give DMA the destination address directly. */
-		volatile uint32_t *destination = pwm_setup.timer[timer].base + PWM_CCR_REG(chn);
-		ret = libdma_configurePeripheral(
-				pwm_common.timer[timer].dma_per[chn],
-				dma_mem2per,
-				dma_priorityVeryHigh,
-				(void *)(destination),
-				2,
-				pSize,
-				1,
-				0,
-				NULL);
-
-		if (ret < 0) {
-			mutexUnlock(pwm_common.dmalock);
-			return ret;
-		}
-
-		/* Enable TIM DMA request */
-		*(pwm_setup.timer[timer].base + tim_dier) |= (1 << 8);
-	}
-
-	/* Add two "idle" values at the end of the DMA buffer.
-	 * One value is necessary because after DMA writes the last compare value, `libdma_tx` exits and user may
-	 * disable the timer immediately without waiting for the final cycle to finish.
-	 * Another value is added because compare values are "delayed" - a write to the CCR register after an update event
-	 * will not take effect immediately, but during the next cycle.
-	 * Without those two "idle" values, the last value would not be transmitted and second-to-last value
-	 * would not be transmitted completely.
-	 * TODO: this could be fixed by waiting two timer cycles after DMA finishes - but this may not be enough depending
-	 * on how fast `libdma_tx` returns after DMA is finished.
-	 */
-	pwm_common.dmaTransferBuffer[nbits] = 0;
-	pwm_common.dmaTransferBuffer[nbits + 1] = 0;
-
+	static const uint8_t zero_value = 0;
+	const uint8_t datasize_log = (datasize == 1) ? 0 : ((datasize == 2) ? 1 : 2);
+	libdma_transfer_buffer_t bufs[2] = {
+		{
+			.buf = data,
+			.bufSize = nbits << datasize_log,
+			.elSize_log = datasize_log,
+			.burstSize = 1,
+			.increment = 1,
+			.isCached = 1,
+			.transform = LIBXPDMA_TRANSFORM_ALIGNR0,
+		},
+		/* Add two "idle" values at the end of the DMA buffer.
+		 * One value is necessary because after DMA writes the last compare value, `libdma_tx` exits and user may
+		 * disable the timer immediately without waiting for the final cycle to finish.
+		 * Another value is added because compare values are "delayed" - a write to the CCR register after an update event
+		 * will not take effect immediately, but during the next cycle.
+		 * Without those two "idle" values, the last value would not be transmitted and second-to-last value
+		 * would not be transmitted completely.
+		 * TODO: this could be fixed by waiting two timer cycles after DMA finishes - but this may not be enough depending
+		 * on how fast `libdma_tx` returns after DMA is finished.
+		 */
+		{
+			.buf = (void *)&zero_value,
+			.bufSize = 2,
+			.elSize_log = 0,
+			.burstSize = 1,
+			.increment = 0,
+			.isCached = 0,
+			.transform = LIBXPDMA_TRANSFORM_ALIGNR0,
+		},
+	};
+	res = (res < 0) ? res : libxpdma_configureMemory(per, dma_mem2per, 0, bufs, 2);
 	/* Start the PWM channel. Set first duty cycle to 0 - idle state. It will be output until DMA takes over. */
-	pwm_set(timer, chn, 0);
+	res = (res < 0) ? res : pwm_set(timer, chn, 0);
+	volatile int done = 0;
+	res = (res < 0) ? res : libxpdma_startTransferWithFlag(per, dma_mem2per, &done);
 	/* TODO: we can calculate a timeout here */
-	libdma_tx(pwm_common.timer[timer].dma_per[chn], pwm_common.dmaTransferBuffer, (nbits + 2) * 4, 0, 0);
-	/* TODO: we may need to wait for the last cycle to finish */
+	res = (res < 0) ? res : libxpdma_waitForTransaction(per, &done, NULL, 0);
 	mutexUnlock(pwm_common.dmalock);
 #else
 	uint16_t firstCompare;
@@ -755,7 +769,7 @@ int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t
 	mutexUnlock(irq->uevlock);
 #endif
 
-	return EOK;
+	return res;
 }
 
 
