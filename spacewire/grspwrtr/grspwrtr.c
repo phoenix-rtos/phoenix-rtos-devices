@@ -39,8 +39,9 @@
 #define LOG_ERROR(fmt, ...) fprintf(stderr, "spacewire-router: " fmt "\n", ##__VA_ARGS__)
 /* clang-format on */
 
-#define SPWRTR_PRIO  3
-#define SPWRTR_PORTS 4
+#define SPWRTR_PRIO         3
+#define SPWRTR_MAX_PHY_PORT 31
+#define SPWRTR_PORT_CNT     (SPWRTR_SPW_CNT + SPWRTR_AMBA_CNT)
 
 #define R_RESERVED(start, end) uint32_t rsvd_##start##_##end[(end - start) / sizeof(uint32_t)] /* reserved address */
 #define BIT(i)                 (1u << (i))                                                     /* bitmask for single bit */
@@ -154,11 +155,11 @@ static struct {
 
 static int spwrtr_setPortMapping(spwrtr_dev_t *dev, uint8_t port, uint32_t enPorts)
 {
-	if (port == 0) {
+	if ((port == 0 || port > SPWRTR_PORT_CNT) && port <= SPWRTR_MAX_PHY_PORT) {
 		return -EINVAL;
 	}
 
-	if ((enPorts >> (SPWRTR_PORTS + 1)) > 0) {
+	if ((enPorts >> (SPWRTR_PORT_CNT + 1)) > 0) {
 		return -EINVAL;
 	}
 
@@ -171,7 +172,7 @@ static int spwrtr_setPortMapping(spwrtr_dev_t *dev, uint8_t port, uint32_t enPor
 
 static int spwrtr_getPortMapping(spwrtr_dev_t *dev, uint8_t port, uint32_t *enPorts)
 {
-	if (port == 0) {
+	if ((port == 0 || port > SPWRTR_PORT_CNT) && port <= SPWRTR_MAX_PHY_PORT) {
 		return -EINVAL;
 	}
 
