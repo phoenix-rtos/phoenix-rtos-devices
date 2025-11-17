@@ -73,16 +73,83 @@ static void libspi_suspendController(libspi_ctx_t *ctx)
 }
 
 
-static int libspi_transactionDMA(libspi_ctx_t *ctx, size_t ignoreBytes, unsigned char *ibuff, const unsigned char *obuff, size_t bufflen)
+static int libspi_transactionDMA(libspi_ctx_t *ctx, const uint8_t *preamble, size_t preambleLen, unsigned char *ibuff, const unsigned char *obuff, size_t bufflen)
 {
-	int ret;
-	*(ctx->base + spi_cr1) |= 1 << 9;
-	ret = libdma_transfer(ctx->per, ibuff, obuff, bufflen);
+	int ret = 0;
+	libdma_transfer_buffer_t bufs[2];
+	/* Set parameters that will be the same for all buffers */
+	bufs[0].elSize_log = 0;
+	bufs[0].burstSize = 1;
+	bufs[0].transform = 0;
+	bufs[1].elSize_log = 0;
+	bufs[1].burstSize = 1;
+	bufs[1].transform = 0;
 
-	libspi_suspendController(ctx);
+	static uint8_t rxDummy = 0, txDummy = 0;
+	volatile int rxDone, txDone;
+	volatile int *rxDonePtr = NULL, *txDonePtr = &txDone;
+	/* If we don't want to receive, we can just not activate RX DMA */
+	if (ibuff != NULL) {
+		rxDonePtr = &rxDone;
+		size_t i = 0;
+		if (preambleLen != 0) {
+			bufs[i].buf = &rxDummy;
+			bufs[i].bufSize = preambleLen;
+			bufs[i].increment = 0;
+			bufs[i].isCached = 0;
+			i++;
+		}
+
+		bufs[i].buf = ibuff;
+		bufs[i].bufSize = bufflen;
+		bufs[i].increment = 1;
+		bufs[i].isCached = 1;
+		i++;
+
+		ret = (ret < 0) ? ret : libxpdma_configureMemory(ctx->per, dma_per2mem, 0, bufs, i);
+		ret = (ret < 0) ? ret : libxpdma_startTransferWithFlag(ctx->per, dma_per2mem, rxDonePtr);
+	}
+
+	size_t i = 0;
+	if (preambleLen != 0) {
+		bufs[i].buf = (void *)preamble;
+		bufs[i].bufSize = preambleLen;
+		bufs[i].increment = 1;
+		bufs[i].isCached = 1;
+		i++;
+	}
+
+	if (obuff != NULL) {
+		bufs[i].buf = (void *)obuff;
+		bufs[i].bufSize = bufflen;
+		bufs[i].increment = 1;
+		bufs[i].isCached = 1;
+		i++;
+	}
+	else {
+		bufs[i].buf = &txDummy;
+		bufs[i].bufSize = bufflen;
+		bufs[i].increment = 0;
+		bufs[i].isCached = 0;
+		i++;
+	}
+
+	ret = (ret < 0) ? ret : libxpdma_configureMemory(ctx->per, dma_mem2per, 0, bufs, i);
+	ret = (ret < 0) ? ret : libxpdma_startTransferWithFlag(ctx->per, dma_mem2per, txDonePtr);
+
+	if (ret >= 0) {
+		*(ctx->base + spi_cr1) |= 1 << 9;
+		ret = libxpdma_waitForTransaction(ctx->per, txDonePtr, rxDonePtr, 0);
+		libspi_suspendController(ctx);
+	}
+	else {
+		libxpdma_cancelTransfer(ctx->per, dma_mem2per);
+		libxpdma_cancelTransfer(ctx->per, dma_per2mem);
+	}
+
 	*(ctx->base + spi_cr1) &= ~1;
 	dataBarier();
-	return ret;
+	return (ret < 0) ? ret : bufflen;
 }
 
 
@@ -95,7 +162,6 @@ static inline uint8_t libspi_getByteOrZero(const uint8_t *buff, size_t i)
 int libspi_transaction(libspi_ctx_t *ctx, int dir, unsigned char cmd, unsigned int addr, unsigned char flags, unsigned char *ibuff, const unsigned char *obuff, size_t bufflen)
 {
 	unsigned int addrsz = (flags >> SPI_ADDRSHIFT) & SPI_ADDRMASK;
-	unsigned int ignoreBytes = 0;
 	/* Ensure buffers are set to NULL if they are not used */
 	if (dir == spi_dir_read) {
 		obuff = NULL;
@@ -108,48 +174,54 @@ int libspi_transaction(libspi_ctx_t *ctx, int dir, unsigned char cmd, unsigned i
 	*(ctx->base + spi_cr1) |= 1;
 	dataBarier();
 
-	/* TX/RX data register need to be accessed as 8-bit */
-	volatile uint8_t *txData = (volatile uint8_t *)(ctx->base + spi_txdr);
-	volatile uint8_t *rxData = (volatile uint8_t *)(ctx->base + spi_rxdr);
-
+	uint8_t preamble[6];
+	unsigned int preambleLen = 0;
 	/* Send command, address and dummy bytes if requested.
 	 * They can be sent all at once because FIFO is large enough (at least 8 bytes) */
 	if ((flags & spi_cmd) != 0) {
-		*txData = cmd;
-		ignoreBytes += 1;
+		preamble[preambleLen] = cmd;
+		preambleLen += 1;
 	}
 
 	if (addrsz > 0) {
-		ignoreBytes += addrsz;
 		if ((flags & spi_addrlsb) == 0) {
 			uint32_t addr_swapped = bswap_32((uint32_t)addr);
 			addr = addr_swapped >> ((4 - addrsz) * 8);
 		}
 
 		for (unsigned int i = 0; i < addrsz; i++) {
-			*txData = addr & 0xff;
+			preamble[preambleLen] = addr & 0xff;
+			preambleLen += 1;
 			addr >>= 8;
 		}
 	}
 
 	if ((flags & spi_dummy) != 0) {
-		ignoreBytes += 1;
-		*txData = 0;
+		preamble[preambleLen] = 0;
+		preambleLen += 1;
 	}
 
 	/* TODO: to support transactions with preamble, multi-buffer DMA transactions will be necessary */
-	if ((ctx->per != NULL) && (ignoreBytes == 0)) {
-		return libspi_transactionDMA(ctx, ignoreBytes, ibuff, obuff, bufflen);
+	if (ctx->per != NULL) {
+		return libspi_transactionDMA(ctx, preamble, preambleLen, ibuff, obuff, bufflen);
+	}
+
+	/* TX/RX data register need to be accessed as 8-bit */
+	volatile uint8_t *txData = (volatile uint8_t *)(ctx->base + spi_txdr);
+	volatile uint8_t *rxData = (volatile uint8_t *)(ctx->base + spi_rxdr);
+
+	for (size_t i = 0; i < preambleLen; i++) {
+		*txData = preamble[i];
 	}
 
 	uint32_t fifoSize = spiInfo[ctx->spiNum - spi1].fifoSize;
-	size_t transactionLength = bufflen + ignoreBytes;
+	size_t transactionLength = bufflen + preambleLen;
 	size_t rx_i = 0;
 	size_t tx_i = 0;
 	bool overflow = false;
 
 	/* Fill up TX FIFO to the limit */
-	while (((tx_i + ignoreBytes) < fifoSize) && (tx_i < bufflen)) {
+	while (((tx_i + preambleLen) < fifoSize) && (tx_i < bufflen)) {
 		*txData = libspi_getByteOrZero(obuff, tx_i);
 		tx_i++;
 	}
@@ -167,8 +239,8 @@ int libspi_transaction(libspi_ctx_t *ctx, int dir, unsigned char cmd, unsigned i
 		}
 
 		if ((status & SR_RXNE) != 0) {
-			if ((ibuff != NULL) && (rx_i >= ignoreBytes)) {
-				ibuff[rx_i - ignoreBytes] = *rxData;
+			if ((ibuff != NULL) && (rx_i >= preambleLen)) {
+				ibuff[rx_i - preambleLen] = *rxData;
 			}
 			else {
 				(void)*rxData;
@@ -286,13 +358,21 @@ int libspi_init(libspi_ctx_t *ctx, unsigned int spi, int useDma)
 
 	if (useDma != 0) {
 		libdma_init();
-		int err = libdma_acquirePeripheral(dma_spi, spi - spi1, &ctx->per);
+		int err = libxpdma_acquirePeripheral(dma_spi, spi - spi1, 0, &ctx->per);
+		err = (err < 0) ? err : libxpdma_configureChannel(ctx->per, dma_mem2per, dma_priorityMedium, NULL);
+		err = (err < 0) ? err : libxpdma_configureChannel(ctx->per, dma_per2mem, dma_priorityMedium, NULL);
+		libdma_peripheral_config_t cfg = {
+			.addr = (void *)(ctx->base + spi_txdr),
+			.elSize_log = 0,
+			.burstSize = 1,
+			.increment = 0,
+		};
+		err = (err < 0) ? err : libxpdma_configurePeripheral(ctx->per, dma_mem2per, &cfg);
+		cfg.addr = (void *)(ctx->base + spi_rxdr);
+		err = (err < 0) ? err : libxpdma_configurePeripheral(ctx->per, dma_per2mem, &cfg);
 		if (err < 0) {
 			return err;
 		}
-
-		libdma_configurePeripheral(ctx->per, dma_mem2per, dma_priorityMedium, (void *)(ctx->base + spi_txdr), 0x0, 0x0, 0x1, 0x0, NULL);
-		libdma_configurePeripheral(ctx->per, dma_per2mem, dma_priorityMedium, (void *)(ctx->base + spi_rxdr), 0x0, 0x0, 0x1, 0x0, NULL);
 	}
 	else {
 		ctx->per = NULL;
