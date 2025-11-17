@@ -195,6 +195,39 @@ static int spwrtr_resetDevice(spwrtr_dev_t *dev)
 }
 
 
+static int spwrtr_setClockDiv(spwrtr_dev_t *dev, uint8_t port, uint8_t clkdiv)
+{
+	if (port == 0 || port > SPWRTR_SPW_CNT) {
+		return -EINVAL;
+	}
+
+	uint32_t pctrl;
+
+	pctrl = dev->mmio->rtr_pctrl[port];
+	pctrl &= ~SPWRTR_PCTRL_RD_MASK;
+	pctrl |= (clkdiv << SPWRTR_PCTRL_RD_SHIFT) & SPWRTR_PCTRL_RD_MASK;
+
+	dev->mmio->rtr_pctrl[port] = pctrl;
+
+	TRACE("port: %d set clockdiv: %d", port, clkdiv);
+
+	return 0;
+}
+
+
+static int spwrtr_getClockDiv(spwrtr_dev_t *dev, uint8_t port, uint8_t *clkdiv)
+{
+	if (port == 0 || port > SPWRTR_SPW_CNT) {
+		return -EINVAL;
+	}
+
+	*clkdiv = (dev->mmio->rtr_pctrl[port] & SPWRTR_PCTRL_RD_MASK) >> SPWRTR_PCTRL_RD_SHIFT;
+	TRACE("port: %d clockdiv: %d", port, *clkdiv);
+
+	return 0;
+}
+
+
 /* Message handling */
 
 
@@ -211,6 +244,13 @@ static void spwrtr_handleDevCtl(msg_t *msg)
 
 		case spwrtr_pmap_get:
 			err = spwrtr_getPortMapping(&spwrtr_common.dev, ictl->task.mapping.port, &octl->val);
+			break;
+
+		case spwrtr_clkdiv_set:
+			err = spwrtr_setClockDiv(&spwrtr_common.dev, ictl->task.clkdiv.port, ictl->task.clkdiv.div);
+			break;
+		case spwrtr_clkdiv_get:
+			err = spwrtr_getClockDiv(&spwrtr_common.dev, ictl->task.clkdiv.port, (uint8_t *)&octl->val);
 			break;
 
 		case spwrtr_reset:
