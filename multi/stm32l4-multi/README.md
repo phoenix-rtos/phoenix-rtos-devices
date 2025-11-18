@@ -1,6 +1,6 @@
 # stm32l4-multi
 
-This server acculumates all devices drivers of STM32L152 microcontrollers familly. It provides support for:
+This server acculumates all devices drivers of STM32L4x6 microcontrollers familly. It provides support for:
 
 - ADC,
 - EEPROM and program flash read/write,
