@@ -29,7 +29,8 @@ enum { adc_get = 0, rtc_setcal, rtc_get, rtc_set, rtc_setalarm, i2c_get, i2c_get
 	i2c_set, i2c_setwreg, gpio_def, gpio_get, gpio_set, uart_def, uart_get, uart_set,
 	flash_get, flash_set, flash_info, spi_get, spi_set, spi_rw, spi_def, exti_def,
 	exti_map, otp_get, otp_set, rtc_setBackup, rtc_getBackup, flash_setRaw, flash_erase,
-	rng_get, pwm_def, pwm_setm, pwm_getm, pwm_getfreq, pwm_distim, pwm_dischn, pwm_bitseq };
+	rng_get, pwm_def, pwm_setm, pwm_getm, pwm_getfreq, pwm_distim, pwm_dischn, pwm_bitseq,
+	i2c_def };
 /* clang-format on */
 
 /* RTC */
@@ -56,6 +57,13 @@ typedef struct {
 	unsigned char addr;
 	unsigned char reg;
 } __attribute__((packed)) i2cmsg_t;
+
+
+typedef struct {
+	int i2c;
+	unsigned char speed;
+	int riseTime;
+} __attribute__((packed)) i2cdef_t;
 
 
 /* GPIO */
@@ -292,6 +300,7 @@ typedef struct {
 		int rtc_calib;
 		rtctimestamp_t rtc_timestamp;
 		i2cmsg_t i2c_msg;
+		i2cdef_t i2c_def;
 		uartget_t uart_get;
 		uartset_t uart_set;
 		uartdef_t uart_def;

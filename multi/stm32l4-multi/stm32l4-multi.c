@@ -119,6 +119,10 @@ static void handleMsg(msg_t *msg)
 			err = i2c_writeReg(imsg->i2c_msg.i2c, imsg->i2c_msg.addr, imsg->i2c_msg.reg, msg->i.data, msg->i.size);
 			break;
 
+		case i2c_def:
+			err = i2c_setSpeed(imsg->i2c_def.i2c, imsg->i2c_def.speed, imsg->i2c_def.riseTime);
+			break;
+
 		case exti_def:
 			err = exti_configure(imsg->exti_def.line, imsg->exti_def.mode, imsg->exti_def.edge);
 			break;

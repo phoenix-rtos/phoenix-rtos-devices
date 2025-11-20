@@ -25,6 +25,13 @@
 
 #define TIMEOUT (100 * 1000)
 
+#define ANALOG_NOISE_FILTER 0
+/* Regardless of reference clock frequency, the low period seems to be 3 cycles too long and high period 2 cycles too long.
+ * These extra delays were measured empirically, they are not mentioned in the documentation nor in the errata,
+ * and according to docs it seems they should not be necessary at all. */
+#define SCLL_EXTRA_DELAY 3
+#define SCLH_EXTRA_DELAY 2
+
 
 static const struct libi2c_peripheralInfo {
 	void *base;
@@ -276,14 +283,138 @@ ssize_t libi2c_writeReg(libi2c_ctx_t *ctx, unsigned char addr, unsigned char reg
 }
 
 
+static uint32_t divide_ceil(uint32_t n, uint32_t d)
+{
+	uint32_t res = (n + d - 1) / d;
+	return (res == 0) ? 1 : res;
+}
+
+/* Calculate values for TIMINGR register and DNF field of CR1 register.
+ * `refclk` - I2C reference clock in Hz
+ * `speed` - I2C speed mode
+ * `rise_time` - Rise time compensation.
+ *		Should be set to time taken by the rising edge of SCLK to reach 70% amplitude.
+ *		The unit is 1/16 microseconds (62.5 ns).
+ *		If rise time is unknown, set to 0 - the clock speed will be in spec, but may be slower than optimal.
+ *		Can be set to < 0 to slow down the clock more than required by spec.
+ * `timingr_val` - output for TIMINGR
+ * `digifilter` - output for DNF field
+ */
+static int libi2c_calculateTiming(uint32_t refclk, enum libi2c_speed speed, int rise_time, uint32_t *timingr_val, uint32_t *digifilter)
+{
+	/* In constants below, each tick represents 0.0625 us, corresponding to frequency of 16 MHz */
+	/* Ticks per one clock period (from I2C protocol documentation) */
+	static const uint8_t lookup_tCLK[] = {
+		[libi2c_speed_standard] = 160, /* 10 us => 100 kHz */
+		[libi2c_speed_fast] = 40,      /* 2.5 us => 400 kHz */
+		[libi2c_speed_fastplus] = 16,  /* 1 us => 1 MHz */
+	};
+	/* Ticks to hold high state (from I2C protocol documentation) */
+	static const uint8_t lookup_tHIGH[] = {
+		[libi2c_speed_standard] = 65, /* 4 us minimum + 0.0625 safety margin */
+		[libi2c_speed_fast] = 11,     /* 0.6 us minimum + 0.0625 safety margin */
+		[libi2c_speed_fastplus] = 5,  /* 0.25 us minimum + 0.0625 safety margin */
+	};
+	/* Data set-up time (tSU;DAT from I2C protocol documentation) */
+	static const uint8_t lookup_tSCLDEL[] = {
+		[libi2c_speed_standard] = 4, /* 0.25 us */
+		[libi2c_speed_fast] = 2,     /* 0.125 us >= 0.1 us minimum */
+		[libi2c_speed_fastplus] = 1, /* 0.625 us >= 0.05 us minimum */
+	};
+	/* Analog noise filter delays clock transitions by another 0.0625 us. */
+	static const uint32_t tANF = (ANALOG_NOISE_FILTER != 0) ? 1 : 0;
+
+	if ((speed < libi2c_speed_standard) || (speed > libi2c_speed_fastplus)) {
+		return -EINVAL;
+	}
+
+	/* Digital noise filter period - 0.125 us */
+	uint32_t tDNF = 2;
+
+	const int low_subtract = lookup_tHIGH[speed] + rise_time + tANF;
+	uint32_t tSCLL = (lookup_tCLK[speed] > low_subtract) ? (lookup_tCLK[speed] - low_subtract) : 1;
+	uint32_t tSCLH = lookup_tHIGH[speed] - tANF;
+	uint32_t tSCLDEL = lookup_tSCLDEL[speed];
+	uint32_t prescaler = 1;
+
+	/* Round the clock frequency to 1 MHz */
+	uint32_t m = divide_ceil(refclk, 1000000);
+	/* If actual frequency is different from our "base frequency", scale the results. */
+	if (m != 16) {
+		tDNF = divide_ceil(tDNF * m, 16);
+		if (tDNF > 15) {
+			tDNF = 15;
+		}
+
+		tSCLDEL = divide_ceil(tSCLDEL * m, 16);
+		tSCLL = divide_ceil(tSCLL * m, 16);
+		tSCLH = divide_ceil(tSCLH * m, 16);
+	}
+
+	tSCLL = (tSCLL > (tDNF + SCLL_EXTRA_DELAY)) ? (tSCLL - (tDNF + SCLL_EXTRA_DELAY)) : 1;
+	tSCLH = (tSCLH > (tDNF + SCLH_EXTRA_DELAY)) ? (tSCLH - (tDNF + SCLH_EXTRA_DELAY)) : 1;
+
+	/* tSCLDEL has a range of [1:16], but we can save some calculations by scaling it up to [16:256]
+	 * just for the purpose of calculating prescaler. */
+	uint32_t longest = max(tSCLDEL * 16, max(tSCLL, tSCLH));
+	if (longest > 256) {
+		prescaler = divide_ceil(longest, 256);
+	}
+
+	if (prescaler > 16) {
+		/* Input frequency too fast */
+		return -EINVAL;
+	}
+
+	if (prescaler > 1) {
+		tSCLDEL = divide_ceil(tSCLDEL, prescaler);
+		tSCLL = divide_ceil(tSCLL, prescaler);
+		tSCLH = divide_ceil(tSCLH, prescaler);
+	}
+
+	*timingr_val =
+			(((prescaler - 1) & 0xf) << 28) |
+			(((tSCLDEL - 1) & 0xf) << 20) |
+			(((tSCLH - 1) & 0xff) << 8) |
+			(((tSCLL - 1) & 0xff) << 0);
+	*digifilter = tDNF;
+	return 0;
+}
+
+
+static int _libi2c_setSpeedInternal(libi2c_ctx_t *ctx, enum libi2c_speed speed, int rise_time)
+{
+	int ret;
+	uint32_t timingr_val, digifilter;
+	dataBarier();
+	ret = libi2c_calculateTiming(ctx->refclk_freq, speed, rise_time, &timingr_val, &digifilter);
+	if (ret < 0) {
+		return ret;
+	}
+
+	uint32_t t = *(ctx->base + cr1) & ~(0xf << 8);
+	*(ctx->base + cr1) = t | (digifilter << 8);
+	*(ctx->base + timingr) = timingr_val;
+	dataBarier();
+	return 0;
+}
+
+
+int libi2c_setSpeed(libi2c_ctx_t *ctx, enum libi2c_speed speed, int rise_time)
+{
+	devClk(ctx->clk, 1);
+	int ret = _libi2c_setSpeedInternal(ctx, speed, rise_time);
+	devClk(ctx->clk, 0);
+	return ret;
+}
+
+
 int libi2c_init(libi2c_ctx_t *ctx, int i2c)
 {
-	int presc;
-	uint32_t refclk;
 	unsigned int t;
 
 	if (i2c < i2c1 || i2c > i2c4 || ctx == NULL) {
-		return -1;
+		return -EINVAL;
 	}
 
 	i2c -= i2c1;
@@ -292,8 +423,8 @@ int libi2c_init(libi2c_ctx_t *ctx, int i2c)
 	ctx->clk = i2cinfo[i2c].clk;
 
 	devClk(ctx->clk, 1);
-	if (libi2c_clockSetup(&i2cinfo[i2c], &refclk) < 0) {
-		return -1;
+	if (libi2c_clockSetup(&i2cinfo[i2c], &ctx->refclk_freq) < 0) {
+		return -EIO;
 	}
 
 	mutexCreate(&ctx->irqlock);
@@ -306,14 +437,11 @@ int libi2c_init(libi2c_ctx_t *ctx, int i2c)
 	dataBarier();
 
 	t = *(ctx->base + cr1) & ~0xfffdff;
-	*(ctx->base + cr1) = t | (1 << 12) | (0x7 << 8) | (1 << 7) | (1 << 6) | (1 << 4) | (1 << 2) | (1 << 1);
-
-	presc = ((refclk + 500 * 1000) / (1000 * 1000)) / 4;
-	t = *(ctx->base + timingr) & ~((0xf << 18) | 0xffffff);
-	*(ctx->base + timingr) = t | (((presc & 0xf) << 28) | (0x4 << 20) | (0x2 << 16) | (0xf << 8) | 0x13);
-	dataBarier();
-
+	/* Enable analog noise filter (if requested) and interrupts (ERR, TC, NACK, RX, TX).
+	 * Note: Analog noise filter is 1 to disable. */
+	*(ctx->base + cr1) = t | ((ANALOG_NOISE_FILTER != 0) ? 0 : (1 << 12)) | (1 << 7) | (1 << 6) | (1 << 4) | (1 << 2) | (1 << 1);
+	int ret = _libi2c_setSpeedInternal(ctx, libi2c_speed_standard, 0);
 	devClk(ctx->clk, 0);
 
-	return 0;
+	return ret;
 }
