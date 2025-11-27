@@ -22,7 +22,86 @@
 #include <errno.h>
 #include <i2c.h>
 
+#include <board_config.h>
 #include <phoenix/arch/armv7a/imx6ull/imx6ull.h>
+
+
+#ifndef CONFIG_I2C1_SCL_MUX_PAD
+#define CONFIG_I2C1_SCL_MUX_PAD pctl_mux_gpio1_02
+#endif
+#ifndef CONFIG_I2C1_SCL_MUX_VAL
+#define CONFIG_I2C1_SCL_MUX_VAL 0
+#endif
+#ifndef CONFIG_I2C1_SDA_MUX_PAD
+#define CONFIG_I2C1_SDA_MUX_PAD pctl_mux_gpio1_03
+#endif
+#ifndef CONFIG_I2C1_SDA_MUX_VAL
+#define CONFIG_I2C1_SDA_MUX_VAL 0
+#endif
+
+#ifndef CONFIG_I2C2_SCL_MUX_PAD
+#define CONFIG_I2C2_SCL_MUX_PAD pctl_mux_gpio1_00
+#endif
+#ifndef CONFIG_I2C2_SCL_MUX_VAL
+#define CONFIG_I2C2_SCL_MUX_VAL 0
+#endif
+#ifndef CONFIG_I2C2_SDA_MUX_PAD
+#define CONFIG_I2C2_SDA_MUX_PAD pctl_mux_gpio1_01
+#endif
+#ifndef CONFIG_I2C2_SDA_MUX_VAL
+#define CONFIG_I2C2_SDA_MUX_VAL 0
+#endif
+
+#ifndef CONFIG_I2C3_SCL_MUX_PAD
+#define CONFIG_I2C3_SCL_MUX_PAD pctl_mux_lcd_d1
+#endif
+#ifndef CONFIG_I2C3_SCL_MUX_VAL
+#define CONFIG_I2C3_SCL_MUX_VAL 4
+#endif
+#ifndef CONFIG_I2C3_SDA_MUX_PAD
+#define CONFIG_I2C3_SDA_MUX_PAD pctl_mux_lcd_d0
+#endif
+#ifndef CONFIG_I2C3_SDA_MUX_VAL
+#define CONFIG_I2C3_SDA_MUX_VAL 4
+#endif
+
+#ifndef CONFIG_I2C4_SCL_MUX_PAD
+#define CONFIG_I2C4_SCL_MUX_PAD pctl_mux_lcd_d3
+#endif
+#ifndef CONFIG_I2C4_SCL_MUX_VAL
+#define CONFIG_I2C4_SCL_MUX_VAL 4
+#endif
+#ifndef CONFIG_I2C4_SDA_MUX_PAD
+#define CONFIG_I2C4_SDA_MUX_PAD pctl_mux_lcd_d2
+#endif
+#ifndef CONFIG_I2C4_SDA_MUX_VAL
+#define CONFIG_I2C4_SDA_MUX_VAL 4
+#endif
+
+#ifndef CONFIG_I2C1_SCL_ISEL
+#define CONFIG_I2C1_SCL_ISEL 0
+#endif
+#ifndef CONFIG_I2C1_SDA_ISEL
+#define CONFIG_I2C1_SDA_ISEL 1
+#endif
+#ifndef CONFIG_I2C2_SCL_ISEL
+#define CONFIG_I2C2_SCL_ISEL 1
+#endif
+#ifndef CONFIG_I2C2_SDA_ISEL
+#define CONFIG_I2C2_SDA_ISEL 1
+#endif
+#ifndef CONFIG_I2C3_SCL_ISEL
+#define CONFIG_I2C3_SCL_ISEL 2
+#endif
+#ifndef CONFIG_I2C3_SDA_ISEL
+#define CONFIG_I2C3_SDA_ISEL 2
+#endif
+#ifndef CONFIG_I2C4_SCL_ISEL
+#define CONFIG_I2C4_SCL_ISEL 2
+#endif
+#ifndef CONFIG_I2C4_SDA_ISEL
+#define CONFIG_I2C4_SDA_ISEL 2
+#endif
 
 
 /* clang-format off */
@@ -41,17 +120,18 @@ typedef struct {
 } i2c_pctl_t;
 
 static const i2c_pctl_t i2c_pctl_mux[4][2] = {
-	{ { pctl_mux_gpio1_02, 0 }, { pctl_mux_gpio1_03, 0 } },
-	{ { pctl_mux_gpio1_00, 0 }, { pctl_mux_gpio1_01, 0 } },
-	{ { pctl_mux_lcd_d1, 4 }, { pctl_mux_lcd_d0, 4 } },
-	{ { pctl_mux_lcd_d3, 4 }, { pctl_mux_lcd_d2, 4 } },
+	{ { CONFIG_I2C1_SCL_MUX_PAD, CONFIG_I2C1_SCL_MUX_VAL }, { CONFIG_I2C1_SDA_MUX_PAD, CONFIG_I2C1_SDA_MUX_VAL } },
+	{ { CONFIG_I2C2_SCL_MUX_PAD, CONFIG_I2C2_SCL_MUX_VAL }, { CONFIG_I2C2_SDA_MUX_PAD, CONFIG_I2C2_SDA_MUX_VAL } },
+	{ { CONFIG_I2C3_SCL_MUX_PAD, CONFIG_I2C3_SCL_MUX_VAL }, { CONFIG_I2C3_SDA_MUX_PAD, CONFIG_I2C3_SDA_MUX_VAL } },
+	{ { CONFIG_I2C4_SCL_MUX_PAD, CONFIG_I2C4_SCL_MUX_VAL }, { CONFIG_I2C4_SDA_MUX_PAD, CONFIG_I2C4_SDA_MUX_VAL } },
 };
 
+
 static const i2c_pctl_t i2c_pctl_isel[4][2] = {
-	{ { pctl_isel_i2c1_scl, 0 }, { pctl_isel_i2c1_sda, 1 } },
-	{ { pctl_isel_i2c2_scl, 1 }, { pctl_isel_i2c2_sda, 1 } },
-	{ { pctl_isel_i2c3_scl, 2 }, { pctl_isel_i2c3_sda, 2 } },
-	{ { pctl_isel_i2c4_scl, 2 }, { pctl_isel_i2c4_sda, 2 } },
+	{ { pctl_isel_i2c1_scl, CONFIG_I2C1_SCL_ISEL }, { pctl_isel_i2c1_sda, CONFIG_I2C1_SDA_ISEL } },
+	{ { pctl_isel_i2c2_scl, CONFIG_I2C2_SCL_ISEL }, { pctl_isel_i2c2_sda, CONFIG_I2C2_SDA_ISEL } },
+	{ { pctl_isel_i2c3_scl, CONFIG_I2C3_SCL_ISEL }, { pctl_isel_i2c3_sda, CONFIG_I2C3_SDA_ISEL } },
+	{ { pctl_isel_i2c4_scl, CONFIG_I2C4_SCL_ISEL }, { pctl_isel_i2c4_sda, CONFIG_I2C4_SDA_ISEL } },
 };
 
 
