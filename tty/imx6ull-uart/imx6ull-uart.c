@@ -30,8 +30,8 @@
 #include <fcntl.h>
 #include <syslog.h>
 
+#include <lf-fifo.h>
 #include <libtty.h>
-#include <libtty-lf-fifo.h>
 #include <libklog.h>
 
 #include <phoenix/arch/armv7a/imx6ull/imx6ull.h>
@@ -65,8 +65,9 @@
 #define USR1_TRDY      (1 << 13)
 #define USR1_FRAMERR   (1 << 10)
 #define USR1_PARITYERR (1 << 15)
-#define USR2_RDR       (1 << 0)
-#define USR2_ORE       (1 << 1)
+#define USR2_RDR       (1 << 0) /* Receive data ready */
+#define USR2_ORE       (1 << 1) /* RX overrun */
+#define USR2_TXDC      (1 << 3) /* Transmitter complete */
 #define UTS_TXFULL     (1 << 4)
 #define UTS_SOFTRST    (1 << 0)
 #define UCR1_UARTEN    (1 << 0)
@@ -76,11 +77,18 @@
 #define UCR2_RXEN      (1 << 1)
 #define UCR2_TXEN      (1 << 2)
 #define UCR2_WS        (1 << 5)
+#define UCR2_CTS       (1 << 12) /* CTS pin output (inverted) */
+#define UCR2_CTSC      (1 << 13)
 #define UCR2_IRTS      (1 << 14)
 #define UCR3_RXDMUXSEL (1 << 2)
 #define UCR3_RI        (1 << 8)
 #define UCR3_DCD       (1 << 9)
 #define UCR3_DSR       (1 << 10)
+#define UCR4_TCEN      (1 << 3) /* Transmitter complete interrupt enable */
+
+#define RTS_CTS_NONE       0
+#define RTS_CTS_HWFLOW     1
+#define RTS_CTS_HALFDUPLEX 2
 
 #define XCAT2(a, b) a##b
 #define PCTL(x)     XCAT2(pctl_, x)
@@ -181,6 +189,7 @@ typedef struct {
 	handle_t openclose_lock;
 
 	uint8_t int_flags;
+	int rts_cts_mode;
 
 	struct {
 		uint32_t parity;
@@ -201,6 +210,12 @@ typedef struct {
 } uart_t;
 
 static uart_t uart = { 0 };
+
+
+static inline bool uart_uses_rts_cts(uart_t *uart)
+{
+	return uart->rts_cts_mode != RTS_CTS_NONE;
+}
 
 
 static void log_printf(int priority, const char *fmt, ...)
@@ -361,10 +376,25 @@ static int uart_intr(unsigned int intr, void *data)
 	if ((*(uart.base + ucr1) & UCR1_RRDYEN) != 0) {
 		while ((*(uart.base + usr2) & USR2_RDR) != 0) {
 			/* NOTE: lock-free push */
-			if (lf_fifo_push(&uart.rx_sw_fifo, (*(uart.base + urxd)) & 0xff) == 0) {
-				uart.counters.sw_overrun++;
+			if (uart.rts_cts_mode == RTS_CTS_HWFLOW) {
+				if (lf_fifo_full(&uart.rx_sw_fifo)) {
+					*(uart.base + ucr1) &= ~UCR1_RRDYEN;
+				}
+				else {
+					lf_fifo_push(&uart.rx_sw_fifo, (*(uart.base + urxd)) & 0xff);
+				}
+			}
+			else {
+				/* TODO: here we should increment uart.counters.sw_overrun if necessary,
+				 * but lf_fifo_ow_push doesn't return information if overflow occurred */
+				lf_fifo_ow_push(&uart.rx_sw_fifo, (*(uart.base + urxd)) & 0xff);
 			}
 		}
+	}
+
+	if ((*(uart.base + ucr4) & UCR4_TCEN) != 0 && (*(uart.base + usr2) & USR2_TXDC) != 0) {
+		/* Transmitter complete interrupt is level triggered, so we need to disable it */
+		*(uart.base + ucr4) &= ~UCR4_TCEN;
 	}
 
 	return 0;
@@ -415,8 +445,41 @@ static void uart_process_rx(void)
 	uint8_t c;
 
 	/* NOTE: lock-free pop */
-	while (lf_fifo_pop(&uart.rx_sw_fifo, &c) != 0) {
-		libtty_putchar(&uart.tty_common, c, NULL);
+	if (uart.rts_cts_mode == RTS_CTS_HWFLOW) {
+		while (lf_fifo_pop(&uart.rx_sw_fifo, &c) != 0) {
+			libtty_putchar(&uart.tty_common, c, NULL);
+		}
+	}
+	else {
+		while (lf_fifo_ow_pop(&uart.rx_sw_fifo, &c) != 0) {
+			libtty_putchar(&uart.tty_common, c, NULL);
+		}
+	}
+
+	if (((*(uart.base + ucr1) & UCR1_RRDYEN) == 0) && (uart.reader_busy != 0)) {
+		*(uart.base + ucr1) |= UCR1_RRDYEN;
+	}
+}
+
+
+static void uart_on_tx_start(uart_t *uart)
+{
+	if (uart->rts_cts_mode == RTS_CTS_HALFDUPLEX) {
+		*(uart->base + ucr2) &= ~(UCR2_RXEN | UCR2_CTS);
+	}
+}
+
+
+static void uart_check_tx_end(uart_t *uart)
+{
+	if (uart->rts_cts_mode == RTS_CTS_HALFDUPLEX) {
+		if ((*(uart->base + usr2) & USR2_TXDC) == 0) {
+			/* TX in progress - wait for TX finished */
+			*(uart->base + ucr4) |= UCR4_TCEN;
+		}
+		else {
+			*(uart->base + ucr2) |= UCR2_RXEN | UCR2_CTS;
+		}
 	}
 }
 
@@ -424,11 +487,17 @@ static void uart_process_rx(void)
 static void uart_process_tx(void)
 {
 	int wake = 0;
+	bool first_char = true;
 
 	while (libtty_txready(&uart.tty_common) != 0) {
 		if ((*(uart.base + uts) & UTS_TXFULL) != 0) {
 			*(uart.base + ucr1) |= UCR1_TRDYEN;
 			break;
+		}
+
+		if (first_char) {
+			uart_on_tx_start(&uart);
+			first_char = false;
 		}
 
 		/* FIXME: potential data race on tx_fifo (lock-free access) */
@@ -440,6 +509,8 @@ static void uart_process_tx(void)
 	if (wake != 0) {
 		libtty_wake_writer(&uart.tty_common);
 	}
+
+	uart_check_tx_end(&uart);
 }
 
 
@@ -481,7 +552,7 @@ static void set_clk(int dev_no)
 }
 
 
-static void set_mux(int dev_no, int use_rts_cts)
+static void set_mux(int dev_no, bool use_rts_cts)
 {
 	platformctl_t uart_ctl;
 	int i, first_mux = 0;
@@ -489,7 +560,7 @@ static void set_mux(int dev_no, int use_rts_cts)
 	uart_ctl.action = pctl_set;
 	uart_ctl.type = pctl_iomux;
 
-	if (use_rts_cts == 0) {
+	if (!use_rts_cts) {
 		first_mux = 2; /* Skip RTS/CTS mux configuration */
 	}
 
@@ -603,6 +674,28 @@ static void set_cflag(void *_uart, tcflag_t *cflag)
 }
 
 
+static void set_rts_cts_mode_internal(uart_t *uart, int rts_cts_mode)
+{
+	uart->rts_cts_mode = rts_cts_mode;
+	uint32_t bits;
+	if (uart->rts_cts_mode == RTS_CTS_HWFLOW) {
+		/* Transmit only when RTS pin is asserted, CTS pin controlled by receiver */
+		bits = UCR2_CTSC;
+	}
+	else {
+		/* Ignore RTS pin, CTS pin under software control. */
+		bits = UCR2_IRTS;
+		if (uart->rts_cts_mode == RTS_CTS_HALFDUPLEX) {
+			/* CTS idles in low state (bit set) */
+			bits |= UCR2_CTS;
+		}
+	}
+
+	uint32_t tmp = *(uart->base + ucr2) & ~(UCR2_CTSC | UCR2_CTS | UCR2_IRTS);
+	*(uart->base + ucr2) = tmp | bits;
+}
+
+
 static void signal_txready(void *_uart)
 {
 	condSignal(uart.cond);
@@ -614,12 +707,15 @@ char __attribute__((aligned(8))) stack0[2048];
 
 static void print_usage(const char *progname)
 {
-	printf("Usage: %s [mode device speed parity use_rts_cts [-t] [-e] [-s]]\n", progname);
+	printf("Usage: %s [mode device speed parity rts_cts_mode [-t] [-e] [-s]]\n", progname);
 	printf("\tmode: 0 - raw, 1 - cooked (default cooked)\n");
 	printf("\tdevice: 1 to 8 (default 1)\n");
 	printf("\tspeed: baud_rate (default 115200)\n");
 	printf("\tparity: 0 - none, 1 - odd, 2 - even (default none)\n");
-	printf("\tuse_rts_cts: 0 - no hardware flow control, 1 - use hardware flow control (default no hardware flow control)\n");
+	printf("\trts_cts_mode (default 0):\n"
+		   "\t\t0 - RTS/CTS not used\n"
+		   "\t\t1 - RTS/CTS used for hardware flow control\n"
+		   "\t\t2 - CTS used for RS485 nDE signal, RTS unused\n");
 	printf("\t-t - make it a default console device, might be empty (default yes)\n");
 	printf("\t-e - report UART errors (default no)\n");
 	printf("\t-s - use syslog for logs (default no)\n");
@@ -642,7 +738,7 @@ int main(int argc, char **argv)
 	int baud = 115200;
 	int parity = 0;
 	int is_cooked = 1;
-	int use_rts_cts = 0;
+	int rts_cts_mode = RTS_CTS_NONE;
 	int is_console = 0;
 	int dte_mode = 0; /* Default to DCE mode */
 
@@ -666,7 +762,7 @@ int main(int argc, char **argv)
 		uart.dev_no = atoi(argv[2]);
 		baud = atoi(argv[3]);
 		parity = atoi(argv[4]);
-		use_rts_cts = atoi(argv[5]);
+		rts_cts_mode = atoi(argv[5]);
 
 		for (int num = 6; num < argc; num++) {
 			if (strcmp(argv[num], "-t") == 0) {
@@ -694,6 +790,14 @@ int main(int argc, char **argv)
 
 	if (uart.use_syslog != 0) {
 		openlog(LOG_TAG, LOG_NDELAY, LOG_DAEMON);
+	}
+
+	if (rts_cts_mode != RTS_CTS_NONE &&
+			rts_cts_mode != RTS_CTS_HWFLOW &&
+			rts_cts_mode != RTS_CTS_HALFDUPLEX) {
+		printf("Invalid RTS/CTS mode!\n");
+		print_usage(argv[0]);
+		return 1;
 	}
 
 	if (baud <= 0) {
@@ -741,9 +845,6 @@ int main(int argc, char **argv)
 	while ((*(uart.base + uts) & UTS_SOFTRST) != 0) {
 	}
 
-	/* set correct daisy for rx input */
-	set_mux(uart.dev_no, use_rts_cts);
-
 	if (mutexCreate(&uart.lock) != EOK) {
 		return 2;
 	}
@@ -766,8 +867,14 @@ int main(int argc, char **argv)
 	*(uart.base + ufcr) &= ~(0b111 << 7);
 	*(uart.base + ufcr) |= 0b010 << 7;
 
-	/* ignore RTS pin, 8-bit transmit, TX enable, soft reset */
-	*(uart.base + ucr2) = UCR2_IRTS | UCR2_WS | UCR2_TXEN | UCR2_SRST;
+	/* 8-bit transmit, TX enable, no reset */
+	*(uart.base + ucr2) = UCR2_WS | UCR2_TXEN | UCR2_SRST;
+	*(uart.base + ucr4) = (24 << 10); /* CTS deasserted after 24 bytes in RX FIFO */
+
+	set_rts_cts_mode_internal(&uart, rts_cts_mode);
+
+	/* set correct daisy for rx input */
+	set_mux(uart.dev_no, uart_uses_rts_cts(&uart));
 
 	set_cflag(&uart, &uart.tty_common.term.c_cflag);
 	set_baudrate(&uart, baud);
