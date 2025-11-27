@@ -38,6 +38,9 @@
 
 #include <phoenix/arch/armv7a/imx6ull/imx6ull.h>
 
+#include <board_config.h>
+#include "imx6ull-uart-def.h"
+
 #define KMSG_CTRL_ID 100
 
 #define LOG_TAG "imx6ull-uart"
@@ -81,6 +84,9 @@
 #define UCR3_DCD       (1 << 9)
 #define UCR3_DSR       (1 << 10)
 
+#define XCAT2(a, b) a##b
+#define PCTL(x)     XCAT2(pctl_, x)
+
 
 /* clang-format off */
 enum { urxd = 0, utxd = 16, ucr1 = 32, ucr2, ucr3, ucr4, ufcr, usr1, usr2,
@@ -88,10 +94,10 @@ enum { urxd = 0, utxd = 16, ucr1 = 32, ucr2, ucr3, ucr4, ufcr, usr1, usr2,
 /* clang-format on */
 
 
-static uint32_t uart_addr[8] = { 0x02020000, 0x021E8000, 0x021EC000, 0x021F0000,
+static const uint32_t uart_addr[8] = { 0x02020000, 0x021E8000, 0x021EC000, 0x021F0000,
 	0x021F4000, 0x021FC000, 0x02018000, 0x02288000 };
 
-static uint32_t uart_pctl_clk[8] = { pctl_clk_uart1, pctl_clk_uart2, pctl_clk_uart3, pctl_clk_uart4,
+static const uint32_t uart_pctl_clk[8] = { pctl_clk_uart1, pctl_clk_uart2, pctl_clk_uart3, pctl_clk_uart4,
 	pctl_clk_uart5, pctl_clk_uart6, pctl_clk_uart7, pctl_clk_uart8 };
 
 typedef struct {
@@ -99,31 +105,69 @@ typedef struct {
 	char val;
 } uart_pctl_t;
 
-/* clang-format off */
-static uart_pctl_t uart_pctl_mux[8][4] = {
-	{ { pctl_mux_uart1_cts, 0 }, { pctl_mux_uart1_rts,  0 }, { pctl_mux_uart1_rx,  0 }, { pctl_mux_uart1_tx,  0 } },
-	{ { pctl_mux_uart2_cts, 0 }, { pctl_mux_uart2_rts,  0 }, { pctl_mux_uart2_rx,  0 }, { pctl_mux_uart2_tx,  0 } },
-	{ { pctl_mux_uart3_cts, 0 }, { pctl_mux_uart3_rts,  0 }, { pctl_mux_uart3_rx,  0 }, { pctl_mux_uart3_tx,  0 } },
-	{ { pctl_mux_lcd_hsync, 2 }, { pctl_mux_lcd_vsync,  2 }, { pctl_mux_uart4_rx,  0 }, { pctl_mux_uart4_tx,  0 } },
-	{ { pctl_mux_gpio1_09,  8 }, { pctl_mux_gpio1_08,   8 }, { pctl_mux_uart5_rx,  0 }, { pctl_mux_uart5_tx,  0 } },
-	{ { pctl_mux_enet1_tx1, 1 }, { pctl_mux_enet1_txen, 1 }, { pctl_mux_enet2_rx1, 1 }, { pctl_mux_enet2_rx0, 1 } },
-	{ { pctl_mux_lcd_d6,    1 }, { pctl_mux_lcd_d7,     1 }, { pctl_mux_lcd_d17,   1 }, { pctl_mux_lcd_d16,   1 } },
-	{ { pctl_mux_lcd_d4,    1 }, { pctl_mux_lcd_d5,     1 }, { pctl_mux_lcd_d21,   1 }, { pctl_mux_lcd_d20,   1 } },
+static const uart_pctl_t uart_pctl_mux[8][4] = {
+	{
+		{ PCTL(CONFIG_UART1_CTS_MUX_PAD), CONFIG_UART1_CTS_MUX_VAL },
+		{ PCTL(CONFIG_UART1_RTS_MUX_PAD), CONFIG_UART1_RTS_MUX_VAL },
+		{ PCTL(CONFIG_UART1_RX_MUX_PAD), CONFIG_UART1_RX_MUX_VAL },
+		{ PCTL(CONFIG_UART1_TX_MUX_PAD), CONFIG_UART1_TX_MUX_VAL },
+	},
+	{
+		{ PCTL(CONFIG_UART2_CTS_MUX_PAD), CONFIG_UART2_CTS_MUX_VAL },
+		{ PCTL(CONFIG_UART2_RTS_MUX_PAD), CONFIG_UART2_RTS_MUX_VAL },
+		{ PCTL(CONFIG_UART2_RX_MUX_PAD), CONFIG_UART2_RX_MUX_VAL },
+		{ PCTL(CONFIG_UART2_TX_MUX_PAD), CONFIG_UART2_TX_MUX_VAL },
+	},
+	{
+		{ PCTL(CONFIG_UART3_CTS_MUX_PAD), CONFIG_UART3_CTS_MUX_VAL },
+		{ PCTL(CONFIG_UART3_RTS_MUX_PAD), CONFIG_UART3_RTS_MUX_VAL },
+		{ PCTL(CONFIG_UART3_RX_MUX_PAD), CONFIG_UART3_RX_MUX_VAL },
+		{ PCTL(CONFIG_UART3_TX_MUX_PAD), CONFIG_UART3_TX_MUX_VAL },
+	},
+	{
+		{ PCTL(CONFIG_UART4_CTS_MUX_PAD), CONFIG_UART4_CTS_MUX_VAL },
+		{ PCTL(CONFIG_UART4_RTS_MUX_PAD), CONFIG_UART4_RTS_MUX_VAL },
+		{ PCTL(CONFIG_UART4_RX_MUX_PAD), CONFIG_UART4_RX_MUX_VAL },
+		{ PCTL(CONFIG_UART4_TX_MUX_PAD), CONFIG_UART4_TX_MUX_VAL },
+	},
+	{
+		{ PCTL(CONFIG_UART5_CTS_MUX_PAD), CONFIG_UART5_CTS_MUX_VAL },
+		{ PCTL(CONFIG_UART5_RTS_MUX_PAD), CONFIG_UART5_RTS_MUX_VAL },
+		{ PCTL(CONFIG_UART5_RX_MUX_PAD), CONFIG_UART5_RX_MUX_VAL },
+		{ PCTL(CONFIG_UART5_TX_MUX_PAD), CONFIG_UART5_TX_MUX_VAL },
+	},
+	{
+		{ PCTL(CONFIG_UART6_CTS_MUX_PAD), CONFIG_UART6_CTS_MUX_VAL },
+		{ PCTL(CONFIG_UART6_RTS_MUX_PAD), CONFIG_UART6_RTS_MUX_VAL },
+		{ PCTL(CONFIG_UART6_RX_MUX_PAD), CONFIG_UART6_RX_MUX_VAL },
+		{ PCTL(CONFIG_UART6_TX_MUX_PAD), CONFIG_UART6_TX_MUX_VAL },
+	},
+	{
+		{ PCTL(CONFIG_UART7_CTS_MUX_PAD), CONFIG_UART7_CTS_MUX_VAL },
+		{ PCTL(CONFIG_UART7_RTS_MUX_PAD), CONFIG_UART7_RTS_MUX_VAL },
+		{ PCTL(CONFIG_UART7_RX_MUX_PAD), CONFIG_UART7_RX_MUX_VAL },
+		{ PCTL(CONFIG_UART7_TX_MUX_PAD), CONFIG_UART7_TX_MUX_VAL },
+	},
+	{
+		{ PCTL(CONFIG_UART8_CTS_MUX_PAD), CONFIG_UART8_CTS_MUX_VAL },
+		{ PCTL(CONFIG_UART8_RTS_MUX_PAD), CONFIG_UART8_RTS_MUX_VAL },
+		{ PCTL(CONFIG_UART8_RX_MUX_PAD), CONFIG_UART8_RX_MUX_VAL },
+		{ PCTL(CONFIG_UART8_TX_MUX_PAD), CONFIG_UART8_TX_MUX_VAL },
+	},
 };
-/* clang-format on */
 
-static uart_pctl_t uart_pctl_isel[8][2] = {
-	{ { pctl_isel_uart1_rts, 3 }, { pctl_isel_uart1_rx, 3 } },
-	{ { pctl_isel_uart2_rts, 1 }, { pctl_isel_uart2_rx, 1 } },
-	{ { pctl_isel_uart3_rts, 1 }, { pctl_isel_uart3_rx, 1 } },
-	{ { pctl_isel_uart4_rts, 3 }, { pctl_isel_uart4_rx, 1 } },
-	{ { pctl_isel_uart5_rts, 1 }, { pctl_isel_uart5_rx, 7 } },
-	{ { pctl_isel_uart6_rts, 3 }, { pctl_isel_uart6_rx, 2 } },
-	{ { pctl_isel_uart7_rts, 3 }, { pctl_isel_uart7_rx, 3 } },
-	{ { pctl_isel_uart8_rts, 3 }, { pctl_isel_uart8_rx, 3 } },
+static const uart_pctl_t uart_pctl_isel[8][2] = {
+	{ { pctl_isel_uart1_rts, CONFIG_UART1_RTS_ISEL }, { pctl_isel_uart1_rx, CONFIG_UART1_RX_ISEL } },
+	{ { pctl_isel_uart2_rts, CONFIG_UART2_RTS_ISEL }, { pctl_isel_uart2_rx, CONFIG_UART2_RX_ISEL } },
+	{ { pctl_isel_uart3_rts, CONFIG_UART3_RTS_ISEL }, { pctl_isel_uart3_rx, CONFIG_UART3_RX_ISEL } },
+	{ { pctl_isel_uart4_rts, CONFIG_UART4_RTS_ISEL }, { pctl_isel_uart4_rx, CONFIG_UART4_RX_ISEL } },
+	{ { pctl_isel_uart5_rts, CONFIG_UART5_RTS_ISEL }, { pctl_isel_uart5_rx, CONFIG_UART5_RX_ISEL } },
+	{ { pctl_isel_uart6_rts, CONFIG_UART6_RTS_ISEL }, { pctl_isel_uart6_rx, CONFIG_UART6_RX_ISEL } },
+	{ { pctl_isel_uart7_rts, CONFIG_UART7_RTS_ISEL }, { pctl_isel_uart7_rx, CONFIG_UART7_RX_ISEL } },
+	{ { pctl_isel_uart8_rts, CONFIG_UART8_RTS_ISEL }, { pctl_isel_uart8_rx, CONFIG_UART8_RX_ISEL } },
 };
 
-static unsigned uart_intr_number[8] = { 58, 59, 60, 61, 62, 49, 71, 72 };
+static const unsigned uart_intr_number[8] = { 58, 59, 60, 61, 62, 49, 71, 72 };
 
 typedef struct {
 	volatile uint32_t *base;
@@ -575,6 +619,7 @@ static void print_usage(const char *progname)
 	printf("\t-t - make it a default console device, might be empty (default yes)\n");
 	printf("\t-e - report UART errors (default no)\n");
 	printf("\t-s - use syslog for logs (default no)\n");
+	printf("\t-d - DTE mode, swap RX and TX signals (default no)\n");
 }
 
 
@@ -595,6 +640,7 @@ int main(int argc, char **argv)
 	int is_cooked = 1;
 	int use_rts_cts = 0;
 	int is_console = 0;
+	int dte_mode = 0; /* Default to DCE mode */
 
 	libtty_callbacks_t callbacks = {
 		.arg = &uart,
@@ -611,7 +657,7 @@ int main(int argc, char **argv)
 		uart.dev_no = 1;
 		is_console = 1;
 	}
-	else if ((argc >= 6) && (argc <= 8)) {
+	else if ((argc >= 6) && (argc <= 9)) {
 		is_cooked = atoi(argv[1]);
 		uart.dev_no = atoi(argv[2]);
 		baud = atoi(argv[3]);
@@ -627,6 +673,9 @@ int main(int argc, char **argv)
 			}
 			else if (strcmp(argv[num], "-s") == 0) {
 				uart.use_syslog = 1;
+			}
+			else if (strcmp(argv[num], "-d") == 0) {
+				dte_mode = 1;
 			}
 			else {
 				print_usage(argv[0]);
@@ -705,8 +754,9 @@ int main(int argc, char **argv)
 
 	interrupt(uart_intr_number[uart.dev_no - 1], uart_intr, NULL, uart.cond, &uart.inth);
 
-	/* set TX & RX FIFO watermark, DCE mode */
-	*(uart.base + ufcr) = (0x04 << 10) | (0 << 6) | (0x1);
+	/* set TX & RX FIFO watermark, DCE/DTE mode as selected */
+	uint32_t dcedte = (dte_mode != 0) ? (1 << 6) : 0;
+	*(uart.base + ufcr) = (0x04 << 10) | dcedte | (0x1);
 
 	/* set Reference Frequency Divider */
 	*(uart.base + ufcr) &= ~(0b111 << 7);
