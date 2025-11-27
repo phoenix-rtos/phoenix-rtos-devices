@@ -78,6 +78,7 @@
 #define UCR2_RXEN      (1 << 1)
 #define UCR2_TXEN      (1 << 2)
 #define UCR2_WS        (1 << 5)
+#define UCR2_CTSC      (1 << 13)
 #define UCR2_IRTS      (1 << 14)
 #define UCR3_RXDMUXSEL (1 << 2)
 #define UCR3_RI        (1 << 8)
@@ -358,6 +359,11 @@ static int uart_intr(unsigned int intr, void *data)
 
 	/* RX */
 	if ((*(uart.base + ucr1) & UCR1_RRDYEN) != 0) {
+		/* TODO: to properly support flow control we need to change the way overflow is handled:
+		 * * don't discard the overflowing byte, instead store it somewhere
+		 * * disable RDR interrupt - RX FIFO will remain over threshold, so hardware will keep CTS deasserted
+		 * * in main thread - once the overflowing byte and rest of buffer is drained,
+		 *   re-enable RDR interrupt to drain HW FIFO (this will cause hardware to assert CTS again) */
 		while ((*(uart.base + usr2) & USR2_RDR) != 0) {
 			/* NOTE: lock-free push */
 			if (lf_fifo_push(&uart.rx_sw_fifo, (*(uart.base + urxd)) & 0xff) == 0) {
@@ -753,8 +759,19 @@ int main(int argc, char **argv)
 	*(uart.base + ufcr) &= ~(0b111 << 7);
 	*(uart.base + ufcr) |= 0b010 << 7;
 
-	/* ignore RTS pin, 8-bit transmit, TX enable, soft reset */
-	*(uart.base + ucr2) = UCR2_IRTS | UCR2_WS | UCR2_TXEN | UCR2_SRST;
+	/* 8-bit transmit, TX enable, soft reset */
+	uint32_t ucr2_hw_flow;
+	if (use_rts_cts != 0) {
+		/* Transmit only when RTS pin is asserted, CTS pin controlled by receiver
+		 * and deasserted when FIFO over threshold */
+		ucr2_hw_flow = UCR2_CTSC;
+	}
+	else {
+		/* Ignore RTS pin, CTS pin under software control */
+		ucr2_hw_flow = UCR2_IRTS;
+	}
+
+	*(uart.base + ucr2) = ucr2_hw_flow | UCR2_WS | UCR2_TXEN | UCR2_SRST;
 
 	set_cflag(&uart, &uart.tty_common.term.c_cflag);
 	set_baudrate(&uart, baud);
