@@ -493,7 +493,8 @@ static int spw_rxRead(spw_dev_t *dev, uint8_t *buf, size_t bufsz, size_t *readCn
 			uint32_t flags = dev->rxDesc[firstDesc].ctrl & RX_DESC_USR_MSK;
 			size_t rxLen = flags & RX_DESC_LEN;
 			if ((rxLen + SPW_RX_MIN_BUFSZ) > bufsz) {
-				/* Buffer too small */
+				LOG_ERROR("buffer too small: %zu < %zu", bufsz, (rxLen + SPW_RX_MIN_BUFSZ));
+				err = -EINVAL;
 				break;
 			}
 			/* Copy packet to user buffer */
