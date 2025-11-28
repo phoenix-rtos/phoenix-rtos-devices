@@ -28,10 +28,6 @@
 
 #include "usbwlan.h"
 
-#ifndef USBWLAN_N_MSGTHREADS
-#define USBWLAN_N_MSGTHREADS 2
-#endif
-
 #ifndef USBWLAN_MSGTHREAD_PRIO
 #define USBWLAN_MSGTHREAD_PRIO 3
 #endif
@@ -39,6 +35,9 @@
 #ifndef USBWLAN_MSGTHREAD_STACK_SIZE
 #define USBWLAN_MSGTHREAD_STACK_SIZE 1024
 #endif
+
+#define USBWLAN_N_MSGTHREADS 1
+#define USBWLAN_BULK_SIZE    2048
 
 #define usbwlan_log(fmt, ...) \
 	do { \
@@ -63,6 +62,14 @@ typedef struct {
 	volatile int refcnt; /* protected by usbwlan_common.lock */
 
 	usb_driver_t *drv;
+
+	struct {
+		handle_t lock;
+		msg_t msg;
+		msg_rid_t rid;
+		int urbid;
+		bool isPending;
+	} rx;
 } usbwlan_dev_t;
 
 
@@ -97,8 +104,17 @@ static usbwlan_dev_t *_usbwlan_devAlloc(void)
 		return NULL;
 	}
 
+	dev->rx.urbid = -1;
+
+	if (mutexCreate(&dev->rx.lock) < 0) {
+		usbwlan_log("Could not create RX mutex");
+		free(dev);
+		return NULL;
+	}
+
 	if (idtree_alloc(&usbwlan_common.devices, &dev->node) < 0) {
 		usbwlan_log("Could not alloc idtree for new device");
+		resourceDestroy(dev->rx.lock);
 		free(dev);
 		return NULL;
 	}
@@ -112,6 +128,19 @@ static usbwlan_dev_t *_usbwlan_devAlloc(void)
 static void usbwlan_free(usbwlan_dev_t *dev)
 {
 	usbwlan_log("Device %s removed", dev->path);
+
+	mutexLock(dev->rx.lock);
+	if (dev->rx.isPending) {
+		dev->rx.msg.o.err = -EIO;
+		(void)msgRespond(usbwlan_common.msgport, &dev->rx.msg, dev->rx.rid);
+		dev->rx.isPending = false;
+	}
+	mutexUnlock(dev->rx.lock);
+
+	if (dev->rx.urbid != -1) {
+		usb_urbFree(dev->drv, dev->pipeBulkIn, dev->rx.urbid);
+	}
+	resourceDestroy(dev->rx.lock);
 	remove(dev->path);
 	free(dev);
 }
@@ -126,6 +155,27 @@ static usbwlan_dev_t *usbwlan_get(int id)
 	dev = lib_treeof(usbwlan_dev_t, node, idnode);
 	if (dev != NULL) {
 		dev->refcnt++;
+	}
+	mutexUnlock(usbwlan_common.lock);
+
+	return dev;
+}
+
+
+static usbwlan_dev_t *usbwlan_getByPipe(int pipe)
+{
+	usbwlan_dev_t *tmp, *dev = NULL;
+	rbnode_t *node;
+
+	mutexLock(usbwlan_common.lock);
+	for (node = lib_rbMinimum(usbwlan_common.devices.root); node != NULL; node = lib_rbNext(node)) {
+		tmp = lib_treeof(usbwlan_dev_t, node, lib_treeof(idnode_t, linkage, node));
+		assert(tmp != NULL);
+		if (tmp->pipeBulkIn == pipe || tmp->pipeBulkOut == pipe || tmp->pipeIntIn == pipe || pipe == tmp->pipeCtrl) {
+			dev = tmp;
+			dev->refcnt++;
+			break;
+		}
 	}
 	mutexUnlock(usbwlan_common.lock);
 
@@ -203,6 +253,13 @@ static int usbwlan_handleInsertion(usb_driver_t *drv, usb_devinfo_t *ins, usb_ev
 			break;
 		}
 
+		dev->rx.urbid = usb_urbAlloc(dev->drv, dev->pipeBulkIn, NULL, usb_dir_in, USBWLAN_BULK_SIZE, usb_transfer_bulk);
+		if (dev->rx.urbid < 0) {
+			usbwlan_log("Fail to allocate URB");
+			err = -ENOMEM;
+			break;
+		}
+
 		oid.port = usbwlan_common.msgport;
 		oid.id = idtree_id(&dev->node);
 		snprintf(dev->path, sizeof(dev->path), "/dev/wlan%ju", (uintmax_t)oid.id);
@@ -262,10 +319,44 @@ static int usbwlan_handleDeletion(usb_driver_t *drv, usb_deletion_t *del)
 }
 
 
-/* stub */
 static int usbwlan_handleCompletion(struct usb_driver *drv, usb_completion_t *completion, const char *data, size_t len)
 {
-	return 0;
+	int err;
+	usbwlan_dev_t *dev;
+
+	dev = usbwlan_getByPipe(completion->pipeid);
+	if (dev == NULL) {
+		return -1;
+	}
+
+	if (completion->pipeid != dev->pipeBulkIn) {
+		usbwlan_put(dev);
+		return -1;
+	}
+
+	mutexLock(dev->rx.lock);
+	do {
+		if (!dev->rx.isPending) {
+			err = -1;
+			break;
+		}
+
+		if (completion->err != 0) {
+			dev->rx.msg.o.err = -abs(completion->err);
+		}
+		else {
+			memcpy(dev->rx.msg.o.data, data, len);
+			dev->rx.msg.o.err = len;
+		}
+
+		err = msgRespond(usbwlan_common.msgport, &dev->rx.msg, dev->rx.rid);
+		dev->rx.isPending = false;
+	} while (0);
+	mutexUnlock(dev->rx.lock);
+
+	usbwlan_put(dev);
+
+	return err;
 }
 
 
@@ -275,6 +366,14 @@ static int _usbwlan_close(usbwlan_dev_t *dev, pid_t pid)
 	if (dev->clientpid == 0 || (dev->clientpid != pid && pid != 1)) {
 		return -EBADF;
 	}
+
+	mutexLock(dev->rx.lock);
+	if (dev->rx.isPending) {
+		dev->rx.msg.o.err = -EBADF;
+		(void)msgRespond(usbwlan_common.msgport, &dev->rx.msg, dev->rx.rid);
+		dev->rx.isPending = false;
+	}
+	mutexUnlock(dev->rx.lock);
 
 	dev->flags = 0;
 	dev->clientpid = 0;
@@ -367,9 +466,25 @@ static int usbwlan_bulkSend(usbwlan_dev_t *dev, const void *data, size_t size)
 }
 
 
-static int usbwlan_bulkReceive(usbwlan_dev_t *dev, void *data, size_t size)
+/*
+ * if EWOULDBLOCK returned - caller shall not respond to msg
+ * calls must be synchronized by dev->rx.lock
+ */
+static int _usbwlan_bulkReceive(usbwlan_dev_t *dev, msg_t *msg, msg_rid_t rid)
 {
-	return usb_transferBulk(dev->drv, dev->pipeBulkIn, data, size, usb_dir_in);
+	if (dev->rx.isPending) {
+		msg->o.err = -EBUSY;
+	}
+	else {
+		dev->rx.isPending = true;
+		dev->rx.msg = *msg;
+		dev->rx.rid = rid;
+		msg->o.err = usb_transferAsync(dev->drv, dev->pipeBulkIn, dev->rx.urbid, USBWLAN_BULK_SIZE, NULL);
+		if (msg->o.err >= 0) {
+			return EWOULDBLOCK;
+		}
+	}
+	return 0;
 }
 
 
@@ -392,6 +507,13 @@ static int usbwlan_handleDevCtl(msg_t *msg, usbwlan_dev_t *dev)
 
 		case usbwlan_regWrite:
 			return usbwlan_hwRegWrite(dev, imsg->reg.cmd, msg->i.data, msg->i.size);
+
+		case usbwlan_abort:
+			/* forced abort */
+			mutexLock(usbwlan_common.lock);
+			_usbwlan_close(dev, msg->pid);
+			mutexUnlock(usbwlan_common.lock);
+			return EOK;
 
 		default:
 			return -EINVAL;
@@ -453,7 +575,13 @@ static void usbwlan_msgthread(void *arg)
 				break;
 
 			case mtRead:
-				msg.o.err = usbwlan_bulkReceive(dev, msg.o.data, msg.o.size);
+				mutexLock(dev->rx.lock);
+				err = _usbwlan_bulkReceive(dev, &msg, rid);
+				mutexUnlock(dev->rx.lock);
+				if (err == EWOULDBLOCK) {
+					usbwlan_put(dev);
+					continue;
+				}
 				break;
 
 			case mtWrite:
