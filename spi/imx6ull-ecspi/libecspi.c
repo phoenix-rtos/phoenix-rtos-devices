@@ -21,14 +21,16 @@
 #include "imx6ull-ecspi.h"
 
 
-#define BYTES_2_RXTHRESHOLD(LEN) (((LEN) + 3) / 4 - 1)
+#define BYTES_2_RXTHRESHOLD(LEN)   (((LEN) + 3) / 4 - 1)
 #define BITS_2_BYTES_ROUND_UP(LEN) (((LEN) + 7) / 8)
-#define GET_BURST_IN_BYTES(ECSPI) (BITS_2_BYTES_ROUND_UP((*((ECSPI)->base + conreg) >> 20) + 1))
+#define GET_BURST_IN_BYTES(ECSPI)  (BITS_2_BYTES_ROUND_UP((*((ECSPI)->base + conreg) >> 20) + 1))
 
 
+/* clang-format off */
 enum { rxdata = 0, txdata, conreg, configreg, intreg, dmareg, statreg, periodreg, testreg, msgdata = 16 };
 
 typedef enum { mode_sync_exchange, mode_async_write, mode_async_exchange, mode_async_periodical } ecspi_mode_t;
+/* clang-format on */
 
 typedef struct {
 	volatile uint32_t *base;
@@ -49,6 +51,7 @@ typedef struct {
 static const addr_t ecspi_addr[4] = { 0x2008000, 0x200C000, 0x2010000, 0x2014000 };
 static const unsigned int ecspi_intr_number[4] = { 63, 64, 65, 66 };
 
+/* clang-format off */
 ecspi_pctl_t ecspi_pctl_mux[4][7] = {
 	{ { pctl_mux_lcd_d23,     2 }, { pctl_mux_lcd_d22,    2 }, { pctl_mux_lcd_d20,   2 }, { pctl_mux_lcd_d21,    2 },
 	  { pctl_mux_lcd_d5,      8 }, { pctl_mux_lcd_d6,     8 }, { pctl_mux_lcd_d7,    8 } },
@@ -66,23 +69,25 @@ ecspi_pctl_t ecspi_pctl_isel[4][4] = {
 	{ { pctl_isel_ecspi3_miso, 0 }, { pctl_isel_ecspi3_mosi, 0 }, { pctl_isel_ecspi3_sclk, 0 }, { pctl_isel_ecspi3_ss0, 0 } },
 	{ { pctl_isel_ecspi4_miso, 0 }, { pctl_isel_ecspi4_mosi, 0 }, { pctl_isel_ecspi4_sclk, 0 }, { pctl_isel_ecspi4_ss0, 0 } }
 };
+/* clang-format on */
 
 uint32_t ecspi_pctl_clk[4] = { pctl_clk_ecspi1, pctl_clk_ecspi2, pctl_clk_ecspi3, pctl_clk_ecspi4 };
 
-static ecspi_t ecspi[4] = {0};
+static ecspi_t ecspi[4] = { 0 };
 
 
-#define RESET_ECSPI(ECSPI) do { \
-	uint32_t reg_backup[3]; \
-	reg_backup[0] = *((ECSPI)->base + configreg); \
-	reg_backup[1] = *((ECSPI)->base + intreg); \
-	reg_backup[2] = *((ECSPI)->base + periodreg); \
-	*((ECSPI)->base + conreg) &= ~(1 << 0); \
-	*((ECSPI)->base + conreg) |= (1 << 0); \
-	*((ECSPI)->base + configreg) = reg_backup[0]; \
-	*((ECSPI)->base + intreg) = reg_backup[1]; \
-	*((ECSPI)->base + periodreg) = reg_backup[2]; \
-} while (0)
+#define RESET_ECSPI(ECSPI) \
+	do { \
+		uint32_t reg_backup[3]; \
+		reg_backup[0] = *((ECSPI)->base + configreg); \
+		reg_backup[1] = *((ECSPI)->base + intreg); \
+		reg_backup[2] = *((ECSPI)->base + periodreg); \
+		*((ECSPI)->base + conreg) &= ~(1 << 0); \
+		*((ECSPI)->base + conreg) |= (1 << 0); \
+		*((ECSPI)->base + configreg) = reg_backup[0]; \
+		*((ECSPI)->base + intreg) = reg_backup[1]; \
+		*((ECSPI)->base + periodreg) = reg_backup[2]; \
+	} while (0)
 
 
 static void readFifo(int dev_no, uint8_t *in, size_t len);
@@ -93,9 +98,9 @@ static void writeFifo(int dev_no, const uint8_t *out, size_t len);
 
 static int ecspi_irqHandler(unsigned int n, void *arg)
 {
-	(void) n;
+	(void)n;
 
-	ecspi_t *e = &ecspi[(int) arg];
+	ecspi_t *e = &ecspi[(int)arg];
 
 	if (e->mode != mode_sync_exchange) {
 		return -1;
@@ -110,7 +115,7 @@ static int ecspi_irqHandler(unsigned int n, void *arg)
 
 static int ecspi_irqHandlerAsync(unsigned int n, void *arg)
 {
-	(void) n;
+	(void)n;
 
 	size_t count;
 	int res = -1;
@@ -157,7 +162,8 @@ static int ecspi_irqHandlerAsync(unsigned int n, void *arg)
 				/* The only way to reset the internal period counter is to reenable the ECSPI. */
 				RESET_ECSPI(e);
 				res = 1;
-			} else {
+			}
+			else {
 				writeFifo(ctx->dev_no, ctx->out_periodical, count);
 				*(e->base + conreg) |= (1 << 2);
 				res = -1;
@@ -247,7 +253,7 @@ static void writeFifo(int dev_no, const uint8_t *out, size_t len)
 	}
 
 	while (len > 0) {
-		word = out[3] | ((uint32_t) out[2] << 8) | ((uint32_t) out[1] << 16) | ((uint32_t) out[0] << 24);
+		word = out[3] | ((uint32_t)out[2] << 8) | ((uint32_t)out[1] << 16) | ((uint32_t)out[0] << 24);
 
 		*(e->base + txdata) = word;
 
@@ -438,7 +444,6 @@ int ecspi_exchange(int dev_no, const uint8_t *out, uint8_t *in, size_t len)
 }
 
 
-
 int ecspi_exchangeBusy(int dev_no, const uint8_t *out, uint8_t *in, size_t len)
 {
 	ecspi_t *e;
@@ -486,7 +491,7 @@ int ecspi_registerContext(int dev_no, ecspi_ctx_t *ctx, handle_t cond)
 		.dev_no = dev_no,
 	};
 
-	return interrupt(ecspi_intr_number[dev_no - 1], ecspi_irqHandlerAsync, (void *) ctx, cond, &ctx->inth);
+	return interrupt(ecspi_intr_number[dev_no - 1], ecspi_irqHandlerAsync, (void *)ctx, cond, &ctx->inth);
 }
 
 
@@ -531,7 +536,7 @@ int ecspi_exchangeAsync(ecspi_ctx_t *ctx, const uint8_t *out, size_t len)
 		current_burst = (*(e->base + conreg) >> 20) + 1;
 		rxfifo_word_cnt = (*(e->base + testreg) >> 8) & 0x7F;
 
-		if (current_burst == (len * 8) && (int) (len / 4) <= (64 - txfifo_word_cnt) && (int) (len / 4) < (64 - rxfifo_word_cnt)) {
+		if (current_burst == (len * 8) && (int)(len / 4) <= (64 - txfifo_word_cnt) && (int)(len / 4) < (64 - rxfifo_word_cnt)) {
 			writeFifo(ctx->dev_no, out, len);
 			*(e->base + conreg) |= (1 << 2);
 			written = len;
@@ -622,7 +627,7 @@ int ecspi_writeAsync(ecspi_ctx_t *ctx, const uint8_t *out, size_t len)
 	else if (e->mode == mode_async_write) {
 		current_burst = (*(e->base + conreg) >> 20) + 1;
 
-		if (current_burst == (len * 8) && (int) (len / 4) <= (64 - txfifo_word_cnt)) {
+		if (current_burst == (len * 8) && (int)(len / 4) <= (64 - txfifo_word_cnt)) {
 			writeFifo(ctx->dev_no, out, len);
 			*(e->base + conreg) |= (1 << 2);
 
@@ -659,7 +664,7 @@ int ecspi_init(int dev_no, uint8_t chan_msk)
 	e->mode = mode_sync_exchange;
 
 	if ((e->base = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, ecspi_addr[dev_no - 1])) == MAP_FAILED) {
-		printf("ecspi: could not map ecspi%d paddr %p.\n", dev_no, (void*) ecspi_addr[dev_no - 1]);
+		printf("ecspi: could not map ecspi%d paddr %p.\n", dev_no, (void *)ecspi_addr[dev_no - 1]);
 		return -1;
 	}
 
@@ -669,7 +674,7 @@ int ecspi_init(int dev_no, uint8_t chan_msk)
 	mutexCreate(&e->irqlock);
 	condCreate(&e->cond);
 
-	interrupt(ecspi_intr_number[dev_no - 1], ecspi_irqHandler, (void *) (dev_no - 1), e->cond, &e->inth);
+	interrupt(ecspi_intr_number[dev_no - 1], ecspi_irqHandler, (void *)(dev_no - 1), e->cond, &e->inth);
 
 	/* Enable ECSPI. Defaults: 8-bit burst, multi burst, mode 0, all master, no cock division */
 	*(e->base + conreg) = 0x007000F1;
