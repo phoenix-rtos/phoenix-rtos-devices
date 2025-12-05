@@ -16,6 +16,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 #include <sys/file.h>
 #include <sys/minmax.h>
 #include <sys/mman.h>
@@ -65,6 +66,7 @@ static const struct {
 
 static struct {
 	unsigned int major;
+	handle_t lock;
 	/* Pointer to array of fifos in the destination memory map (PIPE_MEMMAP) */
 	/* This is the layout the other core will see and use - keep in sync with
 	other implementations */
@@ -76,6 +78,7 @@ static struct {
 	} *pipes;
 	/* Per-pipe data, not available through the memory map */
 	struct pipe_priv {
+		bool busy;
 		handle_t txLock;
 		handle_t rxLock;
 		addr_t txBufaddr;
@@ -116,6 +119,40 @@ static int getMapRange(const char *name, memrange_t *range)
 	}
 
 	return 0;
+}
+
+
+static ssize_t pipeOpen(unsigned int minor)
+{
+	mutexLock(common.lock);
+
+	if (common.pipes_priv[minor].busy) {
+		mutexUnlock(common.lock);
+		return -EBUSY;
+	}
+
+	common.pipes_priv[minor].busy = true;
+
+	mutexUnlock(common.lock);
+
+	return EOK;
+}
+
+
+static ssize_t pipeClose(unsigned int minor)
+{
+	mutexLock(common.lock);
+
+	if (!common.pipes_priv[minor].busy) {
+		mutexUnlock(common.lock);
+		return -EBADF;
+	}
+
+	common.pipes_priv[minor].busy = false;
+
+	mutexUnlock(common.lock);
+
+	return EOK;
 }
 
 
@@ -247,8 +284,11 @@ static void pipe_handleMsg(msg_t *msg, msg_rid_t rid, unsigned int major, unsign
 
 	switch (msg->type) {
 		case mtOpen:
+			msg->o.err = pipeOpen(minor);
+			break;
+
 		case mtClose:
-			msg->o.err = 0;
+			msg->o.err = pipeClose(minor);
 			break;
 
 		case mtWrite:
@@ -320,6 +360,8 @@ static int pipe_init(void)
 	}
 
 	/* Initialize FIFOs and allocate resources */
+
+	mutexCreate(&common.lock);
 
 	for (size_t i = 0; i < PIPE_CNT; i++) {
 		if (common.pipes[i].txsz > 0) {
