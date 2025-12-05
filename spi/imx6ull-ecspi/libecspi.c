@@ -18,12 +18,18 @@
 
 #include <phoenix/arch/armv7a/imx6ull/imx6ull.h>
 
+#include <board_config.h>
+#include "libecspi-def.h"
+
 #include "imx6ull-ecspi.h"
 
 
 #define BYTES_2_RXTHRESHOLD(LEN)   (((LEN) + 3) / 4 - 1)
 #define BITS_2_BYTES_ROUND_UP(LEN) (((LEN) + 7) / 8)
 #define GET_BURST_IN_BYTES(ECSPI)  (BITS_2_BYTES_ROUND_UP((*((ECSPI)->base + conreg) >> 20) + 1))
+
+#define XCAT2(a, b) a##b
+#define PCTL(x)     XCAT2(pctl_, x)
 
 
 /* clang-format off */
@@ -44,34 +50,80 @@ typedef struct {
 
 typedef struct {
 	int pctl;
-	char val;
+	int8_t val;
 } ecspi_pctl_t;
 
 
 static const addr_t ecspi_addr[4] = { 0x2008000, 0x200C000, 0x2010000, 0x2014000 };
 static const unsigned int ecspi_intr_number[4] = { 63, 64, 65, 66 };
 
-/* clang-format off */
-ecspi_pctl_t ecspi_pctl_mux[4][7] = {
-	{ { pctl_mux_lcd_d23,     2 }, { pctl_mux_lcd_d22,    2 }, { pctl_mux_lcd_d20,   2 }, { pctl_mux_lcd_d21,    2 },
-	  { pctl_mux_lcd_d5,      8 }, { pctl_mux_lcd_d6,     8 }, { pctl_mux_lcd_d7,    8 } },
-	{ { pctl_mux_csi_d3,      3 }, { pctl_mux_csi_d2,     3 }, { pctl_mux_csi_d0,    3 }, { pctl_mux_csi_d1,     3 },
-	  { pctl_mux_lcd_hsync,   8 }, { pctl_mux_lcd_vsync,  8 }, { pctl_mux_lcd_rst,   8 } },
-	{ { pctl_mux_uart2_rts,   8 }, { pctl_mux_uart2_cts,  8 }, { pctl_mux_uart2_rx,  8 }, { pctl_mux_uart2_tx,   8 },
-	  { pctl_mux_nand_ale,    8 }, { pctl_mux_nand_re,    8 }, { pctl_mux_nand_we,   8 } },
-	{ { pctl_mux_enet2_txclk, 3 }, { pctl_mux_enet2_txen, 3 }, { pctl_mux_enet2_tx1, 3 }, { pctl_mux_enet2_rxer, 3 },
-	  { pctl_mux_nand_d1,     8 }, { pctl_mux_nand_d2,    8 }, { pctl_mux_nand_d3,   8 } }
+static const ecspi_pctl_t ecspi_pctl_mux[4][7] = {
+	{
+		{ PCTL(CONFIG_ECSPI1_MISO_MUX_PAD), CONFIG_ECSPI1_MISO_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI1_MOSI_MUX_PAD), CONFIG_ECSPI1_MOSI_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI1_SCLK_MUX_PAD), CONFIG_ECSPI1_SCLK_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI1_SS0_MUX_PAD), CONFIG_ECSPI1_SS0_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI1_SS1_MUX_PAD), CONFIG_ECSPI1_SS1_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI1_SS2_MUX_PAD), CONFIG_ECSPI1_SS2_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI1_SS3_MUX_PAD), CONFIG_ECSPI1_SS3_MUX_VAL },
+	},
+	{
+		{ PCTL(CONFIG_ECSPI2_MISO_MUX_PAD), CONFIG_ECSPI2_MISO_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI2_MOSI_MUX_PAD), CONFIG_ECSPI2_MOSI_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI2_SCLK_MUX_PAD), CONFIG_ECSPI2_SCLK_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI2_SS0_MUX_PAD), CONFIG_ECSPI2_SS0_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI2_SS1_MUX_PAD), CONFIG_ECSPI2_SS1_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI2_SS2_MUX_PAD), CONFIG_ECSPI2_SS2_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI2_SS3_MUX_PAD), CONFIG_ECSPI2_SS3_MUX_VAL },
+	},
+	{
+		{ PCTL(CONFIG_ECSPI3_MISO_MUX_PAD), CONFIG_ECSPI3_MISO_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI3_MOSI_MUX_PAD), CONFIG_ECSPI3_MOSI_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI3_SCLK_MUX_PAD), CONFIG_ECSPI3_SCLK_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI3_SS0_MUX_PAD), CONFIG_ECSPI3_SS0_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI3_SS1_MUX_PAD), CONFIG_ECSPI3_SS1_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI3_SS2_MUX_PAD), CONFIG_ECSPI3_SS2_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI3_SS3_MUX_PAD), CONFIG_ECSPI3_SS3_MUX_VAL },
+	},
+	{
+		{ PCTL(CONFIG_ECSPI4_MISO_MUX_PAD), CONFIG_ECSPI4_MISO_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI4_MOSI_MUX_PAD), CONFIG_ECSPI4_MOSI_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI4_SCLK_MUX_PAD), CONFIG_ECSPI4_SCLK_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI4_SS0_MUX_PAD), CONFIG_ECSPI4_SS0_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI4_SS1_MUX_PAD), CONFIG_ECSPI4_SS1_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI4_SS2_MUX_PAD), CONFIG_ECSPI4_SS2_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI4_SS3_MUX_PAD), CONFIG_ECSPI4_SS3_MUX_VAL },
+	},
 };
 
-ecspi_pctl_t ecspi_pctl_isel[4][4] = {
-	{ { pctl_isel_ecspi1_miso, 0 }, { pctl_isel_ecspi1_mosi, 0 }, { pctl_isel_ecspi1_sclk, 0 }, { pctl_isel_ecspi1_ss0, 0 } },
-	{ { pctl_isel_ecspi2_miso, 0 }, { pctl_isel_ecspi2_mosi, 1 }, { pctl_isel_ecspi2_sclk, 0 }, { pctl_isel_ecspi2_ss0, 0 } },
-	{ { pctl_isel_ecspi3_miso, 0 }, { pctl_isel_ecspi3_mosi, 0 }, { pctl_isel_ecspi3_sclk, 0 }, { pctl_isel_ecspi3_ss0, 0 } },
-	{ { pctl_isel_ecspi4_miso, 0 }, { pctl_isel_ecspi4_mosi, 0 }, { pctl_isel_ecspi4_sclk, 0 }, { pctl_isel_ecspi4_ss0, 0 } }
+static const ecspi_pctl_t ecspi_pctl_isel[4][4] = {
+	{
+		{ pctl_isel_ecspi1_miso, CONFIG_ECSPI1_MISO_ISEL },
+		{ pctl_isel_ecspi1_mosi, CONFIG_ECSPI1_MOSI_ISEL },
+		{ pctl_isel_ecspi1_sclk, CONFIG_ECSPI1_SCLK_ISEL },
+		{ pctl_isel_ecspi1_ss0, CONFIG_ECSPI1_SS0_ISEL },
+	},
+	{
+		{ pctl_isel_ecspi2_miso, CONFIG_ECSPI2_MISO_ISEL },
+		{ pctl_isel_ecspi2_mosi, CONFIG_ECSPI2_MOSI_ISEL },
+		{ pctl_isel_ecspi2_sclk, CONFIG_ECSPI2_SCLK_ISEL },
+		{ pctl_isel_ecspi2_ss0, CONFIG_ECSPI2_SS0_ISEL },
+	},
+	{
+		{ pctl_isel_ecspi3_miso, CONFIG_ECSPI3_MISO_ISEL },
+		{ pctl_isel_ecspi3_mosi, CONFIG_ECSPI3_MOSI_ISEL },
+		{ pctl_isel_ecspi3_sclk, CONFIG_ECSPI3_SCLK_ISEL },
+		{ pctl_isel_ecspi3_ss0, CONFIG_ECSPI3_SS0_ISEL },
+	},
+	{
+		{ pctl_isel_ecspi4_miso, CONFIG_ECSPI4_MISO_ISEL },
+		{ pctl_isel_ecspi4_mosi, CONFIG_ECSPI4_MOSI_ISEL },
+		{ pctl_isel_ecspi4_sclk, CONFIG_ECSPI4_SCLK_ISEL },
+		{ pctl_isel_ecspi4_ss0, CONFIG_ECSPI4_SS0_ISEL },
+	},
 };
-/* clang-format on */
 
-uint32_t ecspi_pctl_clk[4] = { pctl_clk_ecspi1, pctl_clk_ecspi2, pctl_clk_ecspi3, pctl_clk_ecspi4 };
+static const uint32_t ecspi_pctl_clk[4] = { pctl_clk_ecspi1, pctl_clk_ecspi2, pctl_clk_ecspi3, pctl_clk_ecspi4 };
 
 static ecspi_t ecspi[4] = { 0 };
 
@@ -202,6 +254,11 @@ static void set_mux(int dev_no, uint8_t chan_msk)
 	for (i = 0; i < 7; i++) {
 		/* Skip SS lines not enabled in chan_msk */
 		if (i < 3 || (chan_msk & (1 << (i - 3)))) {
+			/* Skip if a given mux should not be configured */
+			if ((ecspi_pctl_mux[(dev_no - 1)][i].val < 0)) {
+				continue;
+			}
+
 			ctl.iomux.mux = ecspi_pctl_mux[(dev_no - 1)][i].pctl;
 			ctl.iomux.mode = ecspi_pctl_mux[(dev_no - 1)][i].val;
 			platformctl(&ctl);
@@ -213,6 +270,11 @@ static void set_mux(int dev_no, uint8_t chan_msk)
 
 	for (i = 0; i < 4; i++) {
 		if (i < 3 || (chan_msk & (1 << (i - 3)))) {
+			/* Skip if a given ISEL should not be configured */
+			if ((ecspi_pctl_isel[(dev_no - 1)][i].val < 0)) {
+				continue;
+			}
+
 			ctl.ioisel.isel = ecspi_pctl_isel[(dev_no - 1)][i].pctl;
 			ctl.ioisel.daisy = ecspi_pctl_isel[(dev_no - 1)][i].val;
 			platformctl(&ctl);
