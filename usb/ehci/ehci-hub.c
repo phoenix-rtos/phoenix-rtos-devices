@@ -380,13 +380,9 @@ int ehci_roothubReq(usb_dev_t *hub, usb_transfer_t *t)
 {
 	usb_setup_packet_t *setup = t->setup;
 	int ret;
-	ehci_t *ehci = (ehci_t *)hub->hcd->priv;
 
 	/* It will be finished, when a port status changes */
 	if (t->type == usb_transfer_interrupt) {
-		/* Enable Port Status Changed interrupt if this is a first call */
-		if ((*(ehci->opbase + usbintr) & USBSTS_PCI) == 0)
-			*(ehci->opbase + usbintr) |= USBSTS_PCI;
 		return 0;
 	}
 

@@ -989,7 +989,7 @@ static int ehci_init(hcd_t *hcd)
 #endif
 
 	/* Enable interrupts */
-	*(ehci->opbase + usbintr) = USBSTS_UI | USBSTS_UEI | USBSTS_SEI;
+	*(ehci->opbase + usbintr) = USBSTS_UI | USBSTS_UEI | USBSTS_SEI | USBSTS_PCI;
 
 	/* Set periodic frame list */
 	*(ehci->opbase + periodiclistbase) = va2pa(ehci->periodicList);
