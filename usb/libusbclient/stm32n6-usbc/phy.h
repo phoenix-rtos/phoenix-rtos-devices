@@ -12,8 +12,8 @@
  */
 
 
-#ifndef _PHY_H_
-#define _PHY_H_
+#ifndef _STM32_PHY_H_
+#define _STM32_PHY_H_
 
 #include <stdlib.h>
 
@@ -40,40 +40,22 @@
 #define DSTS    (0x808 / 4)
 
 /* RC OFFSETS */
-#define RCC_AHB5RSTSR 648   // 0xA20 / 4
-#define RCC_AHB5RSTCR 1160  // 0x1220 / 4
+#define RCC_AHB5RSTSR (0xA20 / 4)
+#define RCC_AHB5RSTCR (0x1220 / 4)
 
 #define USBPHYC_CR_FSEL_24MHZ (0x2 << 4)
+#define OTG_GINTSTS_DEVICE_MASK 0xD8FCFCDC
 
 
-/* Function returns buffer which is a multiple of USB_BUFFER_SIZE.
- * Otherwise it returns null.
- */
-void *usbclient_allocBuff(uint32_t size);
-
-
-/* Function cleans the whole memory assigned to endpoints and setup memory */
-void usbclient_buffDestroy(void *addrs, uint32_t size);
-
-/* Function sets the clock for USB Controller */
-void phy_setClock(void);
-
-/* Function returns ID of USB controller interrupt */
-uint32_t phy_getIrq(void);
-
-/* Returns pointer to OTG register base */
 volatile uint32_t *phy_getOtgBase(void);
 
 
-/* Function returns physical address of USB controller */
-void *phy_getBase(uint32_t size);
+void phy_setClock(void);
 
 
-/* Function initializes pins and clocks associated with USB controller */
 int phy_init(void);
 
 
-/* Function resets physical layer of USB controller */
 void phy_reset(void);
 
 

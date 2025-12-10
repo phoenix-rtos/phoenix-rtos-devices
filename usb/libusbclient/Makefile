@@ -15,7 +15,7 @@ ifneq (, $(findstring imxrt, $(TARGET)))
 else ifneq (, $(findstring imx6ull, $(TARGET)))
   SRCS += $(wildcard $(LOCAL_PATH)/imx6ull-usbc/*.c)
 else ifneq (, $(findstring stm32n6, $(TARGET)))
-  SRCS := $(wildcard $(LOCAL_PATH)/stm32n6-usbc/phy.c)
+  SRCS := $(wildcard $(LOCAL_PATH)/stm32n6-usbc/*.c)
 else
 $(NAME): ; $(error $(NAME) for $(TARGET) not implemented)
 endif
@@ -23,10 +23,3 @@ endif
 DEPS := usb
 
 include $(static-lib.mk)
-
-
-NAME := radek-usb
-LOCAL_SRCS := stm32n6-usbc/main.c
-LOCAL_HEADERS := stm32n6-usbc/phy.h
-DEP_LIBS := libusbclient
-include $(binary.mk)
