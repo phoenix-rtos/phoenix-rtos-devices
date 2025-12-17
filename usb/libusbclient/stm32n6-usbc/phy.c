@@ -40,6 +40,12 @@ volatile uint32_t *phy_getOtgBase(void)
 }
 
 
+uint32_t phy_getIrq(void)
+{
+	return otg1_irq;
+}
+
+
 static int setClock(int dev, unsigned int state)
 {
 
@@ -89,43 +95,43 @@ void phy_setClock(void)
 
 static int phy_mapRegs(void)
 {
-	uint32_t phyc_page = PHY_ADDR_USBPHYC & ~(0xFFF);
-	uint32_t phyc_off = PHY_ADDR_USBPHYC & 0xFFF;
+	uint32_t phycPage = PHY_ADDR_USBPHYC & ~(0xFFF);
+	uint32_t phycOff = PHY_ADDR_USBPHYC & 0xFFF;
 	void *ptr;
-	void *rcc_ptr;
+	void *rccPtr;
 
 	if (common.otg_base && common.phyc_base && common.rcc_base) {
 		return 0;
 	}
 
 	common.otg_base = mmap(NULL, 0x1000, PROT_READ | PROT_WRITE,
-			MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, (off_t)PHY_ADDR_OTG);
+			MAP_DEVICE | MAP_PHYSMEM | MAP_UNCACHED | MAP_ANONYMOUS, -1, (off_t)PHY_ADDR_OTG);
 
 	if (common.otg_base == MAP_FAILED) {
-		return -1;
+		return ENOMEM;
 	}
 
 	ptr = mmap(NULL, 0x1000, PROT_READ | PROT_WRITE,
-			MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, (off_t)phyc_page);
+			MAP_DEVICE | MAP_PHYSMEM | MAP_UNCACHED | MAP_ANONYMOUS, -1, (off_t)phycPage);
 
 	if (ptr == MAP_FAILED) {
 		munmap((void *)common.otg_base, 0x1000);
-		return -1;
+		return ENOMEM;
 	}
 
-	common.phyc_base = (volatile uint32_t *)((uintptr_t)ptr + phyc_off);
+	common.phyc_base = (volatile uint32_t *)((uintptr_t)ptr + phycOff);
 
 
-	rcc_ptr = mmap(NULL, 0x2000, PROT_READ | PROT_WRITE,
-			MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, (off_t)RCC_BASE_ADDR);
+	rccPtr = mmap(NULL, 0x2000, PROT_READ | PROT_WRITE,
+			MAP_DEVICE | MAP_PHYSMEM | MAP_UNCACHED | MAP_ANONYMOUS, -1, (off_t)RCC_BASE_ADDR);
 
-	if (rcc_ptr == MAP_FAILED) {
+	if (rccPtr == MAP_FAILED) {
 		munmap((void *)common.otg_base, 0x1000);
 		munmap(ptr, 0x1000);
-		return -1;
+		return ENOMEM;
 	}
 
-	common.rcc_base = (volatile uint32_t *)rcc_ptr;
+	common.rcc_base = (volatile uint32_t *)rccPtr;
 
 	return 0;
 }
@@ -208,8 +214,9 @@ void phy_config(void)
 	common.otg_base[GAHBCFG] |= 1;
 	// *(usbotg + usbotg_gahbcfg) |= 1;
 
-	/* Rx FIFO non-empty */
-	common.otg_base[GINTSTS] |= (1 << 4);
+	/* Rx FIFO non-empty - propably they mean to unmask it*/
+	// common.otg_base[GINTSTS] |= (1 << 4);
+	common.otg_base[GINTMSK] |= (1 << 4);
 	// *(usbotg + usbotg_gintsts) |= (1 << 4);
 
 	/* Force device mode */
@@ -224,10 +231,10 @@ void phy_config(void)
 	common.otg_base[GINTSTS] |= OTG_GINTSTS_DEVICE_MASK;
 
 	/* Unmask OTG interrupt and Mode mismatch interrupt */
-	// common.otg_base[GINTMSK] &= ~3U;
+	common.otg_base[GINTMSK] |= 3;
 
 	if ((common.otg_base[GINTSTS] & 1) != 0) {
-		printf(" Olaf: mode set to device, but is host\n");
+		printf(" [USB PHY]: mode set to device, but is host\n");
 	}
 
 	/* Device config */
@@ -244,6 +251,9 @@ void phy_config(void)
 	– Early suspend
 	– USB suspend
 	– SOF
+
+	---- !!!! I guess this part is the begining of enumeration provess ----
+
 	5. Wait for the USBRST interrupt in OTG_GINTSTS. It indicates that a reset has been
 	detected on the USB that lasts for about 10 ms on receiving this interrupt.
 
@@ -265,95 +275,36 @@ void phy_config(void)
 	/* 4. OTG_GINTMSK unmask: USB reset, Enumeration Done, Early suspend, USB suspend, SOF */
 	common.otg_base[GINTMSK] |= (1 << 12) | (1 << 13) | (1 << 10) | (1 << 11) | (1 << 3);
 
-	/* 5. Wait for USBRST interrupt in OTG)GINTSTS */
-	while (((common.otg_base[GINTSTS] >> 12) & 1) == 0) {
-		usleep(50);
-		timeout++;
-		if (timeout > 0x0FFFFFFF) {
-			printf(" Olaf: timeout waiting for USBRST in init\n");
-			break;
-		}
-	}
-
 	/* TODO RADEK: odnsnik do erraty (na stronie stm) */
 	vbusHack();
+
+	/* 5. Wait for USBRST interrupt in OTGGINTSTS */
+	// while (((common.otg_base[GINTSTS] >> 12) & 1) == 0) {
+	// 	usleep(50);
+	// 	timeout++;
+	// 	if (timeout > 0x0FFFFFFF) {
+	// 		printf(" Olaf: timeout waiting for USBRST in init\n");
+	// 		break;
+	// 	}
+	// }
+
+	/* TODO RADEK: odnsnik do erraty (na stronie stm) */
+	// vbusHack();
+
 	/* now we can get usb reset, when the wire is pluged in*/
 	/* the rest of the code should be in controller.c etc */
-
-
-	/* Endpoint initialization on USB reset */
-	/* 1. Set the NAK bit for all OUT endpoints
-	– SNAK = 1 in OTG_DOEPCTLx (for all OUT endpoints)
-	2. Unmask the following interrupt bits
-	– INEP0 = 1 in OTG_DAINTMSK (control 0 IN endpoint)
-	– OUTEP0 = 1 in OTG_DAINTMSK (control 0 OUT endpoint)
-	– STUPM = 1 in OTG_DOEPMSK
-	– XFRCM = 1 in OTG_DOEPMSK
-	– XFRCM = 1 in OTG_DIEPMSK
-	– TOM = 1 in OTG_DIEPMSK
-	3. Set up the data FIFO RAM for each of the FIFOs
-	– Program the OTG_GRXFSIZ register, to be able to receive control OUT data and
-	setup data. If thresholding is not enabled, at a minimum, this must be equal to 1
-	max packet size of control endpoint 0 + 2 words (for the status of the control OUT
-	data packet) + 10 words (for setup packets).
-	– Program the OTG_DIEPTXF0 register (depending on the FIFO number chosen) to
-	be able to transmit control IN data. At a minimum, this must be equal to 1 max
-	packet size of control endpoint 0.
-	4. Program the following fields in the endpoint-specific registers for control OUT endpoint
-	0 to receive a SETUP packet
-	– STUPCNT = 3 in OTG_DOEPTSIZ0 (to receive up to 3 back-to-back SETUP
-	packets)
-	5. For USB OTG in DMA mode, the OTG_DOEPDMA0 register must have a valid
-	memory address to store any SETUP packets received.
-	At this point, all initialization required to receive SETUP packets is done. */
-
-
-	/* Endpoint initialization on enumeration completion */
-	/* 1. On the Enumeration Done interrupt (ENUMDNE in OTG_GINTSTS), read the
-	OTG_DSTS register to determine the enumeration speed.
-	2. Program the MPSIZ field in OTG_DIEPCTL0 to set the maximum packet size. This
-	step configures control endpoint 0. The maximum packet size for a control endpoint
-	depends on the enumeration speed.
-	3. For USB OTG in DMA mode, program the OTG_DOEPCTL0 register to enable control
-	OUT endpoint 0, to receive a SETUP packet. - N/A for now */
-
-	// return;
-	timeout = 0;
-	while (((common.otg_base[GINTSTS] >> 13) & 1) == 0) {
-		usleep(50);
-		timeout++;
-		if (timeout > 0x0FFFFFFF) {
-			printf(" Olaf: timeout waiting for ENUMDNE in init\n");
-			break;
-		}
-	}
-
-	uint32_t enum_speed = (common.otg_base[DSTS] >> 1) & 3;
-	printf(" Olaf: enum speed(0=Hs, 1=Fs, 3=Res): %d\n", enum_speed);
 }
 
 
 int phy_init(void)
 {
-	if (phy_mapRegs() < 0) {
-		return -1;
+	int res = phy_mapRegs();
+	if (res < 0) {
+		return res;
 	}
 
 	phy_reset();
 	phy_config();
-
-
-	/* Config: Force Device, TRDT=9, PHY LowPower=1 (Full Speed for Start) */
-	// common.otg_base[GUSBCFG] = (1 << 30) | (0x9 << 10) | (1 << 15);
-
-
-	/* AHB Config (Burst INCR4) */
-	// common.otg_base[GAHBCFG] |= (1 << 0) | (3 << 1)| (1 << 5);
-	// common.otg_base[GINTMSK] = 0;
-
-	/* Device Config (Full Speed) */
-	// common.otg_base[DCFG] |= 0x3;
-
 
 	return 0;
 }
