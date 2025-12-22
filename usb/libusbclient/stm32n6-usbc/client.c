@@ -76,7 +76,7 @@ static void usbclient_irqThread(void *arg)
 		if (i < 15) {
 			printf("\nRunda %d:----------------------------\n", i);
 			helper_showRegisterInfo(stm_common.dc.setupstat, HELPER_GINSTSTS);
-			printf("\n bufforek: %d %d\n", stm_common.data.bufforek[0], stm_common.data.bufforek[1]);
+			printf("\n bufforek: %d %d\n", stm_common.dc.setup.bRequest, stm_common.dc.setup.bmRequestType);
 			i++;
 		}
 		/* Low frequency interrupts, handle for OUT control endpoint */

@@ -18,8 +18,8 @@ typedef struct {
 } addr_string_desc_t;
 
 static struct {
-	addr_t dev;
-	addr_t cfg;
+	uint8_t *dev;
+	uint8_t *cfg;
 	addr_string_desc_t str0;
 	addr_string_desc_t strMan;
 	addr_string_desc_t strProd;
@@ -76,48 +76,72 @@ int desc_init(usb_desc_list_t *desList, usb_common_data_t *usb_data_in, usb_dc_t
 	desc_common.dc = dc_in;
 	desc_common.data = usb_data_in;
 
-	memset(desc_common.data->setupMem, 0, FIFO_SIZE);
+	memset(desc_common.data->setupMem, 0, USB_BUFFER_SIZE);
 
+	/* Extract mandatory descriptors to mapped memory */
 	for (; desList != NULL; desList = desList->next) {
-		if (localOffset > FIFO_SIZE)
-			return -ENOMEM;
 
-		vrtAddr = desc_common.data->setupMem + localOffset;
-		addr_t physAddr = (addr_t)vrtAddr;
+		if (localOffset > USB_BUFFER_SIZE)
+			return -ENOMEM;
 
 		switch (desList->descriptor->bDescriptorType) {
 			case USB_DESC_DEVICE:
-				desc_common.dev = physAddr;
+				vrtAddr = desc_common.data->setupMem + localOffset;
+				desc_common.dev = vrtAddr;
 				memcpy(vrtAddr, desList->descriptor, sizeof(usb_device_desc_t));
 				localOffset += desList->descriptor->bFunctionLength;
 				break;
+
 			case USB_DESC_CONFIG:
-				desc_common.cfg = physAddr;
+				vrtAddr = desc_common.data->setupMem + localOffset;
+				desc_common.cfg = vrtAddr;
 				memcpy(vrtAddr, desList->descriptor, sizeof(usb_configuration_desc_t));
 				localOffset += desList->descriptor->bFunctionLength;
 				break;
+
 			case USB_DESC_INTERFACE:
-			case USB_DESC_TYPE_HID:
-			case USB_DESC_TYPE_CDC_CS_INTERFACE:
-				memcpy(vrtAddr, desList->descriptor, desList->descriptor->bFunctionLength);
+				memcpy(desc_common.data->setupMem + localOffset, desList->descriptor, desList->descriptor->bFunctionLength);
 				localOffset += desList->descriptor->bFunctionLength;
 				break;
+
 			case USB_DESC_ENDPOINT:
-				memcpy(vrtAddr, desList->descriptor, desList->descriptor->bFunctionLength);
+				memcpy(desc_common.data->setupMem + localOffset, desList->descriptor, desList->descriptor->bFunctionLength);
 				localOffset += desList->descriptor->bFunctionLength;
 				desc_endptInit((usb_endpoint_desc_t *)desList->descriptor);
 				break;
+
+			case USB_DESC_TYPE_HID:
+				memcpy(desc_common.data->setupMem + localOffset, desList->descriptor, desList->descriptor->bFunctionLength);
+				localOffset += desList->descriptor->bFunctionLength;
+				break;
+
+			case USB_DESC_TYPE_CDC_CS_INTERFACE:
+				memcpy(desc_common.data->setupMem + localOffset, desList->descriptor, desList->descriptor->bFunctionLength);
+				localOffset += desList->descriptor->bFunctionLength;
+				break;
+
 			case USB_DESC_TYPE_HID_REPORT:
-				desc_common.hidReports = physAddr;
+				vrtAddr = desc_common.data->setupMem + localOffset;
+				desc_common.hidReports = VM_2_PHYM(vrtAddr);
 				memcpy(vrtAddr, &desList->descriptor->bDescriptorSubtype, desList->descriptor->bFunctionLength - 2);
 				localOffset += desList->descriptor->bFunctionLength - 2;
 				break;
+
 			case USB_DESC_STRING:
 				desc_strInit(desList, &localOffset, string_desc_count++);
 				break;
-			default: break;
+
+			case USB_DESC_TYPE_DEV_QUAL:
+			case USB_DESC_TYPE_OTH_SPD_CFG:
+			case USB_DESC_TYPE_INTF_PWR:
+				/* Not implemented yet */
+				break;
+
+			default:
+				break;
 		}
 	}
+
 	return EOK;
 }
 
@@ -165,29 +189,56 @@ static int desc_ReqGetConfig(const usb_setup_packet_t *setup)
 		txBuf[0] = 0;
 	else
 		txBuf[0] = 1;
-	ctrl_execTransfer(0, (uint32_t)txBuf, 1, USB_ENDPT_DIR_IN);
+	// ctrl_execTransfer(0, (uint32_t)txBuf, 1, USB_ENDPT_DIR_IN);
 	return EOK;
 }
 
 
 static void desc_ReqGetDescriptor(const usb_setup_packet_t *setup)
 {
+	ctrl_execTransfer(0, desc_common.dev, 0x12);
 }
 
 
 int desc_setup(const usb_setup_packet_t *setup)
 {
+	int res = EOK;
+
 	if (EXTRACT_REQ_TYPE(setup->bmRequestType) != REQUEST_TYPE_STANDARD)
 		return EOK;
 
 	switch (setup->bRequest) {
-		case REQ_SET_ADDRESS: desc_ReqSetAddress(setup); break;
-		case REQ_SET_CONFIGURATION: desc_ReqSetConfig(); break;
-		case REQ_GET_DESCRIPTOR: desc_ReqGetDescriptor(setup); break;
-		case REQ_GET_CONFIGURATION: desc_ReqGetConfig(setup); break;
-		default: break;
+		case REQ_SET_ADDRESS:
+			desc_ReqSetAddress(setup);
+			break;
+
+		case REQ_SET_CONFIGURATION:
+			desc_ReqSetConfig();
+			break;
+
+		case REQ_GET_DESCRIPTOR:
+			desc_ReqGetDescriptor(setup);
+			break;
+
+		case REQ_CLEAR_FEATURE:
+		case REQ_GET_STATUS:
+		case REQ_GET_INTERFACE:
+		case REQ_SET_INTERFACE:
+		case REQ_SET_FEATURE:
+		case REQ_SET_DESCRIPTOR:
+		case REQ_SYNCH_FRAME:
+			break;
+
+		case REQ_GET_CONFIGURATION:
+			desc_ReqGetConfig(setup);
+			break;
+
+		default:
+			// desc_defaultSetup(setup);
+			break;
 	}
-	return EOK;
+
+	return res;
 }
 
 
@@ -211,10 +262,10 @@ int desc_classSetup(const usb_setup_packet_t *setup)
 
 	if (res > 0) {
 		addr_t physBufIn = (addr_t)desc_common.data->endpts[0].buf[USB_ENDPT_DIR_IN].vBuffer;
-		ctrl_execTransfer(0, physBufIn, res, USB_ENDPT_DIR_IN);
+		// ctrl_execTransfer(0, physBufIn, res, USB_ENDPT_DIR_IN);
 	}
 	else if (res == 0) {
-		ctrl_execTransfer(0, 0, 0, USB_ENDPT_DIR_IN);
+		// ctrl_execTransfer(0, 0, 0, USB_ENDPT_DIR_IN);
 	}
 	return EOK;
 }

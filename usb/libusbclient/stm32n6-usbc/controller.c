@@ -151,11 +151,9 @@ static int ctrl_rxFifoData(void)
 	}
 	if ((grxstpStatus >> 17) & 6) {
 		uint32_t wordsToRead = (((grxstpStatus >> 4) & 2047U) + 3) / 4;
-		uint32_t buffor[wordsToRead];
 		for (uint32_t i = 0; i < wordsToRead; i++) {
 			/* read 1 word from fifo*/
-			buffor[i] = ctrl_common.dc->base[FIFO_BASE_OFF];
-			ctrl_common.data->bufforek[i] = buffor[i];
+			((uint32_t *)(&ctrl_common.dc->setup))[i] = ctrl_common.dc->base[FIFO_BASE_OFF];
 		}
 	}
 
@@ -213,6 +211,7 @@ int ctrl_hfIrq(void)
 	/* Read active interrupt flags */
 	uint32_t intStatsAserted = ctrl_common.dc->base[GINTSTS];
 	uint32_t intStatsClear = (intStatsAserted & OTG_GINTSTS_DEVICE_MASK);
+	uint32_t doepintSts = ctrl_common.dc->base[DOEPINT0];
 
 	/* Clear interrupt flags*/
 	ctrl_common.dc->base[GINTSTS] |= intStatsClear;
@@ -253,6 +252,22 @@ int ctrl_hfIrq(void)
 	 */
 	if ((intStatsAserted >> 4) & 1) {
 		ctrl_rxFifoData();
+		if (ctrl_common.dc->setup.bRequest == REQ_SET_ADDRESS) {
+			printf("ps");
+		}
+	}
+
+	/**
+	 * ON DEVICE INIT
+	 * 3. STUP
+	 */
+	if ((doepintSts >> 3) & 1) {
+		// ctrl_common.dc->base[DOEPINT0] |= (1 << 3);
+		uint32_t numSetupPckRec = (ctrl_common.dc->base[DOEPTSIZ0] >> 29) & 3;
+		if (ctrl_common.dc->setup.bRequest == REQ_SET_ADDRESS) {
+			printf("ps");
+		}
+		desc_setup(&ctrl_common.dc->setup);
 	}
 
 
@@ -399,9 +414,39 @@ static void ctrl_writeFifo(void *base, int fifo_num, const void *data, uint32_t 
 }
 
 
-int ctrl_execTransfer(int endpt, uint32_t paddr, uint32_t sz, int dir)
+int ctrl_execTransfer(int endpt, uint8_t *virtAddr, int nBytes)
 {
-	return -1;
+	uint8_t buff[nBytes];
+	uint32_t wordToSend[1];
+	int fullWords = nBytes / 4;
+	int bytesLeft = nBytes % 4;
+
+	memcpy(buff, virtAddr, nBytes);
+
+	/* setting XFERSIZ */
+	ctrl_common.dc->base[DIEPTSIZ0] &= ~(0x7F);
+	ctrl_common.dc->base[DIEPTSIZ0] |= 0x7F & nBytes;
+	/* setting PKTCNT */
+	ctrl_common.dc->base[DIEPTSIZ0] &= ~(0x180000);
+	ctrl_common.dc->base[DIEPTSIZ0] |= (1 << 19);
+
+	/* clear NAK */
+	ctrl_common.dc->base[DIEPCTL0] |= (1 << 26);
+	/* set EPENA */
+	ctrl_common.dc->base[DIEPCTL0] |= (1 << 31);
+
+	/* send full words */
+	for (int i = 0; i < fullWords; i++) {
+		memcpy(wordToSend, buff + 4 * (uint8_t)i, 4);
+		ctrl_common.dc->base[FIFO_BASE_OFF + RX_FIFO_DEPTH_WORDS] = wordToSend[0];
+	}
+
+	/* send remaining bytes */
+	wordToSend[0] = 0;
+	memcpy(wordToSend, buff + 4 * (uint8_t)fullWords, bytesLeft);
+	ctrl_common.dc->base[FIFO_BASE_OFF + RX_FIFO_DEPTH_WORDS] = wordToSend[0];
+
+	return 0;
 }
 
 

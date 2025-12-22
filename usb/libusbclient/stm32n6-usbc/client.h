@@ -20,6 +20,7 @@
 #include "phy.h"
 
 
+#define USB_BUFFER_SIZE 0x1000
 /* MANUAL REGISTER OFFSETS (Byte Addresses) */
 /* Global */
 #define GRXSTSP      (0x020 / 4)
@@ -29,6 +30,7 @@
 #define DOEPCTL0     (0xB00 / 4)
 #define DOEPINT0     (0xB08 / 4)
 #define DIEPCTL0     (0x900 / 4)
+#define DIEPTSIZ0    (0x910 / 4)
 #define OFF_DIEPTXF1 0x104
 
 /* Device */
@@ -141,17 +143,12 @@ extern int desc_classSetup(const usb_setup_packet_t *setup);
 
 
 /* Controller's functions */
-
-int ctrl_execTransfer(int endpt, uint32_t paddr, uint32_t sz, int dir);
-
-
-void ctrl_setAddress(uint32_t addr);
-
-
 extern int ctrl_init(usb_common_data_t *usb_data_in, usb_dc_t *dc_in);
 extern int ctrl_hfIrq(void);
 extern int ctrl_reset(void);
 extern int ctrl_ep0SetOnEnumdne(void);
+extern int ctrl_execTransfer(int endpt, uint8_t *virtAddr, int nBytes);
+void ctrl_setAddress(uint32_t addr);
 
 
 int usbclient_init(usb_desc_list_t *desList);
