@@ -20,7 +20,6 @@
 
 #include "phy.h"
 #include "client.h"
-#include "helper.h"
 
 
 #define THREADS_PRIORITY 3
@@ -68,18 +67,12 @@ static void usbclient_irqThread(void *arg)
 {
 	unsigned i = 0;
 	int event;
-	stm_common.data.bufforek[0] = 0;
-	stm_common.data.bufforek[1] = 0;
 	mutexLock(stm_common.dc.irqLock);
 	while (stm_common.dc.runIrqThread) {
 		condWait(stm_common.dc.irqCond, stm_common.dc.irqLock, 0);
-		if (i < 15) {
-			printf("\nRunda %d:----------------------------\n", i);
-			helper_showRegisterInfo(stm_common.dc.setupstat, HELPER_GINSTSTS);
-			printf("\n bufforek: %d %d\n", stm_common.dc.setup.bRequest, stm_common.dc.setup.bmRequestType);
-			i++;
-		}
-		/* Low frequency interrupts, handle for OUT control endpoint */
+
+		/* after interrupt - longer operations */
+		ctrl_lfIrq();
 		// if ((stm_common.dc.setupstat & 0x1) && stm_common.dc.runIrqThread)
 		// 	desc_classSetup(&stm_common.dc.setup);
 

@@ -38,6 +38,33 @@ static stm32n6_libusbHelper gintsts_bits_data[] = {
 	{ 1, "MMIS", "Mode mismatch interrupt" }
 };
 
+static stm32n6_libusbHelper doepint_bits_data[] = {
+	{ 15, "STPKTRX", "Setup packet received" },
+	{ 14, "NYET", "NYET interrupt" },
+	{ 13, "NAK", "NAK input" },
+	{ 12, "BERR", "Babble error interrupt" },
+	{ 8, "OUTPKTERR", "OUT packet error" },
+	{ 6, "B2BSTUP", "Back-to-back SETUP packets received" },
+	{ 5, "STSPHSRX", "Status phase received for control write" },
+	{ 4, "OTEPDIS", "OUT token received when endpoint disabled" },
+	{ 3, "STUP", "SETUP phase done" },
+	{ 2, "AHBERR", "AHB error" },
+	{ 1, "EPDISD", "Endpoint disabled interrupt" },
+	{ 0, "XFRC", "Transfer completed interrupt" }
+};
+
+static stm32n6_libusbHelper diepint_bits_data[] = {
+	{ 13, " NAK", "NAK input" },
+	{ 11, " PKTDRPSTS", "Packet dropped status" },
+	{ 8, "TXFIFOUDRN", "Transmit Fifo Underrun (TxfifoUndrn)" },
+	{ 7, "TXFE", "Transmit FIFO empty" },
+	{ 6, "INEPNE", "IN endpoint NAK effective" },
+	{ 5, "INEPNM", "IN token received with EP mismatch" },
+	{ 4, "ITTXFE", "IN token received when Tx FIFO is empty" },
+	{ 3, "TOC", "Timeout condition" },
+	{ 2, "AHBERR", "AHB error" },
+	{ 0, "XFRC", "Transfer completed interrupt" }
+};
 
 static stm32n6_libusbHelper doepctl0_bits_data[] = {
 	{ 31, "EPENA", "Endpoint enable" },
@@ -52,6 +79,23 @@ static stm32n6_libusbHelper doepctl0_bits_data[] = {
 	{ 0, "MPSIZ[1:0]", "Maximum packet size" }
 };
 
+static stm32n6_libusbHelper diepctl0_bits_data[] = {
+	{ 13, "NAK", "NAK input" },
+	{ 12, "Reserved, must be kept at reset value." },
+	{ 11, "PKTDRPSTS", "Packet dropped status" },
+	{ 10, "Reserved, must be kept at reset value." },
+	{ 9, "Reserved, must be kept at reset value." },
+	{ 8, "TXFIFOUDRN: Transmit Fifo Underrun (TxfifoUndrn)" },
+	{ 7, "TXFE", "Transmit FIFO empty" },
+	{ 6, "INEPNE", "IN endpoint NAK effective" },
+	{ 5, "INEPNM", "IN token received with EP mismatch" },
+	{ 4, "ITTXFE", "IN token received when Tx FIFO is empty" },
+	{ 3, "TOC", "Timeout condition" },
+	{ 2, "AHBERR", "AHB error" },
+	{ 1, "EPDISD", "Endpoint disabled interrupt" },
+	{ 0, "XFRC", "Transfer completed interrupt" }
+};
+
 
 void helper_showRegisterInfo(uint32_t regVal, int registerH)
 {
@@ -59,14 +103,40 @@ void helper_showRegisterInfo(uint32_t regVal, int registerH)
 		case HELPER_GINSTSTS:
 			for (int i = 0; i < 32; i++) {
 				if ((regVal >> gintsts_bits_data[i].bitNum) & 1) {
-					printf("[HELPER]: bit: %s, info: %s\n", gintsts_bits_data[i].bitName, gintsts_bits_data[i].bitInfo);
+					printf("	[GINSTSTS]: bit: %s, info: %s\n", gintsts_bits_data[i].bitName, gintsts_bits_data[i].bitInfo);
 				}
 			}
 			break;
+
+		case HELPER_DOEPINT:
+			for (int i = 0; i < 32; i++) {
+				if ((regVal >> doepint_bits_data[i].bitNum) & 1) {
+					printf("	[DOEPINT]: bit: %s, info: %s\n", doepint_bits_data[i].bitName, doepint_bits_data[i].bitInfo);
+				}
+			}
+			break;
+		case HELPER_DIEPINT:
+
+			for (int i = 0; i < 32; i++) {
+				if ((regVal >> diepint_bits_data[i].bitNum) & 1) {
+					printf("	[DIEPINT]: bit: %s, info: %s\n", diepint_bits_data[i].bitName, diepint_bits_data[i].bitInfo);
+				}
+			}
+			break;
+
 		case HELPER_DOEPCTL0:
+
 			for (int i = 0; i < 32; i++) {
 				if ((regVal >> doepctl0_bits_data[i].bitNum) & 1) {
-					printf("[HELPER]: bit: %s, info: %s\n", doepctl0_bits_data[i].bitName, doepctl0_bits_data[i].bitInfo);
+					printf("	[DOEPCTL0]: bit: %s, info: %s\n", doepctl0_bits_data[i].bitName, doepctl0_bits_data[i].bitInfo);
+				}
+			}
+			break;
+
+		case HELPER_DIEPCTL0:
+			for (int i = 0; i < 32; i++) {
+				if ((regVal >> diepctl0_bits_data[i].bitNum) & 1) {
+					printf("	[DIEPCTL0]: bit: %s, info: %s\n", diepctl0_bits_data[i].bitName, diepctl0_bits_data[i].bitInfo);
 				}
 			}
 			break;

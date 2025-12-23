@@ -11,7 +11,7 @@
 
 #include "phy.h"
 #include "client.h"
-
+#include "helper.h"
 
 struct {
 	usb_dc_t *dc;
@@ -49,6 +49,12 @@ enum {
 	usbotg_dctl,
 	usbotg_dsts
 };
+
+
+volatile int mojstatus = 0;
+volatile uint32_t tablicaStatusowRejestrow[10][3];
+volatile int bereqineks = 0;
+volatile uint8_t bereq[10];
 
 
 void ctrl_endptInit(void)
@@ -117,15 +123,50 @@ int ctrl_init(usb_common_data_t *usb_data_in, usb_dc_t *dc_in)
 static int ctrl_rxFifoData(void)
 {
 	/* 1. ... read the receive status pop register (OTG_GRXSTSP) */
-	uint32_t grxstpStatus = ctrl_common.dc->base[GRXSTSP];
-
-	/**
-	 * TODO: RADEK	- jak jest zerowana flaga RXFLVL?
-	 * 				- sprawdznanie ilości otrzymanych danych (STUP?) - tych co się zmniejszają o 1 za każdym razem jak czytamy z fifo
-	 */
+	// uint32_t grxstpStatus = ctrl_common.dc->base[GRXSTSP];
 
 	/* 2. The application can mask the RXFLVL interrupt (in OTG_GINTSTS) */
-	ctrl_common.dc->base[GINTMSK] &= 0xFFFFFFEF;
+	// ctrl_common.dc->base[GINTMSK] &= 0xFFFFFFEF;
+	int setupWords = 0;
+	int setupReceived = 0;
+	while ((ctrl_common.dc->base[GINTSTS] >> 4) & 1) {
+		uint32_t grxstpStatus = ctrl_common.dc->base[GRXSTSP];
+
+		if (((grxstpStatus >> 17) & 0xF) == 2) {
+			/* read (BCNT+3)/4 words from FIFO - round up to full word*/
+			uint32_t wordsToRead = (((grxstpStatus >> 4) & 2047U) + 3) / 4;
+			for (int i = 0; i < wordsToRead; i++) {
+				uint32_t trash = ctrl_common.dc->base[FIFO_BASE_OFF];
+			}
+		}
+		if (((grxstpStatus >> 17) & 0xF) == 6) {
+			uint32_t wordsToRead = (((grxstpStatus >> 4) & 2047U) + 3) / 4;
+			for (int i = 0; i < wordsToRead; i++) {
+				/* read 1 word from fifo*/
+				if (setupWords < 2) {
+					((uint32_t *)(&ctrl_common.dc->setup))[i] = ctrl_common.dc->base[FIFO_BASE_OFF];
+					setupWords++;
+				}
+				else {
+					uint32_t trash = ctrl_common.dc->base[FIFO_BASE_OFF];
+				}
+			}
+		}
+		if (((grxstpStatus >> 17) & 0xF) == 4) {
+			uint32_t wordsToRead = (((grxstpStatus >> 4) & 2047U) + 3) / 4;
+			for (int i = 0; i < wordsToRead; i++) {
+				uint32_t trash = ctrl_common.dc->base[FIFO_BASE_OFF];
+			}
+			setupReceived = 1;
+		}
+	}
+
+	if (setupReceived == 1) {
+		ctrl_common.dc->base[DOEPINT0] = (1 << 3);
+		bereq[bereqineks] = ctrl_common.dc->setup.bRequest;
+		bereqineks++;
+		desc_setup(&ctrl_common.dc->setup);
+	}
 
 
 	/**
@@ -145,20 +186,9 @@ static int ctrl_rxFifoData(void)
 	 * [3:0] 	- EPNUM: 	Endpoint number
 	 */
 
-	if ((grxstpStatus >> 17) & 2) {
-		/* read (BCNT+3)/4 words from FIFO - round up to full word*/
-		uint32_t wordsToRead = (((grxstpStatus >> 4) & 2047U) + 3) / 4;
-	}
-	if ((grxstpStatus >> 17) & 6) {
-		uint32_t wordsToRead = (((grxstpStatus >> 4) & 2047U) + 3) / 4;
-		for (uint32_t i = 0; i < wordsToRead; i++) {
-			/* read 1 word from fifo*/
-			((uint32_t *)(&ctrl_common.dc->setup))[i] = ctrl_common.dc->base[FIFO_BASE_OFF];
-		}
-	}
 
 	/* Unmask RXFLVL interrupt (in OTG_GINTSTS) */
-	ctrl_common.dc->base[GINTMSK] |= (1 << 4);
+	// ctrl_common.dc->base[GINTMSK] |= (1 << 4);
 }
 
 
@@ -202,42 +232,61 @@ static int ctrl_epInitOnEnumdne(void)
 	return 0;
 }
 
-/**
- * TODO: RADEK
- * - action on RXFLVL - in the next episode...
- */
+#define STMCTRLDEBUG 0
+#define maxmojstatus 6
+
+void setDebug(uint32_t gintstsAsserted, uint32_t doepintAsserted, uint32_t diepintAsserted)
+{
+	if (STMCTRLDEBUG == 1 && maxmojstatus > mojstatus) {
+		tablicaStatusowRejestrow[mojstatus][HELPER_GINSTSTS] = gintstsAsserted;
+		tablicaStatusowRejestrow[mojstatus][HELPER_DOEPINT] = doepintAsserted;
+		tablicaStatusowRejestrow[mojstatus][HELPER_DIEPINT] = diepintAsserted;
+		mojstatus++;
+	}
+}
+
+
+/* quick actions to perform on interrupt */
 int ctrl_hfIrq(void)
 {
 	/* Read active interrupt flags */
-	uint32_t intStatsAserted = ctrl_common.dc->base[GINTSTS];
-	uint32_t intStatsClear = (intStatsAserted & OTG_GINTSTS_DEVICE_MASK);
-	uint32_t doepintSts = ctrl_common.dc->base[DOEPINT0];
+	uint32_t gintstsAsserted = ctrl_common.dc->base[GINTSTS];
+	uint32_t gintstsClear = (gintstsAsserted & GINTSTSWrMsk);
+	uint32_t doepintAsserted = ctrl_common.dc->base[DOEPINT0];
+	uint32_t doepintClear = (doepintAsserted & DOEPINTxWrMsk);
+	uint32_t diepintAsserted = ctrl_common.dc->base[DIEPINT0];
+	uint32_t diepintClear = (diepintAsserted & DIEPINTxWrMsk);
+	/* READ ONLY */
+	uint32_t deviceAllIrq = ctrl_common.dc->base[DAINT];
 
 	/* Clear interrupt flags*/
-	ctrl_common.dc->base[GINTSTS] |= intStatsClear;
+	ctrl_common.dc->base[GINTSTS] |= gintstsClear;
+	ctrl_common.dc->base[DOEPINT0] |= doepintClear;
+	ctrl_common.dc->base[DIEPINT0] |= diepintClear;
 
 	/**
 	 * TODO: REMOVE IT
 	 * For debug
 	 */
-	ctrl_common.dc->setupstat = intStatsAserted;
+	ctrl_common.dc->setupstat = gintstsAsserted;
 
+	if ((gintstsAsserted >> 1) & 1) {
+		printf("mode mismatch interrupt");
+	}
 
-	/**
-	 * ON DEVICE INIT
-	 * 1. USB RESET
-	 */
-	if ((intStatsAserted >> 12) & 1) {
+	// if (mojstatus > 6) {
+	// 	return 1;
+	// }
+	/* USBRST */
+	if ((gintstsAsserted >> 12) & 1) {
+		setDebug(gintstsAsserted, doepintAsserted, diepintAsserted);
 		if (ctrl_reset() < 0) {
 			return -1;
 		}
 	}
 
-	/**
-	 * ON DEVICE INIT
-	 * 2. ENUMDNE
-	 */
-	if ((intStatsAserted >> 12) & 1) {
+	/* ENUMDNE */
+	if ((gintstsAsserted >> 13) & 1) {
 		if (ctrl_epInitOnEnumdne() < 0) {
 			return -1;
 		}
@@ -246,28 +295,41 @@ int ctrl_hfIrq(void)
 		}
 	}
 
-	/**
-	 * ON DEVICE INIT
-	 * 2. RXFLVL
-	 */
-	if ((intStatsAserted >> 4) & 1) {
+	/* RXFLVL */
+	if ((gintstsAsserted >> 4) & 1) {
+
+		setDebug(gintstsAsserted, doepintAsserted, diepintAsserted);
 		ctrl_rxFifoData();
-		if (ctrl_common.dc->setup.bRequest == REQ_SET_ADDRESS) {
-			printf("ps");
-		}
 	}
 
-	/**
-	 * ON DEVICE INIT
-	 * 3. STUP
-	 */
-	if ((doepintSts >> 3) & 1) {
-		// ctrl_common.dc->base[DOEPINT0] |= (1 << 3);
+	/* STUP */
+	if ((doepintAsserted >> 3) & 1) {
+		// mojstatus++;
+		// for (int i = 1; i < 10; i++) {
+		// 	if (ctrl_common.dc->setup.bRequest == i) {
+		// 		printf("5s");
+		// 	}
+		// }
 		uint32_t numSetupPckRec = (ctrl_common.dc->base[DOEPTSIZ0] >> 29) & 3;
-		if (ctrl_common.dc->setup.bRequest == REQ_SET_ADDRESS) {
-			printf("ps");
-		}
-		desc_setup(&ctrl_common.dc->setup);
+		// desc_setup(&ctrl_common.dc->setup);
+	}
+
+	/* XFRC */
+	if (diepintAsserted & 1) {
+		printf("blagam");
+		// if (~(diepintAsserted >> 4) & 1) {
+		// 	printf("blagam");
+		// }
+		setDebug(gintstsAsserted, doepintAsserted, diepintAsserted);
+		ctrl_ep0SetOnEnumdne();
+		// mojstatus++;
+		// if (mojstatus == 5) {
+		// 	ctrl_common.dc->base[DCFG] &= ~(0x7F0);
+		// 	if (ctrl_common.dc->dev_addr != 0) {
+		// 		ctrl_common.dc->base[DCFG] |= ctrl_common.dc->dev_addr;
+		// 		printf("ts");
+		// 	}
+		// }
 	}
 
 
@@ -373,7 +435,7 @@ int ctrl_ep0SetOnEnumdne(void)
 	ctrl_common.dc->base[DOEPTSIZ0] |= (1 << 19);
 
 	/* SUPCNT = 1 (or 2 or 3) */
-	ctrl_common.dc->base[DOEPTSIZ0] |= (3 << 29);
+	// ctrl_common.dc->base[DOEPTSIZ0] |= (3 << 29);
 
 	/* 1. Program the OTG_DOEPCTLx register */
 	ctrl_common.dc->base[DOEPCTL0] |= ((1 << 31) | (1 << 26));
@@ -425,26 +487,34 @@ int ctrl_execTransfer(int endpt, uint8_t *virtAddr, int nBytes)
 
 	/* setting XFERSIZ */
 	ctrl_common.dc->base[DIEPTSIZ0] &= ~(0x7F);
-	ctrl_common.dc->base[DIEPTSIZ0] |= 0x7F & nBytes;
+	ctrl_common.dc->base[DIEPTSIZ0] |= (0x7F & nBytes);
 	/* setting PKTCNT */
 	ctrl_common.dc->base[DIEPTSIZ0] &= ~(0x180000);
 	ctrl_common.dc->base[DIEPTSIZ0] |= (1 << 19);
 
-	/* clear NAK */
-	ctrl_common.dc->base[DIEPCTL0] |= (1 << 26);
-	/* set EPENA */
-	ctrl_common.dc->base[DIEPCTL0] |= (1 << 31);
-
 	/* send full words */
 	for (int i = 0; i < fullWords; i++) {
 		memcpy(wordToSend, buff + 4 * (uint8_t)i, 4);
-		ctrl_common.dc->base[FIFO_BASE_OFF + RX_FIFO_DEPTH_WORDS] = wordToSend[0];
+		ctrl_common.dc->base[FIFO_BASE_OFF] = wordToSend[0];
 	}
 
 	/* send remaining bytes */
-	wordToSend[0] = 0;
-	memcpy(wordToSend, buff + 4 * (uint8_t)fullWords, bytesLeft);
-	ctrl_common.dc->base[FIFO_BASE_OFF + RX_FIFO_DEPTH_WORDS] = wordToSend[0];
+	if (bytesLeft > 0) {
+		wordToSend[0] = 0;
+		memcpy(wordToSend, buff + 4 * (uint8_t)fullWords, bytesLeft);
+		ctrl_common.dc->base[FIFO_BASE_OFF] = wordToSend[0];
+	}
+
+	ctrl_common.dc->base[DOEPTSIZ0] &= 0xFFFFFF80;
+	/* PKTCNT in DOEPTSIZ0 */
+	ctrl_common.dc->base[DOEPTSIZ0] |= (1 << 19);
+	/* SUPCNT = 1 (or 2 or 3) */
+	ctrl_common.dc->base[DOEPTSIZ0] |= (3 << 29);
+	/* 1. Program the OTG_DOEPCTLx register */
+	ctrl_common.dc->base[DOEPCTL0] |= ((1 << 31) | (1 << 26));
+
+	/* clear NAK and EPENA */
+	ctrl_common.dc->base[DIEPCTL0] |= ((1 << 26) | (1 << 31));
 
 	return 0;
 }
@@ -462,4 +532,24 @@ void ctrl_rx_fifo_handler(void)
 
 void ctrl_lfIrq(void)
 {
+	int statyczna = 1;
+	static int lol = 0;
+	if (mojstatus > statyczna) {
+		ctrl_common.dc->base[GINTMSK] &= 0xFFFFFFEF;
+		if (lol > 0) {
+			return;
+		}
+		lol++;
+		for (int i = 0; i < bereqineks; i++) {
+			printf("bereq nr %d: %d\n", i, bereq[i]);
+		}
+
+		for (int i = 0; i < mojstatus; i++) {
+			printf("\nnumer iteracji: %d\n", i);
+			for (int j = 0; j < 3; j++) {
+				helper_showRegisterInfo(tablicaStatusowRejestrow[i][j], j);
+			}
+		}
+	}
+	ctrl_common.dc->base[GINTMSK] |= (1 << 4);
 }

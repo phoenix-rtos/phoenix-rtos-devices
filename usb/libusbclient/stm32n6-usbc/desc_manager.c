@@ -155,6 +155,20 @@ static void desc_ReqSetAddress(const usb_setup_packet_t *setup)
 	1.Program the OTG_DCFG register with the device address received in the SetAddress
 	command
 	2.Program the core to send out a status IN packet*/
+	printf("pssssssssssssssssssssss");
+	desc_common.dc->dev_addr = setup->wValue;
+
+	/* setting XFERSIZ */
+	desc_common.dc->base[DIEPTSIZ0] &= ~(0x7F);
+	desc_common.dc->base[DIEPTSIZ0] |= (0x7F & 0);
+	/* setting PKTCNT */
+	desc_common.dc->base[DIEPTSIZ0] &= ~(0x180000);
+	desc_common.dc->base[DIEPTSIZ0] |= (1 << 19);
+
+	/* clear NAK */
+	desc_common.dc->base[DIEPCTL0] |= (1 << 26);
+	/* set EPENA */
+	desc_common.dc->base[DIEPCTL0] |= (1 << 31);
 }
 
 

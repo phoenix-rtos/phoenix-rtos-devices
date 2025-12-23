@@ -228,7 +228,7 @@ void phy_config(void)
 	common.otg_base[GUSBCFG] |= (1 << 30) | (1 << 15) | (6 << 10);
 
 	/* Clear interrupts */
-	common.otg_base[GINTSTS] |= OTG_GINTSTS_DEVICE_MASK;
+	common.otg_base[GINTSTS] |= GINTSTSWrMsk;
 
 	/* Unmask OTG interrupt and Mode mismatch interrupt */
 	common.otg_base[GINTMSK] |= 3;

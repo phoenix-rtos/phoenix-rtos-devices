@@ -45,7 +45,7 @@
 
 #define USBPHYC_CR_FSEL_24MHZ (0x2 << 4)
 /* page 3865 per rm0486 - only rf_w1 bits valid for device mode */
-#define OTG_GINTSTS_DEVICE_MASK 0xD8F0FC0A
+#define GINTSTSWrMsk 0xD8F0FC0A
 
 
 volatile uint32_t *phy_getOtgBase(void);

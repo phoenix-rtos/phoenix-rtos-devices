@@ -23,19 +23,28 @@
 #define USB_BUFFER_SIZE 0x1000
 /* MANUAL REGISTER OFFSETS (Byte Addresses) */
 /* Global */
-#define GRXSTSP      (0x020 / 4)
-#define GRXFSIZ      (0x024 / 4)
-#define DIEPTXF0     (0x028 / 4)
-#define DOEPTSIZ0    (0xB10 / 4)
-#define DOEPCTL0     (0xB00 / 4)
-#define DOEPINT0     (0xB08 / 4)
-#define DIEPCTL0     (0x900 / 4)
-#define DIEPTSIZ0    (0x910 / 4)
-#define OFF_DIEPTXF1 0x104
+#define GRXSTSP  (0x020 / 4)
+#define GRXFSIZ  (0x024 / 4)
+#define DIEPTXF0 (0x028 / 4)
 
-/* Device */
-#define DIEPMSK  (0x810 / 4)
-#define DOEPMSK  (0x814 / 4)
+
+// #define OFF_DIEPTXF1 0x104
+
+/* Packet IN - tx registers */
+#define DIEPCTL0      (0x900 / 4)
+#define DIEPMSK       (0x810 / 4)
+#define DIEPINT0      (0x908 / 4)
+#define DIEPINTxWrMsk 0x297F
+#define DIEPTSIZ0     (0x910 / 4)
+
+
+/* Packet OUT - rx registers */
+#define DOEPCTL0      (0xB00 / 4)
+#define DOEPMSK       (0x814 / 4)
+#define DOEPINT0      (0xB08 / 4)
+#define DOEPINTxWrMsk 0xF17F
+#define DOEPTSIZ0     (0xB10 / 4)
+
 #define DAINT    (0x818 / 4)
 #define DAINTMSK (0x81C / 4)
 
@@ -145,6 +154,7 @@ extern int desc_classSetup(const usb_setup_packet_t *setup);
 /* Controller's functions */
 extern int ctrl_init(usb_common_data_t *usb_data_in, usb_dc_t *dc_in);
 extern int ctrl_hfIrq(void);
+extern void ctrl_lfIrq(void);
 extern int ctrl_reset(void);
 extern int ctrl_ep0SetOnEnumdne(void);
 extern int ctrl_execTransfer(int endpt, uint8_t *virtAddr, int nBytes);
