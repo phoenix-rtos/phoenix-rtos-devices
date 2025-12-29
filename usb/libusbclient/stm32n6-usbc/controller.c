@@ -305,23 +305,29 @@ int ctrl_hfIrq(void)
 	/* STUP */
 	if ((doepintAsserted >> 3) & 1) {
 		// mojstatus++;
-		// for (int i = 1; i < 10; i++) {
-		// 	if (ctrl_common.dc->setup.bRequest == i) {
-		// 		printf("5s");
-		// 	}
-		// }
+		if (ctrl_common.dc->setup.bRequest == 5) {
+			printf("5s");
+		}
 		uint32_t numSetupPckRec = (ctrl_common.dc->base[DOEPTSIZ0] >> 29) & 3;
 		// desc_setup(&ctrl_common.dc->setup);
 	}
 
 	/* XFRC */
 	if (diepintAsserted & 1) {
-		printf("blagam");
-		// if (~(diepintAsserted >> 4) & 1) {
-		// 	printf("blagam");
-		// }
+		// printf("blagam");
+		if (~(diepintAsserted >> 4) & 1) {
+
+			printf("blagam");
+		}
 		setDebug(gintstsAsserted, doepintAsserted, diepintAsserted);
-		ctrl_ep0SetOnEnumdne();
+		ctrl_common.dc->base[DOEPTSIZ0] &= 0xFFFFFF80;
+		/* PKTCNT in DOEPTSIZ0 */
+		ctrl_common.dc->base[DOEPTSIZ0] |= (1 << 19);
+		/* SUPCNT = 1 (or 2 or 3) */
+		ctrl_common.dc->base[DOEPTSIZ0] |= (3 << 29);
+		/* 1. Program the OTG_DOEPCTLx register */
+		ctrl_common.dc->base[DOEPCTL0] |= ((1 << 31) | (1 << 26));
+		// ctrl_ep0SetOnEnumdne();
 		// mojstatus++;
 		// if (mojstatus == 5) {
 		// 	ctrl_common.dc->base[DCFG] &= ~(0x7F0);
@@ -331,6 +337,10 @@ int ctrl_hfIrq(void)
 		// 	}
 		// }
 	}
+
+	// if ((diepintAsserted >> 7) & 1) {
+	// 	desc_setup(&ctrl_common.dc->setup);
+	// }
 
 
 	return 1;
@@ -492,6 +502,9 @@ int ctrl_execTransfer(int endpt, uint8_t *virtAddr, int nBytes)
 	ctrl_common.dc->base[DIEPTSIZ0] &= ~(0x180000);
 	ctrl_common.dc->base[DIEPTSIZ0] |= (1 << 19);
 
+	/* clear NAK and EPENA */
+	ctrl_common.dc->base[DIEPCTL0] |= ((1 << 26) | (1 << 31));
+
 	/* send full words */
 	for (int i = 0; i < fullWords; i++) {
 		memcpy(wordToSend, buff + 4 * (uint8_t)i, 4);
@@ -504,17 +517,6 @@ int ctrl_execTransfer(int endpt, uint8_t *virtAddr, int nBytes)
 		memcpy(wordToSend, buff + 4 * (uint8_t)fullWords, bytesLeft);
 		ctrl_common.dc->base[FIFO_BASE_OFF] = wordToSend[0];
 	}
-
-	ctrl_common.dc->base[DOEPTSIZ0] &= 0xFFFFFF80;
-	/* PKTCNT in DOEPTSIZ0 */
-	ctrl_common.dc->base[DOEPTSIZ0] |= (1 << 19);
-	/* SUPCNT = 1 (or 2 or 3) */
-	ctrl_common.dc->base[DOEPTSIZ0] |= (3 << 29);
-	/* 1. Program the OTG_DOEPCTLx register */
-	ctrl_common.dc->base[DOEPCTL0] |= ((1 << 31) | (1 << 26));
-
-	/* clear NAK and EPENA */
-	ctrl_common.dc->base[DIEPCTL0] |= ((1 << 26) | (1 << 31));
 
 	return 0;
 }

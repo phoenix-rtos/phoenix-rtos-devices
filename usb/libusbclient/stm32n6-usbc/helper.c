@@ -54,8 +54,8 @@ static stm32n6_libusbHelper doepint_bits_data[] = {
 };
 
 static stm32n6_libusbHelper diepint_bits_data[] = {
-	{ 13, " NAK", "NAK input" },
-	{ 11, " PKTDRPSTS", "Packet dropped status" },
+	{ 13, "NAK", "NAK input" },
+	{ 11, "PKTDRPSTS", "Packet dropped status" },
 	{ 8, "TXFIFOUDRN", "Transmit Fifo Underrun (TxfifoUndrn)" },
 	{ 7, "TXFE", "Transmit FIFO empty" },
 	{ 6, "INEPNE", "IN endpoint NAK effective" },
@@ -101,7 +101,7 @@ void helper_showRegisterInfo(uint32_t regVal, int registerH)
 {
 	switch (registerH) {
 		case HELPER_GINSTSTS:
-			for (int i = 0; i < 32; i++) {
+			for (int i = 0; i < sizeof(gintsts_bits_data) / sizeof(gintsts_bits_data[0]); i++) {
 				if ((regVal >> gintsts_bits_data[i].bitNum) & 1) {
 					printf("	[GINSTSTS]: bit: %s, info: %s\n", gintsts_bits_data[i].bitName, gintsts_bits_data[i].bitInfo);
 				}
@@ -109,7 +109,7 @@ void helper_showRegisterInfo(uint32_t regVal, int registerH)
 			break;
 
 		case HELPER_DOEPINT:
-			for (int i = 0; i < 32; i++) {
+			for (int i = 0; i < sizeof(doepint_bits_data) / sizeof(doepint_bits_data[0]); i++) {
 				if ((regVal >> doepint_bits_data[i].bitNum) & 1) {
 					printf("	[DOEPINT]: bit: %s, info: %s\n", doepint_bits_data[i].bitName, doepint_bits_data[i].bitInfo);
 				}
@@ -117,7 +117,7 @@ void helper_showRegisterInfo(uint32_t regVal, int registerH)
 			break;
 		case HELPER_DIEPINT:
 
-			for (int i = 0; i < 32; i++) {
+			for (int i = 0; i < sizeof(diepint_bits_data) / sizeof(diepint_bits_data[0]); i++) {
 				if ((regVal >> diepint_bits_data[i].bitNum) & 1) {
 					printf("	[DIEPINT]: bit: %s, info: %s\n", diepint_bits_data[i].bitName, diepint_bits_data[i].bitInfo);
 				}
@@ -126,7 +126,7 @@ void helper_showRegisterInfo(uint32_t regVal, int registerH)
 
 		case HELPER_DOEPCTL0:
 
-			for (int i = 0; i < 32; i++) {
+			for (int i = 0; i < sizeof(doepctl0_bits_data) / sizeof(doepctl0_bits_data[0]); i++) {
 				if ((regVal >> doepctl0_bits_data[i].bitNum) & 1) {
 					printf("	[DOEPCTL0]: bit: %s, info: %s\n", doepctl0_bits_data[i].bitName, doepctl0_bits_data[i].bitInfo);
 				}
@@ -134,7 +134,7 @@ void helper_showRegisterInfo(uint32_t regVal, int registerH)
 			break;
 
 		case HELPER_DIEPCTL0:
-			for (int i = 0; i < 32; i++) {
+			for (int i = 0; i < sizeof(diepctl0_bits_data) / sizeof(diepctl0_bits_data[0]); i++) {
 				if ((regVal >> diepctl0_bits_data[i].bitNum) & 1) {
 					printf("	[DIEPCTL0]: bit: %s, info: %s\n", diepctl0_bits_data[i].bitName, diepctl0_bits_data[i].bitInfo);
 				}
