@@ -617,6 +617,7 @@ static void print_usage(const char *progname)
 	printf("\t-t - make it a default console device, might be empty (default yes)\n");
 	printf("\t-e - report UART errors (default no)\n");
 	printf("\t-s - use syslog for logs (default no)\n");
+	printf("\t-d - DTE mode, swap RX and TX signals (default no)\n");
 }
 
 
@@ -637,6 +638,7 @@ int main(int argc, char **argv)
 	int is_cooked = 1;
 	int use_rts_cts = 0;
 	int is_console = 0;
+	int dte_mode = 0; /* Default to DCE mode */
 
 	libtty_callbacks_t callbacks = {
 		.arg = &uart,
@@ -653,7 +655,7 @@ int main(int argc, char **argv)
 		uart.dev_no = 1;
 		is_console = 1;
 	}
-	else if ((argc >= 6) && (argc <= 8)) {
+	else if ((argc >= 6) && (argc <= 9)) {
 		is_cooked = atoi(argv[1]);
 		uart.dev_no = atoi(argv[2]);
 		baud = atoi(argv[3]);
@@ -669,6 +671,9 @@ int main(int argc, char **argv)
 			}
 			else if (strcmp(argv[num], "-s") == 0) {
 				uart.use_syslog = 1;
+			}
+			else if (strcmp(argv[num], "-d") == 0) {
+				dte_mode = 1;
 			}
 			else {
 				print_usage(argv[0]);
@@ -747,8 +752,9 @@ int main(int argc, char **argv)
 
 	interrupt(uart_intr_number[uart.dev_no - 1], uart_intr, NULL, uart.cond, &uart.inth);
 
-	/* set TX & RX FIFO watermark, DCE mode */
-	*(uart.base + ufcr) = (0x04 << 10) | (0 << 6) | (0x1);
+	/* set TX & RX FIFO watermark, DCE/DTE mode as selected */
+	uint32_t dcedte = (dte_mode != 0) ? (1 << 6) : 0;
+	*(uart.base + ufcr) = (0x04 << 10) | dcedte | (0x1);
 
 	/* set Reference Frequency Divider */
 	*(uart.base + ufcr) &= ~(0b111 << 7);
