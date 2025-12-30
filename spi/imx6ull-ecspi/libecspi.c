@@ -18,17 +18,25 @@
 
 #include <phoenix/arch/armv7a/imx6ull/imx6ull.h>
 
+#include <board_config.h>
+#include "libecspi-def.h"
+
 #include "imx6ull-ecspi.h"
 
 
-#define BYTES_2_RXTHRESHOLD(LEN) (((LEN) + 3) / 4 - 1)
+#define BYTES_2_RXTHRESHOLD(LEN)   (((LEN) + 3) / 4 - 1)
 #define BITS_2_BYTES_ROUND_UP(LEN) (((LEN) + 7) / 8)
-#define GET_BURST_IN_BYTES(ECSPI) (BITS_2_BYTES_ROUND_UP((*((ECSPI)->base + conreg) >> 20) + 1))
+#define GET_BURST_IN_BYTES(ECSPI)  (BITS_2_BYTES_ROUND_UP((*((ECSPI)->base + conreg) >> 20) + 1))
+
+#define XCAT2(a, b) a##b
+#define PCTL(x)     XCAT2(pctl_, x)
 
 
+/* clang-format off */
 enum { rxdata = 0, txdata, conreg, configreg, intreg, dmareg, statreg, periodreg, testreg, msgdata = 16 };
 
 typedef enum { mode_sync_exchange, mode_async_write, mode_async_exchange, mode_async_periodical } ecspi_mode_t;
+/* clang-format on */
 
 typedef struct {
 	volatile uint32_t *base;
@@ -42,47 +50,96 @@ typedef struct {
 
 typedef struct {
 	int pctl;
-	char val;
+	int8_t val;
 } ecspi_pctl_t;
 
 
 static const addr_t ecspi_addr[4] = { 0x2008000, 0x200C000, 0x2010000, 0x2014000 };
 static const unsigned int ecspi_intr_number[4] = { 63, 64, 65, 66 };
 
-ecspi_pctl_t ecspi_pctl_mux[4][7] = {
-	{ { pctl_mux_lcd_d23,     2 }, { pctl_mux_lcd_d22,    2 }, { pctl_mux_lcd_d20,   2 }, { pctl_mux_lcd_d21,    2 },
-	  { pctl_mux_lcd_d5,      8 }, { pctl_mux_lcd_d6,     8 }, { pctl_mux_lcd_d7,    8 } },
-	{ { pctl_mux_csi_d3,      3 }, { pctl_mux_csi_d2,     3 }, { pctl_mux_csi_d0,    3 }, { pctl_mux_csi_d1,     3 },
-	  { pctl_mux_lcd_hsync,   8 }, { pctl_mux_lcd_vsync,  8 }, { pctl_mux_lcd_rst,   8 } },
-	{ { pctl_mux_uart2_rts,   8 }, { pctl_mux_uart2_cts,  8 }, { pctl_mux_uart2_rx,  8 }, { pctl_mux_uart2_tx,   8 },
-	  { pctl_mux_nand_ale,    8 }, { pctl_mux_nand_re,    8 }, { pctl_mux_nand_we,   8 } },
-	{ { pctl_mux_enet2_txclk, 3 }, { pctl_mux_enet2_txen, 3 }, { pctl_mux_enet2_tx1, 3 }, { pctl_mux_enet2_rxer, 3 },
-	  { pctl_mux_nand_d1,     8 }, { pctl_mux_nand_d2,    8 }, { pctl_mux_nand_d3,   8 } }
+static const ecspi_pctl_t ecspi_pctl_mux[4][7] = {
+	{
+		{ PCTL(CONFIG_ECSPI1_MISO_MUX_PAD), CONFIG_ECSPI1_MISO_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI1_MOSI_MUX_PAD), CONFIG_ECSPI1_MOSI_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI1_SCLK_MUX_PAD), CONFIG_ECSPI1_SCLK_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI1_SS0_MUX_PAD), CONFIG_ECSPI1_SS0_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI1_SS1_MUX_PAD), CONFIG_ECSPI1_SS1_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI1_SS2_MUX_PAD), CONFIG_ECSPI1_SS2_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI1_SS3_MUX_PAD), CONFIG_ECSPI1_SS3_MUX_VAL },
+	},
+	{
+		{ PCTL(CONFIG_ECSPI2_MISO_MUX_PAD), CONFIG_ECSPI2_MISO_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI2_MOSI_MUX_PAD), CONFIG_ECSPI2_MOSI_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI2_SCLK_MUX_PAD), CONFIG_ECSPI2_SCLK_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI2_SS0_MUX_PAD), CONFIG_ECSPI2_SS0_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI2_SS1_MUX_PAD), CONFIG_ECSPI2_SS1_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI2_SS2_MUX_PAD), CONFIG_ECSPI2_SS2_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI2_SS3_MUX_PAD), CONFIG_ECSPI2_SS3_MUX_VAL },
+	},
+	{
+		{ PCTL(CONFIG_ECSPI3_MISO_MUX_PAD), CONFIG_ECSPI3_MISO_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI3_MOSI_MUX_PAD), CONFIG_ECSPI3_MOSI_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI3_SCLK_MUX_PAD), CONFIG_ECSPI3_SCLK_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI3_SS0_MUX_PAD), CONFIG_ECSPI3_SS0_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI3_SS1_MUX_PAD), CONFIG_ECSPI3_SS1_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI3_SS2_MUX_PAD), CONFIG_ECSPI3_SS2_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI3_SS3_MUX_PAD), CONFIG_ECSPI3_SS3_MUX_VAL },
+	},
+	{
+		{ PCTL(CONFIG_ECSPI4_MISO_MUX_PAD), CONFIG_ECSPI4_MISO_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI4_MOSI_MUX_PAD), CONFIG_ECSPI4_MOSI_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI4_SCLK_MUX_PAD), CONFIG_ECSPI4_SCLK_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI4_SS0_MUX_PAD), CONFIG_ECSPI4_SS0_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI4_SS1_MUX_PAD), CONFIG_ECSPI4_SS1_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI4_SS2_MUX_PAD), CONFIG_ECSPI4_SS2_MUX_VAL },
+		{ PCTL(CONFIG_ECSPI4_SS3_MUX_PAD), CONFIG_ECSPI4_SS3_MUX_VAL },
+	},
 };
 
-ecspi_pctl_t ecspi_pctl_isel[4][4] = {
-	{ { pctl_isel_ecspi1_miso, 0 }, { pctl_isel_ecspi1_mosi, 0 }, { pctl_isel_ecspi1_sclk, 0 }, { pctl_isel_ecspi1_ss0, 0 } },
-	{ { pctl_isel_ecspi2_miso, 0 }, { pctl_isel_ecspi2_mosi, 1 }, { pctl_isel_ecspi2_sclk, 0 }, { pctl_isel_ecspi2_ss0, 0 } },
-	{ { pctl_isel_ecspi3_miso, 0 }, { pctl_isel_ecspi3_mosi, 0 }, { pctl_isel_ecspi3_sclk, 0 }, { pctl_isel_ecspi3_ss0, 0 } },
-	{ { pctl_isel_ecspi4_miso, 0 }, { pctl_isel_ecspi4_mosi, 0 }, { pctl_isel_ecspi4_sclk, 0 }, { pctl_isel_ecspi4_ss0, 0 } }
+static const ecspi_pctl_t ecspi_pctl_isel[4][4] = {
+	{
+		{ pctl_isel_ecspi1_miso, CONFIG_ECSPI1_MISO_ISEL },
+		{ pctl_isel_ecspi1_mosi, CONFIG_ECSPI1_MOSI_ISEL },
+		{ pctl_isel_ecspi1_sclk, CONFIG_ECSPI1_SCLK_ISEL },
+		{ pctl_isel_ecspi1_ss0, CONFIG_ECSPI1_SS0_ISEL },
+	},
+	{
+		{ pctl_isel_ecspi2_miso, CONFIG_ECSPI2_MISO_ISEL },
+		{ pctl_isel_ecspi2_mosi, CONFIG_ECSPI2_MOSI_ISEL },
+		{ pctl_isel_ecspi2_sclk, CONFIG_ECSPI2_SCLK_ISEL },
+		{ pctl_isel_ecspi2_ss0, CONFIG_ECSPI2_SS0_ISEL },
+	},
+	{
+		{ pctl_isel_ecspi3_miso, CONFIG_ECSPI3_MISO_ISEL },
+		{ pctl_isel_ecspi3_mosi, CONFIG_ECSPI3_MOSI_ISEL },
+		{ pctl_isel_ecspi3_sclk, CONFIG_ECSPI3_SCLK_ISEL },
+		{ pctl_isel_ecspi3_ss0, CONFIG_ECSPI3_SS0_ISEL },
+	},
+	{
+		{ pctl_isel_ecspi4_miso, CONFIG_ECSPI4_MISO_ISEL },
+		{ pctl_isel_ecspi4_mosi, CONFIG_ECSPI4_MOSI_ISEL },
+		{ pctl_isel_ecspi4_sclk, CONFIG_ECSPI4_SCLK_ISEL },
+		{ pctl_isel_ecspi4_ss0, CONFIG_ECSPI4_SS0_ISEL },
+	},
 };
 
-uint32_t ecspi_pctl_clk[4] = { pctl_clk_ecspi1, pctl_clk_ecspi2, pctl_clk_ecspi3, pctl_clk_ecspi4 };
+static const uint32_t ecspi_pctl_clk[4] = { pctl_clk_ecspi1, pctl_clk_ecspi2, pctl_clk_ecspi3, pctl_clk_ecspi4 };
 
-static ecspi_t ecspi[4] = {0};
+static ecspi_t ecspi[4] = { 0 };
 
 
-#define RESET_ECSPI(ECSPI) do { \
-	uint32_t reg_backup[3]; \
-	reg_backup[0] = *((ECSPI)->base + configreg); \
-	reg_backup[1] = *((ECSPI)->base + intreg); \
-	reg_backup[2] = *((ECSPI)->base + periodreg); \
-	*((ECSPI)->base + conreg) &= ~(1 << 0); \
-	*((ECSPI)->base + conreg) |= (1 << 0); \
-	*((ECSPI)->base + configreg) = reg_backup[0]; \
-	*((ECSPI)->base + intreg) = reg_backup[1]; \
-	*((ECSPI)->base + periodreg) = reg_backup[2]; \
-} while (0)
+#define RESET_ECSPI(ECSPI) \
+	do { \
+		uint32_t reg_backup[3]; \
+		reg_backup[0] = *((ECSPI)->base + configreg); \
+		reg_backup[1] = *((ECSPI)->base + intreg); \
+		reg_backup[2] = *((ECSPI)->base + periodreg); \
+		*((ECSPI)->base + conreg) &= ~(1 << 0); \
+		*((ECSPI)->base + conreg) |= (1 << 0); \
+		*((ECSPI)->base + configreg) = reg_backup[0]; \
+		*((ECSPI)->base + intreg) = reg_backup[1]; \
+		*((ECSPI)->base + periodreg) = reg_backup[2]; \
+	} while (0)
 
 
 static void readFifo(int dev_no, uint8_t *in, size_t len);
@@ -93,9 +150,9 @@ static void writeFifo(int dev_no, const uint8_t *out, size_t len);
 
 static int ecspi_irqHandler(unsigned int n, void *arg)
 {
-	(void) n;
+	(void)n;
 
-	ecspi_t *e = &ecspi[(int) arg];
+	ecspi_t *e = &ecspi[(int)arg];
 
 	if (e->mode != mode_sync_exchange) {
 		return -1;
@@ -110,7 +167,7 @@ static int ecspi_irqHandler(unsigned int n, void *arg)
 
 static int ecspi_irqHandlerAsync(unsigned int n, void *arg)
 {
-	(void) n;
+	(void)n;
 
 	size_t count;
 	int res = -1;
@@ -157,7 +214,8 @@ static int ecspi_irqHandlerAsync(unsigned int n, void *arg)
 				/* The only way to reset the internal period counter is to reenable the ECSPI. */
 				RESET_ECSPI(e);
 				res = 1;
-			} else {
+			}
+			else {
 				writeFifo(ctx->dev_no, ctx->out_periodical, count);
 				*(e->base + conreg) |= (1 << 2);
 				res = -1;
@@ -196,6 +254,11 @@ static void set_mux(int dev_no, uint8_t chan_msk)
 	for (i = 0; i < 7; i++) {
 		/* Skip SS lines not enabled in chan_msk */
 		if (i < 3 || (chan_msk & (1 << (i - 3)))) {
+			/* Skip if a given mux should not be configured */
+			if ((ecspi_pctl_mux[(dev_no - 1)][i].val < 0)) {
+				continue;
+			}
+
 			ctl.iomux.mux = ecspi_pctl_mux[(dev_no - 1)][i].pctl;
 			ctl.iomux.mode = ecspi_pctl_mux[(dev_no - 1)][i].val;
 			platformctl(&ctl);
@@ -207,6 +270,11 @@ static void set_mux(int dev_no, uint8_t chan_msk)
 
 	for (i = 0; i < 4; i++) {
 		if (i < 3 || (chan_msk & (1 << (i - 3)))) {
+			/* Skip if a given ISEL should not be configured */
+			if ((ecspi_pctl_isel[(dev_no - 1)][i].val < 0)) {
+				continue;
+			}
+
 			ctl.ioisel.isel = ecspi_pctl_isel[(dev_no - 1)][i].pctl;
 			ctl.ioisel.daisy = ecspi_pctl_isel[(dev_no - 1)][i].val;
 			platformctl(&ctl);
@@ -247,7 +315,7 @@ static void writeFifo(int dev_no, const uint8_t *out, size_t len)
 	}
 
 	while (len > 0) {
-		word = out[3] | ((uint32_t) out[2] << 8) | ((uint32_t) out[1] << 16) | ((uint32_t) out[0] << 24);
+		word = out[3] | ((uint32_t)out[2] << 8) | ((uint32_t)out[1] << 16) | ((uint32_t)out[0] << 24);
 
 		*(e->base + txdata) = word;
 
@@ -438,7 +506,6 @@ int ecspi_exchange(int dev_no, const uint8_t *out, uint8_t *in, size_t len)
 }
 
 
-
 int ecspi_exchangeBusy(int dev_no, const uint8_t *out, uint8_t *in, size_t len)
 {
 	ecspi_t *e;
@@ -486,7 +553,7 @@ int ecspi_registerContext(int dev_no, ecspi_ctx_t *ctx, handle_t cond)
 		.dev_no = dev_no,
 	};
 
-	return interrupt(ecspi_intr_number[dev_no - 1], ecspi_irqHandlerAsync, (void *) ctx, cond, &ctx->inth);
+	return interrupt(ecspi_intr_number[dev_no - 1], ecspi_irqHandlerAsync, (void *)ctx, cond, &ctx->inth);
 }
 
 
@@ -531,7 +598,7 @@ int ecspi_exchangeAsync(ecspi_ctx_t *ctx, const uint8_t *out, size_t len)
 		current_burst = (*(e->base + conreg) >> 20) + 1;
 		rxfifo_word_cnt = (*(e->base + testreg) >> 8) & 0x7F;
 
-		if (current_burst == (len * 8) && (int) (len / 4) <= (64 - txfifo_word_cnt) && (int) (len / 4) < (64 - rxfifo_word_cnt)) {
+		if (current_burst == (len * 8) && (int)(len / 4) <= (64 - txfifo_word_cnt) && (int)(len / 4) < (64 - rxfifo_word_cnt)) {
 			writeFifo(ctx->dev_no, out, len);
 			*(e->base + conreg) |= (1 << 2);
 			written = len;
@@ -622,7 +689,7 @@ int ecspi_writeAsync(ecspi_ctx_t *ctx, const uint8_t *out, size_t len)
 	else if (e->mode == mode_async_write) {
 		current_burst = (*(e->base + conreg) >> 20) + 1;
 
-		if (current_burst == (len * 8) && (int) (len / 4) <= (64 - txfifo_word_cnt)) {
+		if (current_burst == (len * 8) && (int)(len / 4) <= (64 - txfifo_word_cnt)) {
 			writeFifo(ctx->dev_no, out, len);
 			*(e->base + conreg) |= (1 << 2);
 
@@ -659,7 +726,7 @@ int ecspi_init(int dev_no, uint8_t chan_msk)
 	e->mode = mode_sync_exchange;
 
 	if ((e->base = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, ecspi_addr[dev_no - 1])) == MAP_FAILED) {
-		printf("ecspi: could not map ecspi%d paddr %p.\n", dev_no, (void*) ecspi_addr[dev_no - 1]);
+		printf("ecspi: could not map ecspi%d paddr %p.\n", dev_no, (void *)ecspi_addr[dev_no - 1]);
 		return -1;
 	}
 
@@ -669,7 +736,7 @@ int ecspi_init(int dev_no, uint8_t chan_msk)
 	mutexCreate(&e->irqlock);
 	condCreate(&e->cond);
 
-	interrupt(ecspi_intr_number[dev_no - 1], ecspi_irqHandler, (void *) (dev_no - 1), e->cond, &e->inth);
+	interrupt(ecspi_intr_number[dev_no - 1], ecspi_irqHandler, (void *)(dev_no - 1), e->cond, &e->inth);
 
 	/* Enable ECSPI. Defaults: 8-bit burst, multi burst, mode 0, all master, no cock division */
 	*(e->base + conreg) = 0x007000F1;

@@ -1,0 +1,315 @@
+/*
+ * Phoenix-RTOS
+ *
+ * i.MX6ULL ECSPI library
+ *
+ * Default pin definitions
+ *
+ * Copyright 2025 Phoenix Systems
+ * Author: Jacek Maksymowicz
+ *
+ * This file is part of Phoenix-RTOS.
+ *
+ * %LICENSE%
+ */
+
+
+#ifndef _LIBECSPI_DEF_H_
+#define _LIBECSPI_DEF_H_
+
+#ifndef CONFIG_ECSPI1_MISO_MUX_PAD
+#define CONFIG_ECSPI1_MISO_MUX_PAD mux_lcd_d23
+#endif
+
+#ifndef CONFIG_ECSPI1_MISO_MUX_VAL
+#define CONFIG_ECSPI1_MISO_MUX_VAL 2
+#endif
+
+#ifndef CONFIG_ECSPI1_MOSI_MUX_PAD
+#define CONFIG_ECSPI1_MOSI_MUX_PAD mux_lcd_d22
+#endif
+
+#ifndef CONFIG_ECSPI1_MOSI_MUX_VAL
+#define CONFIG_ECSPI1_MOSI_MUX_VAL 2
+#endif
+
+#ifndef CONFIG_ECSPI1_SCLK_MUX_PAD
+#define CONFIG_ECSPI1_SCLK_MUX_PAD mux_lcd_d20
+#endif
+
+#ifndef CONFIG_ECSPI1_SCLK_MUX_VAL
+#define CONFIG_ECSPI1_SCLK_MUX_VAL 2
+#endif
+
+#ifndef CONFIG_ECSPI1_SS0_MUX_PAD
+#define CONFIG_ECSPI1_SS0_MUX_PAD mux_lcd_d21
+#endif
+
+#ifndef CONFIG_ECSPI1_SS0_MUX_VAL
+#define CONFIG_ECSPI1_SS0_MUX_VAL 2
+#endif
+
+#ifndef CONFIG_ECSPI1_SS1_MUX_PAD
+#define CONFIG_ECSPI1_SS1_MUX_PAD mux_lcd_d5
+#endif
+
+#ifndef CONFIG_ECSPI1_SS1_MUX_VAL
+#define CONFIG_ECSPI1_SS1_MUX_VAL 8
+#endif
+
+#ifndef CONFIG_ECSPI1_SS2_MUX_PAD
+#define CONFIG_ECSPI1_SS2_MUX_PAD mux_lcd_d6
+#endif
+
+#ifndef CONFIG_ECSPI1_SS2_MUX_VAL
+#define CONFIG_ECSPI1_SS2_MUX_VAL 8
+#endif
+
+#ifndef CONFIG_ECSPI1_SS3_MUX_PAD
+#define CONFIG_ECSPI1_SS3_MUX_PAD mux_lcd_d7
+#endif
+
+#ifndef CONFIG_ECSPI1_SS3_MUX_VAL
+#define CONFIG_ECSPI1_SS3_MUX_VAL 8
+#endif
+
+
+#ifndef CONFIG_ECSPI2_MISO_MUX_PAD
+#define CONFIG_ECSPI2_MISO_MUX_PAD mux_csi_d3
+#endif
+
+#ifndef CONFIG_ECSPI2_MISO_MUX_VAL
+#define CONFIG_ECSPI2_MISO_MUX_VAL 3
+#endif
+
+#ifndef CONFIG_ECSPI2_MOSI_MUX_PAD
+#define CONFIG_ECSPI2_MOSI_MUX_PAD mux_csi_d2
+#endif
+
+#ifndef CONFIG_ECSPI2_MOSI_MUX_VAL
+#define CONFIG_ECSPI2_MOSI_MUX_VAL 3
+#endif
+
+#ifndef CONFIG_ECSPI2_SCLK_MUX_PAD
+#define CONFIG_ECSPI2_SCLK_MUX_PAD mux_csi_d0
+#endif
+
+#ifndef CONFIG_ECSPI2_SCLK_MUX_VAL
+#define CONFIG_ECSPI2_SCLK_MUX_VAL 3
+#endif
+
+#ifndef CONFIG_ECSPI2_SS0_MUX_PAD
+#define CONFIG_ECSPI2_SS0_MUX_PAD mux_csi_d1
+#endif
+
+#ifndef CONFIG_ECSPI2_SS0_MUX_VAL
+#define CONFIG_ECSPI2_SS0_MUX_VAL 3
+#endif
+
+#ifndef CONFIG_ECSPI2_SS1_MUX_PAD
+#define CONFIG_ECSPI2_SS1_MUX_PAD mux_lcd_hsync
+#endif
+
+#ifndef CONFIG_ECSPI2_SS1_MUX_VAL
+#define CONFIG_ECSPI2_SS1_MUX_VAL 8
+#endif
+
+#ifndef CONFIG_ECSPI2_SS2_MUX_PAD
+#define CONFIG_ECSPI2_SS2_MUX_PAD mux_lcd_vsync
+#endif
+
+#ifndef CONFIG_ECSPI2_SS2_MUX_VAL
+#define CONFIG_ECSPI2_SS2_MUX_VAL 8
+#endif
+
+#ifndef CONFIG_ECSPI2_SS3_MUX_PAD
+#define CONFIG_ECSPI2_SS3_MUX_PAD mux_lcd_rst
+#endif
+
+#ifndef CONFIG_ECSPI2_SS3_MUX_VAL
+#define CONFIG_ECSPI2_SS3_MUX_VAL 8
+#endif
+
+
+#ifndef CONFIG_ECSPI3_MISO_MUX_PAD
+#define CONFIG_ECSPI3_MISO_MUX_PAD mux_uart2_rts
+#endif
+
+#ifndef CONFIG_ECSPI3_MISO_MUX_VAL
+#define CONFIG_ECSPI3_MISO_MUX_VAL 8
+#endif
+
+#ifndef CONFIG_ECSPI3_MOSI_MUX_PAD
+#define CONFIG_ECSPI3_MOSI_MUX_PAD mux_uart2_cts
+#endif
+
+#ifndef CONFIG_ECSPI3_MOSI_MUX_VAL
+#define CONFIG_ECSPI3_MOSI_MUX_VAL 8
+#endif
+
+#ifndef CONFIG_ECSPI3_SCLK_MUX_PAD
+#define CONFIG_ECSPI3_SCLK_MUX_PAD mux_uart2_rx
+#endif
+
+#ifndef CONFIG_ECSPI3_SCLK_MUX_VAL
+#define CONFIG_ECSPI3_SCLK_MUX_VAL 8
+#endif
+
+#ifndef CONFIG_ECSPI3_SS0_MUX_PAD
+#define CONFIG_ECSPI3_SS0_MUX_PAD mux_uart2_tx
+#endif
+
+#ifndef CONFIG_ECSPI3_SS0_MUX_VAL
+#define CONFIG_ECSPI3_SS0_MUX_VAL 8
+#endif
+
+#ifndef CONFIG_ECSPI3_SS1_MUX_PAD
+#define CONFIG_ECSPI3_SS1_MUX_PAD mux_nand_ale
+#endif
+
+#ifndef CONFIG_ECSPI3_SS1_MUX_VAL
+#define CONFIG_ECSPI3_SS1_MUX_VAL 8
+#endif
+
+#ifndef CONFIG_ECSPI3_SS2_MUX_PAD
+#define CONFIG_ECSPI3_SS2_MUX_PAD mux_nand_re
+#endif
+
+#ifndef CONFIG_ECSPI3_SS2_MUX_VAL
+#define CONFIG_ECSPI3_SS2_MUX_VAL 8
+#endif
+
+#ifndef CONFIG_ECSPI3_SS3_MUX_PAD
+#define CONFIG_ECSPI3_SS3_MUX_PAD mux_nand_we
+#endif
+
+#ifndef CONFIG_ECSPI3_SS3_MUX_VAL
+#define CONFIG_ECSPI3_SS3_MUX_VAL 8
+#endif
+
+
+#ifndef CONFIG_ECSPI4_MISO_MUX_PAD
+#define CONFIG_ECSPI4_MISO_MUX_PAD mux_enet2_txclk
+#endif
+
+#ifndef CONFIG_ECSPI4_MISO_MUX_VAL
+#define CONFIG_ECSPI4_MISO_MUX_VAL 3
+#endif
+
+#ifndef CONFIG_ECSPI4_MOSI_MUX_PAD
+#define CONFIG_ECSPI4_MOSI_MUX_PAD mux_enet2_txen
+#endif
+
+#ifndef CONFIG_ECSPI4_MOSI_MUX_VAL
+#define CONFIG_ECSPI4_MOSI_MUX_VAL 3
+#endif
+
+#ifndef CONFIG_ECSPI4_SCLK_MUX_PAD
+#define CONFIG_ECSPI4_SCLK_MUX_PAD mux_enet2_tx1
+#endif
+
+#ifndef CONFIG_ECSPI4_SCLK_MUX_VAL
+#define CONFIG_ECSPI4_SCLK_MUX_VAL 3
+#endif
+
+#ifndef CONFIG_ECSPI4_SS0_MUX_PAD
+#define CONFIG_ECSPI4_SS0_MUX_PAD mux_enet2_rxer
+#endif
+
+#ifndef CONFIG_ECSPI4_SS0_MUX_VAL
+#define CONFIG_ECSPI4_SS0_MUX_VAL 3
+#endif
+
+#ifndef CONFIG_ECSPI4_SS1_MUX_PAD
+#define CONFIG_ECSPI4_SS1_MUX_PAD mux_nand_d1
+#endif
+
+#ifndef CONFIG_ECSPI4_SS1_MUX_VAL
+#define CONFIG_ECSPI4_SS1_MUX_VAL 8
+#endif
+
+#ifndef CONFIG_ECSPI4_SS2_MUX_PAD
+#define CONFIG_ECSPI4_SS2_MUX_PAD mux_nand_d2
+#endif
+
+#ifndef CONFIG_ECSPI4_SS2_MUX_VAL
+#define CONFIG_ECSPI4_SS2_MUX_VAL 8
+#endif
+
+#ifndef CONFIG_ECSPI4_SS3_MUX_PAD
+#define CONFIG_ECSPI4_SS3_MUX_PAD mux_nand_d3
+#endif
+
+#ifndef CONFIG_ECSPI4_SS3_MUX_VAL
+#define CONFIG_ECSPI4_SS3_MUX_VAL 8
+#endif
+
+
+#ifndef CONFIG_ECSPI1_MISO_ISEL
+#define CONFIG_ECSPI1_MISO_ISEL 0
+#endif
+
+#ifndef CONFIG_ECSPI1_MOSI_ISEL
+#define CONFIG_ECSPI1_MOSI_ISEL 0
+#endif
+
+#ifndef CONFIG_ECSPI1_SCLK_ISEL
+#define CONFIG_ECSPI1_SCLK_ISEL 0
+#endif
+
+#ifndef CONFIG_ECSPI1_SS0_ISEL
+#define CONFIG_ECSPI1_SS0_ISEL 0
+#endif
+
+
+#ifndef CONFIG_ECSPI2_MISO_ISEL
+#define CONFIG_ECSPI2_MISO_ISEL 0
+#endif
+
+#ifndef CONFIG_ECSPI2_MOSI_ISEL
+#define CONFIG_ECSPI2_MOSI_ISEL 1
+#endif
+
+#ifndef CONFIG_ECSPI2_SCLK_ISEL
+#define CONFIG_ECSPI2_SCLK_ISEL 0
+#endif
+
+#ifndef CONFIG_ECSPI2_SS0_ISEL
+#define CONFIG_ECSPI2_SS0_ISEL 0
+#endif
+
+
+#ifndef CONFIG_ECSPI3_MISO_ISEL
+#define CONFIG_ECSPI3_MISO_ISEL 0
+#endif
+
+#ifndef CONFIG_ECSPI3_MOSI_ISEL
+#define CONFIG_ECSPI3_MOSI_ISEL 0
+#endif
+
+#ifndef CONFIG_ECSPI3_SCLK_ISEL
+#define CONFIG_ECSPI3_SCLK_ISEL 0
+#endif
+
+#ifndef CONFIG_ECSPI3_SS0_ISEL
+#define CONFIG_ECSPI3_SS0_ISEL 0
+#endif
+
+
+#ifndef CONFIG_ECSPI4_MISO_ISEL
+#define CONFIG_ECSPI4_MISO_ISEL 0
+#endif
+
+#ifndef CONFIG_ECSPI4_MOSI_ISEL
+#define CONFIG_ECSPI4_MOSI_ISEL 0
+#endif
+
+#ifndef CONFIG_ECSPI4_SCLK_ISEL
+#define CONFIG_ECSPI4_SCLK_ISEL 0
+#endif
+
+#ifndef CONFIG_ECSPI4_SS0_ISEL
+#define CONFIG_ECSPI4_SS0_ISEL 0
+#endif
+
+#endif /* _LIBECSPI_DEF_H_ */

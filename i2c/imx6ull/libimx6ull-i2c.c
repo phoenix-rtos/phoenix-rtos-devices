@@ -24,6 +24,12 @@
 
 #include <phoenix/arch/armv7a/imx6ull/imx6ull.h>
 
+#include <board_config.h>
+#include "imx6ull-i2c-def.h"
+
+#define XCAT2(a, b) a##b
+#define PCTL(x)     XCAT2(pctl_, x)
+
 
 /* clang-format off */
 /* NOTE: i2c registers are 16-bit and every second offset is reserved for future use */
@@ -41,17 +47,17 @@ typedef struct {
 } i2c_pctl_t;
 
 static const i2c_pctl_t i2c_pctl_mux[4][2] = {
-	{ { pctl_mux_gpio1_02, 0 }, { pctl_mux_gpio1_03, 0 } },
-	{ { pctl_mux_gpio1_00, 0 }, { pctl_mux_gpio1_01, 0 } },
-	{ { pctl_mux_lcd_d1, 4 }, { pctl_mux_lcd_d0, 4 } },
-	{ { pctl_mux_lcd_d3, 4 }, { pctl_mux_lcd_d2, 4 } },
+	{ { PCTL(CONFIG_I2C1_SCL_MUX_PAD), CONFIG_I2C1_SCL_MUX_VAL }, { PCTL(CONFIG_I2C1_SDA_MUX_PAD), CONFIG_I2C1_SDA_MUX_VAL } },
+	{ { PCTL(CONFIG_I2C2_SCL_MUX_PAD), CONFIG_I2C2_SCL_MUX_VAL }, { PCTL(CONFIG_I2C2_SDA_MUX_PAD), CONFIG_I2C2_SDA_MUX_VAL } },
+	{ { PCTL(CONFIG_I2C3_SCL_MUX_PAD), CONFIG_I2C3_SCL_MUX_VAL }, { PCTL(CONFIG_I2C3_SDA_MUX_PAD), CONFIG_I2C3_SDA_MUX_VAL } },
+	{ { PCTL(CONFIG_I2C4_SCL_MUX_PAD), CONFIG_I2C4_SCL_MUX_VAL }, { PCTL(CONFIG_I2C4_SDA_MUX_PAD), CONFIG_I2C4_SDA_MUX_VAL } },
 };
 
 static const i2c_pctl_t i2c_pctl_isel[4][2] = {
-	{ { pctl_isel_i2c1_scl, 0 }, { pctl_isel_i2c1_sda, 1 } },
-	{ { pctl_isel_i2c2_scl, 1 }, { pctl_isel_i2c2_sda, 1 } },
-	{ { pctl_isel_i2c3_scl, 2 }, { pctl_isel_i2c3_sda, 2 } },
-	{ { pctl_isel_i2c4_scl, 2 }, { pctl_isel_i2c4_sda, 2 } },
+	{ { pctl_isel_i2c1_scl, CONFIG_I2C1_SCL_ISEL }, { pctl_isel_i2c1_sda, CONFIG_I2C1_SDA_ISEL } },
+	{ { pctl_isel_i2c2_scl, CONFIG_I2C2_SCL_ISEL }, { pctl_isel_i2c2_sda, CONFIG_I2C2_SDA_ISEL } },
+	{ { pctl_isel_i2c3_scl, CONFIG_I2C3_SCL_ISEL }, { pctl_isel_i2c3_sda, CONFIG_I2C3_SDA_ISEL } },
+	{ { pctl_isel_i2c4_scl, CONFIG_I2C4_SCL_ISEL }, { pctl_isel_i2c4_sda, CONFIG_I2C4_SDA_ISEL } },
 };
 
 
