@@ -40,6 +40,8 @@
 #include "trng.h"
 #include "cm4.h"
 
+#include "libmulti.h"
+
 #if PSEUDODEV
 #include <pseudodev.h>
 #endif
@@ -98,7 +100,7 @@ static void multi_dispatchMsg(msg_t *msg)
 		case id_gpio12:
 		case id_gpio13:
 #endif
-			gpio_handleMsg(msg, id);
+			// gpio_handleMsg(msg, id);
 			break;
 
 		case id_spi1:
@@ -590,7 +592,6 @@ int main(void)
 	}
 #endif
 
-	gpio_init();
 	uart_init();
 	rtt_init();
 	spi_init();
@@ -623,6 +624,10 @@ int main(void)
 #if PSEUDODEV
 	pseudo_init();
 #endif
+
+	if (libmulti_init() < 0) {
+		printf("warning: imxrt-multi: libmulti_init failed\n");
+	}
 
 	for (i = 0; i < UART_THREADS_NO; ++i) {
 		beginthread(uart_thread, IMXRT_MULTI_PRIO, common.stack[i], STACKSZ, (void *)i);

@@ -19,7 +19,8 @@
 #include <sys/threads.h>
 
 #include "common.h"
-#include "gpio.h"
+
+#include "libmulti-gpio.h"
 
 /* clang-format off */
 
@@ -34,7 +35,7 @@ struct {
 } gpio_common;
 
 
-int gpio_setPort(int port, uint32_t mask, uint32_t val)
+int libmulti_gpioSetPort(uint32_t port, uint32_t mask, uint32_t val)
 {
 	unsigned int set, clr, t;
 
@@ -55,7 +56,7 @@ int gpio_setPort(int port, uint32_t mask, uint32_t val)
 }
 
 
-int gpio_getPort(int port, uint32_t *val)
+int libmulti_gpioGetPort(uint32_t port, uint32_t *val)
 {
 	if ((port <= 0) || (port > GPIO_PORTS)) {
 		return -EINVAL;
@@ -67,7 +68,7 @@ int gpio_getPort(int port, uint32_t *val)
 }
 
 
-int gpio_setDir(int port, uint32_t mask, uint32_t val)
+int libmulti_gpioSetDir(uint32_t port, uint32_t mask, uint32_t dir)
 {
 	unsigned int set, clr, t;
 
@@ -76,8 +77,8 @@ int gpio_setDir(int port, uint32_t mask, uint32_t val)
 	}
 
 	port -= 1;
-	set = val & mask;
-	clr = ~val & mask;
+	set = dir & mask;
+	clr = ~dir & mask;
 
 	mutexLock(gpio_common.lock);
 	t = *(gpio_common.base[port] + gpio_gdir) & ~clr;
@@ -87,82 +88,28 @@ int gpio_setDir(int port, uint32_t mask, uint32_t val)
 }
 
 
-int gpio_getDir(int port, uint32_t *val)
+int libmulti_gpioGetDir(uint32_t port, uint32_t *dir)
 {
 	if ((port <= 0) || (port > GPIO_PORTS)) {
 		return -EINVAL;
 	}
 
 	port -= 1;
-	*val = *(gpio_common.base[port] + gpio_gdir);
+	*dir = *(gpio_common.base[port] + gpio_gdir);
 	return EOK;
 }
 
 
-static void gpio_handleDevCtl(msg_t *msg, int port)
-{
-	multi_i_t *imsg = (multi_i_t *)msg->i.raw;
-	multi_o_t *omsg = (multi_o_t *)msg->o.raw;
-
-	msg->o.err = EOK;
-
-	switch (imsg->gpio.type) {
-		case gpio_set_port:
-			msg->o.err = gpio_setPort(port, imsg->gpio.port.mask, imsg->gpio.port.val);
-			break;
-
-		case gpio_get_port:
-			msg->o.err = gpio_getPort(port, &omsg->val);
-			break;
-
-		case gpio_set_dir:
-			msg->o.err = gpio_setDir(port, imsg->gpio.dir.mask, imsg->gpio.dir.val);
-			break;
-
-		case gpio_get_dir:
-			msg->o.err = gpio_getDir(port, &omsg->val);
-			break;
-
-		default:
-			msg->o.err = -ENOSYS;
-			break;
-	}
-}
-
-
-int gpio_handleMsg(msg_t *msg, int dev)
-{
-	dev -= id_gpio1 - 1; /* Port number will be verified later */
-
-	switch (msg->type) {
-		case mtGetAttr:
-		case mtSetAttr:
-		case mtOpen:
-		case mtClose:
-		case mtWrite:
-		case mtRead:
-			msg->o.err = EOK;
-			break;
-
-		case mtDevCtl:
-			gpio_handleDevCtl(msg, dev);
-			break;
-
-		default:
-			msg->o.err = -ENOSYS;
-			break;
-	}
-
-	return 0;
-}
-
-
-int gpio_init(void)
+int gpio_init(device_ctx_t *ctx)
 {
 	int i;
 	static const void *addresses[] = { GPIO1_BASE, GPIO2_BASE, GPIO3_BASE,
 		GPIO4_BASE, GPIO5_BASE, GPIO6_BASE, GPIO7_BASE, GPIO8_BASE, GPIO9_BASE,
 		GPIO10_BASE, GPIO11_BASE, GPIO12_BASE, GPIO13_BASE };
+
+	if (mutexCreate(&gpio_common.lock) < 0) {
+		return -1;
+	}
 
 #ifndef __CPU_IMXRT117X
 	platformctl_t pctl;
@@ -187,5 +134,14 @@ int gpio_init(void)
 	for (i = 0; i < sizeof(gpio_common.base) / sizeof(gpio_common.base[0]); ++i)
 		gpio_common.base[i] = (void *)addresses[i];
 
+	ctx->devPathPrefix = "/dev/gpio";
+	ctx->nperipherals = GPIO_PORTS;
+
 	return 0;
+}
+
+
+void gpio_destroy(device_ctx_t *ctx)
+{
+	resourceDestroy(gpio_common.lock);
 }

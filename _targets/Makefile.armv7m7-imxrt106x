@@ -9,9 +9,11 @@
 DEFAULT_COMPONENTS := imxrt-multi
 
 ifneq (, $(findstring 117, $(TARGET)))
-  DEFAULT_COMPONENTS += libusbclient imxrt-flash cdc-demo imxrt117x-otp libusbehci umass libusbdrv-umass usbacm libusbdrv-usbacm
+  LIBMULTI_DRIVERS := GPIO
+  DEFAULT_COMPONENTS += libmulti libusbclient imxrt-flash cdc-demo imxrt117x-otp libusbehci umass libusbdrv-umass usbacm libusbdrv-usbacm
 else ifneq (, $(findstring 105, $(TARGET)))
   # placeholder
 else ifneq (, $(findstring 106, $(TARGET)))
+  LIBMULTI_DRIVERS := GPIO
   DEFAULT_COMPONENTS += libusbclient imxrt-flash cdc-demo libimxrt-edma libusbehci umass libusbdrv-umass usbacm libusbdrv-usbacm
 endif
