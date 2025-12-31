@@ -13,6 +13,8 @@ include ../phoenix-rtos-build/Makefile.common
 # should define DEFAULT_COMPONENTS and target-specific variables
 include _targets/Makefile.$(TARGET_FAMILY)-$(TARGET_SUBFAMILY)
 
+LOCAL_CFLAGS := $(addprefix $(addprefix -DLIBMULTI_HAS_,$(sort $(LIBMULTI_DRIVERS))),_DRV=1)
+
 # default path for the programs to be installed in rootfs
 DEFAULT_INSTALL_PATH := /sbin
 
