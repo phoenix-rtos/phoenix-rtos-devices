@@ -18,6 +18,7 @@
 #define LIBTTY_LF_FIFO_H
 
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdatomic.h>
 
@@ -72,6 +73,33 @@ static inline int lf_fifo_push(lf_fifo_t *f, uint8_t byte)
 	atomic_store_explicit(&f->headPos, headPos, memory_order_seq_cst);
 
 	return ret;
+}
+
+
+/* Returns NULL if no space left in FIFO, pointer to reserved byte otherwise.
+ * Caller should check the returned pointer and, if not NULL, store the new byte there.
+ * TODO: this implementation may fail if thread is preempted between `lf_fifo_push_reserve`
+ * and writing byte at pointer. Currently it is only used in IRQ context,
+ * so this will not happen. */
+static inline uint8_t *lf_fifo_push_reserve(lf_fifo_t *f)
+{
+	while (1) {
+		unsigned int headPos = atomic_load_explicit(&f->headPos, memory_order_seq_cst);
+		unsigned int tail = atomic_load_explicit(&f->tail, memory_order_seq_cst);
+		unsigned int tailPos = tail >> 1;
+
+		unsigned int newHeadPos = (headPos + 1) & f->sizeMask;
+		if (newHeadPos == tailPos) {
+			return NULL;
+		}
+
+		if (!atomic_compare_exchange_weak_explicit(&f->headPos, &headPos, newHeadPos, memory_order_seq_cst, memory_order_seq_cst)) {
+			/* Another thread advanced f->headPos while we were processing */
+			continue;
+		}
+
+		return &f->data[headPos];
+	}
 }
 
 
