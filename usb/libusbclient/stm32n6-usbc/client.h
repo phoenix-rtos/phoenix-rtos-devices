@@ -23,9 +23,10 @@
 #define USB_BUFFER_SIZE 0x1000
 /* MANUAL REGISTER OFFSETS (Byte Addresses) */
 /* Global */
-#define GRXSTSP  (0x020 / 4)
-#define GRXFSIZ  (0x024 / 4)
-#define DIEPTXF0 (0x028 / 4)
+#define GRXSTSP    (0x020 / 4)
+#define GRXFSIZ    (0x024 / 4)
+#define DIEPTXF0   (0x028 / 4)
+#define DIEPEMPMSK (0x834 / 4)
 
 
 // #define OFF_DIEPTXF1 0x104
@@ -44,6 +45,7 @@
 #define DOEPINT0      (0xB08 / 4)
 #define DOEPINTxWrMsk 0xF17F
 #define DOEPTSIZ0     (0xB10 / 4)
+#define DTXFSTS0      (0x918 / 4)
 
 #define DAINT    (0x818 / 4)
 #define DAINTMSK (0x81C / 4)
@@ -52,11 +54,6 @@
 #define OFF_INEP_BASE 0x900 / 4
 #define EP_STRIDE     (0x20 / 4)
 
-/* Endpoint Offsets */
-#define OFF_EP_CTL  0x00
-#define OFF_EP_INT  0x08
-#define OFF_EP_TSIZ 0x10
-#define OFF_EP_DMA  0x14
 
 /* States */
 #define DC_DEFAULT    0
@@ -83,6 +80,9 @@
 #define RX_FIFO_DEPTH_WORDS      (0x200)  // 512 words - required minumim is 28 words (for max 64B EP0)
 #define TX0FSA                   RX_FIFO_DEPTH_WORDS
 #define TX0FD                    MAX_PCKT_SZ_EPO_TX_WORDS
+#define MAX_PCKT_SZ_EP0_TX_B     MAX_PCKT_SZ_EPO_TX_WORDS * 4
+
+#define DIEPCTL_MPSIZ_Msk 0x7FF
 
 #define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
 

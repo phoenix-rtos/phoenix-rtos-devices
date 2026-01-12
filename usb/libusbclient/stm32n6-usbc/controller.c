@@ -13,9 +13,23 @@
 #include "client.h"
 #include "helper.h"
 
+#ifndef __PACKED_STRUCT
+#define __PACKED_STRUCT struct __attribute__((packed, aligned(1)))
+#endif
+
+__PACKED_STRUCT T_UINT32_READ { uint32_t v; };
+#define __UNALIGNED_UINT32_READ(addr) (((const struct T_UINT32_READ *)(const void *)(addr))->v)
+
+typedef struct {
+	int ep;
+	uint8_t *virtAdress;
+	int nBytes;
+} dataToSendIN;
+
 struct {
 	usb_dc_t *dc;
 	usb_common_data_t *data;
+	dataToSendIN fifoTxPrep;
 } ctrl_common;
 
 
@@ -123,51 +137,12 @@ int ctrl_init(usb_common_data_t *usb_data_in, usb_dc_t *dc_in)
 static int ctrl_rxFifoData(void)
 {
 	/* 1. ... read the receive status pop register (OTG_GRXSTSP) */
-	// uint32_t grxstpStatus = ctrl_common.dc->base[GRXSTSP];
+	uint32_t grxstpStatus = ctrl_common.dc->base[GRXSTSP];
 
 	/* 2. The application can mask the RXFLVL interrupt (in OTG_GINTSTS) */
-	// ctrl_common.dc->base[GINTMSK] &= 0xFFFFFFEF;
-	int setupWords = 0;
-	int setupReceived = 0;
-	while ((ctrl_common.dc->base[GINTSTS] >> 4) & 1) {
-		uint32_t grxstpStatus = ctrl_common.dc->base[GRXSTSP];
+	ctrl_common.dc->base[GINTMSK] &= 0xFFFFFFEF;
 
-		if (((grxstpStatus >> 17) & 0xF) == 2) {
-			/* read (BCNT+3)/4 words from FIFO - round up to full word*/
-			uint32_t wordsToRead = (((grxstpStatus >> 4) & 2047U) + 3) / 4;
-			for (int i = 0; i < wordsToRead; i++) {
-				uint32_t trash = ctrl_common.dc->base[FIFO_BASE_OFF];
-			}
-		}
-		if (((grxstpStatus >> 17) & 0xF) == 6) {
-			uint32_t wordsToRead = (((grxstpStatus >> 4) & 2047U) + 3) / 4;
-			for (int i = 0; i < wordsToRead; i++) {
-				/* read 1 word from fifo*/
-				if (setupWords < 2) {
-					((uint32_t *)(&ctrl_common.dc->setup))[i] = ctrl_common.dc->base[FIFO_BASE_OFF];
-					setupWords++;
-				}
-				else {
-					uint32_t trash = ctrl_common.dc->base[FIFO_BASE_OFF];
-				}
-			}
-		}
-		if (((grxstpStatus >> 17) & 0xF) == 4) {
-			uint32_t wordsToRead = (((grxstpStatus >> 4) & 2047U) + 3) / 4;
-			for (int i = 0; i < wordsToRead; i++) {
-				uint32_t trash = ctrl_common.dc->base[FIFO_BASE_OFF];
-			}
-			setupReceived = 1;
-		}
-	}
-
-	if (setupReceived == 1) {
-		ctrl_common.dc->base[DOEPINT0] = (1 << 3);
-		bereq[bereqineks] = ctrl_common.dc->setup.bRequest;
-		bereqineks++;
-		desc_setup(&ctrl_common.dc->setup);
-	}
-
+	// uint32_t epNum = (grxstpStatus & 0xF);
 
 	/**
 	 * GRXSTSP:
@@ -186,9 +161,27 @@ static int ctrl_rxFifoData(void)
 	 * [3:0] 	- EPNUM: 	Endpoint number
 	 */
 
+	uint32_t pktstsVal = ((grxstpStatus >> 17) & 0xF);
+	switch (pktstsVal) {
+		case 4:
+			/* SETUP PACKET RECEIVED */
+			return 0;
+
+		case 6:
+			uint32_t wordsToRead = (((grxstpStatus >> 4) & 2047U) + 3) / 4;
+			for (uint32_t i = 0; i < wordsToRead; i++) {
+				/* read 1 word from fifo*/
+				((uint32_t *)(&ctrl_common.dc->setup))[i] = ctrl_common.dc->base[FIFO_BASE_OFF];
+			}
+			break;
+
+		default:
+			break;
+	}
 
 	/* Unmask RXFLVL interrupt (in OTG_GINTSTS) */
-	// ctrl_common.dc->base[GINTMSK] |= (1 << 4);
+	ctrl_common.dc->base[GINTMSK] |= (1 << 4);
+	return 0;
 }
 
 
@@ -215,10 +208,13 @@ static int ctrl_epInitOnEnumdne(void)
 		case 0:
 			/* HIGH SPEED */
 			ctrl_common.dc->base[DIEPCTL0] &= ~2047U;
+			ctrl_common.dc->base[DIEPCTL0] |= (MAX_PCKT_SZ_EP0_TX_B & DIEPCTL_MPSIZ_Msk);
+			break;
 
 		case 1:
 			/* FULL SPEED */
 			ctrl_common.dc->base[DIEPCTL0] &= ~2047U;
+			ctrl_common.dc->base[DIEPCTL0] |= (MAX_PCKT_SZ_EP0_TX_B & DIEPCTL_MPSIZ_Msk);
 			break;
 
 		case 3:
@@ -245,6 +241,56 @@ void setDebug(uint32_t gintstsAsserted, uint32_t doepintAsserted, uint32_t diepi
 	}
 }
 
+uint32_t wordsSending[10];
+int iloscWyslanychSlow = 0;
+
+volatile int lol2 = 0;
+static void sendEpData(int ep, uint8_t *virtAddr, int nBytes)
+{
+
+	uint8_t *pSrc = virtAddr;
+	uint32_t count32b = (((uint32_t)nBytes + 3U) / 4U);
+	for (uint32_t i = 0U; i < count32b; i++) {
+		ctrl_common.dc->base[FIFO_BASE_OFF] = __UNALIGNED_UINT32_READ(pSrc);
+		pSrc++;
+		pSrc++;
+		pSrc++;
+		pSrc++;
+	}
+	lol2 = 1;
+	return;
+
+	uint8_t buff[nBytes];
+	uint32_t wordToSend[1];
+	int fullWords = nBytes / 4;
+	int bytesLeft = nBytes % 4;
+
+	memcpy(buff, virtAddr, nBytes);
+
+	uint32_t old = ctrl_common.dc->base[DTXFSTS0];
+
+	/* send full words */
+	for (int i = 0; i < fullWords; i++) {
+		memcpy(wordToSend, buff + 4 * (uint8_t)i, 4);
+		ctrl_common.dc->base[FIFO_BASE_OFF] = wordToSend[0];
+		wordsSending[iloscWyslanychSlow] = wordToSend[0];
+		iloscWyslanychSlow++;
+		// __asm__ volatile ("1: b 1b");
+	}
+
+	/* send remaining bytes */
+	if (bytesLeft > 0) {
+		wordToSend[0] = 0;
+		memcpy(wordToSend, buff + 4 * (uint8_t)fullWords, bytesLeft);
+		ctrl_common.dc->base[FIFO_BASE_OFF] = wordToSend[0];
+		wordsSending[iloscWyslanychSlow] = wordToSend[0];
+		iloscWyslanychSlow++;
+	}
+
+	uint32_t new = ctrl_common.dc->base[DTXFSTS0];
+	// __asm__ volatile ("1: b 1b");
+}
+
 
 /* quick actions to perform on interrupt */
 int ctrl_hfIrq(void)
@@ -252,6 +298,11 @@ int ctrl_hfIrq(void)
 	/* Read active interrupt flags */
 	uint32_t gintstsAsserted = ctrl_common.dc->base[GINTSTS];
 	uint32_t gintstsClear = (gintstsAsserted & GINTSTSWrMsk);
+
+	if (gintstsClear == 0) {
+		return 0;
+	}
+
 	uint32_t doepintAsserted = ctrl_common.dc->base[DOEPINT0];
 	uint32_t doepintClear = (doepintAsserted & DOEPINTxWrMsk);
 	uint32_t diepintAsserted = ctrl_common.dc->base[DIEPINT0];
@@ -264,14 +315,8 @@ int ctrl_hfIrq(void)
 	ctrl_common.dc->base[DOEPINT0] |= doepintClear;
 	ctrl_common.dc->base[DIEPINT0] |= diepintClear;
 
-	/**
-	 * TODO: REMOVE IT
-	 * For debug
-	 */
-	ctrl_common.dc->setupstat = gintstsAsserted;
-
 	if ((gintstsAsserted >> 1) & 1) {
-		printf("mode mismatch interrupt");
+		// printf("mode mismatch interrupt");
 	}
 
 	// if (mojstatus > 6) {
@@ -297,7 +342,10 @@ int ctrl_hfIrq(void)
 
 	/* RXFLVL */
 	if ((gintstsAsserted >> 4) & 1) {
-
+		// mojstatus++;
+		// if(mojstatus > 1) {
+		// 	printf("ds");
+		// }
 		setDebug(gintstsAsserted, doepintAsserted, diepintAsserted);
 		ctrl_rxFifoData();
 	}
@@ -306,27 +354,51 @@ int ctrl_hfIrq(void)
 	if ((doepintAsserted >> 3) & 1) {
 		// mojstatus++;
 		if (ctrl_common.dc->setup.bRequest == 5) {
-			printf("5s");
+			// printf("5s");
 		}
+
 		uint32_t numSetupPckRec = (ctrl_common.dc->base[DOEPTSIZ0] >> 29) & 3;
-		// desc_setup(&ctrl_common.dc->setup);
+		setDebug(gintstsAsserted, doepintAsserted, diepintAsserted);
+		desc_setup(&ctrl_common.dc->setup);
 	}
+
+	if ((gintstsAsserted >> 18) & 1) {
+
+		if (ctrl_common.dc->base[DAINT] & 1) {
+			/* TXFE - ready to send data*/
+			if ((diepintAsserted >> 7) & 1) {
+				sendEpData(ctrl_common.fifoTxPrep.ep, ctrl_common.fifoTxPrep.virtAdress, ctrl_common.fifoTxPrep.nBytes);
+				// static volatile int debug_trap = 1;
+				// while (debug_trap) {
+				// 	// PROCESOR WAIT -- DEBUG - REMOVE IT
+				// }
+				// ctrl_common.dc->base[DOEPTSIZ0] &= 0xFFFFFF80;
+				// ctrl_common.dc->base[DOEPTSIZ0] |= 0x8;
+				// /* PKTCNT in DOEPTSIZ0 */
+				// ctrl_common.dc->base[DOEPTSIZ0] |= (1 << 19);
+				// /* SUPCNT = 1 (or 2 or 3) */
+				// ctrl_common.dc->base[DOEPTSIZ0] |= (3 << 29);
+				// /* 1. Program the OTG_DOEPCTLx register */
+				// ctrl_common.dc->base[DOEPCTL0] |= ((1 << 31) | (1 << 26));
+
+				setDebug(gintstsAsserted, doepintAsserted, diepintAsserted);
+				ctrl_common.dc->base[DIEPEMPMSK] &= 0xFFFFFFFE;
+			}
+		}
+	}
+
+	// if (lol2 == 1) {
+	// 	__asm__ volatile ("1: b 1b");
+	// }
 
 	/* XFRC */
 	if (diepintAsserted & 1) {
-		// printf("blagam");
-		if (~(diepintAsserted >> 4) & 1) {
-
-			printf("blagam");
-		}
+		// if (~(diepintAsserted >> 4) & 1) {
+		__asm__ volatile("1: b 1b");
+		// }
 		setDebug(gintstsAsserted, doepintAsserted, diepintAsserted);
-		ctrl_common.dc->base[DOEPTSIZ0] &= 0xFFFFFF80;
-		/* PKTCNT in DOEPTSIZ0 */
-		ctrl_common.dc->base[DOEPTSIZ0] |= (1 << 19);
-		/* SUPCNT = 1 (or 2 or 3) */
-		ctrl_common.dc->base[DOEPTSIZ0] |= (3 << 29);
-		/* 1. Program the OTG_DOEPCTLx register */
-		ctrl_common.dc->base[DOEPCTL0] |= ((1 << 31) | (1 << 26));
+		/* prepare OUT ep for ZLP from host */
+
 		// ctrl_ep0SetOnEnumdne();
 		// mojstatus++;
 		// if (mojstatus == 5) {
@@ -338,12 +410,33 @@ int ctrl_hfIrq(void)
 		// }
 	}
 
+
 	// if ((diepintAsserted >> 7) & 1) {
 	// 	desc_setup(&ctrl_common.dc->setup);
 	// }
 
 
 	return 1;
+}
+
+/**
+ * TODO: ctrl_reset() - to co w komentarzach
+ */
+void usb_flushTxFifo(uint32_t num)
+{
+	uint32_t timeout = 200000;
+	while (!((ctrl_common.dc->base[GRSTCTL] >> 31) & 1)) {
+		if (--timeout == 0)
+			return;
+	}
+
+	ctrl_common.dc->base[GRSTCTL] |= (1 << 5 | (num << 6));
+
+	timeout = 200000;
+	while (((ctrl_common.dc->base[GRSTCTL] >> 5) & 1)) {
+		if (--timeout == 0)
+			return;
+	}
 }
 
 
@@ -382,53 +475,7 @@ asserted, the following bits are cleared:
 
 	// while ((ctrl_common.dc->base[GINTMSK] >> 7))
 
-	return 0;
-}
-
-
-/* Transfer Stop Programming for OUT endpoints */
-static int ctrl_transferStop(void)
-{
-	for (int i = 0; i < ENDPOINTS_NUMBER; i++) {
-		ctrl_common.dc->base[DOEPCTL0 + EP_STRIDE * i] |= (1 << 31);
-	}
-
-	/* 2. Poll OTG_GRSTCTL.AHBIDL until it is 1 */
-	while (!((ctrl_common.dc->base[GRSTCTL] >> 31) & 1))
-		;
-
-	/* 2. Perform read modify write operation on OTG_GRSTCTL.RXFFLSH =1 */
-	ctrl_common.dc->base[GRSTCTL] |= (1 << 4);
-
-	/* 2. Poll OTG_GRSTCTL.RXFFLSH until it is 0, but... */
-	int timer = 0;
-	while ((ctrl_common.dc->base[GRSTCTL] >> 4) & 1) {
-		usleep(1);
-		timer++;
-		if (timer > 1e4) {
-			timer = 0;
-			/* go back (once only) to the previous step */
-			ctrl_common.dc->base[GRSTCTL] |= (1 << 4);
-
-			while ((ctrl_common.dc->base[GRSTCTL] >> 4) & 1) {
-				usleep(1);
-				timer++;
-				if (timer > 1e4) {
-					return -1;
-				}
-				break;
-			}
-		}
-	}
-
-	/* We can set SGONAK only after making sure the GONAKEFF i cleared */
-	ctrl_common.dc->base[DCTL] |= (1 << 10);
-	while ((ctrl_common.dc->base[GINTSTS] >> 7) & 1)
-		;
-	/* 3. enable Global OUT NAK mode in the core - Set SGONAK = 1 in OTG_DCTL*/
-	ctrl_common.dc->base[DCTL] |= (1 << 9);
-	ctrl_common.dc->base[GINTMSK] |= (1 << 7);
-
+	usb_flushTxFifo(0x1F);
 	return 0;
 }
 
@@ -488,12 +535,9 @@ static void ctrl_writeFifo(void *base, int fifo_num, const void *data, uint32_t 
 
 int ctrl_execTransfer(int endpt, uint8_t *virtAddr, int nBytes)
 {
-	uint8_t buff[nBytes];
-	uint32_t wordToSend[1];
-	int fullWords = nBytes / 4;
-	int bytesLeft = nBytes % 4;
-
-	memcpy(buff, virtAddr, nBytes);
+	ctrl_common.fifoTxPrep.ep = endpt;
+	ctrl_common.fifoTxPrep.virtAdress = virtAddr;
+	ctrl_common.fifoTxPrep.nBytes = nBytes;
 
 	/* setting XFERSIZ */
 	ctrl_common.dc->base[DIEPTSIZ0] &= ~(0x7F);
@@ -501,26 +545,14 @@ int ctrl_execTransfer(int endpt, uint8_t *virtAddr, int nBytes)
 	/* setting PKTCNT */
 	ctrl_common.dc->base[DIEPTSIZ0] &= ~(0x180000);
 	ctrl_common.dc->base[DIEPTSIZ0] |= (1 << 19);
+	ctrl_common.dc->base[DIEPCTL0] |= (1 << 29);
 
 	/* clear NAK and EPENA */
 	ctrl_common.dc->base[DIEPCTL0] |= ((1 << 26) | (1 << 31));
-
-	/* send full words */
-	for (int i = 0; i < fullWords; i++) {
-		memcpy(wordToSend, buff + 4 * (uint8_t)i, 4);
-		ctrl_common.dc->base[FIFO_BASE_OFF] = wordToSend[0];
-	}
-
-	/* send remaining bytes */
-	if (bytesLeft > 0) {
-		wordToSend[0] = 0;
-		memcpy(wordToSend, buff + 4 * (uint8_t)fullWords, bytesLeft);
-		ctrl_common.dc->base[FIFO_BASE_OFF] = wordToSend[0];
-	}
+	ctrl_common.dc->base[DIEPEMPMSK] |= 1;
 
 	return 0;
 }
-
 
 void ctrl_setAddress(uint32_t addr)
 {
@@ -532,9 +564,24 @@ void ctrl_rx_fifo_handler(void)
 }
 
 
+void print_hex(const void *ptr, size_t n)
+{
+	const uint8_t *data = (const uint8_t *)ptr;
+
+	for (size_t i = 0; i < n; i++) {
+		printf("%02X ", data[i]);
+
+		if ((i + 1) % 16 == 0) {
+			printf("\n");
+		}
+	}
+	printf("\n");
+}
+
+
 void ctrl_lfIrq(void)
 {
-	int statyczna = 1;
+	int statyczna = 4;
 	static int lol = 0;
 	if (mojstatus > statyczna) {
 		ctrl_common.dc->base[GINTMSK] &= 0xFFFFFFEF;
@@ -552,6 +599,11 @@ void ctrl_lfIrq(void)
 				helper_showRegisterInfo(tablicaStatusowRejestrow[i][j], j);
 			}
 		}
+		printf("\nbmRqType: %d\nbRq: %d\nwIndex: %d\nwLength: %d\nwValue: %d\n", ctrl_common.dc->setup.bmRequestType, ctrl_common.dc->setup.bRequest, ctrl_common.dc->setup.wIndex, ctrl_common.dc->setup.wLength, ctrl_common.dc->setup.wValue);
+		printf("\n\nGET_DESCRIPTOR_DEV_: ");
+		print_hex(ctrl_common.fifoTxPrep.virtAdress, ctrl_common.fifoTxPrep.nBytes);
+		printf("\nCo wysylam hostowi: ");
+		print_hex(wordsSending, iloscWyslanychSlow * 4);
 	}
 	ctrl_common.dc->base[GINTMSK] |= (1 << 4);
 }

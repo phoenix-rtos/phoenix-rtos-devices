@@ -64,11 +64,9 @@ static int setClock(int dev, unsigned int state)
 
 void phy_setClock(void)
 {
-	/* volatile uint32_t *rcc_base = (uint32_t *)RCC_BASE; */
-
 	/* Look at RCC_CCIPR6 for options */
 	setClock(pctl_ipclk_otgphy1sel, 3); /* hse_div2_osc_ck */
-	/* *(rcc_base + rcc_ahb5ensr) |= (1 << 26); */
+	// *(volatile uint32_t *)(RCC_BASE_ADDR + RCC_AHB5ENSR) |= (1 << 26);
 	platformctl_t pctl_otg1_set = {
 		.action = pctl_set,
 		.type = pctl_devclk,
@@ -80,7 +78,7 @@ void phy_setClock(void)
 	platformctl(&pctl_otg1_set);
 
 	setClock(pctl_ipclk_otgphy1ckrefsel, 1); /* hse_div2_osc_ck */
-	/* *(rcc_base + rcc_ahb5ensr) |= (1 << 27); */
+	// *(volatile uint32_t *)(RCC_BASE_ADDR + RCC_AHB5ENSR) |= (1 << 27);
 	platformctl_t pctl_otgphy1_set = {
 		.action = pctl_set,
 		.type = pctl_devclk,
@@ -104,7 +102,7 @@ static int phy_mapRegs(void)
 		return 0;
 	}
 
-	common.otg_base = mmap(NULL, 0x1000, PROT_READ | PROT_WRITE,
+	common.otg_base = mmap(NULL, 0x2000, PROT_READ | PROT_WRITE,
 			MAP_DEVICE | MAP_PHYSMEM | MAP_UNCACHED | MAP_ANONYMOUS, -1, (off_t)PHY_ADDR_OTG);
 
 	if (common.otg_base == MAP_FAILED) {
@@ -115,7 +113,7 @@ static int phy_mapRegs(void)
 			MAP_DEVICE | MAP_PHYSMEM | MAP_UNCACHED | MAP_ANONYMOUS, -1, (off_t)phycPage);
 
 	if (ptr == MAP_FAILED) {
-		munmap((void *)common.otg_base, 0x1000);
+		munmap((void *)common.otg_base, 0x2000);
 		return ENOMEM;
 	}
 

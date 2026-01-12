@@ -210,7 +210,33 @@ static int desc_ReqGetConfig(const usb_setup_packet_t *setup)
 
 static void desc_ReqGetDescriptor(const usb_setup_packet_t *setup)
 {
-	ctrl_execTransfer(0, desc_common.dev, 0x12);
+	// if (setup->wValue >> 8 == USB_DESC_DEVICE) {
+	// 	ctrl_execTransfer(0, desc_common.dev, sizeof(usb_device_desc_t), USB_ENDPT_DIR_IN);
+	// }
+	// else if (setup->wValue >> 8 == USB_DESC_CONFIG) {
+	// 	ctrl_execTransfer(0, desc_common.cfg, setup->wLength, USB_ENDPT_DIR_IN);
+	// }
+	// else if (setup->wValue >> 8 == USB_DESC_STRING) {
+	// 	if ((setup->wValue & 0xff) == 0) {
+	// 		ctrl_execTransfer(0, desc_common.str0.pmAddr, MIN(desc_common.str0.vmStruct->bLength, setup->wLength), USB_ENDPT_DIR_IN);
+	// 	}
+	// 	else if ((setup->wValue & 0xff) == 1) {
+	// 		ctrl_execTransfer(0, desc_common.strMan.pmAddr, MIN(desc_common.strMan.vmStruct->bLength, setup->wLength), USB_ENDPT_DIR_IN);
+	// 	}
+	// 	else if ((setup->wValue & 0xff) == 2) {
+	// 		ctrl_execTransfer(0, desc_common.strProd.pmAddr, MIN(desc_common.strProd.vmStruct->bLength, setup->wLength), USB_ENDPT_DIR_IN);
+	// 	}
+	// 	else if ((setup->wValue & 0xff) == 4) {
+	// 		ctrl_execTransfer(0, desc_common.data->endpts[0].buf[USB_ENDPT_DIR_IN].pBuffer, 0, USB_ENDPT_DIR_IN);
+	// 		ctrl_execTransfer(0, desc_common.data->endpts[0].buf[USB_ENDPT_DIR_OUT].pBuffer, 71, USB_ENDPT_DIR_OUT);
+	// 		return;
+	// 	}
+	// }
+	// else if (setup->wValue >> 8 == USB_DESC_TYPE_HID_REPORT) {
+	// 	ctrl_execTransfer(0, desc_common.hidReports, 76, USB_ENDPT_DIR_IN);
+	// }
+
+	ctrl_execTransfer(0, desc_common.dev, sizeof(usb_device_desc_t));
 }
 
 

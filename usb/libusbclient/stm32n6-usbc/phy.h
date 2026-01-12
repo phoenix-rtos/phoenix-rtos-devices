@@ -23,6 +23,8 @@
 #define PHY_ADDR_USBPHYC 0x5803FC00
 #define RCC_BASE_ADDR    0x56028000
 
+#define RCC_AHB5ENSR 0xA60
+
 #define PHY_IRQ otg1_irq
 
 /* REGISTER OFFSETS */
