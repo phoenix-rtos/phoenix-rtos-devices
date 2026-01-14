@@ -268,16 +268,21 @@ static void nmea_parsermc(char *str, nmea_t *out)
 
 void nmea_interpreter(char *str, nmea_t *out)
 {
-	if (strncmp(str, "$GPGSA", 6) == 0) {
+	if (strncmp(str, "$G", 2) != 0 || (str[2] == '\0')) {
+		out->type = nmea_unknown;
+		return;
+	}
+
+	if (strncmp(&str[3], "GSA", 3) == 0) {
 		nmea_parsegsa(str, out);
 	}
-	else if (strncmp(str, "$GPVTG", 6) == 0) {
+	else if (strncmp(&str[3], "VTG", 3) == 0) {
 		nmea_parsevtg(str, out);
 	}
-	else if (strncmp(str, "$GPGGA", 6) == 0) {
+	else if (strncmp(&str[3], "GGA", 3) == 0) {
 		nmea_parsegga(str, out);
 	}
-	else if (strncmp(str, "$GPRMC", 6) == 0) {
+	else if (strncmp(&str[3], "RMC", 3) == 0) {
 		nmea_parsermc(str, out);
 	}
 	else {
