@@ -26,3 +26,11 @@ SENSORHUB_DRIVERS_ALL += $(NAME)
 LOCAL_SRCS := lps25xx.c
 DEPS := $(SENSORHUB_COMMON_DEPS)
 include $(static-lib.mk)
+
+
+# STM LPS22xx barometer sensor
+NAME := lps22xx
+SENSORHUB_DRIVERS_ALL += $(NAME)
+LOCAL_SRCS := lps22xx.c
+DEPS := $(SENSORHUB_COMMON_DEPS)
+include $(static-lib.mk)
