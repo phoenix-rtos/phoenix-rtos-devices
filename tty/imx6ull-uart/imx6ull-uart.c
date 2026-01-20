@@ -76,6 +76,7 @@
 #define UCR2_RXEN      (1 << 1)
 #define UCR2_TXEN      (1 << 2)
 #define UCR2_WS        (1 << 5)
+#define UCR2_CTSC      (1 << 13)
 #define UCR2_IRTS      (1 << 14)
 #define UCR3_RXDMUXSEL (1 << 2)
 #define UCR3_RI        (1 << 8)
@@ -361,8 +362,22 @@ static int uart_intr(unsigned int intr, void *data)
 	if ((*(uart.base + ucr1) & UCR1_RRDYEN) != 0) {
 		while ((*(uart.base + usr2) & USR2_RDR) != 0) {
 			/* NOTE: lock-free push */
-			if (lf_fifo_push(&uart.rx_sw_fifo, (*(uart.base + urxd)) & 0xff) == 0) {
-				uart.counters.sw_overrun++;
+			if ((*(uart.base + ucr2) & UCR2_CTSC) != 0) {
+				/* HW flow control active, avoid overrun */
+				uint8_t *target = lf_fifo_push_reserve(&uart.rx_sw_fifo);
+				if (target != NULL) {
+					*target = *(uart.base + urxd) & 0xff;
+				}
+				else {
+					*(uart.base + ucr1) &= ~UCR1_RRDYEN;
+					break;
+				}
+			}
+			else {
+				/* HW flow control inactive, permit overrun */
+				if (lf_fifo_push(&uart.rx_sw_fifo, (*(uart.base + urxd)) & 0xff) == 0) {
+					uart.counters.sw_overrun++;
+				}
 			}
 		}
 	}
@@ -417,6 +432,10 @@ static void uart_process_rx(void)
 	/* NOTE: lock-free pop */
 	while (lf_fifo_pop(&uart.rx_sw_fifo, &c) != 0) {
 		libtty_putchar(&uart.tty_common, c, NULL);
+	}
+
+	if (((*(uart.base + ucr1) & UCR1_RRDYEN) == 0) && (uart.reader_busy != 0)) {
+		*(uart.base + ucr1) |= UCR1_RRDYEN;
 	}
 }
 
@@ -760,8 +779,19 @@ int main(int argc, char **argv)
 	*(uart.base + ufcr) &= ~(0b111 << 7);
 	*(uart.base + ufcr) |= 0b010 << 7;
 
-	/* ignore RTS pin, 8-bit transmit, TX enable, soft reset */
-	*(uart.base + ucr2) = UCR2_IRTS | UCR2_WS | UCR2_TXEN | UCR2_SRST;
+	/* 8-bit transmit, TX enable, soft reset */
+	uint32_t ucr2_hw_flow;
+	if (use_rts_cts != 0) {
+		/* Transmit only when RTS pin is asserted, CTS pin controlled by receiver */
+		ucr2_hw_flow = UCR2_CTSC;
+		*(uart.base + ucr4) = (24 << 10); /* CTS deasserted after 24 bytes in RX FIFO */
+	}
+	else {
+		/* Ignore RTS pin, CTS pin under software control */
+		ucr2_hw_flow = UCR2_IRTS;
+	}
+
+	*(uart.base + ucr2) = ucr2_hw_flow | UCR2_WS | UCR2_TXEN | UCR2_SRST;
 
 	set_cflag(&uart, &uart.tty_common.term.c_cflag);
 	set_baudrate(&uart, baud);
