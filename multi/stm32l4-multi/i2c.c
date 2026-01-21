@@ -101,6 +101,20 @@ ssize_t i2c_writeReg(int i2c, unsigned char addr, unsigned char reg, const void 
 }
 
 
+int i2c_setSpeed(int i2c, uint32_t speed, int rise_time)
+{
+	if ((N_I2C_ACTIVE == 0) || (i2c < i2c1) || (i2c > MAX_I2C) || (i2cConfig[i2c] == 0)) {
+		return -EINVAL;
+	}
+
+	mutexLock(i2c_lock[i2cPos[i2c]]);
+	int ret = libi2c_setSpeed(&i2c_ctx[i2cPos[i2c]], speed, rise_time);
+	mutexUnlock(i2c_lock[i2cPos[i2c]]);
+
+	return ret;
+}
+
+
 void i2c_init(void)
 {
 	int i2c;
