@@ -55,6 +55,7 @@
 #define PWM_TIM_GP2             ((1 << pwm_tim9) | (1 << pwm_tim12) | (1 << pwm_tim15))
 #define PWM_TIM_NO_MASTER_SLAVE ((1 << pwm_tim10) | (1 << pwm_tim11) | (1 << pwm_tim13) | (1 << pwm_tim14) | (1 << pwm_tim16) | (1 << pwm_tim17))
 #define PWM_TIM_32BIT           ((1 << pwm_tim2) | (1 << pwm_tim3) | (1 << pwm_tim4) | (1 << pwm_tim5))
+#define PWM_TIM_DMA             ((1 << pwm_tim1) | (1 << pwm_tim2) | (1 << pwm_tim3) | (1 << pwm_tim4) | (1 << pwm_tim5) | (1 << pwm_tim8) | (1 << pwm_tim15) | (1 << pwm_tim16) | (1 << pwm_tim17))
 
 
 /* Get the base clock frequency for a given timer. Returns 0 upon error. */
