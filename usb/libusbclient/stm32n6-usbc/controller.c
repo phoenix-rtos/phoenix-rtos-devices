@@ -139,9 +139,6 @@ static int ctrl_rxFifoData(void)
 	/* 1. ... read the receive status pop register (OTG_GRXSTSP) */
 	uint32_t grxstpStatus = ctrl_common.dc->base[GRXSTSP];
 
-	/* 2. The application can mask the RXFLVL interrupt (in OTG_GINTSTS) */
-	ctrl_common.dc->base[GINTMSK] &= 0xFFFFFFEF;
-
 	// uint32_t epNum = (grxstpStatus & 0xF);
 
 	/**
@@ -179,8 +176,6 @@ static int ctrl_rxFifoData(void)
 			break;
 	}
 
-	/* Unmask RXFLVL interrupt (in OTG_GINTSTS) */
-	ctrl_common.dc->base[GINTMSK] |= (1 << 4);
 	return 0;
 }
 
@@ -300,6 +295,7 @@ int ctrl_hfIrq(void)
 	uint32_t gintstsClear = (gintstsAsserted & GINTSTSWrMsk);
 
 	if (gintstsClear == 0) {
+		/* Invalid interrupt */
 		return 0;
 	}
 
@@ -342,12 +338,14 @@ int ctrl_hfIrq(void)
 
 	/* RXFLVL */
 	if ((gintstsAsserted >> 4) & 1) {
-		// mojstatus++;
-		// if(mojstatus > 1) {
-		// 	printf("ds");
-		// }
+
+		ctrl_common.dc->base[GINTMSK] &= 0xFFFFFFEF;
+
 		setDebug(gintstsAsserted, doepintAsserted, diepintAsserted);
+
 		ctrl_rxFifoData();
+
+		ctrl_common.dc->base[GINTMSK] |= (1 << 4);
 	}
 
 	/* STUP */
