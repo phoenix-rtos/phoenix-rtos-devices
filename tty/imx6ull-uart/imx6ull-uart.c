@@ -513,58 +513,64 @@ static void set_mux(int dev_no, int use_rts_cts)
 
 static void set_baudrate(void *_uart, int baud_rate)
 {
-	int md, in, div, res;
-
 	uart_t *uartptr = (uart_t *)_uart;
 
-	if (baud_rate == 0) {
+	if (baud_rate <= 0) {
 		return;
 	}
 
-	/* count gcd */
-	md = MODULE_CLK;
-	in = 16 * baud_rate;
+	/* From docs: baud_rate == reference_clock / (16 * (UBMR + 1) / (UBIR + 1))
+	 * With `in` == (UBIR + 1) and `md` == (UBMR + 1) this equation transforms into
+	 * `in` / `md` == reference_clock / (16 * baud_rate)
+	 * We need to find `in` and `md` that are <= 65536 (registers are 16 bit). */
 
-	div = 0;
-	while (((md % 2) == 0) && ((in % 2) == 0)) {
-		md = md / 2;
-		md = md / 2;
-		div++;
-	}
+	unsigned int md = MODULE_CLK;
+	unsigned int in = 16 * (unsigned int)baud_rate;
 
-	while (md != in) {
-		if ((md % 2) == 0) {
-			md /= 2;
-		}
-		else if ((in % 2) == 0) {
-			in /= 2;
-		}
-		else if (md > in) {
-			md = (md - in) / 2;
+	/* Eliminate common trailing zeroes */
+	int common_tz = __builtin_ctz(md | in);
+	md >>= common_tz;
+	in >>= common_tz;
+
+	/* Find and divide by greatest common divisor. Note that we already eliminated powers of 2 from the GCD. */
+	unsigned int a = md >> __builtin_ctz(md);
+	unsigned int b = in >> __builtin_ctz(in);
+	while (a != b) {
+		if (a > b) {
+			a = a - b;
+			a >>= __builtin_ctz(a);
 		}
 		else {
-			in = (in - md) / 2;
+			b = b - a;
+			b >>= __builtin_ctz(b);
 		}
 	}
-	res = md;
 
-	/* pow */
-	md = 1;
-	in = 2;
-	while (div != 0) {
-		if ((div & 1) != 0) {
-			md *= in;
-		}
-		div /= 2;
-		in *= in;
+	md /= a;
+	in /= a;
+
+	/* Heuristic - if `md` is above limit, but `in` is relatively small (less than 0.5%),
+	 * try dividing `md` by `in` and round - in many cases this is the most precise option. */
+	const unsigned int limit = 65536;
+	if ((md > limit) && (in < (md / 200))) {
+		md = (md + (in / 2)) / in;
+		in = 1;
 	}
 
-	res = md * res;
+	/* While above limit, divide by 2 (loses precision). For most common baud rates this is not necessary. */
+	while ((md > limit) || (in > limit)) {
+		md /= 2;
+		in /= 2;
+	}
+
+	/* If either register has value 0, round it up to 1 */
+	md = (md == 0) ? 1 : md;
+	in = (in == 0) ? 1 : in;
 
 	/* set baud rate */
 	*(uartptr->base + ucr1) &= ~(1 << 14);
-	*(uartptr->base + ubir) = ((baud_rate * 16) / res) - 1;
-	*(uartptr->base + ubmr) = (MODULE_CLK / res) - 1;
+	*(uartptr->base + ubir) = in - 1;
+	*(uartptr->base + ubmr) = md - 1;
 }
 
 
