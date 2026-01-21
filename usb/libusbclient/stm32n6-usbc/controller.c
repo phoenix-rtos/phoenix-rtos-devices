@@ -159,12 +159,28 @@ static int ctrl_rxFifoData(void)
 	 */
 
 	uint32_t pktstsVal = ((grxstpStatus >> 17) & 0xF);
+
 	switch (pktstsVal) {
+
+		case 2:
+			/*
+			READ REGULAR PACKER
+
+			(void)USB_ReadPacket(USBx, ep->xfer_buff,
+							   (uint16_t)((RegVal & USB_OTG_GRXSTSP_BCNT) >> 4));
+
+			ep->xfer_buff += (RegVal & USB_OTG_GRXSTSP_BCNT) >> 4;
+			ep->xfer_count += (RegVal & USB_OTG_GRXSTSP_BCNT) >> 4;
+
+			*/
+			return 0;
+
 		case 4:
 			/* SETUP PACKET RECEIVED */
 			return 0;
 
 		case 6:
+			/* READ SETUP PACKET */
 			uint32_t wordsToRead = (((grxstpStatus >> 4) & 2047U) + 3) / 4;
 			for (uint32_t i = 0; i < wordsToRead; i++) {
 				/* read 1 word from fifo*/
@@ -287,6 +303,24 @@ static void sendEpData(int ep, uint8_t *virtAddr, int nBytes)
 }
 
 
+void usb_flushTxFifo(uint32_t num)
+{
+	uint32_t timeout = 200000;
+	while (!((ctrl_common.dc->base[GRSTCTL] >> 31) & 1)) {
+		if (--timeout == 0)
+			return;
+	}
+
+	ctrl_common.dc->base[GRSTCTL] |= (1 << 5 | (num << 6));
+
+	timeout = 200000;
+	while (((ctrl_common.dc->base[GRSTCTL] >> 5) & 1)) {
+		if (--timeout == 0)
+			return;
+	}
+}
+
+
 /* quick actions to perform on interrupt */
 int ctrl_hfIrq(void)
 {
@@ -298,6 +332,236 @@ int ctrl_hfIrq(void)
 		/* Invalid interrupt */
 		return 0;
 	}
+
+	// frame number = dsts_fnsof
+
+	/* MMIS */
+	if ((gintstsClear >> 1) & 1) {
+		ctrl_common.dc->base[GINTSTS] |= (1 << 1);
+	}
+
+	/* RXFLVL */
+	if (gintstsClear >> 4) {
+		ctrl_common.dc->base[GINTMSK] &= 0xFFFFFFEF;
+
+		ctrl_rxFifoData();
+
+		ctrl_common.dc->base[GINTMSK] |= (1 << 4);
+	}
+
+	/* OEPINT */
+	if ((gintstsClear >> 19) & 1) {
+		uint8_t epNum = 0U;
+
+		uint32_t daintClear = ctrl_common.dc->base[DAINT];
+		daintClear &= ctrl_common.dc->base[DAINTMSK];
+		daintClear &= 0xFFFF0000;
+
+		while (daintClear != 0U) {
+
+			/* EP0 ? */
+			if ((daintClear & 0x01U) != 0) {
+				uint32_t epInt = ctrl_common.dc->base[DOEPINT0 + epNum * EP_STRIDE];
+				epInt &= ctrl_common.dc->base[DOEPMSK];
+
+				/* XFRC */
+				if (epInt & 1) {
+					ctrl_common.dc->base[DOEPINT0 + epNum * EP_STRIDE] |= 1;
+					// (void)PCD_EP_OutXfrComplete_int(hpcd, epnum);
+				}
+
+				/* STUP */
+				if ((epInt >> 3) & 1) {
+					ctrl_common.dc->base[DOEPINT0 + epNum * EP_STRIDE] |= (1 << 3);
+					//(void)PCD_EP_OutSetupPacket_int(hpcd, epnum);
+				}
+
+				/* OTEPDIS */
+				if ((epInt >> 4) & 1) {
+					ctrl_common.dc->base[DOEPINT0 + epNum * EP_STRIDE] |= (1 << 4);
+				}
+
+				/* EPDISD */
+				if ((epInt >> 1) & 1) {
+					/* CLEAR OUT ENDPOINT DISABLED INTERRUPT */
+
+					if ((ctrl_common.dc->base[GINTSTS] >> 7) & 1) {
+						ctrl_common.dc->base[DCTL] |= (1 << 10);
+					}
+
+					/*
+					ep = &hpcd->OUT_ep[epnum];
+
+					if (ep->is_iso_incomplete == 1U)
+					{
+						ep->is_iso_incomplete = 0U;
+
+						#if (USE_HAL_PCD_REGISTER_CALLBACKS == 1U)
+							hpcd->ISOOUTIncompleteCallback(hpcd, (uint8_t)epnum);
+						#else
+							HAL_PCD_ISOOUTIncompleteCallback(hpcd, (uint8_t)epnum);
+						#endif /* USE_HAL_PCD_REGISTER_CALLBACKS
+					}
+					*/
+
+					ctrl_common.dc->base[DOEPINT0 + epNum * EP_STRIDE] |= (1 << 1);
+				}
+
+				/* STSPHSRX / OTEPSPR */
+				if ((epInt >> 5) & 1) {
+					ctrl_common.dc->base[DOEPINT0 + epNum * EP_STRIDE] |= (1 << 5);
+				}
+
+				/* NAK */
+				if ((epInt >> 13) & 1) {
+					ctrl_common.dc->base[DOEPINT0 + epNum * EP_STRIDE] |= (1 << 13);
+				}
+			}
+			epNum++;
+			daintClear >>= 1U;
+		}
+	} /* ENDIF GINTSTS_OEPINT */
+
+	/* IEPINT */
+	if ((gintstsClear >> 18) & 1) {
+		uint8_t epNum = 0U;
+
+		uint32_t daintClear = ctrl_common.dc->base[DAINT];
+		daintClear &= ctrl_common.dc->base[DAINTMSK];
+		daintClear &= 0xFFFF;
+
+		while (daintClear != 0U) {
+
+			/* EP0 ? */
+			if ((daintClear & 0x01U) != 0) {
+				uint32_t epInt = ctrl_common.dc->base[DIEPINT0 + epNum * EP_STRIDE];
+				epInt &= ctrl_common.dc->base[DIEPMSK];
+
+				/* XFRC */
+				if (epInt & 1) {
+					uint32_t fifoemptymsk = (uint32_t)(0x1UL << (epNum & 0xFU));
+					ctrl_common.dc->base[DIEPEMPMSK] &= ~fifoemptymsk;
+
+					ctrl_common.dc->base[DIEPINT0 + epNum * EP_STRIDE] |= 1;
+
+					// HAL_PCD_DataInStageCallback(hpcd, (uint8_t)epnum);
+				}
+
+				/* TOC */
+				if ((epInt >> 3) & 1) {
+					ctrl_common.dc->base[DIEPINT0 + epNum * EP_STRIDE] |= (1 << 3);
+				}
+
+				/* ITTXFE */
+				if ((epInt >> 4) & 1) {
+					ctrl_common.dc->base[DIEPINT0 + epNum * EP_STRIDE] |= (1 << 4);
+				}
+
+				/* INEPNE */
+				if ((epInt >> 6) & 1) {
+					ctrl_common.dc->base[DIEPINT0 + epNum * EP_STRIDE] |= (1 << 6);
+				}
+
+				/* EPDISD */
+				if ((epInt >> 1) & 1) {
+					/* CLEAR OUT ENDPOINT DISABLED INTERRUPT */
+
+					usb_flushTxFifo(epNum);
+
+					/*
+					ep = &hpcd->OUT_ep[epnum];
+
+					if (ep->is_iso_incomplete == 1U)
+					{
+						ep->is_iso_incomplete = 0U;
+
+						#if (USE_HAL_PCD_REGISTER_CALLBACKS == 1U)
+							hpcd->ISOOUTIncompleteCallback(hpcd, (uint8_t)epnum);
+						#else
+							HAL_PCD_ISOOUTIncompleteCallback(hpcd, (uint8_t)epnum);
+						#endif /* USE_HAL_PCD_REGISTER_CALLBACKS
+					}
+					*/
+
+					ctrl_common.dc->base[DIEPINT0 + epNum * EP_STRIDE] |= (1 << 1);
+				}
+
+				/* TXFE */
+				if ((epInt >> 7) & 1) {
+					// (void)PCD_WriteEmptyTxFifo(hpcd, epnum);
+				}
+			}
+			epNum++;
+			daintClear >>= 1U;
+		}
+	} /* ENDIF GINTSTS_IEPINT */
+
+	/* WKUPINT */
+	if ((ctrl_common.dc->base[GINTSTS] >> 31) & 1) {
+
+		/* RWUSIG */
+		ctrl_common.dc->base[DCTL] &= ~(0x1);
+
+		/*
+		if (hpcd->LPM_State == LPM_L1)
+		{
+			hpcd->LPM_State = LPM_L0;
+
+			#if (USE_HAL_PCD_REGISTER_CALLBACKS == 1U)
+					hpcd->LPMCallback(hpcd, PCD_LPM_L0_ACTIVE);
+			#else
+					HAL_PCDEx_LPM_Callback(hpcd, PCD_LPM_L0_ACTIVE);
+			#endif // USE_HAL_PCD_REGISTER_CALLBACKS
+				}
+				else
+				{
+			#if (USE_HAL_PCD_REGISTER_CALLBACKS == 1U)
+					hpcd->ResumeCallback(hpcd);
+			#else
+					HAL_PCD_ResumeCallback(hpcd);
+			#endif // USE_HAL_PCD_REGISTER_CALLBACKS
+		}
+	  */
+		ctrl_common.dc->base[GINTSTS] |= (1 << 31);
+	}
+
+	/* USBSUSP */
+
+
+	/* LPMINT */
+
+
+	/* USBRST */
+	if ((gintstsClear >> 12) & 1) {
+
+		// bla bla bla
+
+		ctrl_common.dc->base[GINTSTS] |= (1 << 12);
+	}
+
+	/* ENUMDNE */
+
+
+	/* SOF */
+
+
+	/* GONAKEFFM / BOUTNAKEFF */
+
+
+	/* IISOIXFR */
+
+
+	/* PXFR_INCOMPISOOUT - incomplete iso interrupt */
+
+
+	/* SRQINT */
+
+
+	/* OTGINT */
+
+
+	return 0;
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	uint32_t doepintAsserted = ctrl_common.dc->base[DOEPINT0];
 	uint32_t doepintClear = (doepintAsserted & DOEPINTxWrMsk);
@@ -392,7 +656,7 @@ int ctrl_hfIrq(void)
 	/* XFRC */
 	if (diepintAsserted & 1) {
 		// if (~(diepintAsserted >> 4) & 1) {
-		__asm__ volatile("1: b 1b");
+		// __asm__ volatile("1: b 1b");
 		// }
 		setDebug(gintstsAsserted, doepintAsserted, diepintAsserted);
 		/* prepare OUT ep for ZLP from host */
@@ -414,27 +678,7 @@ int ctrl_hfIrq(void)
 	// }
 
 
-	return 1;
-}
-
-/**
- * TODO: ctrl_reset() - to co w komentarzach
- */
-void usb_flushTxFifo(uint32_t num)
-{
-	uint32_t timeout = 200000;
-	while (!((ctrl_common.dc->base[GRSTCTL] >> 31) & 1)) {
-		if (--timeout == 0)
-			return;
-	}
-
-	ctrl_common.dc->base[GRSTCTL] |= (1 << 5 | (num << 6));
-
-	timeout = 200000;
-	while (((ctrl_common.dc->base[GRSTCTL] >> 5) & 1)) {
-		if (--timeout == 0)
-			return;
-	}
+	return 0;
 }
 
 
