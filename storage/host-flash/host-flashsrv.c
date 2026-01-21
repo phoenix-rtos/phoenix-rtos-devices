@@ -19,7 +19,8 @@
 static struct {
 	pthread_mutex_t lock;
 	meterfs_ctx_t ctx;
-} hostflashsrv_common;
+} hostflashsrv_common = { 0 };
+
 
 int hostflashsrv_readFile(id_t *id, off_t off, char *buff, size_t bufflen)
 {
@@ -123,3 +124,11 @@ int hostflashsrv_init(size_t *flashsz, size_t *sectorsz, const char *fileName)
 
 	return 0;
 }
+
+
+#if METERFS_DEBUG_UTILS
+void hostflashsrv_setDebugCtx(meterfs_debugCtx_t *ctx)
+{
+	hostflashsrv_common.ctx.debugCtx = *ctx;
+}
+#endif
