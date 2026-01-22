@@ -30,7 +30,10 @@
 /* REGISTER OFFSETS */
 #define USBPHYC_CR (0x000 / 4)
 
+#define CID (0x03C / 4)
+
 #define GOTGCTL (0x000 / 4)
+#define GOTGINT (0x004 / 4)
 #define GAHBCFG (0x008 / 4)
 #define GUSBCFG (0x00C / 4)
 #define GRSTCTL (0x010 / 4)
@@ -44,6 +47,19 @@
 /* RC OFFSETS */
 #define RCC_AHB5RSTSR (0xA20 / 4)
 #define RCC_AHB5RSTCR (0x1220 / 4)
+
+#define RCC_SR        (0x04 / 4)
+#define RCC_CFGR1     (0x20 / 4)
+#define RCC_CFGR2     (0x24 / 4)
+#define RCC_MSICFGR   (0x44 / 4)
+#define RCC_HSICFGR   (0x48 / 4)
+#define RCC_PLL1CFGR1 (0x80 / 4)
+#define RCC_PLL1CFGR2 (0x84 / 4)
+#define RCC_PLL1CFGR3 (0x88 / 4)
+#define RCC_IC2CFGR   (0xC8 / 4)
+
+#define RCC_PLL_STRIDE (0x10 / 4)
+
 
 #define USBPHYC_CR_FSEL_24MHZ (0x2 << 4)
 /* page 3865 per rm0486 - only rf_w1 bits valid for device mode */
@@ -63,6 +79,8 @@ int phy_init(void);
 
 
 void phy_reset(void);
+
+uint32_t phy_getHclkFreq(void);
 
 
 #endif

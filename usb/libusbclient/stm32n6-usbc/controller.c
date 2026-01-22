@@ -307,17 +307,116 @@ void usb_flushTxFifo(uint32_t num)
 {
 	uint32_t timeout = 200000;
 	while (!((ctrl_common.dc->base[GRSTCTL] >> 31) & 1)) {
-		if (--timeout == 0)
+		if (--timeout == 0) {
 			return;
+		}
 	}
 
 	ctrl_common.dc->base[GRSTCTL] |= (1 << 5 | (num << 6));
 
 	timeout = 200000;
 	while (((ctrl_common.dc->base[GRSTCTL] >> 5) & 1)) {
-		if (--timeout == 0)
+		if (--timeout == 0) {
 			return;
+		}
 	}
+}
+
+
+static void ep0OutStart(void)
+{
+	uint32_t gSNPSiD = ctrl_common.dc->base[CID + 1];
+
+	if (gSNPSiD > 0x4F54300AU) {
+		if ((ctrl_common.dc->base[DOEPCTL0] >> 31) & 1) {
+			return;
+		}
+	}
+
+	ctrl_common.dc->base[DOEPTSIZ0] = 0U;
+	ctrl_common.dc->base[DOEPTSIZ0] |= ((0x3FFUL << 19UL) & (1UL << 19));
+	ctrl_common.dc->base[DOEPTSIZ0] |= (3U * 8U);
+	ctrl_common.dc->base[DOEPTSIZ0] |= (0x3UL << 29UL);
+}
+
+
+static uint8_t getDevSpeed(void)
+{
+	uint8_t speed;
+	uint32_t devEnumSpeed = ((ctrl_common.dc->base[DSTS] >> 1) & 3);
+
+	if (devEnumSpeed == 0) {
+		/* HIGH SPEED */
+		speed = 0U;
+	}
+	else if (devEnumSpeed == 1 || devEnumSpeed == 3) {
+		/* FULL SPEED */
+		speed = 2U;
+	}
+	else {
+		speed = 0xFU;
+	}
+
+	return speed;
+}
+
+
+static void setTurnaroundTime(uint32_t hclk, uint8_t speed)
+{
+	uint32_t usbTrd;
+
+	if (speed == 2U) {
+		if ((hclk >= 14200000U) && (hclk < 15000000U)) {
+			/* hclk Clock Range between 14.2-15 MHz */
+			usbTrd = 0xFU;
+		}
+		else if ((hclk >= 15000000U) && (hclk < 16000000U)) {
+			/* hclk Clock Range between 15-16 MHz */
+			usbTrd = 0xEU;
+		}
+		else if ((hclk >= 16000000U) && (hclk < 17200000U)) {
+			/* hclk Clock Range between 16-17.2 MHz */
+			usbTrd = 0xDU;
+		}
+		else if ((hclk >= 17200000U) && (hclk < 18500000U)) {
+			/* hclk Clock Range between 17.2-18.5 MHz */
+			usbTrd = 0xCU;
+		}
+		else if ((hclk >= 18500000U) && (hclk < 20000000U)) {
+			/* hclk Clock Range between 18.5-20 MHz */
+			usbTrd = 0xBU;
+		}
+		else if ((hclk >= 20000000U) && (hclk < 21800000U)) {
+			/* hclk Clock Range between 20-21.8 MHz */
+			usbTrd = 0xAU;
+		}
+		else if ((hclk >= 21800000U) && (hclk < 24000000U)) {
+			/* hclk Clock Range between 21.8-24 MHz */
+			usbTrd = 0x9U;
+		}
+		else if ((hclk >= 24000000U) && (hclk < 27700000U)) {
+			/* hclk Clock Range between 24-27.7 MHz */
+			usbTrd = 0x8U;
+		}
+		else if ((hclk >= 27700000U) && (hclk < 32000000U)) {
+			/* hclk Clock Range between 27.7-32 MHz */
+			usbTrd = 0x7U;
+		}
+		else /* if(hclk >= 32000000) */
+		{
+			/* hclk Clock Range between 32-200 MHz */
+			usbTrd = 0x6U;
+		}
+	}
+	else if (speed == 0U) {
+		usbTrd = 9U;
+	}
+	else {
+		usbTrd = 9U;
+	}
+
+	ctrl_common.dc->base[GUSBCFG] &= ~(0xFUL << 10UL);
+	ctrl_common.dc->base[GUSBCFG] |= (uint32_t)((usbTrd << 10) & (0xFUL << 10UL));
 }
 
 
@@ -374,6 +473,7 @@ int ctrl_hfIrq(void)
 				if ((epInt >> 3) & 1) {
 					ctrl_common.dc->base[DOEPINT0 + epNum * EP_STRIDE] |= (1 << 3);
 					//(void)PCD_EP_OutSetupPacket_int(hpcd, epnum);
+					desc_setup(&ctrl_common.dc->setup);
 				}
 
 				/* OTEPDIS */
@@ -388,6 +488,8 @@ int ctrl_hfIrq(void)
 					if ((ctrl_common.dc->base[GINTSTS] >> 7) & 1) {
 						ctrl_common.dc->base[DCTL] |= (1 << 10);
 					}
+
+					/* FOR ISOCHRONUS DATA */
 
 					/*
 					ep = &hpcd->OUT_ep[epnum];
@@ -468,17 +570,19 @@ int ctrl_hfIrq(void)
 
 					usb_flushTxFifo(epNum);
 
+					/* FOR ISOCHRONUS DATA */
+
 					/*
-					ep = &hpcd->OUT_ep[epnum];
+					ep = &hpcd->IN_ep[epnum];
 
 					if (ep->is_iso_incomplete == 1U)
 					{
 						ep->is_iso_incomplete = 0U;
 
 						#if (USE_HAL_PCD_REGISTER_CALLBACKS == 1U)
-							hpcd->ISOOUTIncompleteCallback(hpcd, (uint8_t)epnum);
+							hpcd->ISOINIncompleteCallback(hpcd, (uint8_t)epnum);
 						#else
-							HAL_PCD_ISOOUTIncompleteCallback(hpcd, (uint8_t)epnum);
+							HAL_PCD_ISOINIncompleteCallback(hpcd, (uint8_t)epnum);
 						#endif /* USE_HAL_PCD_REGISTER_CALLBACKS
 					}
 					*/
@@ -489,6 +593,7 @@ int ctrl_hfIrq(void)
 				/* TXFE */
 				if ((epInt >> 7) & 1) {
 					// (void)PCD_WriteEmptyTxFifo(hpcd, epnum);
+					sendEpData(ctrl_common.fifoTxPrep.ep, ctrl_common.fifoTxPrep.virtAdress, ctrl_common.fifoTxPrep.nBytes);
 				}
 			}
 			epNum++;
@@ -526,6 +631,12 @@ int ctrl_hfIrq(void)
 	}
 
 	/* USBSUSP */
+	if ((gintstsClear >> 11) & 1) {
+
+		// callback
+
+		ctrl_common.dc->base[GINTSTS] |= (1 << 11);
+	}
 
 
 	/* LPMINT */
@@ -534,30 +645,134 @@ int ctrl_hfIrq(void)
 	/* USBRST */
 	if ((gintstsClear >> 12) & 1) {
 
-		// bla bla bla
+		ctrl_common.dc->base[DCTL] &= ~(0x1UL << 0UL);
+
+		usb_flushTxFifo(0x10U);
+
+		for (int i = 0; i < 9; i++) {
+			ctrl_common.dc->base[DIEPINT0 + EP_STRIDE * i] = 0xFB7FU;
+			ctrl_common.dc->base[DIEPCTL0 + EP_STRIDE * i] &= ~(0x1UL << 21UL);
+			ctrl_common.dc->base[DOEPINT0 + EP_STRIDE * i] = 0xFB7FU;
+			ctrl_common.dc->base[DOEPCTL0 + EP_STRIDE * i] &= ~(0x1UL << 21UL);
+			ctrl_common.dc->base[DOEPCTL0 + EP_STRIDE * i] |= (0x1UL << 27UL);
+		}
+		ctrl_common.dc->base[DAINTMSK] |= 0x10001U;
+
+		ctrl_common.dc->base[DOEPMSK] |= ((0x1UL << 3UL) | (0x1UL) | (0x1UL << 1UL) | (0x1UL << 5UL) | (0x1UL << 13UL));
+
+		ctrl_common.dc->base[DIEPMSK] |= ((0x1UL << 3UL) | (0x1UL) | (0x1UL << 1UL));
+
+		ctrl_common.dc->base[DCFG] &= ~(0x7FUL << 4UL);
+
+		ep0OutStart();
 
 		ctrl_common.dc->base[GINTSTS] |= (1 << 12);
 	}
 
 	/* ENUMDNE */
+	if ((gintstsClear >> 13) & 1) {
+		ctrl_common.dc->base[DIEPCTL0] &= ~(0x7FFUL);
+		ctrl_common.dc->base[DCTL] |= (0x1UL << 8UL);
+
+		uint8_t speed = getDevSpeed();
+		uint32_t hclkFreq = phy_getHclkFreq();
+
+		setTurnaroundTime(hclkFreq, speed);
+
+		// callback
+
+		ctrl_common.dc->base[GINTSTS] |= (1 << 13);
+	}
 
 
 	/* SOF */
+	if ((gintstsClear >> 3) & 1) {
+
+		// callback
+
+		ctrl_common.dc->base[GINTSTS] |= (1 << 3);
+	}
 
 
 	/* GONAKEFFM / BOUTNAKEFF */
+	if ((gintstsClear >> 7) & 1) {
 
+		ctrl_common.dc->base[GINTSTS] |= (1 << 7);
+
+		// for (epnum = 1U; epnum < hpcd->Init.dev_endpoints; epnum++)
+		// {
+		// 	if (hpcd->OUT_ep[epnum].is_iso_incomplete == 1U)
+		// 	{
+		// 	/* disable the EP */
+		// 	USBx_OUTEP(epnum)->DOEPCTL |= (USB_OTG_DOEPCTL_SNAK);
+		// 	USBx_OUTEP(epnum)->DOEPCTL |= (USB_OTG_DOEPCTL_EPDIS);
+		// 	}
+		// }
+	}
 
 	/* IISOIXFR */
+	if ((gintstsClear >> 20) & 1) {
 
+		// for (epnum = 1U; epnum < hpcd->Init.dev_endpoints; epnum++)
+		// {
+		// 	RegVal = USBx_INEP(epnum)->DIEPCTL;
+
+		// 	if ((hpcd->IN_ep[epnum].type == EP_TYPE_ISOC) &&
+		// 		((RegVal & USB_OTG_DIEPCTL_EPENA) == USB_OTG_DIEPCTL_EPENA))
+		// 	{
+		// 	hpcd->IN_ep[epnum].is_iso_incomplete = 1U;
+
+		// 	/* Abort current transaction and disable the EP */
+		// 	(void)HAL_PCD_EP_Abort(hpcd, (uint8_t)(epnum | 0x80U));
+		// 	}
+		// }
+
+		ctrl_common.dc->base[GINTSTS] |= (1 << 20);
+	}
 
 	/* PXFR_INCOMPISOOUT - incomplete iso interrupt */
+	if ((gintstsClear >> 21) & 1) {
+		// for (epnum = 1U; epnum < hpcd->Init.dev_endpoints; epnum++)
+		// {
+		// 	RegVal = USBx_OUTEP(epnum)->DOEPCTL;
 
+		// 	if ((hpcd->OUT_ep[epnum].type == EP_TYPE_ISOC) &&
+		// 		((RegVal & USB_OTG_DOEPCTL_EPENA) == USB_OTG_DOEPCTL_EPENA) &&
+		// 		(((RegVal & (0x1UL << 16)) >> 16U) == (hpcd->FrameNumber & 0x1U)))
+		// 	{
+		// 	hpcd->OUT_ep[epnum].is_iso_incomplete = 1U;
+
+		// 	USBx->GINTMSK |= USB_OTG_GINTMSK_GONAKEFFM;
+
+		// 	if ((USBx->GINTSTS & USB_OTG_GINTSTS_BOUTNAKEFF) == 0U)
+		// 	{
+		// 		USBx_DEVICE->DCTL |= USB_OTG_DCTL_SGONAK;
+		// 		break;
+		// 	}
+		// 	}
+		// }
+		ctrl_common.dc->base[GINTSTS] |= (1 << 21);
+	}
 
 	/* SRQINT */
+	if ((gintstsClear >> 30) & 1) {
+
+		// callback
+
+		ctrl_common.dc->base[GINTSTS] |= (1 << 30);
+	}
 
 
 	/* OTGINT */
+	if ((gintstsClear >> 2) & 1) {
+
+		uint32_t regVal = ctrl_common.dc->base[GOTGINT];
+
+		// callback using regval
+		regVal &= 0x40004;
+
+		ctrl_common.dc->base[GOTGINT] |= regVal;
+	}
 
 
 	return 0;
@@ -823,29 +1038,33 @@ void print_hex(const void *ptr, size_t n)
 
 void ctrl_lfIrq(void)
 {
-	int statyczna = 4;
-	static int lol = 0;
-	if (mojstatus > statyczna) {
-		ctrl_common.dc->base[GINTMSK] &= 0xFFFFFFEF;
-		if (lol > 0) {
-			return;
-		}
-		lol++;
-		for (int i = 0; i < bereqineks; i++) {
-			printf("bereq nr %d: %d\n", i, bereq[i]);
-		}
+	// int statyczna = 4;
+	// static int lol = 0;
+	// if (mojstatus > statyczna) {
+	// 	ctrl_common.dc->base[GINTMSK] &= 0xFFFFFFEF;
+	// 	if (lol > 0) {
+	// 		return;
+	// 	}
+	// 	lol++;
+	// 	for (int i = 0; i < bereqineks; i++) {
+	// 		printf("bereq nr %d: %d\n", i, bereq[i]);
+	// 	}
 
-		for (int i = 0; i < mojstatus; i++) {
-			printf("\nnumer iteracji: %d\n", i);
-			for (int j = 0; j < 3; j++) {
-				helper_showRegisterInfo(tablicaStatusowRejestrow[i][j], j);
-			}
-		}
-		printf("\nbmRqType: %d\nbRq: %d\nwIndex: %d\nwLength: %d\nwValue: %d\n", ctrl_common.dc->setup.bmRequestType, ctrl_common.dc->setup.bRequest, ctrl_common.dc->setup.wIndex, ctrl_common.dc->setup.wLength, ctrl_common.dc->setup.wValue);
-		printf("\n\nGET_DESCRIPTOR_DEV_: ");
-		print_hex(ctrl_common.fifoTxPrep.virtAdress, ctrl_common.fifoTxPrep.nBytes);
-		printf("\nCo wysylam hostowi: ");
-		print_hex(wordsSending, iloscWyslanychSlow * 4);
-	}
-	ctrl_common.dc->base[GINTMSK] |= (1 << 4);
+	// 	for (int i = 0; i < mojstatus; i++) {
+	// 		printf("\nnumer iteracji: %d\n", i);
+	// 		for (int j = 0; j < 3; j++) {
+	// 			helper_showRegisterInfo(tablicaStatusowRejestrow[i][j], j);
+	// 		}
+	// 	}
+	// 	printf("\nbmRqType: %d\nbRq: %d\nwIndex: %d\nwLength: %d\nwValue: %d\n", ctrl_common.dc->setup.bmRequestType, ctrl_common.dc->setup.bRequest, ctrl_common.dc->setup.wIndex, ctrl_common.dc->setup.wLength, ctrl_common.dc->setup.wValue);
+	// 	printf("\n\nGET_DESCRIPTOR_DEV_: ");
+	// 	print_hex(ctrl_common.fifoTxPrep.virtAdress, ctrl_common.fifoTxPrep.nBytes);
+	// 	printf("\nCo wysylam hostowi: ");
+	// 	print_hex(wordsSending, iloscWyslanychSlow * 4);
+	// }
+	// ctrl_common.dc->base[GINTMSK] |= (1 << 4);
+	// if (lol == 0 && lol2 == 1) {
+	// 	phy_getHclkFreq();
+	// 	lol=1;
+	// }
 }

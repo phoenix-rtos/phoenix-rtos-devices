@@ -306,3 +306,163 @@ int phy_init(void)
 
 	return 0;
 }
+
+
+static uint32_t getPLLSourceFreq(uint32_t PLLsource)
+{
+	uint32_t pllinputfreq = 0U;
+
+	switch (PLLsource) {
+		case 0U:
+			/* HSI */
+			uint32_t isRccHsiReady = ((common.rcc_base[RCC_SR] >> 3) & 1);
+			if (isRccHsiReady != 0) {
+				uint32_t divider = ((common.rcc_base[RCC_HSICFGR] >> 7) & 3);
+				pllinputfreq = (64000000UL >> divider);
+			}
+			break;
+
+		case (1 << 28):
+			/* MSI */
+			uint32_t isRccMsiReady = ((common.rcc_base[RCC_SR] >> 2) & 1);
+			if (isRccMsiReady != 0) {
+				uint32_t msiFreq = ((common.rcc_base[RCC_MSICFGR] >> 9) & 1);
+				/* 4MHz */
+				if (msiFreq == 0) {
+					pllinputfreq = 4000000UL;
+				}
+				else {
+					pllinputfreq = 16000000UL;
+				}
+			}
+			break;
+
+		case (2 << 28):
+			/* HSE */
+			uint32_t isRccHseReady = ((common.rcc_base[RCC_SR] >> 4) & 1);
+			if (isRccHseReady != 0) {
+				pllinputfreq = 48000000UL;
+			}
+			break;
+
+		case (3 << 28):
+			/* CKIN */
+			pllinputfreq = 12288000U;
+			break;
+
+		default:
+			break;
+	}
+}
+
+
+static uint32_t calcPLLFreq(uint32_t pllInputFreq, uint32_t M, uint32_t N, uint32_t FRACN, uint32_t p1, uint32_t p2)
+{
+	float freq;
+
+	freq = ((float)pllInputFreq * ((float)N + ((float)FRACN / (float)0x1000000))) / (float)M;
+
+	freq = freq / (float)p1;
+	freq = freq / (float)p2;
+
+	return (uint32_t)freq;
+}
+
+
+static int isBypassEnabledPLL1(int pllNum)
+{
+	return ((common.rcc_base[RCC_PLL1CFGR1 + (pllNum * RCC_PLL_STRIDE)] >> 27) & 1);
+}
+
+
+static uint32_t getPLLXFreq(uint8_t pllNum)
+{
+	uint32_t plloutputfreq = 0U;
+	uint32_t divm;
+
+	uint32_t isPllReady = ((common.rcc_base[RCC_SR] >> (8 + pllNum)) & 1);
+
+	if (isPllReady != 0U) {
+		uint32_t isPllEnabled = ((common.rcc_base[RCC_PLL1CFGR3 + (pllNum * RCC_PLL_STRIDE)] >> 30) & 1);
+		if (isPllEnabled != 0U) {
+			uint32_t source = (common.rcc_base[RCC_PLL1CFGR1 + (pllNum * RCC_PLL_STRIDE)] & (7 << 27));
+			uint32_t pllinputfreq = getPLLSourceFreq(source);
+
+			if (pllinputfreq != 0U) {
+				divm = ((common.rcc_base[RCC_PLL1CFGR1 + (pllNum * RCC_PLL_STRIDE)] >> 20) & 0x3F);
+
+				if (divm != 0) {
+					uint32_t valN = ((common.rcc_base[RCC_PLL1CFGR1 + (pllNum * RCC_PLL_STRIDE)] >> 8) & 0xFFF);
+					uint32_t valFRACN = ((common.rcc_base[RCC_PLL1CFGR2 + (pllNum * RCC_PLL_STRIDE)] >> 0) & 0xFFFFFF);
+					uint32_t valP1 = ((common.rcc_base[RCC_PLL1CFGR2 + (pllNum * RCC_PLL_STRIDE)] >> 27) & 0x7);
+					uint32_t valP2 = ((common.rcc_base[RCC_PLL1CFGR2 + (pllNum * RCC_PLL_STRIDE)] >> 24) & 0x7);
+					pllinputfreq = calcPLLFreq(pllinputfreq, divm, valN, valFRACN, valP1, valP2);
+				}
+			}
+		}
+	}
+	else if (isBypassEnabledPLL1(pllNum) != 0) {
+		uint32_t source = ((common.rcc_base[RCC_PLL1CFGR1 + (pllNum * RCC_PLL_STRIDE)] >> 28) & 0x7);
+		plloutputfreq = getPLLSourceFreq(source);
+	}
+	else {
+		/* Nothing to do */
+	}
+
+	return plloutputfreq;
+}
+
+
+static uint32_t getSysClockFrequency(void)
+{
+	uint32_t frequency = 0;
+
+	uint32_t source = ((common.rcc_base[RCC_IC2CFGR] >> 28) & 3);
+	uint32_t divider = (((common.rcc_base[RCC_IC2CFGR] >> 16) & 0xFF) + 1UL);
+
+	uint32_t sysClkSource = (common.rcc_base[RCC_CFGR1] & (3 << 28));
+
+	switch (sysClkSource) {
+		case 0:
+			/* CLKSOURCE_STATUS_HSI */
+			uint32_t hsiDevider = ((common.rcc_base[RCC_HSICFGR] >> 7) & 3);
+			frequency = (64000000UL >> hsiDevider);
+			break;
+
+		case (1 << 28):
+			/* CLKSOURCE_STATUS_MSI */
+			uint32_t msiVal = 4000000UL;
+			uint32_t msifreqsel = ((common.rcc_base[RCC_MSICFGR] >> 9) & 1);
+			frequency = (msifreqsel ? (msiVal << 2) : (msiVal));
+			break;
+
+		case (2 << 28):
+			/* CLKSOURCE_STATUS_HSE */
+			uint32_t hseVal = 48000000UL;
+			frequency = hseVal;
+			break;
+
+		case (3 << 28):
+			/* PLL_X (X in range 1-4, but coresponding source values are 0-3) */
+			frequency = getPLLXFreq(source);
+			frequency = frequency / divider;
+			break;
+
+		default:
+			break;
+	}
+
+	return frequency;
+}
+
+
+uint32_t phy_getHclkFreq(void)
+{
+	// uint32_t GetSysClockFreq =1;
+	// uint32_t GetAHBPrescaler = 1;
+	// uint32_t res =  ((GetSysClockFreq >> (((GetAHBPrescaler) & (0x7UL << 20UL))) >> (20UL)));
+	uint32_t sysClockFreq = getSysClockFrequency();
+	uint32_t ahbPrescaler = ((common.rcc_base[RCC_CFGR2] >> 20) & 7);
+
+	return (sysClockFreq >> ahbPrescaler);
+}
