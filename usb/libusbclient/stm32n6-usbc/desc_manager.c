@@ -26,7 +26,7 @@ static struct {
 	addr_t hidReports;
 	usb_dc_t *dc;
 	usb_common_data_t *data;
-} desc_common;
+} __attribute__((aligned(4))) desc_common;
 
 
 static void desc_endptInit(usb_endpoint_desc_t *endpt)
@@ -81,8 +81,10 @@ int desc_init(usb_desc_list_t *desList, usb_common_data_t *usb_data_in, usb_dc_t
 	/* Extract mandatory descriptors to mapped memory */
 	for (; desList != NULL; desList = desList->next) {
 
-		if (localOffset > USB_BUFFER_SIZE)
+		if (localOffset > USB_BUFFER_SIZE) {
 			return -ENOMEM;
+		}
+
 
 		switch (desList->descriptor->bDescriptorType) {
 			case USB_DESC_DEVICE:
@@ -90,6 +92,7 @@ int desc_init(usb_desc_list_t *desList, usb_common_data_t *usb_data_in, usb_dc_t
 				desc_common.dev = vrtAddr;
 				memcpy(vrtAddr, desList->descriptor, sizeof(usb_device_desc_t));
 				localOffset += desList->descriptor->bFunctionLength;
+
 				break;
 
 			case USB_DESC_CONFIG:
@@ -155,7 +158,6 @@ static void desc_ReqSetAddress(const usb_setup_packet_t *setup)
 	1.Program the OTG_DCFG register with the device address received in the SetAddress
 	command
 	2.Program the core to send out a status IN packet*/
-	printf("pssssssssssssssssssssss");
 	desc_common.dc->dev_addr = setup->wValue;
 
 	/* setting XFERSIZ */
@@ -284,29 +286,7 @@ int desc_setup(const usb_setup_packet_t *setup)
 
 int desc_classSetup(const usb_setup_packet_t *setup)
 {
-	int res;
-	void *buf;
-	int32_t sz = 0;
 
-	if (!desc_common.dc->cbClassSetup)
-		return EOK;
-	if (EXTRACT_REQ_TYPE(setup->bmRequestType) != REQUEST_TYPE_CLASS)
-		return EOK;
-
-	if (setup->wLength > 0) {
-		return EOK; /* Data OUT handled by IRQ */
-	}
-
-	buf = desc_common.data->endpts[0].buf[USB_ENDPT_DIR_OUT].vBuffer;
-	res = desc_common.dc->cbClassSetup(setup, buf, sz, desc_common.dc->ctxUser);
-
-	if (res > 0) {
-		addr_t physBufIn = (addr_t)desc_common.data->endpts[0].buf[USB_ENDPT_DIR_IN].vBuffer;
-		// ctrl_execTransfer(0, physBufIn, res, USB_ENDPT_DIR_IN);
-	}
-	else if (res == 0) {
-		// ctrl_execTransfer(0, 0, 0, USB_ENDPT_DIR_IN);
-	}
 	return EOK;
 }
 

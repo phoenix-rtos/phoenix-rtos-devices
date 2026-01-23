@@ -270,8 +270,8 @@ void phy_config(void)
 	uint32_t timeout = 0;
 	common.otg_base[DCTL] &= ~2;
 
-	/* 4. OTG_GINTMSK unmask: USB reset, Enumeration Done, Early suspend, USB suspend, SOF */
-	common.otg_base[GINTMSK] |= (1 << 12) | (1 << 13) | (1 << 10) | (1 << 11) | (1 << 3);
+	/* 4. OTG_GINTMSK unmask: USB reset, Enumeration Done, Early suspend, USB suspend, SOF ... and OEPINT, IEPINT */
+	common.otg_base[GINTMSK] |= (1 << 12) | (1 << 13) | (1 << 10) | (1 << 11) | (1 << 3) | (1 << 19) | (1 << 18);
 
 	/* TODO RADEK: odnsnik do erraty (na stronie stm) */
 	vbusHack();

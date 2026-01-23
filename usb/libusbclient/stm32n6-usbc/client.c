@@ -41,10 +41,6 @@ static struct {
 } stm_common;
 
 
-/**
- * TODO: RADEK - zamień ten ostatni argument (zero) na miejsce w pamięci FIFO (OTG_BASE + FIFO_OFFSET) i zobacz jak działa
- * prznieś tę funkcję do phy.c i dodaj ją do phy.h
- */
 void *usbclient_allocBuff(uint32_t size)
 {
 	return mmap(NULL, size, PROT_WRITE | PROT_READ, MAP_UNCACHED | MAP_ANONYMOUS, -1, 0);
@@ -169,7 +165,7 @@ int usbclient_init(usb_desc_list_t *desList)
 	stm_common.dc.connected = 0;
 	stm_common.dc.dev_addr = 0;
 
-	stm_common.data.setupMem = usbclient_allocBuff(FIFO_SIZE);
+	stm_common.data.setupMem = usbclient_allocBuff(USB_BUFFER_SIZE);
 
 
 	if (desc_init(desList, &stm_common.data, &stm_common.dc) < 0) {

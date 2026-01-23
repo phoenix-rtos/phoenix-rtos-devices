@@ -140,6 +140,18 @@ typedef struct {
 } usb_common_data_t;
 
 
+enum {
+	USB_EP_DIR_IN,
+	USB_EP_DIR_OUT
+};
+
+enum {
+	USB_EP_TYPE_CTRL = 0U,
+	USB_EP_TYPE_ISOC = 1U,
+	USB_EP_TYPE_BULK = 2U,
+	USB_EP_TYPE_INTR = 3U
+};
+
 /* Descriptors Manager's functions */
 
 extern int desc_init(usb_desc_list_t *desList, usb_common_data_t *usb_data_in, usb_dc_t *dc_in);
@@ -155,7 +167,10 @@ extern int desc_classSetup(const usb_setup_packet_t *setup);
 extern int ctrl_init(usb_common_data_t *usb_data_in, usb_dc_t *dc_in);
 extern int ctrl_hfIrq(void);
 extern void ctrl_lfIrq(void);
-extern int ctrl_reset(void);
+
+extern void clbc_reset(void);
+extern void clbc_enumdne(void);
+
 extern int ctrl_ep0SetOnEnumdne(void);
 extern int ctrl_execTransfer(int endpt, uint8_t *virtAddr, int nBytes);
 void ctrl_setAddress(uint32_t addr);
