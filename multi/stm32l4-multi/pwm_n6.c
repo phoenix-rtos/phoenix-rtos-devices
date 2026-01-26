@@ -179,7 +179,7 @@ static const struct {
 static struct {
 	pwm_tim_data_t timer[pwm_tim_count];
 #if USE_DSHOT_DMA
-	uint32_t dmaTransferBuffer[MAX_DSHOT_DMA + 2];
+	uint32_t dmaTransferBuffer[MAX_DSHOT_DMA + 3];
 	handle_t dmalock;
 #endif
 } pwm_common;
@@ -672,8 +672,11 @@ int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t
 
 	mutexLock(pwm_common.dmalock);
 
+	/* TODO: adding 0 value in the front as a workaround to the rare issue
+	 * of the first value not being emitted. */
+	pwm_common.dmaTransferBuffer[0] = 0;
 	for (unsigned int i = 0; i < nbits; i++) {
-		pwm_common.dmaTransferBuffer[i] = pwm_getUserCompareVal(data, i, datasize);
+		pwm_common.dmaTransferBuffer[i + 1] = pwm_getUserCompareVal(data, i, datasize);
 	}
 
 	if (pwm_common.timer[timer].dma_per[chn] == NULL) {
@@ -717,13 +720,13 @@ int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t
 	 * TODO: this could be fixed by waiting two timer cycles after DMA finishes - but this may not be enough depending
 	 * on how fast `libdma_tx` returns after DMA is finished.
 	 */
-	pwm_common.dmaTransferBuffer[nbits] = 0;
 	pwm_common.dmaTransferBuffer[nbits + 1] = 0;
+	pwm_common.dmaTransferBuffer[nbits + 2] = 0;
 
 	/* Start the PWM channel. Set first duty cycle to 0 - idle state. It will be output until DMA takes over. */
 	pwm_set(timer, chn, 0);
 	/* TODO: we can calculate a timeout here */
-	libdma_tx(pwm_common.timer[timer].dma_per[chn], pwm_common.dmaTransferBuffer, (nbits + 2) * 4, 0, 0);
+	libdma_tx(pwm_common.timer[timer].dma_per[chn], pwm_common.dmaTransferBuffer, (nbits + 3) * 4, 0, 0);
 	/* TODO: we may need to wait for the last cycle to finish */
 	mutexUnlock(pwm_common.dmalock);
 #else
