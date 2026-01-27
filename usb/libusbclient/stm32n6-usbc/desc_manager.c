@@ -10,7 +10,9 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <phoenix/arch/armv8m/stm32/n6/stm32n6.h>
+
 #include "client.h"
+
 
 typedef struct {
 	addr_t pmAddr;
@@ -31,11 +33,11 @@ static struct {
 
 static void desc_endptInit(usb_endpoint_desc_t *endpt)
 {
-	int endNb = endpt->bEndpointAddress & 0x7;
-	int dir = (endpt->bEndpointAddress & (1 << 7)) ? USB_ENDPT_DIR_IN : USB_ENDPT_DIR_OUT;
-	desc_common.data->endpts[endNb].max_pkt_len[dir] = endpt->wMaxPacketSize;
-	desc_common.data->endpts[endNb].type[dir] = endpt->bmAttributes & 0x03;
-	desc_common.data->endpts[endNb].data_toggle[dir] = 0;
+	// int endNb = endpt->bEndpointAddress & 0x7;
+	// int dir = (endpt->bEndpointAddress & (1 << 7)) ? USB_ENDPT_DIR_IN : USB_ENDPT_DIR_OUT;
+	// desc_common.data->endpts[endNb].max_pkt_len[dir] = endpt->wMaxPacketSize;
+	// desc_common.data->endpts[endNb].type[dir] = endpt->bmAttributes & 0x03;
+	// desc_common.data->endpts[endNb].data_toggle[dir] = 0;
 }
 
 
@@ -125,7 +127,7 @@ int desc_init(usb_desc_list_t *desList, usb_common_data_t *usb_data_in, usb_dc_t
 
 			case USB_DESC_TYPE_HID_REPORT:
 				vrtAddr = desc_common.data->setupMem + localOffset;
-				desc_common.hidReports = VM_2_PHYM(vrtAddr);
+				// desc_common.hidReports = VM_2_PHYM(vrtAddr);
 				memcpy(vrtAddr, &desList->descriptor->bDescriptorSubtype, desList->descriptor->bFunctionLength - 2);
 				localOffset += desList->descriptor->bFunctionLength - 2;
 				break;
@@ -198,13 +200,13 @@ send a status IN packet.*/
 
 static int desc_ReqGetConfig(const usb_setup_packet_t *setup)
 {
-	if (setup->wValue != 0 || setup->wIndex != 0 || setup->wLength != 1)
-		return EOK;
-	uint8_t *txBuf = (uint8_t *)desc_common.data->endpts[0].buf[USB_ENDPT_DIR_IN].vBuffer;
-	if (desc_common.dc->status != DC_CONFIGURED)
-		txBuf[0] = 0;
-	else
-		txBuf[0] = 1;
+	// if (setup->wValue != 0 || setup->wIndex != 0 || setup->wLength != 1)
+	// 	return EOK;
+	// uint8_t *txBuf = (uint8_t *)desc_common.data->endpts[0].buf[USB_ENDPT_DIR_IN].vBuffer;
+	// if (desc_common.dc->status != DC_CONFIGURED)
+	// 	txBuf[0] = 0;
+	// else
+	// 	txBuf[0] = 1;
 	// ctrl_execTransfer(0, (uint32_t)txBuf, 1, USB_ENDPT_DIR_IN);
 	return EOK;
 }
@@ -238,7 +240,25 @@ static void desc_ReqGetDescriptor(const usb_setup_packet_t *setup)
 	// 	ctrl_execTransfer(0, desc_common.hidReports, 76, USB_ENDPT_DIR_IN);
 	// }
 
-	ctrl_execTransfer(0, desc_common.dev, sizeof(usb_device_desc_t));
+	uint32_t len = 0;
+	uint8_t *pbuf = NULL;
+
+	// 1. Wybierz odpowiedni bufor w zależności od zapytania
+	if (setup->wValue >> 8 == USB_DESC_DEVICE) {
+		pbuf = (uint8_t *)desc_common.dev;
+		len = sizeof(usb_device_desc_t);
+	}
+
+	// 2. Jeśli znaleziono deskryptor
+	if (pbuf != NULL && len != 0) {
+		// 3. PRZYTNIJ długość do żądania Hosta (setup->wLength)
+		// To chroni przed "Babble Condition" i Broken Pipe
+		len = MIN(len, setup->wLength);
+		// __asm__ volatile ("1: b 1b");
+
+		// 4. Wywołaj właściwą funkcję
+		clbc_epTransmit(0, pbuf, len);
+	}
 }
 
 

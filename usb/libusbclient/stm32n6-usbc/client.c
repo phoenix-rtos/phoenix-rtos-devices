@@ -25,14 +25,6 @@
 #define THREADS_PRIORITY 3
 #define STACKSZ          4096
 
-#define OFF_GRXSTSP 0x020
-#define OFF_DFIFO0  0x1000
-
-#define PKTSTS_SETUP_DATA 6
-#define PKTSTS_OUT_DATA   2
-#define PKTSTS_OUT_COMP   3
-#define PKTSTS_SETUP_COMP 4
-
 
 static struct {
 	usb_dc_t dc;
@@ -125,8 +117,6 @@ int usbclient_destroy(void)
 	stm_common.dc.runIrqThread = 0;
 	condSignal(stm_common.dc.irqCond);
 
-	// ctrl_reset();
-
 	threadJoin(-1, 0);
 
 	resourceDestroy(stm_common.dc.inth);
@@ -196,6 +186,15 @@ int usbclient_init(usb_desc_list_t *desList)
 		resourceDestroy(stm_common.dc.irqLock);
 		resourceDestroy(stm_common.dc.irqCond);
 		resourceDestroy(stm_common.dc.endp0Lock);
+		return -ENOENT;
+	}
+
+	if (clbc_init(&stm_common.data, &stm_common.dc) < 0) {
+		usbclient_cleanData();
+		resourceDestroy(stm_common.dc.irqLock);
+		resourceDestroy(stm_common.dc.irqCond);
+		resourceDestroy(stm_common.dc.endp0Lock);
+		resourceDestroy(stm_common.dc.endp0Cond);
 		return -ENOENT;
 	}
 

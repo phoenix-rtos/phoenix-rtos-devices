@@ -9,16 +9,7 @@
 #include <sys/interrupt.h>
 #include <errno.h>
 
-#include "phy.h"
 #include "client.h"
-#include "helper.h"
-
-
-#ifndef __PACKED_STRUCT
-#define __PACKED_STRUCT struct __attribute__((packed))
-#endif
-__PACKED_STRUCT T_UINT32_READ { uint32_t v; };
-#define __UNALIGNED_UINT32_READ(addr) (((const struct T_UINT32_READ *)(const void *)(addr))->v)
 
 
 typedef struct {
@@ -35,136 +26,7 @@ struct {
 } ctrl_common;
 
 
-void ctrl_endptInit(void)
-{
-	/* 1. Set the NAK bit for all OUT endpoints */
-	for (int i = 0; i < ENDPOINTS_NUMBER; i++) {
-		ctrl_common.dc->base[DOEPCTL0 + EP_STRIDE * i] |= (1 << 27);
-	}
-
-	/* 2. Unmask interrupt bits: INEP0, OUTEP0 */
-	ctrl_common.dc->base[DAINTMSK] |= ((1) | (1 << 16));
-	/* 2. Unmask interrupt bits: STUPM, XFRCM */
-	ctrl_common.dc->base[DOEPMSK] |= ((1 << 3) | (1));
-	/* 2. Unmask interrupt bits: XFRCM, TOM */
-	ctrl_common.dc->base[DIEPMSK] |= ((1) | (1 << 3));
-
-	/* 3. FIFO RAM: OTG_GRXFSIZ	-  Set Rx FIFO */
-	ctrl_common.dc->base[GRXFSIZ] = RX_FIFO_DEPTH_WORDS;
-	/* 3. FIFO RAM: OTG_DIEPTXF0 */
-	ctrl_common.dc->base[DIEPTXF0] = (TX0FD << 16) | TX0FSA;
-
-	/* 4. DOEPTSIZ0: STUPCNT = 3 */
-	ctrl_common.dc->base[DOEPTSIZ0] |= (3 << 29);
-
-	/* 5. For now we don't use DMA as we use FIFO */
-}
-
-
-int ctrl_init(usb_common_data_t *usb_data_in, usb_dc_t *dc_in)
-{
-	ctrl_common.dc = dc_in;
-	ctrl_common.data = usb_data_in;
-
-	ctrl_endptInit();
-	return 0;
-}
-
-
-/* Page 3900 per rm0486 - Operational model */
-static int ctrl_rxFifoData(void)
-{
-	uint32_t grxstpStatus = ctrl_common.dc->base[GRXSTSP];
-
-	uint32_t pktstsVal = ((grxstpStatus >> 17) & 0xF);
-
-	switch (pktstsVal) {
-
-		case 2:
-			/*
-			READ REGULAR PACKER
-
-			(void)USB_ReadPacket(USBx, ep->xfer_buff,
-							   (uint16_t)((RegVal & USB_OTG_GRXSTSP_BCNT) >> 4));
-
-			ep->xfer_buff += (RegVal & USB_OTG_GRXSTSP_BCNT) >> 4;
-			ep->xfer_count += (RegVal & USB_OTG_GRXSTSP_BCNT) >> 4;
-
-			*/
-			return 0;
-
-		case 4:
-			/* SETUP PACKET RECEIVED */
-			return 0;
-
-		case 6:
-			/* READ SETUP PACKET */
-			uint32_t wordsToRead = (((grxstpStatus >> 4) & 2047U) + 3) / 4;
-			for (uint32_t i = 0; i < wordsToRead; i++) {
-				/* read 1 word from fifo*/
-				((uint32_t *)(&ctrl_common.dc->setup))[i] = ctrl_common.dc->base[FIFO_BASE_OFF];
-			}
-			break;
-
-		default:
-			break;
-	}
-
-	return 0;
-}
-
-
-static void sendEpData(int ep, uint8_t *virtAddr, int nBytes)
-{
-	uint8_t *pSrc = virtAddr;
-	uint32_t count32b = (((uint32_t)nBytes + 3U) / 4U);
-	for (uint32_t i = 0U; i < count32b; i++) {
-		ctrl_common.dc->base[FIFO_BASE_OFF] = __UNALIGNED_UINT32_READ(pSrc);
-		pSrc++;
-		pSrc++;
-		pSrc++;
-		pSrc++;
-	}
-	return;
-}
-
-
-void usb_flushTxFifo(uint32_t num)
-{
-	uint32_t timeout = 200000;
-	while (!((ctrl_common.dc->base[GRSTCTL] >> 31) & 1)) {
-		if (--timeout == 0) {
-			return;
-		}
-	}
-
-	ctrl_common.dc->base[GRSTCTL] |= (1 << 5 | (num << 6));
-
-	timeout = 200000;
-	while (((ctrl_common.dc->base[GRSTCTL] >> 5) & 1)) {
-		if (--timeout == 0) {
-			return;
-		}
-	}
-}
-
-
-static void ep0OutStart(void)
-{
-	uint32_t gSNPSiD = ctrl_common.dc->base[CID + 1];
-
-	if (gSNPSiD > 0x4F54300AU) {
-		if ((ctrl_common.dc->base[DOEPCTL0] >> 31) & 1) {
-			return;
-		}
-	}
-
-	ctrl_common.dc->base[DOEPTSIZ0] = 0U;
-	ctrl_common.dc->base[DOEPTSIZ0] |= ((0x3FFUL << 19UL) & (1UL << 19));
-	ctrl_common.dc->base[DOEPTSIZ0] |= (3U * 8U);
-	ctrl_common.dc->base[DOEPTSIZ0] |= (0x3UL << 29UL);
-}
-
+volatile int dupa = 0;
 
 /* quick actions to perform on interrupt */
 int ctrl_hfIrq(void)
@@ -189,7 +51,12 @@ int ctrl_hfIrq(void)
 	if (gintstsClear >> 4) {
 		ctrl_common.dc->base[GINTMSK] &= 0xFFFFFFEF;
 
-		ctrl_rxFifoData();
+
+		clbc_rxFifoData(0);
+		if (dupa >= 1) {
+			dupa++;
+		}
+
 
 		ctrl_common.dc->base[GINTMSK] |= (1 << 4);
 	}
@@ -205,9 +72,12 @@ int ctrl_hfIrq(void)
 
 		while (daintClear != 0U) {
 			if ((daintClear & 0x01U) != 0) {
-				uint32_t epInt = ctrl_common.dc->base[DOEPINT0 + epNum * EP_STRIDE];
+				volatile uint32_t epInt = ctrl_common.dc->base[DOEPINT0 + epNum * EP_STRIDE];
 				epInt &= ctrl_common.dc->base[DOEPMSK];
 
+				if (dupa == 2) {
+					__asm__ volatile("1: b 1b");
+				}
 				/* XFRC */
 				if (epInt & 1) {
 					ctrl_common.dc->base[DOEPINT0 + epNum * EP_STRIDE] |= 1;
@@ -293,10 +163,8 @@ int ctrl_hfIrq(void)
 				if (epInt & 1) {
 					uint32_t fifoemptymsk = (uint32_t)(0x1UL << (epNum & 0xFU));
 					ctrl_common.dc->base[DIEPEMPMSK] &= ~fifoemptymsk;
-
 					ctrl_common.dc->base[DIEPINT0 + epNum * EP_STRIDE] |= 1;
-
-					// HAL_PCD_DataInStageCallback(hpcd, (uint8_t)epnum);
+					clbc_dataInStage(epNum);
 				}
 
 				/* TOC */
@@ -318,7 +186,7 @@ int ctrl_hfIrq(void)
 				if ((epInt >> 1) & 1) {
 					/* CLEAR OUT ENDPOINT DISABLED INTERRUPT */
 
-					usb_flushTxFifo(epNum);
+					clbc_flushTxFifo(epNum);
 
 					/* FOR ISOCHRONUS DATA */
 
@@ -342,8 +210,32 @@ int ctrl_hfIrq(void)
 
 				/* TXFE */
 				if ((epInt >> 7) & 1) {
+
+					stm32n6_endpt_t *ep = &ctrl_common.data->endpts[epNum];
+
+					// if (ep->in.xfer_count < ep->in.xfer_len) {
+
+					// 	uint32_t len = ep->in.xfer_len - ep->in.xfer_count;
+					// 	if (len > ep->in.maxpacket) {
+					// 		len = ep->in.maxpacket;
+					// 	}
+
+					// 	clbc_sendEpData(epNum, ep->in.xfer_buf + ep->in.xfer_count, len);
+
+					// 	ep->in.xfer_count += len;
+					// }
+					clbc_sendEpData(epNum, ep->in.xfer_buf, ep->in.xfer_len);
+					dupa = 1;
+					uint32_t fifoemptymsk = (uint32_t)(0x1UL << (epNum & 0xFU));
+					ctrl_common.dc->base[DIEPEMPMSK] &= ~fifoemptymsk;
+					// if (ep->in.xfer_count >= ep->in.xfer_len) {
+					// 	uint32_t fifoemptymsk = (uint32_t)(0x1UL << (epNum & 0xFU));
+					// 	ctrl_common.dc->base[DIEPEMPMSK] &= ~fifoemptymsk;
+					// }
+
 					// (void)PCD_WriteEmptyTxFifo(hpcd, epnum);
-					sendEpData(ctrl_common.fifoTxPrep.ep, ctrl_common.fifoTxPrep.virtAdress, ctrl_common.fifoTxPrep.nBytes);
+					// clbc_sendEpData(ctrl_common.fifoTxPrep.ep, ctrl_common.fifoTxPrep.virtAdress, ctrl_common.fifoTxPrep.nBytes);
+					ctrl_common.dc->base[DIEPEMPMSK] &= ~(0x1);
 				}
 			}
 			epNum++;
@@ -397,7 +289,7 @@ int ctrl_hfIrq(void)
 
 		ctrl_common.dc->base[DCTL] &= ~(0x1UL << 0UL);
 
-		usb_flushTxFifo(0x10U);
+		clbc_flushTxFifo(0x10U);
 
 		for (int i = 0; i < 9; i++) {
 			ctrl_common.dc->base[DIEPINT0 + EP_STRIDE * i] = 0xFB7FU;
@@ -414,7 +306,9 @@ int ctrl_hfIrq(void)
 
 		ctrl_common.dc->base[DCFG] &= ~(0x7FUL << 4UL);
 
-		ep0OutStart();
+		clbc_ep0OutStart();
+
+		// ep0OutStart();
 
 		ctrl_common.dc->base[GINTSTS] |= (1 << 12);
 	}
@@ -443,7 +337,7 @@ int ctrl_hfIrq(void)
 	/* GONAKEFFM / BOUTNAKEFF */
 	if ((gintstsClear >> 7) & 1) {
 
-		ctrl_common.dc->base[GINTSTS] |= (1 << 7);
+		ctrl_common.dc->base[GINTMSK] &= ~(1 << 7);
 
 		// for (epnum = 1U; epnum < hpcd->Init.dev_endpoints; epnum++)
 		// {
@@ -547,4 +441,14 @@ int ctrl_execTransfer(int endpt, uint8_t *virtAddr, int nBytes)
 
 void ctrl_lfIrq(void)
 {
+}
+
+
+int ctrl_init(usb_common_data_t *usb_data_in, usb_dc_t *dc_in)
+{
+	ctrl_common.dc = dc_in;
+	ctrl_common.data = usb_data_in;
+
+	clbc_endptInit();
+	return 0;
 }
