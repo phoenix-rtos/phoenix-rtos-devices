@@ -659,11 +659,6 @@ static int pwm_initDMAChannel(pwm_tim_id_t timer, pwm_ch_id_t chn)
 	};
 
 	res = (res < 0) ? res : libxpdma_configurePeripheral(pwm_common.timer[timer].dma_per[chn], dma_mem2per, &cfg);
-	if (res < 0) {
-		return res;
-	}
-
-	*(pwm_setup.timer[timer].base + tim_dier) |= TIM_DIER_UDE;
 	return res;
 }
 
@@ -736,7 +731,11 @@ int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t
 	/* Start the PWM channel. Set first duty cycle to 0 - idle state. It will be output until DMA takes over. */
 	res = (res < 0) ? res : pwm_set(timer, chn, 0);
 	volatile int done = 0;
+	/* Request is disabled before DMA start and enabled after to prevent a possible race condition
+	 * between DMA start and timer update request. */
+	*(pwm_setup.timer[timer].base + tim_dier) &= ~TIM_DIER_UDE;
 	res = (res < 0) ? res : libxpdma_startTransferWithFlag(per, dma_mem2per, &done);
+	*(pwm_setup.timer[timer].base + tim_dier) |= TIM_DIER_UDE;
 	/* TODO: we can calculate a timeout here */
 	res = (res < 0) ? res : libxpdma_waitForTransaction(per, &done, NULL, 0);
 	mutexUnlock(pwm_common.dmalock);
