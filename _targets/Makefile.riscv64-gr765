@@ -8,3 +8,4 @@
 
 DEFAULT_COMPONENTS := grlib-uart grspw2 grspwrtr
 DEFAULT_COMPONENTS += gri2cmst i2c-scan
+DEFAULT_COMPONENTS += grspictrl
