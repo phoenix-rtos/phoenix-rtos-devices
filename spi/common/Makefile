@@ -1,7 +1,7 @@
 #
 # Makefile for Phoenix-RTOS SPI API
 #
-# Copyright 2022 Phoenix Systems
+# Copyright 2022, 2026 Phoenix Systems
 #
 
 # SPI API
@@ -18,4 +18,15 @@ endif
 
 NAME := libspi-msg
 DEPS := spi-common
+include $(static-lib.mk)
+
+NAME := libspi-mst
+LOCAL_HEADERS := spi-mst.h
+include $(static-lib.mk)
+
+
+NAME := libspi-mst-msg
+LOCAL_SRCS := libspi-mst-msg.c
+LOCAL_HEADERS := spi-mst-msg.h
+DEPS := libspi-mst
 include $(static-lib.mk)
