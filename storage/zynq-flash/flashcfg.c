@@ -479,6 +479,54 @@ static void flashcfg_winbond(flash_info_t *info)
 }
 
 
+static void flashcfg_micron2G(flash_info_t *info)
+{
+	info->name = "Micron MT25QU02";
+
+	/* Lack of CFI support, filled based on specification */
+	info->cfi.timeoutTypical.byteWrite = 0x5;
+	info->cfi.timeoutTypical.pageWrite = 0x7;
+	info->cfi.timeoutTypical.sectorErase = 0x8;
+	info->cfi.timeoutTypical.chipErase = 0xf;
+	info->cfi.timeoutMax.byteWrite = 0x6;
+	info->cfi.timeoutMax.pageWrite = 0x4;
+	info->cfi.timeoutMax.sectorErase = 0x2;
+	info->cfi.timeoutMax.chipErase = 0x3;
+	info->cfi.chipSize = 0x1c;
+	info->cfi.fdiDesc = 0;
+	info->cfi.pageSize = 0x08;
+	info->cfi.regsCount = 1;
+	info->cfi.regs[0].count = 0xfff;
+	info->cfi.regs[0].size = 0x100;
+
+	memcpy(info->cmds, flash_defCmds, sizeof(flash_defCmds));
+
+	/* Specific configuration */
+	/* Dummy cycles chosen for 100MHz clock speed. */
+	/* Dummy cycles * data lines must be divisible by 8. */
+
+	/* Single line */
+	info->cmds[flash_cmd_fast_read].dummyCyc = 8;
+	info->cmds[flash_cmd_4fast_read].dummyCyc = 8;
+	/* Two lines */
+	info->cmds[flash_cmd_dor].dummyCyc = 4;
+	info->cmds[flash_cmd_4dor].dummyCyc = 4;
+	info->cmds[flash_cmd_dior].dummyCyc = 8;
+	info->cmds[flash_cmd_4dior].dummyCyc = 8;
+	/* Four lines */
+	info->cmds[flash_cmd_qor].dummyCyc = 6;
+	info->cmds[flash_cmd_4qor].dummyCyc = 6;
+	info->cmds[flash_cmd_qior].dummyCyc = 10;
+	info->cmds[flash_cmd_4qior].dummyCyc = 10;
+
+	/* Default read and page program commands */
+	info->readCmd = flash_cmd_4qior;
+	info->ppCmd = flash_cmd_4qpp;
+
+	info->init = flashcfg_micronInit;
+}
+
+
 void flashcfg_jedecIDGet(flash_cmd_t *cmd)
 {
 	*cmd = flash_defCmds[flash_cmd_rdid];
@@ -504,6 +552,9 @@ int flashcfg_infoResolve(flash_info_t *info)
 	/* Winbond W25Q128JV - IM/JM */
 	else if ((info->cfi.vendorData[0] == 0xef) && (info->cfi.vendorData[1] == 0x40) && (info->cfi.vendorData[2] == 0x18)) {
 		flashcfg_winbond(info);
+	}
+	else if ((info->cfi.vendorData[0] == 0x20) && (info->cfi.vendorData[1] == 0xbb) && (info->cfi.vendorData[2] == 0x22)) {
+		flashcfg_micron2G(info);
 	}
 	else {
 		info->name = "Unknown";
