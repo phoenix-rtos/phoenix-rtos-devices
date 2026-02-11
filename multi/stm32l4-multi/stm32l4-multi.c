@@ -298,6 +298,22 @@ static ssize_t console_read(char *str, size_t bufflen, int mode)
 }
 
 
+static void msgDispatchHandler(msg_t *msg)
+{
+	switch (msg->oid.id & (~NODE_ID_MSK)) {
+		case node_id_multi:
+			handleMsg(&msg);
+			break;
+
+		case node_id_i2c:
+			break;
+
+		default:
+			break;
+	}
+}
+
+
 static void thread(void *arg)
 {
 	msg_t msg;
@@ -324,7 +340,7 @@ static void thread(void *arg)
 				break;
 
 			case mtDevCtl:
-				handleMsg(&msg);
+				msgDispatchHandler(&msg);
 				break;
 
 			default:
@@ -382,7 +398,7 @@ int main(void)
 #if defined(__CPU_STM32L4X6)
 	flash_init();
 #endif
-	i2c_init();
+	i2c_init(common.port, node_id_i2c);
 	uart_init();
 	rng_init();
 	libklog_init(log_write);
@@ -401,7 +417,7 @@ int main(void)
 #endif
 
 	oid.port = common.port;
-	oid.id = 0;
+	oid.id = node_id_multi;
 
 	create_dev(&oid, "multi");
 
