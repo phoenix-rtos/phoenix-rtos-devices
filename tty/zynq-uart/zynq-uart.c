@@ -48,6 +48,14 @@
 #define UART_CONSOLE_ROUTED_VIA_PL 0
 #endif
 
+#ifndef ZYNQ_UART_0_ROUTED_VIA_PL
+#define ZYNQ_UART_0_ROUTED_VIA_PL ((UART_CONSOLE_USER == 0) && UART_CONSOLE_ROUTED_VIA_PL)
+#endif
+
+#ifndef ZYNQ_UART_1_ROUTED_VIA_PL
+#define ZYNQ_UART_1_ROUTED_VIA_PL ((UART_CONSOLE_USER == 1) && UART_CONSOLE_ROUTED_VIA_PL)
+#endif
+
 #define UARTS_MAX_CNT 2
 #define UART_REF_CLK  50000000 /* 50 MHz */
 
@@ -74,9 +82,10 @@ static const struct {
 	uint16_t clk;
 	uint16_t rxPin;
 	uint16_t txPin;
+	int setMioPins;
 } info[UARTS_MAX_CNT] = {
-	{ 0xe0000000, 59, pctl_amba_uart0_clk, UART0_RX, UART0_TX },
-	{ 0xe0001000, 82, pctl_amba_uart1_clk, UART1_RX, UART1_TX }
+	{ 0xe0000000, 59, pctl_amba_uart0_clk, UART0_RX, UART0_TX, !ZYNQ_UART_0_ROUTED_VIA_PL },
+	{ 0xe0001000, 82, pctl_amba_uart1_clk, UART1_RX, UART1_TX, !ZYNQ_UART_1_ROUTED_VIA_PL }
 };
 #elif defined(__CPU_ZYNQMP)
 /* TODO: on ZynqMP we can get base address and interrupts from DTB tree */
@@ -87,9 +96,10 @@ static const struct {
 	uint16_t rst;
 	uint16_t rxPin;
 	uint16_t txPin;
+	int setMioPins;
 } info[UARTS_MAX_CNT] = {
-	{ 0xff000000, 53, pctl_devclock_lpd_uart0, pctl_devreset_lpd_uart0, UART0_RX, UART0_TX },
-	{ 0xff010000, 54, pctl_devclock_lpd_uart1, pctl_devreset_lpd_uart1, UART1_RX, UART1_TX }
+	{ 0xff000000, 53, pctl_devclock_lpd_uart0, pctl_devreset_lpd_uart0, UART0_RX, UART0_TX, !ZYNQ_UART_0_ROUTED_VIA_PL },
+	{ 0xff010000, 54, pctl_devclock_lpd_uart1, pctl_devreset_lpd_uart1, UART1_RX, UART1_TX, !ZYNQ_UART_1_ROUTED_VIA_PL }
 };
 #endif
 
@@ -512,15 +522,13 @@ static int uart_init(unsigned int n, int baud, int raw)
 	libtty_callbacks_t callbacks;
 	uart_t *uart = &uart_common.uart;
 
-#if (UART_CONSOLE_ROUTED_VIA_PL != 1)
-	int rxRet = uart_setPin(info[n].rxPin);
-	int txRet = uart_setPin(info[n].txPin);
-	if ((rxRet < 0) || (txRet < 0)) {
-		return -EINVAL;
+	if (info[n].setMioPins) {
+		int rxRet = uart_setPin(info[n].rxPin);
+		int txRet = uart_setPin(info[n].txPin);
+		if ((rxRet < 0) || (txRet < 0)) {
+			return -EINVAL;
+		}
 	}
-#else
-	(void)uart_setPin;
-#endif
 
 	if (uart_activateClk(n) < 0) {
 		return -EINVAL;
