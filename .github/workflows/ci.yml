@@ -10,7 +10,6 @@ on:
     branches:
       - master
       - 'feature/*'
-      - 'nalajcie/*'
 
 jobs:
   call-ci:
