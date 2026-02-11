@@ -23,6 +23,7 @@
 #include <posix/utils.h>
 
 #include <libklog.h>
+#include <i2c-msg.h>
 
 #include "common.h"
 #include "config.h"
@@ -298,17 +299,47 @@ static ssize_t console_read(char *str, size_t bufflen, int mode)
 }
 
 
+static void handleMsgI2c(msg_t *msg)
+{
+	i2c_devctl_t *imsg = (i2c_devctl_t *)msg->i.raw;
+	int i2cBus = (msg->oid.id & NODE_ID_MSK);
+	int err = EOK;
+
+	switch (imsg->i.type) {
+		case i2c_devctl_bus_write:
+			err = i2c_write(i2cBus, imsg->i.dev_addr, msg->i.data, msg->i.size);
+			break;
+
+		case i2c_devctl_bus_read:
+			err = i2c_read(i2cBus, imsg->i.dev_addr, msg->o.data, msg->o.size);
+			break;
+
+		case i2c_devctl_reg_read:
+			err = i2c_readReg(i2cBus, imsg->i.dev_addr, imsg->i.reg_addr, msg->o.data, msg->o.size);
+			break;
+
+		default:
+			err = -EINVAL;
+			break;
+	}
+
+	msg->o.err = err;
+}
+
+
 static void msgDispatchHandler(msg_t *msg)
 {
 	switch (msg->oid.id & (~NODE_ID_MSK)) {
 		case node_id_multi:
-			handleMsg(&msg);
+			handleMsg(msg);
 			break;
 
 		case node_id_i2c:
+			handleMsgI2c(msg);
 			break;
 
 		default:
+			msg->o.err = -EINVAL;
 			break;
 	}
 }
