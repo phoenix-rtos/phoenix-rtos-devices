@@ -16,6 +16,7 @@
 #include <sys/pwman.h>
 #include <sys/threads.h>
 #include <sys/interrupt.h>
+#include <posix/utils.h>
 
 #include "libmulti/libi2c.h"
 
@@ -101,17 +102,29 @@ ssize_t i2c_writeReg(int i2c, unsigned char addr, unsigned char reg, const void 
 }
 
 
-void i2c_init(void)
+void i2c_init(uint32_t port, int protNodeId)
 {
 	int i2c;
+	oid_t oid;
+	char devname[] = "/dev/i2cX";
+
 	if (N_I2C_ACTIVE == 0) {
 		return;
 	}
+
+	oid.id = protNodeId;
+	oid.port = port;
 
 	for (i2c = i2c1; i2c <= MAX_I2C; ++i2c) {
 		if (!i2cConfig[i2c]) {
 			continue;
 		}
+
+		oid.id &= ~NODE_ID_MSK;
+		oid.id |= (NODE_ID_MSK & i2c);
+		devname[sizeof(devname) - 2] = '0' + ((i2c + 1) % 10);
+
+		create_dev(&oid, devname);
 
 		mutexCreate(&i2c_lock[i2cPos[i2c]]);
 		libi2c_init(&i2c_ctx[i2cPos[i2c]], i2c);
