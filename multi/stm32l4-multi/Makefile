@@ -18,7 +18,7 @@ else ifeq ($(TARGET_SUBFAMILY),stm32n6)
 endif
 
 LOCAL_HEADERS := stm32l4-multi.h
-DEP_LIBS := libstm32l4-multi libtty libklog
+DEP_LIBS := libstm32l4-multi libtty libklog i2c-common
 LIBS := libdummyfs libklog libposixsrv
 
 include $(binary.mk)
