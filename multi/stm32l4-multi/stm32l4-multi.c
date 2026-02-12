@@ -23,6 +23,7 @@
 #include <posix/utils.h>
 
 #include <libklog.h>
+#include <i2c-msg.h>
 
 #include "common.h"
 #include "config.h"
@@ -95,7 +96,7 @@ struct {
 } common;
 
 
-static void handleMsg(msg_t *msg)
+static void handleMsgMulti(msg_t *msg)
 {
 	multi_i_t *imsg = (multi_i_t *)msg->i.raw;
 	multi_o_t *omsg = (multi_o_t *)msg->o.raw;
@@ -298,6 +299,52 @@ static ssize_t console_read(char *str, size_t bufflen, int mode)
 }
 
 
+static void handleMsgI2c(msg_t *msg)
+{
+	i2c_devctl_t *imsg = (i2c_devctl_t *)msg->i.raw;
+	int i2cBus = (msg->oid.id & NODE_ID_MSK);
+	int err = EOK;
+
+	switch (imsg->i.type) {
+		case i2c_devctl_bus_write:
+			err = i2c_write(i2cBus, imsg->i.dev_addr, msg->i.data, msg->i.size);
+			break;
+
+		case i2c_devctl_bus_read:
+			err = i2c_read(i2cBus, imsg->i.dev_addr, msg->o.data, msg->o.size);
+			break;
+
+		case i2c_devctl_reg_read:
+			err = i2c_readReg(i2cBus, imsg->i.dev_addr, imsg->i.reg_addr, msg->o.data, msg->o.size);
+			break;
+
+		default:
+			err = -EINVAL;
+			break;
+	}
+
+	msg->o.err = err;
+}
+
+
+static void handleMsg(msg_t *msg)
+{
+	switch (msg->oid.id & (~NODE_ID_MSK)) {
+		case node_id_multi:
+			handleMsgMulti(msg);
+			break;
+
+		case node_id_i2c:
+			handleMsgI2c(msg);
+			break;
+
+		default:
+			msg->o.err = -EINVAL;
+			break;
+	}
+}
+
+
 static void thread(void *arg)
 {
 	msg_t msg;
@@ -382,7 +429,7 @@ int main(void)
 #if defined(__CPU_STM32L4X6)
 	flash_init();
 #endif
-	i2c_init();
+	i2c_init(common.port);
 	uart_init();
 	rng_init();
 	libklog_init(log_write);
@@ -401,7 +448,7 @@ int main(void)
 #endif
 
 	oid.port = common.port;
-	oid.id = 0;
+	oid.id = node_id_multi;
 
 	create_dev(&oid, "multi");
 

@@ -16,6 +16,7 @@
 #include <sys/pwman.h>
 #include <sys/threads.h>
 #include <sys/interrupt.h>
+#include <posix/utils.h>
 
 #include "libmulti/libi2c.h"
 
@@ -35,8 +36,8 @@
 
 #define N_I2C_ACTIVE (I2C1 + I2C2 + I2C3 + I2C4)
 
-libi2c_ctx_t i2c_ctx[N_I2C_ACTIVE];
-handle_t i2c_lock[N_I2C_ACTIVE];
+static libi2c_ctx_t i2c_ctx[N_I2C_ACTIVE];
+static handle_t i2c_lock[N_I2C_ACTIVE];
 
 
 static const int i2cConfig[MAX_I2C + 1] = { I2C1, I2C2, I2C3, I2C4 };
@@ -48,7 +49,7 @@ static const int i2cPos[MAX_I2C + 1] = { I2C1_POS, I2C2_POS, I2C3_POS, I2C4_POS 
 ssize_t i2c_read(int i2c, unsigned char addr, void *buff, size_t len)
 {
 	if ((N_I2C_ACTIVE == 0) || (i2c < i2c1) || (i2c > MAX_I2C) || (i2cConfig[i2c] == 0)) {
-		return -1;
+		return -EINVAL;
 	}
 
 	mutexLock(i2c_lock[i2cPos[i2c]]);
@@ -101,16 +102,31 @@ ssize_t i2c_writeReg(int i2c, unsigned char addr, unsigned char reg, const void 
 }
 
 
-void i2c_init(void)
+void i2c_init(uint32_t port)
 {
 	int i2c;
+	oid_t oid;
+	char devname[] = "/dev/i2cX";
+
 	if (N_I2C_ACTIVE == 0) {
 		return;
 	}
 
+	oid.id = node_id_i2c;
+	oid.port = port;
+
 	for (i2c = i2c1; i2c <= MAX_I2C; ++i2c) {
 		if (!i2cConfig[i2c]) {
 			continue;
+		}
+
+		oid.id &= ~NODE_ID_MSK;
+		oid.id |= (NODE_ID_MSK & i2c);
+		devname[sizeof(devname) - 2] = '0' + ((i2c + 1) % 10);
+
+		if (create_dev(&oid, devname) < 0) {
+			printf("multi: i2c%d dev failed\n", i2c + 1);
+			return;
 		}
 
 		mutexCreate(&i2c_lock[i2cPos[i2c]]);
