@@ -63,6 +63,8 @@ typedef struct {
 
 	usb_driver_t *drv;
 
+	uint32_t chip;
+
 	struct {
 		handle_t lock;
 		msg_t msg;
@@ -513,6 +515,18 @@ static int usbwlan_handleDevCtl(msg_t *msg, usbwlan_dev_t *dev)
 			mutexLock(usbwlan_common.lock);
 			_usbwlan_close(dev, msg->pid);
 			mutexUnlock(usbwlan_common.lock);
+			return EOK;
+
+		case usbwlan_getChip:
+			if (dev->chip == 0) {
+				return -EINVAL;
+			}
+			memcpy(msg->o.data, &dev->chip, sizeof(dev->chip));
+			msg->o.size = sizeof(dev->chip);
+			return EOK;
+
+		case usbwlan_setChip:
+			memcpy(&dev->chip, msg->i.data, sizeof(dev->chip));
 			return EOK;
 
 		default:
