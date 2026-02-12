@@ -10,8 +10,14 @@ LOCAL_HEADERS := i2c.h i2c-msg.h
 include $(static-lib.mk)
 
 
+# i2c message API
+ifneq ($(findstring stm32,$(TARGET_SUBFAMILY)),)
+  LOCAL_SRCS := libi2c-msg-stm32.c
+else
+  LOCAL_SRCS := libi2c-msg.c
+endif
+
 # i2c API message implementation
 NAME := libi2c-msg
 DEPS := i2c-common
-LOCAL_SRCS := libi2c-msg.c
 include $(static-lib.mk)
