@@ -18,14 +18,20 @@
 #include <sys/types.h>
 #include <phoenix/arch/sparcv8leon/gr716/gr716.h>
 
+#include <board_config.h>
 
 #define SPIMCTRL_NUM 2
 
 #define FLASH0_AHB_ADDR 0x02000000
 #define FLASH1_AHB_ADDR 0x04000000
 
+#ifndef SPIMCTRL0_BASE
 #define SPIMCTRL0_BASE ((void *)0xFFF00100)
+#endif
+
+#ifndef SPIMCTRL1_BASE
 #define SPIMCTRL1_BASE ((void *)0xFFF00200)
+#endif
 
 
 /* clang-format off */
