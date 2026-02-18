@@ -49,10 +49,6 @@
 #define USBACM_MSG_PRIO 3
 #endif
 
-#ifndef USBACM_UMSG_PRIO
-#define USBACM_UMSG_PRIO 3
-#endif
-
 #ifndef USBACM_SET_LINE_DEFAULT_RATE
 #define USBACM_SET_LINE_DEFAULT_RATE 57600
 #endif
