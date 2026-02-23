@@ -191,7 +191,10 @@ int main(int argc, char *argv[])
 		switch (c) {
 			case 'e':
 				ndev = strtoul(optarg, NULL, 0);
-				flashnor_ecspiInit(ndev, &info);
+				if (flashnor_ecspiInit(ndev, &info) < 0) {
+					printf("fail: ECSPI no known device found\n");
+					return EXIT_FAILURE;
+				}
 
 				if (run_tests(&info, start) < 0) {
 					return EXIT_FAILURE;
@@ -199,7 +202,10 @@ int main(int argc, char *argv[])
 				break;
 			case 'q':
 				ndev = strtoul(optarg, NULL, 0);
-				flashnor_qspiInit(ndev, &info);
+				if (flashnor_qspiInit(ndev, &info) < 0) {
+					printf("fail: QSPI no known device found\n");
+					return EXIT_FAILURE;
+				}
 
 				if (run_tests(&info, start) < 0) {
 					return EXIT_FAILURE;
