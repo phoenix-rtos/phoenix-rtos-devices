@@ -523,6 +523,10 @@ static int libxpdma_addCacheOp(int dma, int chn, const void *buf, size_t size, i
 		if (ops[i].dirSize == 0) {
 			ops[i].buf = buf;
 			ops[i].dirSize = dirSize;
+			if ((i + 1) < MAX_BUFS_PER_TRANSACTION) {
+				ops[i + 1].dirSize = 0;
+			}
+
 			return EOK;
 		}
 	}
@@ -533,7 +537,7 @@ static int libxpdma_addCacheOp(int dma, int chn, const void *buf, size_t size, i
 
 static void libxpdma_clearCacheOps(int dma, int chn)
 {
-	memset(dma_ctrl[dma].chns[chn].cacheOps, 0, sizeof(dma_ctrl[dma].chns[chn].cacheOps));
+	dma_ctrl[dma].chns[chn].cacheOps[0].dirSize = 0;
 }
 
 
