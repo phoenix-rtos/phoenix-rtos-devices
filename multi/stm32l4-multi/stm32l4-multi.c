@@ -41,6 +41,7 @@
 #include "rng.h"
 
 #if defined(__CPU_STM32N6)
+#include "ext_flash.h"
 #include "pwm_n6.h"
 #endif
 
@@ -127,6 +128,28 @@ static void handleMsgMulti(msg_t *msg)
 		case exti_map:
 			err = syscfg_mapexti(imsg->exti_map.line, imsg->exti_map.port);
 			break;
+
+#if defined(__CPU_STM32N6)
+		case extFlash_read:
+			err = extFlash_fn_read(imsg->extFlash_op.devNum, imsg->extFlash_op.addr, msg->o.data, msg->o.size);
+			break;
+
+		case extFlash_write:
+			err = extFlash_fn_write(imsg->extFlash_op.devNum, imsg->extFlash_op.addr, msg->i.data, msg->i.size);
+			break;
+
+		case extFlash_erase:
+			err = extFlash_fn_erase(imsg->extFlash_op.devNum, imsg->extFlash_op.addr, imsg->extFlash_op.eraseSize);
+			break;
+
+		case extFlash_sync:
+			err = extFlash_fn_sync(imsg->extFlash_op.devNum);
+			break;
+
+		case extFlash_def:
+			err = extFlash_fn_getInfo(imsg->extFlash_op.devNum, &omsg->extFlash_def);
+			break;
+#endif
 
 #if defined(__CPU_STM32L4X6)
 		case flash_get:
@@ -439,6 +462,7 @@ int main(void)
 #endif
 #if defined(__CPU_STM32N6)
 	pwm_init();
+	extFlash_fn_init();
 #endif
 
 	/* Do this after klog init to keep shell from overtaking klog */

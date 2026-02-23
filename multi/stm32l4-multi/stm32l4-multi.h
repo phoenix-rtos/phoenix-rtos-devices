@@ -28,11 +28,14 @@
 #define NODE_ID_MSK        ((1UL << NODE_ID_TYPE_SHIFT) - 1UL)
 
 /* clang-format off */
-enum { adc_get = 0, rtc_setcal, rtc_get, rtc_set, rtc_setalarm, i2c_get, i2c_getwreg,
+enum {
+	adc_get = 0, rtc_setcal, rtc_get, rtc_set, rtc_setalarm, i2c_get, i2c_getwreg,
 	i2c_set, i2c_setwreg, gpio_def, gpio_get, gpio_set, uart_def, uart_get, uart_set,
 	flash_get, flash_set, flash_info, spi_get, spi_set, spi_rw, spi_def, exti_def,
 	exti_map, otp_get, otp_set, rtc_setBackup, rtc_getBackup, flash_setRaw, flash_erase,
-	rng_get, pwm_def, pwm_setm, pwm_getm, pwm_getfreq, pwm_distim, pwm_dischn, pwm_bitseq };
+	rng_get, pwm_def, pwm_setm, pwm_getm, pwm_getfreq, pwm_distim, pwm_dischn, pwm_bitseq,
+	extFlash_def, extFlash_read, extFlash_write, extFlash_erase, extFlash_sync,
+};
 /* clang-format on */
 
 /* RTC */
@@ -288,6 +291,26 @@ typedef struct {
 } __attribute__((packed)) flashinfo_t;
 
 
+/* EXTFLASH */
+
+
+typedef struct {
+	unsigned int devNum;    /* Device number to operate on */
+	unsigned int addr;      /* Address used for read/write/erase operations */
+	unsigned int eraseSize; /* Size used for erase operations */
+} __attribute__((packed)) extFlashOp_t;
+
+
+typedef struct {
+	unsigned int nDevices;  /* Maximum possible number of devices. Always returned, even if retcode is -ENODEV. */
+	char name[32];          /* Name of device, for decorative purposes only. */
+	unsigned int eraseSize; /* Erase block size in bytes. Every erase must be aligned to this many bytes. */
+	unsigned int writeSize; /* Write block size in bytes. Every write must be aligned to this many bytes. */
+	unsigned int pageSize;  /* Page size in bytes. */
+	unsigned int totalSize; /* Total size of device in bytes. */
+} __attribute__((packed)) extFlashDef_t;
+
+
 /* OTP */
 
 
@@ -327,6 +350,7 @@ typedef struct {
 		pwmdistim_t pwm_distim;
 		pwmdischn_t pwm_dischn;
 		pwmbitseq_t pwm_bitseq;
+		extFlashOp_t extFlash_op;
 	};
 } __attribute__((packed)) multi_i_t;
 
@@ -339,6 +363,7 @@ typedef struct {
 		flashinfo_t flash_info;
 		uint64_t pwm_basefreq;
 		pwmgeto_t pwm_get;
+		extFlashDef_t extFlash_def;
 	};
 } __attribute__((packed)) multi_o_t;
 

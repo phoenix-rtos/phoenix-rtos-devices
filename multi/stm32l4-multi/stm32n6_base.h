@@ -90,4 +90,12 @@
 #define TIM3_BASE  ((void *)0x50000400)
 #define TIM2_BASE  ((void *)0x50000000)
 
+#define XSPI1_BASE     ((void *)0x58025000)
+#define XSPI1_REG_BASE ((void *)0x90000000)
+#define XSPI2_BASE     ((void *)0x5802a000)
+#define XSPI2_REG_BASE ((void *)0x70000000)
+#define XSPI3_BASE     ((void *)0x5802d000)
+#define XSPI3_REG_BASE ((void *)0x80000000)
+#define XSPIM_BASE     ((void *)0x5802b400)
+
 #endif /* _STM32N6_BASE_H_ */
