@@ -25,7 +25,16 @@
 enum { dma_per2mem = 0, dma_mem2per };
 
 
-enum libdma_peripheral_type { dma_spi = 0, dma_uart, dma_tim_upd };
+enum libdma_peripheral_type { dma_spi = 0, dma_uart, dma_tim_upd, dma_memTransfer };
+
+
+/* Memory-to-memory transfer is implemented as a fictional "peripheral type" dma_memTransfer.
+ * There are two "peripherals" of this type that differ in how the source and destination of the transfer is configured.
+ */
+enum libdma_memTransfer_num {
+	memTransfer_perIsDst = 0, /* libxpdma_configurePeripheral configures destination, use dma_mem2per direction  */
+	memTransfer_perIsSrc,     /* libxpdma_configurePeripheral configures source, use dma_per2mem direction */
+};
 
 
 enum libdma_interrupt_flags { dma_ht = (1 << 0), dma_tc = (1 << 1) };

@@ -176,6 +176,7 @@ enum dma_reqs {
 	dma_req_i3c1_rs = 142,
 	dma_req_i3c2_tc = 143,
 	dma_req_i3c2_rs = 144,
+	dma_req_sw_trig = 254,
 	dma_req_invalid = 255,
 };
 
@@ -306,6 +307,12 @@ static const struct libdma_perSetup libdma_persTimUpd[] = {
 	[pwm_tim15] = { .defDMA = DMA_CTRL_GPDMA1, .requests = { dma_req_invalid, dma_req_tim15_upd }, .portPer = 1, .portMem = 0, .valid = 1 },
 	[pwm_tim16] = { .defDMA = DMA_CTRL_GPDMA1, .requests = { dma_req_invalid, dma_req_tim16_upd }, .portPer = 1, .portMem = 0, .valid = 1 },
 	[pwm_tim17] = { .defDMA = DMA_CTRL_GPDMA1, .requests = { dma_req_invalid, dma_req_tim17_upd }, .portPer = 1, .portMem = 0, .valid = 1 },
+};
+
+
+static const struct libdma_perSetup libdma_persMemTransfer[] = {
+	[memTransfer_perIsDst] = { .defDMA = DMA_CTRL_HPDMA1, .requests = { dma_req_invalid, dma_req_sw_trig }, .portPer = 0, .portMem = 0, .valid = 1 },
+	[memTransfer_perIsSrc] = { .defDMA = DMA_CTRL_HPDMA1, .requests = { dma_req_sw_trig, dma_req_invalid }, .portPer = 0, .portMem = 0, .valid = 1 },
 };
 
 
@@ -647,16 +654,20 @@ int libxpdma_acquirePeripheral(int per, unsigned int num, uint32_t flags, const 
 	const struct libdma_perSetup *setups;
 	size_t setupsSize;
 	if (per == dma_spi) {
-		setupsSize = sizeof(libdma_persSpi) / sizeof(libdma_persSpi[0]);
+		setupsSize = NELEMS(libdma_persSpi);
 		setups = libdma_persSpi;
 	}
 	else if (per == dma_uart) {
-		setupsSize = sizeof(libdma_persUart) / sizeof(libdma_persUart[0]);
+		setupsSize = NELEMS(libdma_persUart);
 		setups = libdma_persUart;
 	}
 	else if (per == dma_tim_upd) {
-		setupsSize = sizeof(libdma_persTimUpd) / sizeof(libdma_persTimUpd[0]);
+		setupsSize = NELEMS(libdma_persTimUpd);
 		setups = libdma_persTimUpd;
+	}
+	else if (per == dma_memTransfer) {
+		setupsSize = NELEMS(libdma_persMemTransfer);
+		setups = libdma_persMemTransfer;
 	}
 	else {
 		return -EINVAL;
@@ -747,7 +758,8 @@ int libxpdma_configurePeripheral(const struct libdma_per *per, int dir, const li
 		return -EINVAL;
 	}
 
-	if (cfg->elSize_log > 2) {
+	const uint8_t max_elSize_log = dma_setup[dma].isHPDMA ? 3 : 2;
+	if (cfg->elSize_log > max_elSize_log) {
 		return -EINVAL;
 	}
 
@@ -769,13 +781,18 @@ int libxpdma_configurePeripheral(const struct libdma_per *per, int dir, const li
 
 	/* TCEM bits will be configured by libxpdma_configureMemory */
 	sChn->cx.tr2 &= XPDMA_CXTR2_TCEM_MASK;
-	uint32_t dir_bit = (dir == dma_mem2per) ? XPDMA_CXTR2_MEM2PER : XPDMA_CXTR2_PER2MEM;
-	sChn->cx.tr2 |=
-			XPDMA_CXTR2_TCEM_BLOCK |
-			XPDMA_CXTR2_PF_NORMAL |
-			XPDMA_CXTR2_PER_BURST |
-			dir_bit |
-			(per->setup->requests[dir] & 0xff);
+	if (per->setup->requests[dir] == dma_req_sw_trig) {
+		sChn->cx.tr2 |= XPDMA_CXTR2_MEM2MEM;
+	}
+	else {
+		uint32_t dir_bit = (dir == dma_mem2per) ? XPDMA_CXTR2_MEM2PER : XPDMA_CXTR2_PER2MEM;
+		sChn->cx.tr2 |=
+				XPDMA_CXTR2_PF_NORMAL |
+				XPDMA_CXTR2_PER_BURST |
+				dir_bit |
+				(per->setup->requests[dir] & 0xff);
+	}
+
 	if (dir == dma_mem2per) {
 		sChn->cx.dar = (uint32_t)cfg->addr;
 	}
