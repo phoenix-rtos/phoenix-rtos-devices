@@ -1089,6 +1089,26 @@ static void setup_flash_info(void)
 		flashdrv_common.info.chips = 1;
 		flashdrv_common.info.pbits = 18;
 	}
+	else if (flash_id->manufacturerid == 0x9d && flash_id->deviceid == 0x63) {
+		flashdrv_common.info.name = "ISSI IS34ML 8Gbit NAND";
+		flashdrv_common.info.size = 4096ull * 64 * 4096; /* per chip */
+		flashdrv_common.info.writesz = 4096u;
+		flashdrv_common.info.metasz = 256u;
+		flashdrv_common.info.erasesz = 4096u * 64;
+		flashdrv_common.info.oobsz = 16;
+		flashdrv_common.info.oobavail = 16;
+		flashdrv_common.info.pbits = 18;
+		flashdrv_common.info.chips = 1;
+
+		/* Detect if second external chip is present (only the same model supported) */
+		flashdrv_reset(dma, 1);
+		flashdrv_readid(dma, 1, flash_id);
+		if (flash_id->manufacturerid == 0x9d && flash_id->deviceid == 0x63) {
+			flashdrv_common.info.name = "ISSI IS34ML 8Gbit NAND (x2)";
+			flashdrv_common.info.chips = 2;
+			flashdrv_common.info.size *= 2;
+		}
+	}
 	else {
 		/* use sane defaults */
 		flashdrv_common.info.name = "Unknown 8Gbit NAND";
