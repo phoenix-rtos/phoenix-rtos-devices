@@ -59,6 +59,7 @@ static const struct {
 	const flashnor_devInfo_t info; /* Chip info. */
 } chips[] = {
 	{ .jedec = { 0xef, 0x40, 0x15 }, .info = { .name = "Winbond 25Q16JV", .erasesz = 4 * 1024, .size = 2 * 1024 * 1024, .writeBuffsz = 256 } },
+	{ .jedec = { 0xef, 0x40, 0x17 }, .info = { .name = "Winbond 25Q64JV", .erasesz = 4 * 1024, .size = 8 * 1024 * 1024, .writeBuffsz = 256 } },
 	{ .jedec = { 0x1f, 0x47, 0x08 }, .info = { .name = "Adesto AT25FF321A", .erasesz = 4 * 1024, .size = 4 * 1024 * 1024, .writeBuffsz = 256 } },
 	{ .jedec = { 0x1f, 0x87, 0x01 }, .info = { .name = "Adesto AT25SF321A", .erasesz = 4 * 1024, .size = 4 * 1024 * 1024, .writeBuffsz = 256 } },
 };
