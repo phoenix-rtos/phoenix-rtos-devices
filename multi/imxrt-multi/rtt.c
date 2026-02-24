@@ -161,11 +161,12 @@ static void rtt_thread(void *arg)
 
 static int rtt_initOne(rtt_t *uart, int chn, unsigned char *buf)
 {
-	libtty_callbacks_t callbacks;
-	callbacks.arg = uart;
-	callbacks.set_baudrate = NULL;
-	callbacks.set_cflag = NULL;
-	callbacks.signal_txready = NULL;
+	libtty_callbacks_t callbacks = {
+		.arg = uart,
+		.set_baudrate = NULL,
+		.set_cflag = NULL,
+		.signal_txready = NULL,
+	};
 
 	uart->chn = chn;
 

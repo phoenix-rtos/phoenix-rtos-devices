@@ -944,7 +944,6 @@ int uart_init(void)
 	int i, dev;
 	uint32_t t;
 	uart_t *uart;
-	libtty_callbacks_t callbacks;
 	static const size_t fifoSzLut[] = { 1, 4, 8, 16, 32, 64, 128, 256 };
 
 	memset(&uart_common, 0, sizeof(uart_common));
@@ -972,10 +971,12 @@ int uart_init(void)
 		if (condCreate(&uart->cond) < 0 || mutexCreate(&uart->lock) < 0)
 			return -1;
 
-		callbacks.arg = uart;
-		callbacks.set_baudrate = set_baudrate;
-		callbacks.set_cflag = set_cflag;
-		callbacks.signal_txready = signal_txready;
+		libtty_callbacks_t callbacks = {
+			.arg = uart,
+			.set_baudrate = set_baudrate,
+			.set_cflag = set_cflag,
+			.signal_txready = signal_txready,
+		};
 
 		if (libtty_init(&uart->tty_common, &callbacks, tty_bufsz[dev], default_baud[dev]) < 0) {
 			return -1;

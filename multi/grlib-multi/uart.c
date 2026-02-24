@@ -468,8 +468,13 @@ static int uart_irqSetup(unsigned int n, uart_t *uart)
 
 static int uart_setup(unsigned int n, int baud, int raw)
 {
-	libtty_callbacks_t callbacks;
 	uart_t *uart = &uart_common.uart[n];
+	libtty_callbacks_t callbacks = {
+		.arg = uart,
+		.set_cflag = uart_setCFlag,
+		.set_baudrate = uart_setBaudrate,
+		.signal_txready = uart_signalTXReady,
+	};
 	platformctl_t pctl = {
 		.action = pctl_set,
 		.type = pctl_iomux,
@@ -500,11 +505,6 @@ static int uart_setup(unsigned int n, int baud, int raw)
 	if (uart->vbase == MAP_FAILED) {
 		return -1;
 	}
-
-	callbacks.arg = uart;
-	callbacks.set_cflag = uart_setCFlag;
-	callbacks.set_baudrate = uart_setBaudrate;
-	callbacks.signal_txready = uart_signalTXReady;
 
 	if (libtty_init(&uart->tty, &callbacks, _PAGE_SIZE, baud) < 0) {
 		munmap((void *)uart->vbase, _PAGE_SIZE);

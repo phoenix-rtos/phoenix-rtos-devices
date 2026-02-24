@@ -519,8 +519,13 @@ static int uart_initClk(int n)
 
 static int uart_init(unsigned int n, int baud, int raw)
 {
-	libtty_callbacks_t callbacks;
 	uart_t *uart = &uart_common.uart;
+	libtty_callbacks_t callbacks = {
+		.arg = uart,
+		.set_cflag = uart_setCFlag,
+		.set_baudrate = uart_setBaudrate,
+		.signal_txready = uart_signalTXReady,
+	};
 
 	if (info[n].setMioPins) {
 		int rxRet = uart_setPin(info[n].rxPin);
@@ -538,11 +543,6 @@ static int uart_init(unsigned int n, int baud, int raw)
 	if (uart->base == MAP_FAILED) {
 		return -ENOMEM;
 	}
-
-	callbacks.arg = uart;
-	callbacks.set_cflag = uart_setCFlag;
-	callbacks.set_baudrate = uart_setBaudrate;
-	callbacks.signal_txready = uart_signalTXReady;
 
 	if (libtty_init(&uart->tty, &callbacks, _PAGE_SIZE, baud) < 0) {
 		munmap((void *)uart->base, _PAGE_SIZE);
