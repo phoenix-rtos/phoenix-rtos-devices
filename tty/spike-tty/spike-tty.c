@@ -193,13 +193,13 @@ static void spiketty_klogClbk(const char *data, size_t size)
 
 static int _spiketty_init(spiketty_t *spiketty, unsigned int port, unsigned int id)
 {
-	libtty_callbacks_t callbacks;
+	libtty_callbacks_t callbacks = {
+		.arg = spiketty,
+		.set_baudrate = set_baudrate,
+		.set_cflag = set_cflag,
+		.signal_txready = signal_txready,
+	};
 	int err;
-
-	callbacks.arg = spiketty;
-	callbacks.set_baudrate = set_baudrate;
-	callbacks.set_cflag = set_cflag;
-	callbacks.signal_txready = signal_txready;
 
 	if ((err = libtty_init(&spiketty->tty, &callbacks, _PAGE_SIZE, TTYDEF_SPEED)) < 0)
 		return err;

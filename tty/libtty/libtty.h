@@ -34,6 +34,10 @@ struct libtty_callbacks_s {
 	void (*set_baudrate)(void *arg, int baudrate);
 	void (*set_cflag)(void *arg, tcflag_t *cflag);
 
+	/* Optional: */
+	int (*get_halfduplex)(void *arg);
+	void (*set_halfduplex)(void *arg, int enable);
+
 	/* at least one character ready to be sent */
 	void (*signal_txready)(void *arg);
 };
@@ -52,6 +56,8 @@ struct libtty_common_s {
 
 	handle_t tx_mutex;
 	handle_t rx_mutex;
+
+	int temp; /* temporary to hold value to pass from ioctl */
 
 	/* cached optimizations */
 	char breakchars[4]; /* enough to hold \n, VEOF and VEOL. */
