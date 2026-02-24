@@ -105,6 +105,7 @@ typedef struct {
 	int parity;
 	int baud;
 	int stopbits;
+	int halfduplex;
 	uint32_t refclk;
 
 	handle_t cond;
@@ -646,6 +647,45 @@ static void tty_setBaudrate(void *uart, int baudr)
 	ctx->baud = baudr;
 }
 
+static void tty_setHalfduplex(void *uart, unsigned int enable)
+{
+	tty_ctx_t *ctx = (tty_ctx_t *)uart;
+	int flags;
+
+	if (ctx->halfduplex != enable) {
+		*(ctx->base + cr1) &= ~1;
+		dataBarier();
+
+		if (enable == 1) {
+			*(ctx->base + cr3) |= (1U << 3);
+		}
+		else if (enable == 0) {
+			*(ctx->base + cr3) &= ~(1U << 3);
+		}
+
+		*(ctx->base + icr) = -1;
+		(void)*(ctx->base + rdr);
+
+		/* Enable transimitter and receiver (TE + RE) */
+		flags = (1 << 3) | (1 << 2);
+		if (ctx->type == tty_irq) {
+			/* Enable RXNE interrupt (RXNEIE) */
+			flags |= UART_CR1_RXFNEIE;
+		}
+		if (ctx->type == tty_dma) {
+			/* Idle line interrupt enable. */
+			flags |= (1 << 4);
+		}
+		*(ctx->base + cr1) |= flags;
+		dataBarier();
+		*(ctx->base + cr1) |= 1;
+		ctx->enabled = 1;
+		condSignal(ctx->cond);
+	}
+
+	ctx->halfduplex = enable & 1;
+}
+
 
 static tty_ctx_t *tty_getCtx(id_t id)
 {
@@ -806,6 +846,7 @@ int tty_init(void)
 		callbacks.set_baudrate = tty_setBaudrate;
 		callbacks.set_cflag = tty_setCflag;
 		callbacks.signal_txready = tty_signalTxReady;
+		callbacks.set_halfduplex = tty_setHalfduplex;
 
 		if (libtty_init(&ctx->ttyCommon, &callbacks, ttySetup[tty].libttyBufSize, baudrate) < 0) {
 			return -1;
@@ -819,6 +860,7 @@ int tty_init(void)
 		ctx->parity = -1;
 		ctx->baud = -1;
 		ctx->stopbits = -1;
+		ctx->halfduplex = 0;
 
 		if (ttySetup[tty].dma == 0) {
 			lf_fifo_init(&ctx->data.irq.rxFifo, ctx->data.irq.rxFifoBuffer, sizeof(ctx->data.irq.rxFifoBuffer));
