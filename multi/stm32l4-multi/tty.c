@@ -104,6 +104,7 @@ typedef struct {
 	int bits;
 	int parity;
 	int baud;
+	int stopbits;
 	uint32_t refclk;
 
 	handle_t cond;
@@ -489,7 +490,7 @@ static void tty_signalTxReady(void *ctx)
 }
 
 
-static int _tty_configure(tty_ctx_t *ctx, char bits, char parity, char enable)
+static int _tty_configure(tty_ctx_t *ctx, char bits, char parity, char enable, char stopbits)
 {
 	int err = EOK;
 	unsigned int tcr1 = 0;
@@ -538,6 +539,13 @@ static int _tty_configure(tty_ctx_t *ctx, char bits, char parity, char enable)
 			*(ctx->base + cr1) &= ~(1 << 9);
 		}
 
+		if (stopbits == 1) {
+			*(ctx->base + cr2) &= ~(3 << 12);
+		}
+		else if (stopbits == 2) {
+			*(ctx->base + cr2) |= (2 << 12);
+		}
+
 		*(ctx->base + icr) = -1;
 		(void)*(ctx->base + rdr);
 
@@ -568,7 +576,7 @@ static int _tty_configure(tty_ctx_t *ctx, char bits, char parity, char enable)
 static void tty_setCflag(void *uart, tcflag_t *cflag)
 {
 	tty_ctx_t *ctx = (tty_ctx_t *)uart;
-	char bits, parity = tty_parnone;
+	char bits, parity = tty_parnone, stopbits = 1;
 
 	if ((*cflag & CSIZE) == CS6) {
 		bits = 6;
@@ -589,13 +597,18 @@ static void tty_setCflag(void *uart, tcflag_t *cflag)
 		}
 	}
 
-	if ((bits != ctx->bits) || (parity != ctx->parity)) {
-		_tty_configure(ctx, bits, parity, 1);
+	if ((*cflag) & CSTOPB) {
+		stopbits = 2;
+	}
+
+	if ((bits != ctx->bits) || (parity != ctx->parity) || (stopbits != ctx->stopbits)) {
+		_tty_configure(ctx, bits, parity, 1, stopbits);
 		condSignal(ctx->cond);
 	}
 
 	ctx->bits = bits;
 	ctx->parity = parity;
+	ctx->stopbits = stopbits;
 }
 
 
@@ -805,6 +818,7 @@ int tty_init(void)
 		ctx->bits = -1;
 		ctx->parity = -1;
 		ctx->baud = -1;
+		ctx->stopbits = -1;
 
 		if (ttySetup[tty].dma == 0) {
 			lf_fifo_init(&ctx->data.irq.rxFifo, ctx->data.irq.rxFifoBuffer, sizeof(ctx->data.irq.rxFifoBuffer));
@@ -857,7 +871,7 @@ int tty_init(void)
 		}
 
 		/* Set up UART to 9600,8,n,1 16-bit oversampling */
-		_tty_configure(ctx, 8, tty_parnone, 1);
+		_tty_configure(ctx, 8, tty_parnone, 1, 1);
 		tty_setBaudrate(ctx, baudrate);
 
 		if (ttySetup[tty].dma == 0) {
