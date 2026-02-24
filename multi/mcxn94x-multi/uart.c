@@ -404,7 +404,6 @@ static int uart_init(unsigned int minor)
 {
 	uint32_t t;
 	uart_t *uart;
-	libtty_callbacks_t callbacks;
 	static const size_t fifoSzLut[] = { 1, 4, 8, 16, 32, 64, 128, 256 };
 	static const struct {
 		volatile uint32_t *base;
@@ -443,10 +442,12 @@ static int uart_init(unsigned int minor)
 		return -1;
 	}
 
-	callbacks.arg = uart;
-	callbacks.set_baudrate = set_baudrate;
-	callbacks.set_cflag = set_cflag;
-	callbacks.signal_txready = signal_txready;
+	libtty_callbacks_t callbacks = {
+		.arg = uart,
+		.set_baudrate = set_baudrate,
+		.set_cflag = set_cflag,
+		.signal_txready = signal_txready,
+	};
 
 	if (libtty_init(&uart->tty_common, &callbacks, tty_bufsz[minor], default_baud[minor]) < 0) {
 		resourceDestroy(uart->cond);

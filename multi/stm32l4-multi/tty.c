@@ -105,6 +105,7 @@ typedef struct {
 	int parity;
 	int baud;
 	int stopbits;
+	int halfduplex;
 	uint32_t refclk;
 
 	handle_t cond;
@@ -489,12 +490,36 @@ static void tty_signalTxReady(void *ctx)
 	condSignal(((tty_ctx_t *)ctx)->cond);
 }
 
+static void _tty_enable(tty_ctx_t *ctx, char enable)
+{
+	unsigned int flags;
+
+	*(ctx->base + icr) = -1;
+	(void)*(ctx->base + rdr);
+
+	if (enable != 0) {
+		/* Enable transimitter and receiver (TE + RE) */
+		flags = (1 << 3) | (1 << 2);
+		if (ctx->type == tty_irq) {
+			flags |= UART_CR1_RXFNEIE;
+		}
+		if (ctx->type == tty_dma) {
+			/* Idle line interrupt enable. */
+			flags |= (1 << 4);
+		}
+		*(ctx->base + cr1) |= flags;
+
+		dataBarier();
+		*(ctx->base + cr1) |= 1;
+		ctx->enabled = 1;
+	}
+}
+
 
 static int _tty_configure(tty_ctx_t *ctx, char bits, char parity, char enable, char stopbits)
 {
 	int err = EOK;
 	unsigned int tcr1 = 0;
-	unsigned int flags;
 	char tbits = bits;
 
 	ctx->enabled = 0;
@@ -546,25 +571,7 @@ static int _tty_configure(tty_ctx_t *ctx, char bits, char parity, char enable, c
 			*(ctx->base + cr2) |= (2 << 12);
 		}
 
-		*(ctx->base + icr) = -1;
-		(void)*(ctx->base + rdr);
-
-		if (enable != 0) {
-			/* Enable transimitter and receiver (TE + RE) */
-			flags = (1 << 3) | (1 << 2);
-			if (ctx->type == tty_irq) {
-				flags |= UART_CR1_RXFNEIE;
-			}
-			if (ctx->type == tty_dma) {
-				/* Idle line interrupt enable. */
-				flags |= (1 << 4);
-			}
-			*(ctx->base + cr1) |= flags;
-
-			dataBarier();
-			*(ctx->base + cr1) |= 1;
-			ctx->enabled = 1;
-		}
+		_tty_enable(ctx, enable);
 
 		dataBarier();
 	}
@@ -615,7 +622,6 @@ static void tty_setCflag(void *uart, tcflag_t *cflag)
 static void tty_setBaudrate(void *uart, int baudr)
 {
 	tty_ctx_t *ctx = (tty_ctx_t *)uart;
-	int flags;
 
 	if (ctx->baud != baudr) {
 		*(ctx->base + cr1) &= ~1;
@@ -623,27 +629,42 @@ static void tty_setBaudrate(void *uart, int baudr)
 
 		*(ctx->base + brr) = ctx->refclk / baudr;
 
-		*(ctx->base + icr) = -1;
-		(void)*(ctx->base + rdr);
+		_tty_enable(ctx, 1);
 
-		/* Enable transimitter and receiver (TE + RE) */
-		flags = (1 << 3) | (1 << 2);
-		if (ctx->type == tty_irq) {
-			/* Enable RXNE interrupt (RXNEIE) */
-			flags |= UART_CR1_RXFNEIE;
-		}
-		if (ctx->type == tty_dma) {
-			/* Idle line interrupt enable. */
-			flags |= (1 << 4);
-		}
-		*(ctx->base + cr1) |= flags;
-		dataBarier();
-		*(ctx->base + cr1) |= 1;
-		ctx->enabled = 1;
 		condSignal(ctx->cond);
-	}
 
-	ctx->baud = baudr;
+		ctx->baud = baudr;
+	}
+}
+
+static unsigned int *tty_getHalfduplex(void *uart)
+{
+	tty_ctx_t *ctx = (tty_ctx_t *)uart;
+	return (unsigned int *)&ctx->halfduplex;
+}
+
+
+static void tty_setHalfduplex(void *uart, unsigned int enable)
+{
+	tty_ctx_t *ctx = (tty_ctx_t *)uart;
+
+	if (ctx->halfduplex != enable) {
+		*(ctx->base + cr1) &= ~1;
+		dataBarier();
+
+		if (enable == 1) {
+			*(ctx->base + cr3) |= (1U << 3);
+		}
+		else if (enable == 0) {
+			*(ctx->base + cr3) &= ~(1U << 3);
+		}
+
+		_tty_enable(ctx, 1);
+
+		condSignal(ctx->cond);
+
+		ctx->halfduplex = enable & 1;
+	}
 }
 
 
@@ -783,7 +804,6 @@ int tty_init(void)
 	char fname[] = "uartx";
 	int baudrate = 115200;
 	oid_t oid;
-	libtty_callbacks_t callbacks;
 	tty_ctx_t *ctx;
 	int err;
 
@@ -802,10 +822,14 @@ int tty_init(void)
 			return -1;
 		}
 
-		callbacks.arg = ctx;
-		callbacks.set_baudrate = tty_setBaudrate;
-		callbacks.set_cflag = tty_setCflag;
-		callbacks.signal_txready = tty_signalTxReady;
+		libtty_callbacks_t callbacks = {
+			.arg = ctx,
+			.set_baudrate = tty_setBaudrate,
+			.set_cflag = tty_setCflag,
+			.signal_txready = tty_signalTxReady,
+			.get_halfduplex = tty_getHalfduplex,
+			.set_halfduplex = tty_setHalfduplex,
+		};
 
 		if (libtty_init(&ctx->ttyCommon, &callbacks, ttySetup[tty].libttyBufSize, baudrate) < 0) {
 			return -1;
@@ -819,6 +843,7 @@ int tty_init(void)
 		ctx->parity = -1;
 		ctx->baud = -1;
 		ctx->stopbits = -1;
+		ctx->halfduplex = 0;
 
 		if (ttySetup[tty].dma == 0) {
 			lf_fifo_init(&ctx->data.irq.rxFifo, ctx->data.irq.rxFifoBuffer, sizeof(ctx->data.irq.rxFifoBuffer));
