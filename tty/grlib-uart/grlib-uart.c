@@ -226,7 +226,13 @@ static void uart_ioctl(unsigned port, msg_t *msg)
 	inData = ioctl_unpack(msg, &req, NULL);
 	pid = ioctl_getSenderPid(msg);
 
-	err = libtty_ioctl(&uart_common.uart.tty, pid, req, inData, &outData);
+	if (req == KIOEN) {
+		libklog_enable((int)(intptr_t)inData);
+		err = EOK;
+	}
+	else {
+		err = libtty_ioctl(&uart_common.uart.tty, pid, req, inData, &outData);
+	}
 
 	ioctl_setResponse(msg, req, err, outData);
 }
