@@ -17,7 +17,7 @@
 #include <sys/msg.h>
 
 
-int gpio_handleMsg(msg_t *msg, int dev);
+int gpio_handleMsg(msg_t *msg, msg_rid_t rid, int dev);
 
 
 int gpio_init(void);
@@ -33,6 +33,15 @@ int gpio_setDir(int port, uint32_t mask, uint32_t val);
 
 
 int gpio_getDir(int port, uint32_t *val);
+
+
+int gpio_setIrqConf(int port, unsigned int pin, int type);
+
+
+int gpio_getIrqConf(int port, unsigned int pin, uint32_t *val);
+
+
+int gpio_waitIrq(msg_t *msg, msg_rid_t rid, int port, uint32_t mask, uint32_t *val);
 
 
 #endif

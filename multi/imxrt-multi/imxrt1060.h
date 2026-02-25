@@ -16,6 +16,7 @@
 #define _IMXRT1060_H_
 
 #include <phoenix/arch/armv7m/imxrt/10xx/imxrt10xx.h>
+#include <phoenix/types.h>
 #include <sys/platform.h>
 
 #define UART_CLK 80000000
@@ -70,9 +71,9 @@
 #define GPIO4_BASE ((void *)0x401c4000)
 #define GPIO5_BASE ((void *)0x400c0000)
 #define GPIO6_BASE ((void *)0x42000000)
-#define GPIO7_BASE ((void *)0x42040000)
-#define GPIO8_BASE ((void *)0x42080000)
-#define GPIO9_BASE ((void *)0x420c0000)
+#define GPIO7_BASE ((void *)0x42004000)
+#define GPIO8_BASE ((void *)0x42008000)
+#define GPIO9_BASE ((void *)0x4200c000)
 
 #define GPIO10_BASE NULL
 #define GPIO11_BASE NULL
@@ -264,6 +265,23 @@
 #define I2C4_SDA_PIN ad_b0_13
 // #define I2C4_SDA_PIN emc_11
 #endif
+
+
+static union {
+	unsigned int num;
+	handle_t handle;
+} gpio_interrupts[] __attribute__((unused)) = {
+	{ .num = gpio1_0_15_irq },
+	{ .num = gpio1_16_31_irq },
+	{ .num = gpio2_0_15_irq },
+	{ .num = gpio2_16_31_irq },
+	{ .num = gpio3_0_15_irq },
+	{ .num = gpio3_16_31_irq },
+	{ .num = gpio4_0_15_irq },
+	{ .num = gpio4_16_31_irq },
+	{ .num = gpio5_0_15_irq },
+	{ .num = gpio5_16_31_irq },
+};
 
 
 static inline int common_setClock(int dev, unsigned int state)

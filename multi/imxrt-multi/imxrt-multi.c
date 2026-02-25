@@ -49,14 +49,14 @@
 #endif
 
 #define MULTI_THREADS_NO 2
-#define UART_THREADS_NO 2
+#define UART_THREADS_NO  2
 
 #define STACKSZ 1024
 
 
 struct {
 	uint32_t uart_port;
-	char stack[MULTI_THREADS_NO + UART_THREADS_NO - 1][STACKSZ] __attribute__ ((aligned(8)));
+	char stack[MULTI_THREADS_NO + UART_THREADS_NO - 1][STACKSZ] __attribute__((aligned(8)));
 } common;
 
 
@@ -78,7 +78,7 @@ static inline int multi2pseudo(id_t id)
 #endif
 
 
-static void multi_dispatchMsg(msg_t *msg)
+static void multi_dispatchMsg(msg_t *msg, msg_rid_t rid)
 {
 	id_t id = msg->oid.id;
 
@@ -98,7 +98,7 @@ static void multi_dispatchMsg(msg_t *msg)
 		case id_gpio12:
 		case id_gpio13:
 #endif
-			gpio_handleMsg(msg, id);
+			gpio_handleMsg(msg, rid, id);
 			break;
 
 		case id_spi1:
@@ -496,7 +496,11 @@ static void multi_thread(void *arg)
 			case mtGetAttr:
 			case mtSetAttr:
 			case mtDevCtl:
-				multi_dispatchMsg(&msg);
+				multi_dispatchMsg(&msg, rid);
+				if (msg.o.err == EWOULDBLOCK) {
+					/* msgRespond in driver */
+					continue;
+				}
 				break;
 
 			case mtCreate:
@@ -571,18 +575,48 @@ extern int posixsrv_start(void);
 #endif
 
 
+static void multi_cleanup(void)
+{
+	oid_t oid;
+	if (common.uart_port != 0) {
+		portDestroy(common.uart_port);
+	}
+	if (multi_port != 0) {
+		portDestroy(multi_port);
+	}
+	if (lookup(_PATH_CONSOLE, &oid, NULL) >= 0) {
+		remove(_PATH_CONSOLE);
+	}
+}
+
+
 int main(void)
 {
 	int i;
 	oid_t oid;
 
-	priority(IMXRT_MULTI_PRIO);
+	(void)priority(IMXRT_MULTI_PRIO);
 
-	portCreate(&common.uart_port);
-	portCreate(&multi_port);
+	common.uart_port = 0;
+	multi_port = 0;
+
+	if (portCreate(&common.uart_port) < 0) {
+		debug("imxrt-multi: Failed to create UART port\n");
+		return EXIT_FAILURE;
+	}
+
+	if (portCreate(&multi_port) < 0) {
+		debug("imxrt-multi: Failed to create multi port\n");
+		multi_cleanup();
+		return EXIT_FAILURE;
+	}
 
 #if BUILTIN_DUMMYFS
-	fs_init();
+	if (fs_init() != EOK) {
+		debug("imxrt-multi: Failed to initialize filesystem\n");
+		multi_cleanup();
+		return EXIT_FAILURE;
+	}
 #else
 	/* Wait for the filesystem */
 	while (lookup("/", NULL, &oid) < 0) {
@@ -590,26 +624,73 @@ int main(void)
 	}
 #endif
 
-	gpio_init();
-	uart_init();
-	rtt_init();
-	spi_init();
-	i2c_init();
+	if (gpio_init() != EOK) {
+		debug("imxrt-multi: Failed to initialize GPIO\n");
+		multi_cleanup();
+		return EXIT_FAILURE;
+	}
+
+	if (uart_init() != EOK) {
+		debug("imxrt-multi: Failed to initialize UART\n");
+		multi_cleanup();
+		return EXIT_FAILURE;
+	}
+
+#if defined(RTT_ENABLED) && RTT_ENABLED
+	if (rtt_init() != EOK) {
+		debug("imxrt-multi: Failed to initialize RTT\n");
+		multi_cleanup();
+		return EXIT_FAILURE;
+	}
+#endif
+
+	if (spi_init() != EOK) {
+		debug("imxrt-multi: Failed to initialize SPI\n");
+		multi_cleanup();
+		return EXIT_FAILURE;
+	}
+
+	if (i2c_init() != EOK) {
+		debug("imxrt-multi: Failed to initialize I2C\n");
+		multi_cleanup();
+		return EXIT_FAILURE;
+	}
 
 	oid.port = common.uart_port;
 	oid.id = id_console;
-	create_dev(&oid, _PATH_CONSOLE);
+	if (create_dev(&oid, _PATH_CONSOLE)) {
+		debug("imxrt-multi: Failed to create device file\n");
+		multi_cleanup();
+		return EXIT_FAILURE;
+	}
 
 #if !ISEMPTY(RTT_CONSOLE_USER)
-	libklog_init(rtt_klogCblk);
+	if (libklog_init(rtt_klogCblk) != EOK) {
+		debug("imxrt-multi: Failed to initialize klog\n");
+		multi_cleanup();
+		return EXIT_FAILURE;
+	}
 #else
-	libklog_init(uart_klogCblk);
+	if (libklog_init(uart_klogCblk) != EOK) {
+		debug("imxrt-multi: Failed to initialize klog\n");
+		multi_cleanup();
+		return EXIT_FAILURE;
+	}
 #endif
 	oid_t kmsgctrl = { .port = common.uart_port, .id = id_kmsgctrl };
-	libklog_ctrlRegister(&kmsgctrl);
+	if (libklog_ctrlRegister(&kmsgctrl) != EOK) {
+		// FIXME: no way to remove file created by libklog_ctrlRegister
+		debug("imxrt-multi: Failed to register klog ctrl\n");
+		multi_cleanup();
+		return EXIT_FAILURE;
+	}
 
 #if TRNG
-	trng_init();
+	if (trng_init() != EOK) {
+		debug("imxrt-multi: Failed to initialize TRNG\n");
+		multi_cleanup();
+		return EXIT_FAILURE;
+	}
 #endif
 
 #if CM4
@@ -617,7 +698,11 @@ int main(void)
 #endif
 
 #if BUILTIN_POSIXSRV
-	posixsrv_start();
+	if (posixsrv_start() != EOK) {
+		debug("imxrt-multi: Failed to start posixsrv\n");
+		multi_cleanup();
+		return EXIT_FAILURE;
+	}
 #endif
 
 #if PSEUDODEV
@@ -625,11 +710,19 @@ int main(void)
 #endif
 
 	for (i = 0; i < UART_THREADS_NO; ++i) {
-		beginthread(uart_thread, IMXRT_MULTI_PRIO, common.stack[i], STACKSZ, (void *)i);
+		if (beginthread(uart_thread, IMXRT_MULTI_PRIO, common.stack[i], STACKSZ, (void *)i) < 0) {
+			debug("imxrt-multi: Failed to start UART thread\n");
+			multi_cleanup();
+			return EXIT_FAILURE;
+		}
 	}
 
 	for (; i < (MULTI_THREADS_NO + UART_THREADS_NO - 1); ++i) {
-		beginthread(multi_thread, IMXRT_MULTI_PRIO, common.stack[i], STACKSZ, (void *)i);
+		if (beginthread(multi_thread, IMXRT_MULTI_PRIO, common.stack[i], STACKSZ, (void *)i) < 0) {
+			debug("imxrt-multi: Failed to start MULTI thread\n");
+			multi_cleanup();
+			return EXIT_FAILURE;
+		}
 	}
 
 	if (createDevFiles() < 0) {
