@@ -28,6 +28,7 @@
 #include <sys/mman.h>
 #include <sys/msg.h>
 #include <sys/reboot.h>
+#include <sys/platform.h>
 
 #include "imx6ull-flashdrv.h"
 #include "imx6ull-flashsrv.h"
@@ -48,11 +49,50 @@ static size_t pagemapsz;
 	} while (0)
 
 
+#define WATCHDOG_KICK() \
+	do { \
+		wdgreload(); \
+	} while (0)
+
+// #define TEST_TIMINGS
+
+#ifdef TEST_TIMINGS
+
+static uint64_t start_time_us;
+
+static inline uint64_t get_time_us(void)
+{
+	struct timespec ts;
+
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint64_t)ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
+}
+
+#define START() ({ start_time_us = get_time_us(); })
+
+#define START_NEXT(_msg) START_NEXT_CNT((_msg), TOTAL_BLOCKS_CNT)
+
+#define START_NEXT_CNT(_msg, _blocks_cnt) \
+	do { \
+		uint64_t now = get_time_us(); \
+		uint64_t diff_us = now - start_time_us; \
+		uint64_t diff_ms = diff_us / 1000; \
+		start_time_us = now; \
+		printf("%s: total time: %llu.%03u s [ %llu us per block ]\n", _msg, diff_ms / 1000, (unsigned int)diff_ms % 1000, diff_us / (_blocks_cnt)); \
+	} while (0)
+
+#else
+#define START()
+#define START_NEXT(_msg)
+#define START_NEXT_CNT(_msg, _blocks_cnt)
+#endif
+
+
 #define TIMEPROF_SETUP() struct timespec start, end
 
 #define TIMEPROF_START() clock_gettime(CLOCK_MONOTONIC, &start)
 
-/* returns elasped time in us */
+/* returns elapsed time in us */
 #define TIMEPROF_END() (_timeprof_end(&start, &end))
 static inline long _timeprof_end(struct timespec *start, struct timespec *end)
 {
@@ -1292,13 +1332,15 @@ void test_single_block(flashdrv_dma_t *dma, uint32_t blockno, uint8_t *data, uin
 
 	_write_and_check(dma, blockno, data, meta, 0x55);
 
-	if ((err = flashdrv_erase(dma, addr) < 0))
+	if ((err = flashdrv_erase(dma, addr)) < 0) {
 		printf("[%4u] erase(2) failed: %d\n", blockno, err);
+	}
 
 	_write_and_check(dma, blockno, data, meta, 0xAA);
 
-	if ((err = flashdrv_erase(dma, addr) < 0))
+	if ((err = flashdrv_erase(dma, addr)) < 0) {
 		printf("[%4u] erase(3) failed: %d\n", blockno, err);
+	}
 }
 
 /* test writes with 0x55 and 0xAA pattarn (+ read, erase) */
@@ -1315,8 +1357,13 @@ void test_write_read_erase(void)
 	meta = data + _PAGE_SIZE;
 	dma = flashdrv_dmanew();
 
-	for (blockno = 0; blockno < TOTAL_BLOCKS_CNT; ++blockno)
+	for (blockno = 0; blockno < TOTAL_BLOCKS_CNT; ++blockno) {
 		test_single_block(dma, blockno, data, meta);
+		if ((blockno + 1) % 1024 == 0) {
+			START_NEXT_CNT("block_1024", 1024);
+			WATCHDOG_KICK();
+		}
+	}
 
 	flashdrv_dmadestroy(dma);
 	munmap(data, pagemapsz);
@@ -1394,6 +1441,7 @@ void test_memory_aliasing(void)
 			return;
 		}
 	}
+	START_NEXT("chip erase");
 
 	/* Block 0 must be good */
 	err = flashdrv_isbad(dma, 0);
@@ -1522,11 +1570,100 @@ void test_3(void)
 }
 
 
+void test_dump_block_contents(uint32_t blockno)
+{
+	flashdrv_dma_t *dma;
+	uint8_t *data, *meta;
+	flashdrv_meta_t *aux;
+	int err;
+
+	/* block under testing */
+	uint32_t paddr = blockno * BLOCK_PAGES_CNT;
+	printf("[%04u] DUMP (addr=%p)\n", blockno, (void *)paddr);
+
+	data = mmap(NULL, pagemapsz, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_CONTIGUOUS | MAP_ANONYMOUS, -1, 0);
+	meta = data + _PAGE_SIZE;
+	aux = (flashdrv_meta_t *)meta;
+
+	dma = flashdrv_dmanew();
+
+	memset(data, 0x0, pagemapsz);
+
+	if ((err = flashdrv_read(dma, paddr, data, aux)) < 0) {
+		printf("read() failed: %d\n", err);
+	}
+
+	print_block(data, flashinfo.writesz);
+	print_block(meta, flashinfo.metasz);
+
+#if 0 /* uncomment for debuggging */
+	memset(data, 0x0, pagemapsz);
+	if ((err = flashdrv_readraw(dma, paddr, data, FLASHDRV_PAGESZ) < 0))
+		printf("readraw() failed: %d\n",  err);
+
+	print_block(data, FLASHDRV_PAGESZ);
+#endif
+
+	flashdrv_dmadestroy(dma);
+	munmap(data, pagemapsz);
+}
+
+
+/* check if empty flash has all 0xFF (WARN: intentionally doesn't respect the badblock markers) */
+void test_is_flash_really_empty(void)
+{
+	flashdrv_dma_t *dma;
+	uint8_t *data, *meta;
+	flashdrv_meta_t *aux;
+	int err;
+
+
+	data = mmap(NULL, pagemapsz, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_CONTIGUOUS | MAP_ANONYMOUS, -1, 0);
+	meta = data + _PAGE_SIZE;
+	aux = (flashdrv_meta_t *)meta;
+
+	dma = flashdrv_dmanew();
+
+	const uint32_t pages_cnt = flashinfo.size / flashinfo.writesz;
+
+	for (uint32_t paddr = 0; paddr < pages_cnt; ++paddr) {
+		memset(data, 0x0, pagemapsz);
+
+		if ((paddr + 1) % 1024 == 0) { /* 16 blocks */
+			printf("checking page %u/%u: ", paddr, pages_cnt);
+			START_NEXT_CNT("check_page_1024", 1024 / 64);
+			WATCHDOG_KICK();
+		}
+
+		if ((err = flashdrv_read(dma, paddr, data, aux)) < 0) {
+			printf("[paddr=%u] read() failed: %d\n", paddr, err);
+			continue;
+		}
+
+		for (unsigned int i = 0; i < flashinfo.writesz; ++i) {
+			if (data[i] != 0xffU) {
+				printf("[paddr=%u] non-empty byte at %u: 0x%02x\n", paddr, i, data[i]);
+			}
+		}
+
+		for (unsigned int i = 0; i < sizeof(aux->metadata); ++i) {
+			if (aux->metadata[i] != 0xffU) {
+				printf("[paddr=%u] non-empty meta byte at %u: 0x%02x\n", paddr, i, aux->metadata[i]);
+			}
+		}
+	}
+
+	flashdrv_dmadestroy(dma);
+	munmap(data, pagemapsz);
+}
+
+
 int main(int argc, char **argv)
 {
 	printf("%s: starting tests\n", argv[0]);
 
 	flashdrv_init();
+	WATCHDOG_KICK();
 	memcpy(&flashinfo, flashdrv_info(), sizeof(flashdrv_info_t));
 	assert(flashinfo.writesz <= _PAGE_SIZE);
 	pagemapsz = (FLASHDRV_PAGESZ + _PAGE_SIZE - 1) & ~(_PAGE_SIZE - 1);
@@ -1534,11 +1671,24 @@ int main(int argc, char **argv)
 	printf("%s: %s: size: %llu, writesz: %u, chips: %u\n",
 		argv[0], flashinfo.name, flashinfo.size, flashinfo.writesz, flashinfo.chips);
 
-	//test_meta();
-	//test_write_fcb();
-	//test_badblocks();
+
+	START();
+
+	// test_meta();
+	// test_write_fcb();
+	// test_dump_block_contents(1420);
+	// test_is_flash_really_empty();
+
+	test_badblocks();
+	START_NEXT("test_badblocks");
+	WATCHDOG_KICK();
+
 	test_memory_aliasing();
+	START_NEXT("aliasing");
+	WATCHDOG_KICK();
+
 	test_write_read_erase();
+	WATCHDOG_KICK();
 	//test_write_read_erase_raw();
 	//test_stress_one_block();
 	//test_flashsrv("/dev/flash0");
