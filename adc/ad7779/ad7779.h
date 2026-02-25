@@ -99,6 +99,8 @@ int ad7779_set_channel_gain_correction(uint8_t channel, uint32_t gain);
 
 int ad7779_get_status(uint8_t *status_buf);
 
+int ad7779_pulse_sync(void);
+
 /* For debugging purposes */
 int ad7779_print_status(void);
 
