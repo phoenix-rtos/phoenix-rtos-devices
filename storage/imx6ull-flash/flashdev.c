@@ -397,7 +397,12 @@ static int flashmtd_metaRead(struct _storage_t *strg, off_t offs, void *data, si
 		err = _flashmtd_checkECC(strg, paddr, 1);
 		if (err == -EBADMSG) {
 			/* Continue reading, let the client handle -EBADMSG */
-			ret = -EBADMSG;
+			/* ret = -EBADMSG; */
+
+			/* TODO: temporary fix for broken metadata */
+			/* To be removed once proper fix is in place */
+			memset(meta->metadata, 0xff, strg->dev->mtd->oobSize);
+			ret = -EUCLEAN;
 		}
 		else if (err == -EUCLEAN && ret != -EBADMSG) {
 			/* Not a critical error, continue reading, return -EUCLEAN, but don't overwrite -EBADMSG */
