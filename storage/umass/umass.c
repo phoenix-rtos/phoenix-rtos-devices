@@ -51,6 +51,14 @@
 #define UMASS_N_POOL_THREADS 2
 #endif
 
+#ifndef UMASS_MSG_PRIO
+#define UMASS_MSG_PRIO 4
+#endif
+
+#ifndef UMASS_POOL_PRIO
+#define UMASS_POOL_PRIO 4
+#endif
+
 #define UMASS_TRANSMIT_RETRIES 3
 #define UMASS_INIT_RETRIES     10
 
@@ -1006,7 +1014,7 @@ static int umass_init(usb_driver_t *drv, void *args)
 
 		/* Run message threads */
 		for (i = 0; i < sizeof(umass_common.mstacks) / sizeof(umass_common.mstacks[0]); i++) {
-			ret = beginthread(umass_msgthr, 4, umass_common.mstacks[i], sizeof(umass_common.mstacks[i]), NULL);
+			ret = beginthread(umass_msgthr, UMASS_MSG_PRIO, umass_common.mstacks[i], sizeof(umass_common.mstacks[i]), NULL);
 			if (ret != 0) {
 				fprintf(stderr, "umass: fail to beginthread ret: %d\n", ret);
 				break;
@@ -1015,7 +1023,7 @@ static int umass_init(usb_driver_t *drv, void *args)
 
 		/* Run pool threads */
 		for (i = 0; i < sizeof(umass_common.pstacks) / sizeof(umass_common.pstacks[0]); i++) {
-			ret = beginthread(umass_poolthr, 4, umass_common.pstacks[i], sizeof(umass_common.pstacks[i]), NULL);
+			ret = beginthread(umass_poolthr, UMASS_POOL_PRIO, umass_common.pstacks[i], sizeof(umass_common.pstacks[i]), NULL);
 			if (ret < 0) {
 				fprintf(stderr, "umass: failed to start pool thread %d\n", i);
 				break;
