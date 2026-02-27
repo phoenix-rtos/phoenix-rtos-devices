@@ -14,6 +14,16 @@
 
 #include <usbdriver.h>
 #include <usbprocdriver.h>
+#include <board_config.h>
+
+
+#ifndef USBACM_UMSG_PRIO
+#define USBACM_UMSG_PRIO 4
+#endif
+
+#ifndef USBACM_N_UMSG_THREADS
+#define USBACM_N_UMSG_THREADS 1
+#endif
 
 
 int main(int argc, char *argv[])
@@ -25,7 +35,7 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	ret = usb_driverProcRun(driver, NULL);
+	ret = usb_driverProcRun(driver, USBACM_UMSG_PRIO, USBACM_N_UMSG_THREADS, NULL);
 	if (ret < 0) {
 		fprintf(stderr, "usbacm: failed to start server: %d\n", ret);
 	}
