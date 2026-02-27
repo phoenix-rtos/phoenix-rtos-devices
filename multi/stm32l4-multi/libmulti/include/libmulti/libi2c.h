@@ -29,7 +29,12 @@ typedef struct {
 } libi2c_ctx_t;
 
 
-enum { i2c1 = 0, i2c2, i2c3, i2c4 };
+enum {
+	i2c1 = 0,
+	i2c2,
+	i2c3,
+	i2c4,
+};
 
 
 ssize_t libi2c_read(libi2c_ctx_t *ctx, unsigned char addr, void *buff, size_t len);

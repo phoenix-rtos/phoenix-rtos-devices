@@ -14,13 +14,23 @@
 #define LIBAES_H_
 
 
-enum { aes_128 = 0, aes_256 = 1 };
+enum {
+	aes_128 = 0,
+	aes_256 = 1,
+};
 
 
-enum { aes_ecb = 0, aes_cbc = 1, aes_ctr = 2 };
+enum {
+	aes_ecb = 0,
+	aes_cbc = 1,
+	aes_ctr = 2,
+};
 
 
-enum { aes_encrypt = 0, aes_decrypt = 2 };
+enum {
+	aes_encrypt = 0,
+	aes_decrypt = 2,
+};
 
 
 void libaes_setKey(const unsigned char *key, int keylen);

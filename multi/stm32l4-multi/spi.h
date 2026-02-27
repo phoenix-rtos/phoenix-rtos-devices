@@ -20,7 +20,7 @@
 
 
 int spi_transaction(int spi, int dir, unsigned char cmd, unsigned int addr, unsigned char flags,
-	unsigned char *ibuff, const unsigned char *obuff, size_t bufflen);
+		unsigned char *ibuff, const unsigned char *obuff, size_t bufflen);
 
 
 int spi_configure(int spi, char mode, char bdiv, int enable);

@@ -209,7 +209,7 @@ static void libdma_configureChannel(int dma, int channel, int dir, int priority,
 	interrupt(irqnum, libdma_irqHandler, (void *)dma, interruptCond, NULL);
 
 	*(channelBase + ccr) = ((priority & 0x3) << 12) | ((msize & 0x3) << 10) | ((psize & 0x3) << 8) |
-		((minc & 0x1) << 7) | ((pinc & 0x1) << 6) | ((dir & 0x1) << 4);
+			((minc & 0x1) << 7) | ((pinc & 0x1) << 6) | ((dir & 0x1) << 4);
 	*(channelBase + cpar) = (unsigned int)paddr;
 	tmp = *(dma_common[dma].base + cselr) & ~(0xF << channel * 4);
 	*(dma_common[dma].base + cselr) = tmp | ((unsigned int)reqmap << channel * 4);
