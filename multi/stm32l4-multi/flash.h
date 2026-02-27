@@ -19,10 +19,10 @@
 
 #include "stm32l4-multi.h"
 
-#define FLASH_PAGE_SIZE         2048
-#define FLASH_OB_1_ADDR         0x1fff7800
-#define FLASH_OB_2_ADDR         0x1ffff800
-#define FLASH_OB_SIZE           16
+#define FLASH_PAGE_SIZE 2048
+#define FLASH_OB_1_ADDR 0x1fff7800
+#define FLASH_OB_2_ADDR 0x1ffff800
+#define FLASH_OB_SIZE   16
 
 #ifndef FLASH_PROGRAM_1_ADDR
 #define FLASH_PROGRAM_1_ADDR 0x08000000
@@ -43,7 +43,7 @@ static inline uint32_t getPC(void)
 {
 	uint32_t ret;
 
-	__asm__ volatile ("mov %0, pc" : "=r" (ret));
+	__asm__ volatile("mov %0, pc" : "=r"(ret));
 
 	return ret;
 }

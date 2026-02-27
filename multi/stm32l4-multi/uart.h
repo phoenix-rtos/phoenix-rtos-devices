@@ -21,7 +21,7 @@ int uart_configure(int uart, char bits, char parity, unsigned int baud, char ena
 int uart_write(int uart, const void *buff, unsigned int bufflen);
 
 
-int uart_read(int uart, void* buff, unsigned int count, char mode, unsigned int timeout);
+int uart_read(int uart, void *buff, unsigned int count, char mode, unsigned int timeout);
 
 
 int uart_init(void);

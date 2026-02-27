@@ -28,10 +28,30 @@ struct {
 } exti_common;
 
 
-enum { imr1 = 0, emr1, rtsr1, ftsr1, swier1, pr1, imr2 = 8, emr2, rtsr2, ftsr2, swier2, pr2 };
+enum {
+	imr1 = 0,
+	emr1,
+	rtsr1,
+	ftsr1,
+	swier1,
+	pr1,
+	imr2 = 8,
+	emr2,
+	rtsr2,
+	ftsr2,
+	swier2,
+	pr2,
+};
 
 
-enum { memrmp = 0, cfgr1, exticr1, exticr2, exticr3, exticr4 };
+enum {
+	memrmp = 0,
+	cfgr1,
+	exticr1,
+	exticr2,
+	exticr3,
+	exticr4,
+};
 
 
 static int exti0_handler(unsigned int n, void *arg)

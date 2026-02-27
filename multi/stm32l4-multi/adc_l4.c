@@ -23,18 +23,29 @@
 #include "stm32l4-multi.h"
 
 #define MAX_ADC adc3
-enum { adc1_offs = 0, adc2_offs = 64, adc3_offs = 128, common_offs = 192 };
+enum {
+	adc1_offs = 0,
+	adc2_offs = 64,
+	adc3_offs = 128,
+	common_offs = 192,
+};
 
+/* clang-format off */
 enum { isr = 0, ier, cr, cfgr, cfgr2, smpr1, smpr2, tr1 = smpr2 + 2, tr2, tr3, sqr1 = tr3 + 2, sqr2, sqr3, sqr4, dr,
 	jsqr = dr + 3, ofr1 = jsqr + 5, ofr2, ofr3, ofr4, jdr1 = ofr4 + 5, jdr2, jdr3, jdr4, awd2cr = jdr4 + 5 , awd3cr,
 	difsel = awd3cr + 3, calfact };
+/* clang-format on */
 
-enum { common_csr = common_offs, common_ccr = common_csr + 2, common_cdr };
+enum {
+	common_csr = common_offs,
+	common_ccr = common_csr + 2,
+	common_cdr,
+};
 
 
-//static const unsigned short * const ts_cal1 = (void *)0x1fff75a8;
-//static const unsigned short * const ts_cal2 = (void *)0x1fff75ca;
-static const unsigned short * const vrefint = (void *)0x1fff75aa;
+// static const unsigned short * const ts_cal1 = (void *)0x1fff75a8;
+// static const unsigned short * const ts_cal2 = (void *)0x1fff75ca;
+static const unsigned short *const vrefint = (void *)0x1fff75aa;
 
 
 struct {
@@ -50,7 +61,7 @@ static void adc_delay(int delay)
 	volatile int i;
 
 	for (i = 0; i < delay; ++i)
-		__asm__ volatile ("nop");
+		__asm__ volatile("nop");
 }
 
 

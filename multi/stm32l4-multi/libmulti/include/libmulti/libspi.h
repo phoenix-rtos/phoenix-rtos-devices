@@ -56,7 +56,7 @@ enum { spi_bdiv_2 = 0, spi_bdiv_4, spi_bdiv_8, spi_bdiv_16, spi_bdiv_32, spi_bdi
 
 
 int libspi_transaction(libspi_ctx_t *ctx, int dir, unsigned char cmd, unsigned int addr, unsigned char flags,
-	unsigned char *ibuff, const unsigned char *obuff, size_t bufflen);
+		unsigned char *ibuff, const unsigned char *obuff, size_t bufflen);
 
 
 int libspi_configure(libspi_ctx_t *ctx, char mode, char bdiv, int enable);
