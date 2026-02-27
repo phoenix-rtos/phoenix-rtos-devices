@@ -50,9 +50,24 @@ static const struct libi2c_peripheralInfo {
 };
 
 
-enum { cr1 = 0, cr2, oar1, oar2, timingr, timeoutr, isr, icr, pecr, rxdr, txdr };
+enum {
+	cr1 = 0,
+	cr2,
+	oar1,
+	oar2,
+	timingr,
+	timeoutr,
+	isr,
+	icr,
+	pecr,
+	rxdr,
+	txdr,
+};
 
-enum { dir_read, dir_write };
+enum {
+	dir_read,
+	dir_write,
+};
 
 
 #if defined(__CPU_STM32L4X6)

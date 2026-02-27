@@ -24,9 +24,24 @@
 #include "common.h"
 
 
-enum { flash_acr = 0, flash_pdkeyr, flash_keyr, flash_optkeyr, flash_sr, flash_cr, flash_eccr,
-	flash_optr = flash_eccr + 2, flash_pcrop1sr, flash_pcrop1er, flash_wrp1ar, flash_wrp1br,
-	flash_pcrop2sr = flash_wrp1br + 5, flash_pcrop2er, flash_wrp2ar, flash_wrp2br };
+enum {
+	flash_acr = 0,
+	flash_pdkeyr,
+	flash_keyr,
+	flash_optkeyr,
+	flash_sr,
+	flash_cr,
+	flash_eccr,
+	flash_optr = flash_eccr + 2,
+	flash_pcrop1sr,
+	flash_pcrop1er,
+	flash_wrp1ar,
+	flash_wrp1br,
+	flash_pcrop2sr = flash_wrp1br + 5,
+	flash_pcrop2er,
+	flash_wrp2ar,
+	flash_wrp2br,
+};
 
 
 struct {

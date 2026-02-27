@@ -30,6 +30,7 @@ struct {
 } rcc_common;
 
 
+/* clang-format off */
 enum { cr = 0, icscr, cfgr, cir, ahbrstr, apb2rstr, apb1rstr, ahbenr, apb2enr,
 	apb1enr, ahblpenr, apb2lpenr, apb1lpenr, csr };
 
@@ -37,6 +38,7 @@ enum { cr = 0, icscr, cfgr, cir, ahbrstr, apb2rstr, apb1rstr, ahbenr, apb2enr,
 enum { pwr_cr1 = 0, pwr_cr2, pwr_cr3, pwr_cr4, pwr_sr1, pwr_sr2, pwr_scr, pwr_pucra, pwr_pdcra, pwr_pucrb,
 	pwr_pdcrb, pwr_pucrc, pwr_pdcrc, pwr_pucrd, pwr_pdcrd, pwr_pucre, pwr_pdcre, pwr_pucrf, pwr_pdcrf,
 	pwr_pucrg, pwr_pdcrg, pwr_pucrh, pwr_pdcrh, pwr_pucri, pwr_pdcri };
+/* clang-format on */
 
 
 static inline void _pwr_lock(void)

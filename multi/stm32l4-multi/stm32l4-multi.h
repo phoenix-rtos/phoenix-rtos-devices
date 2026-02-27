@@ -233,10 +233,19 @@ typedef struct {
 /* EXTI */
 
 
-enum { exti_irq = 0, exti_event, exti_irqevent, exti_disabled };
+enum {
+	exti_irq = 0,
+	exti_event,
+	exti_irqevent,
+	exti_disabled,
+};
 
 
-enum { exti_rising = 0, exti_falling, exti_risingfalling };
+enum {
+	exti_rising = 0,
+	exti_falling,
+	exti_risingfalling,
+};
 
 
 typedef struct {
@@ -255,7 +264,11 @@ typedef struct {
 /* ADC */
 
 
-enum { adc1 = 0, adc2, adc3 };
+enum {
+	adc1 = 0,
+	adc2,
+	adc3,
+};
 
 
 typedef struct {

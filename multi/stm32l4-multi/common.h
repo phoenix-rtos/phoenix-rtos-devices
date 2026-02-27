@@ -49,13 +49,13 @@
 #ifdef NDEBUG
 #define DEBUG(format, ...)
 #else
-#define DEBUG(format, ...) printf("%s: "format, drvname, ##__VA_ARGS__)
+#define DEBUG(format, ...) printf("%s: " format, drvname, ##__VA_ARGS__)
 #endif
 
 
 static inline void dataBarier(void)
 {
-	__asm__ volatile ("dmb");
+	__asm__ volatile("dmb");
 }
 
 
