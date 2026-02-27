@@ -17,6 +17,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <sys/platform.h>
+#include <sys/minmax.h>
 
 #if defined(__CPU_STM32L4X6)
 #include "stm32l4x6_base.h"
@@ -30,20 +31,6 @@
 
 
 #define NELEMS(x) (sizeof(x) / sizeof(x[0]))
-
-
-#define max(a, b) ({ \
-	__typeof__ (a) _a = (a); \
-	__typeof__ (b) _b = (b); \
-	_a > _b ? _a : _b; \
-})
-
-
-#define min(a, b) ({ \
-	__typeof__ (a) _a = (a); \
-	__typeof__ (b) _b = (b); \
-	_a > _b ? _b : _a; \
-})
 
 
 #ifdef NDEBUG
