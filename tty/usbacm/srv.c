@@ -14,21 +14,25 @@
 
 #include <usbdriver.h>
 #include <usbprocdriver.h>
+#include <board_config.h>
+
+
+#ifndef USBACM_UMSG_PRIO
+#define USBACM_UMSG_PRIO 4
+#endif
+
+#ifndef USBACM_N_UMSG_THREADS
+#define USBACM_N_UMSG_THREADS 1
+#endif
 
 
 int main(int argc, char *argv[])
 {
-	int ret;
 	usb_driver_t *driver = usb_registeredDriverPop();
 	if (driver == NULL) {
 		fprintf(stderr, "usbacm: no driver registered!");
 		return 1;
 	}
 
-	ret = usb_driverProcRun(driver, NULL);
-	if (ret < 0) {
-		fprintf(stderr, "usbacm: failed to start server: %d\n", ret);
-	}
-
-	return ret == 0 ? 0 : 1;
+	usb_driverProcRun(driver, USBACM_UMSG_PRIO, USBACM_N_UMSG_THREADS, NULL);
 }
