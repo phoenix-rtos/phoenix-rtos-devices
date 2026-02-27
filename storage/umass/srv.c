@@ -15,6 +15,16 @@
 
 #include "umass.h"
 #include <usbprocdriver.h>
+#include <board_config.h>
+
+
+#ifndef UMASS_UMSG_PRIO
+#define UMASS_UMSG_PRIO 4
+#endif
+
+#ifndef UMASS_N_UMSG_THREADS
+#define UMASS_N_UMSG_THREADS 1
+#endif
 
 
 static void printHelp(const char *name)
@@ -29,7 +39,6 @@ static void printHelp(const char *name)
 
 int main(int argc, char *argv[])
 {
-	int ret;
 	char c;
 	oid_t oid;
 	umass_args_t umass_args = { .mount_root = false };
@@ -66,7 +75,5 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	ret = usb_driverProcRun(driver, &umass_args);
-
-	return ret == 0 ? 0 : 1;
+	usb_driverProcRun(driver, UMASS_UMSG_PRIO, UMASS_N_UMSG_THREADS, &umass_args);
 }
