@@ -73,6 +73,10 @@
 #error "UART1_RX_PIN must not be empty"
 #endif
 
+#ifndef UART1_HW_FLOWCTRL
+#define UART1_HW_FLOWCTRL 0
+#endif
+
 #if UART1_HW_FLOWCTRL
 
 #ifndef UART1_RTS_PIN
@@ -126,6 +130,10 @@
 #define UART2_RX_PIN UART2_RX_PIN_DEFAULT
 #elif ISEMPTY(UART2_RX_PIN)
 #error "UART2_RX_PIN must not be empty"
+#endif
+
+#ifndef UART2_HW_FLOWCTRL
+#define UART2_HW_FLOWCTRL 0
 #endif
 
 #if UART2_HW_FLOWCTRL
@@ -183,6 +191,10 @@
 #error "UART3_RX_PIN must not be empty"
 #endif
 
+#ifndef UART3_HW_FLOWCTRL
+#define UART3_HW_FLOWCTRL 0
+#endif
+
 #if UART3_HW_FLOWCTRL
 
 #ifndef UART3_RTS_PIN
@@ -236,6 +248,10 @@
 #define UART4_RX_PIN UART4_RX_PIN_DEFAULT
 #elif ISEMPTY(UART4_RX_PIN)
 #error "UART4_RX_PIN must not be empty"
+#endif
+
+#ifndef UART4_HW_FLOWCTRL
+#define UART4_HW_FLOWCTRL 0
 #endif
 
 #if UART4_HW_FLOWCTRL
@@ -293,6 +309,10 @@
 #error "UART5_RX_PIN must not be empty"
 #endif
 
+#ifndef UART5_HW_FLOWCTRL
+#define UART5_HW_FLOWCTRL 0
+#endif
+
 #if UART5_HW_FLOWCTRL
 
 #ifndef UART5_RTS_PIN
@@ -346,6 +366,10 @@
 #define UART6_RX_PIN UART6_RX_PIN_DEFAULT
 #elif ISEMPTY(UART6_RX_PIN)
 #error "UART6_RX_PIN must not be empty"
+#endif
+
+#ifndef UART6_HW_FLOWCTRL
+#define UART6_HW_FLOWCTRL 0
 #endif
 
 #if UART6_HW_FLOWCTRL
@@ -403,6 +427,10 @@
 #error "UART7_RX_PIN must not be empty"
 #endif
 
+#ifndef UART7_HW_FLOWCTRL
+#define UART7_HW_FLOWCTRL 0
+#endif
+
 #if UART7_HW_FLOWCTRL
 
 #ifndef UART7_RTS_PIN
@@ -456,6 +484,10 @@
 #define UART8_RX_PIN UART8_RX_PIN_DEFAULT
 #elif ISEMPTY(UART8_RX_PIN)
 #error "UART8_RX_PIN must not be empty"
+#endif
+
+#ifndef UART8_HW_FLOWCTRL
+#define UART8_HW_FLOWCTRL 0
 #endif
 
 #if UART8_HW_FLOWCTRL
@@ -516,6 +548,10 @@
 #error "UART9_RX_PIN must not be empty"
 #endif
 
+#ifndef UART9_HW_FLOWCTRL
+#define UART9_HW_FLOWCTRL 0
+#endif
+
 #if UART9_HW_FLOWCTRL
 
 #ifndef UART9_RTS_PIN
@@ -569,6 +605,10 @@
 #define UART10_RX_PIN UART10_RX_PIN_DEFAULT
 #elif ISEMPTY(UART10_RX_PIN)
 #error "UART10_RX_PIN must not be empty"
+#endif
+
+#ifndef UART10_HW_FLOWCTRL
+#define UART10_HW_FLOWCTRL 0
 #endif
 
 #if UART10_HW_FLOWCTRL
@@ -626,6 +666,10 @@
 #error "UART11_RX_PIN must not be empty"
 #endif
 
+#ifndef UART11_HW_FLOWCTRL
+#define UART11_HW_FLOWCTRL 0
+#endif
+
 #if UART11_HW_FLOWCTRL
 
 #ifndef UART11_RTS_PIN
@@ -679,6 +723,10 @@
 #define UART12_RX_PIN UART12_RX_PIN_DEFAULT
 #elif ISEMPTY(UART12_RX_PIN)
 #error "UART12_RX_PIN must not be empty"
+#endif
+
+#ifndef UART12_HW_FLOWCTRL
+#define UART12_HW_FLOWCTRL 0
 #endif
 
 #if UART12_HW_FLOWCTRL
