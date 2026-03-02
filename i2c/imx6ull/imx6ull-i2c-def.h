@@ -93,4 +93,32 @@
 #define CONFIG_I2C4_SDA_ISEL 2
 #endif
 
+#ifndef CONFIG_I2C1_SCL_PAD
+#define CONFIG_I2C1_SCL_PAD pad_gpio1_02
+#endif
+#ifndef CONFIG_I2C1_SDA_PAD
+#define CONFIG_I2C1_SDA_PAD pad_gpio1_03
+#endif
+
+#ifndef CONFIG_I2C2_SCL_PAD
+#define CONFIG_I2C2_SCL_PAD pad_gpio1_00
+#endif
+#ifndef CONFIG_I2C2_SDA_PAD
+#define CONFIG_I2C2_SDA_PAD pad_gpio1_01
+#endif
+
+#ifndef CONFIG_I2C3_SCL_PAD
+#define CONFIG_I2C3_SCL_PAD pad_lcd_d1
+#endif
+#ifndef CONFIG_I2C3_SDA_PAD
+#define CONFIG_I2C3_SDA_PAD pad_lcd_d0
+#endif
+
+#ifndef CONFIG_I2C4_SCL_PAD
+#define CONFIG_I2C4_SCL_PAD pad_lcd_d3
+#endif
+#ifndef CONFIG_I2C4_SDA_PAD
+#define CONFIG_I2C4_SDA_PAD pad_lcd_d2
+#endif
+
 #endif /* _IMX6ULL_I2C_DEF_H_ */
