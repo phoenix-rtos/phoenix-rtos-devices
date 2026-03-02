@@ -60,6 +60,12 @@ static const i2c_pctl_t i2c_pctl_isel[4][2] = {
 	{ { pctl_isel_i2c4_scl, CONFIG_I2C4_SCL_ISEL }, { pctl_isel_i2c4_sda, CONFIG_I2C4_SDA_ISEL } },
 };
 
+static const int i2c_pctl_iopad[4][2] = {
+	{ PCTL(CONFIG_I2C1_SCL_PAD), PCTL(CONFIG_I2C1_SDA_PAD) },
+	{ PCTL(CONFIG_I2C2_SCL_PAD), PCTL(CONFIG_I2C2_SDA_PAD) },
+	{ PCTL(CONFIG_I2C3_SCL_PAD), PCTL(CONFIG_I2C3_SDA_PAD) },
+	{ PCTL(CONFIG_I2C4_SCL_PAD), PCTL(CONFIG_I2C4_SDA_PAD) },
+};
 
 static const unsigned i2c_int_no[] = { 32 + 36, 32 + 37, 32 + 38, 32 + 35 };
 
@@ -98,7 +104,7 @@ static void platform_init(void)
 	pctl.type = pctl_iomux;
 	pctl.iomux.sion = 1; /* from RM: SION bit needs to be enabled for i2c pads */
 
-	for (i = 0; i < 2; ++i) {
+	for (i = 0; i < sizeof(i2c_pctl_mux[0]) / sizeof(i2c_pctl_mux[0][0]); ++i) {
 		pctl.iomux.mux = i2c_pctl_mux[i2c.dev_no - 1][i].pctl;
 		pctl.iomux.mode = i2c_pctl_mux[i2c.dev_no - 1][i].val;
 		platformctl(&pctl);
@@ -107,31 +113,28 @@ static void platform_init(void)
 	/* set IOsel */
 	pctl.type = pctl_ioisel;
 
-	for (i = 0; i < 2; ++i) {
+	for (i = 0; i < sizeof(i2c_pctl_isel[0]) / sizeof(i2c_pctl_isel[0][0]); ++i) {
 		pctl.ioisel.isel = i2c_pctl_isel[i2c.dev_no - 1][i].pctl;
 		pctl.ioisel.daisy = i2c_pctl_isel[i2c.dev_no - 1][i].val;
 		platformctl(&pctl);
 	}
 
-	/* PAD configuration taken from linux Device Tree, not needed for our current targets, leaving commented-out
-	 * as it might need to be enabled for targets with missing pullup resistors (and written in generic way) */
-#if 0
+	/* set IOpad */
 	pctl.type = pctl_iopad;
-	pctl.iopad.pad = pctl_pad_gpio1_02;
+
 	pctl.iopad.hys = 1;
 	pctl.iopad.pus = 2; /* 100kOhm pull-up */
-	pctl.iopad.pue = 0;    /* pull/keeper enabled */
+	pctl.iopad.pue = 0; /* pull/keeper enabled */
 	pctl.iopad.pke = 1;
-	pctl.iopad.ode = 1;      /* open drain enable */
+	pctl.iopad.ode = 1;   /* open drain enable */
 	pctl.iopad.speed = 2; /* speed - 100 MHz */
 	pctl.iopad.dse = 0x4;
 	pctl.iopad.sre = 0;
 
-	platformctl(&pctl);
-
-	pctl.iopad.pad = pctl_pad_gpio1_03;
-	platformctl(&pctl);
-#endif
+	for (i = 0; i < sizeof(i2c_pctl_iopad[0]) / sizeof(i2c_pctl_iopad[0][0]); ++i) {
+		pctl.iopad.pad = i2c_pctl_iopad[i2c.dev_no - 1][i];
+		platformctl(&pctl);
+	}
 }
 
 
