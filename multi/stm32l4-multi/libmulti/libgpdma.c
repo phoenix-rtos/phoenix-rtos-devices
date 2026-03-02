@@ -1088,6 +1088,12 @@ int libxpdma_startTransferWithFlag(const struct libdma_per *per, int dir, volati
 }
 
 
+int libxpdma_startTransferPollingOnly(const struct libdma_per *per, int dir)
+{
+	return libxpdma_startTransaction(per, dir, 0, NULL, NULL);
+}
+
+
 static int libxpdma_waitForChannelIntr(int dma, int chn, volatile int *doneFlag, time_t timeout, time_t end)
 {
 	int ret = EOK;
@@ -1172,8 +1178,42 @@ int libxpdma_waitForTransaction(const struct libdma_per *per, volatile int *flag
 				gettime(&now, NULL);
 				if (end <= now) {
 					ret = -ETIME;
+					libdma_cleanupTransfer(dmas[1], chns[1]);
 					break;
 				}
+			}
+		}
+	}
+
+	return ret;
+}
+
+
+int libxpdma_waitPoll(const struct libdma_per *per, int dir, time_t timeout)
+{
+	int dma, chn;
+	if (!libxpdma_getDmaAndChannel(per, dir, &dma, &chn)) {
+		return -EINVAL;
+	}
+
+	time_t end = 0;
+	if (timeout != 0) {
+		time_t now;
+		gettime(&now, NULL);
+		end = now + timeout;
+	}
+
+	int ret = EOK;
+	volatile uint32_t *chnBase = libdma_channelBase(dma, chn);
+	while (!libdma_hasChannelFinished(chnBase)) {
+		/* Wait for the channel to finish */
+		if (timeout != 0) {
+			time_t now;
+			gettime(&now, NULL);
+			if (end <= now) {
+				ret = -ETIME;
+				libdma_cleanupTransfer(dma, chn);
+				break;
 			}
 		}
 	}
