@@ -33,6 +33,7 @@
 #define SENSOR_TYPE_SENSEKF  (1 << 7)
 #define SENSOR_TYPE_FSS      (1 << 8)
 #define SENSOR_TYPE_STAR     (1 << 9)
+#define SENSOR_TYPE_TOF      (1 << 10)
 
 
 typedef unsigned int sensor_type_t;
@@ -190,6 +191,12 @@ typedef struct {
 } starTracker_data_t;
 
 
+typedef struct {
+	uint32_t devId;
+	uint32_t dist; /* Distance [mm] to the closest object */
+} tof_data_t;
+
+
 /* Event data gets from sensor manager */
 typedef struct {
 	sensor_type_t type;
@@ -206,6 +213,7 @@ typedef struct {
 		sensEkf_data_t sensEkf;
 		fss_data_t fss;
 		starTracker_data_t st;
+		tof_data_t tof;
 	};
 } sensor_event_t;
 
