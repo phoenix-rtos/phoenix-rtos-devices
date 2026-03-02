@@ -190,14 +190,29 @@ int libxpdma_startTransferWithCallback(const struct libdma_per *per, int dir, in
 int libxpdma_startTransferWithFlag(const struct libdma_per *per, int dir, volatile int *doneFlag);
 
 
+/* Start transaction with no interrupt to notify of progress. Only polling can be used to detect the end of transaction.
+ * * per - peripheral's handle
+ * * dir - direction of transfer
+ */
+int libxpdma_startTransferPollingOnly(const struct libdma_per *per, int dir);
+
+
 /* Wait for transaction to finish. Can wait on both transfer directions at once.
  * If either flag pointer is NULL, the function won't wait on transfer in that direction.
  * * per - peripheral's handle
  * * flagMem2Per - pointer to flag in memory for `dma_per2mem` direction. Can be NULL.
  * * flagPer2Mem - pointer to flag in memory for `dma_mem2per` direction. Can be NULL.
- * * timeout - ms to wait for transfer to finish or 0 to wait indefinitely
+ * * timeout - us to wait for transfer to finish or 0 to wait indefinitely
  */
 int libxpdma_waitForTransaction(const struct libdma_per *per, volatile int *flagMem2Per, volatile int *flagPer2Mem, time_t timeout);
+
+
+/* Wait for transaction to finish using polling.
+ * * per - peripheral's handle
+ * * dir - direction of transfer
+ * * timeout - us to wait for transfer to finish or 0 to wait indefinitely
+ */
+int libxpdma_waitPoll(const struct libdma_per *per, int dir, time_t timeout);
 
 
 /* Cancel a transfer in progress and reset the channel.
