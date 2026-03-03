@@ -26,11 +26,15 @@
 #include <sys/threads.h>
 #include <posix/utils.h>
 
-#include <libjffs2.h>
 #include <ptable.h>
 #include <storage/storage.h>
 
 #include <flashdrv/flashsrv.h>
+
+#if FLASHSRV_ENABLE_JFFS2
+#include <libjffs2.h>
+#endif
+
 
 #define STRG_PATH "mtd0"
 
@@ -493,6 +497,7 @@ static void flashsrv_signalExit(int sig)
 
 int main(int argc, char **argv)
 {
+#ifndef NOMMU
 	/* Set parent exit handler */
 	signal(SIGUSR1, flashsrv_signalExit);
 
@@ -515,6 +520,10 @@ int main(int argc, char **argv)
 		LOG_ERROR("failed to create new session");
 		exit(EXIT_FAILURE);
 	}
+#else
+	/* No NOMMU targets fork() is not supported. The server will not daemonize. */
+	(void)flashsrv_signalExit;
+#endif
 
 	struct flashsrv_opts opts = {
 		.driver = NULL,
@@ -541,12 +550,14 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 
+#if FLASHSRV_ENABLE_JFFS2
 	/* Register JFFS2 filesystem */
 	err = storage_registerfs("jffs2", libjffs2_mount, libjffs2_umount);
 	if (err < 0) {
 		LOG_ERROR("failed to register jffs2 (%d)\n", err);
 		exit(EXIT_FAILURE);
 	}
+#endif
 
 	/* Initialize flash driver and mtd interface */
 	storage_t *strg = flashsrv_init(&opts);
@@ -569,9 +580,17 @@ int main(int argc, char **argv)
 		}
 	}
 
+#ifndef NOMMU
 	/* Finished server initialization - kill parent */
 	kill(getppid(), SIGUSR1);
-	err = storage_run(1, 2 * _PAGE_SIZE);
+#endif
+	size_t stackSize;
+#ifndef FLASHSRV_STORAGE_STACK_SIZE
+	stackSize = 2 * _PAGE_SIZE;
+#else
+	stackSize = FLASHSRV_STORAGE_STACK_SIZE;
+#endif
+	err = storage_run(1, stackSize);
 
 	storage_remove(strg);
 	opts.driver->destroy(strg);
