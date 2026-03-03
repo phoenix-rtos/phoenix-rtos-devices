@@ -23,6 +23,9 @@
 #define TRACE(fmt, ...) do { if (0) { (void)fprintf(stdout, "flashsrv:%s:%d: " fmt "\n", __func__, __LINE__, ##__VA_ARGS__); } } while (0)
 /* clang-format on */
 
+#ifndef FLASHSRV_ENABLE_JFFS2
+#define FLASHSRV_ENABLE_JFFS2 0
+#endif
 
 void flashsrv_register(const struct flash_driver *driver);
 
