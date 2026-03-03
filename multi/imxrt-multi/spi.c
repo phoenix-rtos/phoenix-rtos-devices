@@ -332,6 +332,10 @@ int spi_handleMsg(msg_t *msg, int dev)
 }
 
 
+/* Temporary workaround to silence -Wundef warning. See comment in config.h */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wundef"
+
 #ifdef __CPU_IMXRT117X
 
 static int spi_getIsel(int mux, int *isel, int *val)
@@ -796,6 +800,8 @@ static void spi_initPins(void)
 		common_setInput(isel, val);
 	}
 }
+
+#pragma GCC diagnostic pop
 
 #endif
 
