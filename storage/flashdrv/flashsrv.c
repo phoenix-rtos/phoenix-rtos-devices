@@ -63,7 +63,7 @@ static struct {
 
 static ssize_t flashsrv_read(storage_t *strg, off_t offs, void *buf, size_t size)
 {
-	if ((strg == NULL) || (strg->dev == NULL) || ((offs + size) > strg->size)) {
+	if ((strg == NULL) || (strg->dev == NULL) || (offs < 0) || ((offs + size) > strg->size)) {
 		return -EINVAL;
 	}
 
@@ -74,7 +74,7 @@ static ssize_t flashsrv_read(storage_t *strg, off_t offs, void *buf, size_t size
 	storage_mtd_t *mtd = strg->dev->mtd;
 	if ((mtd != NULL) && (mtd->ops != NULL) && (mtd->ops->read != NULL)) {
 		size_t retlen;
-		int res = mtd->ops->read(strg, offs, buf, size, &retlen);
+		int res = mtd->ops->read(strg, strg->start + offs, buf, size, &retlen);
 		if (res < 0) {
 			return res;
 		}
@@ -87,7 +87,7 @@ static ssize_t flashsrv_read(storage_t *strg, off_t offs, void *buf, size_t size
 
 static ssize_t flashsrv_write(storage_t *strg, off_t offs, const void *buf, size_t size)
 {
-	if ((strg == NULL) || (strg->dev == NULL) || ((offs + size) > strg->size)) {
+	if ((strg == NULL) || (strg->dev == NULL) || (offs < 0) || ((offs + size) > strg->size)) {
 		return -EINVAL;
 	}
 
@@ -98,7 +98,7 @@ static ssize_t flashsrv_write(storage_t *strg, off_t offs, const void *buf, size
 	storage_mtd_t *mtd = strg->dev->mtd;
 	if ((mtd != NULL) && (mtd->ops != NULL) && (mtd->ops->write != NULL)) {
 		size_t retlen;
-		int res = mtd->ops->write(strg, offs, buf, size, &retlen);
+		int res = mtd->ops->write(strg, strg->start + offs, buf, size, &retlen);
 		if (res < 0) {
 			return res;
 		}
