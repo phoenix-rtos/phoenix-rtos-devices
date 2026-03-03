@@ -11,6 +11,12 @@ ifneq ($(filter $(TARGET_SUBFAMILY), grfpga gr712rc gr740),)
 	DEP_LIBS := libftmctrl libspimctrl
 	LOCAL_CFLAGS += -DFLASHSRV_ENABLE_JFFS2=1
 	LIBS += libjffs2
+else ifneq ($(filter $(TARGET_SUBFAMILY), stm32n6),)
+# Set stack size - on ARMv8-M targets the default stack size given by the kernel may be too small
+# when filesystem support is added
+	LOCAL_LDFLAGS := -z stack-size=2048 -z noexecstack
+	LOCAL_CFLAGS += -DFLASHSRV_STORAGE_STACK_SIZE=2048
+	DEP_LIBS := libstm32_extflash
 endif
 
 include $(binary.mk)
