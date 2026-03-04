@@ -1,47 +1,40 @@
 /*
  * Phoenix-RTOS
  *
- * phy - depends on the platform
+ * libusbclient (STM32 N6)
+ *
+ * Physical layer configuration
  *
  * Copyright 2025 Phoenix Systems
- * Author: Olaf Czerwinski, Radoslaw Szewczyk
+ * Author: Olaf Czerwinski, Radosław Szewczyk, Rafał Mikielis
  *
  * This file is part of Phoenix-RTOS.
  *
  * %LICENSE%
  */
 
-
 #ifndef _STM32_PHY_H_
 #define _STM32_PHY_H_
 
 #include <stdlib.h>
 #include "registers.h"
+#include "client.h"
 
-
-#define PHY_IRQ otg1_irq
-
-
-#define USBPHYC_CR_FSEL_24MHZ (0x2 << 4)
-/* page 3865 per rm0486 - only rf_w1 bits valid for device mode */
-#define GINTSTSWrMsk 0xD8F0FC0A
-
+#define USBPHYC_CR_FSEL_24MHZ (0x2U << 4)
 
 volatile uint32_t *phy_getOtgBase(void);
 
-
 uint32_t phy_getIrq(void);
 
+int phy_setClock(void);
 
-void phy_setClock(void);
-
-
-int phy_init(void);
-
-
-void phy_reset(void);
+int phy_mapRegs(void);
+void phy_unmapRegs(void);
+void phy_config(usb_dc_t *dc);
+int phy_usbss_init(void);
+int phy_clk_reset(void);
+int phy_clear_config(void);
 
 uint32_t phy_getHclkFreq(void);
-
 
 #endif
