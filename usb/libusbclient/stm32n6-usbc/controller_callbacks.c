@@ -1,48 +1,71 @@
+/*
+ * Phoenix-RTOS
+ *
+ * libusbclient (STM32 N6)
+ *
+ * IRQ thread callbacks
+ *
+ * Copyright 2025 Phoenix Systems
+ * Author: Radosław Szewczyk, Rafał Mikielis
+ *
+ * This file is part of Phoenix-RTOS.
+ *
+ * %LICENSE%
+ */
+
 #include "client.h"
+#include "phy.h"
+
+#define DOEPINT_RESET_MASK 0xF17FU
+#define DIEPINT_RESET_MASK 0x297FU
+
+#define UNALIGNED32_READ(addr)       (((const struct unaligned32 *)(addr))->var)
+#define UNALIGNED32_WRITE(addr, val) (void)((((struct unaligned32 *)(addr))->var) = (val))
+
+#define USB_REG(x) clbc_common.dc->base[x]
 
 
-#ifndef __PACKED_STRUCT
-#define __PACKED_STRUCT struct __attribute__((packed))
-#endif
-__PACKED_STRUCT T_UINT32_READ { uint32_t v; };
-#define __UNALIGNED_UINT32_READ(addr) (((const struct T_UINT32_READ *)(const void *)(addr))->v)
+struct __attribute__((packed)) unaligned32 {
+	uint32_t var;
+};
+
+
 struct {
 	usb_dc_t *dc;
 	usb_common_data_t *data;
 } clbc_common;
 
 
-int clbc_init(usb_common_data_t *usb_data_in, usb_dc_t *dc_in)
+void clbc_init(usb_common_data_t *usb_data_in, usb_dc_t *dc_in)
 {
 	clbc_common.dc = dc_in;
 	clbc_common.data = usb_data_in;
-
-	return 0;
 }
 
 
-static void activateEndpoint(int epNum, int epDir, int epType, uint32_t maxPacket)
+static void activateEndpoint(int epNum, int epDir, uint32_t epType, uint32_t maxPacket)
 {
 	if (epDir == USB_EP_DIR_IN) {
 		clbc_common.data->endpts[epNum].in.type = epType;
 
-		clbc_common.dc->base[DAINTMSK] |= (0xFFFF & ((uint32_t)(1UL << (epNum & 0xFU))));
+		USB_REG(DAINTMSK) |= (0xFFFF & ((uint32_t)(1UL << (epNum & 0xFU))));
 
-		if (((clbc_common.dc->base[DIEPCTL0 + epNum * EP_STRIDE] >> 15) & 1) == 0) {
-			clbc_common.dc->base[DIEPCTL0 + epNum * EP_STRIDE] |= (maxPacket & 0x7FF) |
-					((uint32_t)epType << 18) | (epNum << 22) |
-					(0x1UL << 28UL) | (0x1UL << 15UL);
+		/* EPs 1-8 are disabled by the core when USBRST event detected */
+		if (((USB_REG(DIEPCTL0 + epNum * EP_STRIDE) >> 15) & 1) == 0) {
+			USB_REG(DIEPCTL0 + epNum * EP_STRIDE) |= ((maxPacket & 0x7FF) | ((epType & 0x3U) << DIEPCTL_EPTYP) |
+					((epNum & 0xFU) << DIEPCTL_TXFNUM) | (0x1UL << DIEPCTL_SD0PID) |
+					(0x1UL << DIEPCTL_USBAEP));
 		}
 	}
 	else {
 		clbc_common.data->endpts[epNum].out.type = epType;
 
-		clbc_common.dc->base[DAINTMSK] |= ((0xFFFF << 16) & ((uint32_t)(1UL << (epNum & 0xFU))) << 16);
+		USB_REG(DAINTMSK) |= ((0xFFFF << 16) & ((uint32_t)(1UL << (epNum & 0xFU))) << 16);
 
-		if (((clbc_common.dc->base[DOEPCTL0 + epNum * EP_STRIDE] >> 15) & 1) == 0) {
-			clbc_common.dc->base[DOEPCTL0 + epNum * EP_STRIDE] |= (maxPacket & 0x7FF) |
-					((uint32_t)epType << 18) | (epNum << 22) |
-					(0x1UL << 28UL) | (0x1UL << 15UL);
+		/* EPs 1-8 are disabled by the core when USBRST event detected */
+		if (((USB_REG(DOEPCTL0 + epNum * EP_STRIDE) >> 15) & 1) == 0) {
+			USB_REG(DOEPCTL0 + epNum * EP_STRIDE) |= ((maxPacket & 0x7FF) | ((epType & 0x3U) << DOEPCTL_EPTYP) |
+					(0x1UL << DOEPCTL_SD0PID) | (0x1UL << DOEPCTL_USBAEP));
 		}
 	}
 }
@@ -51,54 +74,58 @@ static void activateEndpoint(int epNum, int epDir, int epType, uint32_t maxPacke
 void clbc_reset(void)
 {
 	activateEndpoint(0, USB_EP_DIR_OUT, USB_EP_TYPE_CTRL, 64U);
-	clbc_common.data->endpts[0].in.maxpacket = 64;
-	activateEndpoint(0, USB_EP_DIR_IN, USB_EP_TYPE_CTRL, 64U);
 	clbc_common.data->endpts[0].out.maxpacket = 64;
+	clbc_common.data->endpts[0].out.dataBuf.vBuffer = clbc_common.dc->ep0buffRX;
+	clbc_common.data->endpts[0].out.dataBuf.head = clbc_common.data->endpts[0].out.dataBuf.vBuffer;
+	clbc_common.data->endpts[0].out.dataBuf.tail = clbc_common.data->endpts[0].out.dataBuf.vBuffer;
+	clbc_common.data->endpts[0].out.dataBuf.size = (uint16_t)EP0_RX_BUFFER_SIZE;
+
+	activateEndpoint(0, USB_EP_DIR_IN, USB_EP_TYPE_CTRL, 64U);
+	clbc_common.data->endpts[0].in.maxpacket = 64;
+	clbc_common.data->endpts[0].in.dataBuf.vBuffer = clbc_common.dc->ep0buffTX;
+	clbc_common.data->endpts[0].in.dataBuf.head = clbc_common.data->endpts[0].in.dataBuf.vBuffer;
+	clbc_common.data->endpts[0].in.dataBuf.tail = clbc_common.data->endpts[0].in.dataBuf.vBuffer;
+	clbc_common.data->endpts[0].in.dataBuf.size = (uint16_t)EP0_TX_BUFFER_SIZE;
 }
 
 
 void clbc_ep0OutStart(void)
 {
-	uint32_t gSNPSiD = clbc_common.dc->base[CID + 1];
+	uint32_t gSNPSiD = USB_REG(CID + 1);
 
 	if (gSNPSiD > 0x4F54300AU) {
-		if ((clbc_common.dc->base[DOEPCTL0] >> 31) & 1) {
+		if (((USB_REG(DOEPCTL0) >> DOEPCTL_EPENA) & 1U) == 1U) {
 			return;
 		}
 	}
 
-	clbc_common.dc->base[DOEPTSIZ0] = 0U;
-	clbc_common.dc->base[DOEPTSIZ0] |= ((0x3FFUL << 19UL) & (1UL << 19));
-	clbc_common.dc->base[DOEPTSIZ0] |= (3U * 8U);
-	clbc_common.dc->base[DOEPTSIZ0] |= (0x3UL << 29UL);
+	USB_REG(DOEPTSIZ0) = 0U;
+	USB_REG(DOEPTSIZ0) |= (1UL << 19);
+	USB_REG(DOEPTSIZ0) |= (3U * 8U);
+	USB_REG(DOEPTSIZ0) |= (0x3UL << 29);
 }
 
 
-static void outXfrcComplete(int epNum)
+void clbc_epStall(stm32n6_endpt_t *ep)
 {
-	uint32_t gSNPSiD = clbc_common.dc->base[CID + 1];
-	if (gSNPSiD == 0x4F54310AU) {
-		if ((clbc_common.dc->base[DOEPINT0] >> 15) & 1) {
-			clbc_common.dc->base[DOEPINT0] |= (1 << 15);
-		}
-		if ((clbc_common.dc->base[DOEPINT0] >> 5) & 1) {
-			clbc_common.dc->base[DOEPINT0] |= (1 << 5);
-		}
+	/* stall IN endpoint */
+	if (ep->in.epNum != 0U) {
+		USB_REG(DIEPCTL0 + ep->in.epNum * EP_STRIDE) |= (1UL << DIEPCTL_EPDIS);
+	}
+	USB_REG(DIEPCTL0 + ep->in.epNum * EP_STRIDE) |= (1UL << DIEPCTL_STALL);
 
-		// callback
+	/* stall OUT endpoint */
+	if (ep->in.epNum != 0U) {
+		USB_REG(DOEPCTL0 + ep->in.epNum * EP_STRIDE) |= (1UL << DOEPCTL_EPDIS);
 	}
-	else {
-		if (epNum == 0) {
-			clbc_ep0OutStart();
-		}
-	}
+	USB_REG(DOEPCTL0 + ep->in.epNum * EP_STRIDE) |= (1UL << DOEPCTL_STALL);
 }
 
 
 static uint8_t getDevSpeed(void)
 {
 	uint8_t speed;
-	uint32_t devEnumSpeed = ((clbc_common.dc->base[DSTS] >> 1) & 3);
+	uint32_t devEnumSpeed = ((USB_REG(DSTS) >> 1) & 3);
 
 	if (devEnumSpeed == 0) {
 		/* HIGH SPEED */
@@ -112,6 +139,7 @@ static uint8_t getDevSpeed(void)
 		speed = 0xFU;
 	}
 
+	clbc_common.dc->enumSpeed = speed;
 	return speed;
 }
 
@@ -149,18 +177,10 @@ static void setTurnaroundTime(uint32_t hclk, uint8_t speed)
 			/* hclk Clock Range between 21.8-24 MHz */
 			usbTrd = 0x9U;
 		}
-		else if ((hclk >= 24000000U) && (hclk < 27700000U)) {
-			/* hclk Clock Range between 24-27.7 MHz */
-			usbTrd = 0x8U;
-		}
-		else if ((hclk >= 27700000U) && (hclk < 32000000U)) {
-			/* hclk Clock Range between 27.7-32 MHz */
-			usbTrd = 0x7U;
-		}
 		else /* if(hclk >= 32000000) */
 		{
 			/* hclk Clock Range between 32-200 MHz */
-			usbTrd = 0x6U;
+			usbTrd = 0x9U;
 		}
 	}
 	else if (speed == 0U) {
@@ -170,8 +190,8 @@ static void setTurnaroundTime(uint32_t hclk, uint8_t speed)
 		usbTrd = 9U;
 	}
 
-	clbc_common.dc->base[GUSBCFG] &= ~(0xFUL << 10UL);
-	clbc_common.dc->base[GUSBCFG] |= (uint32_t)((usbTrd << 10) & (0xFUL << 10UL));
+	USB_REG(GUSBCFG) &= ~(0xFUL << 10);
+	USB_REG(GUSBCFG) |= (usbTrd << 10);
 }
 
 
@@ -186,53 +206,51 @@ void clbc_enumdne(void)
 
 static void epStartXfer(stm32n6_endpt_data_t *epData)
 {
+	uint16_t pktcnt;
+
 	if (epData->is_in == 1U) {
 		/* IN Endpoint */
+
 		if (epData->xfer_len == 0U) {
 			/* Zero Length Packet */
-			clbc_common.dc->base[DIEPTSIZ0 + epData->epNum * EP_STRIDE] &= ~(0x3FFUL << 19UL);
-			clbc_common.dc->base[DIEPTSIZ0 + epData->epNum * EP_STRIDE] |= ((0x3FFUL << 19UL) & ((1UL << 19)));
-			clbc_common.dc->base[DIEPTSIZ0 + epData->epNum * EP_STRIDE] &= ~(0x7FFFFUL);
+			USB_REG(DIEPTSIZ0 + epData->epNum * EP_STRIDE) &= ~(0x3FFUL << 19);
+			USB_REG(DIEPTSIZ0 + epData->epNum * EP_STRIDE) |= (1UL << 19);
+			USB_REG(DIEPTSIZ0 + epData->epNum * EP_STRIDE) &= ~(0x7FFFFUL);
 		}
 		else {
-			clbc_common.dc->base[DIEPTSIZ0 + epData->epNum * EP_STRIDE] &= ~(0x3FFUL << 19UL);
-			clbc_common.dc->base[DIEPTSIZ0 + epData->epNum * EP_STRIDE] &= ~(0x7FFFFUL);
+			USB_REG(DIEPTSIZ0 + epData->epNum * EP_STRIDE) &= ~(0x7FFFFUL);
+			USB_REG(DIEPTSIZ0 + epData->epNum * EP_STRIDE) &= ~(0x3FFUL << 19);
 
-			if (epData->epNum == 0) {
-				if (epData->xfer_len > epData->maxpacket) {
-					epData->xfer_len = epData->maxpacket;
-				}
-				clbc_common.dc->base[DIEPTSIZ0 + epData->epNum * EP_STRIDE] |= (1UL << 19);
-			}
-			else {
-				uint16_t pktcnt = (uint16_t)((epData->xfer_len + epData->maxpacket - 1U) / epData->maxpacket);
-				clbc_common.dc->base[DIEPTSIZ0 + epData->epNum * EP_STRIDE] |= ((0x3FFUL << 19UL) & (((uint32_t)pktcnt << 19)));
-
-				if (epData->type == USB_EP_TYPE_ISOC) {
-					/**
-					 * TODO: ISOC PACKETS
-					 */
-					// USBx_INEP(epnum)->DIEPTSIZ &= ~(USB_OTG_DIEPTSIZ_MULCNT);
-					// USBx_INEP(epnum)->DIEPTSIZ |= (USB_OTG_DIEPTSIZ_MULCNT & ((uint32_t)pktcnt << 29));
-				}
+			if (epData->xfer_len > epData->maxpacket) {
+				epData->xfer_len = epData->maxpacket;
 			}
 
-			clbc_common.dc->base[DIEPTSIZ0 + epData->epNum * EP_STRIDE] |= ((0x7FFFFUL) & epData->xfer_len);
+			pktcnt = (uint16_t)((epData->xfer_size + epData->maxpacket - 1U) / epData->maxpacket);
+			USB_REG(DIEPTSIZ0 + epData->epNum * EP_STRIDE) |= ((pktcnt & 0x3FFUL) << 19);
+
+			if (epData->type == USB_EP_TYPE_ISOC) {
+				/**
+				 * TODO: ISOC PACKETS
+				 */
+			}
+
+			USB_REG(DIEPTSIZ0 + epData->epNum * EP_STRIDE) |= (0x7FFFFUL & epData->xfer_size);
 		}
 
-		clbc_common.dc->base[DIEPCTL0 + epData->epNum * EP_STRIDE] |= ((1 << 26) | (1 << 31));
+		/* enable endpoint and clear NAK for this transfer */
+		USB_REG(DIEPCTL0 + epData->epNum * EP_STRIDE) |= ((1UL << 26) | (1UL << 31));
 
 		if (epData->type != USB_EP_TYPE_ISOC) {
 			if (epData->xfer_len > 0U) {
-				clbc_common.dc->base[DIEPEMPMSK] |= (1 << (epData->epNum & 0xF));
+				USB_REG(DIEPEMPMSK) |= (1UL << (epData->epNum & 0xF));
 			}
 		}
 		else {
-			if ((clbc_common.dc->base[DSTS] & (1 << 8)) == 0U) {
-				clbc_common.dc->base[DIEPCTL0 + epData->epNum * EP_STRIDE] |= (1 << 29);
+			if ((USB_REG(DSTS) & (1 << 8)) == 0U) {
+				USB_REG(DIEPCTL0 + epData->epNum * EP_STRIDE) |= (1UL << 29);
 			}
 			else {
-				clbc_common.dc->base[DIEPCTL0 + epData->epNum * EP_STRIDE] |= (1 << 28);
+				USB_REG(DIEPCTL0 + epData->epNum * EP_STRIDE) |= (1UL << 28);
 			}
 			/**
 			 * TODO: WRITE_USB_PACKET()
@@ -241,142 +259,168 @@ static void epStartXfer(stm32n6_endpt_data_t *epData)
 	}
 	else {
 		/* OUT Endpoint */
-		clbc_common.dc->base[DOEPTSIZ0 + epData->epNum * EP_STRIDE] &= ~(0x7FFFFUL);
-		clbc_common.dc->base[DOEPTSIZ0 + epData->epNum * EP_STRIDE] &= ~(0x3FFUL << 19UL);
-
 		if (epData->epNum == 0) {
-			if (epData->xfer_len > 0) {
+			USB_REG(DOEPTSIZ0) &= ~(0x3U << 19UL);
+			USB_REG(DOEPTSIZ0) &= ~(0x7FU);
+
+			if (epData->xfer_size > epData->maxpacket) {
 				epData->xfer_len = epData->maxpacket;
 			}
-
-			epData->xfer_size = epData->maxpacket;
-
-			clbc_common.dc->base[DOEPTSIZ0 + epData->epNum * EP_STRIDE] |= (0x7FFFFUL & epData->xfer_size);
-			clbc_common.dc->base[DOEPTSIZ0 + epData->epNum * EP_STRIDE] |= (1 << 19);
+			pktcnt = 1UL;
 		}
 		else {
-			if (epData->xfer_len == 0) {
-				clbc_common.dc->base[DOEPTSIZ0 + epData->epNum * EP_STRIDE] |= (0x7FFFFUL & epData->xfer_size);
-				clbc_common.dc->base[DOEPTSIZ0 + epData->epNum * EP_STRIDE] |= (1 << 19);
+			USB_REG(DOEPTSIZ0 + epData->epNum * EP_STRIDE) &= ~(0x3FFUL << 19UL);
+			USB_REG(DOEPTSIZ0 + epData->epNum * EP_STRIDE) &= ~(0x7FFFFUL);
+
+			if (epData->xfer_size == 0) {
+				pktcnt = 1UL;
 			}
 			else {
-				uint16_t pktcnt = (uint16_t)((epData->xfer_len + epData->maxpacket - 1U) / epData->maxpacket);
-				epData->xfer_size = epData->maxpacket * pktcnt;
-
-				clbc_common.dc->base[DOEPTSIZ0 + epData->epNum * EP_STRIDE] |= ((0x3FFUL << 19UL) & (uint32_t)pktcnt << 19);
-				clbc_common.dc->base[DOEPTSIZ0 + epData->epNum * EP_STRIDE] |= (0x7FFFFUL & epData->xfer_size);
+				pktcnt = (uint16_t)((epData->xfer_size + epData->maxpacket - 1U) / epData->maxpacket);
 			}
 		}
+
+		USB_REG(DOEPTSIZ0 + epData->epNum * EP_STRIDE) |= (0x7FFFFUL & epData->xfer_size);
+		USB_REG(DOEPTSIZ0 + epData->epNum * EP_STRIDE) |= ((pktcnt & 0x3FFUL) << 19);
 
 		if (epData->type == USB_EP_TYPE_ISOC) {
-			if ((clbc_common.dc->base[DSTS] & (1 << 8)) == 0U) {
-				clbc_common.dc->base[DOEPCTL0 + epData->epNum * EP_STRIDE] |= (1 << 29);
+			if ((USB_REG(DSTS) & (1 << 8)) == 0U) {
+				USB_REG(DOEPCTL0 + epData->epNum * EP_STRIDE) |= (1UL << 29);
 			}
 			else {
-				clbc_common.dc->base[DOEPCTL0 + epData->epNum * EP_STRIDE] |= (1 << 28);
+				USB_REG(DOEPCTL0 + epData->epNum * EP_STRIDE) |= (1UL << 28);
 			}
 		}
-
-		clbc_common.dc->base[DOEPCTL0 + epData->epNum * EP_STRIDE] |= ((1 << 26) | (1 << 31));
+		USB_REG(DOEPCTL0 + epData->epNum * EP_STRIDE) |= ((1UL << 26) | (1UL << 31));
 	}
 }
 
 
-int clbc_epTransmit(uint8_t epNum, uint8_t *dataBuf, uint32_t len)
+void clbc_epTransmit(uint8_t epNum, uint8_t *dataBuf, uint32_t len)
 {
 	stm32n6_endpt_t *ep = &clbc_common.data->endpts[epNum];
 
+	/* lock semaphore for BULK IN */
+	if (epNum == 2U) {
+		semaphoreDown(&clbc_common.dc->semBulkTx, 0);
+	}
+
 	ep->in.xfer_buf = dataBuf;
+	ep->in.xfer_size = len;
 	ep->in.xfer_len = len;
 	ep->in.xfer_count = 0U;
 	ep->in.is_in = 1U;
 	ep->in.epNum = epNum;
+	ep->in.xfer_active = 1;
 
 	epStartXfer(&ep->in);
 }
 
 
-int clbc_epReceive(uint8_t epNum, uint8_t *dataBuf, uint32_t len)
+void clbc_epTransmitCont(uint8_t epNum)
 {
 	stm32n6_endpt_t *ep = &clbc_common.data->endpts[epNum];
-	ep->out.xfer_buf = dataBuf;
-	ep->out.xfer_len = len;
+
+	ep->in.xfer_size = ep->in.xfer_size - ep->in.xfer_count;
+	ep->in.xfer_len = ep->in.xfer_size;
+	ep->in.xfer_count = 0U;
+
+	epStartXfer(&ep->in);
+}
+
+
+int clbc_ep0Receive(usb_xfer_desc_t *desc)
+{
+	stm32n6_endpt_t *ep = &clbc_common.data->endpts[0];
+	uint8_t availSpace = (uint8_t)ep->out.dataBuf.size - (uint8_t)(ep->out.dataBuf.tail - ep->out.dataBuf.head);
+	uint32_t timeout = USB_OTG_TIMEOUT;
+
+	if (desc->len > availSpace) {
+		ep->out.dataBuf.head = ep->out.dataBuf.vBuffer;
+		ep->out.dataBuf.tail = ep->out.dataBuf.vBuffer;
+	}
+
+	availSpace = (uint8_t)ep->out.dataBuf.size - (uint8_t)(ep->out.dataBuf.tail - ep->out.dataBuf.head);
+
+	if (desc->len > availSpace) {
+		return -ENOMEM;
+	}
+
+	desc->head = ep->out.dataBuf.tail;
+	clbc_epReceive(0, ep->out.dataBuf.tail, desc->len);
+
+	/* EP0 OUT data should be received immediately */
+	while (ep->out.xfer_size < ep->out.xfer_count) {
+		if (--timeout == 0UL) {
+			return -EBUSY;
+		};
+	}
+	ep->out.dataBuf.tail += desc->len;
+	desc->tail = ep->out.dataBuf.tail;
+
+	return EOK;
+}
+
+
+void clbc_epReceiveCont(uint8_t epNum)
+{
+	stm32n6_endpt_t *ep = &clbc_common.data->endpts[epNum];
+
+	ep->out.xfer_size = ep->in.xfer_size - ep->in.xfer_count;
+	ep->out.xfer_len = ep->in.xfer_size;
 	ep->out.xfer_count = 0U;
-	ep->out.is_in = 0;
-	ep->out.epNum = epNum;
 
 	epStartXfer(&ep->out);
 }
 
 
-void clbc_dataInStage(uint8_t epNum)
+void clbc_epReceive(uint8_t epNum, uint8_t *dataBuf, uint32_t len)
 {
-	clbc_common.dc->ep0State = USBD_EP0_STATUS_IN;
-	clbc_epReceive(0, NULL, 0);
-	// callback receive
-}
+	stm32n6_endpt_t *ep = &clbc_common.data->endpts[epNum];
 
-
-void clbc_endptInit(void)
-{
-	/* 1. Set the NAK bit for all OUT endpoints */
-	for (int i = 0; i < ENDPOINTS_NUMBER; i++) {
-		clbc_common.dc->base[DOEPCTL0 + EP_STRIDE * i] |= (1 << 27);
+	/* lock semaphore for BULK OUT */
+	if (epNum == 2U) {
+		semaphoreDown(&clbc_common.dc->semBulkRx, 0);
 	}
 
-	/* 2. Unmask interrupt bits: INEP0, OUTEP0 */
-	clbc_common.dc->base[DAINTMSK] |= ((1) | (1 << 16));
-	/* 2. Unmask interrupt bits: STUPM, XFRCM */
-	clbc_common.dc->base[DOEPMSK] |= ((1 << 3) | (1));
-	/* 2. Unmask interrupt bits: XFRCM, TOM */
-	clbc_common.dc->base[DIEPMSK] |= ((1) | (1 << 3));
+	ep->out.xfer_buf = dataBuf;
+	ep->out.xfer_size = len;
+	ep->out.xfer_len = len;
+	ep->out.xfer_count = 0U;
+	ep->out.is_in = 0U;
+	ep->out.epNum = epNum;
+	ep->out.xfer_active = 1;
 
-	/* 3. FIFO RAM: OTG_GRXFSIZ	-  Set Rx FIFO */
-	clbc_common.dc->base[GRXFSIZ] = RX_FIFO_DEPTH_WORDS;
-	/* 3. FIFO RAM: OTG_DIEPTXF0 */
-	clbc_common.dc->base[DIEPTXF0] = (TX0FD << 16) | TX0FSA;
-
-	/* 4. DOEPTSIZ0: STUPCNT = 3 */
-	clbc_common.dc->base[DOEPTSIZ0] |= (3 << 29);
-
-	/* 5. For now we don't use DMA as we use FIFO */
+	epStartXfer(&ep->out);
 }
 
 
 void clbc_rxFifoData(void)
 {
-	uint32_t grxstpStatus = clbc_common.dc->base[GRXSTSP];
+	uint8_t pktSts, epNum;
+	uint16_t byteCount;
+	uint8_t *dest;
+	uint32_t grxstpStatus = USB_REG(GRXSTSP);
+	stm32n6_endpt_t *ep;
 
+	pktSts = ((grxstpStatus >> 17) & 0xF);
+	epNum = (grxstpStatus & 0xF);
+	byteCount = ((grxstpStatus >> 4) & 0x7FF);
 
-	uint32_t pktstsVal = ((grxstpStatus >> 17) & 0xF);
+	ep = &clbc_common.data->endpts[epNum];
 
+	switch (pktSts) {
 
-	switch (pktstsVal) {
+		case RX_PKTSTS_OUT_RXED:
+			clbc_receiveEpData(ep->out.xfer_buf, byteCount);
 
-		case 2:
-			/*
-			READ REGULAR PACKER
+			ep->out.xfer_buf += byteCount;
+			ep->out.xfer_count += byteCount;
 
-			(void)USB_ReadPacket(USBx, ep->xfer_buff,
-							   (uint16_t)((RegVal & USB_OTG_GRXSTSP_BCNT) >> 4));
-
-			ep->xfer_buff += (RegVal & USB_OTG_GRXSTSP_BCNT) >> 4;
-			ep->xfer_count += (RegVal & USB_OTG_GRXSTSP_BCNT) >> 4;
-
-			*/
-			return;
-
-		case 4:
-			/* SETUP PACKET RECEIVED */
-			return;
-
-		case 6:
-			/* READ SETUP PACKET */
-			uint32_t wordsToRead = (((grxstpStatus >> 4) & 2047U) + 3) / 4;
-			for (uint32_t i = 0; i < wordsToRead; i++) {
-				/* read 1 word from fifo*/
-				((uint32_t *)(&clbc_common.dc->setup))[i] = clbc_common.dc->base[FIFO_BASE_OFF];
-			}
+			break;
+		case RX_PKTSTS_SETUP_RXED:
+			dest = (uint8_t *)&clbc_common.dc->setupPacket;
+			clbc_receiveEpData(dest, 8U);
 			break;
 
 		default:
@@ -385,36 +429,446 @@ void clbc_rxFifoData(void)
 }
 
 
-void clbc_flushTxFifo(uint32_t num)
+int clbc_flushTxFifo(uint8_t num)
 {
-	uint32_t timeout = 200000;
-	while (!((clbc_common.dc->base[GRSTCTL] >> 31) & 1)) {
+	uint32_t timeout = USB_OTG_TIMEOUT;
+
+	/* set Global IN NAK */
+	USB_REG(DCTL) |= (1U << 7);
+	while (((USB_REG(GINTSTS) >> 6) & 1U) == 0U) {
 		if (--timeout == 0) {
-			return;
+			return -EBUSY;
 		}
 	}
 
-	clbc_common.dc->base[GRSTCTL] |= (1 << 5 | (num << 6));
-
-	timeout = 200000;
-	while (((clbc_common.dc->base[GRSTCTL] >> 5) & 1)) {
+	/* check AHB master idle */
+	timeout = USB_OTG_TIMEOUT;
+	while (((USB_REG(GRSTCTL) >> 31) & 1U) == 0U) {
 		if (--timeout == 0) {
-			return;
+			return -EBUSY;
+		}
+	}
+
+	USB_REG(GRSTCTL) = (num << 6) | (1U << 5);
+
+	timeout = USB_OTG_TIMEOUT;
+	while (((USB_REG(GRSTCTL) >> 5) & 1U)) {
+		if (--timeout == 0) {
+			return -EBUSY;
+		}
+	}
+
+	/* clear Global IN NAK */
+	timeout = USB_OTG_TIMEOUT;
+	USB_REG(DCTL) |= (1U << 8);
+	while (((USB_REG(GINTSTS) >> 6) & 1U) == 1U) {
+		if (--timeout == 0) {
+			return -EBUSY;
+		}
+	}
+
+	return EOK;
+}
+
+
+int clbc_flushRxFifo(void)
+{
+	uint32_t timeout = USB_OTG_TIMEOUT;
+
+	while (((USB_REG(GRSTCTL) >> 31) & 1U) == 0U) {
+		if (--timeout == 0) {
+			return -EBUSY;
+		}
+	}
+	USB_REG(GRSTCTL) = (1U << 4);
+
+	timeout = USB_OTG_TIMEOUT;
+	while (((USB_REG(GRSTCTL) >> 4) & 1U) == 1U) {
+		if (--timeout == 0) {
+			return -EBUSY;
+		}
+	}
+
+	return EOK;
+}
+
+
+int clbc_resetUSBSS(void)
+{
+	uint32_t timeout = USB_OTG_TIMEOUT;
+
+	while (((USB_REG(GRSTCTL) >> 31) & 1U) == 0U) {
+		if (--timeout == 0) {
+			return -EBUSY;
+		}
+	}
+
+	/* Wait before setting reset */
+	timeout = 10U;
+	while (timeout > 0U) {
+		timeout--;
+	}
+
+	USB_REG(GRSTCTL) |= (1U);
+
+	timeout = USB_OTG_TIMEOUT;
+	while (((USB_REG(GRSTCTL)) & 1U) == 1U) {
+		if (--timeout == 0) {
+			return -EBUSY;
+		}
+	}
+
+	return EOK;
+}
+
+
+int clbc_setDevMode(void)
+{
+	uint32_t timeout = USB_OTG_TIMEOUT;
+
+	/* clear current mode */
+	USB_REG(GUSBCFG) &= ~(0x3UL << 29);
+
+	/* set device mode */
+	USB_REG(GUSBCFG) |= (1UL << 30);
+
+	while ((USB_REG(GINTSTS) & 1U) == 1U) {
+		if (--timeout == 0) {
+			return -EBUSY;
+		}
+	}
+
+	return EOK;
+}
+
+
+void clbc_sendEpData(uint8_t epNum)
+{
+	stm32n6_endpt_t *ep = &clbc_common.data->endpts[epNum];
+	uint8_t *src = ep->in.xfer_buf;
+	uint16_t len = ep->in.xfer_len;
+	uint16_t count32b;
+	uint16_t cnt;
+
+	if (len > ep->in.maxpacket) {
+		len = ep->in.maxpacket;
+	}
+
+	while ((ep->in.xfer_count < ep->in.xfer_size)) {
+		len = (uint16_t)(ep->in.xfer_size - ep->in.xfer_count);
+
+		if (len > ep->in.maxpacket)
+			len = ep->in.maxpacket;
+
+		count32b = (len + 3U) / 4U;
+
+		if ((USB_REG(DTXFSTS0 + EP_STRIDE * epNum) & 0xFFFFUL) < count32b) {
+			break;
+		}
+
+		src = ep->in.xfer_buf;
+
+		for (cnt = 0; cnt < count32b; cnt++) {
+			USB_REG(FIFO_BASE_OFF + epNum * (FIFO_SIZE / 4)) =
+					UNALIGNED32_READ(src);
+			src += sizeof(uint32_t);
+		}
+
+		ep->in.xfer_count += len;
+		ep->in.xfer_buf += len;
+	}
+
+	if (ep->in.xfer_size <= ep->in.xfer_count) {
+		/* mask TX FIFO empty interrupt */
+		USB_REG(DIEPEMPMSK) &= ~(1UL << epNum);
+	}
+	else {
+		/* unmask TX FIFO empty interrupt */
+		USB_REG(DIEPEMPMSK) |= (1UL << epNum);
+	}
+
+	return;
+}
+
+
+void clbc_receiveEpData(uint8_t *dest, uint16_t nBytes)
+{
+	uint16_t count32b = nBytes >> 2U;
+	uint8_t trailingBytes = nBytes % 4U;
+	uint8_t *buff = dest;
+	uint16_t cnt;
+	uint32_t temp;
+
+	for (cnt = 0; cnt < count32b; cnt++) {
+		/* read 1 word from fifo*/
+		UNALIGNED32_WRITE(buff, USB_REG(FIFO_BASE_OFF));
+		buff += sizeof(uint32_t);
+	}
+
+	if (trailingBytes != 0U) {
+		UNALIGNED32_WRITE(&temp, USB_REG(FIFO_BASE_OFF));
+		cnt = 0;
+
+		while (trailingBytes != 0) {
+			*buff = *((uint8_t *)&temp + cnt);
+			trailingBytes--;
+			buff++;
+			cnt++;
 		}
 	}
 }
 
 
-void clbc_sendEpData(int ep, uint8_t *virtAddr, int nBytes)
+/* IRQs callbacks */
+void _clbc_USBRST(void)
 {
-	uint8_t *pSrc = virtAddr;
-	uint32_t count32b = (((uint32_t)nBytes + 3U) / 4U);
-	for (uint32_t i = 0U; i < count32b; i++) {
-		clbc_common.dc->base[FIFO_BASE_OFF] = __UNALIGNED_UINT32_READ(pSrc);
-		pSrc++;
-		pSrc++;
-		pSrc++;
-		pSrc++;
+	/* clear all TX FIFOs*/
+	clbc_flushTxFifo(16U);
+
+	/* clear remote wake up */
+	USB_REG(DCTL) &= ~(0x1UL);
+
+	/* reset endpoints config and set SNACK */
+	for (int i = 0; i < 9; i++) {
+		USB_REG(DIEPINT0 + EP_STRIDE * i) = DIEPINT_RESET_MASK;
+		USB_REG(DIEPCTL0 + EP_STRIDE * i) &= ~(0x1UL << DIEPCTL_STALL);
+		USB_REG(DOEPINT0 + EP_STRIDE * i) = DOEPINT_RESET_MASK;
+		USB_REG(DOEPCTL0 + EP_STRIDE * i) &= ~(0x1UL << DOEPCTL_STALL);
+		USB_REG(DOEPCTL0 + EP_STRIDE * i) |= (0x1UL << DOEPCTL_SNAK);
 	}
-	return;
+
+	/* unmask IN0 and OUT0 EPs IRQs*/
+	USB_REG(DAINTMSK) |= DAINTMSK_IN(0UL);
+	USB_REG(DAINTMSK) |= DAINTMSK_OUT(0UL);
+
+	USB_REG(DOEPMSK) = 0UL;
+	USB_REG(DOEPMSK) |= (0x1UL << DOEPMSK_STUMP) |
+			(0x1UL << DOEPMSK_XFRCM) |
+			(0x1UL << DOEPMSK_STSPHSRXM) |
+			(0x1UL << DOEPMSK_NAKMSK);
+
+	USB_REG(DIEPMSK) = 0UL;
+	USB_REG(DIEPMSK) |= (0x1UL << DIEPMSK_TOM) |
+			(0x1UL << DIEPMSK_XFRCM) |
+			(0x1UL << DIEPMSK_EPDM);
+
+	/* zero-out device address*/
+	USB_REG(DCFG) &= ~(0x7FUL << DCFG_DAD);
+
+	clbc_ep0OutStart();
+}
+
+
+void _clbc_ENUMDNE(void)
+{
+	/* zero out EP0 max packet size */
+	USB_REG(DIEPCTL0) &= ~(0x7FFUL);
+
+	/* clear global IN NAK */
+	USB_REG(DCTL) |= (0x1UL << DCTL_CGINAK);
+
+	/* get device speed */
+	clbc_common.dc->enumSpeed = getDevSpeed();
+
+	/* set turnaround time */
+	clbc_enumdne();
+
+	clbc_reset();
+}
+
+
+void _clbc_OEPINT(void)
+{
+	uint32_t epInt;
+	uint8_t epNum = 0U;
+	stm32n6_endpt_t *ep;
+	uint32_t daintClear = clbc_common.dc->daintClear;
+
+	while (daintClear != 0U) {
+
+		ep = &clbc_common.data->endpts[epNum];
+
+		if ((daintClear & 0x1U) != 0U) {
+			epInt = clbc_common.dc->irqPendingDOEPINT[epNum];
+			epInt &= USB_REG(DOEPMSK);
+
+			/* XFRC */
+			if (IS_IRQ(epInt, DOEPINT_XFRC)) {
+				clbc_common.dc->irqPendingDOEPINT[epNum] &= ~(1UL << DOEPINT_XFRC);
+
+				/* Control transfer */
+				if (epNum == 0U) {
+					/* if STATUS OUT received */
+					if (clbc_common.dc->ep0State == USBD_EP0_STATUS_OUT) {
+						clbc_common.dc->ep0State = USBD_EP0_IDLE;
+						ep->out.xfer_active = 0;
+						/* prepare to receive next SETUP if it is ZLP */
+						if (ep->out.xfer_len == 0U) {
+							USB_REG(DOEPTSIZ0) = (3U << 29) | (1U << 19) | 8U;
+						}
+					}
+					/* if DATA OUT received */
+					else if (clbc_common.dc->ep0State == USBD_EP0_DATA_OUT) {
+
+						/* More data to be received */
+						if (ep->out.xfer_size > ep->out.xfer_count) {
+							clbc_epReceiveCont(epNum);
+						}
+						/* Transfer completed */
+						else {
+							clbc_common.dc->ep0State = USBD_EP0_STATUS_IN;
+							ep->out.xfer_active = 0;
+						}
+					}
+				}
+				/* only 1 data EP implemented */
+				else {
+					ep->out.xfer_active = 0;
+					semaphoreUp(&clbc_common.dc->semBulkRx);
+				}
+			}
+
+			/* STUP */
+			if (IS_IRQ(epInt, DOEPINT_STUP)) {
+				clbc_common.dc->irqPendingDOEPINT[epNum] &= ~(1UL << DOEPINT_STUP);
+
+				if (((epInt >> DOEPINT_STSPHSRX) & 0x1U) == 0x1U) {
+					clbc_common.dc->irqPendingDOEPINT[epNum] &= ~(1UL << DOEPINT_STSPHSRX);
+				}
+
+				clbc_common.dc->ep0State = USBD_EP0_SETUP;
+
+				desc_setup(&clbc_common.dc->setupPacket);
+			}
+
+			/* OTEPDIS */
+			if (IS_IRQ(epInt, DOEPINT_OTEPDIS)) {
+				clbc_common.dc->irqPendingDOEPINT[epNum] &= ~(1UL << DOEPINT_OTEPDIS);
+			}
+
+			/* EPDISD */
+			if (IS_IRQ(epInt, DOEPINT_EPDISD)) {
+				clbc_common.dc->irqPendingDOEPINT[epNum] &= ~(1UL << DOEPINT_EPDISD);
+
+				if ((USB_REG(GINTSTS) >> 7) & 1) {
+					USB_REG(DCTL) |= (1 << 10);
+				}
+			}
+
+			/* STSPHSRX / OTEPSPR */
+			if (IS_IRQ(epInt, DOEPINT_STSPHSRX)) {
+
+				clbc_common.dc->irqPendingDOEPINT[epNum] &= ~(1UL << DOEPINT_STSPHSRX);
+			}
+
+			/* NAK */
+			if (IS_IRQ(epInt, DOEPINT_NAK)) {
+
+				clbc_common.dc->irqPendingDOEPINT[epNum] &= ~(1UL << DOEPINT_NAK);
+
+				/* check if more data are to be received */
+				if (epNum == 0U) {
+					if ((USB_REG(DOEPTSIZ0 + epNum * EP_STRIDE) & (0x3FFUL << DOEPTSIZ_PKTCNT)) != 0UL) {
+						USB_REG(DOEPCTL0 + epNum * EP_STRIDE) |= ((1UL << DOEPCTL_CNAK) | (1UL << DOEPCTL_EPENA));
+					}
+				}
+			}
+		}
+		epNum++;
+		daintClear >>= 1U;
+	}
+}
+
+
+void _clbc_IEPINT(void)
+{
+	volatile uint32_t epInt;
+	uint32_t epMsk, epEmp;
+	uint8_t epNum = 0U;
+	stm32n6_endpt_t *ep;
+	uint32_t daintClear = clbc_common.dc->daintClear;
+
+	while (daintClear != 0U) {
+
+		ep = &clbc_common.data->endpts[epNum];
+
+		if ((daintClear & 0x1U) != 0) {
+
+			/*
+			 * Add "TX FIFO empty interrupt mask" bit (local for every IEP) to the global
+			 * mask register for all IEPs. Now the mask will extract all DIEPINTx interrupts
+			 * (global and local).
+			 */
+			epMsk = USB_REG(DIEPMSK);
+			epEmp = clbc_common.dc->diepmsk;
+
+			epMsk |= ((epEmp >> (epNum & 0xFU)) & 0x1U) << 7;
+
+			epInt = clbc_common.dc->irqPendingDIEPINT[epNum];
+			epInt &= epMsk;
+
+			/* XFRC */
+			if (IS_IRQ(epInt, DIEPINT_XFRC)) {
+				clbc_common.dc->irqPendingDIEPINT[epNum] &= ~(1UL << DIEPINT_XFRC);
+
+				/* mask TX FIFO empty interrupt */
+				USB_REG(DIEPEMPMSK) &= ~(1UL << epNum);
+
+				/* Control transfer*/
+				if (epNum == 0) {
+					/* prepare to receive next SETUP */
+					USB_REG(DOEPTSIZ0) = (3UL << 29) | (1UL << 19) | 8UL;
+
+					if (ep->in.xfer_size - ep->in.xfer_len > 0U) {
+						clbc_epTransmitCont(epNum);
+					}
+					else {
+						ep->in.xfer_active = 0;
+
+						/* STATUS IN stage */
+						if (ep->in.xfer_len == 0U && clbc_common.dc->ep0State == USBD_EP0_STATUS_IN) {
+							clbc_common.dc->ep0State = USBD_EP0_IDLE;
+						}
+						/* DATA IN stage */
+						else if (clbc_common.dc->ep0State == USBD_EP0_DATA_IN) {
+
+							/* receive ZLP status packet */
+							clbc_epReceive(0, NULL, 0);
+							clbc_common.dc->ep0State = USBD_EP0_STATUS_OUT;
+						}
+					}
+				}
+				/* only 1 data EP implemented */
+				else {
+					/* Unmask SOF interrupt - masked in clbc_epTransmit() */
+					ep->in.xfer_active = 0;
+					semaphoreUp(&clbc_common.dc->semBulkTx);
+				}
+			}
+
+			/* TOC */
+			if (IS_IRQ(epInt, DIEPINT_TOC)) {
+				clbc_common.dc->irqPendingDIEPINT[epNum] &= ~(1UL << DIEPINT_TOC);
+			}
+
+			/* ITTXFE */
+			if (IS_IRQ(epInt, DIEPINT_ITTXFE)) {
+				clbc_common.dc->irqPendingDIEPINT[epNum] &= ~(1UL << DIEPINT_ITTXFE);
+			}
+
+			/* INEPNE */
+			if (IS_IRQ(epInt, DIEPINT_INEPNE)) {
+				clbc_common.dc->irqPendingDIEPINT[epNum] &= ~(1UL << DIEPINT_INEPNE);
+			}
+
+			/* EPDISD */
+			if (IS_IRQ(epInt, DIEPINT_EPDISD)) {
+				clbc_common.dc->irqPendingDIEPINT[epNum] &= ~(1UL << DIEPINT_EPDISD);
+
+				clbc_flushTxFifo(epNum);
+			}
+		}
+		epNum++;
+		daintClear >>= 1U;
+	}
 }
