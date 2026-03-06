@@ -19,6 +19,8 @@
 
 #include "stm32l4-multi.h"
 
+#define STM32_HAS_FLASH 1
+
 #define FLASH_PAGE_SIZE 2048
 #define FLASH_OB_1_ADDR 0x1fff7800
 #define FLASH_OB_2_ADDR 0x1ffff800
