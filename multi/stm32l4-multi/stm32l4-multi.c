@@ -42,6 +42,7 @@
 #if defined(__CPU_STM32L4X6)
 #include "flash.h"
 #elif defined(__CPU_STM32N6)
+#include "ext_flash.h"
 #include "pwm_n6.h"
 #endif
 
@@ -243,6 +244,32 @@ static void handleMsgMulti(msg_t *msg)
 			break;
 #endif
 
+#if defined(STM32_HAS_EXTFLASH)
+		case extFlash_read:
+			err = extFlash_fn_read(imsg->extFlash_op.devNum, imsg->extFlash_op.addr, msg->o.data, msg->o.size);
+			break;
+
+		case extFlash_write:
+			err = extFlash_fn_write(imsg->extFlash_op.devNum, imsg->extFlash_op.addr, msg->i.data, msg->i.size);
+			break;
+
+		case extFlash_erase:
+			err = extFlash_fn_erase(imsg->extFlash_op.devNum, imsg->extFlash_op.addr, imsg->extFlash_op.eraseSize);
+			break;
+
+		case extFlash_chipErase:
+			err = extFlash_fn_chipErase(imsg->extFlash_op.devNum);
+			break;
+
+		case extFlash_sync:
+			err = extFlash_fn_sync(imsg->extFlash_op.devNum);
+			break;
+
+		case extFlash_def:
+			err = extFlash_fn_getInfo(imsg->extFlash_op.devNum, &omsg->extFlash_def);
+			break;
+#endif
+
 #if defined(STM32_HAS_PWM)
 		case pwm_def:
 			err = pwm_configure(imsg->pwm_def.timer, imsg->pwm_def.prescaler, imsg->pwm_def.top);
@@ -441,6 +468,10 @@ int main(void)
 
 #if defined(STM32_HAS_PWM)
 	pwm_init();
+#endif
+
+#if defined(STM32_HAS_EXTFLASH)
+	extFlash_fn_init();
 #endif
 
 	/* Do this after klog init to keep shell from overtaking klog */
