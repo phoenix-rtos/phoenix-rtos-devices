@@ -30,7 +30,6 @@
 
 #include "adc.h"
 #include "exti.h"
-#include "flash.h"
 #include "gpio.h"
 #include "i2c.h"
 #include "rcc.h"
@@ -40,7 +39,9 @@
 #include "uart.h"
 #include "rng.h"
 
-#if defined(__CPU_STM32N6)
+#if defined(__CPU_STM32L4X6)
+#include "flash.h"
+#elif defined(__CPU_STM32N6)
 #include "pwm_n6.h"
 #endif
 
@@ -128,41 +129,6 @@ static void handleMsgMulti(msg_t *msg)
 			err = syscfg_mapexti(imsg->exti_map.line, imsg->exti_map.port);
 			break;
 
-#if defined(__CPU_STM32L4X6)
-		case flash_get:
-			err = flash_readData(imsg->flash_addr, msg->o.data, msg->o.size);
-			break;
-
-		case flash_set:
-			err = flash_writeData(imsg->flash_addr, msg->i.data, msg->i.size);
-			break;
-
-		case flash_setRaw:
-			err = flash_writeRaw(imsg->flash_addr, msg->i.data, msg->i.size);
-			break;
-
-		case flash_erase:
-			err = flash_erasePage(imsg->flash_addr);
-			break;
-
-		case flash_info:
-			flash_getInfo(&omsg->flash_info);
-			break;
-
-		case otp_get:
-			err = flash_readOtp(imsg->otp_rw.offset, msg->o.data, msg->o.size);
-			break;
-
-		case otp_set:
-			if (imsg->otp_rw.magic == OTP_WRITE_MAGIC && msg->i.data != NULL) {
-				err = flash_writeOtp(imsg->otp_rw.offset, msg->i.data, msg->i.size);
-			}
-			else {
-				err = -EINVAL;
-			}
-			break;
-#endif
-
 		case rtc_setcal:
 			rtc_setCalib(imsg->rtc_calib);
 			break;
@@ -242,7 +208,42 @@ static void handleMsgMulti(msg_t *msg)
 			err = rng_read(msg->o.data, msg->o.size);
 			break;
 
-#if defined(__CPU_STM32N6)
+#if defined(STM32_HAS_FLASH)
+		case flash_get:
+			err = flash_readData(imsg->flash_addr, msg->o.data, msg->o.size);
+			break;
+
+		case flash_set:
+			err = flash_writeData(imsg->flash_addr, msg->i.data, msg->i.size);
+			break;
+
+		case flash_setRaw:
+			err = flash_writeRaw(imsg->flash_addr, msg->i.data, msg->i.size);
+			break;
+
+		case flash_erase:
+			err = flash_erasePage(imsg->flash_addr);
+			break;
+
+		case flash_info:
+			flash_getInfo(&omsg->flash_info);
+			break;
+
+		case otp_get:
+			err = flash_readOtp(imsg->otp_rw.offset, msg->o.data, msg->o.size);
+			break;
+
+		case otp_set:
+			if (imsg->otp_rw.magic == OTP_WRITE_MAGIC && msg->i.data != NULL) {
+				err = flash_writeOtp(imsg->otp_rw.offset, msg->i.data, msg->i.size);
+			}
+			else {
+				err = -EINVAL;
+			}
+			break;
+#endif
+
+#if defined(STM32_HAS_PWM)
 		case pwm_def:
 			err = pwm_configure(imsg->pwm_def.timer, imsg->pwm_def.prescaler, imsg->pwm_def.top);
 			break;
@@ -426,7 +427,7 @@ int main(void)
 	spi_init();
 	adc_init();
 	rtc_init();
-#if defined(__CPU_STM32L4X6)
+#if defined(STM32_HAS_FLASH)
 	flash_init();
 #endif
 	i2c_init(common.port);
@@ -437,7 +438,8 @@ int main(void)
 #if BUILTIN_POSIXSRV
 	posixsrv_start();
 #endif
-#if defined(__CPU_STM32N6)
+
+#if defined(STM32_HAS_PWM)
 	pwm_init();
 #endif
 

@@ -22,6 +22,8 @@
 #include "stm32n6_base.h"
 #include "clockdef_n6.h"
 
+#define STM32_HAS_PWM 1
+
 #define PWM_CHN_NUM 4
 
 #define PWM_CCMR_REG(chn_id)      (((chn_id) <= 1) ? (tim_ccmr1) : (tim_ccmr2))
