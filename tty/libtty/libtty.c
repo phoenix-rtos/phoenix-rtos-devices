@@ -369,6 +369,11 @@ int libtty_rxready(libtty_common_t *tty)
 	return !fifo_is_empty(tty->rx_fifo);
 }
 
+int libtty_rxfull(libtty_common_t *tty)
+{
+	return fifo_is_full(tty->rx_fifo);
+}
+
 int libtty_poll_status(libtty_common_t *tty)
 {
 	int revents = 0;

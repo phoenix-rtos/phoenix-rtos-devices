@@ -116,6 +116,7 @@ void libtty_signal_pgrp(libtty_common_t *tty, int signal);
 int libtty_txready(libtty_common_t *tty); /* at least 1 character ready to be sent */
 int libtty_txfull(libtty_common_t *tty);  /* no more place in the TX buffer */
 int libtty_rxready(libtty_common_t *tty); /* at least 1 character ready to be read out */
+int libtty_rxfull(libtty_common_t *tty);  /* no more place in the RX buffer */
 
 static inline void libtty_set_mode_raw(libtty_common_t *tty)
 {
