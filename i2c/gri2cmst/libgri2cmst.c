@@ -87,7 +87,7 @@ static struct {
 } common;
 
 
-__attribute__((section(".interrupt"), aligned(0x1000))) static int irqHandler(unsigned int intr, void *data)
+__attribute__((section(".interrupt"))) static int irqHandler(unsigned int intr, void *data)
 {
 	(void)intr;
 
