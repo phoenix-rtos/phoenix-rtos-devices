@@ -137,7 +137,7 @@ static void signal_txready(void *arg)
 }
 
 #ifdef __TARGET_RISCV64
-__attribute__((section(".interrupt"), aligned(0x1000))) static int uart_interrupt(unsigned int n, void *arg)
+__attribute__((section(".interrupt"))) static int uart_interrupt(unsigned int n, void *arg)
 {
 	/* RISC-V platform is very special in how it handles memory during interrupts.
 	 * Due to this the uart_interrupt function cannot call uarthw_* functions.

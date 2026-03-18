@@ -111,7 +111,7 @@ static struct {
 } uart_common;
 
 
-static int __attribute__((section(".interrupt"), aligned(0x1000))) uart_interrupt(unsigned int n, void *arg)
+static int __attribute__((section(".interrupt"))) uart_interrupt(unsigned int n, void *arg)
 {
 	uart_t *uart = (uart_t *)arg;
 

@@ -292,7 +292,7 @@ static size_t spw_rxPacketToMsg(const uint32_t flags, const size_t rxLen, const 
 /* Interrupt handling */
 
 
-__attribute__((section(".interrupt"), aligned(0x1000))) static int spw_irqHandler(unsigned int n, void *arg)
+__attribute__((section(".interrupt"))) static int spw_irqHandler(unsigned int n, void *arg)
 {
 	(void)n;
 

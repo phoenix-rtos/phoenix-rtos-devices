@@ -83,7 +83,7 @@ typedef struct spictrl_regs {
 } spictrl_regs_t;
 
 
-__attribute__((section(".interrupt"), aligned(0x1000))) static int irqHandler(unsigned int n, void *arg)
+__attribute__((section(".interrupt"))) static int irqHandler(unsigned int n, void *arg)
 {
 	(void)n;
 	spi_ctx_t *ctx = (spi_ctx_t *)arg;
