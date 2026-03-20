@@ -34,6 +34,10 @@ struct libtty_callbacks_s {
 	void (*set_baudrate)(void *arg, int baudrate);
 	void (*set_cflag)(void *arg, tcflag_t *cflag);
 
+	/* Optional: */
+	unsigned int *(*get_halfduplex)(void *arg);
+	void (*set_halfduplex)(void *arg, unsigned int enable);
+
 	/* at least one character ready to be sent */
 	void (*signal_txready)(void *arg);
 };

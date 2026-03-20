@@ -380,7 +380,12 @@ static void _uart_mkDev(uint32_t port, int isconsole)
 static int _uart_init(uart_t *uart, unsigned int uartn, unsigned int speed)
 {
 	unsigned int divisor;
-	libtty_callbacks_t callbacks;
+	libtty_callbacks_t callbacks = {
+		.arg = uart,
+		.set_baudrate = set_baudrate,
+		.set_cflag = set_cflag,
+		.signal_txready = signal_txready,
+	};
 
 	int err = uarthw_init(uartn, uart->hwctx, sizeof(uart->hwctx), &uart->clk);
 	if (err < 0) {
@@ -388,11 +393,6 @@ static int _uart_init(uart_t *uart, unsigned int uartn, unsigned int speed)
 	}
 
 	divisor = uart->clk / (16 * speed);
-
-	callbacks.arg = uart;
-	callbacks.set_baudrate = set_baudrate;
-	callbacks.set_cflag = set_cflag;
-	callbacks.signal_txready = signal_txready;
 
 	err = libtty_init(&uart->tty, &callbacks, _PAGE_SIZE, speed);
 	if (err < 0) {
