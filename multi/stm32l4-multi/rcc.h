@@ -16,13 +16,17 @@
 #define RCC_H_
 
 
+#include <phoenix/types.h>
 #include <stdint.h>
 
 #if defined(__CPU_STM32N6)
-#include "clockdef_n6.h"
+#include "rcc/clockdef.h"
 
 
 int rcc_setClksel(enum ipclks ipclk, enum clock_ids clkID);
+
+
+const enum clock_ids *rcc_getClkselOptions(enum ipclks ipclk);
 #endif
 
 
