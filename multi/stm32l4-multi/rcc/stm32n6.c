@@ -4,7 +4,8 @@
  * STM32N6 reset and clock controller driver
  *
  * Copyright 2017, 2018, 2020, 2025 Phoenix Systems
- * Author: Aleksander Kaminski, Jacek Maksymowicz
+ * Copyright 2026 Apator Metrix
+ * Author: Aleksander Kaminski, Jacek Maksymowicz, Mateusz Karcz
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -13,15 +14,13 @@
 
 
 #include <errno.h>
-#include <sys/platform.h>
 
 #include "../common.h"
 #include "../rcc.h"
 #include "../stm32n6_regs.h"
 
 
-#define MAX_CLOCK_CHOICES 8
-static const uint8_t rcc_clksels[pctl_ipclks_count][MAX_CLOCK_CHOICES] = {
+static const uint8_t rcc_clksels[pctl_ipclks_count][RCC_MAX_CLOCK_CHOICES] = {
 	[pctl_ipclk_adf1sel] = { clkid_hclk, clkid_per, clkid_ic7, clkid_ic8, clkid_msi, clkid_hsi_div, clkid_i2s_in, clkid_timg },
 	[pctl_ipclk_adc12sel] = { clkid_hclk, clkid_per, clkid_ic7, clkid_ic8, clkid_msi, clkid_hsi_div, clkid_i2s_in, clkid_timg },
 	[pctl_ipclk_dcmippsel] = { clkid_pclk5, clkid_per, clkid_ic17, clkid_hsi_div },
@@ -78,44 +77,284 @@ static const uint8_t rcc_clksels[pctl_ipclks_count][MAX_CLOCK_CHOICES] = {
 	[pctl_ipclk_uart9sel] = { clkid_pclk2, clkid_per, clkid_ic9, clkid_ic14, clkid_lse, clkid_msi, clkid_hsi_div },
 	[pctl_ipclk_usart10sel] = { clkid_pclk2, clkid_per, clkid_ic9, clkid_ic14, clkid_lse, clkid_msi, clkid_hsi_div },
 	[pctl_ipclk_lpuart1sel] = { clkid_pclk4, clkid_per, clkid_ic9, clkid_ic14, clkid_lse, clkid_msi, clkid_hsi_div },
-
 };
 
 
-int rcc_setClksel(enum ipclks ipclk, enum clock_ids clkID)
+#define CLOCK_LITERAL(x) \
+	{ \
+		.type = clockdef_type_literal, .literal = (x) \
+	}
+
+static const clockdef_literal_t msi_base_vals[] = { 4 * 1000 * 1000, 16 * 1000 * 1000 };
+static const clockdef_clkID_t sysa_mux_vals[] = { clkid_hsi, clkid_msi, clkid_hse, clkid_ic1 };
+static const clockdef_clkID_t sysb_mux_vals[] = { clkid_hsi, clkid_msi, clkid_hse, clkid_ic2 };
+static const clockdef_clkID_t sysc_mux_vals[] = { clkid_hsi, clkid_msi, clkid_hse, clkid_ic6 };
+static const clockdef_clkID_t sysd_mux_vals[] = { clkid_hsi, clkid_msi, clkid_hse, clkid_ic11 };
+static const clockdef_clkID_t per_mux_vals[] = { clkid_hsi, clkid_msi, clkid_hse, clkid_ic19, clkid_ic5, clkid_ic10, clkid_ic15, clkid_ic20 };
+
+static const clockdef_obj_t clockObjects[] = {
+	[clkid_lsi] = { .base = CLOCK_LITERAL(32000), .nom = CLOCK_LITERAL(1), .denom = CLOCK_LITERAL(1) },
+	[clkid_lse] = { .base = CLOCK_LITERAL(32768), .nom = CLOCK_LITERAL(1), .denom = CLOCK_LITERAL(1) },
+	[clkid_msi] = {
+		.base = {
+			.type = clockdef_type_register_lookup,
+			.reg_lookup = {
+				.r = {
+					.offset = rcc_msicfgr,
+					.shift = 9,
+					.mask = 0x1,
+					.val_offset = 0,
+				},
+				.vals = msi_base_vals,
+			},
+		},
+		.nom = CLOCK_LITERAL(1),
+		.denom = CLOCK_LITERAL(1),
+	},
+	[clkid_hsi] = { .base = CLOCK_LITERAL(64 * 1000 * 1000), .nom = CLOCK_LITERAL(1), .denom = CLOCK_LITERAL(1) },
+	[clkid_hsi_div] = {
+		.base = {
+			.type = clockdef_type_clkID,
+			.clkID = clkid_hsi,
+		},
+		.nom = CLOCK_LITERAL(1),
+		.denom = {
+			.type = clockdef_type_register_log,
+			.reg_log = {
+				.offset = rcc_hsicfgr,
+				.shift = 7,
+				.mask = 0x3,
+				.val_offset = 0,
+			},
+		},
+	},
+	[clkid_hse] = { .base = CLOCK_LITERAL(48 * 1000 * 1000), .nom = CLOCK_LITERAL(1), .denom = CLOCK_LITERAL(1) },
+	[clkid_hse_div2_osc] = {
+		.base = {
+			.type = clockdef_type_clkID,
+			.clkID = clkid_hse,
+		},
+		.nom = CLOCK_LITERAL(1),
+		.denom = {
+			.type = clockdef_type_register_log,
+			.reg_log = {
+				.offset = rcc_hsecfgr,
+				.shift = 6,
+				.mask = 0x1,
+				.val_offset = 0,
+			},
+		},
+	},
+	[clkid_hse_rtc] = {
+		.base = {
+			.type = clockdef_type_clkID,
+			.clkID = clkid_hse,
+		},
+		.nom = CLOCK_LITERAL(1),
+		.denom = {
+			.type = clockdef_type_register,
+			.reg = {
+				.offset = rcc_ccipr7,
+				.shift = 12,
+				.mask = 0x3f,
+				.val_offset = 1,
+			},
+		},
+	},
+	[clkid_sysa] = {
+		.base = {
+			.type = clockdef_type_register_mux,
+			.reg_mux = {
+				.r = {
+					.offset = rcc_cfgr1,
+					.shift = 20,
+					.mask = 0x3,
+					.val_offset = 0,
+				},
+				.vals = sysa_mux_vals,
+			},
+		},
+		.nom = CLOCK_LITERAL(1),
+		.denom = CLOCK_LITERAL(1),
+	},
+	[clkid_sysb] = {
+		.base = {
+			.type = clockdef_type_register_mux,
+			.reg_mux = {
+				.r = {
+					.offset = rcc_cfgr1,
+					.shift = 28,
+					.mask = 0x3,
+					.val_offset = 0,
+				},
+				.vals = sysb_mux_vals,
+			},
+		},
+		.nom = CLOCK_LITERAL(1),
+		.denom = CLOCK_LITERAL(1),
+	},
+	[clkid_sysc] = {
+		.base = {
+			.type = clockdef_type_register_mux,
+			.reg_mux = {
+				.r = {
+					.offset = rcc_cfgr1,
+					.shift = 28,
+					.mask = 0x3,
+					.val_offset = 0,
+				},
+				.vals = sysc_mux_vals,
+			},
+		},
+		.nom = CLOCK_LITERAL(1),
+		.denom = CLOCK_LITERAL(1),
+	},
+	[clkid_sysd] = {
+		.base = {
+			.type = clockdef_type_register_mux,
+			.reg_mux = {
+				.r = {
+					.offset = rcc_cfgr1,
+					.shift = 28,
+					.mask = 0x3,
+					.val_offset = 0,
+				},
+				.vals = sysd_mux_vals,
+			},
+		},
+		.nom = CLOCK_LITERAL(1),
+		.denom = CLOCK_LITERAL(1),
+	},
+	[clkid_timg] = {
+		.base = {
+			.type = clockdef_type_clkID,
+			.clkID = clkid_sysb,
+		},
+		.nom = CLOCK_LITERAL(1),
+		.denom = {
+			.type = clockdef_type_register_log,
+			.reg_log = {
+				.offset = rcc_cfgr2,
+				.shift = 24,
+				.mask = 0x3,
+				.val_offset = 0,
+			},
+		},
+	},
+	[clkid_hclk] = {
+		.base = {
+			.type = clockdef_type_clkID,
+			.clkID = clkid_sysb,
+		},
+		.nom = CLOCK_LITERAL(1),
+		.denom = {
+			.type = clockdef_type_register_log,
+			.reg_log = {
+				.offset = rcc_cfgr2,
+				.shift = 20,
+				.mask = 0x7,
+				.val_offset = 0,
+			},
+		},
+	},
+	[clkid_pclk1] = {
+		.base = {
+			.type = clockdef_type_clkID,
+			.clkID = clkid_sysb,
+		},
+		.nom = CLOCK_LITERAL(1),
+		.denom = {
+			.type = clockdef_type_register_log,
+			.reg_log = {
+				.offset = rcc_cfgr2,
+				.shift = 0,
+				.mask = 0x7,
+				.val_offset = 0,
+			},
+		},
+	},
+	[clkid_pclk2] = {
+		.base = {
+			.type = clockdef_type_clkID,
+			.clkID = clkid_sysb,
+		},
+		.nom = CLOCK_LITERAL(1),
+		.denom = {
+			.type = clockdef_type_register_log,
+			.reg_log = {
+				.offset = rcc_cfgr2,
+				.shift = 4,
+				.mask = 0x7,
+				.val_offset = 0,
+			},
+		},
+	},
+	[clkid_pclk4] = {
+		.base = {
+			.type = clockdef_type_clkID,
+			.clkID = clkid_sysb,
+		},
+		.nom = CLOCK_LITERAL(1),
+		.denom = {
+			.type = clockdef_type_register_log,
+			.reg_log = {
+				.offset = rcc_cfgr2,
+				.shift = 12,
+				.mask = 0x7,
+				.val_offset = 0,
+			},
+		},
+	},
+	[clkid_pclk5] = {
+		.base = {
+			.type = clockdef_type_clkID,
+			.clkID = clkid_sysb,
+		},
+		.nom = CLOCK_LITERAL(1),
+		.denom = {
+			.type = clockdef_type_register_log,
+			.reg_log = {
+				.offset = rcc_cfgr2,
+				.shift = 16,
+				.mask = 0x7,
+				.val_offset = 0,
+			},
+		},
+	},
+	[clkid_per] = {
+		.base = {
+			.type = clockdef_type_register_mux,
+			.reg_mux = {
+				.r = {
+					.offset = rcc_ccipr7,
+					.shift = 0,
+					.mask = 0x7,
+					.val_offset = 0,
+				},
+				.vals = per_mux_vals,
+			},
+		},
+		.nom = CLOCK_LITERAL(1),
+		.denom = CLOCK_LITERAL(1),
+	},
+};
+
+
+const clockdef_obj_t *clockdef_getObject(clockdef_clkID_t id)
 {
-	if ((ipclk < 0) || (ipclk > pctl_ipclks_count) || (clkID == clkid_none)) {
-		return -EINVAL;
-	}
-
-	size_t setting;
-	for (setting = 0; setting < MAX_CLOCK_CHOICES; setting++) {
-		enum clock_ids settingID = (enum clock_ids)rcc_clksels[ipclk][setting];
-		if (settingID == clkID) {
-			break;
-		}
-	}
-
-	if (setting > MAX_CLOCK_CHOICES) {
-		return -EINVAL;
-	}
-
-	platformctl_t pctl = {
-		.action = pctl_set,
-		.type = pctl_ipclk,
-		.ipclk = {
-			.ipclk = ipclk,
-			.setting = setting,
-		}
-	};
-
-	return platformctl(&pctl);
+	return clockObjects + id;
 }
 
 
-uint32_t clockdef_getRegHW(uint32_t offset)
+const size_t clockdef_getSize(void)
 {
-	return *(rcc_common.base + offset);
+	return sizeof(clockObjects) / sizeof(clockObjects[0]);
+}
+
+
+const enum clock_ids *rcc_getClkselOptions(enum ipclks ipclk)
+{
+	return rcc_clksels[ipclk];
 }
 
 

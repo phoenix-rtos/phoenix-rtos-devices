@@ -20,7 +20,7 @@
 #include "stm32l4-multi.h"
 #include "stm32n6_regs.h"
 #include "stm32n6_base.h"
-#include "clockdef_n6.h"
+#include "rcc/clockdef.h"
 
 #define STM32MULTI_HANDLE_PWM 1
 
