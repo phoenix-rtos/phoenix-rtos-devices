@@ -23,6 +23,8 @@
 
 #if defined(__CPU_STM32N6)
 #include "stm32n6.h"
+#elif defined(__CPU_STM32U3)
+#include "stm32u3.h"
 #else
 #error "Unsupported platform!"
 #endif

@@ -20,10 +20,16 @@
 #include "../rcc.h"
 
 
+/* Read a register, apply value offset and clamp negative results */
 static uint32_t clockdef_getReg(const clockdef_register_t *reg)
 {
 	uint32_t v = clockdef_getRegHW(reg->offset);
 	v = (v >> reg->shift) & reg->mask;
+
+	if ((reg->val_offset < 0) && (-reg->val_offset > v)) {
+		return 0;
+	}
+
 	return v + reg->val_offset;
 }
 
