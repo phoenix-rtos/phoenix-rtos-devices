@@ -1,10 +1,11 @@
 /*
  * Phoenix-RTOS
  *
- * STM32N6 DMA driver
+ * STM32N6/U3 DMA driver
  *
  * Copyright 2020-2025 Phoenix Systems
- * Author: Daniel Sawka, Aleksander Kaminski, Jacek Maksymowicz
+ * Copyright 2026 Apator Metrix
+ * Author: Daniel Sawka, Aleksander Kaminski, Jacek Maksymowicz, Mateusz Karcz
  *
  * %LICENSE%
  */
@@ -24,15 +25,29 @@
 
 #define DMA_SYSPAGE_MAP_NAME "dmamem"
 
-#define DMA_CTRL_GPDMA1     0
+#define DMA_CTRL_GPDMA1 0
+#if defined(__CPU_STM32N6)
 #define DMA_CTRL_HPDMA1     1
 #define DMA_NUM_CONTROLLERS 2
+#define DMA_DEFAULT         DMA_CTRL_HPDMA1
+#define GPDMA1_MAX_IRQ      gpdma1_ch15_irq
+#elif defined(__CPU_STM32U3)
+#define DMA_NUM_CONTROLLERS 1
+#define DMA_DEFAULT         DMA_CTRL_GPDMA1
+#define GPDMA1_MAX_IRQ      gpdma1_ch11_irq
+#endif
+
 /* Channels 12..15 are capable of 2D transfers, others can only do linear transfers */
-#define DMA_NUM_CHANNELS    16
+#if defined(__CPU_STM32N6)
+#define DMA_NUM_CHANNELS 16
+#elif defined(__CPU_STM32U3)
+#define DMA_NUM_CHANNELS 12
+#endif
 #define DMA_2D_CAPABLE_MASK ((1 << 16) - (1 << 12))
 
 
 enum dma_reqs {
+#if defined(__CPU_STM32N6)
 	dma_req_jpeg_rx = 0,
 	dma_req_jpeg_tx = 1,
 	dma_req_xspi1 = 2,
@@ -176,6 +191,110 @@ enum dma_reqs {
 	dma_req_i3c1_rs = 142,
 	dma_req_i3c2_tc = 143,
 	dma_req_i3c2_rs = 144,
+#elif defined(__CPU_STM32U3)
+	dma_req_adc1 = 0,
+	dma_req_adc2,
+	dma_req_dac1,
+	dma_req_dac2,
+	dma_req_tim6_upd,
+	dma_req_tim7_upd,
+	dma_req_spi1_rx,
+	dma_req_spi1_tx,
+	dma_req_spi2_rx,
+	dma_req_spi2_tx,
+	dma_req_spi3_rx,
+	dma_req_spi3_tx,
+	dma_req_i2c1_rx,
+	dma_req_i2c1_tx,
+	dma_req_i2c1_evc,
+	dma_req_i2c2_rx,
+	dma_req_i2c2_tx,
+	dma_req_i2c2_evc,
+	dma_req_i2c3_rx,
+	dma_req_i2c3_tx,
+	dma_req_i2c3_evc,
+	dma_req_i2c4_rx,
+	dma_req_i2c4_tx,
+	dma_req_i2c4_evc,
+	dma_req_usart1_rx,
+	dma_req_usart1_tx,
+	dma_req_usart2_rx,
+	dma_req_usart2_tx,
+	dma_req_usart3_rx,
+	dma_req_usart3_tx,
+	dma_req_uart4_rx,
+	dma_req_uart4_tx,
+	dma_req_uart5_rx,
+	dma_req_uart5_tx,
+	dma_req_lpuart1_rx,
+	dma_req_lpuart1_tx,
+	dma_req_sai1_a,
+	dma_req_sai1_b,
+	dma_req_octospi1 = 40,
+	dma_req_tim1_cc1 = 42,
+	dma_req_tim1_cc2,
+	dma_req_tim1_cc3,
+	dma_req_tim1_cc4,
+	dma_req_tim1_upd,
+	dma_req_tim1_trig,
+	dma_req_tim1_com,
+	dma_req_i3c1_rx,
+	dma_req_i3c1_tx,
+	dma_req_i3c1_tc,
+	dma_req_i3c1_rs,
+	dma_req_tim2_cc1 = 56,
+	dma_req_tim2_cc2,
+	dma_req_tim2_cc3,
+	dma_req_tim2_cc4,
+	dma_req_tim2_upd,
+	dma_req_tim3_cc1,
+	dma_req_tim3_cc2,
+	dma_req_tim3_cc3,
+	dma_req_tim3_cc4,
+	dma_req_tim3_upd,
+	dma_req_tim3_trig,
+	dma_req_tim4_cc1,
+	dma_req_tim4_cc2,
+	dma_req_tim4_cc3,
+	dma_req_tim4_cc4,
+	dma_req_tim4_upd,
+	dma_req_i3c2_rx,
+	dma_req_i3c2_tx,
+	dma_req_i3c2_tc,
+	dma_req_i3c2_rs,
+	dma_req_spi4_rx,
+	dma_req_spi4_tx,
+	dma_req_tim15_cc1,
+	dma_req_tim15_upd,
+	dma_req_tim15_trig,
+	dma_req_tim15_com,
+	dma_req_tim16_cc1,
+	dma_req_tim16_upd,
+	dma_req_tim17_cc1,
+	dma_req_tim17_upd,
+	dma_req_aes_in = 87,
+	dma_req_aes_out,
+	dma_req_hash_in,
+	dma_req_tim8_cc1 = 91,
+	dma_req_tim8_cc2,
+	dma_req_tim8_cc3,
+	dma_req_tim8_cc4,
+	dma_req_tim8_upd,
+	dma_req_tim8_trig,
+	dma_req_tim8_com,
+	dma_req_adf1_flt0,
+	dma_req_saes_in = 103,
+	dma_req_saes_out,
+	dma_req_lptim1_ic1,
+	dma_req_lptim1_ic2,
+	dma_req_lptim1_ue,
+	dma_req_lptim2_ic1,
+	dma_req_lptim2_ic2,
+	dma_req_lptim2_ue,
+	dma_req_lptim3_ic1,
+	dma_req_lptim3_ic2,
+	dma_req_lptim3_ue,
+#endif
 	dma_req_sw_trig = 254,
 	dma_req_invalid = 255,
 };
@@ -284,11 +403,13 @@ static const uint8_t libdma_reqsUartRx[] = {
 	[usart3] = dma_req_usart3_rx,
 	[uart4] = dma_req_uart4_rx,
 	[uart5] = dma_req_uart5_rx,
+#if defined(__CPU_STM32N6)
 	[usart6] = dma_req_usart6_rx,
 	[uart7] = dma_req_uart7_rx,
 	[uart8] = dma_req_uart8_rx,
 	[uart9] = dma_req_uart9_rx,
 	[usart10] = dma_req_usart10_rx,
+#endif
 };
 
 
@@ -298,11 +419,13 @@ static const uint8_t libdma_reqsUartTx[] = {
 	[usart3] = dma_req_usart3_tx,
 	[uart4] = dma_req_uart4_tx,
 	[uart5] = dma_req_uart5_tx,
+#if defined(__CPU_STM32N6)
 	[usart6] = dma_req_usart6_tx,
 	[uart7] = dma_req_uart7_tx,
 	[uart8] = dma_req_uart8_tx,
 	[uart9] = dma_req_uart9_tx,
 	[usart10] = dma_req_usart10_tx,
+#endif
 };
 
 
@@ -311,8 +434,10 @@ static const uint8_t libdma_reqsSpiRx[] = {
 	[spi2] = dma_req_spi2_rx,
 	[spi3] = dma_req_spi3_rx,
 	[spi4] = dma_req_spi4_rx,
+#if defined(__CPU_STM32N6)
 	[spi5] = dma_req_spi5_rx,
 	[spi6] = dma_req_spi6_rx,
+#endif
 };
 
 
@@ -321,8 +446,10 @@ static const uint8_t libdma_reqsSpiTx[] = {
 	[spi2] = dma_req_spi2_tx,
 	[spi3] = dma_req_spi3_tx,
 	[spi4] = dma_req_spi4_tx,
+#if defined(__CPU_STM32N6)
 	[spi5] = dma_req_spi5_tx,
 	[spi6] = dma_req_spi6_tx,
+#endif
 };
 
 
@@ -331,7 +458,9 @@ static const uint8_t libdma_reqsTimUpd[] = {
 	[pwm_tim2] = dma_req_tim2_upd,
 	[pwm_tim3] = dma_req_tim3_upd,
 	[pwm_tim4] = dma_req_tim4_upd,
+#if defined(__CPU_STM32N6)
 	[pwm_tim5] = dma_req_tim5_upd,
+#endif
 	[pwm_tim6] = dma_req_tim6_upd,
 	[pwm_tim7] = dma_req_tim7_upd,
 	[pwm_tim8] = dma_req_tim8_upd,
@@ -344,7 +473,9 @@ static const uint8_t libdma_reqsTimUpd[] = {
 	[pwm_tim15] = dma_req_tim15_upd,
 	[pwm_tim16] = dma_req_tim16_upd,
 	[pwm_tim17] = dma_req_tim17_upd,
+#if defined(__CPU_STM32N6)
 	[pwm_tim18] = dma_req_tim18_upd,
+#endif
 };
 
 
@@ -353,7 +484,9 @@ static const uint8_t libdma_reqsTimCC1[] = {
 	[pwm_tim2] = dma_req_tim2_cc1,
 	[pwm_tim3] = dma_req_tim3_cc1,
 	[pwm_tim4] = dma_req_tim4_cc1,
+#if defined(__CPU_STM32N6)
 	[pwm_tim5] = dma_req_tim5_cc1,
+#endif
 	[pwm_tim6] = dma_req_invalid,
 	[pwm_tim7] = dma_req_invalid,
 	[pwm_tim8] = dma_req_tim8_cc1,
@@ -366,7 +499,9 @@ static const uint8_t libdma_reqsTimCC1[] = {
 	[pwm_tim15] = dma_req_tim15_cc1,
 	[pwm_tim16] = dma_req_tim16_cc1,
 	[pwm_tim17] = dma_req_tim17_cc1,
+#if defined(__CPU_STM32N6)
 	[pwm_tim18] = dma_req_tim18_cc1,
+#endif
 };
 
 
@@ -375,7 +510,9 @@ static const uint8_t libdma_reqsTimCC2[] = {
 	[pwm_tim2] = dma_req_tim2_cc2,
 	[pwm_tim3] = dma_req_tim3_cc2,
 	[pwm_tim4] = dma_req_tim4_cc2,
+#if defined(__CPU_STM32N6)
 	[pwm_tim5] = dma_req_tim5_cc2,
+#endif
 	[pwm_tim6] = dma_req_invalid,
 	[pwm_tim7] = dma_req_invalid,
 	[pwm_tim8] = dma_req_tim8_cc2,
@@ -385,7 +522,9 @@ static const uint8_t libdma_reqsTimCC2[] = {
 	[pwm_tim12] = dma_req_invalid,
 	[pwm_tim13] = dma_req_invalid,
 	[pwm_tim14] = dma_req_invalid,
+#if defined(__CPU_STM32N6)
 	[pwm_tim15] = dma_req_tim15_cc2,
+#endif
 };
 
 
@@ -394,7 +533,9 @@ static const uint8_t libdma_reqsTimCC3[] = {
 	[pwm_tim2] = dma_req_tim2_cc3,
 	[pwm_tim3] = dma_req_tim3_cc3,
 	[pwm_tim4] = dma_req_tim4_cc3,
+#if defined(__CPU_STM32N6)
 	[pwm_tim5] = dma_req_tim5_cc3,
+#endif
 	[pwm_tim6] = dma_req_invalid,
 	[pwm_tim7] = dma_req_invalid,
 	[pwm_tim8] = dma_req_tim8_cc3,
@@ -406,7 +547,9 @@ static const uint8_t libdma_reqsTimCC4[] = {
 	[pwm_tim2] = dma_req_tim2_cc4,
 	[pwm_tim3] = dma_req_tim3_cc4,
 	[pwm_tim4] = dma_req_tim4_cc4,
+#if defined(__CPU_STM32N6)
 	[pwm_tim5] = dma_req_tim5_cc4,
+#endif
 	[pwm_tim6] = dma_req_invalid,
 	[pwm_tim7] = dma_req_invalid,
 	[pwm_tim8] = dma_req_tim8_cc4,
@@ -442,7 +585,7 @@ static const libdma_perReqLookup_t libdma_reqsLookup[] = {
 	[dma_spi] = { libdma_reqsSpiRx, libdma_reqsSpiTx, NELEMS(libdma_reqsSpiRx), DMA_CTRL_GPDMA1, 1 },
 	[dma_uart] = { libdma_reqsUartRx, libdma_reqsUartTx, NELEMS(libdma_reqsUartRx), DMA_CTRL_GPDMA1, 1 },
 	[dma_tim_upd] = { NULL, libdma_reqsTimUpd, NELEMS(libdma_reqsTimUpd), DMA_CTRL_GPDMA1, 1 },
-	[dma_memTransfer] = { libdma_memTransferP2M, libdma_memTransferM2P, NELEMS(libdma_memTransferM2P), DMA_CTRL_HPDMA1, 0 },
+	[dma_memTransfer] = { libdma_memTransferP2M, libdma_memTransferM2P, NELEMS(libdma_memTransferM2P), DMA_DEFAULT, 0 },
 	[dma_tim_cap1] = { libdma_reqsTimCC1, NULL, NELEMS(libdma_reqsTimCC1), DMA_CTRL_GPDMA1, 1 },
 	[dma_tim_cap2] = { libdma_reqsTimCC2, NULL, NELEMS(libdma_reqsTimCC2), DMA_CTRL_GPDMA1, 1 },
 	[dma_tim_cap3] = { libdma_reqsTimCC3, NULL, NELEMS(libdma_reqsTimCC3), DMA_CTRL_GPDMA1, 1 },
@@ -481,11 +624,13 @@ static const struct dma_setup {
 		.pctl = pctl_gpdma1,
 		.isHPDMA = false,
 	},
+#if defined(DMA_CTRL_HPDMA1)
 	[DMA_CTRL_HPDMA1] = {
 		.base = HPDMA_BASE,
 		.pctl = pctl_hpdma1,
 		.isHPDMA = true,
 	},
+#endif
 };
 
 
@@ -566,6 +711,7 @@ static bool libxpdma_isInsideDMAMemory(const void *addr, size_t sz)
 }
 
 
+#if defined(__CPU_STM32N6)
 static inline bool libdma_irqToChannel(int irq, unsigned int *dma, unsigned int *chn)
 {
 	if ((irq >= gpdma1_ch0_irq) && (irq <= gpdma1_ch15_irq)) {
@@ -594,6 +740,42 @@ static inline int libdma_channelToIRQ(unsigned int dma, unsigned int chn)
 
 	return 0;
 }
+#elif defined(__CPU_STM32U3)
+static inline bool libdma_irqToChannel(int irq, unsigned int *dma, unsigned int *chn)
+{
+	if ((irq >= gpdma1_ch0_irq) && (irq <= gpdma1_ch7_irq)) {
+		*dma = DMA_CTRL_GPDMA1;
+		*chn = irq - gpdma1_ch0_irq;
+		return true;
+	}
+
+	if ((irq >= gpdma1_ch8_irq) && (irq <= gpdma1_ch11_irq)) {
+		*dma = DMA_CTRL_GPDMA1;
+		*chn = 8 + irq - gpdma1_ch8_irq;
+		return true;
+	}
+
+	return false;
+}
+
+
+static inline int libdma_channelToIRQ(unsigned int dma, unsigned int chn)
+{
+	if (dma != DMA_CTRL_GPDMA1) {
+		return 0;
+	}
+
+	if ((chn >= 0) && (chn <= 7)) {
+		return gpdma1_ch0_irq + chn;
+	}
+
+	if ((chn >= 8) && (chn <= 11)) {
+		return gpdma1_ch8_irq + chn - 8;
+	}
+
+	return 0;
+}
+#endif
 
 
 static inline volatile uint32_t *libdma_channelBase(int dma, unsigned int chn)
@@ -604,23 +786,27 @@ static inline volatile uint32_t *libdma_channelBase(int dma, unsigned int chn)
 
 static void libdma_cacheOpMem2Per(const void *addr, size_t sz)
 {
+#if defined(__CPU_STM32N6)
 	platformctl_t pctl;
 	pctl.action = pctl_set;
 	pctl.type = pctl_cleanDCache;
 	pctl.opDCache.addr = (void *)addr;
 	pctl.opDCache.sz = sz;
 	platformctl(&pctl);
+#endif
 }
 
 
 static void libdma_cacheOpPer2Mem(const void *addr, size_t sz)
 {
+#if defined(__CPU_STM32N6)
 	platformctl_t pctl;
 	pctl.action = pctl_set;
 	pctl.type = pctl_cleanInvalDCache;
 	pctl.opDCache.addr = (void *)addr;
 	pctl.opDCache.sz = sz;
 	platformctl(&pctl);
+#endif
 }
 
 
