@@ -1,10 +1,11 @@
 /*
  * Phoenix-RTOS
  *
- * STM32L4 reset and clock controller driver
+ * STM32L4/N6 reset and clock controller driver
  *
  * Copyright 2017, 2018 Phoenix Systems
- * Author: Aleksander Kaminski
+ * Copyright 2026 Apator Metrix
+ * Author: Aleksander Kaminski, Mateusz Karcz
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -37,10 +38,18 @@ void pwr_unlock(void);
 uint32_t pwr_unlockFromIRQ(void);
 
 
-int rcc_setHsi(int state);
-
-
 int rcc_init(void);
+
+
+typedef struct {
+	volatile unsigned int *base;
+	volatile unsigned int *pwr;
+
+	handle_t lock;
+} rcc_common_t;
+
+
+extern rcc_common_t rcc_common;
 
 
 #endif
