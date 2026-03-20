@@ -58,7 +58,7 @@ static inline int devClk(int dev, int state)
 	pctl.type = pctl_devclk;
 	pctl.devclk.dev = dev;
 	pctl.devclk.state = state;
-#if defined(__CPU_STM32N6)
+#if defined(__CPU_STM32N6) || defined(__CPU_STM32U3)
 	pctl.devclk.lpState = state;
 #endif
 
