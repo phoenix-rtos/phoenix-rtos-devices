@@ -15,6 +15,8 @@
 #ifndef _STM32U3_BASE_H_
 #define _STM32U3_BASE_H_
 
+#define GPDMA_BASE ((void *)0x50020000U)
+
 #define PWR_BASE ((void *)0x50030800U)
 #define RCC_BASE ((void *)0x50030c00U)
 
