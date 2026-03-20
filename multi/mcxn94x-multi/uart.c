@@ -48,8 +48,8 @@
 
 #define UART_MAX 10
 #define UART_CNT (UARTN_ACTIVE(0) + UARTN_ACTIVE(1) + UARTN_ACTIVE(2) + \
-	UARTN_ACTIVE(3) + UARTN_ACTIVE(4) + UARTN_ACTIVE(5) + UARTN_ACTIVE(6) + \
-	UARTN_ACTIVE(7) + UARTN_ACTIVE(8))
+		UARTN_ACTIVE(3) + UARTN_ACTIVE(4) + UARTN_ACTIVE(5) + UARTN_ACTIVE(6) + \
+		UARTN_ACTIVE(7) + UARTN_ACTIVE(8))
 
 
 #ifndef UART_RXFIFOSIZE
@@ -58,7 +58,7 @@
 
 
 typedef struct uart_s {
-	char stack[1024] __attribute__ ((aligned(8)));
+	char stack[1024] __attribute__((aligned(8)));
 
 	volatile uint32_t *base;
 	uint32_t mode;
