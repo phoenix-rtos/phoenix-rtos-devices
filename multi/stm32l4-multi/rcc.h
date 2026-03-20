@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * STM32L4/N6 reset and clock controller driver
+ * STM32L4/N6/U3 reset and clock controller driver
  *
  * Copyright 2017, 2018 Phoenix Systems
  * Copyright 2026 Apator Metrix
@@ -19,7 +19,7 @@
 #include <phoenix/types.h>
 #include <stdint.h>
 
-#if defined(__CPU_STM32N6)
+#if defined(__CPU_STM32N6) || defined(__CPU_STM32U3)
 #include "rcc/clockdef.h"
 
 
