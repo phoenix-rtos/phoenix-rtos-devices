@@ -13,15 +13,12 @@
 
 
 #include <errno.h>
-#include <sys/interrupt.h>
-#include <sys/threads.h>
-#include <sys/pwman.h>
 #include <sys/platform.h>
 
-#include "stm32n6_regs.h"
-#include "common.h"
-#include "rcc.h"
-#include "rtc.h"
+#include "../common.h"
+#include "../rcc.h"
+#include "../stm32n6_regs.h"
+
 
 #define MAX_CLOCK_CHOICES 8
 static const uint8_t rcc_clksels[pctl_ipclks_count][MAX_CLOCK_CHOICES] = {
@@ -83,13 +80,6 @@ static const uint8_t rcc_clksels[pctl_ipclks_count][MAX_CLOCK_CHOICES] = {
 	[pctl_ipclk_lpuart1sel] = { clkid_pclk4, clkid_per, clkid_ic9, clkid_ic14, clkid_lse, clkid_msi, clkid_hsi_div },
 
 };
-
-struct {
-	volatile unsigned int *base;
-	volatile unsigned int *pwr;
-
-	handle_t lock;
-} rcc_common;
 
 
 int rcc_setClksel(enum ipclks ipclk, enum clock_ids clkID)
@@ -192,31 +182,4 @@ uint32_t pwr_unlockFromIRQ(void)
 	/* Enable writing to backup domain */
 	*(rcc_common.pwr + pwr_dbpcr) = previous | 1;
 	return previous & 1;
-}
-
-
-void pwr_lock(void)
-{
-	mutexLock(rcc_common.lock);
-	pwr_lockFromIRQ(0);
-	mutexUnlock(rcc_common.lock);
-}
-
-
-void pwr_unlock(void)
-{
-	mutexLock(rcc_common.lock);
-	(void)pwr_unlockFromIRQ();
-	mutexUnlock(rcc_common.lock);
-}
-
-
-int rcc_init(void)
-{
-	rcc_common.base = RCC_BASE;
-	rcc_common.pwr = PWR_BASE;
-
-	mutexCreate(&rcc_common.lock);
-
-	return 0;
 }
