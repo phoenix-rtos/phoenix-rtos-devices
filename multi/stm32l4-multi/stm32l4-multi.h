@@ -32,7 +32,8 @@ enum { adc_get = 0, rtc_setcal, rtc_get, rtc_set, rtc_setalarm, i2c_get, i2c_get
 	i2c_set, i2c_setwreg, gpio_def, gpio_get, gpio_set, uart_def, uart_get, uart_set,
 	flash_get, flash_set, flash_info, spi_get, spi_set, spi_rw, spi_def, exti_def,
 	exti_map, otp_get, otp_set, rtc_setBackup, rtc_getBackup, flash_setRaw, flash_erase,
-	rng_get, pwm_def, pwm_setm, pwm_getm, pwm_getfreq, pwm_distim, pwm_dischn, pwm_bitseq };
+	rng_get, pwm_def, pwm_setm, pwm_getm, pwm_getfreq, pwm_distim, pwm_dischn, pwm_bitseq,
+	pwm_bitseq4 };
 /* clang-format on */
 
 /* RTC */
@@ -230,6 +231,16 @@ typedef struct {
 } __attribute__((packed)) pwmbitseq_t;
 
 
+typedef struct {
+	pwm_tim_id_t timer;
+	pwm_ch_id_t chn[4];
+	uint16_t val16[4];
+	uint16_t hcmp;
+	uint16_t lcmp;
+	int flags;
+} __attribute__((packed)) pwmbitseq4_t;
+
+
 /* EXTI */
 
 
@@ -327,6 +338,7 @@ typedef struct {
 		pwmdistim_t pwm_distim;
 		pwmdischn_t pwm_dischn;
 		pwmbitseq_t pwm_bitseq;
+		pwmbitseq4_t pwm_bitseq4;
 	};
 } __attribute__((packed)) multi_i_t;
 
