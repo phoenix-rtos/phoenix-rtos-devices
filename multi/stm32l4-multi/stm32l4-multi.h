@@ -231,14 +231,18 @@ typedef struct {
 } __attribute__((packed)) pwmbitseq_t;
 
 
+/**
+ * "Packed" by design, not by __attribute__.
+ * Otherwise data cannot be used as arrays.
+ */
 typedef struct {
-	pwm_tim_id_t timer;
-	pwm_ch_id_t chn[4];
+	uint16_t chn[4];
 	uint16_t val16[4];
 	uint16_t hcmp;
 	uint16_t lcmp;
 	int flags;
-} __attribute__((packed)) pwmbitseq4_t;
+	pwm_tim_id_t timer;
+} pwmbitseq4_t;
 
 
 /* EXTI */
