@@ -662,6 +662,117 @@ static int pwm_initDMAChannel(pwm_tim_id_t timer, pwm_ch_id_t chn)
 	return res;
 }
 
+static void pwm_fillBitSequence(uint16_t value, uint16_t hcmp, uint16_t lcmp, uint16_t seq[PWM_BITSEQ4_BITS + 2])
+{
+	int bit;
+
+	for (bit = 0; bit < PWM_BITSEQ4_BITS; ++bit) {
+		uint16_t mask = (uint16_t)(1u << (PWM_BITSEQ4_BITS - 1 - bit));
+		seq[bit] = ((value & mask) != 0u) ? hcmp : lcmp;
+	}
+
+	/* Add two "idle" values at the end of the DMA buffer.
+	 * One value is necessary because after DMA writes the last compare value, `libdma_tx` exits and user may
+	 * disable the timer immediately without waiting for the final cycle to finish.
+	 * Another value is added because compare values are "delayed" - a write to the CCR register after an update event
+	 * will not take effect immediately, but during the next cycle.
+	 * Without those two "idle" values, the last value would not be transmitted and second-to-last value
+	 * would not be transmitted completely.
+	 */
+	seq[PWM_BITSEQ4_BITS] = 0;
+	seq[PWM_BITSEQ4_BITS + 1] = 0;
+}
+
+
+static int pwm_callBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn[PWM_CHN_NUM], uint16_t seq[PWM_CHN_NUM][PWM_BITSEQ4_BITS + 2])
+{
+#if USE_DSHOT_DMA
+	volatile uint32_t *base = pwm_setup.timer[timer].base;
+	const struct libdma_per *per[PWM_CHN_NUM];
+	volatile int done[PWM_CHN_NUM] = { 0 };
+	uint8_t started = 0;
+	bool udeMasked = false;
+	int res = EOK, i;
+
+	mutexLock(pwm_common.dmalock);
+
+	for (i = 0; i < PWM_CHN_NUM; ++i) {
+		libdma_transfer_buffer_t buf = {
+			.buf = seq[i],
+			.bufSize = sizeof(seq[i]),
+			.elSize_log = 1,
+			.burstSize = 1,
+			.increment = 1,
+			.isCached = 1,
+			.transform = LIBXPDMA_TRANSFORM_ALIGNR0,
+		};
+
+		per[i] = pwm_common.timer[timer].dma_per[chn[i]];
+		if (per[i] == NULL) {
+			res = pwm_initDMAChannel(timer, chn[i]);
+			per[i] = pwm_common.timer[timer].dma_per[chn[i]];
+		}
+
+		if (res < 0) {
+			break;
+		}
+
+		res = libxpdma_configureMemory(per[i], dma_mem2per, 0, &buf, 1);
+		if (res < 0) {
+			break;
+		}
+
+		/* Start/arm the PWM channel in idle state. DMA will update CCR on timer update events. */
+		res = pwm_set(timer, chn[i], 0);
+		if (res < 0) {
+			break;
+		}
+	}
+
+	if (res >= 0) {
+		/* Request is disabled before DMA start and enabled after to prevent a possible race condition
+		 * between DMA start and timer update request. */
+		*(base + tim_dier) &= ~TIM_DIER_UDE;
+		udeMasked = true;
+
+		for (i = 0; i < PWM_CHN_NUM; ++i) {
+			res = libxpdma_startTransferWithFlag(per[i], dma_mem2per, &done[i]);
+			if (res < 0) {
+				break;
+			}
+			started++;
+		}
+	}
+
+	if (udeMasked) {
+		*(base + tim_dier) |= TIM_DIER_UDE;
+		udeMasked = false;
+	}
+
+	if (res >= 0) {
+		/* Wait for all transfers. Preserve the first error, but still drain all transactions. */
+		res = EOK;
+		for (i = 0; i < PWM_CHN_NUM; ++i) {
+			int waitRes = libxpdma_waitForTransaction(per[i], &done[i], NULL, 0);
+			if ((res >= 0) && (waitRes < 0)) {
+				res = waitRes;
+			}
+		}
+	}
+	else if (started != 0u) {
+		for (i = 0; i < started; ++i) {
+			(void)libxpdma_waitForTransaction(per[i], &done[i], NULL, 0);
+		}
+	}
+
+	mutexUnlock(pwm_common.dmalock);
+	return res;
+#else
+	return -ENOSYS;
+#endif
+}
+
+
 int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t nbits, uint8_t datasize, int flags)
 {
 	int res;
@@ -772,8 +883,11 @@ int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t
 }
 
 
-int pwm_setBitSequence4(pwm_tim_id_t timer, pwm_ch_id_t chn[PWM_CHN_NUM], void *data[PWM_CHN_NUM], uint32_t nbits, uint8_t datasize, int flags)
+int pwm_setBitSequence4(pwm_tim_id_t timer, const uint16_t chnRaw[PWM_BITSEQ4_CHANNELS],
+	const uint16_t val16[PWM_BITSEQ4_CHANNELS], uint16_t hcmp, uint16_t lcmp, int flags)
 {
+	pwm_ch_id_t chn[PWM_CHN_NUM];
+	uint16_t seq[PWM_CHN_NUM][PWM_BITSEQ4_BITS + 2];
 	int res, i, j;
 
 	(void)flags;
@@ -783,35 +897,16 @@ int pwm_setBitSequence4(pwm_tim_id_t timer, pwm_ch_id_t chn[PWM_CHN_NUM], void *
 		return res;
 	}
 
-	if ((chn == NULL) || (data == NULL)) {
+	if ((chnRaw == NULL) || (val16 == NULL)) {
 		return -EINVAL;
 	}
 
-	if ((datasize != 1) && (datasize != 2) && (datasize != 4)) {
-		return -EINVAL;
-	}
-
-	if ((datasize == 4) && (((PWM_TIM_32BIT >> timer) & 1) == 0)) {
-		return -EINVAL;
-	}
-
-	if (nbits == 0) {
-		/* Treat as no-op */
-		return EOK;
-	}
-
-	/**
-	 * Validate all channels and reject duplicates.
-	 * Complementary outputs share the same CCR register, so they must also be rejected.
-	 */
 	for (i = 0; i < PWM_CHN_NUM; ++i) {
+		chn[i] = (pwm_ch_id_t)chnRaw[i];
+
 		res = pwm_validateChannel(timer, chn[i]);
 		if (res < 0) {
 			return res;
-		}
-
-		if (data[i] == NULL) {
-			return -EINVAL;
 		}
 
 		for (j = 0; j < i; ++j) {
@@ -823,128 +918,11 @@ int pwm_setBitSequence4(pwm_tim_id_t timer, pwm_ch_id_t chn[PWM_CHN_NUM], void *
 				return -EINVAL;
 			}
 		}
+
+		pwm_fillBitSequence(val16[i], hcmp, lcmp, seq[i]);
 	}
 
-#if USE_DSHOT_DMA
-	mutexLock(pwm_common.dmalock);
-
-	volatile uint32_t *base = pwm_setup.timer[timer].base;
-	const struct libdma_per *per[PWM_CHN_NUM];
-	volatile int done[PWM_CHN_NUM] = { 0 };
-	uint8_t started = 0;
-	bool udeMasked = false;
-
-	static const uint8_t zero_value = 0;
-	const uint8_t datasize_log = (datasize == 1) ? 0 : ((datasize == 2) ? 1 : 2);
-
-	/* single-pass loop */
-	do {
-		bool cleanupGoto = false;
-
-		for (i = 0; i < PWM_CHN_NUM; ++i) {
-			per[i] = pwm_common.timer[timer].dma_per[chn[i]];
-			if (per[i] == NULL) {
-				res = pwm_initDMAChannel(timer, chn[i]);
-				per[i] = pwm_common.timer[timer].dma_per[chn[i]];
-			}
-
-			libdma_transfer_buffer_t bufs[2] = {
-				{
-					.buf = data[i],
-					.bufSize = nbits << datasize_log,
-					.elSize_log = datasize_log,
-					.burstSize = 1,
-					.increment = 1,
-					.isCached = 1,
-					.transform = LIBXPDMA_TRANSFORM_ALIGNR0,
-				},
-				/* Add two "idle" values at the end of the DMA buffer.
-				 * One value is necessary because after DMA writes the last compare value, `libdma_tx` exits and user may
-				 * disable the timer immediately without waiting for the final cycle to finish.
-				 * Another value is added because compare values are "delayed" - a write to the CCR register after an update event
-				 * will not take effect immediately, but during the next cycle.
-				 * Without those two "idle" values, the last value would not be transmitted and second-to-last value
-				 * would not be transmitted completely.
-				 */
-				{
-					.buf = (void *)&zero_value,
-					.bufSize = 2,
-					.elSize_log = 0,
-					.burstSize = 1,
-					.increment = 0,
-					.isCached = 0,
-					.transform = LIBXPDMA_TRANSFORM_ALIGNR0,
-				},
-			};
-
-			res = (res < 0) ? res : libxpdma_configureMemory(per[i], dma_mem2per, 0, bufs, 2);
-			/* Start/arm the PWM channel in idle state. DMA will update CCR on timer update events. */
-			res = (res < 0) ? res : pwm_set(timer, chn[i], 0);
-
-			if (res < 0) {
-				cleanupGoto = true;
-				break;
-			}
-		}
-
-		/* Go to CLEANUP on setup error */
-		if (cleanupGoto) {
-			break;
-		}
-
-		/**
-		 * Disable request before DMA start and enable it only after all channels are armed,
-		 * to synchronize all four transfers to the same timer update stream.
-		 */
-		*(base + tim_dier) &= ~TIM_DIER_UDE;
-		udeMasked = true;
-
-		for (i = 0; i < PWM_CHN_NUM; ++i) {
-			res = libxpdma_startTransferWithFlag(per[i], dma_mem2per, &done[i]);
-			if (res < 0) {
-				cleanupGoto = true;
-				break;
-			}
-			started++;
-		}
-
-		/* Go to CLEANUP on transmission start error */
-		if (cleanupGoto) {
-			break;
-		}
-
-		*(base + tim_dier) |= TIM_DIER_UDE;
-		udeMasked = false;
-
-		/* Wait for all transfers. Preserve the first error, but still drain all transactions. */
-		res = EOK;
-		for (i = 0; i < PWM_CHN_NUM; ++i) {
-			int waitRes = libxpdma_waitForTransaction(per[i], &done[i], NULL, 0);
-			if ((res >= 0) && (waitRes < 0)) {
-				res = waitRes;
-			}
-		}
-	} while (0);
-
-	/* start CLEANUP */
-
-	if (udeMasked) {
-		*(base + tim_dier) |= TIM_DIER_UDE;
-		udeMasked = false;
-	}
-
-	/* If some transfers were already started and then an error happened, let them drain. */
-	if ((res < 0) && (started != 0)) {
-		for (i = 0; i < started; ++i) {
-			(void)libxpdma_waitForTransaction(per[i], &done[i], NULL, 0);
-		}
-	}
-
-	mutexUnlock(pwm_common.dmalock);
-	return res;
-#else
-	return -ENOSYS;
-#endif
+	return pwm_callBitSequence(timer, chn, seq);
 }
 
 

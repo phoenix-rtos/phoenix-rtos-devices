@@ -26,6 +26,8 @@
 
 #define NODE_ID_TYPE_SHIFT 8
 #define NODE_ID_MSK        ((1UL << NODE_ID_TYPE_SHIFT) - 1UL)
+#define PWM_BITSEQ4_CHANNELS 4
+#define PWM_BITSEQ4_BITS     16
 
 /* clang-format off */
 enum { adc_get = 0, rtc_setcal, rtc_get, rtc_set, rtc_setalarm, i2c_get, i2c_getwreg,
@@ -233,12 +235,12 @@ typedef struct {
 
 typedef struct {
 	pwm_tim_id_t timer;
-	pwm_ch_id_t chn[4];
+	uint16_t chn[4];
 	uint16_t val16[4];
 	uint16_t hcmp;
 	uint16_t lcmp;
 	int flags;
-} __attribute__((packed)) pwmbitseq4_t;
+} pwmbitseq4_t;
 
 
 /* EXTI */

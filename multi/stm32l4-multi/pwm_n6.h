@@ -82,7 +82,7 @@ int pwm_get(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t *top, uint32_t *compar
 int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t nbits, uint8_t datasize, int flags);
 
 
-int pwm_setBitSequence4(pwm_tim_id_t timer, pwm_ch_id_t chn[PWM_CHN_NUM], void *data[PWM_CHN_NUM], uint32_t nbits, uint8_t datasize, int flags);
+int pwm_setBitSequence4(pwm_tim_id_t timer, const uint16_t chn[PWM_CHN_NUM], const uint16_t val16[PWM_CHN_NUM], uint16_t hcmp, uint16_t lcmp, int flags);
 
 
 int pwm_init(void);

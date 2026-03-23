@@ -269,19 +269,10 @@ static void handleMsgMulti(msg_t *msg)
 					imsg->pwm_bitseq.nbits, imsg->pwm_bitseq.datasize, imsg->pwm_bitseq.flags);
 			break;
 		case pwm_bitseq4:
-			uint16_t seq[PWM_CHN_NUM][16];
-			void *data[PWM_CHN_NUM];
+			pwmbitseq4_t req;
 
-			for (int lane = 0; lane < PWM_CHN_NUM; ++lane) {
-				for (int bit = 0; bit < 16; ++bit) {
-					int mask = (uint16_t)(1u << (15 - bit));
-					seq[lane][bit] = ((imsg->pwm_bitseq4.val16[lane] & mask) != 0u) ? imsg->pwm_bitseq4.hcmp : imsg->pwm_bitseq4.lcmp;
-				}
-
-				data[lane] = seq[lane];
-			}
-
-			err = pwm_setBitSequence4(imsg->pwm_bitseq4.timer, imsg->pwm_bitseq4.chn, data, 16, sizeof(uint16_t), imsg->pwm_bitseq4.flags);
+			memcpy(&req, &imsg->pwm_bitseq4, sizeof(req));
+			err = pwm_setBitSequence4(req.timer, req.chn, req.val16, req.hcmp, req.lcmp, req.flags);
 			break;
 #endif
 		default:
