@@ -22,6 +22,8 @@
 #include "stm32n6_base.h"
 #include "clockdef_n6.h"
 
+#define STM32MULTI_HANDLE_PWM 1
+
 #define PWM_CHN_NUM      4
 #define PWM_BITSEQ4_BITS 16
 
