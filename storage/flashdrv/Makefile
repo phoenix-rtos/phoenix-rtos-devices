@@ -14,6 +14,8 @@ ifneq ($(filter $(TARGET_SUBFAMILY), grfpga gr712rc gr740),)
 else ifneq ($(filter $(TARGET_SUBFAMILY), stm32n6),)
 	DEP_LIBS := libstm32_extflash
 	LOCAL_CFLAGS += -DFLASHSRV_STORAGE_STACK_SIZE=4096
+	LOCAL_CFLAGS += -DFLASHSRV_ENABLE_LITTLEFS=1
+	LIBS += liblfs
 endif
 
 include $(binary.mk)
