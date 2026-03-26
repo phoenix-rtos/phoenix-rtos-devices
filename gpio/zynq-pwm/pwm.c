@@ -23,6 +23,7 @@
 #include <sys/mman.h>
 
 #include <rcpwm/msg.h>
+#include <board_config.h>
 
 #define ROOTFS_WAIT 1
 #define PRIORITY    2
@@ -30,6 +31,11 @@
 #define RELOAD_DEFAULT 100000
 #define PWM_NCHAN      8
 #define PWM_RELOAD     PWM_NCHAN
+
+/* Offset is value that will be subtracted from the comp value written into pwm. */
+#ifndef ZYNQ_PWM_OFFSET
+#define ZYNQ_PWM_OFFSET (0UL)
+#endif
 
 
 typedef struct {
@@ -46,13 +52,20 @@ static struct {
 
 static void pwm_read(pwm_chan_t *chan, uint32_t *val)
 {
-	*val = *(pwm_common.base + chan->reg);
+	*val = *(pwm_common.base + chan->reg) + ZYNQ_PWM_OFFSET;
 }
 
 
 static void pwm_write(pwm_chan_t *chan, uint32_t val)
 {
 	uint32_t reload = *(pwm_common.base + PWM_RELOAD);
+
+	if (val > ZYNQ_PWM_OFFSET) {
+		val -= ZYNQ_PWM_OFFSET;
+	}
+	else {
+		val = 0;
+	}
 
 	if (reload < val) {
 		val = reload;
