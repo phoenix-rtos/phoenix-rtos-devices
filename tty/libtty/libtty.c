@@ -520,6 +520,27 @@ int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const
 			log_ioctl("TIOCGSID = %u", tty->pgrp);
 			*out_arg = (const void *)&tty->pgrp;
 			break;
+		case TIOCGHALFD:
+			if (tty->cb.get_halfduplex == NULL) {
+				return -EIO;
+			}
+			tty->temp = tty->cb.get_halfduplex(tty->cb.arg);
+			*out_arg = (const void *)&tty->temp;
+			log_ioctl("TIOCGHALFD = %d", tty->temp);
+			break;
+		case TIOCSHALFD:
+			if (tty->cb.set_halfduplex == NULL) {
+				return -EIO;
+			}
+			/* WARN: passing ioctl half-duplex enable by value */
+			int enable = (int)(uintptr_t)in_arg;
+			log_ioctl("TIOCSHALFD: enable = %d", enable);
+			if ((enable != 0) || (enable != 1)) {
+				log_warn("halfduplex enable (%d) != {0,1}", enable);
+				return -EINVAL;
+			}
+			CALLBACK(set_halfduplex, enable);
+			break;
 		default:
 			log_warn("unsupported ioctl: 0x%x", cmd);
 			ret = -EINVAL;

@@ -61,7 +61,7 @@ typedef struct {
 
 
 typedef struct uart_s {
-	char stack[1024] __attribute__ ((aligned(8)));
+	char stack[1024] __attribute__((aligned(8)));
 
 	volatile uint32_t *base;
 	uint32_t mode;
@@ -204,7 +204,18 @@ static const struct {
 };
 
 
-enum { veridr = 0, paramr, globalr, pincfgr, baudr, statr, ctrlr, datar, matchr, modirr, fifor, waterr };
+enum { veridr = 0,
+	paramr,
+	globalr,
+	pincfgr,
+	baudr,
+	statr,
+	ctrlr,
+	datar,
+	matchr,
+	modirr,
+	fifor,
+	waterr };
 
 
 static inline int uart_getRXcount(uart_t *uart)
@@ -593,26 +604,86 @@ static int uart_muxVal(int uart, int mux)
 static int uart_getIsel(int uart, int mux, int *isel, int *val)
 {
 	switch (mux) {
-		case pctl_mux_gpio_ad_24:      *isel = pctl_isel_lpuart1_txd; *val = 0; break;
-		case pctl_mux_gpio_disp_b1_02: *isel = pctl_isel_lpuart1_txd; *val = 1; break;
-		case pctl_mux_gpio_ad_25:      *isel = pctl_isel_lpuart1_rxd; *val = 0; break;
-		case pctl_mux_gpio_disp_b1_03: *isel = pctl_isel_lpuart1_rxd; *val = 1; break;
-		case pctl_mux_gpio_disp_b2_06: *isel = pctl_isel_lpuart7_txd; *val = 1; break;
-		case pctl_mux_gpio_ad_00:      *isel = pctl_isel_lpuart7_txd; *val = 0; break;
-		case pctl_mux_gpio_disp_b2_07: *isel = pctl_isel_lpuart7_rxd; *val = 1; break;
-		case pctl_mux_gpio_ad_01:      *isel = pctl_isel_lpuart7_rxd; *val = 0; break;
-		case pctl_mux_gpio_ad_02:      *isel = pctl_isel_lpuart8_txd; *val = 0; break;
-		case pctl_mux_gpio_ad_03:      *isel = pctl_isel_lpuart8_rxd; *val = 0; break;
-		case pctl_mux_gpio_lpsr_08:    *isel = pctl_isel_lpuart11_txd; *val = 1; break;
-		case pctl_mux_gpio_lpsr_04:    *isel = pctl_isel_lpuart11_txd; *val = 0; break;
-		case pctl_mux_gpio_lpsr_09:    *isel = pctl_isel_lpuart11_rxd; *val = 1; break;
-		case pctl_mux_gpio_lpsr_05:    *isel = pctl_isel_lpuart11_rxd; *val = 0; break;
-		case pctl_mux_gpio_lpsr_06:    *isel = pctl_isel_lpuart12_txd; *val = 1; break;
-		case pctl_mux_gpio_lpsr_00:    *isel = pctl_isel_lpuart12_txd; *val = 0; break;
-		case pctl_mux_gpio_lpsr_10:    *isel = pctl_isel_lpuart12_txd; *val = 2; break;
-		case pctl_mux_gpio_lpsr_07:    *isel = pctl_isel_lpuart12_rxd; *val = 1; break;
-		case pctl_mux_gpio_lpsr_01:    *isel = pctl_isel_lpuart12_rxd; *val = 0; break;
-		case pctl_mux_gpio_lpsr_11:    *isel = pctl_isel_lpuart12_rxd; *val = 2; break;
+		case pctl_mux_gpio_ad_24:
+			*isel = pctl_isel_lpuart1_txd;
+			*val = 0;
+			break;
+		case pctl_mux_gpio_disp_b1_02:
+			*isel = pctl_isel_lpuart1_txd;
+			*val = 1;
+			break;
+		case pctl_mux_gpio_ad_25:
+			*isel = pctl_isel_lpuart1_rxd;
+			*val = 0;
+			break;
+		case pctl_mux_gpio_disp_b1_03:
+			*isel = pctl_isel_lpuart1_rxd;
+			*val = 1;
+			break;
+		case pctl_mux_gpio_disp_b2_06:
+			*isel = pctl_isel_lpuart7_txd;
+			*val = 1;
+			break;
+		case pctl_mux_gpio_ad_00:
+			*isel = pctl_isel_lpuart7_txd;
+			*val = 0;
+			break;
+		case pctl_mux_gpio_disp_b2_07:
+			*isel = pctl_isel_lpuart7_rxd;
+			*val = 1;
+			break;
+		case pctl_mux_gpio_ad_01:
+			*isel = pctl_isel_lpuart7_rxd;
+			*val = 0;
+			break;
+		case pctl_mux_gpio_ad_02:
+			*isel = pctl_isel_lpuart8_txd;
+			*val = 0;
+			break;
+		case pctl_mux_gpio_ad_03:
+			*isel = pctl_isel_lpuart8_rxd;
+			*val = 0;
+			break;
+		case pctl_mux_gpio_lpsr_08:
+			*isel = pctl_isel_lpuart11_txd;
+			*val = 1;
+			break;
+		case pctl_mux_gpio_lpsr_04:
+			*isel = pctl_isel_lpuart11_txd;
+			*val = 0;
+			break;
+		case pctl_mux_gpio_lpsr_09:
+			*isel = pctl_isel_lpuart11_rxd;
+			*val = 1;
+			break;
+		case pctl_mux_gpio_lpsr_05:
+			*isel = pctl_isel_lpuart11_rxd;
+			*val = 0;
+			break;
+		case pctl_mux_gpio_lpsr_06:
+			*isel = pctl_isel_lpuart12_txd;
+			*val = 1;
+			break;
+		case pctl_mux_gpio_lpsr_00:
+			*isel = pctl_isel_lpuart12_txd;
+			*val = 0;
+			break;
+		case pctl_mux_gpio_lpsr_10:
+			*isel = pctl_isel_lpuart12_txd;
+			*val = 2;
+			break;
+		case pctl_mux_gpio_lpsr_07:
+			*isel = pctl_isel_lpuart12_rxd;
+			*val = 1;
+			break;
+		case pctl_mux_gpio_lpsr_01:
+			*isel = pctl_isel_lpuart12_rxd;
+			*val = 0;
+			break;
+		case pctl_mux_gpio_lpsr_11:
+			*isel = pctl_isel_lpuart12_rxd;
+			*val = 2;
+			break;
 		case pctl_mux_gpio_disp_b2_09:
 			if (uart == 0) {
 				*isel = pctl_isel_lpuart1_rxd;
@@ -821,42 +892,150 @@ static int uart_muxVal(int mux)
 static int uart_getIsel(int mux, int *isel, int *val)
 {
 	switch (mux) {
-		case pctl_mux_gpio_ad_b1_02: *isel = pctl_isel_lpuart2_tx; *val = 1; break;
-		case pctl_mux_gpio_sd_b1_11: *isel = pctl_isel_lpuart2_tx; *val = 0; break;
-		case pctl_mux_gpio_ad_b1_03: *isel = pctl_isel_lpuart2_rx; *val = 1; break;
-		case pctl_mux_gpio_sd_b1_10: *isel = pctl_isel_lpuart2_rx; *val = 0; break;
-		case pctl_mux_gpio_emc_13:   *isel = pctl_isel_lpuart3_tx; *val = 1; break;
-		case pctl_mux_gpio_ad_b1_06: *isel = pctl_isel_lpuart3_tx; *val = 0; break;
-		case pctl_mux_gpio_b0_08:    *isel = pctl_isel_lpuart3_tx; *val = 2; break;
-		case pctl_mux_gpio_emc_14:   *isel = pctl_isel_lpuart3_rx; *val = 1; break;
-		case pctl_mux_gpio_ad_b1_07: *isel = pctl_isel_lpuart3_rx; *val = 0; break;
-		case pctl_mux_gpio_b0_09:    *isel = pctl_isel_lpuart3_rx; *val = 2; break;
-		case pctl_mux_gpio_emc_15:   *isel = pctl_isel_lpuart3_cts_b; *val = 0; break;
-		case pctl_mux_gpio_ad_b1_04: *isel = pctl_isel_lpuart3_cts_b; *val = 1; break;
-		case pctl_mux_gpio_emc_19:   *isel = pctl_isel_lpuart4_tx; *val = 1; break;
-		case pctl_mux_gpio_b1_00:    *isel = pctl_isel_lpuart4_tx; *val = 2; break;
-		case pctl_mux_gpio_sd_b1_00: *isel = pctl_isel_lpuart4_tx; *val = 0; break;
-		case pctl_mux_gpio_emc_20:   *isel = pctl_isel_lpuart4_rx; *val = 1; break;
-		case pctl_mux_gpio_b1_01:    *isel = pctl_isel_lpuart4_rx; *val = 2; break;
-		case pctl_mux_gpio_sd_b1_01: *isel = pctl_isel_lpuart4_rx; *val = 0; break;
-		case pctl_mux_gpio_emc_23:   *isel = pctl_isel_lpuart5_tx; *val = 0; break;
-		case pctl_mux_gpio_b1_12:    *isel = pctl_isel_lpuart5_tx; *val = 1; break;
-		case pctl_mux_gpio_emc_24:   *isel = pctl_isel_lpuart5_rx; *val = 0; break;
-		case pctl_mux_gpio_b1_13:    *isel = pctl_isel_lpuart5_rx; *val = 1; break;
-		case pctl_mux_gpio_emc_25:   *isel = pctl_isel_lpuart6_tx; *val = 0; break;
-		case pctl_mux_gpio_ad_b0_12: *isel = pctl_isel_lpuart6_tx; *val = 1; break;
-		case pctl_mux_gpio_emc_26:   *isel = pctl_isel_lpuart6_rx; *val = 0; break;
-		case pctl_mux_gpio_ad_b0_03: *isel = pctl_isel_lpuart6_rx; *val = 1; break;
-		case pctl_mux_gpio_emc_31:   *isel = pctl_isel_lpuart7_tx; *val = 1; break;
-		case pctl_mux_gpio_sd_b1_08: *isel = pctl_isel_lpuart7_tx; *val = 0; break;
-		case pctl_mux_gpio_emc_32:   *isel = pctl_isel_lpuart7_rx; *val = 1; break;
-		case pctl_mux_gpio_sd_b1_09: *isel = pctl_isel_lpuart7_rx; *val = 0; break;
-		case pctl_mux_gpio_emc_38:   *isel = pctl_isel_lpuart8_tx; *val = 2; break;
-		case pctl_mux_gpio_ad_b1_10: *isel = pctl_isel_lpuart8_tx; *val = 1; break;
-		case pctl_mux_gpio_sd_b0_04: *isel = pctl_isel_lpuart8_tx; *val = 0; break;
-		case pctl_mux_gpio_emc_39:   *isel = pctl_isel_lpuart8_rx; *val = 2; break;
-		case pctl_mux_gpio_ad_b1_11: *isel = pctl_isel_lpuart8_rx; *val = 1; break;
-		case pctl_mux_gpio_sd_b0_05: *isel = pctl_isel_lpuart8_rx; *val = 0; break;
+		case pctl_mux_gpio_ad_b1_02:
+			*isel = pctl_isel_lpuart2_tx;
+			*val = 1;
+			break;
+		case pctl_mux_gpio_sd_b1_11:
+			*isel = pctl_isel_lpuart2_tx;
+			*val = 0;
+			break;
+		case pctl_mux_gpio_ad_b1_03:
+			*isel = pctl_isel_lpuart2_rx;
+			*val = 1;
+			break;
+		case pctl_mux_gpio_sd_b1_10:
+			*isel = pctl_isel_lpuart2_rx;
+			*val = 0;
+			break;
+		case pctl_mux_gpio_emc_13:
+			*isel = pctl_isel_lpuart3_tx;
+			*val = 1;
+			break;
+		case pctl_mux_gpio_ad_b1_06:
+			*isel = pctl_isel_lpuart3_tx;
+			*val = 0;
+			break;
+		case pctl_mux_gpio_b0_08:
+			*isel = pctl_isel_lpuart3_tx;
+			*val = 2;
+			break;
+		case pctl_mux_gpio_emc_14:
+			*isel = pctl_isel_lpuart3_rx;
+			*val = 1;
+			break;
+		case pctl_mux_gpio_ad_b1_07:
+			*isel = pctl_isel_lpuart3_rx;
+			*val = 0;
+			break;
+		case pctl_mux_gpio_b0_09:
+			*isel = pctl_isel_lpuart3_rx;
+			*val = 2;
+			break;
+		case pctl_mux_gpio_emc_15:
+			*isel = pctl_isel_lpuart3_cts_b;
+			*val = 0;
+			break;
+		case pctl_mux_gpio_ad_b1_04:
+			*isel = pctl_isel_lpuart3_cts_b;
+			*val = 1;
+			break;
+		case pctl_mux_gpio_emc_19:
+			*isel = pctl_isel_lpuart4_tx;
+			*val = 1;
+			break;
+		case pctl_mux_gpio_b1_00:
+			*isel = pctl_isel_lpuart4_tx;
+			*val = 2;
+			break;
+		case pctl_mux_gpio_sd_b1_00:
+			*isel = pctl_isel_lpuart4_tx;
+			*val = 0;
+			break;
+		case pctl_mux_gpio_emc_20:
+			*isel = pctl_isel_lpuart4_rx;
+			*val = 1;
+			break;
+		case pctl_mux_gpio_b1_01:
+			*isel = pctl_isel_lpuart4_rx;
+			*val = 2;
+			break;
+		case pctl_mux_gpio_sd_b1_01:
+			*isel = pctl_isel_lpuart4_rx;
+			*val = 0;
+			break;
+		case pctl_mux_gpio_emc_23:
+			*isel = pctl_isel_lpuart5_tx;
+			*val = 0;
+			break;
+		case pctl_mux_gpio_b1_12:
+			*isel = pctl_isel_lpuart5_tx;
+			*val = 1;
+			break;
+		case pctl_mux_gpio_emc_24:
+			*isel = pctl_isel_lpuart5_rx;
+			*val = 0;
+			break;
+		case pctl_mux_gpio_b1_13:
+			*isel = pctl_isel_lpuart5_rx;
+			*val = 1;
+			break;
+		case pctl_mux_gpio_emc_25:
+			*isel = pctl_isel_lpuart6_tx;
+			*val = 0;
+			break;
+		case pctl_mux_gpio_ad_b0_12:
+			*isel = pctl_isel_lpuart6_tx;
+			*val = 1;
+			break;
+		case pctl_mux_gpio_emc_26:
+			*isel = pctl_isel_lpuart6_rx;
+			*val = 0;
+			break;
+		case pctl_mux_gpio_ad_b0_03:
+			*isel = pctl_isel_lpuart6_rx;
+			*val = 1;
+			break;
+		case pctl_mux_gpio_emc_31:
+			*isel = pctl_isel_lpuart7_tx;
+			*val = 1;
+			break;
+		case pctl_mux_gpio_sd_b1_08:
+			*isel = pctl_isel_lpuart7_tx;
+			*val = 0;
+			break;
+		case pctl_mux_gpio_emc_32:
+			*isel = pctl_isel_lpuart7_rx;
+			*val = 1;
+			break;
+		case pctl_mux_gpio_sd_b1_09:
+			*isel = pctl_isel_lpuart7_rx;
+			*val = 0;
+			break;
+		case pctl_mux_gpio_emc_38:
+			*isel = pctl_isel_lpuart8_tx;
+			*val = 2;
+			break;
+		case pctl_mux_gpio_ad_b1_10:
+			*isel = pctl_isel_lpuart8_tx;
+			*val = 1;
+			break;
+		case pctl_mux_gpio_sd_b0_04:
+			*isel = pctl_isel_lpuart8_tx;
+			*val = 0;
+			break;
+		case pctl_mux_gpio_emc_39:
+			*isel = pctl_isel_lpuart8_rx;
+			*val = 2;
+			break;
+		case pctl_mux_gpio_ad_b1_11:
+			*isel = pctl_isel_lpuart8_rx;
+			*val = 1;
+			break;
+		case pctl_mux_gpio_sd_b0_05:
+			*isel = pctl_isel_lpuart8_rx;
+			*val = 0;
+			break;
 		default: return -1;
 	}
 
@@ -944,7 +1123,6 @@ int uart_init(void)
 	int i, dev;
 	uint32_t t;
 	uart_t *uart;
-	libtty_callbacks_t callbacks;
 	static const size_t fifoSzLut[] = { 1, 4, 8, 16, 32, 64, 128, 256 };
 
 	memset(&uart_common, 0, sizeof(uart_common));
@@ -972,10 +1150,12 @@ int uart_init(void)
 		if (condCreate(&uart->cond) < 0 || mutexCreate(&uart->lock) < 0)
 			return -1;
 
-		callbacks.arg = uart;
-		callbacks.set_baudrate = set_baudrate;
-		callbacks.set_cflag = set_cflag;
-		callbacks.signal_txready = signal_txready;
+		libtty_callbacks_t callbacks = {
+			.arg = uart,
+			.set_baudrate = set_baudrate,
+			.set_cflag = set_cflag,
+			.signal_txready = signal_txready,
+		};
 
 		if (libtty_init(&uart->tty_common, &callbacks, tty_bufsz[dev], default_baud[dev]) < 0) {
 			return -1;

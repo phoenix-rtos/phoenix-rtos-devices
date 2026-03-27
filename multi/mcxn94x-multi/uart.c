@@ -48,8 +48,8 @@
 
 #define UART_MAX 10
 #define UART_CNT (UARTN_ACTIVE(0) + UARTN_ACTIVE(1) + UARTN_ACTIVE(2) + \
-	UARTN_ACTIVE(3) + UARTN_ACTIVE(4) + UARTN_ACTIVE(5) + UARTN_ACTIVE(6) + \
-	UARTN_ACTIVE(7) + UARTN_ACTIVE(8))
+		UARTN_ACTIVE(3) + UARTN_ACTIVE(4) + UARTN_ACTIVE(5) + UARTN_ACTIVE(6) + \
+		UARTN_ACTIVE(7) + UARTN_ACTIVE(8))
 
 
 #ifndef UART_RXFIFOSIZE
@@ -58,7 +58,7 @@
 
 
 typedef struct uart_s {
-	char stack[1024] __attribute__ ((aligned(8)));
+	char stack[1024] __attribute__((aligned(8)));
 
 	volatile uint32_t *base;
 	uint32_t mode;
@@ -404,7 +404,6 @@ static int uart_init(unsigned int minor)
 {
 	uint32_t t;
 	uart_t *uart;
-	libtty_callbacks_t callbacks;
 	static const size_t fifoSzLut[] = { 1, 4, 8, 16, 32, 64, 128, 256 };
 	static const struct {
 		volatile uint32_t *base;
@@ -443,10 +442,12 @@ static int uart_init(unsigned int minor)
 		return -1;
 	}
 
-	callbacks.arg = uart;
-	callbacks.set_baudrate = set_baudrate;
-	callbacks.set_cflag = set_cflag;
-	callbacks.signal_txready = signal_txready;
+	libtty_callbacks_t callbacks = {
+		.arg = uart,
+		.set_baudrate = set_baudrate,
+		.set_cflag = set_cflag,
+		.signal_txready = signal_txready,
+	};
 
 	if (libtty_init(&uart->tty_common, &callbacks, tty_bufsz[minor], default_baud[minor]) < 0) {
 		resourceDestroy(uart->cond);
