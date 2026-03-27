@@ -15,6 +15,8 @@
 #ifndef _STM32U3_BASE_H_
 #define _STM32U3_BASE_H_
 
+#define EXTI_BASE ((void *)0x50032000U)
+
 #define GPDMA_BASE ((void *)0x50020000U)
 
 #define USART1_BASE ((void *)0x50013800U)
