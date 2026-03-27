@@ -41,6 +41,12 @@
 #define MAX_GPIO   gpioq
 #endif
 
+#if defined(__CPU_STM32U3)
+#define EXTI_NEW_LAYOUT
+#define EXTI_LINES 23
+#define MAX_GPIO   gpioh
+#endif
+
 #if !defined(EXTI_CONTINUOUS_IRQS)
 #define EXTI_CONTINUOUS_IRQS EXTI_IRQS
 #endif
@@ -285,6 +291,8 @@ int exti_clear_irq(unsigned int line)
 		0x007dffffU, 0x00000078U
 #elif defined(__CPU_STM32N6)
 		0x0030ffffU, 0x01480180U, 0x000007f4U
+#elif defined(__CPU_STM32U3)
+		0x007fffffU
 #endif
 	};
 
