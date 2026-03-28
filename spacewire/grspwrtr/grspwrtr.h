@@ -20,13 +20,17 @@
 
 typedef struct {
 	/* clang-format off */
-	enum { spwrtr_pmap_set = 0, spwrtr_pmap_get, spwrtr_pctrl, spwrtr_reset } type;
+	enum { spwrtr_pmap_set = 0, spwrtr_pmap_get, spwrtr_clkdiv_set, spwrtr_clkdiv_get, spwrtr_reset } type;
 	/* clang-format on */
 	union {
 		struct {
 			uint8_t port;
 			uint32_t enPorts;
 		} mapping;
+		struct {
+			uint8_t port;
+			uint8_t div;
+		} clkdiv;
 	} task;
 } spwrtr_t;
 
