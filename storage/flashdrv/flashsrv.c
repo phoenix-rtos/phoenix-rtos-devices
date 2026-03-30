@@ -35,6 +35,10 @@
 #include <libjffs2.h>
 #endif
 
+#if FLASHSRV_ENABLE_LITTLEFS
+#include <liblfs.h>
+#endif
+
 
 #define STRG_PATH "mtd0"
 
@@ -555,6 +559,15 @@ int main(int argc, char **argv)
 	err = storage_registerfs("jffs2", libjffs2_mount, libjffs2_umount);
 	if (err < 0) {
 		LOG_ERROR("failed to register jffs2 (%d)\n", err);
+		exit(EXIT_FAILURE);
+	}
+#endif
+
+#if FLASHSRV_ENABLE_LITTLEFS
+	/* Register LittleFS filesystem */
+	err = storage_registerfs("littlefs", liblfs_storage_mount, liblfs_storage_umount);
+	if (err < 0) {
+		LOG_ERROR("failed to register littlefs (%d)\n", err);
 		exit(EXIT_FAILURE);
 	}
 #endif

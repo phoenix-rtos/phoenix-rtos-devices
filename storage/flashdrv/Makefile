@@ -17,6 +17,8 @@ else ifneq ($(filter $(TARGET_SUBFAMILY), stm32n6),)
 	LOCAL_LDFLAGS := -z stack-size=2048 -z noexecstack
 	LOCAL_CFLAGS += -DFLASHSRV_STORAGE_STACK_SIZE=2048
 	DEP_LIBS := libstm32_extflash
+	LOCAL_CFLAGS += -DFLASHSRV_ENABLE_LITTLEFS=1
+	LIBS += liblfs
 endif
 
 include $(binary.mk)
