@@ -535,7 +535,7 @@ int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const
 			/* WARN: passing ioctl half-duplex enable by value */
 			int enable = (int)(uintptr_t)in_arg;
 			log_ioctl("TIOCSHALFD: enable = %d", enable);
-			if ((enable != 0) || (enable != 1)) {
+			if ((enable != 0) && (enable != 1)) {
 				log_warn("halfduplex enable (%d) != {0,1}", enable);
 				return -EINVAL;
 			}
