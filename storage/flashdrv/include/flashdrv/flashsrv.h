@@ -27,6 +27,11 @@
 #define FLASHSRV_ENABLE_JFFS2 0
 #endif
 
+
+#ifndef FLASHSRV_ENABLE_LITTLEFS
+#define FLASHSRV_ENABLE_LITTLEFS 0
+#endif
+
 void flashsrv_register(const struct flash_driver *driver);
 
 
