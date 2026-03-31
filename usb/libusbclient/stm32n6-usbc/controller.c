@@ -5,7 +5,7 @@
  *
  * IRQ controller
  *
- * Copyright 2025 Phoenix Systems
+ * Copyright 2026 Phoenix Systems
  * Author: Radosław Szewczyk, Rafał Mikielis
  *
  * This file is part of Phoenix-RTOS.
@@ -26,7 +26,7 @@
 
 #include "client.h"
 
-#define USB_REG(x) ctrl_common.dc->base[x]
+#define USB_REG(x) *(ctrl_common.dc->base + x)
 
 struct {
 	usb_dc_t *dc;
@@ -52,26 +52,26 @@ void ctrl_hifiq_handler(uint32_t *irqStatus)
 	if (IS_IRQ(*irqStatus, GINTSTS_USBRST)) {
 
 		/* clear IRQ */
-		USB_REG(GINTSTS) = (1UL << GINTSTS_USBRST);
+		USB_REG(otg_gintsts) = (1UL << GINTSTS_USBRST);
 	}
 
 	/* ENUMDNE */
 	if (IS_IRQ(*irqStatus, GINTSTS_ENUMDNE)) {
 
 		/* clear IRQ */
-		USB_REG(GINTSTS) = (1UL << GINTSTS_ENUMDNE);
+		USB_REG(otg_gintsts) = (1UL << GINTSTS_ENUMDNE);
 	}
 
 	/* RXFLVL */
 	if (IS_IRQ(*irqStatus, GINTSTS_RXFLVL)) {
 
 		/* mask IRQ */
-		USB_REG(GINTMSK) &= ~(1UL << GINTSTS_RXFLVL);
+		USB_REG(otg_gintmsk) &= ~(1UL << GINTSTS_RXFLVL);
 
 		clbc_rxFifoData();
 
 		/* unmask IRQ */
-		USB_REG(GINTMSK) |= (1UL << GINTSTS_RXFLVL);
+		USB_REG(otg_gintmsk) |= (1UL << GINTSTS_RXFLVL);
 		*irqStatus &= ~(1UL << GINTSTS_RXFLVL);
 	}
 
@@ -79,8 +79,8 @@ void ctrl_hifiq_handler(uint32_t *irqStatus)
 	if (IS_IRQ(*irqStatus, GINTSTS_OEPINT)) {
 
 		epNum = 0U;
-		daintClear = USB_REG(DAINT);
-		daintClear &= USB_REG(DAINTMSK);
+		daintClear = USB_REG(otg_daint);
+		daintClear &= USB_REG(otg_daintmsk);
 		daintClear &= 0xFFFF0000UL;
 		ctrl_common.dc->daintClear |= daintClear;
 
@@ -88,13 +88,13 @@ void ctrl_hifiq_handler(uint32_t *irqStatus)
 
 		while (daintClear != 0U) {
 			if ((daintClear & 0x1U) != 0U) {
-				reg = USB_REG(DOEPINT0 + epNum * EP_STRIDE);
+				reg = USB_REG(otg_doepint0 + epNum * EP_STRIDE);
 
 				/* save DOEPINT snapshot */
 				ctrl_common.dc->irqPendingDOEPINT[epNum] |= reg;
 
 				/* clear IRQ */
-				USB_REG(DOEPINT0 + epNum * EP_STRIDE) = reg;
+				USB_REG(otg_doepint0 + epNum * EP_STRIDE) = reg;
 			}
 			epNum++;
 			daintClear >>= 1U;
@@ -105,27 +105,27 @@ void ctrl_hifiq_handler(uint32_t *irqStatus)
 	if (IS_IRQ(*irqStatus, GINTSTS_IEPINT)) {
 
 		epNum = 0U;
-		daintClear = USB_REG(DAINT);
-		daintClear &= USB_REG(DAINTMSK);
+		daintClear = USB_REG(otg_daint);
+		daintClear &= USB_REG(otg_daintmsk);
 		daintClear &= 0xFFFFUL;
 		ctrl_common.dc->daintClear |= daintClear;
 
 		while (daintClear != 0U) {
 			if ((daintClear & 0x1U) != 0U) {
-				reg = USB_REG(DIEPINT0 + epNum * EP_STRIDE);
+				reg = USB_REG(otg_diepint0 + epNum * EP_STRIDE);
 
 				/* save DIEPINT snapshot */
 				ctrl_common.dc->irqPendingDIEPINT[epNum] |= reg;
 
 				if (IS_IRQ(reg, DIEPINT_TXFE)) {
 					/* TXFE must be serviced in ISR */
-					USB_REG(DIEPEMPMSK) &= ~(1UL << epNum);
+					USB_REG(otg_diepempmsk) &= ~(1UL << epNum);
 					ctrl_common.dc->irqPendingDIEPINT[epNum] &= ~(1UL << DIEPINT_TXFE);
 					clbc_sendEpData(epNum);
 				}
 
 				/* clear IRQ */
-				USB_REG(DIEPINT0 + epNum * EP_STRIDE) = reg;
+				USB_REG(otg_diepint0 + epNum * EP_STRIDE) = reg;
 			}
 			epNum++;
 			daintClear >>= 1U;
@@ -135,7 +135,7 @@ void ctrl_hifiq_handler(uint32_t *irqStatus)
 	/* MMIS */
 	if (IS_IRQ(*irqStatus, GINTSTS_MMIS)) {
 
-		USB_REG(GINTSTS) = (1 << GINTSTS_MMIS);
+		USB_REG(otg_gintsts) = (1 << GINTSTS_MMIS);
 		*irqStatus &= ~(1UL << GINTSTS_MMIS);
 	}
 
@@ -143,37 +143,37 @@ void ctrl_hifiq_handler(uint32_t *irqStatus)
 	if (IS_IRQ(*irqStatus, GINTSTS_WKUPINT)) {
 
 		/* RWUSIG */
-		USB_REG(DCTL) &= ~(0x1);
+		USB_REG(otg_dctl) &= ~(0x1);
 
-		USB_REG(GINTSTS) = (1UL << GINTSTS_WKUPINT);
+		USB_REG(otg_gintsts) = (1UL << GINTSTS_WKUPINT);
 		*irqStatus &= ~(1UL << GINTSTS_WKUPINT);
 	}
 
 	/* ESUSP */
 	if (IS_IRQ(*irqStatus, GINTSTS_ESUSP)) {
 
-		USB_REG(GINTSTS) = (1UL << GINTSTS_ESUSP);
+		USB_REG(otg_gintsts) = (1UL << GINTSTS_ESUSP);
 		*irqStatus &= ~(1UL << GINTSTS_ESUSP);
 	}
 
 	/* USBSUSP */
 	if (IS_IRQ(*irqStatus, GINTSTS_USBSUSP)) {
 
-		USB_REG(GINTSTS) = (1UL << GINTSTS_USBSUSP);
+		USB_REG(otg_gintsts) = (1UL << GINTSTS_USBSUSP);
 	}
 
 	/* SOF */
 	if (IS_IRQ(*irqStatus, GINTSTS_SOF)) {
 
-		USB_REG(GINTSTS) = (1UL << GINTSTS_SOF);
+		USB_REG(otg_gintsts) = (1UL << GINTSTS_SOF);
 		*irqStatus &= ~(1UL << GINTSTS_SOF);
 	}
 
 	/* OTGINT */
 	if (IS_IRQ(*irqStatus, GINTSTS_OTGINT)) {
 
-		reg = USB_REG(GOTGINT);
-		USB_REG(GOTGINT) = reg;
+		reg = USB_REG(otg_gotgint);
+		USB_REG(otg_gotgint) = reg;
 		*irqStatus &= ~(1UL << GINTSTS_OTGINT);
 	}
 

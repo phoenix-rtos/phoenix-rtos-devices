@@ -5,7 +5,7 @@
  *
  * Physical layer configuration
  *
- * Copyright 2025 Phoenix Systems
+ * Copyright 2026 Phoenix Systems
  * Author: Olaf Czerwinski, Radosław Szewczyk, Rafał Mikielis
  *
  * This file is part of Phoenix-RTOS.
@@ -27,9 +27,9 @@
 #include "phy.h"
 #include "client.h"
 
-#define USB_REG(x)     common.otg_base[x]
-#define USB_PHY_REG(x) common.phyc_base[x]
-#define RCC_REG(x)     common.rcc_base[x]
+#define USB_REG(x)     *(common.otg_base + x)
+#define USB_PHY_REG(x) *(common.phyc_base + x)
+#define RCC_REG(x)     *(common.rcc_base + x)
 
 static struct {
 	volatile uint32_t *otg_base;
@@ -134,7 +134,7 @@ void phy_unmapRegs(void)
 
 static int phy_otg1_clk_enable(void)
 {
-	/* (RCC_BASE_ADDR + RCC_AHB5ENSR) |= (1 << 26) */
+	/* (RCC_BASE_ADDR + RCC_PLL_STRIDE) |= (1 << 26) */
 	platformctl_t pctl_otg1_set = {
 		.action = pctl_set,
 		.type = pctl_devclk,
@@ -149,7 +149,7 @@ static int phy_otg1_clk_enable(void)
 
 static int phy_otg1phy_clk_enable(void)
 {
-	/* (RCC_BASE_ADDR + RCC_AHB5ENSR) |= (1 << 27) */
+	/* (RCC_BASE_ADDR + RCC_PLL_STRIDE) |= (1 << 27) */
 	platformctl_t pctl_otgphy1_set = {
 		.action = pctl_set,
 		.type = pctl_devclk,
@@ -183,30 +183,30 @@ int phy_clk_reset(void)
 	}
 
 	/* Reset modules: Bits: 27(PHY), 26(Core), 23(PhyCtrl) - RM0486 Rev 2; page: 3743/12 */
-	RCC_REG(RCC_AHB5RSTSR) |= (1UL << 23);
-	RCC_REG(RCC_AHB5RSTSR) |= (1UL << 26);
-	RCC_REG(RCC_AHB5RSTSR) |= (1UL << 27);
+	RCC_REG(rcc_ahb5rstsr) |= (1UL << 23);
+	RCC_REG(rcc_ahb5rstsr) |= (1UL << 26);
+	RCC_REG(rcc_ahb5rstsr) |= (1UL << 27);
 
 	/* Setting hse_div2_osc_ck = hse_osc_ck/2 is done in plo */
 
 	/* Deassert PhyCtrl reset */
-	RCC_REG(RCC_AHB5RSTCR) = (1 << 23);
+	RCC_REG(rcc_ahb5rstcr) = (1 << 23);
 
 	/* Delay before accessing USBCPHY_CR */
 	usleep(1000);
 
 	/* Select OTHPHY1 frequency */
-	USB_PHY_REG(USBPHYC_CR) &= ~(0x7U << 4);
-	USB_PHY_REG(USBPHYC_CR) |= USBPHYC_CR_FSEL_24MHZ;
+	USB_PHY_REG(usbphyc_cr) &= ~(0x7U << 4);
+	USB_PHY_REG(usbphyc_cr) |= USBPHYC_CR_FSEL_24MHZ;
 
 	/* Deassert OTGPHY1 reset */
-	RCC_REG(RCC_AHB5RSTCR) = (1UL << 27);
+	RCC_REG(rcc_ahb5rstcr) = (1UL << 27);
 
 	/* Wait befre releasing OTG1 reset */
 	usleep(1000);
 
 	/* Deassert OTG1 reset  */
-	RCC_REG(RCC_AHB5RSTCR) = (1UL << 26);
+	RCC_REG(rcc_ahb5rstcr) = (1UL << 26);
 
 	__asm__ volatile("dsb");
 
@@ -221,47 +221,47 @@ int phy_clk_reset(void)
 static void vbusHack(void)
 {
 	/* Override physical VBUS pin state to force B-Session Valid ([6] BVALOEN + [7] BVALOVAL) */
-	USB_REG(GOTGCTL) |= (1U << 6);
-	USB_REG(GOTGCTL) |= (1U << 7);
+	USB_REG(otg_gotgctl) |= (1U << 6);
+	USB_REG(otg_gotgctl) |= (1U << 7);
 
-	USB_REG(GCCFG) |= (1 << 23);
+	USB_REG(otg_gccfg) |= (1 << 23);
 }
 
 
 static void phy_start(void)
 {
 	/* Enable interrupts */
-	USB_REG(GAHBCFG) |= (1U);
+	USB_REG(otg_gahbcfg) |= (1U);
 
 	/* Ungate clocks */
-	USB_REG(PCGCCTL) &= ~(0x3U);
+	USB_REG(otg_pcgcctl) &= ~(0x3U);
 
 	/* Clear soft reset */
-	USB_REG(DCTL) &= ~(1U << 1);
+	USB_REG(otg_dctl) &= ~(1U << 1);
 }
 
 
 int phy_clear_config(void)
 {
-	int cnt, ret;
+	int cnt, ret, epSet;
 
 	/* clear TX FIFO sizes */
-	USB_REG(DIEPTXF0) = 0UL;
+	USB_REG(otg_dieptxf0) = 0UL;
 	for (cnt = 1; cnt < ENDPOINTS_NUMBER; cnt++) {
-		USB_REG(DIEPTXFx + (cnt - 1)) = 0UL;
+		USB_REG(otg_dieptxfx + (cnt - 1)) = 0UL;
 	}
 
 	/* Disable pull-downs in device mode */
-	USB_REG(GCCFG) &= ~(1UL << 25);
+	USB_REG(otg_gccfg) &= ~(1UL << 25);
 
 	vbusHack();
 
 	/* clear clk gating options */
-	USB_REG(PCGCCTL) = 0U;
+	USB_REG(otg_pcgcctl) = 0U;
 
 	/* Program device speed (FS) */
-	USB_REG(DCFG) &= ~(3U);
-	USB_REG(DCFG) |= 1U;
+	USB_REG(otg_dcfg) &= ~(3U);
+	USB_REG(otg_dcfg) |= 1U;
 
 	ret = clbc_flushTxFifo(16U);
 	if (ret < 0) {
@@ -276,72 +276,73 @@ int phy_clear_config(void)
 	}
 
 	/* clear pending interrupts */
-	USB_REG(DIEPMSK) = 0UL;
-	USB_REG(DOEPMSK) = 0UL;
-	USB_REG(DAINTMSK) = 0UL;
+	USB_REG(otg_diepmsk) = 0UL;
+	USB_REG(otg_doepmsk) = 0UL;
+	USB_REG(otg_daintmsk) = 0UL;
 
 	for (cnt = 0; cnt < ENDPOINTS_NUMBER; cnt++) {
 
+		epSet = cnt * EP_STRIDE;
 		/* IEPs clearing */
-		if (((USB_REG(DIEPCTL0 + cnt * EP_STRIDE) >> DIEPCTL_EPENA) & 1U) == 1U) {
+		if (((USB_REG(otg_diepctl0 + epSet) >> DIEPCTL_EPENA) & 1U) == 1U) {
 			if (cnt == 0U) {
-				USB_REG(DIEPCTL0) |= (1UL << DIEPCTL_SNAK);
+				USB_REG(otg_diepctl0) |= (1UL << DIEPCTL_SNAK);
 			}
 			else {
-				USB_REG(DIEPCTL0 + cnt * EP_STRIDE) |= ((1UL << DIEPCTL_SNAK) | (1UL << DIEPCTL_EPDIS));
+				USB_REG(otg_diepctl0 + epSet) |= ((1UL << DIEPCTL_SNAK) | (1UL << DIEPCTL_EPDIS));
 			}
 		}
 		else {
-			USB_REG(DIEPCTL0 + cnt * EP_STRIDE) = 0UL;
+			USB_REG(otg_diepctl0 + epSet) = 0UL;
 		}
-		USB_REG(DIEPTSIZ0 + cnt * EP_STRIDE) = 0UL;
-		USB_REG(DIEPINT0 + cnt * EP_STRIDE) = DIEPINTxWrMsk;
+		USB_REG(otg_dieptsiz0 + epSet) = 0UL;
+		USB_REG(otg_diepint0 + epSet) = DIEPINTxWrMsk;
 
 		/* OEPs clearing */
-		if (((USB_REG(DOEPCTL0 + cnt * EP_STRIDE) >> DOEPCTL_EPENA) & 1U) == 1U) {
+		if (((USB_REG(otg_doepctl0 + epSet) >> DOEPCTL_EPENA) & 1U) == 1U) {
 			if (cnt == 0U) {
-				USB_REG(DOEPCTL0) |= (1UL << DOEPCTL_SNAK);
+				USB_REG(otg_doepctl0) |= (1UL << DOEPCTL_SNAK);
 			}
 			else {
-				USB_REG(DOEPCTL0 + cnt * EP_STRIDE) |= ((1UL << DOEPCTL_SNAK) | (1UL << DOEPCTL_EPDIS));
+				USB_REG(otg_doepctl0 + epSet) |= ((1UL << DOEPCTL_SNAK) | (1UL << DOEPCTL_EPDIS));
 			}
 		}
 		else {
-			USB_REG(DOEPCTL0 + cnt * EP_STRIDE) = 0UL;
+			USB_REG(otg_doepctl0 + epSet) = 0UL;
 		}
-		USB_REG(DOEPTSIZ0 + cnt * EP_STRIDE) = 0UL;
-		USB_REG(DOEPINT0 + cnt * EP_STRIDE) = DOEPINTxWrMsk;
+		USB_REG(otg_doeptsiz0 + epSet) = 0UL;
+		USB_REG(otg_doepint0 + epSet) = DOEPINTxWrMsk;
 	}
 
 	/* Clear interrupts */
-	USB_REG(GINTSTS) |= GINTSTSWrMsk;
+	USB_REG(otg_gintsts) |= GINTSTSWrMsk;
 
 	/* unmask Rx FIFO non-empty */
-	USB_REG(GINTMSK) |= (1U << GINTSTS_RXFLVL);
+	USB_REG(otg_gintmsk) |= (1U << GINTSTS_RXFLVL);
 
 	/* OTG_GINTMSK unmask: USB reset, Enumeration Done, Early suspend, USB suspend, SOF...*/
-	USB_REG(GINTMSK) |= ((1UL << GINTSTS_USBRST) | (1UL << GINTSTS_ENUMDNE) |
+	USB_REG(otg_gintmsk) |= ((1UL << GINTSTS_USBRST) | (1UL << GINTSTS_ENUMDNE) |
 			(1UL << GINTSTS_ESUSP) | (1UL << GINTSTS_USBSUSP) |
 			(1UL << GINTSTS_SOF) | (1UL << GINTSTS_OEPINT) |
 			(1UL << GINTSTS_IEPINT) | (1UL << GINTSTS_OTGINT));
 
 	/* setting USB turnaround time to min val. 0x9 */
-	USB_REG(GUSBCFG) &= ~(0xFUL << GUSBCFG_TRDT);
-	USB_REG(GUSBCFG) |= (0x9UL << GUSBCFG_TRDT);
+	USB_REG(otg_gusbcfg) &= ~(0xFUL << GUSBCFG_TRDT);
+	USB_REG(otg_gusbcfg) |= (0x9UL << GUSBCFG_TRDT);
 
 	/* set USB PLL clock to 48MHz in low-power for FS */
 #if DEVICE_SPEED == USB_SPEED_FS
-	USB_REG(GUSBCFG) |= (0x1UL << GUSBCFG_PHYLPC);
+	USB_REG(otg_gusbcfg) |= (0x1UL << GUSBCFG_PHYLPC);
 #endif
 
 	/* non-zero-length status OUT handshake set to STALL */
-	USB_REG(DCFG) |= (1U << DCFG_NZLSOHSK);
+	USB_REG(otg_dcfg) |= (1U << DCFG_NZLSOHSK);
 
 	/* setting Periodic Frame Interval to 95% */
-	USB_REG(DCFG) |= (3UL << DCFG_PFIVL);
+	USB_REG(otg_dcfg) |= (3UL << DCFG_PFIVL);
 
 	/* Set soft reset */
-	USB_REG(DCTL) |= (1U << 1);
+	USB_REG(otg_dctl) |= (1U << 1);
 
 	return EOK;
 }
@@ -350,16 +351,16 @@ int phy_clear_config(void)
 void phy_config(usb_dc_t *dc)
 {
 	/* FIFO RAM: OTG_GRXFSIZ	-  Set Rx FIFO */
-	USB_REG(GRXFSIZ) = RX_FIFO_DEPTH;
+	USB_REG(otg_grxfsiz) = RX_FIFO_DEPTH;
 
 	/* FIFO RAM: OTG_DIEPTXF0  - EP0 */
-	USB_REG(DIEPTXF0) = (TX0FD << 16) | (TX0FSA);
+	USB_REG(otg_dieptxf0) = (TX0FD << 16) | (TX0FSA);
 
 	/* FIFO RAM: OTG_DIEPTXF1 - EP1 (CDC Control IN)*/
-	USB_REG(DIEPTXFx) = (TX1FD << 16) | (TX1FSA);
+	USB_REG(otg_dieptxfx) = (TX1FD << 16) | (TX1FSA);
 
 	/* FIFO RAM: OTG_DIEPTXF2 - EP2 (CDC Bulk IN)*/
-	USB_REG(DIEPTXFx + 0x1U) = (TX2FD << 16) | (TX2FSA);
+	USB_REG(otg_dieptxfx + 0x1U) = (TX2FD << 16) | (TX2FSA);
 
 	phy_start();
 }
@@ -370,7 +371,7 @@ int phy_usbss_init(void)
 	int ret;
 
 	/* Disable interrupts */
-	USB_REG(GAHBCFG) &= ~(1U);
+	USB_REG(otg_gahbcfg) &= ~(1U);
 
 	/* Soft reset USBSS */
 	ret = clbc_resetUSBSS();
@@ -398,18 +399,18 @@ static uint32_t getPLLSourceFreq(uint32_t PLLsource)
 	switch (PLLsource) {
 		case 0U:
 			/* HSI */
-			rccReady = ((RCC_REG(RCC_SR) >> 3) & 1);
+			rccReady = ((RCC_REG(rcc_sr) >> 3) & 1);
 			if (rccReady != 0) {
-				divider = ((RCC_REG(RCC_HSICFGR) >> 7) & 3);
+				divider = ((RCC_REG(rcc_hsicfgr) >> 7) & 3);
 				pllinputfreq = (64000000UL >> divider);
 			}
 			break;
 
 		case 1U:
 			/* MSI */
-			rccReady = ((RCC_REG(RCC_SR) >> 2) & 1);
+			rccReady = ((RCC_REG(rcc_sr) >> 2) & 1);
 			if (rccReady != 0) {
-				msiFreq = ((RCC_REG(RCC_MSICFGR) >> 9) & 1);
+				msiFreq = ((RCC_REG(rcc_msicfgr) >> 9) & 1);
 				/* 4MHz */
 				if (msiFreq == 0) {
 					pllinputfreq = 4000000UL;
@@ -422,7 +423,7 @@ static uint32_t getPLLSourceFreq(uint32_t PLLsource)
 
 		case 2U:
 			/* HSE */
-			rccReady = ((RCC_REG(RCC_SR) >> 4) & 1);
+			rccReady = ((RCC_REG(rcc_sr) >> 4) & 1);
 			if (rccReady != 0) {
 				pllinputfreq = 48000000UL;
 			}
@@ -455,7 +456,7 @@ static uint32_t calcPLLFreq(uint32_t pllInputFreq, uint32_t M, uint32_t N, uint3
 
 static int isBypassEnabledPLL1(int pllNum)
 {
-	return ((RCC_REG(RCC_PLL1CFGR1 + (pllNum * RCC_PLL_STRIDE)) >> 27) & 1U);
+	return ((RCC_REG(rcc_pll1cfgr1 + (pllNum * RCC_PLL_STRIDE)) >> 27) & 1U);
 }
 
 
@@ -465,30 +466,31 @@ static uint32_t getPLLXFreq(uint8_t pllNum)
 	uint32_t divm;
 	uint32_t isPllEnabled, source, pllinputfreq;
 	uint32_t valN, valFRACN, valP1, valP2;
+	int pllSet = pllNum * RCC_PLL_STRIDE;
 
-	uint32_t isPllReady = ((RCC_REG(RCC_SR) >> (8 + pllNum)) & 1);
+	uint32_t isPllReady = ((RCC_REG(rcc_sr) >> (8 + pllNum)) & 1);
 
 	if (isPllReady != 0U) {
-		isPllEnabled = ((RCC_REG(RCC_PLL1CFGR3 + (pllNum * RCC_PLL_STRIDE)) >> 30) & 1);
+		isPllEnabled = ((RCC_REG(rcc_pll1cfgr3 + pllSet) >> 30) & 1);
 		if (isPllEnabled != 0U) {
-			source = (RCC_REG(RCC_PLL1CFGR1 + (pllNum * RCC_PLL_STRIDE)) >> 27) & 7UL;
+			source = (RCC_REG(rcc_pll1cfgr1 + pllSet) >> 27) & 7UL;
 			pllinputfreq = getPLLSourceFreq(source);
 
 			if (pllinputfreq != 0U) {
-				divm = ((RCC_REG(RCC_PLL1CFGR1 + (pllNum * RCC_PLL_STRIDE)) >> 20) & 0x3F);
+				divm = ((RCC_REG(rcc_pll1cfgr1 + pllSet) >> 20) & 0x3F);
 
 				if (divm != 0) {
-					valN = ((RCC_REG(RCC_PLL1CFGR1 + (pllNum * RCC_PLL_STRIDE)) >> 8) & 0xFFF);
-					valFRACN = ((RCC_REG(RCC_PLL1CFGR2 + (pllNum * RCC_PLL_STRIDE)) >> 0) & 0xFFFFFF);
-					valP1 = ((RCC_REG(RCC_PLL1CFGR2 + (pllNum * RCC_PLL_STRIDE)) >> 27) & 0x7);
-					valP2 = ((RCC_REG(RCC_PLL1CFGR2 + (pllNum * RCC_PLL_STRIDE)) >> 24) & 0x7);
+					valN = ((RCC_REG(rcc_pll1cfgr1 + pllSet) >> 8) & 0xFFF);
+					valFRACN = ((RCC_REG(rcc_pll1cfgr2 + pllSet) >> 0) & 0xFFFFFF);
+					valP1 = ((RCC_REG(rcc_pll1cfgr2 + pllSet) >> 27) & 0x7);
+					valP2 = ((RCC_REG(rcc_pll1cfgr2 + pllSet) >> 24) & 0x7);
 					pllinputfreq = calcPLLFreq(pllinputfreq, divm, valN, valFRACN, valP1, valP2);
 				}
 			}
 		}
 	}
 	else if (isBypassEnabledPLL1(pllNum) != 0) {
-		source = ((RCC_REG(RCC_PLL1CFGR1 + (pllNum * RCC_PLL_STRIDE)) >> 28) & 0x7);
+		source = ((RCC_REG(rcc_pll1cfgr1 + pllSet) >> 28) & 0x7);
 		plloutputfreq = getPLLSourceFreq(source);
 	}
 	else {
@@ -502,22 +504,22 @@ static uint32_t getPLLXFreq(uint8_t pllNum)
 static uint32_t getSysClockFrequency(void)
 {
 	uint32_t frequency = 0;
-	uint32_t source = ((RCC_REG(RCC_IC2CFGR) >> 28) & 3);
-	uint32_t divider = (((RCC_REG(RCC_IC2CFGR) >> 16) & 0xFF) + 1UL);
-	uint32_t sysClkSource = (RCC_REG(RCC_CFGR1) >> 28) & 3U;
+	uint32_t source = ((RCC_REG(rcc_ic2cfgr) >> 28) & 3);
+	uint32_t divider = (((RCC_REG(rcc_ic2cfgr) >> 16) & 0xFF) + 1UL);
+	uint32_t sysClkSource = (RCC_REG(rcc_cfgr1) >> 28) & 3U;
 	uint32_t hsiDivider, msiVal, msifreqsel, hseVal;
 
 	switch (sysClkSource) {
 		case 0U:
 			/* CLKSOURCE_STATUS_HSI */
-			hsiDivider = ((RCC_REG(RCC_HSICFGR) >> 7) & 3);
+			hsiDivider = ((RCC_REG(rcc_hsicfgr) >> 7) & 3);
 			frequency = (64000000UL >> hsiDivider);
 			break;
 
 		case 1U:
 			/* CLKSOURCE_STATUS_MSI */
 			msiVal = 4000000UL;
-			msifreqsel = ((RCC_REG(RCC_MSICFGR) >> 9) & 1);
+			msifreqsel = ((RCC_REG(rcc_msicfgr) >> 9) & 1);
 			frequency = (msifreqsel ? (msiVal << 2) : (msiVal));
 			break;
 
@@ -544,7 +546,7 @@ static uint32_t getSysClockFrequency(void)
 uint32_t phy_getHclkFreq(void)
 {
 	uint32_t sysClockFreq = getSysClockFrequency();
-	uint32_t ahbPrescaler = ((RCC_REG(RCC_CFGR2) >> 20) & 0x7U);
+	uint32_t ahbPrescaler = ((RCC_REG(rcc_cfgr2) >> 20) & 0x7U);
 
 	return (sysClockFreq >> ahbPrescaler);
 }
