@@ -654,13 +654,6 @@ static int usbacm_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion, u
 			break;
 		}
 
-		err = usb_setConfiguration(drv, dev->pipeCtrl, 1);
-		if (err != 0) {
-			fprintf(stderr, "usbacm: Fail to set configuration\n");
-			err = -EINVAL;
-			break;
-		}
-
 		dev->pipeBulkIN = usb_open(drv, insertion, usb_transfer_bulk, usb_dir_in);
 		if (dev->pipeBulkIN < 0) {
 			err = -EINVAL;
