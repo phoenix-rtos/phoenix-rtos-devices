@@ -30,7 +30,7 @@
 #include <cdc.h>
 #include <board_config.h>
 
-#include "../libtty/fifo.h"
+#include <lf-fifo.h>
 
 
 #ifndef USBACM_N_MSG_THREADS
@@ -85,7 +85,7 @@ typedef struct _usbacm_dev {
 	/* blocking/nonblocking READ state - protected by rxLock */
 	char *rxptr;
 	size_t rxbuflen;
-	fifo_t *fifo;
+	lf_fifo_t fifo;
 	handle_t rxLock;
 	handle_t rxCond;
 	int rxState;
@@ -152,12 +152,7 @@ static int _usbacm_rxStop(usbacm_dev_t *dev)
 
 static void usbacm_fifoPush(usbacm_dev_t *dev, const char *data, size_t size)
 {
-	unsigned i;
-
-	mutexLock(dev->rxLock);
-	for (i = 0; i < size; i++)
-		fifo_push(dev->fifo, data[i]);
-	mutexUnlock(dev->rxLock);
+	lf_fifo_push_many(&dev->fifo, (const void *)data, size);
 }
 
 
@@ -201,7 +196,7 @@ static void usbacm_free(usbacm_dev_t *dev)
 	fprintf(stdout, "usbacm: Device removed: %s\n", dev->path);
 	remove(dev->path);
 
-	free(dev->fifo);
+	free(dev->fifo.data);
 	resourceDestroy(dev->rxCond);
 	resourceDestroy(dev->rxLock);
 	free(dev);
@@ -344,9 +339,7 @@ static int usbacm_read(usbacm_dev_t *dev, char *data, size_t len)
 	mutexLock(dev->rxLock);
 	do {
 		if ((dev->flags & O_NONBLOCK) && (dev->rxState == RxRunning)) {
-			for (ret = 0; ret < len && !fifo_is_empty(dev->fifo); ret++) {
-				data[ret] = fifo_pop_back(dev->fifo);
-			}
+			ret = lf_fifo_pop_many(&dev->fifo, (void *)data, len);
 		}
 		else if ((dev->flags & O_NONBLOCK) == 0 && (dev->rxState == RxStopped)) {
 			dev->rxptr = data;
@@ -449,29 +442,22 @@ static int _usbacm_urbsAlloc(usbacm_dev_t *dev)
 
 static int _usbacm_openNonblock(usbacm_dev_t *dev)
 {
-	/* TODO: switch to lf-fifo */
-	fifo_t *fifo;
 	int ret = 0;
 	TRACE("openNonblock");
 
-	if (dev->fifo != NULL) {
-		fifo = dev->fifo;
-	}
-	else {
-		fifo = malloc(sizeof(fifo_t) + RX_FIFO_SIZE);
-		if (fifo == NULL) {
+	if (dev->fifo.data == NULL) {
+		dev->fifo.data = malloc(RX_FIFO_SIZE);
+		if (dev->fifo.data == NULL) {
 			return -ENOMEM;
 		}
 	}
 
-	fifo_init(fifo, RX_FIFO_SIZE);
+	lf_fifo_init(&dev->fifo, dev->fifo.data, RX_FIFO_SIZE);
 
 	mutexLock(dev->rxLock);
-	dev->fifo = fifo;
-
 	if (_usbacm_rxStart(dev) != 0) {
-		dev->fifo = NULL;
-		free(fifo);
+		free(dev->fifo.data);
+		dev->fifo.data = NULL;
 		ret = -EIO;
 	}
 	mutexUnlock(dev->rxLock);
@@ -598,7 +584,7 @@ static void usbacm_msgthr(void *arg)
 			case mtGetAttr:
 				if (msg.i.attr.type == atPollStatus) {
 					msg.o.attr.val = POLLOUT;
-					if (((dev->flags & O_NONBLOCK) != 0) && fifo_is_empty(dev->fifo)) {
+					if (((dev->flags & O_NONBLOCK) != 0) && lf_fifo_empty(&dev->fifo)) {
 						msg.o.attr.val |= POLLIN;
 					}
 					msg.o.err = EOK;
