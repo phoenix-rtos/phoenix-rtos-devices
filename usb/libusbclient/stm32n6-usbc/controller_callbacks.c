@@ -5,7 +5,7 @@
  *
  * IRQ thread callbacks
  *
- * Copyright 2025 Phoenix Systems
+ * Copyright 2026 Phoenix Systems
  * Author: Radosław Szewczyk, Rafał Mikielis
  *
  * This file is part of Phoenix-RTOS.
@@ -22,7 +22,7 @@
 #define UNALIGNED32_READ(addr)       (((const struct unaligned32 *)(addr))->var)
 #define UNALIGNED32_WRITE(addr, val) (void)((((struct unaligned32 *)(addr))->var) = (val))
 
-#define USB_REG(x) clbc_common.dc->base[x]
+#define USB_REG(x) *(clbc_common.dc->base + x)
 
 
 struct __attribute__((packed)) unaligned32 {
@@ -48,11 +48,11 @@ static void activateEndpoint(int epNum, int epDir, uint32_t epType, uint32_t max
 	if (epDir == USB_EP_DIR_IN) {
 		clbc_common.data->endpts[epNum].in.type = epType;
 
-		USB_REG(DAINTMSK) |= (0xFFFF & ((uint32_t)(1UL << (epNum & 0xFU))));
+		USB_REG(otg_daintmsk) |= (0xFFFF & ((uint32_t)(1UL << (epNum & 0xFU))));
 
 		/* EPs 1-8 are disabled by the core when USBRST event detected */
-		if (((USB_REG(DIEPCTL0 + epNum * EP_STRIDE) >> 15) & 1) == 0) {
-			USB_REG(DIEPCTL0 + epNum * EP_STRIDE) |= ((maxPacket & 0x7FF) | ((epType & 0x3U) << DIEPCTL_EPTYP) |
+		if (((USB_REG(otg_diepctl0 + epNum * EP_STRIDE) >> 15) & 1) == 0) {
+			USB_REG(otg_diepctl0 + epNum * EP_STRIDE) |= ((maxPacket & 0x7FF) | ((epType & 0x3U) << DIEPCTL_EPTYP) |
 					((epNum & 0xFU) << DIEPCTL_TXFNUM) | (0x1UL << DIEPCTL_SD0PID) |
 					(0x1UL << DIEPCTL_USBAEP));
 		}
@@ -60,11 +60,11 @@ static void activateEndpoint(int epNum, int epDir, uint32_t epType, uint32_t max
 	else {
 		clbc_common.data->endpts[epNum].out.type = epType;
 
-		USB_REG(DAINTMSK) |= ((0xFFFF << 16) & ((uint32_t)(1UL << (epNum & 0xFU))) << 16);
+		USB_REG(otg_daintmsk) |= ((0xFFFF << 16) & ((uint32_t)(1UL << (epNum & 0xFU))) << 16);
 
 		/* EPs 1-8 are disabled by the core when USBRST event detected */
-		if (((USB_REG(DOEPCTL0 + epNum * EP_STRIDE) >> 15) & 1) == 0) {
-			USB_REG(DOEPCTL0 + epNum * EP_STRIDE) |= ((maxPacket & 0x7FF) | ((epType & 0x3U) << DOEPCTL_EPTYP) |
+		if (((USB_REG(otg_doepctl0 + epNum * EP_STRIDE) >> 15) & 1) == 0) {
+			USB_REG(otg_doepctl0 + epNum * EP_STRIDE) |= ((maxPacket & 0x7FF) | ((epType & 0x3U) << DOEPCTL_EPTYP) |
 					(0x1UL << DOEPCTL_SD0PID) | (0x1UL << DOEPCTL_USBAEP));
 		}
 	}
@@ -73,36 +73,38 @@ static void activateEndpoint(int epNum, int epDir, uint32_t epType, uint32_t max
 
 void clbc_reset(void)
 {
+	stm32n6_endpt_t *ep = &clbc_common.data->endpts[0];
+
 	activateEndpoint(0, USB_EP_DIR_OUT, USB_EP_TYPE_CTRL, 64U);
-	clbc_common.data->endpts[0].out.maxpacket = 64;
-	clbc_common.data->endpts[0].out.dataBuf.vBuffer = clbc_common.dc->ep0buffRX;
-	clbc_common.data->endpts[0].out.dataBuf.head = clbc_common.data->endpts[0].out.dataBuf.vBuffer;
-	clbc_common.data->endpts[0].out.dataBuf.tail = clbc_common.data->endpts[0].out.dataBuf.vBuffer;
-	clbc_common.data->endpts[0].out.dataBuf.size = (uint16_t)EP0_RX_BUFFER_SIZE;
+	ep->out.maxpacket = 64;
+	ep->out.dataBuf.vBuffer = clbc_common.dc->ep0buffRX;
+	ep->out.dataBuf.head = ep->out.dataBuf.vBuffer;
+	ep->out.dataBuf.tail = ep->out.dataBuf.vBuffer;
+	ep->out.dataBuf.size = (uint16_t)EP0_RX_BUFFER_SIZE;
 
 	activateEndpoint(0, USB_EP_DIR_IN, USB_EP_TYPE_CTRL, 64U);
-	clbc_common.data->endpts[0].in.maxpacket = 64;
-	clbc_common.data->endpts[0].in.dataBuf.vBuffer = clbc_common.dc->ep0buffTX;
-	clbc_common.data->endpts[0].in.dataBuf.head = clbc_common.data->endpts[0].in.dataBuf.vBuffer;
-	clbc_common.data->endpts[0].in.dataBuf.tail = clbc_common.data->endpts[0].in.dataBuf.vBuffer;
-	clbc_common.data->endpts[0].in.dataBuf.size = (uint16_t)EP0_TX_BUFFER_SIZE;
+	ep->in.maxpacket = 64;
+	ep->in.dataBuf.vBuffer = clbc_common.dc->ep0buffTX;
+	ep->in.dataBuf.head = ep->in.dataBuf.vBuffer;
+	ep->in.dataBuf.tail = ep->in.dataBuf.vBuffer;
+	ep->in.dataBuf.size = (uint16_t)EP0_TX_BUFFER_SIZE;
 }
 
 
 void clbc_ep0OutStart(void)
 {
-	uint32_t gSNPSiD = USB_REG(CID + 1);
+	uint32_t gSNPSiD = USB_REG(otg_cid + 1);
 
 	if (gSNPSiD > 0x4F54300AU) {
-		if (((USB_REG(DOEPCTL0) >> DOEPCTL_EPENA) & 1U) == 1U) {
+		if (((USB_REG(otg_doepctl0) >> DOEPCTL_EPENA) & 1U) == 1U) {
 			return;
 		}
 	}
 
-	USB_REG(DOEPTSIZ0) = 0U;
-	USB_REG(DOEPTSIZ0) |= (1UL << 19);
-	USB_REG(DOEPTSIZ0) |= (3U * 8U);
-	USB_REG(DOEPTSIZ0) |= (0x3UL << 29);
+	USB_REG(otg_doeptsiz0) = 0U;
+	USB_REG(otg_doeptsiz0) |= (1UL << 19);
+	USB_REG(otg_doeptsiz0) |= (3U * 8U);
+	USB_REG(otg_doeptsiz0) |= (0x3UL << 29);
 }
 
 
@@ -110,22 +112,22 @@ void clbc_epStall(stm32n6_endpt_t *ep)
 {
 	/* stall IN endpoint */
 	if (ep->in.epNum != 0U) {
-		USB_REG(DIEPCTL0 + ep->in.epNum * EP_STRIDE) |= (1UL << DIEPCTL_EPDIS);
+		USB_REG(otg_diepctl0 + ep->in.epNum * EP_STRIDE) |= (1UL << DIEPCTL_EPDIS);
 	}
-	USB_REG(DIEPCTL0 + ep->in.epNum * EP_STRIDE) |= (1UL << DIEPCTL_STALL);
+	USB_REG(otg_diepctl0 + ep->in.epNum * EP_STRIDE) |= (1UL << DIEPCTL_STALL);
 
 	/* stall OUT endpoint */
 	if (ep->in.epNum != 0U) {
-		USB_REG(DOEPCTL0 + ep->in.epNum * EP_STRIDE) |= (1UL << DOEPCTL_EPDIS);
+		USB_REG(otg_doepctl0 + ep->in.epNum * EP_STRIDE) |= (1UL << DOEPCTL_EPDIS);
 	}
-	USB_REG(DOEPCTL0 + ep->in.epNum * EP_STRIDE) |= (1UL << DOEPCTL_STALL);
+	USB_REG(otg_doepctl0 + ep->in.epNum * EP_STRIDE) |= (1UL << DOEPCTL_STALL);
 }
 
 
 static uint8_t getDevSpeed(void)
 {
 	uint8_t speed;
-	uint32_t devEnumSpeed = ((USB_REG(DSTS) >> 1) & 3);
+	uint32_t devEnumSpeed = ((USB_REG(otg_dsts) >> 1) & 3);
 
 	if (devEnumSpeed == 0) {
 		/* HIGH SPEED */
@@ -190,8 +192,8 @@ static void setTurnaroundTime(uint32_t hclk, uint8_t speed)
 		usbTrd = 9U;
 	}
 
-	USB_REG(GUSBCFG) &= ~(0xFUL << 10);
-	USB_REG(GUSBCFG) |= (usbTrd << 10);
+	USB_REG(otg_gusbcfg) &= ~(0xFUL << 10);
+	USB_REG(otg_gusbcfg) |= (usbTrd << 10);
 }
 
 
@@ -207,26 +209,27 @@ void clbc_enumdne(void)
 static void epStartXfer(stm32n6_endpt_data_t *epData)
 {
 	uint16_t pktcnt;
+	uint8_t epSet = epData->epNum * EP_STRIDE;
 
 	if (epData->is_in == 1U) {
 		/* IN Endpoint */
 
 		if (epData->xfer_len == 0U) {
 			/* Zero Length Packet */
-			USB_REG(DIEPTSIZ0 + epData->epNum * EP_STRIDE) &= ~(0x3FFUL << 19);
-			USB_REG(DIEPTSIZ0 + epData->epNum * EP_STRIDE) |= (1UL << 19);
-			USB_REG(DIEPTSIZ0 + epData->epNum * EP_STRIDE) &= ~(0x7FFFFUL);
+			USB_REG(otg_dieptsiz0 + epSet) &= ~(0x3FFUL << 19);
+			USB_REG(otg_dieptsiz0 + epSet) |= (1UL << 19);
+			USB_REG(otg_dieptsiz0 + epSet) &= ~(0x7FFFFUL);
 		}
 		else {
-			USB_REG(DIEPTSIZ0 + epData->epNum * EP_STRIDE) &= ~(0x7FFFFUL);
-			USB_REG(DIEPTSIZ0 + epData->epNum * EP_STRIDE) &= ~(0x3FFUL << 19);
+			USB_REG(otg_dieptsiz0 + epSet) &= ~(0x7FFFFUL);
+			USB_REG(otg_dieptsiz0 + epSet) &= ~(0x3FFUL << 19);
 
 			if (epData->xfer_len > epData->maxpacket) {
 				epData->xfer_len = epData->maxpacket;
 			}
 
 			pktcnt = (uint16_t)((epData->xfer_size + epData->maxpacket - 1U) / epData->maxpacket);
-			USB_REG(DIEPTSIZ0 + epData->epNum * EP_STRIDE) |= ((pktcnt & 0x3FFUL) << 19);
+			USB_REG(otg_dieptsiz0 + epSet) |= ((pktcnt & 0x3FFUL) << 19);
 
 			if (epData->type == USB_EP_TYPE_ISOC) {
 				/**
@@ -234,23 +237,23 @@ static void epStartXfer(stm32n6_endpt_data_t *epData)
 				 */
 			}
 
-			USB_REG(DIEPTSIZ0 + epData->epNum * EP_STRIDE) |= (0x7FFFFUL & epData->xfer_size);
+			USB_REG(otg_dieptsiz0 + epSet) |= (0x7FFFFUL & epData->xfer_size);
 		}
 
 		/* enable endpoint and clear NAK for this transfer */
-		USB_REG(DIEPCTL0 + epData->epNum * EP_STRIDE) |= ((1UL << 26) | (1UL << 31));
+		USB_REG(otg_diepctl0 + epSet) |= ((1UL << 26) | (1UL << 31));
 
 		if (epData->type != USB_EP_TYPE_ISOC) {
 			if (epData->xfer_len > 0U) {
-				USB_REG(DIEPEMPMSK) |= (1UL << (epData->epNum & 0xF));
+				USB_REG(otg_diepempmsk) |= (1UL << (epData->epNum & 0xF));
 			}
 		}
 		else {
-			if ((USB_REG(DSTS) & (1 << 8)) == 0U) {
-				USB_REG(DIEPCTL0 + epData->epNum * EP_STRIDE) |= (1UL << 29);
+			if ((USB_REG(otg_dsts) & (1 << 8)) == 0U) {
+				USB_REG(otg_diepctl0 + epSet) |= (1UL << 29);
 			}
 			else {
-				USB_REG(DIEPCTL0 + epData->epNum * EP_STRIDE) |= (1UL << 28);
+				USB_REG(otg_diepctl0 + epSet) |= (1UL << 28);
 			}
 			/**
 			 * TODO: WRITE_USB_PACKET()
@@ -260,8 +263,8 @@ static void epStartXfer(stm32n6_endpt_data_t *epData)
 	else {
 		/* OUT Endpoint */
 		if (epData->epNum == 0) {
-			USB_REG(DOEPTSIZ0) &= ~(0x3U << 19UL);
-			USB_REG(DOEPTSIZ0) &= ~(0x7FU);
+			USB_REG(otg_doeptsiz0) &= ~(0x3U << 19UL);
+			USB_REG(otg_doeptsiz0) &= ~(0x7FU);
 
 			if (epData->xfer_size > epData->maxpacket) {
 				epData->xfer_len = epData->maxpacket;
@@ -269,8 +272,8 @@ static void epStartXfer(stm32n6_endpt_data_t *epData)
 			pktcnt = 1UL;
 		}
 		else {
-			USB_REG(DOEPTSIZ0 + epData->epNum * EP_STRIDE) &= ~(0x3FFUL << 19UL);
-			USB_REG(DOEPTSIZ0 + epData->epNum * EP_STRIDE) &= ~(0x7FFFFUL);
+			USB_REG(otg_doeptsiz0 + epSet) &= ~(0x3FFUL << 19UL);
+			USB_REG(otg_doeptsiz0 + epSet) &= ~(0x7FFFFUL);
 
 			if (epData->xfer_size == 0) {
 				pktcnt = 1UL;
@@ -280,18 +283,18 @@ static void epStartXfer(stm32n6_endpt_data_t *epData)
 			}
 		}
 
-		USB_REG(DOEPTSIZ0 + epData->epNum * EP_STRIDE) |= (0x7FFFFUL & epData->xfer_size);
-		USB_REG(DOEPTSIZ0 + epData->epNum * EP_STRIDE) |= ((pktcnt & 0x3FFUL) << 19);
+		USB_REG(otg_doeptsiz0 + epSet) |= (0x7FFFFUL & epData->xfer_size);
+		USB_REG(otg_doeptsiz0 + epSet) |= ((pktcnt & 0x3FFUL) << 19);
 
 		if (epData->type == USB_EP_TYPE_ISOC) {
-			if ((USB_REG(DSTS) & (1 << 8)) == 0U) {
-				USB_REG(DOEPCTL0 + epData->epNum * EP_STRIDE) |= (1UL << 29);
+			if ((USB_REG(otg_dsts) & (1 << 8)) == 0U) {
+				USB_REG(otg_doepctl0 + epSet) |= (1UL << 29);
 			}
 			else {
-				USB_REG(DOEPCTL0 + epData->epNum * EP_STRIDE) |= (1UL << 28);
+				USB_REG(otg_doepctl0 + epSet) |= (1UL << 28);
 			}
 		}
-		USB_REG(DOEPCTL0 + epData->epNum * EP_STRIDE) |= ((1UL << 26) | (1UL << 31));
+		USB_REG(otg_doepctl0 + epSet) |= ((1UL << 26) | (1UL << 31));
 	}
 }
 
@@ -332,22 +335,24 @@ void clbc_epTransmitCont(uint8_t epNum)
 int clbc_ep0Receive(usb_xfer_desc_t *desc)
 {
 	stm32n6_endpt_t *ep = &clbc_common.data->endpts[0];
-	uint8_t availSpace = (uint8_t)ep->out.dataBuf.size - (uint8_t)(ep->out.dataBuf.tail - ep->out.dataBuf.head);
+	usb_buffer_t *dataBuff = &ep->out.dataBuf;
+	uint8_t availSpace = (uint8_t)dataBuff->size - (uint8_t)(dataBuff->tail - dataBuff->head);
 	uint32_t timeout = USB_OTG_TIMEOUT;
 
+
 	if (desc->len > availSpace) {
-		ep->out.dataBuf.head = ep->out.dataBuf.vBuffer;
-		ep->out.dataBuf.tail = ep->out.dataBuf.vBuffer;
+		dataBuff->head = dataBuff->vBuffer;
+		dataBuff->tail = dataBuff->vBuffer;
 	}
 
-	availSpace = (uint8_t)ep->out.dataBuf.size - (uint8_t)(ep->out.dataBuf.tail - ep->out.dataBuf.head);
+	availSpace = (uint8_t)dataBuff->size - (uint8_t)(dataBuff->tail - dataBuff->head);
 
 	if (desc->len > availSpace) {
 		return -ENOMEM;
 	}
 
-	desc->head = ep->out.dataBuf.tail;
-	clbc_epReceive(0, ep->out.dataBuf.tail, desc->len);
+	desc->head = dataBuff->tail;
+	clbc_epReceive(0, dataBuff->tail, desc->len);
 
 	/* EP0 OUT data should be received immediately */
 	while (ep->out.xfer_size < ep->out.xfer_count) {
@@ -355,8 +360,8 @@ int clbc_ep0Receive(usb_xfer_desc_t *desc)
 			return -EBUSY;
 		};
 	}
-	ep->out.dataBuf.tail += desc->len;
-	desc->tail = ep->out.dataBuf.tail;
+	dataBuff->tail += desc->len;
+	desc->tail = dataBuff->tail;
 
 	return EOK;
 }
@@ -400,7 +405,7 @@ void clbc_rxFifoData(void)
 	uint8_t pktSts, epNum;
 	uint16_t byteCount;
 	uint8_t *dest;
-	uint32_t grxstpStatus = USB_REG(GRXSTSP);
+	uint32_t grxstpStatus = USB_REG(otg_grxstsp);
 	stm32n6_endpt_t *ep;
 
 	pktSts = ((grxstpStatus >> 17) & 0xF);
@@ -434,8 +439,8 @@ int clbc_flushTxFifo(uint8_t num)
 	uint32_t timeout = USB_OTG_TIMEOUT;
 
 	/* set Global IN NAK */
-	USB_REG(DCTL) |= (1U << 7);
-	while (((USB_REG(GINTSTS) >> 6) & 1U) == 0U) {
+	USB_REG(otg_dctl) |= (1U << 7);
+	while (((USB_REG(otg_gintsts) >> 6) & 1U) == 0U) {
 		if (--timeout == 0) {
 			return -EBUSY;
 		}
@@ -443,16 +448,16 @@ int clbc_flushTxFifo(uint8_t num)
 
 	/* check AHB master idle */
 	timeout = USB_OTG_TIMEOUT;
-	while (((USB_REG(GRSTCTL) >> 31) & 1U) == 0U) {
+	while (((USB_REG(otg_grstctl) >> 31) & 1U) == 0U) {
 		if (--timeout == 0) {
 			return -EBUSY;
 		}
 	}
 
-	USB_REG(GRSTCTL) = (num << 6) | (1U << 5);
+	USB_REG(otg_grstctl) = (num << 6) | (1U << 5);
 
 	timeout = USB_OTG_TIMEOUT;
-	while (((USB_REG(GRSTCTL) >> 5) & 1U)) {
+	while (((USB_REG(otg_grstctl) >> 5) & 1U)) {
 		if (--timeout == 0) {
 			return -EBUSY;
 		}
@@ -460,8 +465,8 @@ int clbc_flushTxFifo(uint8_t num)
 
 	/* clear Global IN NAK */
 	timeout = USB_OTG_TIMEOUT;
-	USB_REG(DCTL) |= (1U << 8);
-	while (((USB_REG(GINTSTS) >> 6) & 1U) == 1U) {
+	USB_REG(otg_dctl) |= (1U << 8);
+	while (((USB_REG(otg_gintsts) >> 6) & 1U) == 1U) {
 		if (--timeout == 0) {
 			return -EBUSY;
 		}
@@ -475,15 +480,15 @@ int clbc_flushRxFifo(void)
 {
 	uint32_t timeout = USB_OTG_TIMEOUT;
 
-	while (((USB_REG(GRSTCTL) >> 31) & 1U) == 0U) {
+	while (((USB_REG(otg_grstctl) >> 31) & 1U) == 0U) {
 		if (--timeout == 0) {
 			return -EBUSY;
 		}
 	}
-	USB_REG(GRSTCTL) = (1U << 4);
+	USB_REG(otg_grstctl) = (1U << 4);
 
 	timeout = USB_OTG_TIMEOUT;
-	while (((USB_REG(GRSTCTL) >> 4) & 1U) == 1U) {
+	while (((USB_REG(otg_grstctl) >> 4) & 1U) == 1U) {
 		if (--timeout == 0) {
 			return -EBUSY;
 		}
@@ -497,7 +502,7 @@ int clbc_resetUSBSS(void)
 {
 	uint32_t timeout = USB_OTG_TIMEOUT;
 
-	while (((USB_REG(GRSTCTL) >> 31) & 1U) == 0U) {
+	while (((USB_REG(otg_grstctl) >> 31) & 1U) == 0U) {
 		if (--timeout == 0) {
 			return -EBUSY;
 		}
@@ -509,10 +514,10 @@ int clbc_resetUSBSS(void)
 		timeout--;
 	}
 
-	USB_REG(GRSTCTL) |= (1U);
+	USB_REG(otg_grstctl) |= (1U);
 
 	timeout = USB_OTG_TIMEOUT;
-	while (((USB_REG(GRSTCTL)) & 1U) == 1U) {
+	while (((USB_REG(otg_grstctl)) & 1U) == 1U) {
 		if (--timeout == 0) {
 			return -EBUSY;
 		}
@@ -527,12 +532,12 @@ int clbc_setDevMode(void)
 	uint32_t timeout = USB_OTG_TIMEOUT;
 
 	/* clear current mode */
-	USB_REG(GUSBCFG) &= ~(0x3UL << 29);
+	USB_REG(otg_gusbcfg) &= ~(0x3UL << 29);
 
 	/* set device mode */
-	USB_REG(GUSBCFG) |= (1UL << 30);
+	USB_REG(otg_gusbcfg) |= (1UL << 30);
 
-	while ((USB_REG(GINTSTS) & 1U) == 1U) {
+	while ((USB_REG(otg_gintsts) & 1U) == 1U) {
 		if (--timeout == 0) {
 			return -EBUSY;
 		}
@@ -562,7 +567,7 @@ void clbc_sendEpData(uint8_t epNum)
 
 		count32b = (len + 3U) / 4U;
 
-		if ((USB_REG(DTXFSTS0 + EP_STRIDE * epNum) & 0xFFFFUL) < count32b) {
+		if ((USB_REG(otg_dtxfsts0 + EP_STRIDE * epNum) & 0xFFFFUL) < count32b) {
 			break;
 		}
 
@@ -580,11 +585,11 @@ void clbc_sendEpData(uint8_t epNum)
 
 	if (ep->in.xfer_size <= ep->in.xfer_count) {
 		/* mask TX FIFO empty interrupt */
-		USB_REG(DIEPEMPMSK) &= ~(1UL << epNum);
+		USB_REG(otg_diepempmsk) &= ~(1UL << epNum);
 	}
 	else {
 		/* unmask TX FIFO empty interrupt */
-		USB_REG(DIEPEMPMSK) |= (1UL << epNum);
+		USB_REG(otg_diepempmsk) |= (1UL << epNum);
 	}
 
 	return;
@@ -626,34 +631,34 @@ void _clbc_USBRST(void)
 	clbc_flushTxFifo(16U);
 
 	/* clear remote wake up */
-	USB_REG(DCTL) &= ~(0x1UL);
+	USB_REG(otg_dctl) &= ~(0x1UL);
 
 	/* reset endpoints config and set SNACK */
 	for (int i = 0; i < 9; i++) {
-		USB_REG(DIEPINT0 + EP_STRIDE * i) = DIEPINT_RESET_MASK;
-		USB_REG(DIEPCTL0 + EP_STRIDE * i) &= ~(0x1UL << DIEPCTL_STALL);
-		USB_REG(DOEPINT0 + EP_STRIDE * i) = DOEPINT_RESET_MASK;
-		USB_REG(DOEPCTL0 + EP_STRIDE * i) &= ~(0x1UL << DOEPCTL_STALL);
-		USB_REG(DOEPCTL0 + EP_STRIDE * i) |= (0x1UL << DOEPCTL_SNAK);
+		USB_REG(otg_diepint0 + EP_STRIDE * i) = DIEPINT_RESET_MASK;
+		USB_REG(otg_diepctl0 + EP_STRIDE * i) &= ~(0x1UL << DIEPCTL_STALL);
+		USB_REG(otg_doepint0 + EP_STRIDE * i) = DOEPINT_RESET_MASK;
+		USB_REG(otg_doepctl0 + EP_STRIDE * i) &= ~(0x1UL << DOEPCTL_STALL);
+		USB_REG(otg_doepctl0 + EP_STRIDE * i) |= (0x1UL << DOEPCTL_SNAK);
 	}
 
 	/* unmask IN0 and OUT0 EPs IRQs*/
-	USB_REG(DAINTMSK) |= DAINTMSK_IN(0UL);
-	USB_REG(DAINTMSK) |= DAINTMSK_OUT(0UL);
+	USB_REG(otg_daintmsk) |= DAINTMSK_IN(0UL);
+	USB_REG(otg_daintmsk) |= DAINTMSK_OUT(0UL);
 
-	USB_REG(DOEPMSK) = 0UL;
-	USB_REG(DOEPMSK) |= (0x1UL << DOEPMSK_STUMP) |
+	USB_REG(otg_doepmsk) = 0UL;
+	USB_REG(otg_doepmsk) |= (0x1UL << DOEPMSK_STUMP) |
 			(0x1UL << DOEPMSK_XFRCM) |
 			(0x1UL << DOEPMSK_STSPHSRXM) |
 			(0x1UL << DOEPMSK_NAKMSK);
 
-	USB_REG(DIEPMSK) = 0UL;
-	USB_REG(DIEPMSK) |= (0x1UL << DIEPMSK_TOM) |
+	USB_REG(otg_diepmsk) = 0UL;
+	USB_REG(otg_diepmsk) |= (0x1UL << DIEPMSK_TOM) |
 			(0x1UL << DIEPMSK_XFRCM) |
 			(0x1UL << DIEPMSK_EPDM);
 
 	/* zero-out device address*/
-	USB_REG(DCFG) &= ~(0x7FUL << DCFG_DAD);
+	USB_REG(otg_dcfg) &= ~(0x7FUL << DCFG_DAD);
 
 	clbc_ep0OutStart();
 }
@@ -662,10 +667,10 @@ void _clbc_USBRST(void)
 void _clbc_ENUMDNE(void)
 {
 	/* zero out EP0 max packet size */
-	USB_REG(DIEPCTL0) &= ~(0x7FFUL);
+	USB_REG(otg_diepctl0) &= ~(0x7FFUL);
 
 	/* clear global IN NAK */
-	USB_REG(DCTL) |= (0x1UL << DCTL_CGINAK);
+	USB_REG(otg_dctl) |= (0x1UL << DCTL_CGINAK);
 
 	/* get device speed */
 	clbc_common.dc->enumSpeed = getDevSpeed();
@@ -690,7 +695,7 @@ void _clbc_OEPINT(void)
 
 		if ((daintClear & 0x1U) != 0U) {
 			epInt = clbc_common.dc->irqPendingDOEPINT[epNum];
-			epInt &= USB_REG(DOEPMSK);
+			epInt &= USB_REG(otg_doepmsk);
 
 			/* XFRC */
 			if (IS_IRQ(epInt, DOEPINT_XFRC)) {
@@ -704,7 +709,7 @@ void _clbc_OEPINT(void)
 						ep->out.xfer_active = 0;
 						/* prepare to receive next SETUP if it is ZLP */
 						if (ep->out.xfer_len == 0U) {
-							USB_REG(DOEPTSIZ0) = (3U << 29) | (1U << 19) | 8U;
+							USB_REG(otg_doeptsiz0) = (3U << 29) | (1U << 19) | 8U;
 						}
 					}
 					/* if DATA OUT received */
@@ -750,8 +755,8 @@ void _clbc_OEPINT(void)
 			if (IS_IRQ(epInt, DOEPINT_EPDISD)) {
 				clbc_common.dc->irqPendingDOEPINT[epNum] &= ~(1UL << DOEPINT_EPDISD);
 
-				if ((USB_REG(GINTSTS) >> 7) & 1) {
-					USB_REG(DCTL) |= (1 << 10);
+				if ((USB_REG(otg_gintsts) >> 7) & 1) {
+					USB_REG(otg_dctl) |= (1 << 10);
 				}
 			}
 
@@ -768,8 +773,8 @@ void _clbc_OEPINT(void)
 
 				/* check if more data are to be received */
 				if (epNum == 0U) {
-					if ((USB_REG(DOEPTSIZ0 + epNum * EP_STRIDE) & (0x3FFUL << DOEPTSIZ_PKTCNT)) != 0UL) {
-						USB_REG(DOEPCTL0 + epNum * EP_STRIDE) |= ((1UL << DOEPCTL_CNAK) | (1UL << DOEPCTL_EPENA));
+					if ((USB_REG(otg_doeptsiz0 + epNum * EP_STRIDE) & (0x3FFUL << DOEPTSIZ_PKTCNT)) != 0UL) {
+						USB_REG(otg_doepctl0 + epNum * EP_STRIDE) |= ((1UL << DOEPCTL_CNAK) | (1UL << DOEPCTL_EPENA));
 					}
 				}
 			}
@@ -799,8 +804,8 @@ void _clbc_IEPINT(void)
 			 * mask register for all IEPs. Now the mask will extract all DIEPINTx interrupts
 			 * (global and local).
 			 */
-			epMsk = USB_REG(DIEPMSK);
-			epEmp = clbc_common.dc->diepmsk;
+			epMsk = USB_REG(otg_diepmsk);
+			epEmp = clbc_common.dc->otg_diepmsk;
 
 			epMsk |= ((epEmp >> (epNum & 0xFU)) & 0x1U) << 7;
 
@@ -812,12 +817,12 @@ void _clbc_IEPINT(void)
 				clbc_common.dc->irqPendingDIEPINT[epNum] &= ~(1UL << DIEPINT_XFRC);
 
 				/* mask TX FIFO empty interrupt */
-				USB_REG(DIEPEMPMSK) &= ~(1UL << epNum);
+				USB_REG(otg_diepempmsk) &= ~(1UL << epNum);
 
 				/* Control transfer*/
 				if (epNum == 0) {
 					/* prepare to receive next SETUP */
-					USB_REG(DOEPTSIZ0) = (3UL << 29) | (1UL << 19) | 8UL;
+					USB_REG(otg_doeptsiz0) = (3UL << 29) | (1UL << 19) | 8UL;
 
 					if (ep->in.xfer_size - ep->in.xfer_len > 0U) {
 						clbc_epTransmitCont(epNum);
@@ -840,7 +845,6 @@ void _clbc_IEPINT(void)
 				}
 				/* only 1 data EP implemented */
 				else {
-					/* Unmask SOF interrupt - masked in clbc_epTransmit() */
 					ep->in.xfer_active = 0;
 					semaphoreUp(&clbc_common.dc->semBulkTx);
 				}

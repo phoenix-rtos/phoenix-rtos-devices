@@ -5,7 +5,7 @@
  *
  * Device-side CDC ACM driver
  *
- * Copyright 2025 Phoenix Systems
+ * Copyright 2026 Phoenix Systems
  * Author: Radosław Szewczyk, Rafał Mikielis
  *
  * This file is part of Phoenix-RTOS.
@@ -19,7 +19,7 @@
 #define THREADS_PRIORITY 4
 #define STACKSZ          384
 
-#define USB_REG(x) stm_common.dc.base[x]
+#define USB_REG(x) *(stm_common.dc.base + x)
 
 
 static struct {
@@ -43,8 +43,8 @@ void usbclient_buffDestory(void *addrs, uint32_t size)
 
 static int usbclient_intr(unsigned int intr, void *data)
 {
-	uint32_t gintsts = USB_REG(GINTSTS);
-	uint32_t gintmsk = USB_REG(GINTMSK);
+	uint32_t gintsts = USB_REG(otg_gintsts);
+	uint32_t gintmsk = USB_REG(otg_gintmsk);
 	uint32_t irqStatus = gintsts & gintmsk;
 
 	ctrl_hifiq_handler(&irqStatus);
@@ -102,7 +102,7 @@ int usbclient_send(int endpt, const void *data, unsigned int len)
 		}
 
 		semaphoreUp(&stm_common.dc.semBulkTx);
-		res = res - (USB_REG(DIEPTSIZ0 + endpt * EP_STRIDE) & 0x7FFFFUL);
+		res = res - (USB_REG(otg_dieptsiz0 + endpt * EP_STRIDE) & 0x7FFFFUL);
 	}
 
 	return (int)res;
@@ -128,7 +128,7 @@ int usbclient_receive(int endpt, void *data, unsigned int len)
 		}
 
 		semaphoreUp(&stm_common.dc.semBulkRx);
-		res = res - (USB_REG(DOEPTSIZ0 + endpt * EP_STRIDE) & 0x7FFFFUL);
+		res = res - (USB_REG(otg_doeptsiz0 + endpt * EP_STRIDE) & 0x7FFFFUL);
 	}
 
 	return (int)res;
@@ -180,47 +180,60 @@ int usbclient_init(usb_desc_list_t *desList)
 	if (stm_common.dc.base == MAP_FAILED) {
 		return -ENOMEM;
 	}
-	stm_common.dc.runIrqThread = 1U;
+
 	stm_common.data.setupMem = usbclient_allocBuff(USB_BUFFER_SIZE);
+	if (stm_common.data.setupMem == MAP_FAILED) {
+		phy_unmapRegs();
+		return -ENOMEM;
+	}
+
+	stm_common.dc.runIrqThread = 1U;
 	stm_common.dc.currEvent = USBCLIENT_EV_DISCONNECT;
 
 	if (stm_common.dc.cbEvent != NULL) {
 		stm_common.dc.cbEvent(stm_common.dc.currEvent, stm_common.dc.ctxUser);
 	}
 
-	if (desc_init(desList, &stm_common.data, &stm_common.dc) < 0) {
+	res = desc_init(desList, &stm_common.data, &stm_common.dc);
+	if (res < 0) {
 		usbclient_freeResorces();
-		return -ENOMEM;
+		return res;
 	}
 
-	if (mutexCreate(&stm_common.dc.irqLock) != EOK) {
+	res = mutexCreate(&stm_common.dc.irqLock);
+	if (res != EOK) {
 		usbclient_freeResorces();
-		return -ENOENT;
+		return res;
 	}
 
-	if (condCreate(&stm_common.dc.irqCond) != EOK) {
+	res = condCreate(&stm_common.dc.irqCond);
+	if (res != EOK) {
 		usbclient_freeResorces();
-		return -ENOENT;
+		return res;
 	}
 
-	if (mutexCreate(&stm_common.dc.endp0Lock) != EOK) {
+	res = mutexCreate(&stm_common.dc.endp0Lock);
+	if (res != EOK) {
 		usbclient_freeResorces();
-		return -ENOENT;
+		return res;
 	}
 
-	if (condCreate(&stm_common.dc.endp0Cond) != EOK) {
+	res = condCreate(&stm_common.dc.endp0Cond);
+	if (res != EOK) {
 		usbclient_freeResorces();
-		return -ENOENT;
+		return res;
 	}
 
-	if (semaphoreCreate(&stm_common.dc.semBulkTx, 1U) != EOK) {
+	res = semaphoreCreate(&stm_common.dc.semBulkTx, 1U);
+	if (res != EOK) {
 		usbclient_freeResorces();
-		return -ENOENT;
+		return res;
 	}
 
-	if (semaphoreCreate(&stm_common.dc.semBulkRx, 1U) != EOK) {
+	res = semaphoreCreate(&stm_common.dc.semBulkRx, 1U);
+	if (res != EOK) {
 		usbclient_freeResorces();
-		return -ENOENT;
+		return res;
 	}
 
 	clbc_init(&stm_common.data, &stm_common.dc);
@@ -230,18 +243,21 @@ int usbclient_init(usb_desc_list_t *desList)
 	res = phy_clk_reset();
 	if (res < 0) {
 		fprintf(stderr, "[USB CLIENT]: clk reset failed\n");
+		usbclient_freeResorces();
 		return -EIO;
 	}
 
 	res = phy_usbss_init();
 	if (res < 0) {
 		fprintf(stderr, "[USB CLIENT]: OTG reset failed\n");
+		usbclient_freeResorces();
 		return -EIO;
 	}
 
 	res = phy_clear_config();
 	if (res < 0) {
 		fprintf(stderr, "[USB CLIENT]: OTG clear failed\n");
+		usbclient_freeResorces();
 		return -EIO;
 	}
 
