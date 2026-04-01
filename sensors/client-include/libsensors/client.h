@@ -33,6 +33,8 @@
 #define SENSOR_TYPE_SENSEKF  (1 << 7)
 #define SENSOR_TYPE_FSS      (1 << 8)
 #define SENSOR_TYPE_STAR     (1 << 9)
+#define SENSOR_TYPE_TOF      (1 << 10)
+#define SENSOR_TYPE_OPTFLOW  (1 << 11)
 
 
 typedef unsigned int sensor_type_t;
@@ -190,6 +192,24 @@ typedef struct {
 } starTracker_data_t;
 
 
+typedef struct {
+	uint32_t devId;
+	uint32_t dist;   /* Distance [mm] to the closest object */
+	uint8_t valid;   /* Measurement validity indicator */
+	uint8_t quality; /* Distance measurement quality (0-255), lower index means higher accuracy */
+	uint8_t reserved[2];
+} tof_data_t;
+
+
+typedef struct {
+	uint32_t devId;
+	int32_t vel[2];  /* Flow velocity (velocity [mm / s] per distance [m]) measurement for x and y sensor axis [mm/(s * m)] */
+	uint8_t valid;   /* Measurement validity indicator */
+	uint8_t quality; /* Velocity measurement quality (0-255), lower index means higher accuracy */
+	uint8_t reserved[2];
+} opticalFlow_data_t;
+
+
 /* Event data gets from sensor manager */
 typedef struct {
 	sensor_type_t type;
@@ -206,6 +226,8 @@ typedef struct {
 		sensEkf_data_t sensEkf;
 		fss_data_t fss;
 		starTracker_data_t st;
+		tof_data_t tof;
+		opticalFlow_data_t optFlow;
 	};
 } sensor_event_t;
 
