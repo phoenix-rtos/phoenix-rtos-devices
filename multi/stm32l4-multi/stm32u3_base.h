@@ -27,6 +27,7 @@
 
 #define PWR_BASE ((void *)0x50030800U)
 #define RCC_BASE ((void *)0x50030c00U)
+#define RTC_BASE ((void *)0x50007800U)
 
 #define GPIOA_BASE ((void *)0x52020000U)
 #define GPIOB_BASE ((void *)0x52020400U)
