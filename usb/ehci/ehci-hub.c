@@ -376,6 +376,28 @@ uint32_t ehci_getHubStatus(usb_dev_t *hub)
 }
 
 
+static int ehci_getConfiguration(usb_transfer_t *t)
+{
+	if (t->setup->wLength != 1) {
+		return -1;
+	}
+
+	t->buffer[0] = ehci_descs.cfg.bConfigurationValue;
+	return 0;
+}
+
+
+static int ehci_getInterface(usb_transfer_t *t)
+{
+	if (t->setup->wIndex != ehci_descs.iface.bInterfaceNumber || t->setup->wLength != 1) {
+		return -1;
+	}
+
+	t->buffer[0] = ehci_descs.iface.bAlternateSetting;
+	return 0;
+}
+
+
 int ehci_roothubReq(usb_dev_t *hub, usb_transfer_t *t)
 {
 	usb_setup_packet_t *setup = t->setup;
@@ -399,6 +421,12 @@ int ehci_roothubReq(usb_dev_t *hub, usb_transfer_t *t)
 		case REQ_GET_DESCRIPTOR:
 			ret = ehci_getDesc(hub, setup->wValue >> 8, setup->wValue & 0xff, t->buffer, t->size);
 			break;
+		case REQ_GET_CONFIGURATION:
+			ret = ehci_getConfiguration(t);
+			break;
+		case REQ_GET_INTERFACE:
+			ret = ehci_getInterface(t);
+			break;
 		case REQ_SET_ADDRESS:
 		case REQ_SET_CONFIGURATION:
 			/* Pass on */
@@ -407,6 +435,7 @@ int ehci_roothubReq(usb_dev_t *hub, usb_transfer_t *t)
 		default:
 			/* Not implemented */
 			ret = -1;
+			break;
 	}
 
 	usb_transferFinished(t, ret);
