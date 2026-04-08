@@ -5,7 +5,7 @@
  *
  * Device-side CDC ACM driver
  *
- * Copyright 2025 Phoenix Systems
+ * Copyright 2026 Phoenix Systems
  * Author: Radosław Szewczyk, Rafał Mikielis
  *
  * This file is part of Phoenix-RTOS.
@@ -133,8 +133,9 @@ typedef struct _usb_dc_t {
 	uint32_t daintClear;
 	uint32_t irqPendingDIEPINT[ENDPOINTS_NUMBER];
 	uint32_t irqPendingDOEPINT[ENDPOINTS_NUMBER];
-	uint32_t diepmsk;
+	uint32_t otg_diepmsk;
 } usb_dc_t;
+
 
 typedef struct _usb_buffer_t {
 	uint8_t *vBuffer;
@@ -198,6 +199,7 @@ enum {
 	USB_EP_TYPE_INTR = 3U
 };
 
+
 /*  Device Status */
 #define USBD_STATE_DEFAULT    0x01U
 #define USBD_STATE_ADDRESSED  0x02U
@@ -224,44 +226,99 @@ enum {
 
 
 void usbclient_buffDestory(void *addrs, uint32_t size);
+
+
 void *usbclient_allocBuff(uint32_t size);
 
-extern void ctrl_init(usb_common_data_t *usb_data_in, usb_dc_t *dc_in);
-extern void ctrl_hifiq_handler(uint32_t *irqStatus);
-extern void ctrl_lifiq_handler(uint32_t *irqStatus);
-extern void ctrl_setAddress(uint32_t addr);
 
-extern void clbc_init(usb_common_data_t *usb_data_in, usb_dc_t *dc_in);
-extern void clbc_reset(void);
-extern int clbc_resetUSBSS(void);
-extern void clbc_enumdne(void);
-extern void clbc_ep0OutStart(void);
-extern void clbc_epStall(stm32n6_endpt_t *ep);
-extern int clbc_setDevMode(void);
-extern void clbc_rxFifoData(void);
-extern int clbc_flushTxFifo(uint8_t num);
-extern int clbc_flushRxFifo(void);
-extern void clbc_sendEpData(uint8_t epNum);
-extern void clbc_receiveEpData(uint8_t *dest, uint16_t nBytes);
-extern void clbc_epTransmit(uint8_t epNum, uint8_t *dataBuf, uint32_t len);
+/* Controller functions */
+void ctrl_init(usb_common_data_t *usb_data_in, usb_dc_t *dc_in);
 
-/* RX on control endpoint */
-extern int clbc_ep0Receive(usb_xfer_desc_t *desc);
 
-/* RX on data endpoint*/
-extern void clbc_epReceive(uint8_t epNum, uint8_t *dataBuf, uint32_t len);
-extern void clbc_epReceiveCont(uint8_t epNum);
+void ctrl_hifiq_handler(uint32_t *irqStatus);
 
-extern void _clbc_USBRST(void);
-extern void _clbc_ENUMDNE(void);
-extern void _clbc_OEPINT(void);
-extern void _clbc_IEPINT(void);
 
-extern int desc_init(usb_desc_list_t *desList, usb_common_data_t *usb_data_in, usb_dc_t *dc_in);
-extern int desc_setup(const usb_setup_packet_t *setup);
-extern int desc_classSetup(const usb_setup_packet_t *setup);
-extern void desc_epActivation(stm32n6_endpt_data_t *ep);
-extern void desc_epDeactivation(stm32n6_endpt_data_t *ep);
+void ctrl_lifiq_handler(uint32_t *irqStatus);
+
+
+void ctrl_setAddress(uint32_t addr);
+
+
+/* Calback functions */
+void clbc_init(usb_common_data_t *usb_data_in, usb_dc_t *dc_in);
+
+
+void clbc_reset(void);
+
+
+int clbc_resetUSBSS(void);
+
+
+void clbc_enumdne(void);
+
+
+void clbc_ep0OutStart(void);
+
+
+void clbc_epStall(stm32n6_endpt_t *ep);
+
+
+int clbc_setDevMode(void);
+
+
+void clbc_rxFifoData(void);
+
+
+int clbc_flushTxFifo(uint8_t num);
+
+
+int clbc_flushRxFifo(void);
+
+
+void clbc_sendEpData(uint8_t epNum);
+
+
+void clbc_receiveEpData(uint8_t *dest, uint16_t nBytes);
+
+
+void clbc_epTransmit(uint8_t epNum, uint8_t *dataBuf, uint32_t len);
+
+
+int clbc_ep0Receive(usb_xfer_desc_t *desc);
+
+
+void clbc_epReceive(uint8_t epNum, uint8_t *dataBuf, uint32_t len);
+
+
+void clbc_epReceiveCont(uint8_t epNum);
+
+
+void _clbc_USBRST(void);
+
+
+void _clbc_ENUMDNE(void);
+
+
+void _clbc_OEPINT(void);
+
+
+void _clbc_IEPINT(void);
+
+
+/* Descriptor management functions */
+int desc_init(usb_desc_list_t *desList, usb_common_data_t *usb_data_in, usb_dc_t *dc_in);
+
+
+int desc_setup(const usb_setup_packet_t *setup);
+
+
+int desc_classSetup(const usb_setup_packet_t *setup);
+
+
+void desc_epActivation(stm32n6_endpt_data_t *ep);
+
+
+void desc_epDeactivation(stm32n6_endpt_data_t *ep);
 
 
 #endif
