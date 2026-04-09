@@ -11,3 +11,4 @@ DEFAULT_COMPONENTS += gri2cmst i2c-scan
 DEFAULT_COMPONENTS += grspictrl
 DEFAULT_COMPONENTS += grlib-nandfctrl2
 DEFAULT_COMPONENTS += test-grlib-nandfctrl2
+DEFAULT_COMPONENTS += grgpio

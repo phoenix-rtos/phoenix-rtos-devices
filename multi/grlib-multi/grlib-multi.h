@@ -21,6 +21,7 @@
 #include <sys/types.h>
 #include <phoenix/gaisler/ambapp.h>
 #include <libgrspw.h>
+#include <libgrgpio.h>
 
 
 /* clang-format off */
@@ -32,27 +33,6 @@ enum { id_gpio0 = 0, id_gpio1, id_spi0, id_spi1, id_uart0, id_uart1, id_uart2, i
 
 
 #pragma pack(push, 8)
-
-
-/* GPIO */
-
-
-typedef struct {
-	/* clang-format off */
-	enum { gpio_setPort = 0, gpio_getPort, gpio_setDir, gpio_getDir } type;
-	/* clang-format on */
-	union {
-		struct {
-			uint32_t mask;
-			uint32_t val;
-		} port;
-
-		struct {
-			uint32_t mask;
-			uint32_t val;
-		} dir;
-	};
-} gpio_t;
 
 
 /* SPI */
@@ -135,7 +115,7 @@ typedef struct {
 
 typedef struct {
 	union {
-		gpio_t gpio;
+		gpio_i_t gpio;
 		spi_t spi;
 		adc_t adc;
 		spw_t spw;
