@@ -82,8 +82,9 @@ void ctrl_hifiq_handler(uint32_t *irqStatus)
 		daintClear = USB_REG(DAINT);
 		daintClear &= USB_REG(DAINTMSK);
 		daintClear &= 0xFFFF0000UL;
+		ctrl_common.dc->daintClear |= daintClear;
+
 		daintClear >>= 16;
-		ctrl_common.dc->daintClear = daintClear;
 
 		while (daintClear != 0U) {
 			if ((daintClear & 0x1U) != 0U) {
@@ -107,7 +108,7 @@ void ctrl_hifiq_handler(uint32_t *irqStatus)
 		daintClear = USB_REG(DAINT);
 		daintClear &= USB_REG(DAINTMSK);
 		daintClear &= 0xFFFFUL;
-		ctrl_common.dc->daintClear = daintClear;
+		ctrl_common.dc->daintClear |= daintClear;
 
 		while (daintClear != 0U) {
 			if ((daintClear & 0x1U) != 0U) {
