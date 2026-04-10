@@ -130,7 +130,7 @@ typedef struct _usb_dc_t {
 	uint8_t ep0State;
 
 	uint32_t pending_event;
-	uint32_t daintClear;
+	_Atomic uint32_t daintClear;
 	uint32_t irqPendingDIEPINT[ENDPOINTS_NUMBER];
 	uint32_t irqPendingDOEPINT[ENDPOINTS_NUMBER];
 	uint32_t diepmsk;

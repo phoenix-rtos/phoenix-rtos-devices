@@ -13,6 +13,7 @@
  * %LICENSE%
  */
 
+#include <stdatomic.h>
 #include "client.h"
 #include "phy.h"
 
@@ -682,7 +683,10 @@ void _clbc_OEPINT(void)
 	uint32_t epInt;
 	uint8_t epNum = 0U;
 	stm32n6_endpt_t *ep;
-	uint32_t daintClear = clbc_common.dc->daintClear;
+	uint32_t daintClear = atomic_fetch_and(&clbc_common.dc->daintClear, 0x0000FFFFU);
+
+	daintClear &= 0xFFFF0000U;
+	daintClear >>= 16U;
 
 	while (daintClear != 0U) {
 
@@ -786,7 +790,9 @@ void _clbc_IEPINT(void)
 	uint32_t epMsk, epEmp;
 	uint8_t epNum = 0U;
 	stm32n6_endpt_t *ep;
-	uint32_t daintClear = clbc_common.dc->daintClear;
+	uint32_t daintClear = atomic_fetch_and(&clbc_common.dc->daintClear, 0xFFFF0000U);
+
+	daintClear &= 0x0000FFFFU;
 
 	while (daintClear != 0U) {
 
