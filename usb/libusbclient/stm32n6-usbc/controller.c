@@ -181,32 +181,27 @@ void ctrl_hifiq_handler(uint32_t *irqStatus)
 }
 
 
-void ctrl_lifiq_handler(uint32_t *irqStatus)
+void ctrl_lifiq_handler(uint32_t irqStatus)
 {
 	uint8_t epNum;
 
 	/* USBRST */
-	if (IS_IRQ(*irqStatus, GINTSTS_USBRST)) {
-
-		*irqStatus &= ~(1UL << GINTSTS_USBRST);
+	if (IS_IRQ(irqStatus, GINTSTS_USBRST)) {
 		ctrl_common.dc->currEvent = USBCLIENT_EV_RESET;
 
 		_clbc_USBRST();
 	}
 
 	/* ENUMDNE */
-	if (IS_IRQ(*irqStatus, GINTSTS_ENUMDNE)) {
-
+	if (IS_IRQ(irqStatus, GINTSTS_ENUMDNE)) {
 		ctrl_common.dc->deviceState = USBD_STATE_DEFAULT;
-		*irqStatus &= ~(1UL << GINTSTS_ENUMDNE);
 		ctrl_common.dc->currEvent = USBCLIENT_EV_CONNECT;
 
 		_clbc_ENUMDNE();
 	}
 
 	/* USBSUSP */
-	if (IS_IRQ(*irqStatus, GINTSTS_USBSUSP)) {
-
+	if (IS_IRQ(irqStatus, GINTSTS_USBSUSP)) {
 		ctrl_common.dc->deviceState = USBD_STATE_DEFAULT;
 		ctrl_common.dc->ep0State = USBD_EP0_IDLE;
 		ctrl_common.dc->currEvent = USBCLIENT_EV_DISCONNECT;
@@ -223,23 +218,15 @@ void ctrl_lifiq_handler(uint32_t *irqStatus)
 		if (ctrl_common.dc->semBulkTx.v == 0U) {
 			semaphoreUp(&ctrl_common.dc->semBulkTx);
 		}
-
-		*irqStatus &= ~(1UL << GINTSTS_USBSUSP);
 	}
 
 	/* OEPINT */
-	if (IS_IRQ(*irqStatus, GINTSTS_OEPINT)) {
-
-		*irqStatus &= ~(1UL << GINTSTS_OEPINT);
-
+	if (IS_IRQ(irqStatus, GINTSTS_OEPINT)) {
 		_clbc_OEPINT();
 	}
 
 	/* IEPINT */
-	if (IS_IRQ(*irqStatus, GINTSTS_IEPINT)) {
-
-		*irqStatus &= ~(1UL << GINTSTS_IEPINT);
-
+	if (IS_IRQ(irqStatus, GINTSTS_IEPINT)) {
 		_clbc_IEPINT();
 	}
 }
