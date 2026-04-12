@@ -13,6 +13,7 @@
  * %LICENSE%
  */
 
+#include <stdatomic.h>
 #include "phy.h"
 #include "client.h"
 
@@ -65,8 +66,10 @@ static void usbclient_irqThread(void *arg)
 	while (stm_common.dc.runIrqThread == 1U) {
 		condWait(stm_common.dc.irqCond, stm_common.dc.irqLock, 0);
 
+		uint32_t pending = atomic_exchange(&stm_common.dc.pending_event, 0U);
+
 		/* low-speed IRQ handling */
-		ctrl_lifiq_handler(&stm_common.dc.pending_event);
+		ctrl_lifiq_handler(pending);
 
 		if ((stm_common.dc.currEvent != stm_common.dc.prevEvent) && (stm_common.dc.cbEvent != NULL)) {
 			stm_common.dc.cbEvent(stm_common.dc.currEvent, stm_common.dc.ctxUser);
