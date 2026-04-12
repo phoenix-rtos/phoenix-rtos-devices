@@ -5,7 +5,7 @@
  *
  * Physical layer configuration
  *
- * Copyright 2025 Phoenix Systems
+ * Copyright 2026 Phoenix Systems
  * Author: Olaf Czerwinski, Radosław Szewczyk, Rafał Mikielis
  *
  * This file is part of Phoenix-RTOS.
@@ -24,16 +24,30 @@
 
 volatile uint32_t *phy_getOtgBase(void);
 
+
 uint32_t phy_getIrq(void);
+
 
 int phy_setClock(void);
 
+
 int phy_mapRegs(void);
+
+
 void phy_unmapRegs(void);
+
+
 void phy_config(usb_dc_t *dc);
+
+
 int phy_usbss_init(void);
+
+
 int phy_clk_reset(void);
+
+
 int phy_clear_config(void);
+
 
 uint32_t phy_getHclkFreq(void);
 
