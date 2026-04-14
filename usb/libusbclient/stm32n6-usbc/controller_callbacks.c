@@ -313,6 +313,7 @@ void clbc_epTransmit(uint8_t epNum, uint8_t *dataBuf, uint32_t len)
 	ep->in.is_in = 1U;
 	ep->in.epNum = epNum;
 	ep->in.xfer_active = 1;
+	ep->in.xfer_failed = 0U;
 
 	epStartXfer(&ep->in);
 }
@@ -391,6 +392,7 @@ void clbc_epReceive(uint8_t epNum, uint8_t *dataBuf, uint32_t len)
 	ep->out.is_in = 0U;
 	ep->out.epNum = epNum;
 	ep->out.xfer_active = 1;
+	ep->out.xfer_failed = 0U;
 
 	epStartXfer(&ep->out);
 }

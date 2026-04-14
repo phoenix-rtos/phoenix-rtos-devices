@@ -164,6 +164,7 @@ typedef struct _stm32n6_endpt_data_t {
 	uint32_t xfer_count;
 	uint32_t xfer_size;
 	volatile uint8_t xfer_active;
+	volatile uint8_t xfer_failed;
 	/* Endpoint static data */
 	usb_buffer_t dataBuf;
 	uint8_t is_in;

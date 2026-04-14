@@ -85,7 +85,7 @@ static void usbclient_irqThread(void *arg)
 int usbclient_send(int endpt, const void *data, unsigned int len)
 {
 	stm32n6_endpt_t *ep;
-	uint32_t res = len;
+	int res = (int)len;
 
 	if (endpt >= ENDPOINTS_NUMBER || endpt < 0) {
 		return -EINVAL;
@@ -104,8 +104,14 @@ int usbclient_send(int endpt, const void *data, unsigned int len)
 			semaphoreDown(&stm_common.dc.semBulkTx, 0);
 		}
 
+		if (ep->in.xfer_failed != 0U) {
+			res = -EIO;
+		}
+		else {
+			res = res - (USB_REG(DIEPTSIZ0 + endpt * EP_STRIDE) & 0x7FFFFUL);
+		}
+
 		semaphoreUp(&stm_common.dc.semBulkTx);
-		res = res - (USB_REG(DIEPTSIZ0 + endpt * EP_STRIDE) & 0x7FFFFUL);
 	}
 
 	return (int)res;
@@ -115,7 +121,7 @@ int usbclient_send(int endpt, const void *data, unsigned int len)
 int usbclient_receive(int endpt, void *data, unsigned int len)
 {
 	stm32n6_endpt_t *ep;
-	uint32_t res = len;
+	int res = (int)len;
 
 	if (endpt >= ENDPOINTS_NUMBER || endpt < 0) {
 		return -EINVAL;
@@ -130,8 +136,14 @@ int usbclient_receive(int endpt, void *data, unsigned int len)
 			semaphoreDown(&stm_common.dc.semBulkRx, 0);
 		}
 
+		if (ep->out.xfer_failed != 0U) {
+			res = -EIO;
+		}
+		else {
+			res = res - (USB_REG(DOEPTSIZ0 + endpt * EP_STRIDE) & 0x7FFFFUL);
+		}
+
 		semaphoreUp(&stm_common.dc.semBulkRx);
-		res = res - (USB_REG(DOEPTSIZ0 + endpt * EP_STRIDE) & 0x7FFFFUL);
 	}
 
 	return (int)res;

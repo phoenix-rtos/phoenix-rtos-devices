@@ -181,13 +181,37 @@ void ctrl_hifiq_handler(uint32_t *irqStatus)
 }
 
 
+static void ctrl_terminateXfers(void)
+{
+	uint8_t epNum = 0U;
+
+	for (epNum = 0U; epNum < ENDPOINTS_NUMBER; epNum++) {
+		if (ctrl_common.data->endpts[epNum].in.xfer_active != 0U) {
+			ctrl_common.data->endpts[epNum].in.xfer_active = 0U;
+			ctrl_common.data->endpts[epNum].in.xfer_failed = 1U;
+		}
+		if (ctrl_common.data->endpts[epNum].out.xfer_active != 0U) {
+			ctrl_common.data->endpts[epNum].out.xfer_active = 0U;
+			ctrl_common.data->endpts[epNum].out.xfer_failed = 1U;
+		}
+	}
+
+	if (ctrl_common.dc->semBulkRx.v == 0U) {
+		semaphoreUp(&ctrl_common.dc->semBulkRx);
+	}
+	if (ctrl_common.dc->semBulkTx.v == 0U) {
+		semaphoreUp(&ctrl_common.dc->semBulkTx);
+	}
+}
+
+
 void ctrl_lifiq_handler(uint32_t irqStatus)
 {
-	uint8_t epNum;
-
 	/* USBRST */
 	if (IS_IRQ(irqStatus, GINTSTS_USBRST)) {
 		ctrl_common.dc->currEvent = USBCLIENT_EV_RESET;
+
+		ctrl_terminateXfers();
 
 		_clbc_USBRST();
 	}
@@ -206,18 +230,7 @@ void ctrl_lifiq_handler(uint32_t irqStatus)
 		ctrl_common.dc->ep0State = USBD_EP0_IDLE;
 		ctrl_common.dc->currEvent = USBCLIENT_EV_DISCONNECT;
 
-		/* Release semaphores, terminate transfers */
-		for (epNum = 0U; epNum < ENDPOINTS_NUMBER; epNum++) {
-			ctrl_common.data->endpts[epNum].in.xfer_active = 0U;
-			ctrl_common.data->endpts[epNum].out.xfer_active = 0U;
-		}
-
-		if (ctrl_common.dc->semBulkRx.v == 0U) {
-			semaphoreUp(&ctrl_common.dc->semBulkRx);
-		}
-		if (ctrl_common.dc->semBulkTx.v == 0U) {
-			semaphoreUp(&ctrl_common.dc->semBulkTx);
-		}
+		ctrl_terminateXfers();
 	}
 
 	/* OEPINT */
