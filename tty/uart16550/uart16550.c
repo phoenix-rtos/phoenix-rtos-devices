@@ -147,6 +147,7 @@ static void uart_intthr(void *arg)
 {
 	uart_t *uart = (uart_t *)arg;
 	uint8_t iir;
+	int cnt;
 
 	mutexLock(uart->mutex);
 	for (;;) {
@@ -164,7 +165,11 @@ static void uart_intthr(void *arg)
 		/* Transmit */
 		if (iir & IIR_THRE) {
 			if (libtty_txready(&uart->tty)) {
-				uarthw_write(uart->hwctx, REG_THR, libtty_getchar(&uart->tty, NULL));
+				cnt = 0;
+				while (libtty_txready(&uart->tty) && (cnt < 16)) {
+					uarthw_write(uart->hwctx, REG_THR, libtty_getchar(&uart->tty, NULL));
+					cnt++;
+				}
 			}
 			else {
 				uarthw_write(uart->hwctx, REG_IMR, IMR_DR);
