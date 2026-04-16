@@ -742,7 +742,10 @@ void _clbc_OEPINT(void)
 
 				clbc_common.dc->ep0State = USBD_EP0_SETUP;
 
-				desc_setup(&clbc_common.dc->setupPacket);
+				if (desc_setup(&clbc_common.dc->setupPacket) < 0) {
+					clbc_epStall(&clbc_common.data->endpts[0]);
+					clbc_common.dc->ep0State = USBD_EP0_STALL;
+				}
 			}
 
 			/* OTEPDIS */
