@@ -299,7 +299,8 @@ static void desc_ReqGetDescriptor(const usb_setup_packet_t *setup)
 			clbc_epTransmit(0, (uint8_t *)desc_common.strProd.vmStruct, MIN(desc_common.strProd.vmStruct->bLength, setup->wLength));
 		}
 		else {
-			clbc_epTransmit(0, NULL, 0);
+			clbc_epStall(&desc_common.data->endpts[0]);
+			desc_common.dc->ep0State = USBD_EP0_STALL;
 		}
 	}
 	else if ((setup->wValue >> 8) == USB_DESC_TYPE_HID_REPORT) {
