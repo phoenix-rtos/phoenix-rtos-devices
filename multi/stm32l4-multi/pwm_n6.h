@@ -27,12 +27,14 @@
 #define PWM_CHN_NUM      4
 #define PWM_BITSEQ4_BITS 16
 
-#define PWM_CCMR_REG(chn_id)      (((chn_id) <= 1) ? (tim_ccmr1) : (tim_ccmr2))
-#define PWM_CCMR_OCPE_OFF(chn_id) (3 + 8 * ((chn_id) & 1))
-#define PWM_CCMR_CCS_OFF(chn_id)  (8 * ((chn_id) & 1))
-#define PWM_CCMR_OCMH_OFF(chn_id) (16 + 8 * ((chn_id) & 1))
-#define PWM_CCMR_OCML_OFF(chn_id) (4 + 8 * ((chn_id) & 1))
-#define PWM_CCMR_OCFE_OFF(chn_id) (2 + 8 * ((chn_id) & 1))
+#define PWM_CCMR_REG(chn_id)       (((chn_id) <= 1) ? (tim_ccmr1) : (tim_ccmr2))
+#define PWM_CCMR_CCS_OFF(chn_id)   (8 * ((chn_id) & 1))
+#define PWM_CCMR_ICPSC_OFF(chn_id) (2 + 8 * ((chn_id) & 1))
+#define PWM_CCMR_ICF_OFF(chn_id)   (4 + 8 * ((chn_id) & 1))
+#define PWM_CCMR_OCFE_OFF(chn_id)  (2 + 8 * ((chn_id) & 1))
+#define PWM_CCMR_OCPE_OFF(chn_id)  (3 + 8 * ((chn_id) & 1))
+#define PWM_CCMR_OCML_OFF(chn_id)  (4 + 8 * ((chn_id) & 1))
+#define PWM_CCMR_OCMH_OFF(chn_id)  (16 + 8 * ((chn_id) & 1))
 
 #define PWM_CCER_CCE_OFF(chn_id)  (4 * (chn_id))
 #define PWM_CCER_CCNE_OFF(chn_id) (2 + 4 * (chn_id))
@@ -69,7 +71,7 @@ int pwm_configure(pwm_tim_id_t timer, uint16_t prescaler, uint32_t top);
 
 
 /* Set compare value for a specific channel on configured timer. Returns errors */
-int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t compare);
+int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t compare, uint8_t activeLow);
 
 
 /* Returns current duty cycle percentage. Or errors */
