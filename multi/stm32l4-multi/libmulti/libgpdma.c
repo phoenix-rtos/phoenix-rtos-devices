@@ -1468,7 +1468,7 @@ void *libdma_malloc(size_t size, size_t alignment)
 	}
 
 	mutexLock(dma_common.dmaAllocMutex);
-	size_t misalign = ((uintptr_t)dma_common.dmaAllocPtr & (alignment - 1));
+	size_t misalign = (alignment == 0) ? 0 : ((uintptr_t)dma_common.dmaAllocPtr & (alignment - 1));
 	misalign = (misalign != 0) ? (alignment - misalign) : 0;
 
 	if ((dma_common.dmaAllocSz < misalign) || (size > (dma_common.dmaAllocSz - misalign))) {

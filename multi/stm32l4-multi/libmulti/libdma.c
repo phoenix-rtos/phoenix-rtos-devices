@@ -15,6 +15,7 @@
 #include <sys/time.h>
 #include <sys/pwman.h>
 #include <stdbool.h>
+#include <stdlib.h>
 
 #include "../common.h"
 #include "libmulti/libdma.h"
@@ -502,6 +503,41 @@ int libdma_acquirePeripheral(int per, unsigned int num, const struct libdma_per 
 	mutexUnlock(dma_common[(int)p->dma].takenLock);
 
 	return err;
+}
+
+
+void *libdma_malloc(size_t size, size_t alignment)
+{
+	/* Alignment must be a power of 2 */
+	if ((alignment & (alignment - 1)) != 0) {
+		return NULL;
+	}
+
+	/* On STM32L4 memory is not cached, so we can use regular memory for DMA */
+	void *ptr = malloc(size);
+	if (ptr == NULL) {
+		return NULL;
+	}
+
+	if ((alignment != 0) && (((uintptr_t)ptr & (alignment - 1)) != 0)) {
+		void *newPtr = realloc(ptr, size + alignment);
+		if (newPtr == NULL) {
+			free(ptr);
+			return NULL;
+		}
+
+		ptr = newPtr;
+		uintptr_t diff = alignment - ((uintptr_t)ptr & (alignment - 1));
+		if (diff != alignment) {
+			ptr = (char *)ptr + diff;
+		}
+	}
+
+	/*
+	 * Note: because `ptr` could be offset from the malloc'ed chunk of memory, it can't be passed directly to free().
+	 * Remember this for the future when implementing libdma_free().
+	 */
+	return ptr;
 }
 
 
