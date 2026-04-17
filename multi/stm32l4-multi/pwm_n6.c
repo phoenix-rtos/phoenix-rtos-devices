@@ -34,6 +34,16 @@
 #define TIM_DIER_UIE (1 << 0) /* Update IRQ enable */
 #define TIM_DIER_UDE (1 << 8) /* Update DMA request enable */
 
+/* DMA capability flags - there exists a DMA request of this type for this timer */
+#define DMA_CAP_CC1 (1 << 0)
+#define DMA_CAP_CC2 (1 << 1)
+#define DMA_CAP_CC3 (1 << 2)
+#define DMA_CAP_CC4 (1 << 3)
+#define DMA_CAP_UPD (1 << 4)
+#define DMA_CAP_TRG (1 << 5)
+#define DMA_CAP_COM (1 << 6)
+
+
 /* Data used in IRQ dshot. Limited to one channel per timer. */
 typedef struct {
 	pwm_ch_id_t chn;  /* Channel used for pwm */
@@ -61,141 +71,167 @@ typedef struct {
 	const unsigned int uevirq; /* Update Event interrupt request */
 	const uint32_t pctl;
 	const uint8_t channels; /* If channel available (1 << channel_id) set */
+	const uint8_t dmaCaps;  /* DMA capabilities */
 } pwm_tim_setup_t;
 
 typedef struct {
 	pwm_irq_t irq;
 	uint32_t arr;
 	atomic_uint_least8_t channelOn;
-	uint8_t devOn;
+	bool initialized;
 #if USE_DSHOT_DMA
+	handle_t dmaMutex;
 	const struct libdma_per *dma_per[PWM_CHN_NUM];
 #endif
 } pwm_tim_data_t;
 
-/* clang-format off */
 static const struct {
 	pwm_tim_setup_t timer[pwm_tim_count];
 } pwm_setup = {
 	.timer = {
 		[pwm_tim1] = {
 			.base = TIM1_BASE,
+			.pctl = pctl_tim1,
 			.channels = (1 << pwm_ch1) | (1 << pwm_ch1n) | (1 << pwm_ch2) | (1 << pwm_ch2n) |
-					    (1 << pwm_ch3) | (1 << pwm_ch3n) | (1 << pwm_ch4) | (1 << pwm_ch4n),
+					(1 << pwm_ch3) | (1 << pwm_ch3n) | (1 << pwm_ch4) | (1 << pwm_ch4n),
 			.uevirq = tim1_up_irq,
-			.pctl = pctl_tim1
+			.dmaCaps = DMA_CAP_CC1 | DMA_CAP_CC2 | DMA_CAP_CC3 | DMA_CAP_CC4 | DMA_CAP_UPD | DMA_CAP_TRG | DMA_CAP_COM,
 		},
 		[pwm_tim2] = {
 			.base = TIM2_BASE,
+			.pctl = pctl_tim2,
 			.channels = (1 << pwm_ch1) | (1 << pwm_ch2) | (1 << pwm_ch3) | (1 << pwm_ch4),
 			.uevirq = tim2_irq,
-			 .pctl = pctl_tim2
+			.dmaCaps = DMA_CAP_CC1 | DMA_CAP_CC2 | DMA_CAP_CC3 | DMA_CAP_CC4 | DMA_CAP_UPD | DMA_CAP_TRG,
 		},
 		[pwm_tim3] = {
 			.base = TIM3_BASE,
+			.pctl = pctl_tim3,
 			.channels = (1 << pwm_ch1) | (1 << pwm_ch2) | (1 << pwm_ch3) | (1 << pwm_ch4),
 			.uevirq = tim3_irq,
-			.pctl = pctl_tim3
+			.dmaCaps = DMA_CAP_CC1 | DMA_CAP_CC2 | DMA_CAP_CC3 | DMA_CAP_CC4 | DMA_CAP_UPD | DMA_CAP_TRG,
 		},
 		[pwm_tim4] = {
 			.base = TIM4_BASE,
+			.pctl = pctl_tim4,
 			.channels = (1 << pwm_ch1) | (1 << pwm_ch2) | (1 << pwm_ch3) | (1 << pwm_ch4),
-			.uevirq = tim4_irq, .pctl = pctl_tim4
+			.uevirq = tim4_irq,
+			.dmaCaps = DMA_CAP_CC1 | DMA_CAP_CC2 | DMA_CAP_CC3 | DMA_CAP_CC4 | DMA_CAP_UPD | DMA_CAP_TRG,
 		},
 		[pwm_tim5] = {
 			.base = TIM5_BASE,
+			.pctl = pctl_tim5,
 			.channels = (1 << pwm_ch1) | (1 << pwm_ch2) | (1 << pwm_ch3) | (1 << pwm_ch4),
 			.uevirq = tim5_irq,
-			.pctl = pctl_tim5 },
+			.dmaCaps = DMA_CAP_CC1 | DMA_CAP_CC2 | DMA_CAP_CC3 | DMA_CAP_CC4 | DMA_CAP_UPD | DMA_CAP_TRG,
+		},
 		[pwm_tim6] = {
 			.base = TIM6_BASE,
+			.pctl = pctl_tim6,
+			.uevirq = tim6_irq,
+			.dmaCaps = DMA_CAP_UPD,
 		},
 		[pwm_tim7] = {
 			.base = TIM7_BASE,
+			.pctl = pctl_tim7,
+			.uevirq = tim7_irq,
+			.dmaCaps = DMA_CAP_UPD,
 		},
 		[pwm_tim8] = {
 			.base = TIM8_BASE,
-			.channels = (1 << pwm_ch1) | (1 << pwm_ch1n) | (1 << pwm_ch2) | (1 << pwm_ch2n) |
-			            (1 << pwm_ch3) | (1 << pwm_ch3n) | (1 << pwm_ch4) | (1 << pwm_ch4n),
+			.pctl = pctl_tim8,
+			.channels = (1 << pwm_ch1) | (1 << pwm_ch1n) | (1 << pwm_ch2) | (1 << pwm_ch2n) | (1 << pwm_ch3) | (1 << pwm_ch3n) | (1 << pwm_ch4) | (1 << pwm_ch4n),
 			.uevirq = tim8_up_irq,
-			.pctl = pctl_tim8
+			.dmaCaps = DMA_CAP_CC1 | DMA_CAP_CC2 | DMA_CAP_CC3 | DMA_CAP_CC4 | DMA_CAP_UPD | DMA_CAP_TRG | DMA_CAP_COM,
 		},
 		[pwm_tim9] = {
 			.base = TIM9_BASE,
+			.pctl = pctl_tim9,
 			.channels = (1 << pwm_ch1) | (1 << pwm_ch2),
 			.uevirq = tim9_irq,
-			.pctl = pctl_tim9
 		},
 		[pwm_tim10] = {
 			.base = TIM10_BASE,
+			.pctl = pctl_tim10,
 			.channels = (1 << pwm_ch1),
 			.uevirq = tim10_irq,
-			.pctl = pctl_tim10
 		},
 		[pwm_tim11] = {
 			.base = TIM11_BASE,
+			.pctl = pctl_tim11,
 			.channels = (1 << pwm_ch1),
 			.uevirq = tim11_irq,
-			.pctl = pctl_tim11
 		},
 		[pwm_tim12] = {
 			.base = TIM12_BASE,
+			.pctl = pctl_tim12,
 			.channels = (1 << pwm_ch1) | (1 << pwm_ch2),
 			.uevirq = tim12_irq,
-			.pctl = pctl_tim12
 		},
 		[pwm_tim13] = {
 			.base = TIM13_BASE,
+			.pctl = pctl_tim13,
 			.channels = (1 << pwm_ch1),
 			.uevirq = tim13_irq,
-			.pctl = pctl_tim13
 		},
 		[pwm_tim14] = {
 			.base = TIM14_BASE,
+			.pctl = pctl_tim14,
 			.channels = (1 << pwm_ch1),
 			.uevirq = tim14_irq,
-			.pctl = pctl_tim14
 		},
 		[pwm_tim15] = {
 			.base = TIM15_BASE,
+			.pctl = pctl_tim15,
 			.channels = (1 << pwm_ch1) | (1 << pwm_ch1n) | (1 << pwm_ch2),
 			.uevirq = tim15_irq,
-			.pctl = pctl_tim15
+			.dmaCaps = DMA_CAP_CC1 | DMA_CAP_CC2 | DMA_CAP_UPD | DMA_CAP_TRG | DMA_CAP_COM,
 		},
 		[pwm_tim16] = {
 			.base = TIM16_BASE,
+			.pctl = pctl_tim16,
 			.channels = (1 << pwm_ch1) | (1 << pwm_ch1n),
 			.uevirq = tim16_irq,
-			.pctl = pctl_tim16
+			.dmaCaps = DMA_CAP_CC1 | DMA_CAP_UPD | DMA_CAP_COM,
 		},
 		[pwm_tim17] = {
 			.base = TIM17_BASE,
+			.pctl = pctl_tim17,
 			.channels = (1 << pwm_ch1) | (1 << pwm_ch1n),
 			.uevirq = tim17_irq,
-			.pctl = pctl_tim17
+			.dmaCaps = DMA_CAP_CC1 | DMA_CAP_UPD | DMA_CAP_COM,
 		},
 		[pwm_tim18] = {
 			.base = TIM18_BASE,
+			.pctl = pctl_tim18,
+			.uevirq = tim18_irq,
+			.dmaCaps = DMA_CAP_CC1 | DMA_CAP_UPD | DMA_CAP_COM,
 		} }
 };
-/* clang-format on */
 
 static struct {
 	pwm_tim_data_t timer[pwm_tim_count];
-#if USE_DSHOT_DMA
-	handle_t dmalock;
-#endif
 } pwm_common;
 
 
-static int pwm_validateTimer(pwm_tim_id_t timer)
+static int pwm_validateTimer(pwm_tim_id_t timer, bool checkInitialized, uint8_t checkDMAFlags)
 {
 	if (timer < 0 || timer >= pwm_tim_count) {
 		return -EINVAL;
 	}
+
 	if (((PWM_TIM_BASIC >> timer) & 1) != 0) {
 		return -EINVAL;
 	}
+
+	if (checkInitialized && !pwm_common.timer[timer].initialized) {
+		return -EINVAL;
+	}
+
+	if ((pwm_setup.timer[timer].dmaCaps & checkDMAFlags) != checkDMAFlags) {
+		return -EINVAL;
+	}
+
 	return EOK;
 }
 
@@ -312,7 +348,7 @@ static int pwm_updateEventIrq(unsigned int n, void *arg)
 
 int pwm_disableTimer(pwm_tim_id_t timer)
 {
-	int res = pwm_validateTimer(timer);
+	int res = pwm_validateTimer(timer, true, 0);
 	if (res < 0) {
 		return res;
 	}
@@ -330,7 +366,7 @@ int pwm_disableTimer(pwm_tim_id_t timer)
 
 int pwm_disableChannel(pwm_tim_id_t timer, pwm_ch_id_t chn)
 {
-	int res = pwm_validateTimer(timer);
+	int res = pwm_validateTimer(timer, true, 0);
 	if (res < 0) {
 		return res;
 	}
@@ -357,7 +393,7 @@ int pwm_disableChannel(pwm_tim_id_t timer, pwm_ch_id_t chn)
 
 uint64_t pwm_getBaseFrequency(pwm_tim_id_t timer)
 {
-	int res = pwm_validateTimer(timer);
+	int res = pwm_validateTimer(timer, true, 0);
 	if (res < 0) {
 		return 0;
 	}
@@ -378,7 +414,7 @@ int pwm_configure(pwm_tim_id_t timer, uint16_t prescaler, uint32_t top)
 	uint16_t t16;
 	volatile uint32_t *base;
 	pwm_irq_t *irq;
-	int res = pwm_validateTimer(timer);
+	int res = pwm_validateTimer(timer, false, 0);
 
 	if (res < 0) {
 		return res;
@@ -388,10 +424,17 @@ int pwm_configure(pwm_tim_id_t timer, uint16_t prescaler, uint32_t top)
 	}
 	base = pwm_setup.timer[timer].base;
 	irq = &pwm_common.timer[timer].irq;
-	if (pwm_common.timer[timer].devOn == 0) {
+	if (!pwm_common.timer[timer].initialized) {
 		devClk(pwm_setup.timer[timer].pctl, 1);
-		pwm_common.timer[timer].devOn = 1;
+		if (pwm_setup.timer[timer].dmaCaps != 0) {
+			if (mutexCreate(&pwm_common.timer[timer].dmaMutex) < 0) {
+				return -ENOMEM;
+			}
+		}
+
+		pwm_common.timer[timer].initialized = true;
 	}
+
 	if (!irq->flag_initialized) {
 		mutexCreate(&irq->uevlock);
 		condCreate(&irq->uevcond);
@@ -479,7 +522,7 @@ int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t compare)
 	pwm_dshot_ctx_t *dshot;
 #endif
 
-	int res = pwm_validateTimer(timer);
+	int res = pwm_validateTimer(timer, true, 0);
 	if (res < 0) {
 		return res;
 	}
@@ -626,7 +669,7 @@ int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t compare)
 
 int pwm_get(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t *top, uint32_t *compare)
 {
-	int res = pwm_validateTimer(timer);
+	int res = pwm_validateTimer(timer, true, 0);
 	if (res < 0) {
 		return res;
 	}
@@ -700,7 +743,7 @@ static int pwm_callBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn[PWM_CHN_NUM],
 	bool udeMasked = false;
 	int res = 0, i;
 
-	mutexLock(pwm_common.dmalock);
+	mutexLock(pwm_common.timer[timer].dmaMutex);
 
 	for (i = 0; i < PWM_CHN_NUM; ++i) {
 		libdma_transfer_buffer_t buf = {
@@ -771,7 +814,7 @@ static int pwm_callBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn[PWM_CHN_NUM],
 		}
 	}
 
-	mutexUnlock(pwm_common.dmalock);
+	mutexUnlock(pwm_common.timer[timer].dmaMutex);
 	return res;
 #else
 	return -ENOSYS;
@@ -782,7 +825,7 @@ static int pwm_callBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn[PWM_CHN_NUM],
 int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t nbits, uint8_t datasize, int flags)
 {
 	int res;
-	res = pwm_validateTimer(timer);
+	res = pwm_validateTimer(timer, true, DMA_CAP_UPD);
 	if (res < 0) {
 		return res;
 	}
@@ -805,7 +848,7 @@ int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t
 	}
 
 #if USE_DSHOT_DMA
-	mutexLock(pwm_common.dmalock);
+	mutexLock(pwm_common.timer[timer].dmaMutex);
 	const struct libdma_per *per = pwm_common.timer[timer].dma_per[chn];
 	if (per == NULL) {
 		res = (res < 0) ? res : pwm_initDMAChannel(timer, chn);
@@ -855,7 +898,7 @@ int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t
 	*(pwm_setup.timer[timer].base + tim_dier) |= TIM_DIER_UDE;
 	/* TODO: we can calculate a timeout here */
 	res = (res < 0) ? res : libxpdma_waitForTransaction(per, &done, NULL, 0);
-	mutexUnlock(pwm_common.dmalock);
+	mutexUnlock(pwm_common.timer[timer].dmaMutex);
 #else
 	uint16_t firstCompare;
 	pwm_irq_t *irq = &pwm_common.timer[timer].irq;
@@ -897,7 +940,7 @@ int pwm_setBitSequence4(pwm_tim_id_t timer, const uint16_t chnRaw[4], const uint
 
 	(void)flags;
 
-	res = pwm_validateTimer(timer);
+	res = pwm_validateTimer(timer, true, DMA_CAP_UPD);
 	if (res < 0) {
 		return res;
 	}
@@ -930,7 +973,6 @@ int pwm_setBitSequence4(pwm_tim_id_t timer, const uint16_t chnRaw[4], const uint
 int pwm_init(void)
 {
 #if USE_DSHOT_DMA
-	mutexCreate(&pwm_common.dmalock);
 	libdma_init();
 #endif
 	return 0;
