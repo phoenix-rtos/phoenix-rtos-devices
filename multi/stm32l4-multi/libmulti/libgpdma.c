@@ -1288,14 +1288,24 @@ static int libdma_getDmaMemory(void)
 }
 
 
-void *libdma_malloc(size_t size)
+void *libdma_malloc(size_t size, size_t alignment)
 {
+	/* Alignment must be a power of 2 */
+	if ((alignment & (alignment - 1)) != 0) {
+		return NULL;
+	}
+
 	mutexLock(dma_common.dmaAllocMutex);
-	if (size > dma_common.dmaAllocSz) {
+	size_t misalign = ((uintptr_t)dma_common.dmaAllocPtr & (alignment - 1));
+	misalign = (misalign != 0) ? (alignment - misalign) : 0;
+
+	if ((dma_common.dmaAllocSz < misalign) || (size > (dma_common.dmaAllocSz - misalign))) {
 		mutexUnlock(dma_common.dmaAllocMutex);
 		return NULL;
 	}
 
+	dma_common.dmaAllocSz -= misalign;
+	dma_common.dmaAllocPtr += misalign;
 	void *ret = dma_common.dmaAllocPtr;
 	dma_common.dmaAllocSz -= size;
 	dma_common.dmaAllocPtr += size;

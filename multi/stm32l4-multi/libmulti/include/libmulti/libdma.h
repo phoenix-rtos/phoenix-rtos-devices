@@ -232,6 +232,6 @@ ssize_t libxpdma_bufferRemaining(const struct libdma_per *per, int dir);
  * For now to we assume DMA buffers will be allocated once at the start of the program as needed
  * and for this reason no corresponding `libdma_free` function exists.
  */
-void *libdma_malloc(size_t size);
+void *libdma_malloc(size_t size, size_t alignment);
 
 #endif
