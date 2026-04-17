@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <stdbool.h>
+#include <stdatomic.h>
 #include <sys/threads.h>
 #include <sys/interrupt.h>
 #include <sys/pwman.h>
@@ -30,6 +31,7 @@
 #define USE_DSHOT_DMA 1
 #define MAX_DSHOT_DMA 32
 
+#define TIM_DIER_UIE (1 << 0) /* Update IRQ enable */
 #define TIM_DIER_UDE (1 << 8) /* Update DMA request enable */
 
 /* Data used in IRQ dshot. Limited to one channel per timer. */
@@ -64,7 +66,7 @@ typedef struct {
 typedef struct {
 	pwm_irq_t irq;
 	uint32_t arr;
-	uint8_t channelOn;
+	atomic_uint_least8_t channelOn;
 	uint8_t devOn;
 #if USE_DSHOT_DMA
 	const struct libdma_per *dma_per[PWM_CHN_NUM];
@@ -278,14 +280,14 @@ static int pwm_updateEventIrq(unsigned int n, void *arg)
 
 	/* If irq isn't used to load next DSHOT bit, didsable future UEV interrupts. */
 	if (!irq->flag_dshot_uev) {
-		*(base + tim_dier) &= ~1u;
+		*(base + tim_dier) &= ~TIM_DIER_UIE;
 	}
 	else {
 #if USE_DSHOT_DMA == 0
 		pwm_ch_id_t chn = dshot->chn;
 		/* If the last bit was already emitted, can safely disable further UEV IRQ */
 		if (dshot->bitPos > dshot->bitSize) {
-			*(base + tim_dier) &= ~1u;
+			*(base + tim_dier) &= ~TIM_DIER_UIE;
 			irq->flag_dshot_end = 1;
 		}
 		/* If last bit then preload compare value to 0 to end the sequence */
@@ -316,9 +318,7 @@ int pwm_disableTimer(pwm_tim_id_t timer)
 	}
 	/* Disable all enabled channels */
 	for (pwm_ch_id_t chn = 0; chn < PWM_CHN_NUM; chn++) {
-		if (((pwm_common.timer[timer].channelOn >> chn) & 1) != 0) {
-			pwm_disableChannel(timer, chn);
-		}
+		pwm_disableChannel(timer, chn);
 	}
 
 	/* Clear CEN in CR1 */
@@ -339,13 +339,18 @@ int pwm_disableChannel(pwm_tim_id_t timer, pwm_ch_id_t chn)
 		return res;
 	}
 
+	uint8_t prevChannelOn = atomic_fetch_and(&pwm_common.timer[timer].channelOn, ~(1 << chn));
+	if (((prevChannelOn >> chn) & 1) == 0) {
+		/* Already disabled */
+		return 0;
+	}
+
 	/* Disable the channel. Clear CCxE in CCER */
 	*(pwm_setup.timer[timer].base + tim_ccer) &= ~(1 << PWM_CCER_CCE_OFF(chn));
 	if (pwm_channelHasComplement(timer, chn)) {
 		*(pwm_setup.timer[timer].base + tim_ccer) &= ~(1 << PWM_CCER_CCNE_OFF(chn));
 	}
-	/* Remember that channel is closed */
-	pwm_common.timer[timer].channelOn &= ~(1 << chn);
+
 	return EOK;
 }
 
@@ -395,7 +400,7 @@ int pwm_configure(pwm_tim_id_t timer, uint16_t prescaler, uint32_t top)
 	}
 
 	/* Fail if one of the channels hasn't been disabled */
-	if (pwm_common.timer[timer].channelOn != 0) {
+	if (atomic_load(&pwm_common.timer[timer].channelOn) != 0) {
 		return -EPERM;
 	}
 
@@ -439,7 +444,7 @@ int pwm_configure(pwm_tim_id_t timer, uint16_t prescaler, uint32_t top)
 	dataBarier();
 
 	/* Enable update event interrupt */
-	*(base + tim_dier) |= 0x1;
+	*(base + tim_dier) |= TIM_DIER_UIE;
 
 	dataBarier();
 	/* Generate update event (UG bit in EGR) to reload prescaler and repetition counter */
@@ -495,7 +500,8 @@ int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t compare)
 #endif
 
 	/* If channel is on, then only reconfigure compare value */
-	if (((pwm_common.timer[timer].channelOn >> chn) & 1) != 0) {
+	uint8_t prevChannelOn = atomic_fetch_or(&pwm_common.timer[timer].channelOn, (1 << chn));
+	if (((prevChannelOn >> chn) & 1) != 0) {
 		*(base + PWM_CCR_REG(chn)) = compare;
 		return EOK;
 	}
@@ -573,7 +579,7 @@ int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t compare)
 
 	dataBarier();
 	/* Enable update event interrupt */
-	*(base + tim_dier) |= 0x1;
+	*(base + tim_dier) |= TIM_DIER_UIE;
 
 	/* Temporarily clear the DSHOT_UEV flag to run the regular UEV handler */
 	uint32_t oldflag = irq->flag_dshot_uev;
@@ -599,7 +605,7 @@ int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t compare)
 #if USE_DSHOT_DMA == 0
 	/* Enable subsequent UEV interrupts if in dshot mode */
 	if (irq->flag_dshot_uev) {
-		*(base + tim_dier) |= 0x1;
+		*(base + tim_dier) |= TIM_DIER_UIE;
 	}
 
 	/* Preload the second compare value if in dshot mode */
@@ -614,9 +620,6 @@ int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t compare)
 	*(base + tim_cr1) |= 0x1;
 
 	dataBarier();
-
-	/* Mark that channel is on */
-	pwm_common.timer[timer].channelOn |= (1 << chn);
 	return EOK;
 }
 
@@ -631,9 +634,12 @@ int pwm_get(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t *top, uint32_t *compar
 	if (res < 0) {
 		return res;
 	}
-	if (((pwm_common.timer[timer].channelOn >> chn) & 1) == 0) {
+
+	/* If channel is off, we don't allow reading of current timer settings */
+	if (((atomic_load(&pwm_common.timer[timer].channelOn) >> chn) & 1) == 0) {
 		return -EPERM;
 	}
+
 	/* Load top and compare. Return compare/top */
 	*top = *(pwm_setup.timer[timer].base + tim_arr);
 	*compare = *(pwm_setup.timer[timer].base + PWM_CCR_REG(chn));
