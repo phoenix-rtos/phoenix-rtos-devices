@@ -275,7 +275,7 @@ static void handleMsgMulti(msg_t *msg)
 			err = pwm_configure(imsg->pwm_def.timer, imsg->pwm_def.prescaler, imsg->pwm_def.top);
 			break;
 		case pwm_setm:
-			err = pwm_set(imsg->pwm_set.timer, imsg->pwm_set.chn, imsg->pwm_set.compare);
+			err = pwm_set(imsg->pwm_set.timer, imsg->pwm_set.chn, imsg->pwm_set.compare, 0);
 			break;
 		case pwm_getm:
 			uint32_t compare = 0, top = 0;
