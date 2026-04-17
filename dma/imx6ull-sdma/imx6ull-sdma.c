@@ -12,6 +12,7 @@
  */
 
 #include <stdint.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <errno.h>
 #include <unistd.h>
@@ -135,7 +136,7 @@ typedef enum {
 
 typedef struct {
 	int active;
-	int auto_bd_done;
+	bool auto_bd_done;
 
 	sdma_buffer_desc_t *bd;
 	addr_t bd_paddr;
@@ -375,13 +376,14 @@ static int sdma_intr(unsigned int intr, void *arg)
 
 			/* Check if channel is active and it's interrupt flag is set */
 			if (_INTR & (1 << i) && channel->active) {
-
-				/* Set BD_DONE in all buffer descriptors */
-				sdma_buffer_desc_t *current = channel->bd;
-				do {
-					if (!(current->flags & SDMA_BD_DONE))
-						current->flags |= SDMA_BD_DONE;
-				} while (!((current++)->flags & SDMA_BD_WRAP));
+				if (channel->auto_bd_done) {
+					/* Set BD_DONE in all buffer descriptors */
+					sdma_buffer_desc_t *current = channel->bd;
+					do {
+						if (!(current->flags & SDMA_BD_DONE))
+							current->flags |= SDMA_BD_DONE;
+					} while (!((current++)->flags & SDMA_BD_WRAP));
+				}
 
 				/* Increase interrupt count to notify dispatcher that interrupt for
 				 * this channel occurred */
@@ -574,6 +576,7 @@ static int sdma_channel_configure(uint8_t channel_id, sdma_channel_config_t *cfg
 		common.regs->HOSTOVR &= ~(1 << channel_id);
 	}
 
+	common.channel[channel_id].auto_bd_done = (cfg->options & sdma_chOption__auto_bd_done) != 0;
 	sdma_set_channel_priority(channel_id, cfg->priority);
 
 	if ((res = sdma_set_bd_array(channel_id, cfg->bd_paddr, cfg->bd_cnt)) < 0) {

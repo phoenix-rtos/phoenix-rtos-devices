@@ -104,12 +104,17 @@ typedef enum {
 	sdma_trig__host,
 } sdma_trig_t;
 
+enum sdma_chOption {
+	sdma_chOption__auto_bd_done = (1 << 0),
+};
+
 typedef struct {
 	addr_t bd_paddr; /* Physical address of buffer descriptor array */
 	unsigned bd_cnt;
 	sdma_trig_t trig;
 	unsigned event;
 	unsigned priority;
+	unsigned options;
 } sdma_channel_config_t;
 
 typedef enum {

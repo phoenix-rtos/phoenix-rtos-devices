@@ -69,6 +69,7 @@ static void sdma_configure(void)
 	cfg.trig = sdma_trig__event;
 	cfg.event = event_channel;
 	cfg.priority = SDMA_CHANNEL_PRIORITY_MIN + 1;
+	cfg.options = sdma_chOption__auto_bd_done;
 	sdma_channel_configure(&sdma_common.sdma, &cfg);
 }
 
