@@ -211,31 +211,36 @@ static void epStartXfer(stm32n6_endpt_data_t *epData)
 
 	if (epData->is_in == 1U) {
 		/* IN Endpoint */
+		USB_REG(DIEPTSIZ0 + epData->epNum * EP_STRIDE) &= ~(0x7FFFFUL);
+		USB_REG(DIEPTSIZ0 + epData->epNum * EP_STRIDE) &= ~(0x3FFUL << 19);
 
 		if (epData->xfer_len == 0U) {
 			/* Zero Length Packet */
-			USB_REG(DIEPTSIZ0 + epData->epNum * EP_STRIDE) &= ~(0x3FFUL << 19);
 			USB_REG(DIEPTSIZ0 + epData->epNum * EP_STRIDE) |= (1UL << 19);
-			USB_REG(DIEPTSIZ0 + epData->epNum * EP_STRIDE) &= ~(0x7FFFFUL);
 		}
 		else {
-			USB_REG(DIEPTSIZ0 + epData->epNum * EP_STRIDE) &= ~(0x7FFFFUL);
-			USB_REG(DIEPTSIZ0 + epData->epNum * EP_STRIDE) &= ~(0x3FFUL << 19);
+			/* EP0 - send 1 packet at a time */
+			if (epData->epNum == 0U) {
 
-			if (epData->xfer_len > epData->maxpacket) {
-				epData->xfer_len = epData->maxpacket;
+				if (epData->xfer_len > epData->maxpacket) {
+					epData->xfer_len = epData->maxpacket;
+				}
+				USB_REG(DIEPTSIZ0) |= (1UL << 19);
+				USB_REG(DIEPTSIZ0) |= (0x7FFFFUL & epData->xfer_len);
 			}
+			else {
+				/* EP1-EP8 - whole transfer at once */
+				pktcnt = (uint16_t)((epData->xfer_size + epData->maxpacket - 1U) / epData->maxpacket);
+				USB_REG(DIEPTSIZ0 + epData->epNum * EP_STRIDE) |= ((pktcnt & 0x3FFUL) << 19);
 
-			pktcnt = (uint16_t)((epData->xfer_size + epData->maxpacket - 1U) / epData->maxpacket);
-			USB_REG(DIEPTSIZ0 + epData->epNum * EP_STRIDE) |= ((pktcnt & 0x3FFUL) << 19);
+				if (epData->type == USB_EP_TYPE_ISOC) {
+					/**
+					 * TODO: ISOC PACKETS
+					 */
+				}
 
-			if (epData->type == USB_EP_TYPE_ISOC) {
-				/**
-				 * TODO: ISOC PACKETS
-				 */
+				USB_REG(DIEPTSIZ0 + epData->epNum * EP_STRIDE) |= (0x7FFFFUL & epData->xfer_size);
 			}
-
-			USB_REG(DIEPTSIZ0 + epData->epNum * EP_STRIDE) |= (0x7FFFFUL & epData->xfer_size);
 		}
 
 		/* enable endpoint and clear NAK for this transfer */
@@ -260,19 +265,16 @@ static void epStartXfer(stm32n6_endpt_data_t *epData)
 	}
 	else {
 		/* OUT Endpoint */
-		if (epData->epNum == 0) {
-			USB_REG(DOEPTSIZ0) &= ~(0x3U << 19UL);
-			USB_REG(DOEPTSIZ0) &= ~(0x7FU);
+		USB_REG(DOEPTSIZ0 + epData->epNum * EP_STRIDE) &= ~(0x3FFUL << 19UL);
+		USB_REG(DOEPTSIZ0 + epData->epNum * EP_STRIDE) &= ~(0x7FFFFUL);
 
+		if (epData->epNum == 0) {
 			if (epData->xfer_size > epData->maxpacket) {
 				epData->xfer_len = epData->maxpacket;
 			}
 			pktcnt = 1UL;
 		}
 		else {
-			USB_REG(DOEPTSIZ0 + epData->epNum * EP_STRIDE) &= ~(0x3FFUL << 19UL);
-			USB_REG(DOEPTSIZ0 + epData->epNum * EP_STRIDE) &= ~(0x7FFFFUL);
-
 			if (epData->xfer_size == 0) {
 				pktcnt = 1UL;
 			}
@@ -551,12 +553,8 @@ void clbc_sendEpData(uint8_t epNum)
 	uint16_t count32b;
 	uint16_t cnt;
 
-	if (len > ep->in.maxpacket) {
-		len = ep->in.maxpacket;
-	}
-
-	while ((ep->in.xfer_count < ep->in.xfer_size)) {
-		len = (uint16_t)(ep->in.xfer_size - ep->in.xfer_count);
+	while ((ep->in.xfer_count < ep->in.xfer_len)) {
+		len = (uint16_t)(ep->in.xfer_len - ep->in.xfer_count);
 
 		if (len > ep->in.maxpacket)
 			len = ep->in.maxpacket;
@@ -579,7 +577,7 @@ void clbc_sendEpData(uint8_t epNum)
 		ep->in.xfer_buf += len;
 	}
 
-	if (ep->in.xfer_size <= ep->in.xfer_count) {
+	if (ep->in.xfer_len <= ep->in.xfer_count) {
 		/* mask TX FIFO empty interrupt */
 		USB_REG(DIEPEMPMSK) &= ~(1UL << epNum);
 	}
