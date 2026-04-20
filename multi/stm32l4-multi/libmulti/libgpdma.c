@@ -261,9 +261,10 @@ struct libdma_perSetup {
 
 
 struct libdma_per {
-	const struct libdma_perSetup *setup;
-	uint8_t dma;                   /* Controller selected for the given peripheral */
+	uint8_t dma;                   /* Controller selected for the given peripheral. DMA_NUM_CONTROLLERS signifies slot is not in use. */
 	uint8_t chns[dma_mem2per + 1]; /* Channel used for a given direction. Value of DMA_NUM_CHANNELS signifies channel is not in use. */
+	uint8_t reqs[dma_mem2per + 1];
+	uint8_t portPer;
 };
 
 
@@ -273,46 +274,175 @@ struct libdma_per {
  * Only the AXI port of HPDMA can access TCM memories in the CPU.
  */
 
-static const struct libdma_perSetup libdma_persUart[] = {
-	[usart1] = { .defDMA = DMA_CTRL_GPDMA1, .requests = { dma_req_usart1_rx, dma_req_usart1_tx }, .portPer = 1, .portMem = 0, .valid = 1 },
-	[usart2] = { .defDMA = DMA_CTRL_GPDMA1, .requests = { dma_req_usart2_rx, dma_req_usart2_tx }, .portPer = 1, .portMem = 0, .valid = 1 },
-	[usart3] = { .defDMA = DMA_CTRL_GPDMA1, .requests = { dma_req_usart3_rx, dma_req_usart3_tx }, .portPer = 1, .portMem = 0, .valid = 1 },
-	[uart4] = { .defDMA = DMA_CTRL_GPDMA1, .requests = { dma_req_uart4_rx, dma_req_uart4_tx }, .portPer = 1, .portMem = 0, .valid = 1 },
-	[uart5] = { .defDMA = DMA_CTRL_GPDMA1, .requests = { dma_req_uart5_rx, dma_req_uart5_tx }, .portPer = 1, .portMem = 0, .valid = 1 },
-	[usart6] = { .defDMA = DMA_CTRL_GPDMA1, .requests = { dma_req_usart6_rx, dma_req_usart6_tx }, .portPer = 1, .portMem = 0, .valid = 1 },
-	[uart7] = { .defDMA = DMA_CTRL_GPDMA1, .requests = { dma_req_uart7_rx, dma_req_uart7_tx }, .portPer = 1, .portMem = 0, .valid = 1 },
-	[uart8] = { .defDMA = DMA_CTRL_GPDMA1, .requests = { dma_req_uart8_rx, dma_req_uart8_tx }, .portPer = 1, .portMem = 0, .valid = 1 },
-	[uart9] = { .defDMA = DMA_CTRL_GPDMA1, .requests = { dma_req_uart9_rx, dma_req_uart9_tx }, .portPer = 1, .portMem = 0, .valid = 1 },
-	[usart10] = { .defDMA = DMA_CTRL_GPDMA1, .requests = { dma_req_usart10_rx, dma_req_usart10_tx }, .portPer = 1, .portMem = 0, .valid = 1 },
+static const uint8_t libdma_reqsUartRx[] = {
+	[usart1] = dma_req_usart1_rx,
+	[usart2] = dma_req_usart2_rx,
+	[usart3] = dma_req_usart3_rx,
+	[uart4] = dma_req_uart4_rx,
+	[uart5] = dma_req_uart5_rx,
+	[usart6] = dma_req_usart6_rx,
+	[uart7] = dma_req_uart7_rx,
+	[uart8] = dma_req_uart8_rx,
+	[uart9] = dma_req_uart9_rx,
+	[usart10] = dma_req_usart10_rx,
 };
 
 
-static const struct libdma_perSetup libdma_persSpi[] = {
-	[spi1] = { .defDMA = DMA_CTRL_GPDMA1, .requests = { dma_req_spi1_rx, dma_req_spi1_tx }, .portPer = 1, .portMem = 0, .valid = 1 },
-	[spi2] = { .defDMA = DMA_CTRL_GPDMA1, .requests = { dma_req_spi2_rx, dma_req_spi2_tx }, .portPer = 1, .portMem = 0, .valid = 1 },
-	[spi3] = { .defDMA = DMA_CTRL_GPDMA1, .requests = { dma_req_spi3_rx, dma_req_spi3_tx }, .portPer = 1, .portMem = 0, .valid = 1 },
-	[spi4] = { .defDMA = DMA_CTRL_GPDMA1, .requests = { dma_req_spi4_rx, dma_req_spi4_tx }, .portPer = 1, .portMem = 0, .valid = 1 },
-	[spi5] = { .defDMA = DMA_CTRL_GPDMA1, .requests = { dma_req_spi5_rx, dma_req_spi5_tx }, .portPer = 1, .portMem = 0, .valid = 1 },
-	[spi6] = { .defDMA = DMA_CTRL_GPDMA1, .requests = { dma_req_spi6_rx, dma_req_spi6_tx }, .portPer = 1, .portMem = 0, .valid = 1 },
+static const uint8_t libdma_reqsUartTx[] = {
+	[usart1] = dma_req_usart1_tx,
+	[usart2] = dma_req_usart2_tx,
+	[usart3] = dma_req_usart3_tx,
+	[uart4] = dma_req_uart4_tx,
+	[uart5] = dma_req_uart5_tx,
+	[usart6] = dma_req_usart6_tx,
+	[uart7] = dma_req_uart7_tx,
+	[uart8] = dma_req_uart8_tx,
+	[uart9] = dma_req_uart9_tx,
+	[usart10] = dma_req_usart10_tx,
 };
 
 
-static const struct libdma_perSetup libdma_persTimUpd[] = {
-	[pwm_tim1] = { .defDMA = DMA_CTRL_GPDMA1, .requests = { dma_req_invalid, dma_req_tim1_upd }, .portPer = 1, .portMem = 0, .valid = 1 },
-	[pwm_tim2] = { .defDMA = DMA_CTRL_GPDMA1, .requests = { dma_req_invalid, dma_req_tim2_upd }, .portPer = 1, .portMem = 0, .valid = 1 },
-	[pwm_tim3] = { .defDMA = DMA_CTRL_GPDMA1, .requests = { dma_req_invalid, dma_req_tim3_upd }, .portPer = 1, .portMem = 0, .valid = 1 },
-	[pwm_tim4] = { .defDMA = DMA_CTRL_GPDMA1, .requests = { dma_req_invalid, dma_req_tim4_upd }, .portPer = 1, .portMem = 0, .valid = 1 },
-	[pwm_tim5] = { .defDMA = DMA_CTRL_GPDMA1, .requests = { dma_req_invalid, dma_req_tim5_upd }, .portPer = 1, .portMem = 0, .valid = 1 },
-	[pwm_tim8] = { .defDMA = DMA_CTRL_GPDMA1, .requests = { dma_req_invalid, dma_req_tim8_upd }, .portPer = 1, .portMem = 0, .valid = 1 },
-	[pwm_tim15] = { .defDMA = DMA_CTRL_GPDMA1, .requests = { dma_req_invalid, dma_req_tim15_upd }, .portPer = 1, .portMem = 0, .valid = 1 },
-	[pwm_tim16] = { .defDMA = DMA_CTRL_GPDMA1, .requests = { dma_req_invalid, dma_req_tim16_upd }, .portPer = 1, .portMem = 0, .valid = 1 },
-	[pwm_tim17] = { .defDMA = DMA_CTRL_GPDMA1, .requests = { dma_req_invalid, dma_req_tim17_upd }, .portPer = 1, .portMem = 0, .valid = 1 },
+static const uint8_t libdma_reqsSpiRx[] = {
+	[spi1] = dma_req_spi1_rx,
+	[spi2] = dma_req_spi2_rx,
+	[spi3] = dma_req_spi3_rx,
+	[spi4] = dma_req_spi4_rx,
+	[spi5] = dma_req_spi5_rx,
+	[spi6] = dma_req_spi6_rx,
 };
 
 
-static const struct libdma_perSetup libdma_persMemTransfer[] = {
-	[memTransfer_perIsDst] = { .defDMA = DMA_CTRL_HPDMA1, .requests = { dma_req_invalid, dma_req_sw_trig }, .portPer = 0, .portMem = 0, .valid = 1 },
-	[memTransfer_perIsSrc] = { .defDMA = DMA_CTRL_HPDMA1, .requests = { dma_req_sw_trig, dma_req_invalid }, .portPer = 0, .portMem = 0, .valid = 1 },
+static const uint8_t libdma_reqsSpiTx[] = {
+	[spi1] = dma_req_spi1_tx,
+	[spi2] = dma_req_spi2_tx,
+	[spi3] = dma_req_spi3_tx,
+	[spi4] = dma_req_spi4_tx,
+	[spi5] = dma_req_spi5_tx,
+	[spi6] = dma_req_spi6_tx,
+};
+
+
+static const uint8_t libdma_reqsTimUpd[] = {
+	[pwm_tim1] = dma_req_tim1_upd,
+	[pwm_tim2] = dma_req_tim2_upd,
+	[pwm_tim3] = dma_req_tim3_upd,
+	[pwm_tim4] = dma_req_tim4_upd,
+	[pwm_tim5] = dma_req_tim5_upd,
+	[pwm_tim6] = dma_req_tim6_upd,
+	[pwm_tim7] = dma_req_tim7_upd,
+	[pwm_tim8] = dma_req_tim8_upd,
+	[pwm_tim9] = dma_req_invalid,
+	[pwm_tim10] = dma_req_invalid,
+	[pwm_tim11] = dma_req_invalid,
+	[pwm_tim12] = dma_req_invalid,
+	[pwm_tim13] = dma_req_invalid,
+	[pwm_tim14] = dma_req_invalid,
+	[pwm_tim15] = dma_req_tim15_upd,
+	[pwm_tim16] = dma_req_tim16_upd,
+	[pwm_tim17] = dma_req_tim17_upd,
+	[pwm_tim18] = dma_req_tim18_upd,
+};
+
+
+static const uint8_t libdma_reqsTimCC1[] = {
+	[pwm_tim1] = dma_req_tim1_cc1,
+	[pwm_tim2] = dma_req_tim2_cc1,
+	[pwm_tim3] = dma_req_tim3_cc1,
+	[pwm_tim4] = dma_req_tim4_cc1,
+	[pwm_tim5] = dma_req_tim5_cc1,
+	[pwm_tim6] = dma_req_invalid,
+	[pwm_tim7] = dma_req_invalid,
+	[pwm_tim8] = dma_req_tim8_cc1,
+	[pwm_tim9] = dma_req_invalid,
+	[pwm_tim10] = dma_req_invalid,
+	[pwm_tim11] = dma_req_invalid,
+	[pwm_tim12] = dma_req_invalid,
+	[pwm_tim13] = dma_req_invalid,
+	[pwm_tim14] = dma_req_invalid,
+	[pwm_tim15] = dma_req_tim15_cc1,
+	[pwm_tim16] = dma_req_tim16_cc1,
+	[pwm_tim17] = dma_req_tim17_cc1,
+	[pwm_tim18] = dma_req_tim18_cc1,
+};
+
+
+static const uint8_t libdma_reqsTimCC2[] = {
+	[pwm_tim1] = dma_req_tim1_cc2,
+	[pwm_tim2] = dma_req_tim2_cc2,
+	[pwm_tim3] = dma_req_tim3_cc2,
+	[pwm_tim4] = dma_req_tim4_cc2,
+	[pwm_tim5] = dma_req_tim5_cc2,
+	[pwm_tim6] = dma_req_invalid,
+	[pwm_tim7] = dma_req_invalid,
+	[pwm_tim8] = dma_req_tim8_cc2,
+	[pwm_tim9] = dma_req_invalid,
+	[pwm_tim10] = dma_req_invalid,
+	[pwm_tim11] = dma_req_invalid,
+	[pwm_tim12] = dma_req_invalid,
+	[pwm_tim13] = dma_req_invalid,
+	[pwm_tim14] = dma_req_invalid,
+	[pwm_tim15] = dma_req_tim15_cc2,
+};
+
+
+static const uint8_t libdma_reqsTimCC3[] = {
+	[pwm_tim1] = dma_req_tim1_cc3,
+	[pwm_tim2] = dma_req_tim2_cc3,
+	[pwm_tim3] = dma_req_tim3_cc3,
+	[pwm_tim4] = dma_req_tim4_cc3,
+	[pwm_tim5] = dma_req_tim5_cc3,
+	[pwm_tim6] = dma_req_invalid,
+	[pwm_tim7] = dma_req_invalid,
+	[pwm_tim8] = dma_req_tim8_cc3,
+};
+
+
+static const uint8_t libdma_reqsTimCC4[] = {
+	[pwm_tim1] = dma_req_tim1_cc4,
+	[pwm_tim2] = dma_req_tim2_cc4,
+	[pwm_tim3] = dma_req_tim3_cc4,
+	[pwm_tim4] = dma_req_tim4_cc4,
+	[pwm_tim5] = dma_req_tim5_cc4,
+	[pwm_tim6] = dma_req_invalid,
+	[pwm_tim7] = dma_req_invalid,
+	[pwm_tim8] = dma_req_tim8_cc4,
+};
+
+
+static const uint8_t libdma_memTransferP2M[] = {
+	[memTransfer_perIsDst] = dma_req_invalid,
+	[memTransfer_perIsSrc] = dma_req_sw_trig,
+};
+
+
+static const uint8_t libdma_memTransferM2P[] = {
+	[memTransfer_perIsDst] = dma_req_sw_trig,
+	[memTransfer_perIsSrc] = dma_req_invalid,
+};
+
+typedef struct {
+	const uint8_t *reqsPer2Mem;
+	const uint8_t *reqsMem2Per;
+	size_t num;
+	uint8_t defaultDma;
+	uint8_t portPer;
+} libdma_perReqLookup_t;
+
+
+_Static_assert(NELEMS(libdma_reqsSpiRx) == NELEMS(libdma_reqsSpiTx));
+_Static_assert(NELEMS(libdma_reqsUartRx) == NELEMS(libdma_reqsUartTx));
+_Static_assert(NELEMS(libdma_memTransferP2M) == NELEMS(libdma_memTransferM2P));
+
+
+static const libdma_perReqLookup_t libdma_reqsLookup[] = {
+	[dma_spi] = { libdma_reqsSpiRx, libdma_reqsSpiTx, NELEMS(libdma_reqsSpiRx), DMA_CTRL_GPDMA1, 1 },
+	[dma_uart] = { libdma_reqsUartRx, libdma_reqsUartTx, NELEMS(libdma_reqsUartRx), DMA_CTRL_GPDMA1, 1 },
+	[dma_tim_upd] = { NULL, libdma_reqsTimUpd, NELEMS(libdma_reqsTimUpd), DMA_CTRL_GPDMA1, 1 },
+	[dma_memTransfer] = { libdma_memTransferP2M, libdma_memTransferM2P, NELEMS(libdma_memTransferM2P), DMA_CTRL_HPDMA1, 0 },
+	[dma_tim_cap1] = { libdma_reqsTimCC1, NULL, NELEMS(libdma_reqsTimCC1), DMA_CTRL_GPDMA1, 1 },
+	[dma_tim_cap2] = { libdma_reqsTimCC2, NULL, NELEMS(libdma_reqsTimCC2), DMA_CTRL_GPDMA1, 1 },
+	[dma_tim_cap3] = { libdma_reqsTimCC3, NULL, NELEMS(libdma_reqsTimCC3), DMA_CTRL_GPDMA1, 1 },
+	[dma_tim_cap4] = { libdma_reqsTimCC4, NULL, NELEMS(libdma_reqsTimCC4), DMA_CTRL_GPDMA1, 1 },
 };
 
 
@@ -653,36 +783,41 @@ static int libxpdma_findChannel(uint8_t request, int dir, uint32_t *chanFreePtr,
 }
 
 
+static int libxpdma_lookupPeripheral(int per, unsigned int num, uint8_t requests[2], uint8_t *defaultDMA, uint8_t *portPer)
+{
+	if (per >= NELEMS(libdma_reqsLookup)) {
+		return -EINVAL;
+	}
+
+	const libdma_perReqLookup_t *l = &libdma_reqsLookup[per];
+	if (num >= l->num) {
+		return -EINVAL;
+	}
+
+	requests[dma_per2mem] = (l->reqsPer2Mem == NULL) ? dma_req_invalid : l->reqsPer2Mem[num];
+	requests[dma_mem2per] = (l->reqsMem2Per == NULL) ? dma_req_invalid : l->reqsMem2Per[num];
+	if ((requests[dma_per2mem] == dma_req_invalid) && (requests[dma_mem2per] == dma_req_invalid)) {
+		/* If both requests are invalid, this peripheral/number combination is invalid */
+		return -EINVAL;
+	}
+
+	*defaultDMA = l->defaultDma;
+	*portPer = l->portPer;
+	return EOK;
+}
+
+
 int libxpdma_acquirePeripheral(int per, unsigned int num, uint32_t flags, const struct libdma_per **perP)
 {
-	const struct libdma_perSetup *setups;
-	size_t setupsSize;
-	if (per == dma_spi) {
-		setupsSize = NELEMS(libdma_persSpi);
-		setups = libdma_persSpi;
-	}
-	else if (per == dma_uart) {
-		setupsSize = NELEMS(libdma_persUart);
-		setups = libdma_persUart;
-	}
-	else if (per == dma_tim_upd) {
-		setupsSize = NELEMS(libdma_persTimUpd);
-		setups = libdma_persTimUpd;
-	}
-	else if (per == dma_memTransfer) {
-		setupsSize = NELEMS(libdma_persMemTransfer);
-		setups = libdma_persMemTransfer;
-	}
-	else {
-		return -EINVAL;
+	uint8_t requests[2];
+	uint8_t dma;
+	uint8_t portPer;
+
+	int ret = libxpdma_lookupPeripheral(per, num, requests, &dma, &portPer);
+	if (ret < 0) {
+		return ret;
 	}
 
-	if ((num >= setupsSize) || (setups[num].valid == 0)) {
-		return -EINVAL;
-	}
-
-	const struct libdma_perSetup *setup = &setups[num];
-	uint32_t dma = setup->defDMA;
 	if ((flags & (LIBXPDMA_ACQUIRE_FORCE_HPDMA | LIBXPDMA_ACQUIRE_FORCE_GPDMA)) != 0) {
 		bool findHPDMA = (flags & LIBXPDMA_ACQUIRE_FORCE_HPDMA) != 0;
 		for (dma = 0; dma < DMA_NUM_CONTROLLERS; dma++) {
@@ -702,7 +837,7 @@ int libxpdma_acquirePeripheral(int per, unsigned int num, uint32_t flags, const 
 	struct libdma_per *p = NULL;
 	/* Find a free slot for peripheral information */
 	for (int i = 0; i < sizeof(ctrl->pers) / sizeof(ctrl->pers[0]); i++) {
-		if (ctrl->pers[i].setup == NULL) {
+		if (ctrl->pers[i].dma >= DMA_NUM_CONTROLLERS) {
 			p = &ctrl->pers[i];
 			break;
 		}
@@ -716,7 +851,7 @@ int libxpdma_acquirePeripheral(int per, unsigned int num, uint32_t flags, const 
 	/* Find enough unused channels necessary for peripheral */
 	uint32_t chanFree = ctrl->chanFree;
 	for (int dir = dma_per2mem; dir <= dma_mem2per; dir++) {
-		int acqResult = libxpdma_findChannel(setup->requests[dir], dir, &chanFree, flags);
+		int acqResult = libxpdma_findChannel(requests[dir], dir, &chanFree, flags);
 		if (acqResult < 0) {
 			mutexUnlock(ctrl->takenLock);
 			return acqResult;
@@ -726,8 +861,10 @@ int libxpdma_acquirePeripheral(int per, unsigned int num, uint32_t flags, const 
 	}
 
 	ctrl->chanFree = chanFree;
-	p->setup = setup;
 	p->dma = dma;
+	p->reqs[0] = requests[0];
+	p->reqs[1] = requests[1];
+	p->portPer = portPer;
 	mutexUnlock(ctrl->takenLock);
 
 	*perP = p;
@@ -777,7 +914,7 @@ int libxpdma_configurePeripheral(const struct libdma_per *per, int dir, const li
 	sChn->cx.tr1 &= ~(XPDMA_CXTR1_INDIVIDUAL_BITS << shift);
 	uint32_t cxtr1_temp =
 			(1u << 15) | /* secure transfer */
-			((per->setup->portPer & 1) << 14) |
+			((per->portPer & 1) << 14) |
 			(((cfg->burstSize - 1) & 0x3f) << 4) |
 			((cfg->increment != 0) ? (1 << 3) : 0) |
 			((cfg->elSize_log & 0x3) << 0);
@@ -785,7 +922,7 @@ int libxpdma_configurePeripheral(const struct libdma_per *per, int dir, const li
 
 	/* TCEM bits will be configured by libxpdma_configureMemory */
 	sChn->cx.tr2 &= XPDMA_CXTR2_TCEM_MASK;
-	if (per->setup->requests[dir] == dma_req_sw_trig) {
+	if (per->reqs[dir] == dma_req_sw_trig) {
 		sChn->cx.tr2 |= XPDMA_CXTR2_MEM2MEM;
 	}
 	else {
@@ -794,7 +931,7 @@ int libxpdma_configurePeripheral(const struct libdma_per *per, int dir, const li
 				XPDMA_CXTR2_PF_NORMAL |
 				XPDMA_CXTR2_PER_BURST |
 				dir_bit |
-				(per->setup->requests[dir] & 0xff);
+				(per->reqs[dir] & 0xff);
 	}
 
 	if (dir == dma_mem2per) {
@@ -871,7 +1008,7 @@ static ssize_t libxpdma_configureBuffer(
 	tr1_new &= ~(XPDMA_CXTR1_INDIVIDUAL_BITS << shift);
 	uint32_t tr1_bits =
 			(1u << 15) | /* secure transfer */
-			((per->setup->portMem & 1) << 14) |
+			(0 << 14) |  /* Use port 0 for memory (AHB on GPDMA, AXI on HPDMA) */
 			((buf->burstSize - 1) << 4) |
 			((buf->increment != 0) ? (1 << 3) : 0) |
 			(buf->elSize_log & 0x3);
@@ -1573,7 +1710,7 @@ int libdma_init(void)
 		}
 
 		for (size_t per = 0; per < (sizeof(dma_ctrl[dma].pers) / sizeof(dma_ctrl[dma].pers[0])); per++) {
-			dma_ctrl[dma].pers[per].setup = NULL;
+			dma_ctrl[dma].pers[per].dma = DMA_NUM_CONTROLLERS;
 			dma_ctrl[dma].pers[per].chns[0] = DMA_NUM_CHANNELS;
 			dma_ctrl[dma].pers[per].chns[1] = DMA_NUM_CHANNELS;
 		}
