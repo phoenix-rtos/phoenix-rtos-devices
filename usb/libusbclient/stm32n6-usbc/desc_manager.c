@@ -5,7 +5,7 @@
  *
  * Descriptor manager
  *
- * Copyright 2025 Phoenix Systems
+ * Copyright 2026 Phoenix Systems
  * Author: Radosław Szewczyk, Rafał Mikielis
  *
  * This file is part of Phoenix-RTOS.
@@ -23,7 +23,7 @@
 
 #include "client.h"
 
-#define USB_REG(x)             desc_common.dc->base[x]
+#define USB_REG(x)             *(desc_common.dc->base + x)
 #define CONF_DESC_LENGTH(addr) (((usb_configuration_desc_t *)(addr))->wTotalLength)
 
 
@@ -48,30 +48,31 @@ static struct {
 static void desc_endptInit(usb_endpoint_desc_t *endpt)
 {
 	uint8_t epNum = endpt->bEndpointAddress & 0x7U;
+	stm32n6_endpt_t *ep = &desc_common.data->endpts[epNum];
 	uint8_t dir = ((endpt->bEndpointAddress & (1U << 7)) > 0U) ? 1U : 0U;
 
 	if (dir == 1U) {
-		desc_common.data->endpts[epNum].in.maxpacket = endpt->wMaxPacketSize;
-		desc_common.data->endpts[epNum].in.type = endpt->bmAttributes & 0x03;
-		desc_common.data->endpts[epNum].in.is_in = 1U;
-		desc_common.data->endpts[epNum].in.epNum = epNum;
+		ep->in.maxpacket = endpt->wMaxPacketSize;
+		ep->in.type = endpt->bmAttributes & 0x03;
+		ep->in.is_in = 1U;
+		ep->in.epNum = epNum;
 
 		/*
 		 * Descriptors are configured for HS device, right now
 		 * we are FS device so overwriting max packet value.
 		 */
-		if (desc_common.data->endpts[epNum].in.type == 2U) {
-			desc_common.data->endpts[epNum].in.maxpacket = 0x40UL;
+		if (ep->in.type == 2U) {
+			ep->in.maxpacket = 0x40UL;
 		}
 	}
 	else {
-		desc_common.data->endpts[epNum].out.maxpacket = endpt->wMaxPacketSize;
-		desc_common.data->endpts[epNum].out.type = endpt->bmAttributes & 0x03;
-		desc_common.data->endpts[epNum].out.is_in = 0U;
-		desc_common.data->endpts[epNum].out.epNum = epNum;
+		ep->out.maxpacket = endpt->wMaxPacketSize;
+		ep->out.type = endpt->bmAttributes & 0x03;
+		ep->out.is_in = 0U;
+		ep->out.epNum = epNum;
 
-		if (desc_common.data->endpts[epNum].out.type == 2U) {
-			desc_common.data->endpts[epNum].out.maxpacket = 0x40UL;
+		if (ep->out.type == 2U) {
+			ep->out.maxpacket = 0x40UL;
 		}
 	}
 }
@@ -118,6 +119,7 @@ int desc_init(usb_desc_list_t *desList, usb_common_data_t *usbDataIn, usb_dc_t *
 	/* Extract mandatory descriptors to mapped memory */
 	for (; desList != NULL; desList = desList->next) {
 
+		vrtAddr = desc_common.data->setupMem + localOffset;
 		len = desList->descriptor->bFunctionLength;
 		if (localOffset + len > USB_BUFFER_SIZE) {
 			return -ENOMEM;
@@ -125,46 +127,43 @@ int desc_init(usb_desc_list_t *desList, usb_common_data_t *usbDataIn, usb_dc_t *
 
 		switch (desList->descriptor->bDescriptorType) {
 			case USB_DESC_DEVICE:
-				vrtAddr = desc_common.data->setupMem + localOffset;
 				desc_common.dev = (uint8_t *)vrtAddr;
 				memcpy(vrtAddr, desList->descriptor, sizeof(usb_device_desc_t));
-				localOffset += desList->descriptor->bFunctionLength;
+				localOffset += len;
 
 				break;
 
 			case USB_DESC_CONFIG:
-				vrtAddr = desc_common.data->setupMem + localOffset;
 				desc_common.cfg = (uint8_t *)vrtAddr;
 				memcpy(vrtAddr, desList->descriptor, sizeof(usb_configuration_desc_t));
-				localOffset += desList->descriptor->bFunctionLength;
+				localOffset += len;
 				break;
 
 			case USB_DESC_INTERFACE:
-				memcpy(desc_common.data->setupMem + localOffset, desList->descriptor, desList->descriptor->bFunctionLength);
-				localOffset += desList->descriptor->bFunctionLength;
+				memcpy(vrtAddr, desList->descriptor, len);
+				localOffset += len;
 				break;
 
 			case USB_DESC_ENDPOINT:
-				memcpy(desc_common.data->setupMem + localOffset, desList->descriptor, desList->descriptor->bFunctionLength);
-				localOffset += desList->descriptor->bFunctionLength;
+				memcpy(vrtAddr, desList->descriptor, len);
+				localOffset += len;
 				desc_endptInit((usb_endpoint_desc_t *)desList->descriptor);
 				break;
 
 			case USB_DESC_TYPE_HID:
-				memcpy(desc_common.data->setupMem + localOffset, desList->descriptor, desList->descriptor->bFunctionLength);
-				localOffset += desList->descriptor->bFunctionLength;
+				memcpy(vrtAddr, desList->descriptor, len);
+				localOffset += len;
 				break;
 
 			case USB_DESC_TYPE_CDC_CS_INTERFACE:
-				memcpy(desc_common.data->setupMem + localOffset, desList->descriptor, desList->descriptor->bFunctionLength);
-				localOffset += desList->descriptor->bFunctionLength;
+				memcpy(vrtAddr, desList->descriptor, len);
+				localOffset += len;
 				break;
 
 			case USB_DESC_TYPE_HID_REPORT:
-				vrtAddr = desc_common.data->setupMem + localOffset;
 				desc_common.hidReports = (addr_t)vrtAddr;
-				memcpy(vrtAddr, &desList->descriptor->bDescriptorSubtype, desList->descriptor->bFunctionLength - 2);
-				localOffset += desList->descriptor->bFunctionLength - 2;
+				memcpy(vrtAddr, &desList->descriptor->bDescriptorSubtype, len - 2);
+				localOffset += len - 2;
 				break;
 
 			case USB_DESC_STRING:
@@ -188,8 +187,8 @@ int desc_init(usb_desc_list_t *desList, usb_common_data_t *usbDataIn, usb_dc_t *
 
 static void desc_ReqSetAddress(const usb_setup_packet_t *setup)
 {
-	USB_REG(DCFG) &= ~(0x7FUL << DCFG_DAD);
-	USB_REG(DCFG) |= ((setup->wValue & 0x7FUL) << DCFG_DAD);
+	USB_REG(otg_dcfg) &= ~(0x7FUL << DCFG_DAD);
+	USB_REG(otg_dcfg) |= ((setup->wValue & 0x7FUL) << DCFG_DAD);
 
 	desc_common.dc->devAddr = setup->wValue;
 	desc_common.dc->deviceState = USBD_STATE_ADDRESSED;
@@ -434,10 +433,10 @@ void desc_epActivation(stm32n6_endpt_data_t *ep)
 		mask |= ((0xFU & ep->epNum) << DIEPCTL_TXFNUM);
 		mask |= (1UL << DIEPCTL_USBAEP);
 
-		USB_REG(DIEPCTL0 + ep->epNum * EP_STRIDE) = mask;
+		USB_REG(otg_diepctl0 + ep->epNum * EP_STRIDE) = mask;
 
-		/* Unmask DAINT register for given EP */
-		USB_REG(DAINTMSK) |= DAINTMSK_IN(ep->epNum);
+		/* Unmask otg_daint register for given EP */
+		USB_REG(otg_daintmsk) |= DAINTMSK_IN(ep->epNum);
 	}
 	else if (ep->is_in == 0U) {
 		/* Program DOEPCTLx register of this EP */
@@ -446,10 +445,10 @@ void desc_epActivation(stm32n6_endpt_data_t *ep)
 		mask |= ((0x3U & ep->type) << DOEPCTL_EPTYP);
 		mask |= (1UL << DIEPCTL_USBAEP);
 
-		USB_REG(DOEPCTL0 + ep->epNum * EP_STRIDE) = mask;
+		USB_REG(otg_doepctl0 + ep->epNum * EP_STRIDE) = mask;
 
-		/* Unmask DAINT register for given EP */
-		USB_REG(DAINTMSK) |= DAINTMSK_OUT(ep->epNum);
+		/* Unmask otg_daint register for given EP */
+		USB_REG(otg_daintmsk) |= DAINTMSK_OUT(ep->epNum);
 	}
 	else {
 		/* No action needed */
@@ -462,15 +461,15 @@ void desc_epDeactivation(stm32n6_endpt_data_t *ep)
 	if (ep->is_in == 1U) {
 
 		/* clear the USB active endpoint bit */
-		USB_REG(DIEPCTL0 + ep->epNum * EP_STRIDE) &= ~(1UL << DIEPCTL_EPENA);
+		USB_REG(otg_diepctl0 + ep->epNum * EP_STRIDE) &= ~(1UL << DIEPCTL_EPENA);
 
-		/* mask DAINT register for given EP */
-		USB_REG(DAINTMSK) &= ~(DAINTMSK_IN(ep->epNum));
+		/* mask otg_daint register for given EP */
+		USB_REG(otg_daintmsk) &= ~(DAINTMSK_IN(ep->epNum));
 	}
 	else if (ep->is_in == 0U) {
-		USB_REG(DOEPCTL0 + ep->epNum * EP_STRIDE) &= ~(1UL << DOEPCTL_EPENA);
+		USB_REG(otg_doepctl0 + ep->epNum * EP_STRIDE) &= ~(1UL << DOEPCTL_EPENA);
 
-		USB_REG(DAINTMSK) &= ~(DAINTMSK_OUT(ep->epNum));
+		USB_REG(otg_daintmsk) &= ~(DAINTMSK_OUT(ep->epNum));
 	}
 	else {
 		/* No action needed */
