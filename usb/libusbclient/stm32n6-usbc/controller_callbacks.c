@@ -116,10 +116,10 @@ void clbc_epStall(stm32n6_endpt_t *ep)
 	USB_REG(DIEPCTL0 + ep->in.epNum * EP_STRIDE) |= (1UL << DIEPCTL_STALL);
 
 	/* stall OUT endpoint */
-	if (ep->in.epNum != 0U) {
-		USB_REG(DOEPCTL0 + ep->in.epNum * EP_STRIDE) |= (1UL << DOEPCTL_EPDIS);
+	if (ep->out.epNum != 0U) {
+		USB_REG(DOEPCTL0 + ep->out.epNum * EP_STRIDE) |= (1UL << DOEPCTL_EPDIS);
 	}
-	USB_REG(DOEPCTL0 + ep->in.epNum * EP_STRIDE) |= (1UL << DOEPCTL_STALL);
+	USB_REG(DOEPCTL0 + ep->out.epNum * EP_STRIDE) |= (1UL << DOEPCTL_STALL);
 }
 
 
