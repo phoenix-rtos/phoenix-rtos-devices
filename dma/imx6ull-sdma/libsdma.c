@@ -80,7 +80,7 @@ int sdma_channel_configure(sdma_t *s, sdma_channel_config_t *cfg)
 	return sdma_dev_ctl(s, &dev_ctl, NULL, 0);
 }
 
-int sdma_data_mem_write(sdma_t *s, void *data, size_t size, addr_t addr)
+int sdma_data_mem_write(sdma_t *s, const void *data, size_t size, addr_t addr)
 {
 	sdma_dev_ctl_t dev_ctl;
 
@@ -88,7 +88,7 @@ int sdma_data_mem_write(sdma_t *s, void *data, size_t size, addr_t addr)
 	dev_ctl.mem.addr = addr;
 	dev_ctl.mem.len = size;
 
-	return sdma_dev_ctl(s, &dev_ctl, data, size);
+	return sdma_dev_ctl(s, &dev_ctl, (void *)data, size);
 }
 
 int sdma_data_mem_read(sdma_t *s, void *data, size_t size, addr_t addr)
