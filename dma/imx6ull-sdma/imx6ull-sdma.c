@@ -339,30 +339,22 @@ static int sdma_free_uncached(void *vaddr, size_t size)
 	return munmap(vaddr, n*_PAGE_SIZE);
 }
 
-static int __attribute__((unused)) sdma_program_memory_dump(uint16_t addr,
-															addr_t buffer,
-															size_t size)
+static int __attribute__((unused)) sdma_program_memory_dump(uint16_t addr, addr_t buffer, size_t size)
 {
 	return sdma_run_channel0_cmd(size, SDMA_CMD_C0_GET_PM, buffer, addr);
 }
 
-static int __attribute__((unused)) sdma_program_memory_write(uint16_t addr,
-															 addr_t buffer,
-															 size_t size)
+static int __attribute__((unused)) sdma_program_memory_write(uint16_t addr, addr_t buffer, size_t size)
 {
 	return sdma_run_channel0_cmd(size, SDMA_CMD_C0_SET_PM, buffer, addr);
 }
 
-static int sdma_data_memory_dump(uint16_t addr,
-								 addr_t buffer,
-								 size_t size)
+static int sdma_data_memory_dump(uint16_t addr, addr_t buffer, size_t size)
 {
 	return sdma_run_channel0_cmd(size, SDMA_CMD_C0_GET_DM, buffer, addr);
 }
 
-static int sdma_data_memory_write(uint16_t addr,
-								  addr_t buffer,
-								  size_t size)
+static int sdma_data_memory_write(uint16_t addr, addr_t buffer, size_t size)
 {
 	return sdma_run_channel0_cmd(size, SDMA_CMD_C0_SET_DM, buffer, addr);
 }
