@@ -124,6 +124,7 @@ typedef enum {
 	sdma_dev_ctl__ocram_alloc
 } sdma_dev_ctl_type_t;
 
+/* TODO: use separate types for input/output devctl and remove msg.o being used for input data (both raw and data) */
 typedef struct {
 	sdma_dev_ctl_type_t type;
 
