@@ -299,7 +299,8 @@ static void handleMsgMulti(msg_t *msg)
 		case pwm_bitseq4:
 			const uint16_t chn[] = { imsg->pwm_bitseq4.chn[0], imsg->pwm_bitseq4.chn[1], imsg->pwm_bitseq4.chn[2], imsg->pwm_bitseq4.chn[3] };
 			const uint16_t val16[] = { imsg->pwm_bitseq4.val16[0], imsg->pwm_bitseq4.val16[1], imsg->pwm_bitseq4.val16[2], imsg->pwm_bitseq4.val16[3] };
-			err = pwm_setBitSequence4(imsg->pwm_bitseq4.timer, chn, val16, imsg->pwm_bitseq4.hcmp, imsg->pwm_bitseq4.lcmp, imsg->pwm_bitseq4.flags);
+			int *rxOutput = ((msg->o.data != NULL) && (msg->o.size == (4 * sizeof(int)))) ? msg->o.data : NULL;
+			err = pwm_setBitSequence4(imsg->pwm_bitseq4.timer, chn, val16, imsg->pwm_bitseq4.hcmp, imsg->pwm_bitseq4.lcmp, imsg->pwm_bitseq4.flags, rxOutput);
 			break;
 #endif
 		default:
