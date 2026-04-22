@@ -28,8 +28,8 @@
 #include <stdlib.h>
 #include <time.h>
 
-#define USE_DSHOT_DMA 1
-#define MAX_DSHOT_DMA 32
+#define USE_DSHOT_DMA  1
+#define DMA_ALLOC_SIZE (18 * PWM_CHN_NUM * sizeof(uint16_t))
 
 #define TIM_DIER_UIE   (1 << 0)  /* Update IRQ enable */
 #define TIM_DIER_CC1IE (1 << 1)  /* Capture/compare 1 IRQ enable */
@@ -104,11 +104,15 @@ typedef struct {
 	bool initialized;
 #if USE_DSHOT_DMA
 	handle_t dmaMutex;
+	void *dmaMem;
 	const struct libdma_per *dma_per[PWM_CHN_NUM];
 	const struct libdma_per *dma_multiChannel;
 	const struct libdma_per *dma_capture[PWM_CHN_NUM];
 #endif
 } pwm_tim_data_t;
+
+/* Idle value made available as a static const, so that it can be read by DMA */
+static const uint16_t pwm_idleValue = 0;
 
 static const struct {
 	pwm_tim_setup_t timer[pwm_tim_count];
@@ -238,6 +242,12 @@ static struct {
 	pwm_tim_data_t timer[pwm_tim_count];
 	uint32_t baseFreq; /* Timer base frequency, 32-bit range is acceptable on this platform */
 } pwm_common;
+
+/* Get log2(size) for sizes of 4, 2 or 1. */
+static inline uint8_t sizeLog(size_t size)
+{
+	return (size == 4) ? 2 : ((size == 2) ? 1 : 0);
+}
 
 
 static int pwm_validateTimer(pwm_tim_id_t timer, bool checkInitialized, uint8_t checkDMAFlags)
@@ -725,116 +735,6 @@ static int pwm_initDMA(pwm_tim_id_t timer, pwm_ch_id_t chn, enum pwm_dmaAllocTyp
 }
 #endif
 
-static void pwm_fillBitSequence(uint16_t value, uint16_t hcmp, uint16_t lcmp, uint16_t seq[PWM_BITSEQ4_BITS + 2])
-{
-	int bit;
-
-	for (bit = 0; bit < PWM_BITSEQ4_BITS; ++bit) {
-		uint16_t mask = (uint16_t)(1u << (PWM_BITSEQ4_BITS - 1 - bit));
-		seq[bit] = ((value & mask) != 0u) ? hcmp : lcmp;
-	}
-
-	/* Add two "idle" values at the end of the DMA buffer.
-	 * One value is necessary because after DMA writes the last compare value, `libdma_tx` exits and user may
-	 * disable the timer immediately without waiting for the final cycle to finish.
-	 * Another value is added because compare values are "delayed" - a write to the CCR register after an update event
-	 * will not take effect immediately, but during the next cycle.
-	 * Without those two "idle" values, the last value would not be transmitted and second-to-last value
-	 * would not be transmitted completely.
-	 */
-	seq[PWM_BITSEQ4_BITS] = 0;
-	seq[PWM_BITSEQ4_BITS + 1] = 0;
-}
-
-
-static int pwm_callBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn[PWM_CHN_NUM], uint16_t seq[PWM_CHN_NUM][PWM_BITSEQ4_BITS + 2])
-{
-#if USE_DSHOT_DMA
-	volatile uint32_t *base = pwm_setup.timer[timer].base;
-	const struct libdma_per *per[PWM_CHN_NUM];
-	volatile int done[PWM_CHN_NUM] = { 0 };
-	uint8_t started = 0;
-	bool udeMasked = false;
-	int res = 0, i;
-
-	mutexLock(pwm_common.timer[timer].dmaMutex);
-
-	for (i = 0; i < PWM_CHN_NUM; ++i) {
-		libdma_transfer_buffer_t buf = {
-			.buf = seq[i],
-			.bufSize = sizeof(seq[i]),
-			.elSize_log = 1,
-			.burstSize = 1,
-			.increment = 1,
-			.isCached = 1,
-			.transform = LIBXPDMA_TRANSFORM_ALIGNR0,
-		};
-
-		per[i] = pwm_common.timer[timer].dma_per[chn[i]];
-		if (per[i] == NULL) {
-			res = pwm_initDMA(timer, chn[i], pwm_dmaUpd);
-			per[i] = pwm_common.timer[timer].dma_per[chn[i]];
-		}
-
-		if (res < 0) {
-			break;
-		}
-
-		res = libxpdma_configureMemory(per[i], dma_mem2per, 0, &buf, 1);
-		if (res < 0) {
-			break;
-		}
-
-		/* Start/arm the PWM channel in idle state. DMA will update CCR on timer update events. */
-		res = pwm_setInternal(timer, chn[i], 0, 0);
-		if (res < 0) {
-			break;
-		}
-	}
-
-	if (res >= 0) {
-		/* Request is disabled before DMA start and enabled after to prevent a possible race condition
-		 * between DMA start and timer update request. */
-		*(base + tim_dier) &= ~TIM_DIER_UDE;
-		udeMasked = true;
-
-		for (i = 0; i < PWM_CHN_NUM; ++i) {
-			res = libxpdma_startTransferWithFlag(per[i], dma_mem2per, &done[i]);
-			if (res < 0) {
-				break;
-			}
-			started++;
-		}
-	}
-
-	if (udeMasked) {
-		*(base + tim_dier) |= TIM_DIER_UDE;
-		udeMasked = false;
-	}
-
-	if (res >= 0) {
-		/* Wait for all transfers. Preserve the first error, but still drain all transactions. */
-		res = 0;
-		for (i = 0; i < PWM_CHN_NUM; ++i) {
-			int waitRes = libxpdma_waitForTransaction(per[i], &done[i], NULL, 0);
-			if ((res >= 0) && (waitRes < 0)) {
-				res = waitRes;
-			}
-		}
-	}
-	else if (started != 0u) {
-		for (i = 0; i < started; ++i) {
-			(void)libxpdma_waitForTransaction(per[i], &done[i], NULL, 0);
-		}
-	}
-
-	mutexUnlock(pwm_common.timer[timer].dmaMutex);
-	return res;
-#else
-	return -ENOSYS;
-#endif
-}
-
 
 int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t nbits, uint8_t datasize, int flags)
 {
@@ -863,19 +763,14 @@ int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t
 
 #if USE_DSHOT_DMA
 	mutexLock(pwm_common.timer[timer].dmaMutex);
-	const struct libdma_per *per = pwm_common.timer[timer].dma_per[chn];
-	if (per == NULL) {
-		res = (res < 0) ? res : pwm_initDMA(timer, chn, pwm_dmaUpd);
-		per = pwm_common.timer[timer].dma_per[chn];
-	}
+	res = (res < 0) ? res : pwm_initDMA(timer, chn, pwm_dmaUpd);
 
-	static const uint8_t zero_value = 0;
-	const uint8_t datasize_log = (datasize == 1) ? 0 : ((datasize == 2) ? 1 : 2);
+	const struct libdma_per *per = pwm_common.timer[timer].dma_per[chn];
 	libdma_transfer_buffer_t bufs[2] = {
 		{
 			.buf = data,
-			.bufSize = nbits << datasize_log,
-			.elSize_log = datasize_log,
+			.bufSize = nbits * datasize,
+			.elSize_log = sizeLog(datasize),
 			.burstSize = 1,
 			.increment = 1,
 			.isCached = 1,
@@ -892,9 +787,9 @@ int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t
 		 * on how fast `libdma_tx` returns after DMA is finished.
 		 */
 		{
-			.buf = (void *)&zero_value,
-			.bufSize = 2,
-			.elSize_log = 0,
+			.buf = (void *)&pwm_idleValue,
+			.bufSize = 2 * sizeof(pwm_idleValue),
+			.elSize_log = sizeLog(sizeof(pwm_idleValue)),
 			.burstSize = 1,
 			.increment = 0,
 			.isCached = 0,
@@ -903,7 +798,7 @@ int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t
 	};
 	res = (res < 0) ? res : libxpdma_configureMemory(per, dma_mem2per, 0, bufs, 2);
 	/* Start the PWM channel. Set first duty cycle to 0 - idle state. It will be output until DMA takes over. */
-	res = (res < 0) ? res : pwm_setInternal(timer, chn, 0, 0);
+	res = (res < 0) ? res : pwm_setInternal(timer, chn, pwm_idleValue, 0);
 	volatile int done = 0;
 	/* Request is disabled before DMA start and enabled after to prevent a possible race condition
 	 * between DMA start and timer update request. */
@@ -946,12 +841,42 @@ int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t
 }
 
 
+/* Render data given in `val16` into an array of timer compare values.
+ * * `output` - array of timer values.
+ *   Array must have (`n_bits * n_channels`) elements.
+ * * `n_bits` - total number of bits to render (0..16)
+ * * `valIdx` - mapping from physical channel to indices into `val16`.
+ *   Index of < 0 indicates the channel will be inactive.
+ *   Array must have `n_channels` elements.
+ * * `n_channels` - total number of channels to output (0..`PWM_CHN_NUM`)
+ * * `val16` - data for channels.
+ *   Array must have `max(valIdx[...])` elements.
+ * * `hcmp` - timer compare value for 1 bit
+ * * `lcmp` - timer compare value for 0 bit
+ */
+static void pwm_renderBitSequence(volatile uint16_t *output, size_t n_bits, int *valIdx, size_t n_channels, const uint16_t *val16, uint16_t hcmp, uint16_t lcmp)
+{
+	for (size_t bitIdx = 0; bitIdx < n_bits; bitIdx++) {
+		uint16_t mask = (1U << (n_bits - 1 - bitIdx));
+		for (size_t chnIdx = 0; chnIdx < n_channels; chnIdx++) {
+			int idx = valIdx[chnIdx];
+			uint16_t cmp = pwm_idleValue;
+			if (idx >= 0) {
+				cmp = ((val16[idx] & mask) != 0) ? hcmp : lcmp;
+			}
+
+			output[(bitIdx * n_channels) + chnIdx] = cmp;
+		}
+	}
+}
+
+
 int pwm_setBitSequence4(pwm_tim_id_t timer, const uint16_t chnRaw[4], const uint16_t val16[4], uint16_t hcmp, uint16_t lcmp, int flags)
 {
-	pwm_ch_id_t chn[PWM_CHN_NUM];
-	uint16_t seq[PWM_CHN_NUM][PWM_BITSEQ4_BITS + 2];
-	int res, i, j;
-
+#if USE_DSHOT_DMA
+	int res;
+	/* Mapping from physical channels (pwm_ch1 .. pwm_ch4) to indices in val16 array */
+	int valIdx[PWM_CHN_NUM] = { -1, -1, -1, -1 };
 	(void)flags;
 
 	res = pwm_validateTimer(timer, true, DMA_CAP_UPD);
@@ -959,28 +884,102 @@ int pwm_setBitSequence4(pwm_tim_id_t timer, const uint16_t chnRaw[4], const uint
 		return res;
 	}
 
-	for (i = 0; i < PWM_CHN_NUM; ++i) {
-		chn[i] = (pwm_ch_id_t)chnRaw[i];
-
-		res = pwm_validateChannel(timer, chn[i]);
+	pwm_tim_data_t *t = &pwm_common.timer[timer];
+	for (int i = 0; i < 4; i++) {
+		pwm_ch_id_t chn = (pwm_ch_id_t)chnRaw[i];
+		res = pwm_validateChannel(timer, chn);
 		if (res < 0) {
 			return res;
 		}
 
-		for (j = 0; j < i; ++j) {
-			if (chn[i] == chn[j]) {
-				return -EINVAL;
-			}
-
-			if (PWM_CCR_REG(chn[i]) == PWM_CCR_REG(chn[j])) {
-				return -EINVAL;
-			}
+		if (valIdx[chn] != -1) {
+			/* One of the channels was given twice */
+			return -EINVAL;
 		}
 
-		pwm_fillBitSequence(val16[i], hcmp, lcmp, seq[i]);
+		valIdx[chn] = i;
 	}
 
-	return pwm_callBitSequence(timer, chn, seq);
+	mutexLock(t->dmaMutex);
+	res = pwm_initDMA(timer, 0, pwm_dmaUpdMultiChannel);
+	if (res < 0) {
+		mutexUnlock(t->dmaMutex);
+		return res;
+	}
+
+	if (t->dmaMem == NULL) {
+		t->dmaMem = libdma_malloc(DMA_ALLOC_SIZE, sizeof(uint16_t));
+		if (t->dmaMem == NULL) {
+			mutexUnlock(t->dmaMutex);
+			return -ENOMEM;
+		}
+	}
+
+	const struct libdma_per *per = t->dma_multiChannel;
+	static const size_t n_bits = 16;
+	static const size_t n_values = n_bits * PWM_CHN_NUM;
+	_Static_assert(n_values * sizeof(uint16_t) <= DMA_ALLOC_SIZE);
+	volatile uint16_t *rendered = t->dmaMem;
+	pwm_renderBitSequence(rendered, n_bits, valIdx, PWM_CHN_NUM, val16, hcmp, lcmp);
+	libdma_transfer_buffer_t bufs[2] = {
+		{
+			.buf = (void *)rendered,
+			.bufSize = n_values * sizeof(rendered[0]),
+			.elSize_log = sizeLog(sizeof(rendered[0])),
+			.burstSize = PWM_CHN_NUM, /* Use burst transaction when reading to reduce bus contention a bit */
+			.increment = 1,
+			.isCached = 0,
+			.transform = LIBXPDMA_TRANSFORM_ALIGNR0,
+		},
+		/* Insert the two idle values (see above) */
+		{
+			.buf = (void *)&pwm_idleValue,
+			.bufSize = 2 * PWM_CHN_NUM * sizeof(pwm_idleValue),
+			.elSize_log = sizeLog(sizeof(pwm_idleValue)),
+			.burstSize = PWM_CHN_NUM,
+			.increment = 0,
+			.isCached = 0,
+			.transform = LIBXPDMA_TRANSFORM_ALIGNR0,
+		},
+	};
+
+	res = libxpdma_configureMemory(per, dma_mem2per, 0, bufs, 2);
+	if (res < 0) {
+		mutexUnlock(t->dmaMutex);
+		return res;
+	}
+
+	/* Start the PWM channel. Set first duty cycle to 0 - idle state. It will be output until DMA takes over. */
+	for (int i = pwm_ch1; i <= pwm_ch4; i++) {
+		res = pwm_setInternal(timer, i, pwm_idleValue, 0);
+		if (res < 0) {
+			mutexUnlock(t->dmaMutex);
+			return res;
+		}
+	}
+
+	volatile int done = 0;
+	/* Configure DMA distribution system */
+	*(pwm_setup.timer[timer].base + tim_dier) &= ~TIM_DIER_UDE;
+	*(pwm_setup.timer[timer].base + tim_dcr) =
+			(1 << 16) |                /* DMA burst source: update event */
+			((PWM_CHN_NUM - 1) << 8) | /* DMA burst length: all available channels */
+			(tim_ccr1 << 0);           /* DMA burst start at CCR1 register */
+	res = libxpdma_startTransferWithFlag(per, dma_mem2per, &done);
+	if (res < 0) {
+		mutexUnlock(t->dmaMutex);
+		return res;
+	}
+
+	*(pwm_setup.timer[timer].base + tim_dier) |= TIM_DIER_UDE;
+	/* TODO: we can calculate a timeout here */
+	res = libxpdma_waitForTransaction(per, &done, NULL, 0);
+	mutexUnlock(t->dmaMutex);
+	return res;
+#else
+	(void)pwm_renderBitSequence;
+	return -ENOSYS;
+#endif
 }
 
 
