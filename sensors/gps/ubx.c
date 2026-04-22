@@ -26,6 +26,8 @@
 #include <libsensors/gps/receiver.h>
 #include <libsensors/gps/nmea.h>
 
+#include <board_config.h>
+
 #include "ubx.h"
 
 #define ubx_STR "ubx:"
@@ -40,12 +42,18 @@
 #define REC_BUF_SZ 1024
 #define INBOX_SIZE 3
 
+#ifndef UBX_DEFAULT_BAUDRATE
+#define UBX_DEFAULT_BAUDRATE B9600
+#endif
+
 
 typedef struct {
 	sensor_event_t evtGps;
 	int filedes;
 	gps_receiver_t receiver;
 	char stack[2048] __attribute__((aligned(8)));
+	handle_t tid;
+	volatile int run;
 } ubx_ctx_t;
 
 
@@ -60,9 +68,8 @@ static void ubx_threadPublish(void *data)
 	/* Redirecting errno to keep backward compatibility (in case of errno not working correctly) */
 	_errno_new(&errnoNew);
 
-	while (1) {
+	while (ctx->run) {
 		inbocCap = gps_recv(ctx->filedes, &ctx->receiver);
-
 		update = 0;
 		for (i = 0; i < inbocCap; i++) {
 			nmea_interpreter(ctx->receiver.inbox[i].msg, &message);
@@ -73,6 +80,8 @@ static void ubx_threadPublish(void *data)
 			sensors_publish(info->id, &ctx->evtGps);
 		}
 	}
+
+	endthread();
 }
 
 
@@ -83,8 +92,9 @@ static int ubx_start(sensor_info_t *info)
 
 	ctx->evtGps.type = SENSOR_TYPE_GPS;
 	ctx->evtGps.gps.devId = info->id;
+	ctx->run = 1;
 
-	err = beginthread(ubx_threadPublish, THREAD_PRIORITY_SENSOR, ctx->stack, sizeof(ctx->stack), info);
+	err = beginthreadex(ubx_threadPublish, THREAD_PRIORITY_SENSOR, ctx->stack, sizeof(ctx->stack), info, &ctx->tid);
 	if (err < 0) {
 		free(ctx);
 	}
@@ -170,8 +180,8 @@ static int ubx_alloc(sensor_info_t *info, const char *args)
 	}
 
 	/* First serial setup backups termios settings */
-	if (gps_serialSetup(ctx->filedes, B9600, &termBackup) < 0) {
-		fprintf(stderr, "%s cannot set baud %d\n", ubx_STR, 9600);
+	if (gps_serialSetup(ctx->filedes, UBX_DEFAULT_BAUDRATE, &termBackup) < 0) {
+		fprintf(stderr, "%s cannot set default baud\n", ubx_STR);
 		close(ctx->filedes);
 		gps_recvDone(&ctx->receiver);
 		free(ctx);
@@ -211,12 +221,38 @@ static int ubx_alloc(sensor_info_t *info, const char *args)
 }
 
 
+static int ubx_dealloc(sensor_info_t *info)
+{
+	ubx_ctx_t *ctx;
+
+	if (!info || !info->ctx) {
+		return -EINVAL;
+	}
+
+	ctx = (ubx_ctx_t *)info->ctx;
+	ctx->run = 0;
+
+	(void)close(ctx->filedes);
+
+	if (ctx->tid) {
+		(void)threadJoin(ctx->tid, (time_t)-1);
+	}
+
+	gps_recvDone(&ctx->receiver);
+	free(ctx);
+	info->ctx = NULL;
+
+	return 0;
+}
+
+
 void __attribute__((constructor)) ubx_register(void)
 {
 	static sensor_drv_t sensor = {
 		.name = "ubx",
 		.alloc = ubx_alloc,
-		.start = ubx_start
+		.start = ubx_start,
+		.dealloc = ubx_dealloc,
 	};
 
 	sensors_register(&sensor);
