@@ -223,6 +223,13 @@ typedef struct {
 } __attribute__((packed)) pwmdischn_t;
 
 
+#define PWM_BITSEQ4_CHN_INVALID   (1UL << 15) /* This channel in the array will be set to idle state */
+#define PWM_BITSEQ4_CHN_IDLE_HIGH (1UL << 14) /* This channel in the array will be in high state when idle */
+#define PWM_BITSEQ4_CHN_IDLE_LOW  (0UL << 14) /* This channel in the array will be in low state when idle */
+#define PWM_BITSEQ4_CHN_DO_RX     (1UL << 13) /* This channel in the array will try to receive response */
+#define PWM_BITSEQ4_CHN_MASK      0xFFUL      /* Mask for channel number */
+
+
 typedef struct {
 	pwm_tim_id_t timer;
 	pwm_ch_id_t chn;
