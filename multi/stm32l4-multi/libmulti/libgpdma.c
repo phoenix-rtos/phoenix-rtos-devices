@@ -213,6 +213,10 @@ enum xpdma_cx_regs {
  * However, bits 29:26 and 13:10 refer to the transfer as a whole (byte exchange, padding and alignment). */
 #define XPDMA_CXTR1_INDIVIDUAL_BITS 0xc3ffUL
 #define XPDMA_CXTR1_COMMON_BITS     0x3c003c00UL
+#define XPDMA_CXTR1_PAM_MASK        (3 << 11)           /* Mask for padding/alignment mode */
+#define XPDMA_CXTR1_PAM_PACK        (2 << 11)           /* Padding/alignment set to FIFO queued packing */
+#define XPDMA_CXTR1_SRC_EL_SIZE(x)  (((x) >> 0) & 0x3)  /* Log2 of element size for source */
+#define XPDMA_CXTR1_DST_EL_SIZE(x)  (((x) >> 16) & 0x3) /* Log2 of element size for destination */
 
 #define XPDMA_CXTR2_TCEM_BLOCK   (0 << 30) /* Generate TC event on block completion, HT on half block */
 #define XPDMA_CXTR2_TCEM_RBLOCK  (1 << 30) /* Generate TC event on repeated block completion, HT on half repeated block */
@@ -987,12 +991,29 @@ static ssize_t libxpdma_configureBuffer(
 		libdma_chn_setup_t *setup,
 		uint32_t *changeMask_out)
 {
-	if ((buf->bufSize == 0) || (buf->bufSize > DMA_MAX_LEN)) {
+	const uint8_t max_elSize_log = dma_setup[dma].isHPDMA ? 3 : 2;
+	if ((buf->bufSize == 0) || ((buf->bufSize & ((1 << buf->elSize_log) - 1)) != 0)) {
 		return -EINVAL;
 	}
 
-	const uint8_t max_elSize_log = dma_setup[dma].isHPDMA ? 3 : 2;
 	if (buf->elSize_log > max_elSize_log) {
+		return -EINVAL;
+	}
+
+	uint32_t bufSizeAtSource = buf->bufSize;
+	if (dir == dma_per2mem) {
+		/* This is a workaround for an unintuitive behavior of the DMA controller.
+		 * Block size stored in BR1 register is always counted at *source* element size.
+		 * E.g. if you have a 32-bit peripheral and only want low 16 bits stored in the buffer,
+		 * BR1 value will have to be twice the size of destination buffer in bytes. */
+		uint32_t perElSizeLog = XPDMA_CXTR1_SRC_EL_SIZE(setup->tr1);
+		uint8_t pamRequest = buf->transform & 0x6;
+		if ((perElSizeLog != buf->elSize_log) && (pamRequest != LIBXPDMA_TRANSFORM_PACK)) {
+			bufSizeAtSource = (buf->bufSize >> buf->elSize_log) << perElSizeLog;
+		}
+	}
+
+	if (bufSizeAtSource > DMA_MAX_LEN) {
 		return -EINVAL;
 	}
 
@@ -1023,8 +1044,8 @@ static ssize_t libxpdma_configureBuffer(
 		n_changes++;
 	}
 
-	if ((setup->br1 & 0xffff) != buf->bufSize) {
-		setup->br1 = (setup->br1 & 0xffff0000) | (buf->bufSize & 0xffff);
+	if ((setup->br1 & 0xffff) != bufSizeAtSource) {
+		setup->br1 = (setup->br1 & 0xffff0000) | (bufSizeAtSource & 0xffff);
 		changeMask |= XPDMA_CXLLR_UB1;
 		n_changes++;
 	}
@@ -1380,7 +1401,21 @@ ssize_t libxpdma_bufferRemaining(const struct libdma_per *per, int dir)
 
 	volatile uint32_t *chnBase = libdma_channelBase(dma, chn);
 	/* Only bottom 16 bits contain data. */
-	return *(chnBase + xpdma_cxbr1) & 0xffff;
+	uint32_t nBytesSrc = *(chnBase + xpdma_cxbr1) & 0xffff;
+	/* Block size stored in BR1 register is always counted at *source* element size.
+	 * If source is memory, then it's OK already.
+	 * If source is peripheral, it's at different element size and packing is not applied, we need to calculate
+	 * the resulting number of bytes in memory. */
+	if (dir == dma_mem2per) {
+		return (ssize_t)nBytesSrc;
+	}
+
+	uint32_t tr1 = *(chnBase + xpdma_cxtr1);
+	if (XPDMA_CXTR1_SRC_EL_SIZE(tr1) != XPDMA_CXTR1_DST_EL_SIZE(tr1) && ((tr1 & XPDMA_CXTR1_PAM_MASK) != XPDMA_CXTR1_PAM_PACK)) {
+		return (nBytesSrc >> XPDMA_CXTR1_SRC_EL_SIZE(tr1)) << XPDMA_CXTR1_DST_EL_SIZE(tr1);
+	}
+
+	return nBytesSrc;
 }
 
 
