@@ -129,10 +129,10 @@ typedef struct _usb_dc_t {
 	uint8_t deviceState;
 	uint8_t ep0State;
 
-	uint32_t pending_event;
+	_Atomic uint32_t pending_event;
 	_Atomic uint32_t daintClear;
-	uint32_t irqPendingDIEPINT[ENDPOINTS_NUMBER];
-	uint32_t irqPendingDOEPINT[ENDPOINTS_NUMBER];
+	_Atomic uint32_t irqPendingDIEPINT[ENDPOINTS_NUMBER];
+	_Atomic uint32_t irqPendingDOEPINT[ENDPOINTS_NUMBER];
 	uint32_t diepmsk;
 } usb_dc_t;
 
@@ -228,7 +228,7 @@ void *usbclient_allocBuff(uint32_t size);
 
 extern void ctrl_init(usb_common_data_t *usb_data_in, usb_dc_t *dc_in);
 extern void ctrl_hifiq_handler(uint32_t *irqStatus);
-extern void ctrl_lifiq_handler(uint32_t *irqStatus);
+extern void ctrl_lifiq_handler(uint32_t irqStatus);
 extern void ctrl_setAddress(uint32_t addr);
 
 extern void clbc_init(usb_common_data_t *usb_data_in, usb_dc_t *dc_in);

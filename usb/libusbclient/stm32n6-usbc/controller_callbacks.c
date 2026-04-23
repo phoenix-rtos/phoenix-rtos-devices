@@ -691,13 +691,11 @@ void _clbc_OEPINT(void)
 		ep = &clbc_common.data->endpts[epNum];
 
 		if ((daintClear & 0x1U) != 0U) {
-			epInt = clbc_common.dc->irqPendingDOEPINT[epNum];
+			epInt = atomic_exchange(&clbc_common.dc->irqPendingDOEPINT[epNum], 0U);
 			epInt &= USB_REG(DOEPMSK);
 
 			/* XFRC */
 			if (IS_IRQ(epInt, DOEPINT_XFRC)) {
-				clbc_common.dc->irqPendingDOEPINT[epNum] &= ~(1UL << DOEPINT_XFRC);
-
 				/* Control transfer */
 				if (epNum == 0U) {
 					/* if STATUS OUT received */
@@ -732,42 +730,20 @@ void _clbc_OEPINT(void)
 
 			/* STUP */
 			if (IS_IRQ(epInt, DOEPINT_STUP)) {
-				clbc_common.dc->irqPendingDOEPINT[epNum] &= ~(1UL << DOEPINT_STUP);
-
-				if (((epInt >> DOEPINT_STSPHSRX) & 0x1U) == 0x1U) {
-					clbc_common.dc->irqPendingDOEPINT[epNum] &= ~(1UL << DOEPINT_STSPHSRX);
-				}
-
 				clbc_common.dc->ep0State = USBD_EP0_SETUP;
 
 				desc_setup(&clbc_common.dc->setupPacket);
 			}
 
-			/* OTEPDIS */
-			if (IS_IRQ(epInt, DOEPINT_OTEPDIS)) {
-				clbc_common.dc->irqPendingDOEPINT[epNum] &= ~(1UL << DOEPINT_OTEPDIS);
-			}
-
 			/* EPDISD */
 			if (IS_IRQ(epInt, DOEPINT_EPDISD)) {
-				clbc_common.dc->irqPendingDOEPINT[epNum] &= ~(1UL << DOEPINT_EPDISD);
-
 				if ((USB_REG(GINTSTS) >> 7) & 1) {
 					USB_REG(DCTL) |= (1 << 10);
 				}
 			}
 
-			/* STSPHSRX / OTEPSPR */
-			if (IS_IRQ(epInt, DOEPINT_STSPHSRX)) {
-
-				clbc_common.dc->irqPendingDOEPINT[epNum] &= ~(1UL << DOEPINT_STSPHSRX);
-			}
-
 			/* NAK */
 			if (IS_IRQ(epInt, DOEPINT_NAK)) {
-
-				clbc_common.dc->irqPendingDOEPINT[epNum] &= ~(1UL << DOEPINT_NAK);
-
 				/* check if more data are to be received */
 				if (epNum == 0U) {
 					if ((USB_REG(DOEPTSIZ0 + epNum * EP_STRIDE) & (0x3FFUL << DOEPTSIZ_PKTCNT)) != 0UL) {
@@ -808,13 +784,11 @@ void _clbc_IEPINT(void)
 
 			epMsk |= ((epEmp >> (epNum & 0xFU)) & 0x1U) << 7;
 
-			epInt = clbc_common.dc->irqPendingDIEPINT[epNum];
+			epInt = atomic_exchange(&clbc_common.dc->irqPendingDIEPINT[epNum], 0U);
 			epInt &= epMsk;
 
 			/* XFRC */
 			if (IS_IRQ(epInt, DIEPINT_XFRC)) {
-				clbc_common.dc->irqPendingDIEPINT[epNum] &= ~(1UL << DIEPINT_XFRC);
-
 				/* mask TX FIFO empty interrupt */
 				USB_REG(DIEPEMPMSK) &= ~(1UL << epNum);
 
@@ -850,25 +824,8 @@ void _clbc_IEPINT(void)
 				}
 			}
 
-			/* TOC */
-			if (IS_IRQ(epInt, DIEPINT_TOC)) {
-				clbc_common.dc->irqPendingDIEPINT[epNum] &= ~(1UL << DIEPINT_TOC);
-			}
-
-			/* ITTXFE */
-			if (IS_IRQ(epInt, DIEPINT_ITTXFE)) {
-				clbc_common.dc->irqPendingDIEPINT[epNum] &= ~(1UL << DIEPINT_ITTXFE);
-			}
-
-			/* INEPNE */
-			if (IS_IRQ(epInt, DIEPINT_INEPNE)) {
-				clbc_common.dc->irqPendingDIEPINT[epNum] &= ~(1UL << DIEPINT_INEPNE);
-			}
-
 			/* EPDISD */
 			if (IS_IRQ(epInt, DIEPINT_EPDISD)) {
-				clbc_common.dc->irqPendingDIEPINT[epNum] &= ~(1UL << DIEPINT_EPDISD);
-
 				clbc_flushTxFifo(epNum);
 			}
 		}
