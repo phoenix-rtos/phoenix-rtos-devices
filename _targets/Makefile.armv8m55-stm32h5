@@ -1,0 +1,9 @@
+#
+# Makefile for Phoenix-RTOS 3 device drivers
+#
+# STM32H5 drivers
+#
+# Copyright 2026 Phoenix Systems
+#
+
+DEFAULT_COMPONENTS := stm32l4-multi
