@@ -149,6 +149,7 @@ static int uart_interrupt(unsigned int n, void *arg)
 {
 	return ((uart_t *)arg)->intcond;
 }
+#endif
 
 
 static void uart_intthr(void *arg)
