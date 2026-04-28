@@ -176,7 +176,7 @@ int gps_updateEvt(nmea_t *message, sensor_event_t *evtGps, float posStdev, float
 			evtGps->gps.utc = message->msg.gga.utc * 1000000;
 
 			gettime(&evtGps->timestamp, NULL);
-			break;
+			return 1;
 
 		case nmea_gsa:
 			evtGps->gps.hdop = (unsigned int)(message->msg.gsa.hdop * 1e2);
@@ -184,10 +184,10 @@ int gps_updateEvt(nmea_t *message, sensor_event_t *evtGps, float posStdev, float
 
 			evtGps->gps.eph = evtGps->gps.hdop * posStdev;
 			evtGps->gps.epv = evtGps->gps.vdop * posStdev;
-			break;
+			return 0;
 
 		case nmea_rmc:
-			break;
+			return 0;
 
 		case nmea_vtg:
 			evtGps->gps.heading = message->msg.vtg.track * DEG2MILIRAD;     /* degrees -> milliradians */
@@ -197,13 +197,11 @@ int gps_updateEvt(nmea_t *message, sensor_event_t *evtGps, float posStdev, float
 
 			/* This is not 100% correct error estimation but the only we have */
 			evtGps->gps.evel = evtGps->gps.hdop * velStdev;
-			break;
+			return 0;
 
 		default:
 			return 0;
 	}
-
-	return 1;
 }
 
 
