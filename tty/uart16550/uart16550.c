@@ -56,6 +56,7 @@ typedef struct {
 static struct {
 	uart_t uarts[4];
 	char stack[1024] __attribute__((aligned(8)));
+	char stack2[1024] __attribute__((aligned(8)));
 } uart_common;
 
 
@@ -410,8 +411,11 @@ int main(int argc, char **argv)
 		}
 	}
 
-	beginthread(poolthr, 4, uart_common.stack, sizeof(uart_common.stack), (void *)(uintptr_t)port);
+	beginthread(poolthr, 2, uart_common.stack, sizeof(uart_common.stack), (void *)(uintptr_t)port);
+	beginthread(poolthr, 2, uart_common.stack2, sizeof(uart_common.stack2), (void *)(uintptr_t)port);
 	_uart_mkDev(port, isconsole);
+
+	priority(2);
 	poolthr((void *)(uintptr_t)port);
 
 	return EXIT_SUCCESS;
