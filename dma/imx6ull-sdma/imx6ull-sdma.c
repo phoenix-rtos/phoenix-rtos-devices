@@ -1074,8 +1074,8 @@ int main(int argc, char *argv[])
 	unsigned i, intr_cnt[NUM_OF_SDMA_CHANNELS], cnt;
 	memset(intr_cnt, 0, sizeof(intr_cnt));
 
+	mutexLock(common.lock);
 	while (1) {
-		mutexLock(common.lock);
 		res = condWait(common.intr_cond, common.lock, INTR_WAIT_TIMEOUT_US);
 
 		if (res == -ETIME) {
@@ -1091,8 +1091,6 @@ int main(int argc, char *argv[])
 
 				common.broken = 1;
 			}
-
-			mutexUnlock(common.lock);
 			continue;
 		}
 
@@ -1113,11 +1111,10 @@ int main(int argc, char *argv[])
 			condSignal(common.channel[i].intr_cond);
 			intr_cnt[i] = cnt;
 		}
-
-		mutexUnlock(common.lock);
 	}
 
 	/* Should never be reached */
+	mutexUnlock(common.lock);
 	log_error("Exiting!");
 	return 0;
 }
