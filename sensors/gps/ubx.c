@@ -40,7 +40,7 @@
 #define UBX_VEL_ACCURACY 0.0849f
 
 #define REC_BUF_SZ 1024
-#define INBOX_SIZE 3
+#define INBOX_SIZE 8
 
 #ifndef UBX_DEFAULT_BAUDRATE
 #define UBX_DEFAULT_BAUDRATE B9600
@@ -214,6 +214,8 @@ static int ubx_alloc(sensor_info_t *info, const char *args)
 	/* set output rate to 10Hz */
 	write(ctx->filedes, UBX_PREMADE_FIX_10HZ, sizeof(UBX_PREMADE_FIX_10HZ));
 	usleep(100 * 1000);
+
+	write(ctx->filedes, UBX_PREMADE_UART1_OUT_NMEA_ONLY_115200, sizeof(UBX_PREMADE_UART1_OUT_NMEA_ONLY_115200));
 
 	info->ctx = ctx;
 
