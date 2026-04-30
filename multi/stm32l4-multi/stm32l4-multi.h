@@ -35,6 +35,7 @@ enum {
 	exti_map, otp_get, otp_set, rtc_setBackup, rtc_getBackup, flash_setRaw, flash_erase,
 	rng_get, pwm_def, pwm_setm, pwm_getm, pwm_getfreq, pwm_distim, pwm_dischn, pwm_bitseq, pwm_bitseq4,
 	extFlash_def, extFlash_read, extFlash_write, extFlash_erase, extFlash_chipErase, extFlash_sync,
+	i2c_def
 };
 /* clang-format on */
 
@@ -62,6 +63,13 @@ typedef struct {
 	unsigned char addr;
 	unsigned char reg;
 } __attribute__((packed)) i2cmsg_t;
+
+
+typedef struct {
+	int i2c;
+	unsigned char speed;
+	int riseTime;
+} __attribute__((packed)) i2cdef_t;
 
 
 /* GPIO */
@@ -345,6 +353,7 @@ typedef struct {
 		int rtc_calib;
 		rtctimestamp_t rtc_timestamp;
 		i2cmsg_t i2c_msg;
+		i2cdef_t i2c_def;
 		uartget_t uart_get;
 		uartset_t uart_set;
 		uartdef_t uart_def;
