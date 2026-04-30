@@ -228,7 +228,7 @@ static void thread(void *arg)
 				msg.o.err = -EBUSY;
 				break;
 
-			case mtRead:
+			case mtRead: {
 				int ret = getMeasurement(&temp, &rh);
 				if (ret < 0 && ret != -EAGAIN) { /* If new measurement is not ready, then send previous value */
 					msg.o.err = ret;
@@ -242,7 +242,7 @@ static void thread(void *arg)
 				}
 
 				msg.o.err = 0; /* FIXME: read should return number of bytes read */
-				break;
+			} break;
 
 			case mtDevCtl:
 				msg.o.err = devctl(&msg);
