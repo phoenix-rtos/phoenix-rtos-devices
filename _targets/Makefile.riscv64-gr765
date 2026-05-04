@@ -7,8 +7,8 @@
 #
 
 DEFAULT_COMPONENTS := grlib-uart grspw2 grspwrtr
-DEFAULT_COMPONENTS += gri2cmst i2c-scan
-DEFAULT_COMPONENTS += grspictrl
+DEFAULT_COMPONENTS += gri2cmst i2c-scan libi2c-msg
+DEFAULT_COMPONENTS += grspictrl libspi-mst-msg
 DEFAULT_COMPONENTS += grlib-nandfctrl2
 DEFAULT_COMPONENTS += test-grlib-nandfctrl2
-DEFAULT_COMPONENTS += grgpio
+DEFAULT_COMPONENTS += grgpio libgrgpio-msg
