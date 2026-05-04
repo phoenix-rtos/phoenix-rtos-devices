@@ -70,6 +70,18 @@
 
 #define USE_DSHOT_DMA 1
 
+#ifdef __ARM_FEATURE_MVE
+#if __ARM_FEATURE_MVE != 0
+#ifndef DSHOT_USE_MVE_ACCELERATION
+#define DSHOT_USE_MVE_ACCELERATION 1
+#endif
+#else
+#define DSHOT_USE_MVE_ACCELERATION 0
+#endif /* if __ARM_FEATURE_MVE != 0 */
+#else
+#define DSHOT_USE_MVE_ACCELERATION 0
+#endif /* ifdef __ARM_FEATURE_MVE */
+
 #define TIM_DIER_UIE   (1 << 0)  /* Update IRQ enable */
 #define TIM_DIER_CC1IE (1 << 1)  /* Capture/compare 1 IRQ enable */
 #define TIM_DIER_CC2IE (1 << 2)  /* Capture/compare 2 IRQ enable */
@@ -303,56 +315,145 @@ static inline uint8_t sizeLog(size_t size)
 }
 
 
-/* Decode timer counts into eRPM value.
- * First it turns timer counts into a stream of bits, then it undoes the modified GCR encoding to get the raw value.
- * * bitlen - expected time per bit (unit: timer tick)
- * * counts - array of timer counts taken at edges of signal
- * * n_counts - number of timer counts that were captured
- * * val_out - output of decoded binary value
- * returns:
- * * 0 on success
- * * -EILSEQ on unsuccessful decode
- * NOTE: we assume the timer won't overflow - it shouldn't happen because DMA requests are turned off upon RX timeout.
- */
-static int dshot_decodeRxData(uint16_t bitlen, const uint16_t *counts, size_t nCounts, uint16_t *val_out)
+#if DSHOT_USE_MVE_ACCELERATION
+#include <arm_mve.h>
+#include <arm_mve_types.h>
+
+
+static void pwm_renderBitSequenceMVE(void *output, int *valIdx, const uint16_t *val16, uint16_t hcmp, uint16_t lcmp)
 {
-	static const size_t MAX_BITS = DSHOT_GCR_N_BITS;
-	if (nCounts < 2) {
-		/* Nothing was captured */
-		return -ENODATA;
+	static const size_t n_bits = 16;
+	static const size_t n_channels = 4;
+	uint16_t *out16 = output;
+	uint16_t idlePredicate = 0;
+	uint64_t data = 0;
+	for (int i = 0; i < 4; i++) {
+		if (valIdx[i] < 0) {
+			idlePredicate |= 0x3 << (i * 2); /* Predication is byte-wise */
+		}
+		else {
+			data |= (uint64_t)val16[valIdx[i]] << (i * 16);
+		}
 	}
 
-	if (((nCounts % 2) != 0) || (nCounts < 10)) {
-		/* The last rising edge of the signal was not captured or
-		 * less than minimum number of transitions was captured */
+	idlePredicate |= idlePredicate << 8;
+	uint16x8_t dataVec = __arm_vcreateq_u16(data, data);
+	/* Shift top 4 values by 1 - we handle 2 bits every iteration */
+	dataVec = __arm_vshlq_m_n_u16(dataVec, dataVec, 1, 0xff00);
+	uint16x8_t lcmpVec = __arm_vdupq_n_u16(lcmp);
+	/* For channels that are inactive, pick idle value instead of low time */
+	lcmpVec = __arm_vpselq_u16(__arm_vdupq_n_u16(pwm_idleValue), lcmpVec, idlePredicate);
+	uint16x8_t hcmpVec = __arm_vdupq_n_u16(hcmp);
+	for (size_t i = 0; i < n_bits / 2; i++) {
+		/* Check if top bit set by checking x >= 0x8000 */
+		mve_pred16_t bitSetPredicate = __arm_vcmpcsq_n_u16(dataVec, 0x8000);
+		/* Conditional select - high if top bit set, low if top bit clear */
+		uint16x8_t out = __arm_vpselq_u16(hcmpVec, lcmpVec, bitSetPredicate);
+		/* Shift by 2 for next iteration */
+		dataVec = __arm_vshlq_n_u16(dataVec, 2);
+		/* Store results */
+		__arm_vstrhq_u16(out16 + (2 * n_channels * i), out);
+	}
+}
+
+
+static inline uint32_t getBitLength(uint32_t x)
+{
+	return 32 - __builtin_clz(x);
+}
+
+
+static int dshot_decodeBitsMVE(uint16_t bitlen, const uint16_t *counts, size_t nCounts, uint32_t *val_out)
+{
+	/* The modified GCR value is 21 bits long, but we put an extra 1 bit at the start
+	 * to make things easier to decode. */
+	static const uint32_t TARGET_BITS = DSHOT_GCR_N_BITS + 1;
+	if ((nCounts > 16) || (bitlen > 1024)) {
+		/* Account for algorithm limitations: up to 16 values,
+		 * at long bit lengths our "division" becomes very inaccurate. */
+		return -EINVAL;
+	}
+
+	uint16x8_t data0 = __arm_vldrhq_u16(counts);
+	uint32_t carry = 0;
+	uint16x8_t data0shift = __arm_vshlcq_u16(data0, &carry, 16);
+	data0 = __arm_vsubq_u16(data0, data0shift);
+	/* Load with predication, zero out inactive values */
+	mve_pred16_t tailPred = __arm_vctp16q(nCounts - 8);
+	uint16x8_t data1 = __arm_vldrhq_z_u16(counts + 8, tailPred);
+	/* Shift with the same predication to leave past-the-end timestamps at 0 */
+	uint16x8_t data1shift = __arm_vshlcq_m_u16(data1, &carry, 16, tailPred);
+	data1 = __arm_vsubq_u16(data1, data1shift);
+
+	/* Add a 1-bit-long high state at the start - this will help with decoding later.
+	 * This also replaces the invalid value that is there currently. */
+	data0 = __arm_vsetq_lane_u16(bitlen, data0, 0);
+
+	/* If a diff is very large it will get interpreted as a negative number - this is fine,
+	 * because we will detect and reject it later. */
+	int16x8_t div0;
+	int16x8_t div1;
+	if (bitlen > 1) {
+		/* Vector Saturating Rounding Doubling Multiply Returning High Half, a.k.a. poor man's division.
+		 * data[i] = ((2 * data[i] * multiplier) + 0x8000) >> 16 */
+		int16_t multiplier = ((1UL << 15) + (bitlen / 2)) / bitlen;
+		div0 = __arm_vqrdmulhq_n_s16(__arm_vreinterpretq_s16_u16(data0), multiplier);
+		div1 = __arm_vqrdmulhq_n_s16(__arm_vreinterpretq_s16_u16(data1), multiplier);
+	}
+	else {
+		/* Division by 1 is a no-op */
+		div0 = __arm_vreinterpretq_s16_u16(data0);
+		div1 = __arm_vreinterpretq_s16_u16(data1);
+	}
+
+	/* Sum length of all bits. If signal was correct, there should be no more than 22 bits received
+	 * (including the "fake" 1 bit we put at the start). Because of the cast, if any of the diffs was
+	 * invalid, the accumulation result will be very large and we will reject the signal as intended. */
+	uint32_t valLen = 0;
+	valLen = __arm_vaddvaq_u16(valLen, __arm_vreinterpretq_u16_s16(div0));
+	valLen = __arm_vaddvaq_u16(valLen, __arm_vreinterpretq_u16_s16(div1));
+	if (valLen > TARGET_BITS) {
 		return -EILSEQ;
 	}
 
-	uint32_t val = 1; /* Signal always starts in high state, so starting value is 1 */
-	size_t totalBits = 0;
-	for (size_t i = 1; i <= nCounts; i++) {
-		uint32_t nBits;
-		if (totalBits > MAX_BITS) {
-			/* We decoded too many bits - signal glitch or clock drifted too far */
-			return -EILSEQ;
-		}
-		else if (totalBits == MAX_BITS) {
-			break;
-		}
-		else if (i == nCounts) {
-			nBits = MAX_BITS - totalBits;
-		}
-		else {
-			uint16_t diff = counts[i] - counts[i - 1];
-			nBits = (diff + (bitlen / 2)) / bitlen; /* Divide with rounding to get the expected length */
-		}
+	/* Time for some reorganization - split the 1 bits and 0 bits into different registers.
+	 * This will also cause them to become interleaved between first half and second half of the signal and
+	 * will put lengths of 1 bits above the length of the 0 bits that succeed them */
+	int16x8_t bit1Lengths = __arm_vmovntq_s32(div0, __arm_vreinterpretq_s32_s16(div1));
+	int16x8_t bit0Lengths = __arm_vshrnbq_n_s32(div1, __arm_vreinterpretq_s32_s16(div0), 16);
+	/* Create pattern of `n` ones, then shift it to get pattern of `n` ones then `m` zeroes */
+	uint16x8_t bits1 = __arm_vdupq_n_u16(1);
+	bits1 = __arm_vqshlq_u16(bits1, bit1Lengths);
+	bits1 = __arm_vsubq_n_u16(bits1, 1);
+	uint16x8_t bitPatterns = __arm_vqshlq_u16(bits1, bit0Lengths);
+	int16x8_t lenPatterns = __arm_vaddq_s16(bit1Lengths, bit0Lengths);
+	/* Merge adjacent bit patterns (mind the interleaving!). First swap the 32-bit words within each 64-bit value -
+	 * this gets length of next pattern under previous pattern. Then shift the previous patterns. Finally,
+	 * get previous patterns under next patterns and bitwise OR to merge them. */
+	lenPatterns = __arm_vreinterpretq_s16_s32(__arm_vrev64q_s32(__arm_vreinterpretq_s32_s16(lenPatterns)));
+	bitPatterns = __arm_vqshlq_m_u16(bitPatterns, bitPatterns, lenPatterns, 0x0f0f);
+	uint16x8_t bitPatternsSwapped = __arm_vreinterpretq_u16_u32(__arm_vrev64q_u32(__arm_vreinterpretq_u32_u16(bitPatterns)));
+	bitPatterns = __arm_vorrq_u16(bitPatterns, bitPatternsSwapped);
 
-		totalBits += nBits;
-		uint32_t new_bits = (~val & 1) << nBits;
-		val <<= nBits;
-		val |= (new_bits != 0) ? (new_bits - 1) : 0;
-	}
+	/* At this point shifting the values around and merging them would be too much effort,
+	 * also we've exhausted the potential parallelism because there are just 4 values left.
+	 * Merge the remaining values with regular CPU instructions. */
+	uint32_t val0 = __arm_vgetq_lane_u16(bitPatterns, 4);
+	val0 |= __arm_vgetq_lane_u16(bitPatterns, 0) << getBitLength(val0);
+	uint32_t val1 = __arm_vgetq_lane_u16(bitPatterns, 5);
+	val1 |= __arm_vgetq_lane_u16(bitPatterns, 1) << getBitLength(val1);
+	uint32_t val = (val0 << getBitLength(val1)) | val1;
+	val <<= TARGET_BITS - valLen;
+	val |= (1UL << (TARGET_BITS - valLen)) - 1;
 
+	*val_out = val;
+	return 0;
+}
+#endif
+
+
+static int dshot_decodeGCR(uint32_t val, uint16_t *val_out)
+{
 	/* Decode modified GCR into regular GCR. Note that because bit 21 is set, bit 20 will also be set,
 	 * but it's okay because we only care about bits 0..19. */
 	uint32_t gcr = val ^ (val >> 1);
@@ -405,6 +506,86 @@ static int dshot_decodeRxData(uint16_t bitlen, const uint16_t *counts, size_t nC
 
 	*val_out = res;
 	return 0;
+}
+
+
+/* Decode received timer counts into a sequence of bits */
+static int dshot_decodeBits(uint16_t bitlen, const uint16_t *counts, size_t nCounts, uint32_t *val_out)
+{
+	static const size_t MAX_BITS = DSHOT_GCR_N_BITS;
+	uint32_t val = 1; /* Signal always starts in high state, so starting value is 1 */
+	size_t totalBits = 0;
+	for (size_t i = 1; i <= nCounts; i++) {
+		uint32_t nBits;
+		if (totalBits > MAX_BITS) {
+			/* We decoded too many bits - signal glitch or clock drifted too far */
+			return -EILSEQ;
+		}
+		else if (totalBits == MAX_BITS) {
+			break;
+		}
+		else if (i == nCounts) {
+			nBits = MAX_BITS - totalBits;
+		}
+		else {
+			uint16_t diff = counts[i] - counts[i - 1];
+			nBits = (diff + (bitlen / 2)) / bitlen; /* Divide with rounding to get the expected length */
+		}
+
+		totalBits += nBits;
+		uint32_t new_bits = (~val & 1) << nBits;
+		val <<= nBits;
+		val |= (new_bits != 0) ? (new_bits - 1) : 0;
+	}
+
+	*val_out = val;
+	return 0;
+}
+
+/* Decode timer counts into eRPM value.
+ * First it turns timer counts into a stream of bits, then it undoes the modified GCR encoding to get the raw value.
+ * * bitlen - expected time per bit (unit: timer tick)
+ * * counts - array of timer counts taken at edges of signal
+ * * n_counts - number of timer counts that were captured
+ * * val_out - output of decoded binary value
+ * returns:
+ * * 0 on success
+ * * -EILSEQ on unsuccessful decode
+ * NOTE: we assume the timer won't overflow - it shouldn't happen because DMA requests are turned off upon RX timeout.
+ */
+static int dshot_decodeRxData(uint16_t bitlen, const uint16_t *counts, size_t nCounts, uint16_t *val_out)
+{
+	if (nCounts < 2) {
+		/* Nothing was captured */
+		return -ENODATA;
+	}
+
+	if (((nCounts % 2) != 0) || (nCounts < 10)) {
+		/* The last rising edge of the signal was not captured or
+		 * less than minimum number of transitions was captured */
+		return -EILSEQ;
+	}
+
+	/* -EINVAL means we should retry with non-accelerated algorithm */
+	int ret = -EINVAL;
+	uint32_t val;
+
+#if DSHOT_USE_MVE_ACCELERATION
+	ret = dshot_decodeBitsMVE(bitlen, counts, nCounts, &val);
+	if ((ret < 0) && (ret != -EINVAL)) {
+		return ret;
+	}
+#endif
+
+	if (ret == -EINVAL) {
+		ret = dshot_decodeBits(bitlen, counts, nCounts, &val);
+	}
+
+	if (ret < 0) {
+		return ret;
+	}
+
+	return dshot_decodeGCR(val, val_out);
 }
 
 
@@ -1043,6 +1224,13 @@ int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t
  */
 static void pwm_renderBitSequence(void *output, size_t n_bits, int *valIdx, size_t n_channels, const uint16_t *val16, uint16_t hcmp, uint16_t lcmp)
 {
+#if DSHOT_USE_MVE_ACCELERATION
+	if ((n_bits == 16) && (n_channels == 4)) {
+		pwm_renderBitSequenceMVE(output, valIdx, val16, hcmp, lcmp);
+		return;
+	}
+#endif
+
 	if ((n_bits <= 16) && (n_channels == 4)) {
 		/* If using 16 bits and 4 channels we can render data using this pseudo-vectorized code.
 		 * It doesn't use MVE, but is still 3x as performant as naive code. */
