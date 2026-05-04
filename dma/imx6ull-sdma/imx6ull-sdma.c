@@ -453,7 +453,6 @@ static void sdma_init_core(void)
 
 	common.regs->EVTOVR = 0;
 	common.regs->HOSTOVR = 0;
-	common.regs->DSPOVR = 0xffffffff;
 
 	/* Clear channel pending status */
 	common.regs->EVTPEND = common.regs->EVTPEND;
@@ -557,8 +556,6 @@ static int sdma_channel_configure(uint8_t channel_id, sdma_channel_config_t *cfg
 		log_error("unsupported channel priority");
 		return -1;
 	}
-
-	common.regs->DSPOVR |= 1 << channel_id;
 
 	if (cfg->trig == sdma_trig__event) {
 		if (cfg->event >= NUM_OF_SDMA_REQUESTS) {
