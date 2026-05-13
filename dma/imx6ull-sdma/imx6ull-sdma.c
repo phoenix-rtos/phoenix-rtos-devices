@@ -698,7 +698,7 @@ static int dev_ctl(msg_t *msg)
 			return EOK;
 
 		case sdma_dev_ctl__data_mem_write:
-			if (msg->o.size != dev_ctl.mem.len || msg->o.size > common.tmp_size) {
+			if ((msg->o.size != dev_ctl.mem.len) || (msg->o.size > common.tmp_size) || (msg->o.size % 4 != 0)) {
 				log_error("dev_ctl: invalid size");
 				return -EIO;
 			}
@@ -706,7 +706,7 @@ static int dev_ctl(msg_t *msg)
 			return sdma_data_memory_write(dev_ctl.mem.addr, common.tmp_paddr, dev_ctl.mem.len);
 
 		case sdma_dev_ctl__data_mem_read:
-			if (msg->o.size != dev_ctl.mem.len || msg->o.size > common.tmp_size) {
+			if ((msg->o.size != dev_ctl.mem.len) || (msg->o.size > common.tmp_size) || (msg->o.size % 4 != 0)) {
 				log_error("dev_ctl: invalid size");
 				return -EIO;
 			}
