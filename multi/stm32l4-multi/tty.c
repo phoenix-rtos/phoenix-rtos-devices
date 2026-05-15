@@ -223,6 +223,15 @@ enum { tty_parnone = 0, tty_pareven, tty_parodd };
 #define UART_CR1_RXFNEIE (1 << 5) /* Enable */
 #define UART_ISR_RXFNE   (1 << 5) /* Status */
 
+/* RX (FIFO / register) threshold interrupt */
+#define UART_CR3_RXFT (1 << 28) /* Enable */
+#define UART_ISR_RXFT (1 << 26) /* Status */
+
+/* IDLE line interrupt */
+#define UART_CR1_IDLEIE (1 << 4) /* Enable */
+#define UART_ICR_IDLE   (1 << 4) /* Clear */
+#define UART_ISR_IDLE   (1 << 4) /* Status */
+
 /* TX (FIFO not full / register empty) interrupt */
 #define UART_CR1_TXFNFIE (1 << 7) /* Enable */
 #define UART_ISR_TXFNF   (1 << 7) /* Status */
@@ -271,10 +280,19 @@ static int tty_irqHandler(unsigned int n, void *arg)
 {
 	tty_ctx_t *ctx = (tty_ctx_t *)arg;
 	uint32_t isr_val = *(ctx->base + isr);
-	while ((isr_val & UART_ISR_RXFNE) != 0) {
-		lf_fifo_push(&ctx->data.irq.rxFifo, *(ctx->base + rdr));
+
+#if UART_FIFO_MODE
+	/* check for line idle/rx fifo threshold interrupt */
+	if ((isr_val & UART_ISR_IDLE) || (isr_val & UART_ISR_RXFT)) {
+		*(ctx->base + icr) |= UART_ICR_IDLE;
+#else
+	if (isr_val & UART_ISR_RXFNE) {
+#endif
+		while ((isr_val & UART_ISR_RXFNE) != 0) {
+			lf_fifo_push(&ctx->data.irq.rxFifo, *(ctx->base + rdr));
+			isr_val = *(ctx->base + isr);
+		}
 		ctx->data.irq.rxready = 1;
-		isr_val = *(ctx->base + isr);
 	}
 
 	if ((isr_val & UART_ISR_ORE) != 0) {
@@ -421,11 +439,9 @@ static void tty_irqthread(void *arg)
 	tty_ctx_t *ctx = (tty_ctx_t *)arg;
 	int keptidle = 0;
 	uint8_t mask;
+	uint8_t rxbyte;
 
 	for (;;) {
-		uint8_t rxbyte;
-		unsigned rxcount;
-
 		mutexLock(ctx->irqlock);
 		while (((ctx->data.irq.rxready == 0) && !((tty_txready(ctx) != 0) && ((libtty_txready(&ctx->ttyCommon) != 0) || (keptidle != 0)))) || (tty_uartenabled(ctx) == 0)) {
 			condWait(ctx->cond, ctx->irqlock, 0);
@@ -442,16 +458,19 @@ static void tty_irqthread(void *arg)
 			mask = 0xff;
 		}
 
-		ctx->data.irq.rxready = 0;
-		dataBarier();
-
-		/* limiting byte count to 8 to avoid starving tx */
-		for (rxcount = 8; (rxcount != 0) && (lf_fifo_pop(&ctx->data.irq.rxFifo, &rxbyte) != 0); rxcount--) {
-			libtty_putchar(&ctx->ttyCommon, rxbyte & mask, NULL);
-		}
-		if (rxcount == 0) {
-			/* aborted due to rxcount limit - setting rxready to skip next condWait */
-			ctx->data.irq.rxready = 1;
+		if (ctx->data.irq.rxready) {
+			int wake = 0, wakeHelper = 0;
+			ctx->data.irq.rxready = 0;
+			dataBarier();
+			libtty_putchar_lock(&ctx->ttyCommon);
+			while (lf_fifo_pop(&ctx->data.irq.rxFifo, &rxbyte) != 0) {
+				libtty_putchar_unlocked(&ctx->ttyCommon, rxbyte & mask, &wakeHelper);
+				wake |= wakeHelper;
+			}
+			libtty_putchar_unlock(&ctx->ttyCommon);
+			if (wake != 0) {
+				libtty_wake_reader(&ctx->ttyCommon);
+			}
 		}
 
 		int txReady = 0;
@@ -501,7 +520,12 @@ static void _tty_enable(tty_ctx_t *ctx, char enable)
 		/* Enable transmitter and receiver (TE + RE) */
 		flags = (1 << 3) | (1 << 2);
 		if (ctx->type == tty_irq) {
+#if UART_FIFO_MODE
+			*(ctx->base + cr1) |= UART_CR1_IDLEIE; /* enable idle line interrupt */
+			*(ctx->base + cr3) |= UART_CR3_RXFT;   /* enable fifo threshold interrupt */
+#else
 			flags |= UART_CR1_RXFNEIE;
+#endif
 		}
 		if (ctx->type == tty_dma) {
 			/* Idle line interrupt enable. */
@@ -554,7 +578,8 @@ static int _tty_configure(tty_ctx_t *ctx, char bits, char parity, char enable, c
 		*(ctx->base + cr1) &= ~1;
 		dataBarier();
 #if UART_FIFO_MODE
-		tcr1 |= (1 << 29); /* Activate FIFO mode */
+		tcr1 |= (1 << 29);               /* Activate FIFO mode */
+		*(ctx->base + cr3) |= (3 << 25); /* set rx fifo threshold to 3/4 */
 #endif
 		*(ctx->base + cr1) = tcr1;
 
