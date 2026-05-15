@@ -21,11 +21,22 @@
 #define DMA_MAX_LEN ((1u << 16) - 1u)
 
 
-/* clang-format off */
-enum { dma_per2mem = 0, dma_mem2per };
+enum {
+	dma_per2mem = 0,
+	dma_mem2per,
+};
 
 
-enum libdma_peripheral_type { dma_spi = 0, dma_uart, dma_tim_upd, dma_memTransfer };
+enum libdma_peripheral_type {
+	dma_spi = 0,
+	dma_uart,
+	dma_tim_upd,
+	dma_memTransfer,
+	dma_tim_cap1,
+	dma_tim_cap2,
+	dma_tim_cap3,
+	dma_tim_cap4,
+};
 
 
 /* Memory-to-memory transfer is implemented as a fictional "peripheral type" dma_memTransfer.
@@ -37,6 +48,7 @@ enum libdma_memTransfer_num {
 };
 
 
+/* clang-format off */
 enum libdma_interrupt_flags { dma_ht = (1 << 0), dma_tc = (1 << 1) };
 
 
@@ -232,6 +244,6 @@ ssize_t libxpdma_bufferRemaining(const struct libdma_per *per, int dir);
  * For now to we assume DMA buffers will be allocated once at the start of the program as needed
  * and for this reason no corresponding `libdma_free` function exists.
  */
-void *libdma_malloc(size_t size);
+void *libdma_malloc(size_t size, size_t alignment);
 
 #endif
