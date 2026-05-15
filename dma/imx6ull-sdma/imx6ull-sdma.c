@@ -12,6 +12,7 @@
  */
 
 #include <stdint.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <errno.h>
 #include <unistd.h>
@@ -135,7 +136,7 @@ typedef enum {
 
 typedef struct {
 	int active;
-	int auto_bd_done;
+	bool auto_bd_done;
 
 	sdma_buffer_desc_t *bd;
 	addr_t bd_paddr;
@@ -339,30 +340,22 @@ static int sdma_free_uncached(void *vaddr, size_t size)
 	return munmap(vaddr, n*_PAGE_SIZE);
 }
 
-static int __attribute__((unused)) sdma_program_memory_dump(uint16_t addr,
-															addr_t buffer,
-															size_t size)
+static int __attribute__((unused)) sdma_program_memory_dump(uint16_t addr, addr_t buffer, size_t size)
 {
 	return sdma_run_channel0_cmd(size, SDMA_CMD_C0_GET_PM, buffer, addr);
 }
 
-static int __attribute__((unused)) sdma_program_memory_write(uint16_t addr,
-															 addr_t buffer,
-															 size_t size)
+static int __attribute__((unused)) sdma_program_memory_write(uint16_t addr, addr_t buffer, size_t size)
 {
 	return sdma_run_channel0_cmd(size, SDMA_CMD_C0_SET_PM, buffer, addr);
 }
 
-static int sdma_data_memory_dump(uint16_t addr,
-								 addr_t buffer,
-								 size_t size)
+static int sdma_data_memory_dump(uint16_t addr, addr_t buffer, size_t size)
 {
 	return sdma_run_channel0_cmd(size, SDMA_CMD_C0_GET_DM, buffer, addr);
 }
 
-static int sdma_data_memory_write(uint16_t addr,
-								  addr_t buffer,
-								  size_t size)
+static int sdma_data_memory_write(uint16_t addr, addr_t buffer, size_t size)
 {
 	return sdma_run_channel0_cmd(size, SDMA_CMD_C0_SET_DM, buffer, addr);
 }
@@ -379,20 +372,22 @@ static int sdma_intr(unsigned int intr, void *arg)
 
 		unsigned i;
 		for (i = 1; i < NUM_OF_SDMA_CHANNELS; i++) {
+			sdma_channel_t *channel = &cmn->channel[i];
 
 			/* Check if channel is active and it's interrupt flag is set */
-			if (_INTR & (1 << i) && cmn->channel[i].active) {
-
-				/* Set BD_DONE in all buffer descriptors */
-				sdma_buffer_desc_t *current = cmn->channel[i].bd;
-				do {
-					if (!(current->flags & SDMA_BD_DONE))
-						current->flags |= SDMA_BD_DONE;
-				} while (!((current++)->flags & SDMA_BD_WRAP));
+			if (_INTR & (1 << i) && channel->active) {
+				if (channel->auto_bd_done) {
+					/* Set BD_DONE in all buffer descriptors */
+					sdma_buffer_desc_t *current = channel->bd;
+					do {
+						if (!(current->flags & SDMA_BD_DONE))
+							current->flags |= SDMA_BD_DONE;
+					} while (!((current++)->flags & SDMA_BD_WRAP));
+				}
 
 				/* Increase interrupt count to notify dispatcher that interrupt for
 				 * this channel occurred */
-				cmn->channel[i].intr_cnt++;
+				channel->intr_cnt++;
 			}
 		}
 	}
@@ -461,7 +456,6 @@ static void sdma_init_core(void)
 
 	common.regs->EVTOVR = 0;
 	common.regs->HOSTOVR = 0;
-	common.regs->DSPOVR = 0xffffffff;
 
 	/* Clear channel pending status */
 	common.regs->EVTPEND = common.regs->EVTPEND;
@@ -566,8 +560,6 @@ static int sdma_channel_configure(uint8_t channel_id, sdma_channel_config_t *cfg
 		return -1;
 	}
 
-	common.regs->DSPOVR |= 1 << channel_id;
-
 	if (cfg->trig == sdma_trig__event) {
 		if (cfg->event >= NUM_OF_SDMA_REQUESTS) {
 			log_error("event number is too high (%d)", cfg->event);
@@ -584,6 +576,7 @@ static int sdma_channel_configure(uint8_t channel_id, sdma_channel_config_t *cfg
 		common.regs->HOSTOVR &= ~(1 << channel_id);
 	}
 
+	common.channel[channel_id].auto_bd_done = (cfg->options & sdma_chOption__auto_bd_done) != 0;
 	sdma_set_channel_priority(channel_id, cfg->priority);
 
 	if ((res = sdma_set_bd_array(channel_id, cfg->bd_paddr, cfg->bd_cnt)) < 0) {
@@ -706,19 +699,19 @@ static int dev_ctl(msg_t *msg)
 			return EOK;
 
 		case sdma_dev_ctl__data_mem_write:
-			if (msg->o.size != dev_ctl.mem.len || msg->o.size > common.tmp_size) {
+			if ((msg->o.size != dev_ctl.mem.len) || (msg->o.size > common.tmp_size) || (msg->o.size % 4 != 0)) {
 				log_error("dev_ctl: invalid size");
 				return -EIO;
 			}
 			memcpy(common.tmp, msg->o.data, msg->o.size);
-			return sdma_data_memory_write(dev_ctl.mem.addr, common.tmp_paddr, dev_ctl.mem.len);
+			return sdma_data_memory_write(dev_ctl.mem.addr, common.tmp_paddr, dev_ctl.mem.len / 4);
 
 		case sdma_dev_ctl__data_mem_read:
-			if (msg->o.size != dev_ctl.mem.len || msg->o.size > common.tmp_size) {
+			if ((msg->o.size != dev_ctl.mem.len) || (msg->o.size > common.tmp_size) || (msg->o.size % 4 != 0)) {
 				log_error("dev_ctl: invalid size");
 				return -EIO;
 			}
-			res = sdma_data_memory_dump(dev_ctl.mem.addr, common.tmp_paddr, dev_ctl.mem.len);
+			res = sdma_data_memory_dump(dev_ctl.mem.addr, common.tmp_paddr, dev_ctl.mem.len / 4);
 			memcpy(msg->o.data, common.tmp, msg->o.size);
 			return res;
 
@@ -1082,8 +1075,8 @@ int main(int argc, char *argv[])
 	unsigned i, intr_cnt[NUM_OF_SDMA_CHANNELS], cnt;
 	memset(intr_cnt, 0, sizeof(intr_cnt));
 
+	mutexLock(common.lock);
 	while (1) {
-		mutexLock(common.lock);
 		res = condWait(common.intr_cond, common.lock, INTR_WAIT_TIMEOUT_US);
 
 		if (res == -ETIME) {
@@ -1099,8 +1092,6 @@ int main(int argc, char *argv[])
 
 				common.broken = 1;
 			}
-
-			mutexUnlock(common.lock);
 			continue;
 		}
 
@@ -1121,11 +1112,10 @@ int main(int argc, char *argv[])
 			condSignal(common.channel[i].intr_cond);
 			intr_cnt[i] = cnt;
 		}
-
-		mutexUnlock(common.lock);
 	}
 
 	/* Should never be reached */
+	mutexUnlock(common.lock);
 	log_error("Exiting!");
 	return 0;
 }

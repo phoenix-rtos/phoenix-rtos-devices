@@ -25,7 +25,21 @@ int sdma_close(sdma_t *s);
 
 int sdma_channel_configure(sdma_t *s, sdma_channel_config_t *cfg);
 
-int sdma_data_mem_write(sdma_t *s, void *data, size_t size, addr_t addr);
+/*
+ * write SDMA memory using data mode (32 bit word access)
+ *
+ * @param[in]  data,size  source buffer, expressed in bytes, must be multiple of 4 bytes (32 bit word)
+ * @param[in]  addr       destination address in 32 bit words
+ */
+int sdma_data_mem_write(sdma_t *s, const void *data, size_t size, addr_t addr);
+
+
+/*
+ * read SDMA memory using data mode (32 bit word access)
+ *
+ * @param[out]  data,size  destination buffer; expressed in bytes; must be multiple of 4 bytes (32 bit word)
+ * @param[in]   addr       source address in 32 bit words
+ */
 int sdma_data_mem_read(sdma_t *s, void *data, size_t size, addr_t addr);
 
 int sdma_context_dump(sdma_t *s, sdma_context_t *ctx);
