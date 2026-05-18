@@ -22,7 +22,7 @@
 
 /* Moves pointer to the n-th comma character in str (excluding the first character).
  * Returns the pointer with the new value or NULL if search failed */
-static char *nmea_nField(char *str, int n)
+static const char *nmea_nField(const char *str, int n)
 {
 	int i;
 
@@ -34,10 +34,10 @@ static char *nmea_nField(char *str, int n)
 }
 
 
-static void nmea_parsegsa(char *str, nmea_t *out)
+static void nmea_parsegsa(const char *str, nmea_t *out)
 {
-	char *p = str;
-	nmea_gsa_t in;
+	const char *p = str;
+	nmea_gsa_t in = { 0 };
 
 	out->type = nmea_broken;
 
@@ -77,10 +77,10 @@ static void nmea_parsegsa(char *str, nmea_t *out)
 }
 
 
-static void nmea_parsevtg(char *str, nmea_t *out)
+static void nmea_parsevtg(const char *str, nmea_t *out)
 {
-	char *p = str;
-	nmea_vtg_t in;
+	const char *p = str;
+	nmea_vtg_t in = { 0 };
 
 	out->type = nmea_broken;
 
@@ -110,10 +110,10 @@ static void nmea_parsevtg(char *str, nmea_t *out)
 }
 
 
-static void nmea_parsegga(char *str, nmea_t *out)
+static void nmea_parsegga(const char *str, nmea_t *out)
 {
-	char *p = str, *sign;
-	nmea_gga_t in;
+	const char *p = str, *sign;
+	nmea_gga_t in = { 0 };
 
 	out->type = nmea_broken;
 
@@ -202,10 +202,10 @@ static void nmea_parsegga(char *str, nmea_t *out)
 }
 
 
-static void nmea_parsermc(char *str, nmea_t *out)
+static void nmea_parsermc(const char *str, nmea_t *out)
 {
-	char *p = str, *sign;
-	nmea_rmc_t in;
+	const char *p = str, *sign;
+	nmea_rmc_t in = { 0 };
 
 	out->type = nmea_broken;
 
@@ -266,7 +266,43 @@ static void nmea_parsermc(char *str, nmea_t *out)
 }
 
 
-void nmea_interpreter(char *str, nmea_t *out)
+static int nmea_checksum(const char *buff, size_t buffSz)
+{
+	unsigned int ii = 1;
+	unsigned char csum = 0;
+	char csumStr[3];
+
+	if (buffSz == 0) {
+		return -1;
+	}
+
+	if (buff[0] != '$') {
+		return -1;
+	}
+
+	while ((ii < buffSz) && (buff[ii] != '*')) {
+		csum ^= buff[ii];
+		ii++;
+	}
+
+	if ((ii >= buffSz) || (buff[ii] != '*')) {
+		return -1;
+	}
+
+	if ((ii + 2) >= buffSz) {
+		return -1;
+	}
+
+	snprintf(csumStr, sizeof(csumStr), "%02X", csum);
+	if ((csumStr[0] != buff[ii + 1]) || (csumStr[1] != buff[ii + 2])) {
+		return -1;
+	}
+
+	return 0;
+}
+
+
+void nmea_interpreter(const char *str, nmea_t *out)
 {
 	if (strncmp(str, "$G", 2) != 0 || (str[2] == '\0')) {
 		out->type = nmea_unknown;
@@ -288,4 +324,97 @@ void nmea_interpreter(char *str, nmea_t *out)
 	else {
 		out->type = nmea_unknown;
 	}
+}
+
+
+int nmea_scan(nmea_scanCtx_t *ctx, const char *buff, size_t buffSz, const char **frame)
+{
+	if ((ctx == NULL) || (buff == NULL) || (buffSz == 0) || (frame == NULL)) {
+		return -1;
+	}
+	*frame = NULL;
+
+	while (ctx->rdIdx < buffSz) {
+		/* pull data from input buffer into frame if frame buffer index is aligned with buffer data count */
+		if ((ctx->buffIdx == ctx->buffCnt) && (ctx->buffCnt < sizeof(ctx->buff))) {
+			ctx->buff[ctx->buffIdx] = buff[ctx->rdIdx];
+			ctx->rdIdx++;
+			ctx->buffCnt++;
+		}
+
+		switch (ctx->state) {
+			case state_header:
+				/* check for frame buffer space */
+				if (ctx->buffCnt == sizeof(ctx->buff)) {
+					/* buffer full - no header found, discard buffer content */
+					ctx->buffIdx = 0;
+					ctx->buffCnt = 0;
+					break;
+				}
+
+				/* search for header in buffered data */
+				if (ctx->buff[ctx->buffIdx] != '$') {
+					ctx->buffIdx++;
+					break;
+				}
+				ctx->headIdx = ctx->buffIdx;
+				ctx->footIdx = ctx->headIdx;
+				ctx->state = state_pld;
+				ctx->buffIdx++;
+				break;
+
+			case state_pld:
+				/* check for frame buffer space */
+				if (ctx->buffCnt == sizeof(ctx->buff)) {
+					if (ctx->headIdx == 0) {
+						/* this is not valid frame - search for header */
+						ctx->buffIdx = 1;
+						ctx->state = state_header;
+					}
+					else {
+						/* frame cannot be discarded yet - move data to beginning of buffer */
+						ctx->buffCnt -= ctx->headIdx;
+						memmove(ctx->buff, &ctx->buff[ctx->headIdx], ctx->buffCnt);
+						ctx->buffIdx -= ctx->headIdx;
+						ctx->headIdx = 0;
+					}
+					break;
+				}
+
+				/* search for footer in buffered data */
+				if (ctx->buff[ctx->buffIdx] != '\n') {
+					ctx->buffIdx++;
+					break;
+				}
+				ctx->footIdx = ctx->buffIdx;
+
+				/* validate frame */
+				ctx->state = state_header;
+				uint32_t frameLen = ctx->footIdx - ctx->headIdx + 1;
+				if (nmea_checksum(&ctx->buff[ctx->headIdx], frameLen) != 0) {
+					ctx->buffIdx = ctx->headIdx + 1; /* align current frame buffer index with header index */
+					break;
+				}
+
+				/* frame valid - return with success */
+				ctx->buff[ctx->footIdx] = '\0'; /* substitute newline with null character */
+				*frame = &ctx->buff[ctx->headIdx];
+				ctx->buffIdx = ctx->footIdx; /* align current frame buffer index with header index */
+				return frameLen;
+
+			default:
+				ctx->rdIdx = 0;
+				ctx->headIdx = 0;
+				ctx->footIdx = 0;
+				ctx->buffIdx = 0;
+				ctx->buffCnt = 0;
+				ctx->state = state_header;
+				break;
+		}
+	}
+
+	/* we should reach this only if whole buffer was scanned */
+	ctx->rdIdx = 0;
+
+	return 0;
 }

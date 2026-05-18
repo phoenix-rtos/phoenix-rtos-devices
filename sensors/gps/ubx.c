@@ -21,6 +21,7 @@
 #include <unistd.h>
 #include <sys/time.h>
 #include <sys/threads.h>
+#include <poll.h>
 
 #include <libsensors/sensor.h>
 #include <libsensors/gps/receiver.h>
@@ -39,8 +40,7 @@
 #define UBX_POS_ACCURACY 2.547f
 #define UBX_VEL_ACCURACY 0.0849f
 
-#define REC_BUF_SZ 1024
-#define INBOX_SIZE 3
+#define REC_BUF_SZ 512
 
 #ifndef UBX_DEFAULT_BAUDRATE
 #define UBX_DEFAULT_BAUDRATE B9600
@@ -59,26 +59,38 @@ typedef struct {
 
 static void ubx_threadPublish(void *data)
 {
+	/* calculate time needed to fill 50 % of buffer to set it as read interval */
+	static const unsigned int sleepPeriod = ((REC_BUF_SZ / 2) * 1e6) / (UBX_DEFAULT_BAUDRATE / 10);
+
 	sensor_info_t *info = (sensor_info_t *)data;
 	struct __errno_t errnoNew;
 	ubx_ctx_t *ctx = info->ctx;
-	nmea_t message;
-	unsigned int i, inbocCap, update;
+	const char *frameStr;
+	nmea_t message = { 0 };
+	int ret = 0;
+
+	/* reset NMEA scanner context */
+	memset(&ctx->receiver.pCtx, 0, sizeof(nmea_scanCtx_t));
 
 	/* Redirecting errno to keep backward compatibility (in case of errno not working correctly) */
 	_errno_new(&errnoNew);
 
 	while (ctx->run) {
-		inbocCap = gps_recv(ctx->filedes, &ctx->receiver);
-		update = 0;
-		for (i = 0; i < inbocCap; i++) {
-			nmea_interpreter(ctx->receiver.inbox[i].msg, &message);
-			update |= gps_updateEvt(&message, &ctx->evtGps, UBX_POS_ACCURACY, UBX_VEL_ACCURACY);
+		ret = read(ctx->filedes, ctx->receiver.buf, ctx->receiver.bufSz);
+		while ((ret > 0) && (nmea_scan(&ctx->receiver.pCtx, ctx->receiver.buf, ret, &frameStr) > 0)) {
+			nmea_interpreter(frameStr, &message);
+			if (gps_updateEvt(&message, &ctx->evtGps, UBX_POS_ACCURACY, UBX_VEL_ACCURACY) != 0) {
+				sensors_publish(ctx->evtGps.gps.devId, &ctx->evtGps);
+			}
 		}
 
-		if (update != 0) {
-			sensors_publish(info->id, &ctx->evtGps);
+		if (ret == ctx->receiver.bufSz) {
+			/* buffer was full, there might be more data to read already */
+			continue;
 		}
+
+		/* sleep to wait for more data to arrive */
+		usleep(sleepPeriod);
 	}
 
 	endthread();
@@ -115,10 +127,10 @@ static int ubx_parse(const char *args, const char **path)
 	}
 	else {
 		fprintf(
-			stderr,
-			"%s Wrong arguments\n"
-			"Please specify the path to source device instance, for example: /dev/uart0\n",
-			ubx_STR);
+				stderr,
+				"%s Wrong arguments\n"
+				"Please specify the path to source device instance, for example: /dev/uart0\n",
+				ubx_STR);
 		err = -EINVAL;
 	}
 
@@ -147,7 +159,7 @@ static int ubx_alloc(sensor_info_t *info, const char *args)
 	}
 
 	/* Preparing receiver */
-	err = gps_recvInit(&ctx->receiver, REC_BUF_SZ, INBOX_SIZE);
+	err = gps_recvInit(&ctx->receiver, REC_BUF_SZ);
 	if (err < 0) {
 		free(ctx);
 		return -1;
@@ -155,7 +167,7 @@ static int ubx_alloc(sensor_info_t *info, const char *args)
 
 	/* Opening serial device */
 	do {
-		ctx->filedes = open(path, O_RDWR | O_NOCTTY);
+		ctx->filedes = open(path, O_RDWR | O_NOCTTY | O_NONBLOCK);
 
 		if (ctx->filedes < 0) {
 			usleep(10 * 1000);
