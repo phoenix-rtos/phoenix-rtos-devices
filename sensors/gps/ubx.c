@@ -43,7 +43,7 @@
 #define REC_BUF_SZ 512
 
 #ifndef UBX_DEFAULT_BAUDRATE
-#define UBX_DEFAULT_BAUDRATE B9600
+#define UBX_DEFAULT_BAUDRATE 115200
 #endif
 
 
@@ -140,6 +140,8 @@ static int ubx_parse(const char *args, const char **path)
 
 static int ubx_alloc(sensor_info_t *info, const char *args)
 {
+	static const speed_t baudTable[] = { 4800, 9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600 };
+
 	int cnt = 0, err = -1;
 	const char *path;
 	ubx_ctx_t *ctx;
@@ -191,23 +193,55 @@ static int ubx_alloc(sensor_info_t *info, const char *args)
 		return -1;
 	}
 
-	/* First serial setup backups termios settings */
-	if (gps_serialSetup(ctx->filedes, UBX_DEFAULT_BAUDRATE, &termBackup) < 0) {
-		fprintf(stderr, "%s cannot set default baud\n", ubx_STR);
-		close(ctx->filedes);
-		gps_recvDone(&ctx->receiver);
-		free(ctx);
-		return -1;
+	/* Detect baudrate (NMEA frames are expected) */
+	for (uint8_t i = 0; i < (sizeof(baudTable) / sizeof(speed_t)); i++) {
+		if (gps_serialSetup(ctx->filedes, baudTable[i], (i == 0) ? &termBackup : NULL) < 0) {
+			fprintf(stderr, "%s cannot set default baud\n", ubx_STR);
+			close(ctx->filedes);
+			gps_recvDone(&ctx->receiver);
+			free(ctx);
+			return -1;
+		}
+		const char *msg;
+		int detected = 0;
+
+		/* scan for NMEA frames for 1 s */
+		cnt = 0;
+		memset(&ctx->receiver.pCtx, 0, sizeof(nmea_scanCtx_t));
+		while ((cnt++ < 10) && !detected) {
+			usleep(100 * 1000);
+			err = read(ctx->filedes, ctx->receiver.buf, ctx->receiver.bufSz);
+			if (err <= 0) {
+				continue;
+			}
+
+			while (nmea_scan(&ctx->receiver.pCtx, ctx->receiver.buf, err, &msg) > 0) {
+				detected = 1;
+			}
+		}
+
+		if (detected == 1) {
+			printf("%s detected NMEA device at %d baudrate\n", ubx_STR, baudTable[i]);
+			break;
+		}
+
+		if (i == (sizeof(baudTable) / sizeof(speed_t) - 1)) {
+			fprintf(stderr, "%s failed to detect baudrate\n", ubx_STR);
+			close(ctx->filedes);
+			gps_recvDone(&ctx->receiver);
+			free(ctx);
+			return -1;
+		}
 	}
-	usleep(100 * 1000);
+
 
 	/* baudrate setting to 115200 */
 	write(ctx->filedes, UBX_PREMADE_BAUD_115200, sizeof(UBX_PREMADE_BAUD_115200));
 	usleep(100 * 1000);
 
 	/* First serial setup backups termios settings */
-	if (gps_serialSetup(ctx->filedes, B115200, NULL) < 0) {
-		fprintf(stderr, "%s cannot set baud %d\n", ubx_STR, 115200);
+	if (gps_serialSetup(ctx->filedes, UBX_DEFAULT_BAUDRATE, NULL) < 0) {
+		fprintf(stderr, "%s cannot set baud %d\n", ubx_STR, UBX_DEFAULT_BAUDRATE);
 		close(ctx->filedes);
 		gps_recvDone(&ctx->receiver);
 		free(ctx);
