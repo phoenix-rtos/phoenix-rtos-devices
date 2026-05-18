@@ -14,6 +14,10 @@
 #ifndef _NMEA_H_
 #define _NMEA_H_
 
+
+#include <stdint.h>
+
+
 /* clang-format off */
 /* types of messages interpreted, together with unknown, and broken message */
 enum nmea_type { nmea_gga, nmea_gsa, nmea_rmc, nmea_vtg, nmea_unknown, nmea_broken };
@@ -98,7 +102,39 @@ typedef struct {
 } nmea_t;
 
 
+typedef struct {
+	char buff[128];       /* frame buffer */
+	unsigned int buffCnt; /* number of bytes in frame buffer */
+	unsigned int buffIdx; /* frame buffer index */
+	unsigned int headIdx; /* last potential head index in frame buffer */
+	unsigned int footIdx; /* last potential foot index in frame buffer */
+	unsigned int rdIdx;   /* read index in input buffer */
+
+	/* parser state */
+	enum {
+		state_header,
+		state_pld
+	} state;
+} nmea_scanCtx_t;
+
+
 /* interpret one line of gps output into nmea message */
-extern void nmea_interpreter(char *str, nmea_t *out);
+extern void nmea_interpreter(const char *str, nmea_t *out);
+
+
+/**
+ * Scan buffer in search for nmea frames. Function is reentrant and returns length of
+ * detected frame as long as one is available. Detected frame address is put under frame
+ * pointer.
+ * -> ctx - pointer to scanner context, before first use the context should be whole
+ *          reset to 0,
+ * -> buff - pointer to buffer with new data,
+ * -> buffSz - number of bytes in buffer with new data,
+ * -> frame - address at which pointer to proper frame will be put,
+ *
+ * In case no more frames are available in buffer, the scanner returns 0.
+ * !note: frames are not appended with null character.
+ */
+int nmea_scan(nmea_scanCtx_t *ctx, const char *buff, size_t buffSz, const char **frame);
 
 #endif

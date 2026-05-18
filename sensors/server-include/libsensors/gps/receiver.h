@@ -27,24 +27,11 @@
 
 
 typedef struct {
-	char *msg;
-	size_t sz;
-} gps_msg_t;
-
-
-typedef struct {
 	/* NMEA text reading buffer */
 	char *buf;
 	size_t bufSz;
 
-	/* receiver specific variables */
-	char *remStart;
-	size_t remLen;
-	int pos;
-
-	/* nmea messages inbox */
-	gps_msg_t *inbox;
-	size_t inboxLen;
+	nmea_scanCtx_t pCtx; /* NMEA parser context */
 } gps_receiver_t;
 
 
@@ -57,20 +44,11 @@ int gps_serialSetup(int fd, speed_t baud, struct termios *backup);
 
 
 /*
-* Performs buffered read of gps incoming messages, and saves them to the `inbox`
-*
-* Buffering is inter-read split safe. Message that was only partially read in the first call
-* will be joined with its remainder in the next call (assuming no buffer overflow occurs).
-*/
-int gps_recv(int fd, gps_receiver_t *rcv);
-
-
-/*
  * Returns 1 if `gpsEvt` was updated with data from `message`. Otherwise returns 0.
  * `posStdev` - position accuracy of sensor (from datasheet)
  * ``velStdev` - velocity accuracy of sensor (from dataseet)
  */
-int gps_updateEvt(nmea_t *message, sensor_event_t *evtGps, float posStdev, float velStdev);
+int gps_updateEvt(const nmea_t *message, sensor_event_t *evtGps, float posStdev, float velStdev);
 
 
 /* Gps receiver instance deinitialziation */
@@ -78,7 +56,7 @@ void gps_recvDone(gps_receiver_t *rcv);
 
 
 /* Gps receiver instance initialization */
-int gps_recvInit(gps_receiver_t *rcv, size_t buffSz, size_t inboxLen);
+int gps_recvInit(gps_receiver_t *rcv, size_t buffSz);
 
 
 #endif
