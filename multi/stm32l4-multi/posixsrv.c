@@ -28,7 +28,7 @@
 
 
 struct {
-	char stacks[2 + POSIXSRV_THREADS_NO][_PAGE_SIZE] __attribute__((aligned(8)));
+	char stacks[2 + POSIXSRV_THREADS_NO][2 * _PAGE_SIZE] __attribute__((aligned(8)));
 	unsigned srvPort;
 	unsigned eventPort;
 } libposixsrv_common;
