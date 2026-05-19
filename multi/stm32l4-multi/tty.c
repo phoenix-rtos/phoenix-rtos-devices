@@ -899,24 +899,24 @@ int tty_init(void)
 
 			ctx->data.dma.debug.droppedBytes = 0;
 
-			ctx->data.dma.rxbufsz = ttySetup[tty].dmaBufSizeRx;
-			ctx->data.dma.rxbufszMask = ctx->data.dma.rxbufsz - 1;
-			ctx->data.dma.rxbuf = malloc(ctx->data.dma.rxbufsz);
-			if (ctx->data.dma.rxbuf == NULL) {
-				return -ENOMEM;
-			}
-			ctx->data.dma.txbufsz = ttySetup[tty].dmaBufSizeTx;
-			ctx->data.dma.txbuf = malloc(ctx->data.dma.txbufsz);
-			if (ctx->data.dma.txbuf == NULL) {
-				free(ctx->data.dma.rxbuf);
-				return -ENOMEM;
-			}
 			rxFifoBuf = malloc(ttySetup[tty].dmaRxFifoSize);
 			if (rxFifoBuf == NULL) {
-				free(ctx->data.dma.rxbuf);
-				free(ctx->data.dma.txbuf);
 				return -ENOMEM;
 			}
+
+			ctx->data.dma.rxbufsz = ttySetup[tty].dmaBufSizeRx;
+			ctx->data.dma.rxbufszMask = ctx->data.dma.rxbufsz - 1;
+			ctx->data.dma.txbufsz = ttySetup[tty].dmaBufSizeTx;
+
+			void *dmaMemory = libdma_malloc(ctx->data.dma.rxbufsz + ctx->data.dma.txbufsz, 1);
+			if (dmaMemory == NULL) {
+				free(rxFifoBuf);
+				return -ENOMEM;
+			}
+
+			ctx->data.dma.rxbuf = (unsigned char *)dmaMemory;
+			ctx->data.dma.txbuf = (unsigned char *)dmaMemory + ctx->data.dma.rxbufsz;
+
 			lf_fifo_init(&ctx->data.dma.rxFifo, rxFifoBuf, ttySetup[tty].dmaRxFifoSize);
 
 			ctx->type = tty_dma;
