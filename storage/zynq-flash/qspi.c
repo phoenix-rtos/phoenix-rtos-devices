@@ -145,7 +145,7 @@ static unsigned int qspi_rxData(uint8_t *rxBuff, size_t size)
 
 static unsigned int qspi_txData(const uint8_t *txBuff, size_t size)
 {
-	const uint8_t dummy[sizeof(uint32_t)] = { 0 };
+	const uint8_t dummy[sizeof(uint32_t)] = { 0xff, 0xff, 0xff, 0xff };
 	const uint8_t *buff = (txBuff == NULL) ? dummy : txBuff;
 
 	switch (size) {
