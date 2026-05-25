@@ -18,7 +18,7 @@
 
 
 #ifndef USBACM_UMSG_PRIO
-#define USBACM_UMSG_PRIO 4
+#define USBACM_UMSG_PRIO 3
 #endif
 
 #ifndef USBACM_N_UMSG_THREADS
