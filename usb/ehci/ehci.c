@@ -21,6 +21,7 @@
 #include <sys/minmax.h>
 
 #include <errno.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -546,20 +547,21 @@ static int ehci_irqHandler(unsigned int n, void *data)
 {
 	hcd_t *hcd = (hcd_t *)data;
 	ehci_t *ehci = (ehci_t *)hcd->priv;
-	uint32_t currentStatus;
+	uint32_t currentStatus, handled = 0;
 
 	currentStatus = *(ehci->opbase + usbsts);
 	do {
 		*(ehci->opbase + usbsts) = currentStatus & (EHCI_INTRMASK | USBSTS_FRI);
 
-		ehci->status |= currentStatus;
+		handled |= currentStatus;
+		atomic_fetch_or(&ehci->status, currentStatus);
 
 		/* For edge triggered interrupts to prevent losing interrupts,
 		 * poll the usbsts register until it is stable */
 		currentStatus = *(ehci->opbase + usbsts);
 	} while ((currentStatus & EHCI_INTRMASK) != 0);
 
-	return -!(ehci->status & EHCI_INTRMASK);
+	return -!(handled & EHCI_INTRMASK);
 }
 
 
@@ -639,7 +641,7 @@ static void ehci_portStatusChanged(hcd_t *hcd)
 
 
 #if EHCI_DEBUG_IRQ
-static void ehci_printIrq(hcd_t *hcd)
+static void ehci_printIrq(hcd_t *hcd, uint32_t status)
 {
 	ehci_t *ehci = (ehci_t *)hcd->priv;
 	static char buf[30];
@@ -648,7 +650,7 @@ static void ehci_printIrq(hcd_t *hcd)
 	i += sprintf(buf, "INT%d: ", hcd->info->irq);
 
 #define append_to_buf(interrupt) \
-	if (ehci->status & (interrupt)) { \
+	if (status & (interrupt)) { \
 		i += sprintf(buf + i, #interrupt " "); \
 	}
 	append_to_buf(USBSTS_UI);
@@ -665,34 +667,35 @@ static void ehci_irqThread(void *arg)
 {
 	hcd_t *hcd = (hcd_t *)arg;
 	ehci_t *ehci = (ehci_t *)hcd->priv;
+	uint32_t status;
 
 	mutexLock(ehci->irqLock);
 	for (;;) {
 		condWait(ehci->irqCond, ehci->irqLock, 0);
 
+		/*
+		 * The irqThread must clear the handler interrupt status, since otherwise it would handle
+		 * ghost interrupts on every interrupt (irqHandler never clears ehci->status)
+		 */
+		status = atomic_exchange(&ehci->status, 0);
+
 #if EHCI_DEBUG_IRQ
-		ehci_printIrq(hcd);
+		ehci_printIrq(hcd, status);
 #endif
 
-		/* The irqThread must clear the handler interrupt status,
-			 since otherwise it would handle ghost interrupts
-			 on every interrupt (irqHandler never clears ehci->status) */
-		if (ehci->status & USBSTS_SEI) {
-			ehci->status &= ~USBSTS_SEI;
+		if (status & USBSTS_SEI) {
 			log_error("host system error, controller halted");
 			/* TODO cleanup/reset after death */
 			continue;
 		}
 
-		if (ehci->status & (USBSTS_UI | USBSTS_UEI)) {
-			ehci->status &= ~(USBSTS_UI | USBSTS_UEI);
+		if (status & (USBSTS_UI | USBSTS_UEI)) {
 			mutexLock(hcd->transLock);
 			ehci_transUpdate(hcd);
 			mutexUnlock(hcd->transLock);
 		}
 
-		if (ehci->status & USBSTS_PCI) {
-			ehci->status &= ~USBSTS_PCI;
+		if (status & USBSTS_PCI) {
 			ehci_portStatusChanged(hcd);
 		}
 	}

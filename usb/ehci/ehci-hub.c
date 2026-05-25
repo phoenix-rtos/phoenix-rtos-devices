@@ -14,6 +14,7 @@
 
 #include <errno.h>
 #include <string.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -131,7 +132,7 @@ static void ehci_resetPort(hcd_t *hcd, int port)
 	}
 #endif
 
-	ehci->portResetChange = 1 << port;
+	atomic_fetch_or(&ehci->portResetChange, 1 << port);
 
 	if ((*reg & PORTSC_PSPD) == PORTSC_PSPD_HS)
 		phy_enableHighSpeedDisconnect(hcd, 1);
@@ -250,7 +251,7 @@ static int ehci_clearPortFeature(usb_dev_t *hub, int port, uint16_t wValue)
 			*portsc = val | PORTSC_OCC;
 			break;
 		case USB_PORT_FEAT_C_RESET:
-			ehci->portResetChange &= ~(1 << port);
+			atomic_fetch_and(&ehci->portResetChange, ~(1 << port));
 			break;
 		case USB_PORT_FEAT_ENABLE:
 			/* Disable port */
