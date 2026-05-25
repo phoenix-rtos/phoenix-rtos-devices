@@ -726,11 +726,55 @@ static int ehci_qtdAdd(ehci_t *ehci, ehci_qtd_t **list, int token, size_t maxpac
 /* TODO: return -ETIMEDOUT on failed handshakes/{start,stop}Async - will require a change in signature */
 static void ehci_transferDequeue(hcd_t *hcd, usb_transfer_t *t)
 {
+	ehci_t *ehci = (ehci_t *)hcd->priv;
+	ehci_qtd_t *qtds;
+
 	mutexLock(hcd->transLock);
-	/* note: not tested for interrupt transfers */
-	if (t->hcdpriv != NULL)
-		ehci_qtdsDeactivate((ehci_qtd_t *)t->hcdpriv);
-	ehci_transUpdate(hcd);
+
+	if (t->hcdpriv == NULL) {
+		ehci_transUpdate(hcd);
+		mutexUnlock(hcd->transLock);
+		return;
+	}
+
+	qtds = (ehci_qtd_t *)t->hcdpriv;
+	if (t->type == usb_transfer_bulk || t->type == usb_transfer_control) {
+		ehci_qh_t *qh = qtds->qh;
+		ehci_qhUnlinkAsync(hcd, qh);
+
+		mutexLock(ehci->asyncLock);
+		ehci_qtdsDeactivate(qtds);
+		/* Clear overlay active bit so HC won't resume this QTD */
+		qh->hw->token &= ~QTD_ACTIVE;
+		ehci_memDmb();
+		mutexUnlock(ehci->asyncLock);
+
+		ehci_transUpdate(hcd);
+
+		ehci_qhLinkAsync(hcd, qh);
+	}
+	else if (t->type == usb_transfer_interrupt) {
+		mutexLock(ehci->periodicLock);
+
+		*(ehci->opbase + usbcmd) &= ~USBCMD_PSE;
+		ehci_memDmb();
+		(void)ehci_handshake(ehci->opbase + usbsts, USBSTS_PS, 0, 20000);
+
+		ehci_qtdsDeactivate(qtds);
+		qtds->qh->hw->token &= ~QTD_ACTIVE;
+		ehci_memDmb();
+
+		mutexUnlock(ehci->periodicLock);
+
+		ehci_transUpdate(hcd);
+
+		mutexLock(ehci->periodicLock);
+		*(ehci->opbase + usbcmd) |= USBCMD_PSE;
+		ehci_memDmb();
+		(void)ehci_handshake(ehci->opbase + usbsts, USBSTS_PS, USBSTS_PS, 20000);
+		mutexUnlock(ehci->periodicLock);
+	}
+
 	mutexUnlock(hcd->transLock);
 }
 
