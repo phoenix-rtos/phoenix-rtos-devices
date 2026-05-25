@@ -568,13 +568,13 @@ static int ehci_irqHandler(unsigned int n, void *data)
 static int ehci_qtdsCheck(hcd_t *hcd, usb_transfer_t *t, int *status)
 {
 	ehci_qtd_t *qtds = (ehci_qtd_t *)t->hcdpriv;
-	int error = 0;
+	unsigned int error = 0;
 	int finished = 0;
 
 	*status = 0;
 	do {
 		ehci_qtdDump(qtds, false);
-		if (qtds->hw->token & (QTD_XACT | QTD_BABBLE | QTD_BUFERR | QTD_HALTED)) {
+		if (qtds->hw->token & (QTD_XACT | QTD_BABBLE | QTD_BUFERR)) {
 			error++;
 		}
 
@@ -585,9 +585,7 @@ static int ehci_qtdsCheck(hcd_t *hcd, usb_transfer_t *t, int *status)
 		finished = 1;
 		*status = -error;
 	}
-
-	/* Finished no error */
-	if (!(qtds->prev->hw->token & QTD_ACTIVE) || (qtds->prev->hw->token & QTD_HALTED)) {
+	else if (!(qtds->prev->hw->token & QTD_ACTIVE) || (qtds->prev->hw->token & QTD_HALTED)) {
 		finished = 1;
 		*status = t->size - QTD_LEN(qtds->prev->hw->token);
 	}
