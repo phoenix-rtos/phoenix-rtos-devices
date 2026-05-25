@@ -295,12 +295,12 @@ static int ehci_getStringDesc(usb_dev_t *hub, int index, char *buf, size_t size)
 			break;
 		case 1:
 			/* Product string */
-			len = strlen(ehci_descs.product) * 2 + 3;
+			len = strlen(ehci_descs.product) * 2 + 2;
 			src = ehci_descs.product;
 			break;
 		case 2:
 			/* Manufacturer string */
-			len = strlen(ehci_descs.manufacturer) * 2 + 3;
+			len = strlen(ehci_descs.manufacturer) * 2 + 2;
 			src = ehci_descs.manufacturer;
 			break;
 		default:
