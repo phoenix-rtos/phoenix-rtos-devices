@@ -237,8 +237,8 @@ typedef struct {
 	size_t nqtds;
 
 	handle_t irqCond, irqHandle, irqLock, asyncLock, periodicLock;
-	volatile unsigned portResetChange;
-	volatile unsigned status;
+	_Atomic uint32_t portResetChange;
+	_Atomic uint32_t status;
 
 	volatile uint32_t *base;
 	volatile uint32_t *opbase;
