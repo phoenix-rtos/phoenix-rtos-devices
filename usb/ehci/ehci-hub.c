@@ -99,7 +99,7 @@ static void ehci_resetPort(hcd_t *hcd, int port)
 	log_debug("resetting port %d", port);
 
 	tmp = *reg;
-	tmp &= ~(PORTSC_ENA | PORTSC_PR);
+	tmp &= ~(PORTSC_ENA | PORTSC_PR | PORTSC_CBITS);
 	*reg = tmp | PORTSC_PR;
 
 #ifdef EHCI_IMX
@@ -236,7 +236,9 @@ static int ehci_clearPortFeature(usb_dev_t *hub, int port, uint16_t wValue)
 	if (port > hub->nports)
 		return -1;
 
+	/* Prevent clearing unrelated write-1-to-clear bits */
 	val &= ~PORTSC_CBITS;
+
 	switch (wValue) {
 		/* For 'change' features, ack the change */
 		case USB_PORT_FEAT_C_CONNECTION:
