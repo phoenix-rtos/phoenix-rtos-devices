@@ -378,8 +378,9 @@ uint32_t ehci_getHubStatus(usb_dev_t *hub)
 	for (i = 0; i < hub->nports; i++) {
 		val = *(ehci->opbase + portsc1 + i);
 		log_debug("(INT%d) port %d portsc: %x", hcd->info->irq, i + 1, val);
-		if (val & (PORTSC_CSC | PORTSC_PEC | PORTSC_OCC))
+		if ((val & (PORTSC_CSC | PORTSC_PEC | PORTSC_OCC)) != 0 || (ehci->portResetChange & (1 << (i + 1))) != 0) {
 			status |= 1 << (i + 1);
+		}
 	}
 
 	log_debug("(INT%d): status: %x", hcd->info->irq, status);
