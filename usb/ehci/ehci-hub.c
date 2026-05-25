@@ -201,7 +201,7 @@ static int ehci_getPortStatus(usb_dev_t *hub, int port, usb_port_status_t *statu
 
 	/* TODO: set indicator */
 
-	return 0;
+	return sizeof(usb_port_status_t);
 }
 
 
@@ -361,10 +361,11 @@ static int ehci_getDesc(usb_dev_t *hub, int type, int index, char *buf, size_t s
 			hdesc->bNbrPorts = *(ehci->base + hcsparams) & 0xf;
 			hdesc->variable[0] = 0;    /* Device not removable */
 			hdesc->variable[1] = 0xff; /* PortPwrCtrlMask */
+			bytes = sizeof(usb_hub_desc_t) + 2;
 			break;
 	}
 
-	return 0;
+	return bytes;
 }
 
 
