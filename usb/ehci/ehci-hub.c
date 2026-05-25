@@ -12,6 +12,7 @@
  */
 
 
+#include <assert.h>
 #include <errno.h>
 #include <string.h>
 #include <stdatomic.h>
@@ -96,6 +97,8 @@ static void ehci_resetPort(hcd_t *hcd, int port)
 	volatile uint32_t *reg = (ehci->opbase + portsc1) + (port - 1);
 	uint32_t tmp;
 
+	assert(port > 0);
+
 	log_debug("resetting port %d", port);
 
 	tmp = *reg;
@@ -145,8 +148,9 @@ static int ehci_getPortStatus(usb_dev_t *hub, int port, usb_port_status_t *statu
 	ehci_t *ehci = (ehci_t *)hcd->priv;
 	uint32_t val;
 
-	if (port > hub->nports)
+	if (port == 0 || port > hub->nports) {
 		return -1;
+	}
 
 	status->wPortChange = 0;
 	status->wPortStatus = 0;
@@ -205,8 +209,9 @@ static int ehci_setPortFeature(usb_dev_t *hub, int port, uint16_t wValue)
 {
 	hcd_t *hcd = hub->hcd;
 
-	if (port > hub->nports)
+	if (port == 0 || port > hub->nports) {
 		return -1;
+	}
 
 	switch (wValue) {
 		case USB_PORT_FEAT_RESET:
@@ -230,11 +235,13 @@ static int ehci_clearPortFeature(usb_dev_t *hub, int port, uint16_t wValue)
 {
 	hcd_t *hcd = hub->hcd;
 	ehci_t *ehci = (ehci_t *)hcd->priv;
+
+	if (port == 0 || port > hub->nports) {
+		return -1;
+	}
+
 	volatile uint32_t *portsc = (ehci->opbase + portsc1) + (port - 1);
 	uint32_t val = *portsc;
-
-	if (port > hub->nports)
-		return -1;
 
 	/* Prevent clearing unrelated write-1-to-clear bits */
 	val &= ~PORTSC_CBITS;
