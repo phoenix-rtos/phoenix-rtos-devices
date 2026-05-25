@@ -308,14 +308,15 @@ static int ehci_getStringDesc(usb_dev_t *hub, int index, char *buf, size_t size)
 	desc->bLength = len;
 
 	if (index == 0) {
-		memcpy(buf, src, len - 2);
+		/* LangID */
+		memcpy(desc->wData, src, len - 2);
 	}
 	else {
-		/* Unicode encode */
+		/* Encode in UTF-16LE */
 		memset(desc->wData, 0, len - 2);
-
-		for (i = 0; src[i] != '\0'; i++)
+		for (i = 0; src[i] != '\0'; i++) {
 			desc->wData[i * 2] = src[i];
+		}
 	}
 
 	return len;
