@@ -437,14 +437,17 @@ static void ehci_qhLinkPeriodic(hcd_t *hcd, ehci_qh_t *qh)
 		/* Insert inside */
 		qh->next = t->next;
 		t->next = qh;
-		qh->hw->horizontal = (qh->next != NULL) ? QH_PTR(qh->next) : QH_PTR_INVALID;
 		t->hw->horizontal = QH_PTR(qh);
 	}
 
-	if (qh->next == NULL) {
+	if (qh->next != NULL) {
+		qh->hw->horizontal = QH_PTR(qh->next);
+	}
+	else {
 		/* New last element */
 		qh->hw->horizontal |= QH_PTR_INVALID;
 	}
+
 	ehci_memDmb();
 	mutexUnlock(ehci->periodicLock);
 }
