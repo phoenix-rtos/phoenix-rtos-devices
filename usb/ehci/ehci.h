@@ -218,6 +218,7 @@ typedef struct _ehci_qh {
 	struct _ehci_qh *prev, *next;
 	volatile struct qh *hw;
 	volatile struct qtd *lastQtd;
+	usb_pipe_t *pipe;
 	unsigned period; /* [ms], interrupt transfer only */
 	unsigned phase;  /* [ms], interrupt transfer only */
 	unsigned uframe; /* interrupt transfer and high-speed only */
