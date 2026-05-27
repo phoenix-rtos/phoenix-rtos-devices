@@ -317,6 +317,7 @@ static ehci_qh_t *ehci_qhAlloc(ehci_t *ehci)
 
 	qh->next = NULL;
 	qh->prev = NULL;
+	qh->pipe = NULL;
 	qh->period = 0;
 	qh->uframe = 0;
 	qh->phase = 0;
@@ -615,13 +616,13 @@ static int ehci_qtdsCheck(hcd_t *hcd, usb_transfer_t *t, int *status)
 }
 
 
-static void ehci_transUpdate(hcd_t *hcd)
+static void ehci_transUpdate_ex(hcd_t *hcd, int abort)
 {
 	ehci_qh_t *qh;
 	ehci_qtd_t *qtd;
 	usb_transfer_t *t, *n;
 	int cont;
-	int status;
+	int status, finished;
 
 	if ((t = hcd->transfers) == NULL)
 		return;
@@ -632,16 +633,37 @@ static void ehci_transUpdate(hcd_t *hcd)
 		cont = 0;
 		n = t->next;
 
-		if (ehci_qtdsCheck(hcd, t, &status)) {
+		if (abort == 0) {
+			finished = ehci_qtdsCheck(hcd, t, &status);
+		}
+		else {
+			finished = 1;
+			status = -1;
+		}
+
+		if (finished != 0) {
 			ehci_continue(hcd->priv, qh, qtd->prev);
 			ehci_qtdsPut(hcd->priv, &qtd);
 			LIST_REMOVE(&hcd->transfers, t);
 			t->hcdpriv = NULL;
 			usb_transferFinished(t, status);
-			if (n != t)
+			if (n != t) {
 				cont = 1;
+			}
 		}
 	} while (hcd->transfers && ((t = n) != hcd->transfers || cont));
+}
+
+
+static void ehci_transUpdate(hcd_t *hcd)
+{
+	return ehci_transUpdate_ex(hcd, 0);
+}
+
+
+static void ehci_transAbort(hcd_t *hcd)
+{
+	return ehci_transUpdate_ex(hcd, 1);
 }
 
 
@@ -682,6 +704,9 @@ static void ehci_printIrq(hcd_t *hcd, uint32_t status)
 #endif
 
 
+static int ehci_resetController(hcd_t *hcd);
+
+
 static void ehci_irqThread(void *arg)
 {
 	hcd_t *hcd = (hcd_t *)arg;
@@ -704,8 +729,30 @@ static void ehci_irqThread(void *arg)
 
 		if (status & USBSTS_SEI) {
 			log_error("host system error, controller halted");
-			/* TODO cleanup/reset after death */
-			continue;
+
+			/* Wait for HC to fully halt before touching transfers. The HC may still be mid-DMA */
+			*(ehci->opbase + usbcmd) &= ~USBCMD_RUN;
+			ehci_memDmb();
+			(void)ehci_handshake(ehci->opbase + usbsts, USBSTS_HCH, USBSTS_HCH, 100000);
+
+			mutexLock(hcd->transLock);
+			ehci_transAbort(hcd);
+			mutexUnlock(hcd->transLock);
+
+			if (ehci_resetController(hcd) < 0) {
+				log_error("failed to reset the controller");
+				continue;
+			}
+
+			/* Pick up any interrupts (e.g. PCI) that fired during reinit */
+			status = atomic_exchange(&ehci->status, 0);
+
+			/* Ensure port changes are not missed */
+			ehci_portStatusChanged(hcd);
+
+			if (status == 0) {
+				continue;
+			}
 		}
 
 		if (status & (USBSTS_UI | USBSTS_UEI)) {
@@ -797,6 +844,7 @@ static int ehci_transferEnqueue(hcd_t *hcd, usb_transfer_t *t, usb_pipe_t *pipe)
 
 		ehci_qhConf(qh, pipe);
 		pipe->hcdpriv = qh;
+		qh->pipe = pipe;
 
 		if (t->type == usb_transfer_bulk || t->type == usb_transfer_control)
 			ehci_qhLinkAsync(hcd, qh);
@@ -900,8 +948,66 @@ static void ehci_pipeDestroy(hcd_t *hcd, usb_pipe_t *pipe)
 }
 
 
+static void ehci_tearDownAsync(ehci_t *ehci)
+{
+	ehci_qh_t *head = ehci->asyncList;
+	ehci_qh_t *curr = head->next;
+
+	while (curr != head) {
+		ehci_qh_t *tmp = curr;
+		curr = curr->next;
+		if (tmp->pipe != NULL)
+			tmp->pipe->hcdpriv = NULL;
+		usb_free((void *)tmp->hw, sizeof(struct qh));
+		free(tmp);
+	}
+	/* Free old dummy QH */
+	usb_free((void *)head->hw, sizeof(struct qh));
+	free(head);
+	ehci->asyncList = NULL;
+}
+
+
+static void ehci_tearDownPeriodic(ehci_t *ehci)
+{
+	int i;
+	ehci_qh_t *marker = (ehci_qh_t *)(uintptr_t)1;
+	ehci_qh_t *freeList = marker;
+
+	/* Collect unique QHs first using the unused 'prev' pointer as a visited marker/link, then free them */
+	for (i = 0; i < EHCI_PERIODIC_SIZE; ++i) {
+		ehci_qh_t *node = ehci->periodicNodes[i];
+		while (node != NULL) {
+			if (node->prev == NULL) {
+				/* Not yet visited. Mark and collect */
+				node->prev = freeList;
+				freeList = node;
+			}
+			node = node->next;
+		}
+		ehci->periodicNodes[i] = NULL;
+	}
+
+	while (freeList != marker) {
+		ehci_qh_t *tmp = freeList;
+		freeList = tmp->prev;
+		if (tmp->pipe != NULL) {
+			tmp->pipe->hcdpriv = NULL;
+		}
+		usb_free((void *)tmp->hw, sizeof(struct qh));
+		free(tmp);
+	}
+}
+
+
 static void ehci_free(ehci_t *ehci)
 {
+	if (ehci->asyncList != NULL) {
+		ehci_tearDownAsync(ehci);
+	}
+
+	ehci_tearDownPeriodic(ehci);
+
 	if (ehci->periodicList != NULL)
 		usb_freeAligned(ehci->periodicList, EHCI_PERIODIC_SIZE * sizeof(uint32_t));
 
@@ -919,107 +1025,35 @@ static void ehci_free(ehci_t *ehci)
 }
 
 
-static int ehci_init(hcd_t *hcd)
+static int ehci_resetController(hcd_t *hcd)
 {
-	ehci_t *ehci;
+	ehci_t *ehci = (ehci_t *)hcd->priv;
 	ehci_qh_t *qh;
-	int i, ret;
+	int i;
 
-	if ((ehci = calloc(1, sizeof(ehci_t))) == NULL) {
-		log_error("Out of memory!");
-		return -ENOMEM;
+	if (ehci->asyncList != NULL) {
+		/*
+		 * Free all QHs and invalidate their pipes' hcdpriv so that ehci_pipeDestroy (called
+		 * later by the hub layer during device disconnect) becomes a no-op for stale QHs.
+		 */
+		ehci_tearDownAsync(ehci);
 	}
 
-	if ((ehci->periodicList = usb_allocAligned(EHCI_PERIODIC_SIZE * sizeof(uint32_t), EHCI_PERIODIC_ALIGN)) == NULL) {
-		log_error("Out of memory!");
-		ehci_free(ehci);
-		return -ENOMEM;
+	ehci_tearDownPeriodic(ehci);
+
+	for (i = 0; i < EHCI_PERIODIC_SIZE; ++i) {
+		ehci->periodicList[i] = QH_PTR_INVALID;
 	}
 
-	if ((ehci->periodicNodes = calloc(EHCI_PERIODIC_SIZE, sizeof(ehci_qh_t *))) == NULL) {
+	/* Initialize Async List with a dummy qh to optimize accesses and make them safer */
+	qh = ehci_qhAlloc(ehci);
+	if (qh == NULL) {
 		log_error("Out of memory!");
-		ehci_free(ehci);
-		return -ENOMEM;
-	}
-
-	hcd->priv = ehci;
-
-	if (phy_init(hcd) != 0) {
-		log_error("Phy init failed!");
-		ehci_free(ehci);
-		return -EINVAL;
-	}
-
-	if (condCreate(&ehci->irqCond) < 0) {
-		log_error("Out of memory!");
-		ehci_free(ehci);
-		return -ENOMEM;
-	}
-
-	if (mutexCreate(&ehci->irqLock) < 0) {
-		log_error("Out of memory!");
-		ehci_free(ehci);
-		return -ENOMEM;
-	}
-
-	if (mutexCreate(&ehci->asyncLock) < 0) {
-		log_error("Out of memory!");
-		ehci_free(ehci);
-		return -ENOMEM;
-	}
-
-	if (mutexCreate(&ehci->periodicLock) < 0) {
-		log_error("Out of memory!");
-		ehci_free(ehci);
-		return -ENOMEM;
-	}
-
-	/* Initialize Async List with a dummy qh to optimize
-	 * accesses and make them safer */
-	if ((qh = ehci_qhAlloc(ehci)) == NULL) {
-		log_error("Out of memory!");
-		ehci_free(ehci);
 		return -ENOMEM;
 	}
 	qh->hw->info[0] |= QH_HEAD;
 	qh->hw->horizontal = QH_PTR(qh);
 	LIST_ADD(&ehci->asyncList, qh);
-
-	for (i = 0; i < EHCI_PERIODIC_SIZE; ++i)
-		ehci->periodicList[i] = QH_PTR_INVALID;
-
-	if (((addr_t)hcd->base & (0x20 - 1)) != 0) {
-		log_error("USBBASE not aligned to 32 bits");
-		ehci_free(ehci);
-		return -EINVAL;
-	}
-
-	/* Set USBBASE */
-	ehci->base = hcd->base;
-
-#ifdef EHCI_IMX
-	/* imx deviation: Here we don't distinguish between base/opbase addresses, as
-	 * the distance between operational register base and USBBASE is a known
-	 * constant accounted for in the register enum already. */
-	ehci->opbase = ehci->base;
-#else
-	/* In general, EHCI states that the operational register base has address:
-	 * USBBASE + CAPLENGTH */
-	ehci->opbase = (volatile uint32_t *)((char *)ehci->base + *(uint8_t *)(ehci->base + caplength));
-#endif
-
-	log_debug("attaching handler to irq=%d", hcd->info->irq);
-	ret = interrupt(hcd->info->irq, ehci_irqHandler, hcd, ehci->irqCond, &ehci->irqHandle);
-
-	if (ret < 0) {
-		log_error("failed to set interrupt handler");
-		return ret;
-	}
-
-	if (beginthread(ehci_irqThread, EHCI_PRIO, ehci->stack, sizeof(ehci->stack), hcd) != 0) {
-		ehci_free(ehci);
-		return -ENOMEM;
-	}
 
 #ifndef EHCI_IMX
 	/* Hangs controller on imx */
@@ -1070,9 +1104,103 @@ static int ehci_init(hcd_t *hcd)
 	/* Allow for the hardware to catch up */
 	usleep(50 * 1000);
 
-	if (ehci_startAsync(hcd) < 0) {
-		return -ETIMEDOUT;
+	ehci_startAsync(hcd);
+
+	return 0;
+}
+
+
+static int ehci_init(hcd_t *hcd)
+{
+	ehci_t *ehci;
+	int ret;
+
+	if ((ehci = calloc(1, sizeof(ehci_t))) == NULL) {
+		log_error("Out of memory!");
+		return -ENOMEM;
 	}
+
+	if ((ehci->periodicList = usb_allocAligned(EHCI_PERIODIC_SIZE * sizeof(uint32_t), EHCI_PERIODIC_ALIGN)) == NULL) {
+		log_error("Out of memory!");
+		ehci_free(ehci);
+		return -ENOMEM;
+	}
+
+	if ((ehci->periodicNodes = calloc(EHCI_PERIODIC_SIZE, sizeof(ehci_qh_t *))) == NULL) {
+		log_error("Out of memory!");
+		ehci_free(ehci);
+		return -ENOMEM;
+	}
+
+	hcd->priv = ehci;
+
+	if (phy_init(hcd) != 0) {
+		log_error("Phy init failed!");
+		ehci_free(ehci);
+		return -EINVAL;
+	}
+
+	if (condCreate(&ehci->irqCond) < 0) {
+		log_error("Out of memory!");
+		ehci_free(ehci);
+		return -ENOMEM;
+	}
+
+	if (mutexCreate(&ehci->irqLock) < 0) {
+		log_error("Out of memory!");
+		ehci_free(ehci);
+		return -ENOMEM;
+	}
+
+	if (mutexCreate(&ehci->asyncLock) < 0) {
+		log_error("Out of memory!");
+		ehci_free(ehci);
+		return -ENOMEM;
+	}
+
+	if (mutexCreate(&ehci->periodicLock) < 0) {
+		log_error("Out of memory!");
+		ehci_free(ehci);
+		return -ENOMEM;
+	}
+
+	if (((addr_t)hcd->base & (0x20 - 1)) != 0) {
+		log_error("USBBASE not aligned to 32 bits");
+		ehci_free(ehci);
+		return -EINVAL;
+	}
+
+	/* Set USBBASE */
+	ehci->base = hcd->base;
+
+#ifdef EHCI_IMX
+	/* imx deviation: Here we don't distinguish between base/opbase addresses, as
+	 * the distance between operational register base and USBBASE is a known
+	 * constant accounted for in the register enum already. */
+	ehci->opbase = ehci->base;
+#else
+	/* In general, EHCI states that the operational register base has address:
+	 * USBBASE + CAPLENGTH */
+	ehci->opbase = (volatile uint32_t *)((char *)ehci->base + *(uint8_t *)(ehci->base + caplength));
+#endif
+
+	log_debug("attaching handler to irq=%d", hcd->info->irq);
+	ret = interrupt(hcd->info->irq, ehci_irqHandler, hcd, ehci->irqCond, &ehci->irqHandle);
+	if (ret < 0) {
+		log_error("failed to set interrupt handler");
+		ehci_free(ehci);
+		return ret;
+	}
+
+	if (beginthread(ehci_irqThread, EHCI_PRIO, ehci->stack, sizeof(ehci->stack), hcd) != 0) {
+		ehci_free(ehci);
+		return -ENOMEM;
+	}
+
+	if (ehci_resetController(hcd) < 0) {
+		ehci_free(ehci);
+		return -1;
+	};
 
 	log_debug("hc initialized");
 
