@@ -257,4 +257,23 @@ int ehci_roothubReq(usb_dev_t *hub, usb_transfer_t *t);
 uint32_t ehci_getHubStatus(usb_dev_t *hub);
 
 
+/* Poll a register until (read & mask) == done, or timeout. Returns 0 on success, -ETIMEDOUT on timeout. */
+static inline int ehci_handshake(volatile uint32_t *reg, uint32_t mask, uint32_t done, unsigned int timeout_us)
+{
+	unsigned int elapsed = 0;
+
+	while (elapsed < timeout_us) {
+		if ((*reg & mask) == done) {
+			return 0;
+		}
+		usleep(1);
+		elapsed++;
+	}
+
+	log_error("handshake failed: %p & 0x%x != 0x%x after %d us", reg, mask, done, timeout_us);
+
+	return -ETIMEDOUT;
+}
+
+
 #endif /* _USB_EHCI_H_ */

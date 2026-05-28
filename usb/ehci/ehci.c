@@ -59,26 +59,24 @@ static inline void ehci_memDmb(void)
 }
 
 
-static void ehci_startAsync(hcd_t *hcd)
+static int ehci_startAsync(hcd_t *hcd)
 {
 	ehci_t *ehci = (ehci_t *)hcd->priv;
 
 	*(ehci->opbase + asynclistaddr) = va2pa((void *)ehci->asyncList->hw);
 	*(ehci->opbase + usbcmd) |= USBCMD_ASE;
 	ehci_memDmb();
-	while ((*(ehci->opbase + usbsts) & USBSTS_AS) == 0)
-		;
+	return ehci_handshake(ehci->opbase + usbsts, USBSTS_AS, USBSTS_AS, 20000);
 }
 
 
-static void ehci_stopAsync(hcd_t *hcd)
+static int ehci_stopAsync(hcd_t *hcd)
 {
 	ehci_t *ehci = (ehci_t *)hcd->priv;
 
 	*(ehci->opbase + usbcmd) &= ~USBCMD_ASE;
 	ehci_memDmb();
-	while ((*(ehci->opbase + usbsts) & USBSTS_AS) != 0)
-		;
+	return ehci_handshake(ehci->opbase + usbsts, USBSTS_AS, 0, 20000);
 }
 
 
@@ -487,15 +485,19 @@ static void ehci_qtdsDeactivate(ehci_qtd_t *qtds)
 }
 
 
+/*
+ * TODO: propagate -ETIMEDOUT from {stop,start}Async up to pipeDestroy -
+ * requires hcd signature change
+ */
 static void ehci_qhUnlinkAsync(hcd_t *hcd, ehci_qh_t *qh)
 {
 	ehci_t *ehci = (ehci_t *)hcd->priv;
 
 	mutexLock(ehci->asyncLock);
 
-	ehci_stopAsync(hcd);
+	(void)ehci_stopAsync(hcd);
 	qh->prev->hw->horizontal = qh->hw->horizontal;
-	ehci_startAsync(hcd);
+	(void)ehci_startAsync(hcd);
 	ehci_memDmb();
 
 	qh->prev->next = qh->next;
@@ -720,6 +722,7 @@ static int ehci_qtdAdd(ehci_t *ehci, ehci_qtd_t **list, int token, size_t maxpac
 }
 
 
+/* TODO: return -ETIMEDOUT on failed handshakes/{start,stop}Async - will require a change in signature */
 static void ehci_transferDequeue(hcd_t *hcd, usb_transfer_t *t)
 {
 	ehci_t *ehci = (ehci_t *)hcd->priv;
@@ -736,27 +739,25 @@ static void ehci_transferDequeue(hcd_t *hcd, usb_transfer_t *t)
 	qtds = (ehci_qtd_t *)t->hcdpriv;
 	if (t->type == usb_transfer_bulk || t->type == usb_transfer_control) {
 		mutexLock(ehci->asyncLock);
-		ehci_stopAsync(hcd);
+		(void)ehci_stopAsync(hcd);
 		ehci_qtdsDeactivate(qtds);
 		/* Clear overlay active bit so HC won't resume this QTD */
 		qtds->qh->hw->token &= ~QTD_ACTIVE;
 		ehci_memDmb();
-		ehci_startAsync(hcd);
+		(void)ehci_startAsync(hcd);
 		mutexUnlock(ehci->asyncLock);
 	}
 	else if (t->type == usb_transfer_interrupt) {
 		mutexLock(ehci->periodicLock);
 		*(ehci->opbase + usbcmd) &= ~USBCMD_PSE;
 		ehci_memDmb();
-		while ((*(ehci->opbase + usbsts) & USBSTS_PS) != 0)
-			;
+		(void)ehci_handshake(ehci->opbase + usbsts, USBSTS_PS, 0, 20000);
 		ehci_qtdsDeactivate(qtds);
 		qtds->qh->hw->token &= ~QTD_ACTIVE;
 		ehci_memDmb();
 		*(ehci->opbase + usbcmd) |= USBCMD_PSE;
 		ehci_memDmb();
-		while ((*(ehci->opbase + usbsts) & USBSTS_PS) == 0)
-			;
+		(void)ehci_handshake(ehci->opbase + usbsts, USBSTS_PS, USBSTS_PS, 20000);
 		mutexUnlock(ehci->periodicLock);
 	}
 
@@ -1008,14 +1009,16 @@ static int ehci_init(hcd_t *hcd)
 	/* Hangs controller on imx */
 	*(ehci->opbase + usbcmd) &= ~(USBCMD_RUN | USBCMD_IAA);
 
-	while ((*(ehci->opbase + usbsts) & USBSTS_HCH) == 0)
-		;
+	if (ehci_handshake(ehci->opbase + usbsts, USBSTS_HCH, USBSTS_HCH, 100000) < 0) {
+		return -ETIMEDOUT;
+	}
 #endif
 
 	/* Reset controller */
 	*(ehci->opbase + usbcmd) |= USBCMD_HCRESET;
-	while ((*(ehci->opbase + usbcmd) & USBCMD_HCRESET) != 0)
-		;
+	if (ehci_handshake(ehci->opbase + usbcmd, USBCMD_HCRESET, 0, 250000) < 0) {
+		return -ETIMEDOUT;
+	}
 
 #ifdef EHCI_IMX
 	/* imx deviation: Set host mode */
@@ -1041,8 +1044,9 @@ static int ehci_init(hcd_t *hcd)
 	*(ehci->opbase + usbcmd) &= ~(USBCMD_LRESET | USBCMD_ASE);
 
 	*(ehci->opbase + usbcmd) |= (USBCMD_PSE | USBCMD_RUN);
-	while ((*(ehci->opbase + usbsts) & (USBSTS_HCH)) != 0)
-		;
+	if (ehci_handshake(ehci->opbase + usbsts, USBSTS_HCH, 0, 100000) < 0) {
+		return -ETIMEDOUT;
+	}
 
 	/* Route all ports to this host controller */
 	*(ehci->opbase + configflag) = 1;
@@ -1050,7 +1054,9 @@ static int ehci_init(hcd_t *hcd)
 	/* Allow for the hardware to catch up */
 	usleep(50 * 1000);
 
-	ehci_startAsync(hcd);
+	if (ehci_startAsync(hcd) < 0) {
+		return -ETIMEDOUT;
+	}
 
 	log_debug("hc initialized");
 

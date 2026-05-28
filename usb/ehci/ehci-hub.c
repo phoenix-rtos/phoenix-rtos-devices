@@ -105,27 +105,28 @@ static void ehci_resetPort(hcd_t *hcd, int port)
 	tmp &= ~(PORTSC_ENA | PORTSC_PR | PORTSC_CBITS);
 	*reg = tmp | PORTSC_PR;
 
-#ifdef EHCI_IMX
 	/*
-	 * imx deviation: According to ehci documentation
-	 * it is up to software to set the PR bit 0 after waiting 20ms
+	 * imx deviation: According to ehci documentation, it is up to software to
+	 * set the PR bit 0 after waiting 20ms. On IMX, it is done by the controller.
 	 */
-	while (*reg & PORTSC_PR)
-		;
-	usleep(20 * 1000);
-#else
+
+#ifndef EHCI_IMX
 	/* Wait for reset to complete */
 	usleep(50 * 1000);
 
 	/* Stop the reset sequence */
 	*reg = tmp;
+#endif
 
 	/* Wait until reset sequence stops */
-	while ((*reg & PORTSC_PR) != 0)
-		;
+	if (ehci_handshake(reg, PORTSC_PR, 0, 100000) < 0) {
+		log_error("port reset handshake timed out");
+		return;
+	}
 
 	usleep(20 * 1000);
 
+#ifndef EHCI_IMX
 	tmp = *reg;
 
 	log_debug("port %d reset done, status after reset=%x", port, tmp);
