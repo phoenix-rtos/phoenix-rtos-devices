@@ -503,6 +503,22 @@ static void ehci_qhUnlinkAsync(hcd_t *hcd, ehci_qh_t *qh)
 	qh->prev->next = qh->next;
 	qh->next->prev = qh->prev;
 
+	/*
+	 * Just in case, ring the IAA doorbell and wait for the HC to confirm it has
+	 * advanced past the unlinked QH (EHCI 4.8.2).  Without this handshake the HC
+	 * may still be mid-transaction on the old QH's QTDs, potentially causing
+	 * DMA-after-free in usb_transferFinished that usually comes after.
+	 */
+	*(ehci->opbase + usbsts) = USBSTS_IAA;
+	ehci_memDmb();
+	*(ehci->opbase + usbcmd) |= USBCMD_IAA;
+	ehci_memDmb();
+
+	(void)ehci_handshake(ehci->opbase + usbsts, USBSTS_IAA, USBSTS_IAA, 10000);
+
+	*(ehci->opbase + usbsts) = USBSTS_IAA;
+	ehci_memDmb();
+
 	mutexUnlock(ehci->asyncLock);
 }
 
