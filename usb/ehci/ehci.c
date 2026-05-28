@@ -70,16 +70,6 @@ static int ehci_startAsync(hcd_t *hcd)
 }
 
 
-static int ehci_stopAsync(hcd_t *hcd)
-{
-	ehci_t *ehci = (ehci_t *)hcd->priv;
-
-	*(ehci->opbase + usbcmd) &= ~USBCMD_ASE;
-	ehci_memDmb();
-	return ehci_handshake(ehci->opbase + usbsts, USBSTS_AS, 0, 20000);
-}
-
-
 static void ehci_qtdLink(ehci_qtd_t *prev, ehci_qtd_t *next)
 {
 	prev->hw->next = next->paddr;
@@ -495,13 +485,24 @@ static void ehci_qhUnlinkAsync(hcd_t *hcd, ehci_qh_t *qh)
 
 	mutexLock(ehci->asyncLock);
 
-	(void)ehci_stopAsync(hcd);
 	qh->prev->hw->horizontal = qh->hw->horizontal;
-	(void)ehci_startAsync(hcd);
 	ehci_memDmb();
 
 	qh->prev->next = qh->next;
 	qh->next->prev = qh->prev;
+
+	/* Ring the IAA doorbell if async schedule is enabled */
+	if ((*(ehci->opbase + usbsts) & USBSTS_AS) != 0) {
+		*(ehci->opbase + usbsts) = USBSTS_IAA;
+		ehci_memDmb();
+		*(ehci->opbase + usbcmd) |= USBCMD_IAA;
+		ehci_memDmb();
+
+		(void)ehci_handshake(ehci->opbase + usbsts, USBSTS_IAA, USBSTS_IAA, 10000);
+
+		*(ehci->opbase + usbsts) = USBSTS_IAA;
+		ehci_memDmb();
+	}
 
 	mutexUnlock(ehci->asyncLock);
 }
