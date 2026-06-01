@@ -25,7 +25,13 @@
 #if defined(__CPU_ZYNQ7000)
 #include <phoenix/arch/armv7a/zynq7000/zynq7000.h>
 #elif defined(__CPU_ZYNQMP)
+#if defined(__TARGET_ARMV7R5F)
+#include <phoenix/arch/armv7r/zynqmp/zynqmp.h>
+#elif defined(__TARGET_AARCH64A53)
 #include <phoenix/arch/aarch64/zynqmp/zynqmp.h>
+#else
+#error "Unsupported target"
+#endif
 #else
 #error "Unsupported platform"
 #endif

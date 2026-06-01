@@ -29,7 +29,13 @@
 #define QSPI_INTERRUPT 51
 #define QSPI_BASE      0xe000d000
 #elif defined(__CPU_ZYNQMP)
+#if defined(__TARGET_ARMV7R5F)
+#include <phoenix/arch/armv7r/zynqmp/zynqmp.h>
+#elif defined(__TARGET_AARCH64A53)
 #include <phoenix/arch/aarch64/zynqmp/zynqmp.h>
+#else
+#error "Unsupported target"
+#endif
 
 #define QSPI_INTERRUPT 47
 #define QSPI_BASE      0x00ff0f0000
