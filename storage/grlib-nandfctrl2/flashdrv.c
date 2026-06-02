@@ -709,7 +709,7 @@ static void resetNandfctrl2(void)
 	/* Timing mode 0 until ONFI page is read */
 	setOnfiTimingMode(0U, NULL, SYSCLK_FREQ, 0);
 
-	common.regs->tout0 = 0U; /* Disable timeout */
+	common.regs->tout0 = 0xffffffffU; /* Max timeout */
 }
 
 
@@ -792,14 +792,25 @@ static int setupFlash(flashdrv_info_t *info, flashdrv_dma_t *dma, unsigned int t
 		return err;
 	}
 
+	uint32_t timeout;
 	flash_id_t *flashId = (flash_id_t *)dmaScratch(dma);
 
 	if ((flashId->manufacturerId == 0x2cU) && (flashId->deviceId == 0xacU)) {
 		info->name = "Micron MT29F4G08ABBFA";
+		/* 10 ms */
+		timeout = ns2cycles(10 * 1000 * 1000U, SYSCLK_FREQ);
+	}
+	else if ((flashId->manufacturerId == 0x2cU) && (flashId->deviceId == 0x68U)) {
+		info->name = "Micron MT29F32G08ABAAA";
+		/* 7 ms */
+		timeout = ns2cycles(7 * 1000 * 1000U, SYSCLK_FREQ);
 	}
 	else {
 		info->name = "Unknown NAND flash";
+		timeout = 0xffffffffU;
 	}
+
+	common.regs->tout0 = timeout;
 
 	/* Read ONFI parameter page */
 	dmaChainReset(dma);
