@@ -505,6 +505,25 @@ static int libtty_flow(libtty_common_t *tty, int action)
 }
 
 
+static int libtty_sendbreak(libtty_common_t *tty, int duration)
+{
+	if (duration < 0) {
+		return -EINVAL;
+	}
+
+	if (tty->cb.break_enable == NULL) {
+		return -EOPNOTSUPP;
+	}
+
+	time_t durationUs = ((duration == 0) ? 250 : duration) * 1000;
+	tty->cb.break_enable(tty, true);
+	usleep(durationUs);
+	tty->cb.break_enable(tty, false);
+
+	return 0;
+}
+
+
 void libtty_flush(libtty_common_t *tty, int type)
 {
 	if (type == TCIFLUSH || type == TCIOFLUSH) {
@@ -559,6 +578,11 @@ int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const
 		case TCXONC:
 			log_ioctl("TCXONC (%d)", inVal);
 			ret = libtty_flow(tty, inVal);
+			break;
+
+		case TCSBRK:
+			log_ioctl("TCSBRK (%d)", inVal);
+			ret = libtty_sendbreak(tty, inVal);
 			break;
 
 		case TCFLSH:
