@@ -533,6 +533,27 @@ static int _libtty_flow(libtty_common_t *tty, int action)
 }
 
 
+static int _libtty_sendbreak(libtty_common_t *tty, int duration)
+{
+	if (duration < 0) {
+		return -EINVAL;
+	}
+
+	if (tty->cb.break_enable == NULL) {
+		return -EOPNOTSUPP;
+	}
+
+	time_t durationUs = ((duration == 0) ? (time_t)250 : (time_t)duration) * 1000;
+	tty->cb.break_enable(tty->cb.arg, true);
+	mutexUnlock(tty->lock);
+	usleep(durationUs);
+	mutexLock(tty->lock);
+	tty->cb.break_enable(tty->cb.arg, false);
+
+	return 0;
+}
+
+
 static int _libtty_flush(libtty_common_t *tty, int type)
 {
 	if (type != TCIFLUSH && type != TCOFLUSH && type != TCIOFLUSH) {
@@ -777,6 +798,14 @@ int _libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned long cmd, con
 		case TCXONC:
 			log_ioctl("TCXONC (%d)", val);
 			ret = _libtty_flow(tty, val);
+			break;
+
+		case TCSBRK:
+			log_ioctl("TCSBRK (%d)", val);
+			if (_libtty_drain(tty) < 0) {
+				return -EBADF;
+			}
+			ret = _libtty_sendbreak(tty, val);
 			break;
 
 		case TCFLSH:

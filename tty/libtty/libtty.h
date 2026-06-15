@@ -40,6 +40,7 @@ struct libtty_callbacks_s {
 	/* Optional: */
 	int (*get_halfduplex)(void *arg);
 	void (*set_halfduplex)(void *arg, int enable);
+	/* enable/disable break condition */
 	void (*break_enable)(void *arg, int enable);
 
 	/* at least one character ready to be sent */
