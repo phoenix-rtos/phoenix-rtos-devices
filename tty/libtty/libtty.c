@@ -309,7 +309,9 @@ ssize_t libtty_write(libtty_common_t *tty, const char *data, size_t size, unsign
 			if (mode & O_NONBLOCK)
 				goto exit;
 
-			CALLBACK(signal_txready);
+			if ((atomic_load_explicit(&tty->t_flags, memory_order_relaxed) & TF_OOFF) == 0) {
+				CALLBACK(signal_txready);
+			}
 			condWait(tty->tx_waitq, tty->tx_mutex, 0);
 		}
 
@@ -325,7 +327,9 @@ ssize_t libtty_write(libtty_common_t *tty, const char *data, size_t size, unsign
 	}
 
 	/* DEBUG_CHAR('W'); */
-	CALLBACK(signal_txready);
+	if ((atomic_load_explicit(&tty->t_flags, memory_order_relaxed) & TF_OOFF) == 0) {
+		CALLBACK(signal_txready);
+	}
 #if 0
 	/* TODO: test O_SYNC */
 	while ((mode & O_SYNC) && !fifo_is_empty(tty->tx_fifo) && !(LIBTTY_IS_CLOSING(tty)))
@@ -354,7 +358,7 @@ int libtty_txready(libtty_common_t *tty)
 		DEBUG_CHAR('F');
 #endif
 
-	return !fifo_is_empty(tty->tx_fifo);
+	return ((atomic_load_explicit(&tty->t_flags, memory_order_relaxed) & TF_OOFF) != 0) ? 0 : !fifo_is_empty(tty->tx_fifo);
 }
 
 int libtty_txfull(libtty_common_t *tty)
@@ -405,6 +409,50 @@ void libtty_drain(libtty_common_t *tty)
 
 	mutexUnlock(tty->tx_mutex);
 }
+
+static int libtty_flow(libtty_common_t *tty, int action)
+{
+	int ret = 0;
+	char data[1];
+
+	switch (action) {
+		case TCOOFF:
+			atomic_fetch_or_explicit(&tty->t_flags, TF_OOFF, memory_order_relaxed);
+			break;
+
+		case TCOON:
+			atomic_fetch_and_explicit(&tty->t_flags, ~TF_OOFF, memory_order_relaxed);
+			condBroadcast(tty->tx_waitq);
+
+			mutexLock(tty->tx_mutex);
+			CALLBACK(signal_txready);
+			mutexUnlock(tty->tx_mutex);
+			break;
+
+		case TCIOFF:
+			data[0] = CSTOP;
+			ret = libtty_write(tty, data, 1, O_NONBLOCK);
+			if (ret > 0) {
+				ret = 0;
+			}
+			break;
+
+		case TCION:
+			data[0] = CSTART;
+			ret = libtty_write(tty, data, 1, O_NONBLOCK);
+			if (ret > 0) {
+				ret = 0;
+			}
+			break;
+
+		default:
+			ret = -EINVAL;
+			break;
+	}
+
+	return ret;
+}
+
 void libtty_flush(libtty_common_t *tty, int type)
 {
 	if (type == TCIFLUSH || type == TCIOFLUSH) {
@@ -430,6 +478,7 @@ int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const
 	struct termios *termios_p = (struct termios *)in_arg;
 	struct winsize *ws = (struct winsize *)in_arg;
 	pid_t *pid = (pid_t *)in_arg;
+	int inVal = (int)(uintptr_t)in_arg;
 	int ret = 0;
 
 	*out_arg = NULL;
@@ -452,10 +501,14 @@ int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const
 			log_ioctl("TCDRAIN");
 			libtty_drain(tty);
 			break;
+		case TCXONC:
+			log_ioctl("TCXONC (%d)", inVal);
+			ret = libtty_flow(tty, inVal);
+			break;
 		case TCFLSH:
 			log_ioctl("TCFLSH");
 			/* WARN: passing ioctl attr by value */
-			libtty_flush(tty, (long)in_arg);
+			libtty_flush(tty, inVal);
 			break;
 		case TCSETS:
 		case TCSETSW:
@@ -531,7 +584,7 @@ int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const
 				return -EIO;
 			}
 			/* WARN: passing ioctl half-duplex enable by value */
-			int enable = (int)(uintptr_t)in_arg;
+			int enable = inVal;
 			log_ioctl("TIOCSHALFD: enable = %d", enable);
 			if ((enable != 0) && (enable != 1)) {
 				log_warn("halfduplex enable (%d) != {0,1}", enable);
