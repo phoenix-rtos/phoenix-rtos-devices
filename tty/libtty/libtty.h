@@ -17,6 +17,7 @@
 #define _LIBTTY_H_
 
 #include <stdatomic.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <termios.h>
 #include <unistd.h>
@@ -41,6 +42,9 @@ struct libtty_callbacks_s {
 
 	/* at least one character ready to be sent */
 	void (*signal_txready)(void *arg);
+
+	/* enable/disable break condition */
+	void (*break_enable)(void *arg, bool enable);
 };
 
 struct libtty_common_s {
