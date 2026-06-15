@@ -96,8 +96,7 @@
 #define CTL_ALNUM(c) (((c) >= '0' && (c) <= '9') || ((c) >= 'a' && (c) <= 'z') || ((c) >= 'A' && (c) <= 'Z'))
 
 
-/* writing chars to TX buffer without any futher processing */
-static int _libttydisc_txFeedback(libtty_common_t *tty, const char *data, size_t len)
+int _libttydisc_txFeedback(libtty_common_t *tty, const char *data, size_t len)
 {
 	const char *data_end = data + len;
 

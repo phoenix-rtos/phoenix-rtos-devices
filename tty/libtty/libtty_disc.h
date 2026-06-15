@@ -39,6 +39,10 @@
 int _libttydisc_writeOproc(libtty_common_t *tty, char c);
 
 
+/* writing chars to TX buffer without any futher processing */
+int _libttydisc_txFeedback(libtty_common_t *tty, const char *data, size_t len);
+
+
 ssize_t _libttydisc_readCanon(libtty_common_t *tty, char *data, size_t size, unsigned mode, libtty_read_state_t *st);
 ssize_t _libttydisc_readRaw(libtty_common_t *tty, char *data, size_t size, unsigned mode, libtty_read_state_t *st);
 
