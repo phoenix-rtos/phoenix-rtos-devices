@@ -347,7 +347,9 @@ ssize_t _libtty_write(libtty_common_t *tty, const char *data, size_t size, unsig
 				goto exit;
 			}
 
-			CALLBACK(signal_txready);
+			if ((tty->t_flags & TF_OOFF) == 0) {
+				CALLBACK(signal_txready);
+			}
 			condWait(tty->tx_waitq, tty->lock, 0);
 		}
 
@@ -362,8 +364,9 @@ ssize_t _libtty_write(libtty_common_t *tty, const char *data, size_t size, unsig
 		data += 1;
 	}
 
-	/* DEBUG_CHAR('W'); */
-	CALLBACK(signal_txready);
+	if ((tty->t_flags & TF_OOFF) == 0) {
+		CALLBACK(signal_txready);
+	}
 
 exit:
 	if ((tty->t_flags & TF_CLOSING) != 0) {
@@ -391,7 +394,7 @@ ssize_t libtty_write(libtty_common_t *tty, const char *data, size_t size, unsign
 
 int _libtty_txready(libtty_common_t *tty)
 {
-	return !fifo_is_empty(tty->tx_fifo);
+	return ((tty->t_flags & TF_OOFF) != 0) ? 0 : !fifo_is_empty(tty->tx_fifo);
 }
 
 
@@ -485,6 +488,47 @@ static void _libtty_drain(libtty_common_t *tty)
 	while (!fifo_is_empty(tty->tx_fifo)) {
 		condWait(tty->tx_waitq, tty->lock, 0);
 	}
+}
+
+
+static int _libtty_flow(libtty_common_t *tty, int action)
+{
+	int ret = 0;
+	char c;
+
+	switch (action) {
+		case TCOOFF:
+			tty->t_flags |= TF_OOFF;
+			break;
+
+		case TCOON:
+			tty->t_flags &= ~TF_OOFF;
+			condBroadcast(tty->tx_waitq);
+			CALLBACK(signal_txready);
+			break;
+
+		case TCIOFF:
+			c = CSTOP;
+			ret = _libtty_write(tty, &c, 1, 0);
+			if (ret > 0) {
+				ret = 0;
+			}
+			break;
+
+		case TCION:
+			c = CSTART;
+			ret = _libtty_write(tty, &c, 1, 0);
+			if (ret > 0) {
+				ret = 0;
+			}
+			break;
+
+		default:
+			ret = -EINVAL;
+			break;
+	}
+
+	return ret;
 }
 
 
@@ -706,8 +750,8 @@ int _libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned long cmd, con
 {
 	struct termios *termios_p = (struct termios *)in_arg;
 	struct winsize *ws = (struct winsize *)in_arg;
+	int val = (int)(uintptr_t)in_arg;
 	int ret = 0;
-	int val;
 
 	switch (cmd) {
 		case TIOCGWINSZ:
@@ -727,10 +771,14 @@ int _libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned long cmd, con
 			_libtty_drain(tty);
 			break;
 
+		case TCXONC:
+			log_ioctl("TCXONC (%d)", val);
+			ret = _libtty_flow(tty, val);
+			break;
+
 		case TCFLSH:
-			log_ioctl("TCFLSH");
-			/* WARN: passing ioctl attr by value */
-			ret = _libtty_flush(tty, (long)in_arg);
+			log_ioctl("TCFLSH (%d)", val);
+			ret = _libtty_flush(tty, val);
 			break;
 
 		case TCSETS:
@@ -800,15 +848,13 @@ int _libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned long cmd, con
 				ret = -EIO;
 				break;
 			}
-			/* WARN: passing ioctl half-duplex enable by value */
-			int enable = (int)(uintptr_t)in_arg;
-			log_ioctl("TIOCSHALFD: enable = %d", enable);
-			if ((enable != 0) && (enable != 1)) {
-				log_warn("halfduplex enable (%d) != {0,1}", enable);
+			log_ioctl("TIOCSHALFD: enable = %d", val);
+			if ((val != 0) && (val != 1)) {
+				log_warn("halfduplex enable (%d) != {0,1}", val);
 				ret = -EINVAL;
 				break;
 			}
-			tty->cb.set_halfduplex(tty->cb.arg, enable);
+			tty->cb.set_halfduplex(tty->cb.arg, val);
 			break;
 
 		default:
