@@ -14,6 +14,7 @@
  * %LICENSE%
  */
 
+#include <assert.h>
 #include <sys/mman.h>
 #include <sys/threads.h>
 #include <sys/list.h>
@@ -240,6 +241,7 @@ static ehci_qtd_t *ehci_qtdAlloc(ehci_t *ehci, int pid, size_t maxpacksz, char *
 		qtd->hw->token |= bytes << 16;
 		*size -= bytes;
 	}
+	qtd->bytes = bytes;
 
 	return qtd;
 }
@@ -574,30 +576,49 @@ static int ehci_irqHandler(unsigned int n, void *data)
 
 static int ehci_qtdsCheck(hcd_t *hcd, usb_transfer_t *t, int *status)
 {
-	ehci_qtd_t *qtds = (ehci_qtd_t *)t->hcdpriv;
-	unsigned int error = 0;
-	int finished = 0;
+	ehci_qtd_t *qtd = (ehci_qtd_t *)t->hcdpriv;
+	size_t left = 0, totalTransferred = 0;
 
 	*status = 0;
 	do {
-		ehci_qtdDump(qtds, false);
-		if (qtds->hw->token & (QTD_XACT | QTD_BABBLE | QTD_BUFERR)) {
-			error++;
+		ehci_memDmb();
+
+		ehci_qtdDump(qtd, false);
+
+		uint32_t token = qtd->hw->token;
+		if ((token & (QTD_ACTIVE)) != 0) {
+			return 0;
 		}
 
-		qtds = qtds->next;
-	} while (qtds != t->hcdpriv);
+		if ((token & (QTD_HALTED)) != 0) {
+			*status = -1;
+			return 1;
+		}
 
-	if (error > 0) {
-		finished = 1;
-		*status = -error;
-	}
-	else if (!(qtds->prev->hw->token & QTD_ACTIVE) || (qtds->prev->hw->token & QTD_HALTED)) {
-		finished = 1;
-		*status = t->size - QTD_LEN(qtds->prev->hw->token);
-	}
+		left = QTD_LEN(token);
+		if (QTD_PID(token) != setup_token) {
+			/* Exclude setup qtd from the payload size. Status qtd is fine, as it has qtd->bytes == 0 anyway */
+			if (left > qtd->bytes) {
+				log_error("hardware reported left (%zu) > bytes (%zu)", left, qtd->bytes);
+				*status = -1;
+				return 1;
+			}
+			totalTransferred += qtd->bytes - left;
+		}
 
-	return finished;
+		if (left > 0) {
+			/* Short packet, abandon the rest of the chain */
+			break;
+		}
+
+		qtd = qtd->next;
+	} while (qtd != t->hcdpriv);
+
+	*status = totalTransferred;
+
+	assert(left > 0 || totalTransferred == t->size);
+
+	return 1;
 }
 
 
