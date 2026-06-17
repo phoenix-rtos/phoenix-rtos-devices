@@ -207,6 +207,35 @@ int _libtty_putchar(libtty_common_t *tty, unsigned char c, int *wake_reader)
 		*wake_reader = 0;
 	}
 
+	/* IXON: CSTOP suspends output, CSTART resumes it. */
+	if (CMP_FLAG(i, IXON)) {
+		if (c == CSTOP) {
+			tty->t_flags |= TF_OOFF;
+			/* don't write the start/stop character */
+			return 0;
+		}
+		else if (c == CSTART) {
+			tty->t_flags &= ~TF_OOFF;
+			/* don't write the start/stop character */
+			return 0;
+		}
+
+		/* IXANY: any incoming character can "wake us up" from TF_OOFF */
+		if (CMP_FLAG(i, IXANY)) {
+			if ((tty->t_flags & TF_OOFF) != 0) {
+				tty->t_flags &= ~TF_OOFF;
+				CALLBACK(signal_txready);
+			}
+		}
+	}
+
+	/* IXOFF: send CSTOP if RX queue is nearly full (CSTART sent in libtty_read) */
+	if (CMP_FLAG(i, IXOFF) && fifo_freespace(tty->rx_fifo) < LIBTTYDISC_INPUT_OFF_THRESHOLD && (tty->t_flags & TF_IOFF) == 0) {
+		const char cstop = CSTOP;
+		_libttydisc_txFeedback(tty, &cstop, 1);
+		tty->t_flags |= TF_IOFF;
+	}
+
 	/* ISTRIP: removing the top bit */
 	if (CMP_FLAG(i, ISTRIP)) {
 		c &= ~0x80;
