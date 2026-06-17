@@ -43,6 +43,7 @@
 #define IIR_CODE_RTO  0x06 /* Reception Timeout */
 
 #define LCR_DLAB 0x80
+#define LCR_SBRK 0x40
 #define LCR_D8N1 0x03
 #define LCR_D8N2 0x07
 
@@ -53,6 +54,7 @@
 
 #define LSR_DR   0x01
 #define LSR_THRE 0x20
+#define LSR_TEM  0x40
 
 
 #endif

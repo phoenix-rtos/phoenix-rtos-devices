@@ -130,6 +130,27 @@ static void set_cflag(void *_uart, tcflag_t *cflag)
 }
 
 
+static void break_enable(void *_uart, bool enable)
+{
+	uart_t *uart = _uart;
+	uint8_t lcr;
+
+	lcr = uarthw_read(uart->hwctx, REG_LCR);
+
+	if (enable) {
+		/* wait while transmitter busy */
+		while ((uarthw_read(uart->hwctx, REG_LSR) & LSR_TEM) == 0) {
+			usleep(100);
+		}
+
+		uarthw_write(uart->hwctx, REG_LCR, lcr | LCR_SBRK);
+	}
+	else {
+		uarthw_write(uart->hwctx, REG_LCR, lcr & ~LCR_SBRK);
+	}
+}
+
+
 static void signal_txready(void *arg)
 {
 	uart_t *uart = (uart_t *)arg;
@@ -385,6 +406,7 @@ static int _uart_init(uart_t *uart, unsigned int uartn, unsigned int speed)
 		.set_baudrate = set_baudrate,
 		.set_cflag = set_cflag,
 		.signal_txready = signal_txready,
+		.break_enable = break_enable,
 	};
 
 	int err = uarthw_init(uartn, uart->hwctx, sizeof(uart->hwctx), &uart->clk);
