@@ -175,7 +175,7 @@ ssize_t libtty_read_helper(libtty_common_t *tty, char *data, size_t size, unsign
 		if (fifo_freespace(tty->rx_fifo) >= LIBTTYDISC_INPUT_ON_THRESHOLD && (atomic_load_explicit(&tty->t_flags, memory_order_relaxed) & TF_IOFF) != 0) {
 			const char cstart = CSTART;
 			/* non-blocking write so that we don't deadlock */
-			libtty_write(tty, &cstart, 0, O_NONBLOCK);
+			libtty_write(tty, &cstart, 1, O_NONBLOCK);
 			atomic_fetch_and_explicit(&tty->t_flags, ~TF_IOFF, memory_order_relaxed);
 		}
 	}

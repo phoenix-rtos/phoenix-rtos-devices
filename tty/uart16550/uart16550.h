@@ -45,6 +45,7 @@
 
 #define LCR_DLAB 0x80
 #define LCR_SBRK 0x40
+#define LCR_PCE  0x08
 #define LCR_D8N1 0x03
 #define LCR_D8N2 0x07
 
