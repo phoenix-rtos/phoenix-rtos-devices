@@ -538,9 +538,14 @@ int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const
 			/* WARN: passing ioctl attr by value */
 			libtty_flush(tty, inVal);
 			break;
-		case TCSETS:
+
+		case TCSETSF:
+			libtty_flush(tty, TCIFLUSH);
+			/* fallthrough */
 		case TCSETSW:
-		case TCSETSF: {
+			libtty_drain(tty);
+			/* fallthrough */
+		case TCSETS: {
 			log_ioctl("TCSETS (%s)", ((termios_p->c_lflag & ICANON) ? "cooked" : "raw"));
 			/* TODO: SW SF */
 
