@@ -34,12 +34,18 @@
 /* maximum amount of chars outputted by libttydisc_write_oproc */
 #define LIBTTYDISC_WRITE_OPROC_MAXLEN 8
 
+/* minimum number of freespace in RX queue for us to send VSTOP to the receiver in IXOFF mode */
+#define LIBTTYDISC_INPUT_OFF_THRESHOLD 32
+
+/* minimum number of freespace in RX queue for us to send CSTART to the receiver in IXOFF mode if we have been stopped */
+#define LIBTTYDISC_INPUT_ON_THRESHOLD (2 * LIBTTYDISC_INPUT_OFF_THRESHOLD)
+
 
 /* internal interface - line discipline */
 int _libttydisc_writeOproc(libtty_common_t *tty, char c);
 
 
-/* writing chars to TX buffer without any futher processing */
+/* writing chars to TX buffer without any further processing */
 int _libttydisc_txFeedback(libtty_common_t *tty, const char *data, size_t len);
 
 

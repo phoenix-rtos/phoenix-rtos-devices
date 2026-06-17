@@ -206,6 +206,39 @@ int _libtty_putchar(libtty_common_t *tty, unsigned char c, int *wake_reader)
 		*wake_reader = 0;
 	}
 
+	/* IXON: VSTOP suspends output, VSTART resumes it. */
+	if (CMP_FLAG(i, IXON)) {
+		if (CMP_CC(VSTOP, c)) {
+			tty->t_flags |= TF_OOFF;
+			/* don't write the start/stop character */
+			return 0;
+		}
+		else if (CMP_CC(VSTART, c)) {
+			if ((tty->t_flags & TF_OOFF) != 0) {
+				tty->t_flags &= ~TF_OOFF;
+				CALLBACK(signal_txready);
+			}
+			/* don't write the start/stop character */
+			return 0;
+		}
+
+		/* IXANY: any incoming character can "wake us up" from TF_OOFF */
+		if (CMP_FLAG(i, IXANY)) {
+			if ((tty->t_flags & TF_OOFF) != 0) {
+				tty->t_flags &= ~TF_OOFF;
+				CALLBACK(signal_txready);
+			}
+		}
+	}
+
+	/* IXOFF: send VSTOP if RX queue is nearly full (VSTART sent in libtty_read) */
+	if (CMP_FLAG(i, IXOFF) && fifo_freespace(tty->rx_fifo) < LIBTTYDISC_INPUT_OFF_THRESHOLD && (tty->t_flags & TF_IOFF) == 0) {
+		const char cstop = tty->term.c_cc[VSTOP];
+		if (cstop != _POSIX_VDISABLE && _libttydisc_txFeedback(tty, &cstop, 1) == 1) {
+			tty->t_flags |= TF_IOFF;
+		}
+	}
+
 	/* ISTRIP: removing the top bit */
 	if (CMP_FLAG(i, ISTRIP)) {
 		c &= ~0x80;

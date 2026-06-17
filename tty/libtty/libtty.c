@@ -53,8 +53,8 @@
 #define log_error(fmt, ...) do { if (0) printf(COL_RED  LOG_TAG fmt "\n" COL_NORMAL, ##__VA_ARGS__); } while (0)
 /* clang-format on */
 
-/* NOT supported: IGNBRK|BRKINT|IMAXBEL|IXON|IXOFF|IXANY|PARMRK|INPCK|IGNPAR */
-#define TTYSUP_IFLAG (ISTRIP | INLCR | IGNCR | ICRNL)
+/* NOT supported: IGNBRK|BRKINT|IMAXBEL|PARMRK|INPCK|IGNPAR */
+#define TTYSUP_IFLAG (ISTRIP | INLCR | IGNCR | ICRNL | IXON | IXOFF | IXANY)
 /* NOT supported: ONOCR|ONLRET|NLDLY|CRDLY|TABDLY|BSDLY|VTDLY|FFDLY */
 #define TTYSUP_OFLAG (OPOST | ONLCR | TAB3 | OCRNL)
 /* NOT supported: ECHOKE|ECHOK|TOSTOP|FLUSHO|NOFLSH|ECHOPRT */
@@ -178,6 +178,16 @@ ssize_t _libtty_read_nonblock(libtty_common_t *tty, char *data, size_t size, uns
 	}
 	else {
 		ret = _libttydisc_readRaw(tty, data, size, mode, st);
+	}
+
+	/* IXOFF: send CSTART if we stopped the remote and the queue has space again */
+	if (CMP_FLAG(i, IXOFF)) {
+		if (((tty->t_flags & TF_IOFF) != 0) && fifo_freespace(tty->rx_fifo) >= LIBTTYDISC_INPUT_ON_THRESHOLD) {
+			const char cstart = tty->term.c_cc[VSTART];
+			if (cstart != _POSIX_VDISABLE && _libttydisc_txFeedback(tty, &cstart, 1) == 1) {
+				tty->t_flags &= ~TF_IOFF;
+			}
+		}
 	}
 
 	return ret;
@@ -509,7 +519,12 @@ static int _libtty_flow(libtty_common_t *tty, int action)
 			break;
 
 		case TCIOFF:
-			c = CSTOP;
+			c = tty->term.c_cc[VSTOP];
+			if (c == _POSIX_VDISABLE) {
+				ret = 0;
+				break;
+			}
+
 			ret = _libttydisc_txFeedback(tty, &c, 1);
 			if (ret > 0) {
 				ret = 0;
@@ -517,7 +532,12 @@ static int _libtty_flow(libtty_common_t *tty, int action)
 			break;
 
 		case TCION:
-			c = CSTART;
+			c = tty->term.c_cc[VSTART];
+			if (c == _POSIX_VDISABLE) {
+				ret = 0;
+				break;
+			}
+
 			ret = _libttydisc_txFeedback(tty, &c, 1);
 			if (ret > 0) {
 				ret = 0;
