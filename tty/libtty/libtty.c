@@ -814,11 +814,19 @@ int _libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned long cmd, con
 			ret = _libtty_flush(tty, val);
 			break;
 
-		case TCSETS:
+		case TCSETSF:
 		case TCSETSW:
-		case TCSETSF: {
-			log_ioctl("TCSETS (%s)", ((termios_p->c_lflag & ICANON) ? "cooked" : "raw"));
-			/* TODO: SW SF */
+		case TCSETS: {
+			log_ioctl("TCSETS%c (%s)", (cmd == TCSETSF) ? 'F' : ((cmd == TCSETSW) ? 'W' : ' '),
+					(((termios_p->c_lflag & ICANON) != 0) ? "cooked" : "raw"));
+
+			if (cmd == TCSETSF) {
+				_libtty_drain(tty);
+				_libtty_flush(tty, TCIFLUSH);
+			}
+			else if (cmd == TCSETSW) {
+				_libtty_drain(tty);
+			}
 
 			/* need local copy to be able to change values */
 			struct termios temp_term = *termios_p;
