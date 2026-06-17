@@ -204,6 +204,37 @@ static int libtty_putchar_helper(libtty_common_t *tty, unsigned char c, int *wak
 		*wake_reader = 0;
 	}
 
+	/* IXON: CSTOP suspends output, CSTART resumes it. */
+	if (CMP_FLAG(i, IXON)) {
+		if (c == CSTOP) {
+			atomic_fetch_or_explicit(&tty->t_flags, TF_OOFF, memory_order_relaxed);
+			/* don't write the start/stop character */
+			return 0;
+		}
+		else if (c == CSTART) {
+			atomic_fetch_and_explicit(&tty->t_flags, ~TF_OOFF, memory_order_relaxed);
+			/* don't write the start/stop character */
+			return 0;
+		}
+
+		/* IXANY: any incoming character can "wake us up" from TF_OOFF */
+		if (CMP_FLAG(i, IXANY)) {
+			if ((atomic_fetch_and_explicit(&tty->t_flags, ~TF_OOFF, memory_order_relaxed) & TF_OOFF) != 0) {
+				CALLBACK(signal_txready);
+			}
+		}
+	}
+
+	/* IXOFF: send CSTOP if RX queue is nearly full (CSTART sent in libtty_read) */
+	if (CMP_FLAG(i, IXOFF)) {
+		if (fifo_freespace(tty->rx_fifo) < LIBTTYDISC_INPUT_OFF_THRESHOLD &&
+				(atomic_load_explicit(&tty->t_flags, memory_order_relaxed) & TF_IOFF) == 0) {
+			const char cstop = CSTOP;
+			tx_write_ifspace(tty, &cstop, 1);
+			atomic_fetch_or_explicit(&tty->t_flags, TF_IOFF, memory_order_relaxed);
+		}
+	}
+
 	/* ISTRIP: removing the top bit */
 	if (CMP_FLAG(i, ISTRIP)) {
 		c &= ~0x80;

@@ -52,8 +52,7 @@
 
 /* } DEBUG */
 
-/* NOT supported: IXON|IXOFF|IXANY|PARMRK|INPCK|IGNPAR */
-#define TTYSUP_IFLAG (IGNBRK | BRKINT | ISTRIP | INLCR | IGNCR | ICRNL | IMAXBEL)
+#define TTYSUP_IFLAG (IGNBRK | BRKINT | ISTRIP | INLCR | IGNCR | ICRNL | IMAXBEL | IXON | IXOFF | IXANY | PARMRK | INPCK | IGNPAR)
 
 #define TTYSUP_OFLAG (OPOST | ONLCR | TAB3 | OCRNL | ONOCR | ONLRET)
 /* NOT supported: TOSTOP|FLUSHO|NOFLSH|ECHOPRT */
@@ -149,22 +148,7 @@ static void termios_print_flags(const struct termios *termios_p)
 }
 
 
-ssize_t libtty_read(libtty_common_t *tty, char *data, size_t size, unsigned mode)
-{
-	ssize_t ret = 0;
-
-	if (LIBTTY_IS_CLOSING(tty))
-		return -EBADF;
-
-	if (CMP_FLAG(l, ICANON))
-		ret = libttydisc_read_canonical(tty, data, size, mode, NULL);
-	else
-		ret = libttydisc_read_raw(tty, data, size, mode, NULL);
-
-	return ret;
-}
-
-ssize_t libtty_read_nonblock(libtty_common_t *tty, char *data, size_t size, unsigned mode, libtty_read_state_t *st)
+ssize_t libtty_read_helper(libtty_common_t *tty, char *data, size_t size, unsigned mode, libtty_read_state_t *st)
 {
 	ssize_t ret = 0;
 
@@ -176,7 +160,29 @@ ssize_t libtty_read_nonblock(libtty_common_t *tty, char *data, size_t size, unsi
 	else
 		ret = libttydisc_read_raw(tty, data, size, mode, st);
 
+	/* IXOFF: send CSTART if we stopped the remote and the queue has space again */
+	if (CMP_FLAG(i, IXOFF)) {
+		if (fifo_freespace(tty->rx_fifo) >= LIBTTYDISC_INPUT_ON_THRESHOLD &&
+				(atomic_load_explicit(&tty->t_flags, memory_order_relaxed) & TF_IOFF) != 0) {
+			const char cstart = CSTART;
+			/* non-blocking write so that we don't deadlock */
+			libtty_write(tty, &cstart, 0, O_NONBLOCK);
+			atomic_fetch_and_explicit(&tty->t_flags, ~TF_IOFF, memory_order_relaxed);
+		}
+	}
+
 	return ret;
+}
+
+
+ssize_t libtty_read(libtty_common_t *tty, char *data, size_t size, unsigned mode)
+{
+	return libtty_read_helper(tty, data, size, mode, NULL);
+}
+
+ssize_t libtty_read_nonblock(libtty_common_t *tty, char *data, size_t size, unsigned mode, libtty_read_state_t *st)
+{
+	return libtty_read_helper(tty, data, size, mode, st);
 }
 
 
