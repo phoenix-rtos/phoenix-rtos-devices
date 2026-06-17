@@ -184,17 +184,54 @@ static int uart_interrupt(unsigned int n, void *arg)
 	uint8_t iir = uarthw_read(uart->hwctx, REG_IIR);
 	uarthw_write(uart->hwctx, REG_IMR, 0);
 	unsigned int i = uart->buf_i;
+	const tcflag_t iflags = uart->tty.term.c_iflag;
+
 	do {
-		uint8_t intr_type = (iir >> 1) & 0x7;
+		const uint8_t intr_type = (iir >> 1) & 0x7;
+
 		if ((intr_type == IIR_CODE_DR) || (intr_type == IIR_CODE_RTO)) {
-			uint8_t c = uarthw_read(uart->hwctx, REG_RBR);
-			if (i < SW_BUF_SIZE) {
-				uart->buf[i] = c;
-				i++;
+			/* LSR has to be read before RBR to reflect the character status */
+			const uint8_t lsr = uarthw_read(uart->hwctx, REG_LSR);
+			const uint8_t c = uarthw_read(uart->hwctx, REG_RBR);
+
+			if ((lsr & LSR_PE) != 0 && ((iflags & INPCK) != 0)) { /* parity error */
+				if ((iflags & IGNPAR) != 0) {
+					/* ignore characters with parity errors */
+				}
+				else {
+					if ((iflags & PARMRK) != 0) {
+						if (i + 2 < SW_BUF_SIZE) {
+							uart->buf[i++] = '\377';
+							uart->buf[i++] = '\0';
+							uart->buf[i++] = c;
+						}
+						/* TODO: else maybe signal SW overrun */
+					}
+					else {
+						if (i < SW_BUF_SIZE) {
+							uart->buf[i++] = '\0';
+						}
+						/* TODO: else maybe signal SW overrun */
+					}
+				}
 			}
-		}
-		else if (intr_type == IIR_CODE_LS) {
-			uarthw_read(uart->hwctx, REG_LSR);
+			else if ((lsr & LSR_BI) != 0) { /* break condition */
+				if ((iflags & IGNBRK) != 0) {
+					/* ignore break condition */
+				}
+				else {
+					if (i < SW_BUF_SIZE) {
+						uart->buf[i++] = '\0';
+					}
+					/* TODO: else maybe signal SW overrun */
+				}
+			}
+			else {
+				if (i < SW_BUF_SIZE) {
+					uart->buf[i++] = c;
+				}
+				/* TODO: else maybe signal SW overrun */
+			}
 		}
 		else if (intr_type == IIR_CODE_MS) {
 			uarthw_read(uart->hwctx, REG_MSR);
