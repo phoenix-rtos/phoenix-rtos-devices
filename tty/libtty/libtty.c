@@ -65,6 +65,8 @@
 			tty->cb.cb_name(tty->cb.arg, ##__VA_ARGS__); \
 	} while (0)
 
+#define LIBTTY_IS_CLOSING(tty) ((atomic_load_explicit(&(tty)->t_flags, memory_order_relaxed) & TF_CLOSING) != 0)
+
 #if 0
 #define DEBUG_CHAR(c) \
 	do { \
@@ -129,10 +131,10 @@ static void termios_optimize(libtty_common_t *tty)
 	tty->breakchars[n] = '\0';
 
 	/* check if we have break char in the RX FIFO */
-	tty->t_flags &= ~TF_HAVEBREAK;
+	atomic_fetch_and_explicit(&tty->t_flags, ~TF_HAVEBREAK, memory_order_relaxed);
 	if (CMP_FLAG(l, ICANON)) {
 		if (libttydisc_rx_have_breakchar(tty)) {
-			tty->t_flags |= TF_HAVEBREAK;
+			atomic_fetch_or_explicit(&tty->t_flags, TF_HAVEBREAK, memory_order_relaxed);
 		}
 	}
 }
@@ -158,7 +160,7 @@ ssize_t libtty_read(libtty_common_t *tty, char *data, size_t size, unsigned mode
 {
 	ssize_t ret = 0;
 
-	if ((tty->t_flags & TF_CLOSING) != 0) {
+	if (LIBTTY_IS_CLOSING(tty)) {
 		return -EBADF;
 	}
 
@@ -177,7 +179,7 @@ ssize_t libtty_read_nonblock(libtty_common_t *tty, char *data, size_t size, unsi
 {
 	ssize_t ret = 0;
 
-	if ((tty->t_flags & TF_CLOSING) != 0) {
+	if (LIBTTY_IS_CLOSING(tty)) {
 		return -EBADF;
 	}
 
@@ -295,14 +297,10 @@ int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned in
 
 int libtty_close(libtty_common_t *tty)
 {
-	mutexLock2(tty->tx_mutex, tty->rx_mutex);
-	tty->t_flags |= TF_CLOSING;
+	atomic_fetch_or_explicit(&tty->t_flags, TF_CLOSING, memory_order_relaxed);
 
 	condBroadcast(tty->tx_waitq);
 	condBroadcast(tty->rx_waitq);
-
-	mutexUnlock(tty->tx_mutex);
-	mutexUnlock(tty->rx_mutex);
 
 	return 0;
 }
@@ -328,7 +326,7 @@ ssize_t libtty_write(libtty_common_t *tty, const char *data, size_t size, unsign
 	ssize_t len = 0;
 
 	/* short path */
-	if ((tty->t_flags & TF_CLOSING) != 0) {
+	if (LIBTTY_IS_CLOSING(tty)) {
 		return -EPIPE;
 	}
 	else if (lf_fifo_full(&tty->tx_fifo) && (mode & O_NONBLOCK) != 0) {
@@ -345,7 +343,7 @@ ssize_t libtty_write(libtty_common_t *tty, const char *data, size_t size, unsign
 	/* write contents of the buffer */
 	while (len < size) {
 		while (lf_fifo_free(&tty->tx_fifo) < fifo_freespace_for_single_char) {
-			if (tty->t_flags & TF_CLOSING) {
+			if (LIBTTY_IS_CLOSING(tty)) {
 				goto exit;
 			}
 
@@ -372,12 +370,13 @@ ssize_t libtty_write(libtty_common_t *tty, const char *data, size_t size, unsign
 	CALLBACK(signal_txready);
 #if 0
 	/* TODO: test O_SYNC */
-	while ((mode & O_SYNC) && !fifo_is_empty(tty->tx_fifo) && !(tty->t_flags & TF_CLOSING))
+	while ((mode & O_SYNC) && !fifo_is_empty(tty->tx_fifo) && !(LIBTTY_IS_CLOSING(tty)))
 		condWait(tty->tx_waitq, tty->tx_mutex, 0);
 #endif
 
 exit:
-	if ((tty->t_flags & TF_CLOSING) != 0) {
+
+	if (LIBTTY_IS_CLOSING(tty)) {
 		len = -EPIPE;
 	}
 	else if ((len == 0) && (mode & O_NONBLOCK) != 0) {
@@ -427,7 +426,7 @@ int libtty_poll_status(libtty_common_t *tty)
 		}
 	}
 	else {
-		if ((tty->t_flags & TF_HAVEBREAK) != 0) {
+		if ((atomic_load_explicit(&tty->t_flags, memory_order_relaxed) & TF_HAVEBREAK) != 0) {
 			revents |= POLLIN | POLLRDNORM;
 		}
 	}
@@ -435,8 +434,7 @@ int libtty_poll_status(libtty_common_t *tty)
 	if (!libtty_txfull(tty)) {
 		revents |= POLLOUT | POLLWRNORM;
 	}
-
-	if ((tty->t_flags & TF_CLOSING) != 0) {
+	if (LIBTTY_IS_CLOSING(tty)) {
 		revents |= POLLHUP;
 	}
 

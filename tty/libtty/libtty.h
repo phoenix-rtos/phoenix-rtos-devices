@@ -16,6 +16,7 @@
 #ifndef _LIBTTY_H_
 #define _LIBTTY_H_
 
+#include <stdatomic.h>
 #include <stdint.h>
 #include <termios.h>
 #include <unistd.h>
@@ -65,7 +66,7 @@ struct libtty_common_s {
 
 	/* cached optimizations */
 	char breakchars[4]; /* enough to hold \n, VEOF and VEOL. */
-	unsigned int t_flags;
+	atomic_uint t_flags;
 
 	/* TODO: remove */
 	volatile uint32_t *debug;
