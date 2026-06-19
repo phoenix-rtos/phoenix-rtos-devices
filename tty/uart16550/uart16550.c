@@ -94,6 +94,7 @@ static void set_baudrate(void *_uart, int baud_rate)
 		return;
 	}
 
+	mutexLock(uart->mutex);
 	reg = uarthw_read(uart->hwctx, REG_LCR);
 
 	/* Set baud rate */
@@ -101,12 +102,15 @@ static void set_baudrate(void *_uart, int baud_rate)
 	uarthw_write(uart->hwctx, REG_LSB, (uint8_t)((unsigned)baud_rate));
 	uarthw_write(uart->hwctx, REG_MSB, (uint8_t)((unsigned)baud_rate >> 8));
 	uarthw_write(uart->hwctx, REG_LCR, reg & ~LCR_DLAB);
+	mutexUnlock(uart->mutex);
 }
 
 
 static void set_cflag(void *_uart, tcflag_t *cflag)
 {
 	uart_t *uart = (uart_t *)_uart;
+
+	mutexLock(uart->mutex);
 	uint8_t lcr = uarthw_read(uart->hwctx, REG_LCR);
 
 	lcr &= ~((3 << 0) | (1 << 2) | (1 << 3) | (1 << 4));
@@ -127,27 +131,25 @@ static void set_cflag(void *_uart, tcflag_t *cflag)
 	lcr |= ((*cflag & CSTOPB) != 0) << 2;
 
 	uarthw_write(uart->hwctx, REG_LCR, lcr);
+	mutexUnlock(uart->mutex);
 }
 
 
 static void break_enable(void *_uart, bool enable)
 {
 	uart_t *uart = _uart;
-	uint8_t lcr;
-
-	lcr = uarthw_read(uart->hwctx, REG_LCR);
 
 	if (enable) {
 		/* wait while transmitter busy */
 		while ((uarthw_read(uart->hwctx, REG_LSR) & LSR_TEM) == 0) {
 			usleep(100);
 		}
+	}
 
-		uarthw_write(uart->hwctx, REG_LCR, lcr | LCR_SBRK);
-	}
-	else {
-		uarthw_write(uart->hwctx, REG_LCR, lcr & ~LCR_SBRK);
-	}
+	mutexLock(uart->mutex);
+	const uint8_t lcr = uarthw_read(uart->hwctx, REG_LCR);
+	uarthw_write(uart->hwctx, REG_LCR, enable ? (lcr | LCR_SBRK) : (lcr & ~LCR_SBRK));
+	mutexUnlock(uart->mutex);
 }
 
 
