@@ -15,6 +15,7 @@
 #ifndef _IMXRT1170_H_
 #define _IMXRT1170_H_
 
+#include <phoenix/types.h>
 #include <phoenix/arch/armv7m/imxrt/11xx/imxrt1170.h>
 #include <sys/platform.h>
 
@@ -286,6 +287,23 @@
 #define SPI6_PCS1_DEFAULT
 #define SPI6_PCS2_DEFAULT
 #define SPI6_PCS3_DEFAULT
+
+
+static union {
+	unsigned int num;
+	handle_t handle;
+} gpio_interrupts[] __attribute__((unused)) = {
+	{ .num = gpio1_int0_irq },
+	{ .num = gpio1_int1_irq },
+	{ .num = gpio2_int0_irq },
+	{ .num = gpio2_int1_irq },
+	{ .num = gpio3_int0_irq },
+	{ .num = gpio3_int1_irq },
+	{ .num = gpio4_int0_irq },
+	{ .num = gpio4_int1_irq },
+	{ .num = gpio5_int0_irq },
+	{ .num = gpio5_int1_irq },
+};
 
 
 static inline int common_setClock(int clock, int div, int mux, int mfd, int mfn, int state)
