@@ -12,8 +12,10 @@
  */
 
 
+#include <assert.h>
 #include <errno.h>
 #include <string.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -95,33 +97,36 @@ static void ehci_resetPort(hcd_t *hcd, int port)
 	volatile uint32_t *reg = (ehci->opbase + portsc1) + (port - 1);
 	uint32_t tmp;
 
+	assert(port > 0);
+
 	log_debug("resetting port %d", port);
 
 	tmp = *reg;
-	tmp &= ~(PORTSC_ENA | PORTSC_PR);
+	tmp &= ~(PORTSC_ENA | PORTSC_PR | PORTSC_CBITS);
 	*reg = tmp | PORTSC_PR;
 
-#ifdef EHCI_IMX
 	/*
-	 * imx deviation: According to ehci documentation
-	 * it is up to software to set the PR bit 0 after waiting 20ms
+	 * imx deviation: According to ehci documentation, it is up to software to
+	 * set the PR bit 0 after waiting 20ms. On IMX, it is done by the controller.
 	 */
-	while (*reg & PORTSC_PR)
-		;
-	usleep(20 * 1000);
-#else
+
+#ifndef EHCI_IMX
 	/* Wait for reset to complete */
 	usleep(50 * 1000);
 
 	/* Stop the reset sequence */
 	*reg = tmp;
+#endif
 
 	/* Wait until reset sequence stops */
-	while ((*reg & PORTSC_PR) != 0)
-		;
+	if (ehci_handshake(reg, PORTSC_PR, 0, 100000) < 0) {
+		log_error("port reset handshake timed out");
+		return;
+	}
 
 	usleep(20 * 1000);
 
+#ifndef EHCI_IMX
 	tmp = *reg;
 
 	log_debug("port %d reset done, status after reset=%x", port, tmp);
@@ -131,7 +136,7 @@ static void ehci_resetPort(hcd_t *hcd, int port)
 	}
 #endif
 
-	ehci->portResetChange = 1 << port;
+	atomic_fetch_or(&ehci->portResetChange, 1 << port);
 
 	if ((*reg & PORTSC_PSPD) == PORTSC_PSPD_HS)
 		phy_enableHighSpeedDisconnect(hcd, 1);
@@ -144,8 +149,9 @@ static int ehci_getPortStatus(usb_dev_t *hub, int port, usb_port_status_t *statu
 	ehci_t *ehci = (ehci_t *)hcd->priv;
 	uint32_t val;
 
-	if (port > hub->nports)
+	if (port == 0 || port > hub->nports) {
 		return -1;
+	}
 
 	status->wPortChange = 0;
 	status->wPortStatus = 0;
@@ -196,7 +202,7 @@ static int ehci_getPortStatus(usb_dev_t *hub, int port, usb_port_status_t *statu
 
 	/* TODO: set indicator */
 
-	return 0;
+	return sizeof(usb_port_status_t);
 }
 
 
@@ -204,8 +210,9 @@ static int ehci_setPortFeature(usb_dev_t *hub, int port, uint16_t wValue)
 {
 	hcd_t *hcd = hub->hcd;
 
-	if (port > hub->nports)
+	if (port == 0 || port > hub->nports) {
 		return -1;
+	}
 
 	switch (wValue) {
 		case USB_PORT_FEAT_RESET:
@@ -229,13 +236,17 @@ static int ehci_clearPortFeature(usb_dev_t *hub, int port, uint16_t wValue)
 {
 	hcd_t *hcd = hub->hcd;
 	ehci_t *ehci = (ehci_t *)hcd->priv;
+
+	if (port == 0 || port > hub->nports) {
+		return -1;
+	}
+
 	volatile uint32_t *portsc = (ehci->opbase + portsc1) + (port - 1);
 	uint32_t val = *portsc;
 
-	if (port > hub->nports)
-		return -1;
-
+	/* Prevent clearing unrelated write-1-to-clear bits */
 	val &= ~PORTSC_CBITS;
+
 	switch (wValue) {
 		/* For 'change' features, ack the change */
 		case USB_PORT_FEAT_C_CONNECTION:
@@ -250,7 +261,7 @@ static int ehci_clearPortFeature(usb_dev_t *hub, int port, uint16_t wValue)
 			*portsc = val | PORTSC_OCC;
 			break;
 		case USB_PORT_FEAT_C_RESET:
-			ehci->portResetChange &= ~(1 << port);
+			atomic_fetch_and(&ehci->portResetChange, ~(1 << port));
 			break;
 		case USB_PORT_FEAT_ENABLE:
 			/* Disable port */
@@ -285,12 +296,12 @@ static int ehci_getStringDesc(usb_dev_t *hub, int index, char *buf, size_t size)
 			break;
 		case 1:
 			/* Product string */
-			len = strlen(ehci_descs.product) * 2 + 3;
+			len = strlen(ehci_descs.product) * 2 + 2;
 			src = ehci_descs.product;
 			break;
 		case 2:
 			/* Manufacturer string */
-			len = strlen(ehci_descs.manufacturer) * 2 + 3;
+			len = strlen(ehci_descs.manufacturer) * 2 + 2;
 			src = ehci_descs.manufacturer;
 			break;
 		default:
@@ -305,14 +316,15 @@ static int ehci_getStringDesc(usb_dev_t *hub, int index, char *buf, size_t size)
 	desc->bLength = len;
 
 	if (index == 0) {
-		memcpy(buf, src, len - 2);
+		/* LangID */
+		memcpy(desc->wData, src, len - 2);
 	}
 	else {
-		/* Unicode encode */
+		/* Encode in UTF-16LE */
 		memset(desc->wData, 0, len - 2);
-
-		for (i = 0; src[i] != '\0'; i++)
+		for (i = 0; src[i] != '\0'; i++) {
 			desc->wData[i * 2] = src[i];
+		}
 	}
 
 	return len;
@@ -350,10 +362,11 @@ static int ehci_getDesc(usb_dev_t *hub, int type, int index, char *buf, size_t s
 			hdesc->bNbrPorts = *(ehci->base + hcsparams) & 0xf;
 			hdesc->variable[0] = 0;    /* Device not removable */
 			hdesc->variable[1] = 0xff; /* PortPwrCtrlMask */
+			bytes = sizeof(usb_hub_desc_t) + 2;
 			break;
 	}
 
-	return 0;
+	return bytes;
 }
 
 
@@ -367,8 +380,9 @@ uint32_t ehci_getHubStatus(usb_dev_t *hub)
 	for (i = 0; i < hub->nports; i++) {
 		val = *(ehci->opbase + portsc1 + i);
 		log_debug("(INT%d) port %d portsc: %x", hcd->info->irq, i + 1, val);
-		if (val & (PORTSC_CSC | PORTSC_PEC | PORTSC_OCC))
+		if ((val & (PORTSC_CSC | PORTSC_PEC | PORTSC_OCC)) != 0 || (ehci->portResetChange & (1 << (i + 1))) != 0) {
 			status |= 1 << (i + 1);
+		}
 	}
 
 	log_debug("(INT%d): status: %x", hcd->info->irq, status);
