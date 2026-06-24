@@ -18,6 +18,7 @@
 #include <libtty.h>
 #include <stdlib.h>
 #include <stdatomic.h>
+#include <libklog.h>
 
 #include <sys/debug.h>
 #include <sys/file.h>
@@ -336,7 +337,22 @@ static void uart_ioctl(msg_t *msg, int dev)
 	inData = ioctl_unpack(msg, &req, NULL);
 	pid = ioctl_getSenderPid(msg);
 
-	err = libtty_ioctl(&uart_common.uart[dev].tty, pid, req, inData, &outData);
+	if (req == KIOEN) {
+#ifdef UART_CONSOLE_USER
+		if (dev == UART_CONSOLE_USER) {
+			libklog_enable((int)(intptr_t)inData);
+			err = EOK;
+		}
+		else {
+			err = -EINVAL;
+		}
+#else
+		err = -EINVAL;
+#endif
+	}
+	else {
+		err = libtty_ioctl(&uart_common.uart[dev].tty, pid, req, inData, &outData);
+	}
 
 	ioctl_setResponse(msg, req, err, outData);
 }
