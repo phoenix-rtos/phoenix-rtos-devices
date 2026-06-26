@@ -639,7 +639,7 @@ int ttypc_vt_respond(ttypc_vt_t *vt, const char *buff)
 {
 	int err = 0;
 	while ((*buff != '\0') && (err == 0)) {
-		err = libtty_putchar(&vt->tty, *(buff++), NULL);
+		err = libtty_putchar(&vt->tty, *(buff++), cf_normal, NULL);
 	}
 	return err;
 }

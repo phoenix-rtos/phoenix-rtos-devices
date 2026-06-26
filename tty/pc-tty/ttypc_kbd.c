@@ -513,7 +513,7 @@ static void ttypc_kbd_handle_event(ttypc_t *ttypc, unsigned char b)
 				s = "\r\n";
 		}
 
-		while (*s && !libtty_putchar(&cvt->tty, *s++, NULL))
+		while (*s && !libtty_putchar(&cvt->tty, *s++, cf_normal, NULL))
 			;
 	}
 

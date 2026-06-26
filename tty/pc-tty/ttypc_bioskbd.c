@@ -38,7 +38,7 @@ static void ttypc_bioskbd_ctlthr(void *arg)
 		mutexLock((cvt = ttypc->vt)->lock);
 
 		/* Add the keystroke and update head position */
-		libtty_putchar(&ttypc->vt->tty, *(volatile unsigned char *)((uintptr_t)ttypc->kbd + 0x400 + head), NULL);
+		libtty_putchar(&ttypc->vt->tty, *(volatile unsigned char *)((uintptr_t)ttypc->kbd + 0x400 + head), cf_normal, NULL);
 		*(volatile uint16_t *)((uintptr_t)ttypc->kbd + 0x41a) = 0x1e + (head - 0x1e + 2) % 32;
 
 		mutexUnlock(cvt->lock);

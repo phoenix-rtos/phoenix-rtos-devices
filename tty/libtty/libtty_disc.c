@@ -198,10 +198,41 @@ static int libttydisc_rubchar(libtty_common_t *tty)
 }
 
 
-static int libtty_putchar_helper(libtty_common_t *tty, unsigned char c, int *wake_reader, int lock)
+static int libtty_putchar_helper(libtty_common_t *tty, unsigned char c, enum charflags cf, int *wake_reader, int lock)
 {
 	if (wake_reader != NULL) {
 		*wake_reader = 0;
+	}
+
+	/* IXON: CSTOP suspends output, CSTART resumes it. */
+	if (CMP_FLAG(i, IXON)) {
+		if (c == CSTOP) {
+			atomic_fetch_or_explicit(&tty->t_flags, TF_OOFF, memory_order_relaxed);
+			/* don't write the start/stop character */
+			return 0;
+		}
+		else if (c == CSTART) {
+			atomic_fetch_and_explicit(&tty->t_flags, ~TF_OOFF, memory_order_relaxed);
+			/* don't write the start/stop character */
+			return 0;
+		}
+
+		/* IXANY: any incoming character can "wake us up" from TF_OOFF */
+		if (CMP_FLAG(i, IXANY)) {
+			if ((atomic_fetch_and_explicit(&tty->t_flags, ~TF_OOFF, memory_order_relaxed) & TF_OOFF) != 0) {
+				CALLBACK(signal_txready);
+			}
+		}
+	}
+
+	/* IXOFF: send CSTOP if RX queue is nearly full (CSTART sent in libtty_read) */
+	if (CMP_FLAG(i, IXOFF)) {
+		if (fifo_freespace(tty->rx_fifo) < LIBTTYDISC_INPUT_OFF_THRESHOLD &&
+				(atomic_load_explicit(&tty->t_flags, memory_order_relaxed) & TF_IOFF) == 0) {
+			const char cstop = CSTOP;
+			tx_write_ifspace(tty, &cstop, 1);
+			atomic_fetch_or_explicit(&tty->t_flags, TF_IOFF, memory_order_relaxed);
+		}
 	}
 
 	/* ISTRIP: removing the top bit */
@@ -231,8 +262,8 @@ static int libtty_putchar_helper(libtty_common_t *tty, unsigned char c, int *wak
 	}
 
 	/* Skip input processing when we want to print it literally. */
-	if (tty->t_flags & TF_LITERAL) {
-		tty->t_flags &= ~TF_LITERAL;
+	if ((atomic_load_explicit(&tty->t_flags, memory_order_relaxed) & TF_LITERAL) != 0) {
+		atomic_fetch_and_explicit(&tty->t_flags, ~TF_LITERAL, memory_order_relaxed);
 		goto processed;
 	}
 
@@ -248,7 +279,7 @@ static int libtty_putchar_helper(libtty_common_t *tty, unsigned char c, int *wak
 					libttydisc_echo(tty, c);
 				}
 			}
-			tty->t_flags |= TF_LITERAL;
+			atomic_fetch_or_explicit(&tty->t_flags, TF_LITERAL, memory_order_relaxed);
 			return 0;
 		}
 	}
@@ -304,14 +335,44 @@ processed:
 		log_warn("RX OVERRUN!");
 		fifo_pop_back(tty->rx_fifo);
 	}
-	fifo_push(tty->rx_fifo, c);
+
+	/* process chars */
+	if ((cf & cf_break) != 0) { /* break condition */
+		if (CMP_FLAG(i, IGNBRK)) {
+			/* ignore break condition */
+		}
+		else {
+			/* push breakchar as NUL byte */
+			fifo_push(tty->rx_fifo, '\0');
+		}
+	}
+	else if ((cf & cf_parity) != 0 && CMP_FLAG(i, INPCK)) { /* parity error */
+		if (CMP_FLAG(i, IGNPAR)) {
+			/* ignore characters with parity errors */
+		}
+		else {
+			if (CMP_FLAG(i, PARMRK)) {
+				fifo_push(tty->rx_fifo, '\377');
+				fifo_push(tty->rx_fifo, '\0');
+				fifo_push(tty->rx_fifo, c);
+			}
+			else {
+				/* push parity error chars as NUL byte */
+				fifo_push(tty->rx_fifo, '\0');
+			}
+		}
+	}
+	else {
+		/* push normal character */
+		fifo_push(tty->rx_fifo, c);
+	}
 
 	libttydisc_echo(tty, c);
 
 	if (CMP_FLAG(l, ICANON)) {
 		/* signal only when the line ends */
 		if (libttydisc_is_breakchar(tty, c)) {
-			tty->t_flags |= TF_HAVEBREAK;
+			atomic_fetch_or_explicit(&tty->t_flags, TF_HAVEBREAK, memory_order_relaxed);
 
 			if (wake_reader != NULL) {
 				*wake_reader = 1;
@@ -337,9 +398,9 @@ processed:
 }
 
 
-int libtty_putchar(libtty_common_t *tty, unsigned char c, int *wake_reader)
+int libtty_putchar(libtty_common_t *tty, unsigned char c, enum charflags cf, int *wake_reader)
 {
-	return libtty_putchar_helper(tty, c, wake_reader, 1);
+	return libtty_putchar_helper(tty, c, cf, wake_reader, 1);
 }
 
 
@@ -361,9 +422,9 @@ void libtty_putchar_unlock(libtty_common_t *tty)
 }
 
 
-int libtty_putchar_unlocked(libtty_common_t *tty, unsigned char c, int *wake_reader)
+int libtty_putchar_unlocked(libtty_common_t *tty, unsigned char c, enum charflags cf, int *wake_reader)
 {
-	return libtty_putchar_helper(tty, c, wake_reader, 0);
+	return libtty_putchar_helper(tty, c, cf, wake_reader, 0);
 }
 
 
@@ -428,6 +489,7 @@ ssize_t libttydisc_read_canonical(libtty_common_t *tty, char *data, size_t size,
 {
 	char byte = 0xff;
 	size_t len = 0;
+	unsigned int t_flags;
 
 	if (st)
 		st->timeout_ms = -1; /* default (finished) */
@@ -435,10 +497,11 @@ ssize_t libttydisc_read_canonical(libtty_common_t *tty, char *data, size_t size,
 	/* check if we have break char in RX fifo */
 	mutexLock(tty->rx_mutex);
 	do {
-		if (tty->t_flags & TF_HAVEBREAK)
+		t_flags = atomic_load_explicit(&tty->t_flags, memory_order_relaxed);
+		if ((t_flags & TF_HAVEBREAK) != 0)
 			break;
 
-		if (tty->t_flags & TF_CLOSING) {
+		if ((t_flags & TF_CLOSING) != 0) {
 			mutexUnlock(tty->rx_mutex);
 			return -EBADF;
 		}
@@ -473,10 +536,10 @@ ssize_t libttydisc_read_canonical(libtty_common_t *tty, char *data, size_t size,
 
 	if (libttydisc_is_breakchar(tty, byte)) { /* loop ended due to breakchar */
 		/* check if we have another break char in the RX FIFO */
-		tty->t_flags &= ~TF_HAVEBREAK;
+		atomic_fetch_and_explicit(&tty->t_flags, ~TF_HAVEBREAK, memory_order_relaxed);
 		if (CMP_FLAG(l, ICANON)) {
 			if (libttydisc_rx_have_breakchar(tty))
-				tty->t_flags |= TF_HAVEBREAK;
+				atomic_fetch_or_explicit(&tty->t_flags, TF_HAVEBREAK, memory_order_relaxed);
 		}
 	}
 
@@ -531,7 +594,7 @@ ssize_t libttydisc_read_raw(libtty_common_t *tty, char *data, size_t size, unsig
 					else { /* blocking wait */
 						mutexLock(tty->rx_mutex);
 						while (fifo_is_empty(tty->rx_fifo)) {
-							if (tty->t_flags & TF_CLOSING) {
+							if ((atomic_load_explicit(&tty->t_flags, memory_order_relaxed) & TF_CLOSING) != 0) {
 								mutexUnlock(tty->rx_mutex);
 								return len;
 							}

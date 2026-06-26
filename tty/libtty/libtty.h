@@ -16,6 +16,8 @@
 #ifndef _LIBTTY_H_
 #define _LIBTTY_H_
 
+#include <stdatomic.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <termios.h>
 #include <unistd.h>
@@ -40,6 +42,9 @@ struct libtty_callbacks_s {
 
 	/* at least one character ready to be sent */
 	void (*signal_txready)(void *arg);
+
+	/* enable/disable break condition */
+	void (*break_enable)(void *arg, bool enable);
 };
 
 struct libtty_common_s {
@@ -61,7 +66,7 @@ struct libtty_common_s {
 
 	/* cached optimizations */
 	char breakchars[4]; /* enough to hold \n, VEOF and VEOL. */
-	unsigned int t_flags;
+	atomic_uint t_flags;
 
 	/* TODO: remove */
 	volatile uint32_t *debug;
@@ -84,6 +89,15 @@ static inline void libtty_read_state_init(libtty_read_state_t *st)
 #define TF_LITERAL   0x00200 /* Accept the next character literally. */
 #define TF_BYPASS    0x04000 /* Optimized input path. */
 #define TF_CLOSING   0x08000 /* TTY is being closed */
+#define TF_OOFF      0x10000 /* TTY output is stopped */
+#define TF_IOFF      0x20000 /* TTY input is stopped */
+
+
+enum charflags {
+	cf_normal = 1U << 0,
+	cf_parity = 1U << 1,
+	cf_break = 1U << 2,
+};
 
 
 /* bufsize: TX/RX buffer size - has to be power of 2 ! */
@@ -108,11 +122,11 @@ int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const
 ssize_t libtty_read_nonblock(libtty_common_t *tty, char *data, size_t size, unsigned mode, libtty_read_state_t *st);
 
 /* internal (HW) interface */
-int libtty_putchar(libtty_common_t *tty, unsigned char c, int *wake_reader);
+int libtty_putchar(libtty_common_t *tty, unsigned char c, enum charflags cf, int *wake_reader);
 void libtty_putchar_lock(libtty_common_t *tty);
 void libtty_putchar_unlock(libtty_common_t *tty);
 void libtty_wake_reader(libtty_common_t *tty);
-int libtty_putchar_unlocked(libtty_common_t *tty, unsigned char c, int *wake_reader);
+int libtty_putchar_unlocked(libtty_common_t *tty, unsigned char c, enum charflags cf, int *wake_reader);
 /* writer wake up is done outside of libtty if wake_writer is not NULL */
 unsigned char libtty_getchar(libtty_common_t *tty, int *wake_writer);
 unsigned char libtty_popchar(libtty_common_t *tty);
