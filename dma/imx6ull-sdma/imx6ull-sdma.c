@@ -371,12 +371,13 @@ static int sdma_intr(unsigned int intr, void *arg)
 
 		unsigned i;
 		for (i = 1; i < NUM_OF_SDMA_CHANNELS; i++) {
+			sdma_channel_t *channel = &cmn->channel[i];
 
 			/* Check if channel is active and it's interrupt flag is set */
-			if (_INTR & (1 << i) && cmn->channel[i].active) {
+			if (_INTR & (1 << i) && channel->active) {
 
 				/* Set BD_DONE in all buffer descriptors */
-				sdma_buffer_desc_t *current = cmn->channel[i].bd;
+				sdma_buffer_desc_t *current = channel->bd;
 				do {
 					if (!(current->flags & SDMA_BD_DONE))
 						current->flags |= SDMA_BD_DONE;
@@ -384,7 +385,7 @@ static int sdma_intr(unsigned int intr, void *arg)
 
 				/* Increase interrupt count to notify dispatcher that interrupt for
 				 * this channel occurred */
-				cmn->channel[i].intr_cnt++;
+				channel->intr_cnt++;
 			}
 		}
 	}
