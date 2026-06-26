@@ -42,6 +42,7 @@
 typedef struct {
 	uint8_t hwctx[64];
 	uint8_t buf[SW_BUF_SIZE];
+	uint8_t cf[SW_BUF_SIZE];
 	volatile unsigned int buf_i;
 
 	unsigned int init;
@@ -186,7 +187,6 @@ static int uart_interrupt(unsigned int n, void *arg)
 	uint8_t iir = uarthw_read(uart->hwctx, REG_IIR);
 	uarthw_write(uart->hwctx, REG_IMR, 0);
 	unsigned int i = uart->buf_i;
-	const tcflag_t iflags = uart->tty.term.c_iflag;
 
 	do {
 		const uint8_t intr_type = (iir >> 1) & 0x7;
@@ -196,43 +196,15 @@ static int uart_interrupt(unsigned int n, void *arg)
 			const uint8_t lsr = uarthw_read(uart->hwctx, REG_LSR);
 			const uint8_t c = uarthw_read(uart->hwctx, REG_RBR);
 
-			if ((lsr & LSR_PE) != 0 && ((iflags & INPCK) != 0)) { /* parity error */
-				if ((iflags & IGNPAR) != 0) {
-					/* ignore characters with parity errors */
+			if (i < SW_BUF_SIZE) {
+				uart->cf[i] = cf_normal;
+				if ((lsr & LSR_BI) != 0) { /* break condition */
+					uart->cf[i] = cf_break;
 				}
-				else {
-					if ((iflags & PARMRK) != 0) {
-						if (i + 2 < SW_BUF_SIZE) {
-							uart->buf[i++] = '\377';
-							uart->buf[i++] = '\0';
-							uart->buf[i++] = c;
-						}
-						/* TODO: else maybe signal SW overrun */
-					}
-					else {
-						if (i < SW_BUF_SIZE) {
-							uart->buf[i++] = '\0';
-						}
-						/* TODO: else maybe signal SW overrun */
-					}
+				if ((lsr & LSR_PE) != 0) { /* parity error */
+					uart->cf[i] = cf_parity;
 				}
-			}
-			else if ((lsr & LSR_BI) != 0) { /* break condition */
-				if ((iflags & IGNBRK) != 0) {
-					/* ignore break condition */
-				}
-				else {
-					if (i < SW_BUF_SIZE) {
-						uart->buf[i++] = '\0';
-					}
-					/* TODO: else maybe signal SW overrun */
-				}
-			}
-			else {
-				if (i < SW_BUF_SIZE) {
-					uart->buf[i++] = c;
-				}
-				/* TODO: else maybe signal SW overrun */
+				uart->buf[i++] = c;
 			}
 		}
 		else if (intr_type == IIR_CODE_MS) {
@@ -263,13 +235,13 @@ static void uart_intthr(void *arg)
 		/* Empty received buffer */
 		unsigned int buf_i = uart->buf_i;
 		for (unsigned int i = 0; i < buf_i; i++) {
-			libtty_putchar(&uart->tty, uart->buf[i], NULL);
+			libtty_putchar(&uart->tty, uart->buf[i], uart->cf[i], NULL);
 		}
 
 		uart->buf_i = 0;
 		/* Depending on implementation we may have more characters in hardware FIFO */
 		while ((uarthw_read(uart->hwctx, REG_LSR) & LSR_DR) != 0) {
-			libtty_putchar(&uart->tty, uarthw_read(uart->hwctx, REG_RBR), NULL);
+			libtty_putchar(&uart->tty, uarthw_read(uart->hwctx, REG_RBR), cf_normal, NULL);
 		}
 
 		/* Check for transmit */

@@ -198,7 +198,7 @@ static int libttydisc_rubchar(libtty_common_t *tty)
 }
 
 
-static int libtty_putchar_helper(libtty_common_t *tty, unsigned char c, int *wake_reader, int lock)
+static int libtty_putchar_helper(libtty_common_t *tty, unsigned char c, enum charflags cf, int *wake_reader, int lock)
 {
 	if (wake_reader != NULL) {
 		*wake_reader = 0;
@@ -335,7 +335,37 @@ processed:
 		log_warn("RX OVERRUN!");
 		fifo_pop_back(tty->rx_fifo);
 	}
-	fifo_push(tty->rx_fifo, c);
+
+	/* process chars */
+	if ((cf & cf_break) != 0) { /* break condition */
+		if (CMP_FLAG(i, IGNBRK)) {
+			/* ignore break condition */
+		}
+		else {
+			/* push breakchar as NUL byte */
+			fifo_push(tty->rx_fifo, '\0');
+		}
+	}
+	else if ((cf & cf_parity) != 0 && CMP_FLAG(i, INPCK)) { /* parity error */
+		if (CMP_FLAG(i, IGNPAR)) {
+			/* ignore characters with parity errors */
+		}
+		else {
+			if (CMP_FLAG(i, PARMRK)) {
+				fifo_push(tty->rx_fifo, '\377');
+				fifo_push(tty->rx_fifo, '\0');
+				fifo_push(tty->rx_fifo, c);
+			}
+			else {
+				/* push parity error chars as NUL byte */
+				fifo_push(tty->rx_fifo, '\0');
+			}
+		}
+	}
+	else {
+		/* push normal character */
+		fifo_push(tty->rx_fifo, c);
+	}
 
 	libttydisc_echo(tty, c);
 
@@ -368,9 +398,9 @@ processed:
 }
 
 
-int libtty_putchar(libtty_common_t *tty, unsigned char c, int *wake_reader)
+int libtty_putchar(libtty_common_t *tty, unsigned char c, enum charflags cf, int *wake_reader)
 {
-	return libtty_putchar_helper(tty, c, wake_reader, 1);
+	return libtty_putchar_helper(tty, c, cf, wake_reader, 1);
 }
 
 
@@ -392,9 +422,9 @@ void libtty_putchar_unlock(libtty_common_t *tty)
 }
 
 
-int libtty_putchar_unlocked(libtty_common_t *tty, unsigned char c, int *wake_reader)
+int libtty_putchar_unlocked(libtty_common_t *tty, unsigned char c, enum charflags cf, int *wake_reader)
 {
-	return libtty_putchar_helper(tty, c, wake_reader, 0);
+	return libtty_putchar_helper(tty, c, cf, wake_reader, 0);
 }
 
 

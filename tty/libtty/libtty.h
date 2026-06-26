@@ -93,6 +93,13 @@ static inline void libtty_read_state_init(libtty_read_state_t *st)
 #define TF_IOFF      0x20000 /* TTY input is stopped */
 
 
+enum charflags {
+	cf_normal = 1U << 0,
+	cf_parity = 1U << 1,
+	cf_break = 1U << 2,
+};
+
+
 /* bufsize: TX/RX buffer size - has to be power of 2 ! */
 int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned int bufsize, int speed);
 int libtty_destroy(libtty_common_t *tty);
@@ -115,11 +122,11 @@ int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const
 ssize_t libtty_read_nonblock(libtty_common_t *tty, char *data, size_t size, unsigned mode, libtty_read_state_t *st);
 
 /* internal (HW) interface */
-int libtty_putchar(libtty_common_t *tty, unsigned char c, int *wake_reader);
+int libtty_putchar(libtty_common_t *tty, unsigned char c, enum charflags cf, int *wake_reader);
 void libtty_putchar_lock(libtty_common_t *tty);
 void libtty_putchar_unlock(libtty_common_t *tty);
 void libtty_wake_reader(libtty_common_t *tty);
-int libtty_putchar_unlocked(libtty_common_t *tty, unsigned char c, int *wake_reader);
+int libtty_putchar_unlocked(libtty_common_t *tty, unsigned char c, enum charflags cf, int *wake_reader);
 /* writer wake up is done outside of libtty if wake_writer is not NULL */
 unsigned char libtty_getchar(libtty_common_t *tty, int *wake_writer);
 unsigned char libtty_popchar(libtty_common_t *tty);
