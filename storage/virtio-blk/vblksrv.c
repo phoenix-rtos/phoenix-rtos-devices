@@ -154,6 +154,7 @@ static void vblk_msgHandler(void *arg, msg_t *msg)
 		case mtMount:
 			strg = storage_get(msg->oid.id);
 			msg->o.err = storage_mountfs(strg, imnt->fstype, msg->i.data, imnt->mode, &imnt->mnt, &omnt->oid);
+			break;
 
 		case mtUmount:
 			strg = storage_get(msg->oid.id);
