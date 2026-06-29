@@ -435,15 +435,19 @@ static int i2c_devctl(int pos, msg_t *msg)
 	switch (ctl->i.type) {
 		case i2c_devctl_bus_write:
 			ret = _i2c_busWrite(pos, ctl->i.dev_addr, msg->i.data, msg->i.size);
+			break;
 
 		case i2c_devctl_bus_read:
 			ret = _i2c_busRead(pos, ctl->i.dev_addr, msg->o.data, msg->o.size);
+			break;
 
 		case i2c_devctl_reg_read:
 			ret = _i2c_regRead(pos, ctl->i.dev_addr, ctl->i.reg_addr, msg->o.data, msg->o.size);
+			break;
 
 		default:
 			ret = -ENOSYS;
+			break;
 	}
 
 	mutexUnlock(i2c_common[pos].mutex);
