@@ -15,8 +15,13 @@ include $(static-lib.mk)
 
 NAME := zynq-flash
 LOCAL_SRCS := zynq-flash.c
-LOCAL_HEADERS := zynq-flash.h
 DEP_LIBS := libflashdrv-zynq
 LIBS := libstorage libjffs2 libmtd libcache
+
+include $(binary.mk)
+
+NAME := zynq-jffs2
+LOCAL_SRCS := jffs2-standalone.c
+LIBS := libstorage libjffs2 libmtd
 
 include $(binary.mk)

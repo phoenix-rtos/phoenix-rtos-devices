@@ -6,7 +6,7 @@
 # Copyright 2024 Phoenix Systems
 #
 
-DEFAULT_COMPONENTS := zynq-uart zynq-flash zynqmp-can zynq-pwm uart16550
+DEFAULT_COMPONENTS := zynq-uart zynq-flash zynqmp-can zynq-pwm uart16550 zynq-jffs2
 DEFAULT_COMPONENTS += zynq-i2c zynq-spi
 DEFAULT_COMPONENTS += librcpwm
 DEFAULT_COMPONENTS += libsensorsclient libsensors sensors
