@@ -703,7 +703,11 @@ static int flash_optsParse(int argc, char **argv)
 					return err;
 				}
 
-				flash_sharedPortAdd(portName, part, rbw, wbw, rate, prio);
+				err = flash_sharedPortAdd(portName, part, rbw, wbw, rate, prio);
+				if (err < 0) {
+					fprintf(stderr, "zynq-flash: failed to add shared port - %s: %d\n", portName, err);
+					return err;
+				}
 
 				break;
 
