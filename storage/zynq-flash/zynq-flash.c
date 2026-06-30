@@ -26,6 +26,7 @@
 #include <storage/storage.h>
 
 #include "flashdrv.h"
+#include "zynq-flash.h"
 
 #define MTD_POS   (29)
 #define MTD_MASK  (3 << MTD_POS)
@@ -34,6 +35,19 @@
 
 #define GET_STORAGE_ID(id) (id & ~MTD_MASK)
 #define GET_MTD_TYPE(id)   (id & MTD_MASK)
+
+#define LIMITED_PORT_STACK_SIZE (1024U)
+
+typedef struct {
+	id_t targetId;
+	struct timespec lastOp;
+	size_t readbwBudget;
+	size_t readmaxBudget;
+	size_t writebwBudget;
+	size_t writemaxBudget;
+	size_t rateBudget;
+	size_t maxRate;
+} portlimit_data_t;
 
 
 /* Operations on flash memory device */
@@ -141,22 +155,60 @@ static int flash_getAttr(oid_t *oid, int type, long long *attr)
 }
 
 
-static int flash_devCtl(oid_t *oid)
+static int flash_erase(storage_t *strg, off_t offs, size_t size)
 {
-	ssize_t res;
-
-	/* TODO: use libmtd to handle ioctl */
-	if (GET_MTD_TYPE(oid->id) == MTD_CHAR) {
-		res = -ENOSYS;
-	}
-	else if (GET_MTD_TYPE(oid->id) == MTD_BLOCK) {
-		res = -ENOSYS;
-	}
-	else {
-		res = -EINVAL;
+	if (strg->dev->mtd->ops->erase == NULL) {
+		return -EINVAL;
 	}
 
-	return res;
+	if (size == 0) {
+		return EOK;
+	}
+
+	if (offs < 0 || (off_t)(offs + size) > (off_t)strg->size) {
+		return -EINVAL;
+	}
+
+	return strg->dev->mtd->ops->erase(strg, strg->start + offs, size);
+}
+
+
+static int flash_info(storage_t *strg, flash_o_devctl_t *out)
+{
+	out->info.size = strg->size;
+	out->info.type = strg->dev->mtd->type;
+	out->info.erasesz = strg->dev->mtd->erasesz;
+	out->info.writesz = strg->dev->mtd->writesz;
+	out->info.erasesz = strg->dev->mtd->erasesz;
+	out->info.writesz = strg->dev->mtd->writesz;
+	out->info.writeBuffsz = strg->dev->mtd->writeBuffsz;
+	out->info.metaSize = strg->dev->mtd->metaSize;
+	out->info.oobSize = strg->dev->mtd->oobSize;
+	out->info.oobAvail = strg->dev->mtd->oobAvail;
+
+	return EOK;
+}
+
+
+static int flash_devCtl(msg_t *msg)
+{
+	const flash_i_devctl_t *idevctl = (const flash_i_devctl_t *)msg->i.raw;
+	storage_t *strg = storage_get(GET_STORAGE_ID(msg->oid.id));
+
+	if (strg == NULL || strg->dev == NULL || strg->dev->mtd == NULL || strg->dev->mtd->ops == NULL) {
+		return -EINVAL;
+	}
+
+	switch (idevctl->type) {
+		case flashsrv_devctl_erase:
+			return flash_erase(strg, (off_t)idevctl->erase.address, idevctl->erase.size);
+
+		case flashsrv_devctl_info:
+			return flash_info(strg, (flash_o_devctl_t *)msg->o.raw);
+
+		default:
+			return -ENOSYS;
+	}
 }
 
 
@@ -205,7 +257,7 @@ static void flash_msgHandler(void *arg, msg_t *msg)
 			break;
 
 		case mtDevCtl:
-			msg->o.err = flash_devCtl(&msg->oid);
+			msg->o.err = flash_devCtl(msg);
 			break;
 
 		default:
@@ -228,6 +280,101 @@ static void flash_help(const char *prog)
 	printf("\t\tsize:   partition size in bytes\n");
 	printf("\t\tfs:     filesystem name\n");
 	printf("\t-h                           - print this help message\n");
+}
+
+
+static int flash_limitShared(void *data, msg_t *msg)
+{
+	portlimit_data_t *limitData = (portlimit_data_t *)data;
+	size_t opSize = msg->i.size + msg->o.size;
+	struct timespec t1;
+	time_t elapsedNs;
+	size_t renewal;
+
+	if (limitData->targetId != (id_t)-1) {
+		if (msg->oid.id != 0U) {
+			return -EPERM;
+		}
+		msg->oid.id = limitData->targetId;
+	}
+
+	if ((opSize > limitData->writemaxBudget && msg->type == mtWrite) ||
+			(opSize > limitData->readmaxBudget && msg->type == mtRead)) {
+		return -EFBIG;
+	}
+
+	do {
+		clock_gettime(CLOCK_MONOTONIC, &t1);
+
+		elapsedNs = (t1.tv_sec - limitData->lastOp.tv_sec) * 1000000000LL +
+				(t1.tv_nsec - limitData->lastOp.tv_nsec);
+		if (elapsedNs < 0) {
+			elapsedNs = 0;
+		}
+
+		limitData->lastOp = t1;
+
+		renewal = (size_t)(((time_t)limitData->readmaxBudget * elapsedNs) / 1000000000LL);
+		limitData->readbwBudget += renewal;
+		if (limitData->readbwBudget > limitData->readmaxBudget) {
+			limitData->readbwBudget = limitData->readmaxBudget;
+		}
+
+		renewal = (size_t)(((time_t)limitData->writemaxBudget * elapsedNs) / 1000000000LL);
+		limitData->writebwBudget += renewal;
+		if (limitData->writebwBudget > limitData->writemaxBudget) {
+			limitData->writebwBudget = limitData->writemaxBudget;
+		}
+
+		renewal = (size_t)(((time_t)limitData->maxRate * elapsedNs) / 1000000000LL);
+		limitData->rateBudget += renewal;
+		if (limitData->rateBudget > limitData->maxRate) {
+			limitData->rateBudget = limitData->maxRate;
+		}
+
+		if (msg->type == mtRead && opSize > limitData->readbwBudget) {
+			size_t need = opSize - limitData->readbwBudget;
+			time_t sleepNs = (limitData->readmaxBudget != 0U) ?
+					(((time_t)need * 1000000000LL) / (time_t)limitData->readmaxBudget) :
+					0;
+			struct timespec ts = { .tv_sec = sleepNs / 1000000000LL, .tv_nsec = sleepNs % 1000000000LL };
+			nanosleep(&ts, NULL);
+			continue;
+		}
+
+		if (msg->type == mtWrite && opSize > limitData->writebwBudget) {
+			size_t need = opSize - limitData->writebwBudget;
+			time_t sleepNs = (limitData->writemaxBudget != 0U) ?
+					(((time_t)need * 1000000000LL) / (time_t)limitData->writemaxBudget) :
+					0;
+			struct timespec ts = { .tv_sec = sleepNs / 1000000000LL, .tv_nsec = sleepNs % 1000000000LL };
+			nanosleep(&ts, NULL);
+			continue;
+		}
+
+		if (limitData->rateBudget < 1U) {
+			size_t need = 1U - limitData->rateBudget;
+			time_t sleepNs = (limitData->maxRate != 0U) ?
+					(((time_t)need * 1000000000LL) / (time_t)limitData->maxRate) :
+					0;
+			struct timespec ts = { .tv_sec = sleepNs / 1000000000LL, .tv_nsec = sleepNs % 1000000000LL };
+			nanosleep(&ts, NULL);
+			continue;
+		}
+
+	} while ((msg->type == mtRead && opSize > limitData->readbwBudget) ||
+			(msg->type == mtWrite && opSize > limitData->writebwBudget) ||
+			limitData->rateBudget < 1U);
+
+	if (msg->type == mtRead) {
+		limitData->readbwBudget -= opSize;
+	}
+	if (msg->type == mtWrite) {
+		limitData->writebwBudget -= opSize;
+	}
+	limitData->rateBudget -= 1U;
+
+	return EOK;
 }
 
 
@@ -379,16 +526,70 @@ static int flash_partAdd(const char *parentPath, off_t start, size_t size)
 }
 
 
+static int flash_sharedPortAdd(const char *portName, const char *devPath, size_t bwRead, size_t bwWrite, size_t rate, unsigned int reqthrpriority)
+{
+	oid_t port, strgOid;
+	storage_t *strg = NULL;
+	portlimit_data_t *limitData;
+	int err;
+
+	err = sys_namedResource(portName, strlen(portName), &port.port);
+	if (err < 0) {
+		fprintf(stderr, "zynq-flash: failed to find a named port %s, err: %d\n", portName, err);
+		return err;
+	}
+
+	err = flash_oidResolve(devPath, &strgOid);
+	if (err < 0) {
+		fprintf(stderr, "zynq-flash: cannot resolve %s\n", devPath);
+		return err;
+	}
+
+	strg = storage_get(GET_STORAGE_ID(strgOid.id));
+	if (strg == NULL) {
+		fprintf(stderr, "zynq-flash: failed to find storage %s, err: %d\n", devPath, err);
+		return -EINVAL;
+	}
+
+	limitData = malloc(sizeof(portlimit_data_t));
+	if (limitData == NULL) {
+		fprintf(stderr, "zynq-flash: failed to allocate port limit data, err: %d\n", err);
+		return -ENOMEM;
+	}
+
+	limitData->targetId = strgOid.id;
+	limitData->readbwBudget = bwRead;
+	limitData->readmaxBudget = bwRead;
+	limitData->writebwBudget = bwWrite;
+	limitData->writemaxBudget = bwWrite;
+	limitData->rateBudget = rate;
+	limitData->maxRate = rate;
+
+	clock_gettime(CLOCK_MONOTONIC, &limitData->lastOp);
+
+	err = storage_bindLimitedPort(port.port, flash_limitShared, limitData, reqthrpriority, LIMITED_PORT_STACK_SIZE);
+
+	if (err < 0) {
+		fprintf(stderr, "zynq-flash: failed to bind limited port, err: %d\n", err);
+		free(limitData);
+		return err;
+	}
+
+	return EOK;
+}
+
+
 static int flash_optsParse(int argc, char **argv)
 {
 	int err, c;
 	unsigned int id;
 	oid_t oid;
 	off_t start;
-	size_t size;
-	char *devPath, *arg, *fs;
+	size_t size, rbw, wbw, rate;
+	unsigned int prio;
+	char *devPath, *arg, *fs, *portName, *part;
 
-	while ((c = getopt(argc, argv, "p:r:h")) != -1) {
+	while ((c = getopt(argc, argv, "p:r:n:h")) != -1) {
 		err = -EINVAL;
 		switch (c) {
 			case 'p': /* <dev:start:size> */
@@ -458,6 +659,54 @@ static int flash_optsParse(int argc, char **argv)
 
 				portRegister(oid.port, "/", &oid);
 				break;
+
+			case 'n': /* <portName:part:rbw:wbw:rate:prio> */
+				portName = optarg;
+				part = strchr(optarg, ':');
+				if (part == NULL) {
+					fprintf(stderr, "zynq-flash: missing a partition name, err: %d\n", err);
+					return err;
+				}
+
+				*part++ = '\0';
+				arg = strchr(part, ':');
+				if (arg == NULL) {
+					fprintf(stderr, "zynq-flash: missing a partition bandwidth limit, err: %d\n", err);
+					return err;
+				}
+
+				*arg++ = '\0';
+				rbw = strtol(arg, &arg, 0);
+				if (*arg != ':') {
+					fprintf(stderr, "zynq-flash: wrong bandwidth limit %s, err: %d\n", arg, err);
+					return err;
+				}
+
+				*arg++ = '\0';
+				wbw = strtol(arg, &arg, 0);
+				if (*arg != ':') {
+					fprintf(stderr, "zynq-flash: wrong bandwidth limit %s, err: %d\n", arg, err);
+					return err;
+				}
+
+				*arg++ = '\0';
+				rate = strtol(arg, &arg, 0);
+				if (*arg != ':') {
+					fprintf(stderr, "zynq-flash: wrong message rate limit %s, err: %d\n", arg, err);
+					return err;
+				}
+
+				*arg++ = '\0';
+				prio = strtol(arg, &arg, 0);
+				if (*arg != '\0') {
+					fprintf(stderr, "zynq-flash: wrong shared port thread priority %s, err: %d\n", arg, err);
+					return err;
+				}
+
+				flash_sharedPortAdd(portName, part, rbw, wbw, rate, prio);
+
+				break;
+
 
 			case 'h':
 				flash_help(argv[0]);
