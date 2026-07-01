@@ -179,6 +179,7 @@ static int ata_select(ata_dev_t *dev, uint64_t lba, uint16_t sectors, uint8_t mo
 
 	case LBA28:
 		h = (uint16_t)(lba >> 24) & DEVSEL_HEAD;
+		/* fallthrough */
 	case LBA48:
 		c = (uint16_t)(lba >> 8);
 		h |= DEVSEL_LBA;
