@@ -17,6 +17,7 @@
 #include <unistd.h>
 
 #include <sys/msg.h>
+#include <sys/threads.h>
 #include <posix/utils.h>
 
 #include "mcp331-low.h"
@@ -36,6 +37,15 @@ static struct {
 		uint8_t chan;
 	} spi;
 } common;
+
+
+static struct {
+	uint16_t samples[MCP331_PERIODIC_BUFFER_SIZE];
+	volatile size_t count; /* Number of samples collected */
+} sampleBuffer;
+
+handle_t cond_spi; /* Condition variable for completion */
+handle_t irqlock;  /* Mutex for buffer access */
 
 
 static int devInit(void)
@@ -63,15 +73,95 @@ static int devInit(void)
 }
 
 
+static int periodicSampleCallback(const uint8_t *data, size_t len)
+{
+	if (len < READ_SIZE) {
+		return -EINVAL;
+	}
+
+	uint16_t result = (((uint16_t)data[0] << 8) | data[1]) >> (16 - common.res);
+	uint16_t sample = result;
+
+	if (sampleBuffer.count < MCP331_PERIODIC_BUFFER_SIZE) {
+		sampleBuffer.samples[sampleBuffer.count] = sample;
+		sampleBuffer.count++;
+	}
+
+	return (sampleBuffer.count < MCP331_PERIODIC_BUFFER_SIZE) ? len : -1;
+}
+
+
+static int devCtlStartPeriodic(uint16_t waitStates)
+{
+	sampleBuffer.count = 0;
+
+	if (spi_startPeriodic(common.spi.bus, common.spi.chan, waitStates) < 0) {
+		return -1;
+	}
+
+	mutexLock(irqlock);
+
+	while (sampleBuffer.count < MCP331_PERIODIC_BUFFER_SIZE) {
+		// printf("buffer count: %d, sample[0]: %d\n", sampleBuffer.count, sampleBuffer.samples[0]);
+		condWait(cond_spi, irqlock, 1000);
+		// condWait(cond_spi, irqlock, 0);
+	}
+	mutexUnlock(irqlock);
+
+	return 0;
+}
+
+
+static int devCtlGetSamples(uint8_t *outBuff, size_t maxSamples, size_t *outCount)
+{
+	size_t toRead = 0;
+	size_t i = 0;
+	uint16_t *samples = (uint16_t *)outBuff;
+
+	mutexLock(irqlock);
+
+	toRead = sampleBuffer.count;
+	if (toRead > maxSamples) {
+		toRead = maxSamples;
+	}
+
+	for (i = 0; i < toRead; i++) {
+		samples[i] = sampleBuffer.samples[i];
+	}
+
+	mutexUnlock(irqlock);
+
+	*outCount = toRead;
+	return 0;
+}
+
+
 static int devCtl(msg_t *msg)
 {
 	mcp331_i_devctl_t data;
+	size_t samplesRead = 0;
 
 	memcpy(&data, msg->i.raw, sizeof(mcp331_i_devctl_t));
 
 	switch (data.cmd) {
 		case mcp331_cmd__recalibrate:
 			return -ENOTSUP; /* TODO: Implement */
+
+		case mcp331_cmd__startPeriodic:
+			return devCtlStartPeriodic(data.startPeriodic.waitStates);
+
+		case mcp331_cmd__getSamples:
+			if (msg->o.data == NULL || msg->o.size < sizeof(uint16_t)) {
+				return -EINVAL;
+			}
+			msg->o.err = devCtlGetSamples(msg->o.data,
+					data.getSamples.maxSamples > 0 ? data.getSamples.maxSamples : msg->o.size / sizeof(uint16_t),
+					&samplesRead);
+			/* Return number of samples read in o.err on success */
+			if (msg->o.err == 0) {
+				msg->o.err = (int)samplesRead;
+			}
+			return msg->o.err;
 
 		default:
 			return -ENOSYS;
@@ -151,6 +241,23 @@ static int init(void)
 		log_error("Failed to initialize spi");
 		return -1;
 	}
+
+	if (mutexCreate(&irqlock) < 0) {
+		log_error("Failed to create mutex");
+		return -1;
+	}
+
+	if (condCreate(&cond_spi) < 0) {
+		log_error("Failed to create condition variable");
+		return -1;
+	}
+
+	if (spi_initPeriodic(common.spi.bus, cond_spi, periodicSampleCallback) < 0) {
+		log_error("Failed to initialize periodic SPI");
+		return -1;
+	}
+
+	sampleBuffer.count = 0;
 
 	if (devInit() < 0) {
 		log_error("Device initialization failed");
