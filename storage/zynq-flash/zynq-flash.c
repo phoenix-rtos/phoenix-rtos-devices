@@ -22,6 +22,7 @@
 #include <posix/utils.h>
 #include <sys/threads.h>
 #include <sys/minmax.h>
+#include <stdbool.h>
 
 #include <libjffs2.h>
 #include <mtd/mtd.h>
@@ -58,6 +59,11 @@ typedef struct {
 	id_t targetId;
 	limit_data_t data;
 } portlimit_data_t;
+
+
+static struct {
+	bool disableSharedFSLimits;
+} flash_common;
 
 
 /* Operations on flash memory device */
@@ -379,6 +385,10 @@ static int flash_limit(limit_data_t *data, size_t wsize, size_t rsize)
 
 static int flash_limitSharedOps(void *data, size_t wsize, size_t rsize)
 {
+	if (flash_common.disableSharedFSLimits) {
+		return EOK;
+	}
+
 	return flash_limit(data, wsize, rsize);
 }
 
@@ -1035,6 +1045,8 @@ int main(int argc, char **argv)
 	int res;
 	pid_t pid;
 
+	flash_common.disableSharedFSLimits = true;
+
 	/* Set parent exit handler */
 	signal(SIGUSR1, flash_signalexit);
 
@@ -1088,6 +1100,10 @@ int main(int argc, char **argv)
 
 	/* Finished server initialization - kill parent */
 	kill(getppid(), SIGUSR1);
+
+	/* Ensure that limits apply before starting request handlers */
+	flash_common.disableSharedFSLimits = false;
+
 	storage_run(2, 2 * _PAGE_SIZE);
 
 	return EXIT_SUCCESS;
