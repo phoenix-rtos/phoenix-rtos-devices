@@ -875,9 +875,44 @@ static int ehci_transferEnqueue(hcd_t *hcd, usb_transfer_t *t, usb_pipe_t *pipe)
 	if (usb_isRoothub(pipe->dev))
 		return ehci_roothubReq(pipe->dev, t);
 
-	if (pipe->hcdpriv == NULL) {
-		if ((qh = ehci_qhAlloc(hcd->priv)) == NULL)
+	/* Setup stage */
+	if (t->type == usb_transfer_control) {
+		if (ehci_qtdAdd(hcd->priv, &qtds, setup_token, pipe->maxPacketLen, (char *)t->setup, sizeof(usb_setup_packet_t), 0) < 0) {
+			ehci_qtdsPut(hcd->priv, &qtds);
 			return -ENOMEM;
+		}
+	}
+
+	/* Data stage */
+	if ((t->type == usb_transfer_control && t->size > 0) || t->type == usb_transfer_bulk ||
+			t->type == usb_transfer_interrupt) {
+		if (ehci_qtdAdd(hcd->priv, &qtds, token, pipe->maxPacketLen, t->buffer, t->size, 1) < 0) {
+			ehci_qtdsPut(hcd->priv, &qtds);
+			return -ENOMEM;
+		}
+	}
+
+	/* Status stage */
+	if (t->type == usb_transfer_control) {
+		token = (token == in_token) ? out_token : in_token;
+		if (ehci_qtdAdd(hcd->priv, &qtds, token, pipe->maxPacketLen, NULL, 0, 1) < 0) {
+			ehci_qtdsPut(hcd->priv, &qtds);
+			return -ENOMEM;
+		}
+	}
+
+	/* No qtds allocated */
+	if (qtds == NULL)
+		return -1;
+
+	mutexLock(hcd->transLock);
+
+	if (pipe->hcdpriv == NULL) {
+		if ((qh = ehci_qhAlloc(hcd->priv)) == NULL) {
+			mutexUnlock(hcd->transLock);
+			ehci_qtdsPut(hcd->priv, &qtds);
+			return -ENOMEM;
+		}
 
 		ehci_qhConf(qh, pipe);
 		pipe->hcdpriv = qh;
@@ -899,39 +934,6 @@ static int ehci_transferEnqueue(hcd_t *hcd, usb_transfer_t *t, usb_pipe_t *pipe)
 			qh->hw->info[0] = (qh->hw->info[0] & ~(0x7ff << 16)) | (pipe->maxPacketLen << 16);
 	}
 
-	/* Setup stage */
-	if (t->type == usb_transfer_control) {
-		if (ehci_qtdAdd(hcd->priv, &qtds, setup_token, pipe->maxPacketLen, (char *)t->setup, sizeof(usb_setup_packet_t), 0) < 0) {
-			ehci_qtdsPut(hcd->priv, &qtds);
-			t->hcdpriv = NULL;
-			return -ENOMEM;
-		}
-	}
-
-	/* Data stage */
-	if ((t->type == usb_transfer_control && t->size > 0) || t->type == usb_transfer_bulk ||
-			t->type == usb_transfer_interrupt) {
-		if (ehci_qtdAdd(hcd->priv, &qtds, token, pipe->maxPacketLen, t->buffer, t->size, 1) < 0) {
-			ehci_qtdsPut(hcd->priv, &qtds);
-			t->hcdpriv = NULL;
-			return -ENOMEM;
-		}
-	}
-
-	/* Status stage */
-	if (t->type == usb_transfer_control) {
-		token = (token == in_token) ? out_token : in_token;
-		if (ehci_qtdAdd(hcd->priv, &qtds, token, pipe->maxPacketLen, NULL, 0, 1) < 0) {
-			ehci_qtdsPut(hcd->priv, &qtds);
-			t->hcdpriv = NULL;
-			return -ENOMEM;
-		}
-	}
-
-	/* No qtds allocated */
-	if (qtds == NULL)
-		return -1;
-
 	t->hcdpriv = qtds;
 	do {
 		ehci_qtdLink(qtds, qtds->next);
@@ -941,7 +943,6 @@ static int ehci_transferEnqueue(hcd_t *hcd, usb_transfer_t *t, usb_pipe_t *pipe)
 
 	qtds = (ehci_qtd_t *)t->hcdpriv;
 
-	mutexLock(hcd->transLock);
 	LIST_ADD(&hcd->transfers, t);
 	ehci_enqueue(hcd, qh, qtds, qtds->prev);
 	mutexUnlock(hcd->transLock);
