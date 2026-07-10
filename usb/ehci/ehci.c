@@ -63,8 +63,20 @@ static inline void ehci_memDmb(void)
 static int ehci_startAsync(hcd_t *hcd)
 {
 	ehci_t *ehci = (ehci_t *)hcd->priv;
+	uint32_t addr = va2pa((void *)ehci->asyncList->hw);
 
-	*(ehci->opbase + asynclistaddr) = va2pa((void *)ehci->asyncList->hw);
+	/* EHCI 4.8.1: async list base address must be 32-byte aligned and non-null. */
+	assert(addr != 0 && (addr & 0x1f) == 0);
+
+	/* EHCI 3.6.1: reclamation header QH must have H-bit set. */
+	if ((ehci->asyncList->hw->info[0] & QH_HEAD) == 0) {
+		log_error("async list head missing H-bit (info[0]=%08x addr=%08x), repairing",
+				ehci->asyncList->hw->info[0], addr);
+		ehci->asyncList->hw->info[0] |= QH_HEAD;
+	}
+
+	*(ehci->opbase + asynclistaddr) = addr;
+	ehci_memDmb();
 	*(ehci->opbase + usbcmd) |= USBCMD_ASE;
 	ehci_memDmb();
 	return ehci_handshake(ehci->opbase + usbsts, USBSTS_AS, USBSTS_AS, 20000);
@@ -81,6 +93,9 @@ static void ehci_qtdLink(ehci_qtd_t *prev, ehci_qtd_t *next)
 static void ehci_enqueue(hcd_t *hcd, ehci_qh_t *qh, ehci_qtd_t *first, ehci_qtd_t *last)
 {
 	ehci_t *ehci = (ehci_t *)hcd->priv;
+
+	/* EHCI 3.6.1: QH must be 32-byte aligned before HC can traverse it */
+	assert(qh->hw != NULL && (va2pa((void *)qh->hw) & 0x1f) == 0);
 
 	mutexLock(ehci->asyncLock);
 	last->hw->next = QTD_PTR_INVALID;
@@ -207,6 +222,9 @@ static ehci_qtd_t *ehci_qtdAlloc(ehci_t *ehci, int pid, size_t maxpacksz, char *
 		qtd->paddr = QTD_PTR(qtd);
 	}
 
+	/* EHCI 3.5.1: QTD must be 32-byte aligned */
+	assert((va2pa((void *)qtd->hw) & 0x1f) == 0);
+
 	qtd->hw->token = (datax << 31) | (pid << 8) | (EHCI_TRANS_ERRORS << 10) | QTD_ACTIVE;
 
 	qtd->hw->next = QTD_PTR_INVALID;
@@ -298,6 +316,9 @@ static ehci_qh_t *ehci_qhAlloc(ehci_t *ehci)
 			return NULL;
 		}
 	}
+
+	/* EHCI 3.6.1: QH must be 32-byte aligned */
+	assert((va2pa((void *)qh->hw) & 0x1f) == 0);
 
 	qh->hw->info[0] = 0;
 	qh->hw->info[1] = 0;
