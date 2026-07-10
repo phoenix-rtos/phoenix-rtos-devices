@@ -482,12 +482,9 @@ static void ehci_qtdsDeactivate(ehci_qtd_t *qtds)
  * TODO: propagate -ETIMEDOUT from {stop,start}Async up to pipeDestroy -
  * requires hcd signature change
  */
-static void ehci_qhUnlinkAsync(hcd_t *hcd, ehci_qh_t *qh)
+/* Must be called under ehci->asyncLock */
+static void _ehci_qhUnlinkAsync(ehci_t *ehci, ehci_qh_t *qh)
 {
-	ehci_t *ehci = (ehci_t *)hcd->priv;
-
-	mutexLock(ehci->asyncLock);
-
 	qh->prev->hw->horizontal = qh->hw->horizontal;
 	ehci_memDmb();
 
@@ -506,18 +503,15 @@ static void ehci_qhUnlinkAsync(hcd_t *hcd, ehci_qh_t *qh)
 		*(ehci->opbase + usbsts) = USBSTS_IAA;
 		ehci_memDmb();
 	}
-
-	mutexUnlock(ehci->asyncLock);
 }
 
 
-void ehci_qhUnlinkPeriodic(hcd_t *hcd, ehci_qh_t *qh)
+/* Must be called under ehci->periodicLock */
+static void _ehci_qhUnlinkPeriodic(ehci_t *ehci, ehci_qh_t *qh)
 {
-	ehci_t *ehci = (ehci_t *)hcd->priv;
 	ehci_qh_t *tmp;
 	int i;
 
-	mutexLock(ehci->periodicLock);
 	/* TODO: do we have to stop the periodic queue? */
 	for (i = 0; i < EHCI_PERIODIC_SIZE; i++) {
 		/* Count Qhs linked to this periodic index */
@@ -548,7 +542,6 @@ void ehci_qhUnlinkPeriodic(hcd_t *hcd, ehci_qh_t *qh)
 		}
 	}
 	ehci_memDmb();
-	mutexUnlock(ehci->periodicLock);
 }
 
 
@@ -811,10 +804,11 @@ static void ehci_transferDequeue(hcd_t *hcd, usb_transfer_t *t)
 
 	qtds = (ehci_qtd_t *)t->hcdpriv;
 	if (t->type == usb_transfer_bulk || t->type == usb_transfer_control) {
-		ehci_qh_t *qh = qtds->qh;
-		ehci_qhUnlinkAsync(hcd, qh);
-
 		mutexLock(ehci->asyncLock);
+		ehci_qh_t *qh = qtds->qh;
+
+		_ehci_qhUnlinkAsync(ehci, qh);
+
 		ehci_qtdsDeactivate(qtds);
 		/* Clear overlay active bit so HC won't resume this QTD */
 		qh->hw->token &= ~QTD_ACTIVE;
@@ -940,18 +934,27 @@ static void ehci_pipeDestroy(hcd_t *hcd, usb_pipe_t *pipe)
 	usb_transfer_t *t;
 	ehci_qh_t *qh;
 	ehci_qtd_t *qtds;
+	ehci_t *ehci = (ehci_t *)hcd->priv;
 
-	if (pipe->hcdpriv == NULL)
+	mutexLock(hcd->transLock);
+	if (pipe->hcdpriv == NULL) {
+		mutexUnlock(hcd->transLock);
 		return;
+	}
 
 	qh = (ehci_qh_t *)pipe->hcdpriv;
 
-	if (pipe->type == usb_transfer_bulk || pipe->type == usb_transfer_control)
-		ehci_qhUnlinkAsync(hcd, qh);
-	else if (pipe->type == usb_transfer_interrupt)
-		ehci_qhUnlinkPeriodic(hcd, qh);
+	if (pipe->type == usb_transfer_bulk || pipe->type == usb_transfer_control) {
+		mutexLock(ehci->asyncLock);
+		_ehci_qhUnlinkAsync(ehci, qh);
+		mutexUnlock(ehci->asyncLock);
+	}
+	else if (pipe->type == usb_transfer_interrupt) {
+		mutexLock(ehci->periodicLock);
+		_ehci_qhUnlinkPeriodic(ehci, qh);
+		mutexUnlock(ehci->periodicLock);
+	}
 
-	mutexLock(hcd->transLock);
 	t = hcd->transfers;
 	/* Deactivate device's qtds */
 	if (t != NULL) {
@@ -963,9 +966,9 @@ static void ehci_pipeDestroy(hcd_t *hcd, usb_pipe_t *pipe)
 		} while (t != hcd->transfers);
 		ehci_transUpdate(hcd);
 	}
+	pipe->hcdpriv = NULL;
 	mutexUnlock(hcd->transLock);
 
-	pipe->hcdpriv = NULL;
 	ehci_qhPut(hcd->priv, qh);
 }
 
