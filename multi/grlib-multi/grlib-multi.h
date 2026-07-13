@@ -119,7 +119,7 @@ typedef struct {
 		gpio_i_t gpio;
 		spi_t spi;
 		adc_t adc;
-		spw_t spw;
+		spw_i_t spw;
 	};
 } multi_i_t;
 

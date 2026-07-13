@@ -469,7 +469,7 @@ static int spw_rxConfigure(spw_dev_t *dev, size_t *firstDesc, const size_t nPack
 
 
 /* Read from RX buffers */
-static int spw_rxRead(spw_dev_t *dev, uint8_t *buf, size_t bufsz, size_t *readCnt, const spw_t *ictl)
+static int spw_rxRead(spw_dev_t *dev, uint8_t *buf, size_t bufsz, size_t *readCnt, const spw_i_t *ictl)
 {
 	size_t firstDesc = ictl->task.rx.firstDesc;
 	const size_t nPackets = ictl->task.rx.nPackets;
@@ -570,7 +570,7 @@ static void spw_handleDevCtl(msg_t *msg, int dev)
 		return;
 	}
 
-	const spw_t *ictl = (spw_t *)msg->i.raw;
+	const spw_i_t *ictl = (spw_i_t *)msg->i.raw;
 	spw_o_t *octl = (spw_o_t *)msg->o.raw;
 	spw_dev_t *spw = &spw_common.dev[dev];
 
