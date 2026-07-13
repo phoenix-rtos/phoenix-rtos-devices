@@ -39,4 +39,8 @@
 #define GPIOG_BASE ((void *)0x52021800U)
 #define GPIOH_BASE ((void *)0x52021c00U)
 
+#define SPI1_BASE ((void *)0x50013000)
+#define SPI2_BASE ((void *)0x50003800)
+#define SPI3_BASE ((void *)0x50002000)
+
 #endif /* _STM32U3_BASE_H_ */
