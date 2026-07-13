@@ -42,7 +42,7 @@ static libspi_ctx_t spi_common[N_ACTIVE_SPI];
 static handle_t spi_locks[N_ACTIVE_SPI];
 
 
-#if defined(__CPU_STM32L4X6)
+#if defined(__CPU_STM32L4X6) || defined(__CPU_STM32U3)
 #if (SPI4 || SPI5 || SPI6)
 #error "Chosen SPI not available on this platform"
 #endif
