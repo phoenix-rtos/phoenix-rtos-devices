@@ -371,7 +371,7 @@ static int spw_transmit(spw_dev_t *dev, const uint8_t *buf, size_t bufsz, const 
 		}
 		desc->hdrAddr = pa;
 
-		pa = va2pa((void *)txBuff + hdrLen);
+		pa += hdrLen;
 		if ((pa & ~SPW_ADDR_MASK) != 0) {
 			LOG_ERROR("DMA addr 0x%" PRIxPTR "exceeds 32-bit limit", pa);
 			return -EINVAL;
@@ -688,7 +688,7 @@ static int spw_defaultConfig(spw_dev_t *dev)
 		LOG_ERROR("DMA addr 0x%" PRIxPTR "exceeds 32-bit limit", pa);
 		return -EINVAL;
 	}
-	dev->vbase[DMA_RX_DESC] = va2pa((void *)dev->rxDesc);
+	dev->vbase[DMA_RX_DESC] = (uint32_t)pa;
 
 	return 0;
 }
