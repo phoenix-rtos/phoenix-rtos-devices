@@ -6,18 +6,16 @@
  * Copyright 2023 Phoenix Systems
  * Author: Lukasz Leczkowski
  *
- * This file is part of Phoenix-RTOS.
- *
- * %LICENSE%
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 #ifndef _MULTI_SPACEWIRE_H_
 #define _MULTI_SPACEWIRE_H_
 
 
+#include <sys/msg.h>
 #include <phoenix/msg.h>
 #include <string.h>
-#include <sys/msg.h>
 #include <stdbool.h>
 
 enum {
@@ -85,23 +83,41 @@ typedef struct {
 
 
 typedef struct {
+	size_t nPackets;
+} spw_rxConfig_t;
+
+
+typedef struct {
+	size_t firstDesc;
+	size_t nPackets;
+	uint32_t timeoutUs;
+} spw_rx_t;
+
+
+typedef struct {
+	size_t nPackets;
+	bool async;
+} spw_tx_t;
+
+
+typedef struct {
+	/* Configure, RX, TX in one op */
+	size_t nTxPackets;
+	size_t nRxPackets;
+	uint32_t rxTimeoutUs;
+} spw_xfer_t;
+
+
+typedef struct {
 	/* clang-format off */
-	enum { spw_config = 0, spw_rxConfig, spw_rx, spw_tx } type;
+	enum { spw_config = 0, spw_rxConfig, spw_rx, spw_tx, spw_xfer } type;
 	/* clang-format on */
 	union {
 		spw_config_t config;
-		struct {
-			size_t nPackets;
-		} rxConfig;
-		struct {
-			size_t firstDesc;
-			size_t nPackets;
-			uint32_t timeoutUs;
-		} rx;
-		struct {
-			size_t nPackets;
-			bool async;
-		} tx;
+		spw_rxConfig_t rxConfig;
+		spw_rx_t rx;
+		spw_tx_t tx;
+		spw_xfer_t xfer;
 	} task;
 
 } spw_i_t;

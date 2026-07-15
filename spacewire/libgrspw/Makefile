@@ -3,7 +3,7 @@
 #
 # Copyright 2025 Phoenix Systems
 #
-# %LICENSE%
+# SPDX-License-Identifier: BSD-3-Clause
 #
 
 NAME := libgrspw
