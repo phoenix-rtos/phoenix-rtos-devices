@@ -1,0 +1,14 @@
+storage/grlib-nandfctrl2/flashdrv.c
+  h_fc26ad17182140 801,806
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "7f21e0d4aaf46b3c6cd48631cd276cb21a3101e2",
+  "prompts": {},
+  "humans": {
+    "h_fc26ad17182140": {
+      "author": "Lukasz Leczkowski <lukasz.leczkowski@phoenix-rtos.com>"
+    }
+  }
+}
