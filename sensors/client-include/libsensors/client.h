@@ -92,9 +92,9 @@ typedef struct {
  */
 typedef struct {
 	uint32_t devId;
-	int32_t gyroX;    /* latest angular velocity value in [mrad/s] */
-	int32_t gyroY;    /* latest angular velocity value in [mrad/s] */
-	int32_t gyroZ;    /* latest angular velocity value in [mrad/s] */
+	int32_t gyroX;    /* latest angular velocity value in [urad/s] */
+	int32_t gyroY;    /* latest angular velocity value in [urad/s] */
+	int32_t gyroZ;    /* latest angular velocity value in [urad/s] */
 	uint32_t dAngleX; /* delta angle in [urad] since driver start */
 	uint32_t dAngleY; /* delta angle in [urad] since driver start */
 	uint32_t dAngleZ; /* delta angle in [urad] since driver start */

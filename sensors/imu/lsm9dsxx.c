@@ -94,7 +94,7 @@
 #define GYR_OVERFLOW       26820 /* if gyro returns more than this, the sensorhub result will overflow */
 
 /* conversions */
-#define GYR2000DPS_CONV_MRAD 1.221730475f /* convert gyroscope value (at scale 2000DPS) to mrad/s */
+#define GYR2000DPS_CONV_URAD 1221.730475f /* convert gyroscope value (at scale 2000DPS) to urad/s */
 #define ACC8G_CONV_MG        0.244F       /* convert accelerations (at 8G scale) [m/s^2] */
 #define MG_CONV_MMS2         9.80665f     /* convert milli G to [mm/s^2] */
 
@@ -112,7 +112,7 @@ static int32_t translateGyr(uint8_t hbyte, uint8_t lbyte)
 	/* MISRA incompliant - casting u16 to s16 with no regard to sign */
 	int16_t val = ((uint16_t)hbyte << 8) | (uint16_t)lbyte;
 
-	return GYR2000DPS_CONV_MRAD * val; /* sensor value to [mrad/s] */
+	return GYR2000DPS_CONV_URAD * val; /* sensor value to [urad/s] */
 }
 
 
