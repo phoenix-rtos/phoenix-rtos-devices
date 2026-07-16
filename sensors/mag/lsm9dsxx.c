@@ -72,7 +72,7 @@
 #define SENSOR_OUTPUT_SIZE 6
 
 /* conversions */
-#define MAG4G_CONV_MGAUSS 0.14F /* conversion from sensor (at +-4 gauss scale) value to milligauss (equal to 10^-7 T) */
+#define MAG4G_CONV_UGAUSS 140.0F /* conversion from sensor (at +-4 gauss scale) value to microgauss (equal to 0.1 nT) */
 
 
 typedef struct {
@@ -81,14 +81,14 @@ typedef struct {
 } lsm9dsxx_ctx_t;
 
 
-static int16_t translateMag(uint8_t hbyte, uint8_t lbyte)
+static int32_t translateMag(uint8_t hbyte, uint8_t lbyte)
 {
 	int16_t val;
 
 	val = (hbyte << 8) | lbyte;
 
-	/* conversion to milligaus (10^-7 T), as it is already sensor manager storage scale */
-	return val * MAG4G_CONV_MGAUSS;
+	/* conversion to microgauss (10^-10 T), as it is already sensor manager storage scale */
+	return val * MAG4G_CONV_UGAUSS;
 }
 
 

@@ -105,10 +105,9 @@ typedef struct {
 /* Magnetometer data */
 typedef struct {
 	uint32_t devId;
-	int16_t magX; /* value in 1E-7 [T] */
-	int16_t magY; /* value in 1E-7 [T] */
-	int16_t magZ; /* value in 1E-7 [T] */
-	uint8_t reserved[2];
+	int32_t magX; /* value in 0.1 [nT] */
+	int32_t magY; /* value in 0.1 [nT] */
+	int32_t magZ; /* value in 0.1 [nT] */
 } mag_data_t;
 
 

@@ -49,8 +49,7 @@
 #define REG_DATA_OUT       0x68
 #define SENSOR_OUTPUT_SIZE 6
 
-#define MAG_CONV_MGAUSS 1.5F  /* conversion from sensor value to milligauss (equal to 10^-7 T) */
-#define MAG_OVERFLOW    21843 /* sensorhub will overflow if lis2mdl returns abs(raw) > MAG_OVERFLOW */
+#define MAG_CONV_UGAUSS 1500.0F /* magnetometer unit conversion factor, converts raw register value to 0.1 nT (micro Gauss) */
 
 
 typedef struct {
@@ -59,23 +58,15 @@ typedef struct {
 } lis2mdl_ctx_t;
 
 
-static int16_t translateMag(uint8_t hbyte, uint8_t lbyte)
+static int32_t translateMag(uint8_t hbyte, uint8_t lbyte)
 {
-	int16_t val;
+	int32_t val;
 
-	/* MISRA incompliant - casting u16 to s16 with no regard to sign */
-	val = ((uint16_t)hbyte << 8) | (uint16_t)lbyte;
+	/* MISRA incompliant - casting u32 to s32 with no regard to sign */
+	val = ((uint32_t)hbyte << 8) | (uint32_t)lbyte;
 
-	if (val > MAG_OVERFLOW) {
-		return MAG_OVERFLOW * MAG_CONV_MGAUSS;
-	}
-	else if (val < -MAG_OVERFLOW) {
-		return -MAG_OVERFLOW * MAG_CONV_MGAUSS;
-	}
-	else {
-		/* conversion to milligaus (10^-7 T), as it is already sensor manager storage scale */
-		return val * MAG_CONV_MGAUSS;
-	}
+	/* conversion to microgauss (1e-10 T), as it is already sensor manager storage scale */
+	return val * MAG_CONV_UGAUSS;
 }
 
 
