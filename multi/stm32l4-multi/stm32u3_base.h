@@ -43,4 +43,9 @@
 #define SPI2_BASE ((void *)0x50003800)
 #define SPI3_BASE ((void *)0x50002000)
 
+#define I2C1_BASE ((void *)0x50005400U)
+#define I2C2_BASE ((void *)0x50005800U)
+#define I2C3_BASE ((void *)0x50042800U)
+#define I2C4_BASE ((void *)0x50008400U)
+
 #endif /* _STM32U3_BASE_H_ */
