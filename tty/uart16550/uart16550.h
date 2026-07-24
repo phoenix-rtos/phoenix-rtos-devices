@@ -32,6 +32,7 @@
 
 
 /* Register bits */
+#define IMR_LS   0x04
 #define IMR_THRE 0x02
 #define IMR_DR   0x01
 
@@ -51,8 +52,17 @@
 #define MCR_RTS  0x02
 #define MCR_DTR  0x01
 
-#define LSR_DR   0x01
-#define LSR_THRE 0x20
+#define LSR_DR   0x01 /* Data ready */
+#define LSR_OE   0x02 /* Overrun error */
+#define LSR_PE   0x04 /* Parity error */
+#define LSR_FE   0x08 /* Framing error */
+#define LSR_BI   0x10 /* Break interrupt */
+#define LSR_THRE 0x20 /* Transmitter hold register empty */
+
+#define FCR_FIFOEN  0x1  /* Enable FIFO */
+#define FCR_RESETRX 0x2  /* Reset RX FIFO */
+#define FCR_RESETTX 0x4  /* Reset TX FIFO */
+#define FCR_EXTFIFO 0x20 /* Enable extended FIFO size (16750 / implementation dependent) */
 
 
 #endif
