@@ -20,6 +20,9 @@
 #include <unistd.h>
 #include <paths.h>
 #include <string.h>
+#include <stdatomic.h>
+#include <stddef.h>
+#include <lf-fifo.h>
 
 #include <sys/file.h>
 #include <sys/interrupt.h>
@@ -39,13 +42,50 @@
 
 #define SW_BUF_SIZE 64
 
+#define N_UARTS 4
+
+#define THREAD_STACK_SIZE 2048
+
+/*
+ * Note: different 16550 implementations have different meanings for FIFO threshold settings.
+ * Typically 0x2 is 8 characters threshold in a FIFO of 16 characters.
+ */
+#define UART16550_FIFO_DEFAULT 0x2
+
+#ifndef UART16550_FIFO0
+#define UART16550_FIFO0 UART16550_FIFO_DEFAULT
+#endif
+
+#ifndef UART16550_FIFO1
+#define UART16550_FIFO1 UART16550_FIFO_DEFAULT
+#endif
+
+#ifndef UART16550_FIFO2
+#define UART16550_FIFO2 UART16550_FIFO_DEFAULT
+#endif
+
+#ifndef UART16550_FIFO3
+#define UART16550_FIFO3 UART16550_FIFO_DEFAULT
+#endif
+
+
+static const int8_t uart_defaultFifo[N_UARTS] = {
+	UART16550_FIFO0,
+	UART16550_FIFO1,
+	UART16550_FIFO2,
+	UART16550_FIFO3,
+};
+
+
 typedef struct {
 	uint8_t hwctx[64];
-	uint8_t buf[SW_BUF_SIZE];
-	volatile unsigned int buf_i;
+	lf_fifo_t rxSwFifo;
+	uint8_t rxSwFifoData[SW_BUF_SIZE];
+	atomic_uint_fast8_t lineStatus;
 
 	unsigned int init;
 	unsigned int clk;
+	volatile unsigned int hwOverruns; /* Intended to be read by debugger */
 
 	handle_t mutex;
 	handle_t intcond;
@@ -54,13 +94,13 @@ typedef struct {
 	oid_t oid;
 	libtty_common_t tty;
 
-	char stack[1024] __attribute__((aligned(8)));
+	char stack[THREAD_STACK_SIZE] __attribute__((aligned(8)));
 } uart_t;
 
 
 static struct {
-	uart_t uarts[4];
-	char stack[1024] __attribute__((aligned(8)));
+	uart_t uarts[N_UARTS];
+	char stack[THREAD_STACK_SIZE] __attribute__((aligned(8)));
 } uart_common;
 
 
@@ -68,7 +108,7 @@ static uart_t *uart_get(oid_t *oid)
 {
 	unsigned int i;
 
-	for (i = 0; i < sizeof(uart_common.uarts) / sizeof(uart_common.uarts[0]); i++) {
+	for (i = 0; i < N_UARTS; i++) {
 		if ((uart_common.uarts[i].oid.port == oid->port) && (uart_common.uarts[i].oid.id == oid->id)) {
 			return uart_common.uarts + i;
 		}
@@ -136,6 +176,20 @@ static void signal_txready(void *arg)
 	condSignal(uart->intcond);
 }
 
+
+/*
+ * This function is necessary because Line Status Register contains error bits that are clear-on-read
+ * (like overrun bit), but also hardware-cleared bits like data ready bit.
+ * We need to store and accumulate error bits until we are ready to handle them.
+ */
+static uint8_t uart_readUpdateLineStatus(uart_t *uart)
+{
+	uint8_t lineStatus = uarthw_read(uart->hwctx, REG_LSR);
+	atomic_fetch_or(&uart->lineStatus, lineStatus);
+	return lineStatus;
+}
+
+
 #ifdef __TARGET_RISCV64
 __attribute__((section(".interrupt"))) static int uart_interrupt(unsigned int n, void *arg)
 {
@@ -144,8 +198,7 @@ __attribute__((section(".interrupt"))) static int uart_interrupt(unsigned int n,
 	 * Fortunately the UART IRQ on this platform is edge-triggered so we can just
 	 * exit interrupt, signal uart->intcond and main thread will handle the rest.
 	 */
-	uart_t *uart = (uart_t *)arg;
-	return uart->intcond;
+	return 1;
 }
 #else
 static int uart_interrupt(unsigned int n, void *arg)
@@ -162,18 +215,17 @@ static int uart_interrupt(unsigned int n, void *arg)
 	 */
 	uint8_t iir = uarthw_read(uart->hwctx, REG_IIR);
 	uarthw_write(uart->hwctx, REG_IMR, 0);
-	unsigned int i = uart->buf_i;
 	do {
 		uint8_t intr_type = (iir >> 1) & 0x7;
 		if ((intr_type == IIR_CODE_DR) || (intr_type == IIR_CODE_RTO)) {
-			uint8_t c = uarthw_read(uart->hwctx, REG_RBR);
-			if (i < SW_BUF_SIZE) {
-				uart->buf[i] = c;
-				i++;
+			uint8_t status = uart_readUpdateLineStatus(uart);
+			while ((status & LSR_DR) != 0) {
+				lf_fifo_ow_push(&uart->rxSwFifo, uarthw_read(uart->hwctx, REG_RBR));
+				status = uart_readUpdateLineStatus(uart);
 			}
 		}
 		else if (intr_type == IIR_CODE_LS) {
-			uarthw_read(uart->hwctx, REG_LSR);
+			uart_readUpdateLineStatus(uart);
 		}
 		else if (intr_type == IIR_CODE_MS) {
 			uarthw_read(uart->hwctx, REG_MSR);
@@ -182,40 +234,61 @@ static int uart_interrupt(unsigned int n, void *arg)
 		iir = uarthw_read(uart->hwctx, REG_IIR);
 	} while ((iir & IIR_IRQPEND) == 0);
 
-	uart->buf_i = i;
-	return uart->intcond;
+	return 1;
 }
 #endif
+
+
+static void uart_handleErrors(uart_t *uart)
+{
+	(void)uart_readUpdateLineStatus(uart);
+	uint8_t lineStatus = atomic_exchange(&uart->lineStatus, 0);
+	if (lineStatus & LSR_OE) {
+		uart->hwOverruns++;
+	}
+}
 
 
 static void uart_intthr(void *arg)
 {
 	uart_t *uart = (uart_t *)arg;
-	uint8_t target_imr = IMR_DR;
+	uint8_t target_imr = IMR_DR | IMR_LS;
 
 	mutexLock(uart->mutex);
 	for (;;) {
 		uarthw_write(uart->hwctx, REG_IMR, target_imr);
+		uart_handleErrors(uart);
 		condWait(uart->intcond, uart->mutex, 0);
 		/* For the following part the interrupt needs to be masked */
 		uarthw_write(uart->hwctx, REG_IMR, 0);
 
-		/* Empty received buffer */
-		unsigned int buf_i = uart->buf_i;
-		for (unsigned int i = 0; i < buf_i; i++) {
-			libtty_putchar(&uart->tty, uart->buf[i], NULL);
-		}
+		if (!lf_fifo_empty(&uart->rxSwFifo) || (uart_readUpdateLineStatus(uart) & LSR_DR) != 0) {
+			int wake = 0, wakeHelper = 0;
+			libtty_putchar_lock(&uart->tty);
+			/* Empty received buffer */
+			uint8_t c;
+			while (lf_fifo_ow_pop(&uart->rxSwFifo, &c) != 0) {
+				libtty_putchar_unlocked(&uart->tty, c, &wakeHelper);
+				wake |= wakeHelper;
+			}
 
-		uart->buf_i = 0;
-		/* Depending on implementation we may have more characters in hardware FIFO */
-		while ((uarthw_read(uart->hwctx, REG_LSR) & LSR_DR) != 0) {
-			libtty_putchar(&uart->tty, uarthw_read(uart->hwctx, REG_RBR), NULL);
+			/* Depending on implementation we may have more characters in hardware FIFO */
+			while ((uart_readUpdateLineStatus(uart) & LSR_DR) != 0) {
+				c = uarthw_read(uart->hwctx, REG_RBR);
+				libtty_putchar_unlocked(&uart->tty, c, &wakeHelper);
+				wake |= wakeHelper;
+			}
+
+			libtty_putchar_unlock(&uart->tty);
+			if (wake != 0) {
+				libtty_wake_reader(&uart->tty);
+			}
 		}
 
 		/* Check for transmit */
 		while (1) {
 			if (libtty_txready(&uart->tty) != 0) {
-				if ((uarthw_read(uart->hwctx, REG_LSR) & LSR_THRE) != 0) {
+				if ((uart_readUpdateLineStatus(uart) & LSR_THRE) != 0) {
 					uarthw_write(uart->hwctx, REG_THR, libtty_getchar(&uart->tty, NULL));
 				}
 				else {
@@ -346,7 +419,7 @@ static void _uart_mkDev(uint32_t port, int isconsole)
 	char path[12];
 	unsigned int i;
 
-	for (i = 0; i < sizeof(uart_common.uarts) / sizeof(uart_common.uarts[0]); i++) {
+	for (i = 0; i < N_UARTS; i++) {
 		if (uart_common.uarts[i].init == 1) {
 			uart_common.uarts[i].oid.port = port;
 			uart_common.uarts[i].oid.id = (i == UART16550_CONSOLE_USER) ? 0 : i + 1;
@@ -377,7 +450,7 @@ static void _uart_mkDev(uint32_t port, int isconsole)
 }
 
 
-static int _uart_init(uart_t *uart, unsigned int uartn, unsigned int speed)
+static int _uart_init(uart_t *uart, unsigned int uartn, unsigned int speed, int8_t fifo)
 {
 	unsigned int divisor;
 	libtty_callbacks_t callbacks = {
@@ -399,23 +472,43 @@ static int _uart_init(uart_t *uart, unsigned int uartn, unsigned int speed)
 		return err;
 	}
 
-	uart->buf_i = 0;
-	condCreate(&uart->intcond);
-	mutexCreate(&uart->mutex);
+	uart->hwOverruns = 0;
+	atomic_store(&uart->lineStatus, 0);
+	lf_fifo_init(&uart->rxSwFifo, uart->rxSwFifoData, sizeof(uart->rxSwFifoData));
+	err = condCreate(&uart->intcond);
+	if (err < 0) {
+		libtty_destroy(&uart->tty);
+		return err;
+	}
 
-	beginthread(uart_intthr, 1, uart->stack, sizeof(uart->stack), uart);
-	interrupt(uarthw_irq(uart->hwctx), uart_interrupt, uart, uart->intcond, &uart->inth);
+	err = mutexCreate(&uart->mutex);
+	if (err < 0) {
+		resourceDestroy(uart->intcond);
+		libtty_destroy(&uart->tty);
+		return err;
+	}
 
 	/* Set speed (MOD) */
 	uarthw_write(uart->hwctx, REG_LCR, LCR_DLAB);
 	uarthw_write(uart->hwctx, REG_LSB, divisor);
 	uarthw_write(uart->hwctx, REG_MSB, divisor >> 8);
 
-	/* Set data format (MOD) */
-	uarthw_write(uart->hwctx, REG_LCR, LCR_D8N1);
+	/* Set data format, leave DLAB on because some 16750 implementations require it to enable extended FIFO settings */
+	uarthw_write(uart->hwctx, REG_LCR, LCR_DLAB | LCR_D8N1);
 
 	/* Enable and configure FIFOs */
-	uarthw_write(uart->hwctx, REG_FCR, 0xa7);
+	if (fifo < 0) {
+		uarthw_write(uart->hwctx, REG_FCR, 0);
+	}
+	else {
+		/* On some implementations we need to set FIFOEN separately before any other write can take effect */
+		uarthw_write(uart->hwctx, REG_FCR, FCR_FIFOEN);
+		uint8_t fifoSetting = (((uint8_t)fifo & 0x3) << 6);
+		uarthw_write(uart->hwctx, REG_FCR, fifoSetting | FCR_EXTFIFO | FCR_RESETTX | FCR_RESETRX | FCR_FIFOEN);
+	}
+
+	/* Set LCR to its final value */
+	uarthw_write(uart->hwctx, REG_LCR, LCR_D8N1);
 
 	/* Enable hardware interrupts */
 	uarthw_write(uart->hwctx, REG_MCR, MCR_OUT2);
@@ -423,7 +516,26 @@ static int _uart_init(uart_t *uart, unsigned int uartn, unsigned int speed)
 	/* Set interrupt mask */
 	uarthw_write(uart->hwctx, REG_IMR, 0);
 
-	return EOK;
+	err = interrupt(uarthw_irq(uart->hwctx), uart_interrupt, uart, uart->intcond, &uart->inth);
+	if (err < 0) {
+		uarthw_write(uart->hwctx, REG_MCR, 0);
+		resourceDestroy(uart->mutex);
+		resourceDestroy(uart->intcond);
+		libtty_destroy(&uart->tty);
+		return err;
+	}
+
+	err = beginthread(uart_intthr, 1, uart->stack, sizeof(uart->stack), uart);
+	if (err < 0) {
+		resourceDestroy(uart->inth);
+		uarthw_write(uart->hwctx, REG_MCR, 0);
+		resourceDestroy(uart->mutex);
+		resourceDestroy(uart->intcond);
+		libtty_destroy(&uart->tty);
+		return err;
+	}
+
+	return 0;
 }
 
 
@@ -438,13 +550,17 @@ int main(int argc, char **argv)
 		isconsole = 0;
 	}
 	else if (argc != 1) {
-		return -1;
+		return EXIT_FAILURE;
 	}
 
-	portCreate(&port);
+	err = portCreate(&port);
+	if (err < 0) {
+		fprintf(stderr, "uart16550: failed to create port\n");
+		return EXIT_FAILURE;
+	}
 
-	for (i = 0; i < sizeof(uart_common.uarts) / sizeof(uart_common.uarts[0]); i++) {
-		err = _uart_init(&uart_common.uarts[i], i, UART16550_BAUDRATE);
+	for (i = 0; i < N_UARTS; i++) {
+		err = _uart_init(&uart_common.uarts[i], i, UART16550_BAUDRATE, uart_defaultFifo[i]);
 		if (err < 0) {
 			if (err != -ENODEV) {
 				fprintf(stderr, "uart16550: failed to init ttyS%u, err: %d\n", i, err);
@@ -455,7 +571,12 @@ int main(int argc, char **argv)
 		}
 	}
 
-	beginthread(poolthr, 4, uart_common.stack, sizeof(uart_common.stack), (void *)(uintptr_t)port);
+	err = beginthread(poolthr, 4, uart_common.stack, sizeof(uart_common.stack), (void *)(uintptr_t)port);
+	if (err < 0) {
+		fprintf(stderr, "uart16550: failed to start thread\n");
+		return EXIT_FAILURE;
+	}
+
 	_uart_mkDev(port, isconsole);
 	poolthr((void *)(uintptr_t)port);
 

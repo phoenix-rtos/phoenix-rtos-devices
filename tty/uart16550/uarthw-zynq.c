@@ -92,7 +92,7 @@ int uarthw_init(unsigned int uartn, void *hwctx, size_t hwctxsz, unsigned int *f
 {
 	void *base;
 	static const struct {
-		uint32_t base;
+		uintptr_t base;
 		unsigned int irqno;
 	} uarthw_info[] = {
 		{ .base = UART16550_BASE0, .irqno = UART16550_IRQ0 },
