@@ -164,6 +164,10 @@ int gpio_init(void)
 		GPIO4_BASE, GPIO5_BASE, GPIO6_BASE, GPIO7_BASE, GPIO8_BASE, GPIO9_BASE,
 		GPIO10_BASE, GPIO11_BASE, GPIO12_BASE, GPIO13_BASE };
 
+	if (mutexCreate(&gpio_common.lock) < 0) {
+		return -1;
+	}
+
 #ifndef __CPU_IMXRT117X
 	platformctl_t pctl;
 	static const int clocks[] = { GPIO1_CLK, GPIO2_CLK, GPIO3_CLK,
