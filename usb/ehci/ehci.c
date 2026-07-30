@@ -763,16 +763,19 @@ static void ehci_irqThread(void *arg)
 			log_error("host system error: USBCMD=%08x USBSTS=%08x ASYNCLISTADDR=%08x PERIODICLISTBASE=%08x PORTSC=%08x",
 					*(ehci->opbase + usbcmd), *(ehci->opbase + usbsts), *(ehci->opbase + asynclistaddr), *(ehci->opbase + periodiclistbase), *(ehci->opbase + portsc1));
 
+			mutexLock(hcd->transLock);
 			/* Wait for HC to fully halt before touching transfers. The HC may still be mid-DMA */
 			*(ehci->opbase + usbcmd) &= ~USBCMD_RUN;
 			ehci_memDmb();
+
 			if (ehci_handshake(ehci->opbase + usbsts, USBSTS_HCH, USBSTS_HCH, 100000) < 0) {
 				log_error("HC did not halt after SEI");
+				mutexUnlock(hcd->transLock);
 				continue;
 			}
 
-			mutexLock(hcd->transLock);
 			ehci_transAbort(hcd);
+
 			if (ehci_resetController(hcd) < 0) {
 				log_error("failed to reset the controller");
 				mutexUnlock(hcd->transLock);
