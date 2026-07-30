@@ -59,9 +59,9 @@
 #define SENSOR_OUTPUT_SIZE 5
 
 /* conversions */
-#define SENSOR_CONV_PASCALS 0.024414062F /* conversion from sensor value to pascals; = (100 * 1/4096) */
-#define SENSOR_CONV_KELV    0.002083333F /*conversion from sensor value to kelvin */
-#define SENSOR_KELV_OFFS    315.65F      /* temperature measurement offset + kelvin to celsius offset */
+#define SENSOR_CONV_CENTIPASCALS (1e4F / 4096.0F) /* conversion from sensor value to centipascals */
+#define SENSOR_CONV_KELV         0.002083333F     /*conversion from sensor value to kelvin */
+#define SENSOR_KELV_OFFS         315.65F          /* temperature measurement offset + kelvin to celsius offset */
 
 
 typedef struct {
@@ -78,7 +78,7 @@ static uint32_t translatePress(uint8_t lbyte, uint8_t mbyte, uint8_t hbyte)
 	/* dismiss highest bit as it is unusable */
 	val &= 0x7FFFFF;
 
-	return val * SENSOR_CONV_PASCALS;
+	return val * SENSOR_CONV_CENTIPASCALS;
 }
 
 

@@ -51,7 +51,7 @@ typedef struct {
 
 typedef struct {
 	uint32_t devId;
-	uint32_t pressure; /* pressure in [Pa] */
+	uint32_t pressure; /* pressure in [cPa] */
 	uint32_t temp;     /* temperature value in Kelvin [K] */
 } baro_data_t;
 
