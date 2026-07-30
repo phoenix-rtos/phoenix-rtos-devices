@@ -183,7 +183,7 @@ static void ms5611_publishthr(void *data)
 		/* MS5611 operating ranges: temperature from -40C to +80C, and pressure: 45000Pa, 110000 Pa */
 		if (press > 45000 && press < 120000 && temp > -4000 && temp < 8500) {
 			ctx->evtBaro.timestamp = now;
-			ctx->evtBaro.baro.pressure = press;
+			ctx->evtBaro.baro.pressure = press * 100;
 			ctx->evtBaro.baro.temp = (temp + 27315 + 50) / 100;
 
 			sensors_publish(info->id, &ctx->evtBaro);

@@ -54,9 +54,9 @@
 #define SENSOR_OUTPUT_SIZE 5
 
 /* conversions */
-#define SENSOR_CONV_PASCALS 0.024414062F /* conversion from sensor value to pascals; = (100 * 1/4096) */
-#define SENSOR_CONV_KELV    0.01F        /* conversion from sensor value to kelvin */
-#define SENSOR_KELV_OFFS    273.15F      /* temperature measurement offset + kelvin to celsius offset */
+#define SENSOR_CONV_CENTIPASCALS (1e4F / 4096.0F) /* conversion from sensor value to centipascals */
+#define SENSOR_CONV_KELV         0.01F            /* conversion from sensor value to kelvin */
+#define SENSOR_KELV_OFFS         273.15F          /* temperature measurement offset + kelvin to celsius offset */
 
 #define LPS22XX_BOOT_DELAY_US   (10 * 1000)
 #define LPS22XX_CONFIG_DELAY_US (100 * 1000)
@@ -82,7 +82,7 @@ static uint32_t translatePress(uint8_t lbyte, uint8_t mbyte, uint8_t hbyte)
 
 	val = lbyte | (mbyte << 8) | (hbyte << 16);
 
-	return (uint32_t)((float)val * SENSOR_CONV_PASCALS);
+	return (uint32_t)((float)val * SENSOR_CONV_CENTIPASCALS);
 }
 
 
