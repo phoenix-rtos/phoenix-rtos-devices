@@ -158,6 +158,8 @@ bool dmaRxCb(const uint8_t *data, size_t size)
 			/* response from first chip in chain is received last */
 			size_t offs = (sample * 64) + (3 - chip) * 16;
 			uint8_t rsp[16];
+
+			/* SDMA uses 32 bit words with opposite endianness than main CPU */
 			for (int i = 0; i + 4 <= sizeof(rsp); i += 4) {
 				uint8_t *dst = rsp + i;
 				const uint8_t *src = data + offs + i;
