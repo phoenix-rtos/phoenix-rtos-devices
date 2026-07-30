@@ -100,6 +100,7 @@ static void ehci_enqueue(hcd_t *hcd, ehci_qh_t *qh, ehci_qtd_t *first, ehci_qtd_
 	mutexLock(ehci->asyncLock);
 	last->hw->next = QTD_PTR_INVALID;
 	last->hw->token |= QTD_IOC;
+	ehci_memDmb();
 
 	/* No qtds linked */
 	if (qh->lastQtd == NULL)
@@ -442,14 +443,12 @@ static void ehci_qhLinkPeriodic(hcd_t *hcd, ehci_qh_t *qh)
 
 		for (i = qh->phase; i < EHCI_PERIODIC_SIZE; i += qh->period) {
 			ehci->periodicNodes[i] = qh;
-			ehci->periodicList[i] = QH_PTR(qh);
 		}
 	}
 	else {
 		/* Insert inside */
 		qh->next = t->next;
 		t->next = qh;
-		t->hw->horizontal = QH_PTR(qh);
 	}
 
 	if (qh->next != NULL) {
@@ -461,6 +460,18 @@ static void ehci_qhLinkPeriodic(hcd_t *hcd, ehci_qh_t *qh)
 	}
 
 	ehci_memDmb();
+
+	if (t == NULL || t->period < qh->period) {
+		for (i = qh->phase; i < EHCI_PERIODIC_SIZE; i += qh->period) {
+			ehci->periodicList[i] = QH_PTR(qh);
+		}
+	}
+	else {
+		t->hw->horizontal = QH_PTR(qh);
+	}
+
+	ehci_memDmb();
+
 	mutexUnlock(ehci->periodicLock);
 }
 
@@ -479,6 +490,7 @@ static void ehci_qhLinkAsync(hcd_t *hcd, ehci_qh_t *qh)
 	ehci->asyncList->next = qh;
 
 	qh->hw->horizontal = ehci->asyncList->hw->horizontal;
+	ehci_memDmb();
 	ehci->asyncList->hw->horizontal = QH_PTR(qh);
 	ehci_memDmb();
 
