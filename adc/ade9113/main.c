@@ -445,7 +445,25 @@ int adcConfigure(struct adcCtx *ctx, const struct args *args)
 
 	struct ade9113_ctx ade = { spiExchangeCb, NULL };
 
+	/*
+	 * NOTE: many commands below are executed without checking return values. There are explicit checkpoints later
+	 * that will fail if ADC's are not fully operational.
+	 */
+	waitReady(&ade, false, 1000 * 1000);
 	ade9113_writeRegs(&ade, ADE9113_WR_LOCK, ADE9113_WR_LOCK__UNLOCK_KEY);
+
+	/* simple check to fail early if first chip is not responding */
+	const uint8_t magic = 0xab;
+	uint8_t readScratch[4] = { 0 };
+	ade9113_writeRegs(&ade, ADE9113_SCRATCH, magic);
+	ade9113_readRegs(&ade, ADE9113_SCRATCH, readScratch, sizeof(readScratch));
+	if (readScratch[0] != magic) {
+		log_error("Initial READ/WRITE transaction failed. Analog frontend might be broken/missing");
+		if (!args->ignoreErrors) {
+			return -1;
+		}
+	}
+
 	ade9113_writeRegs(&ade, ADE9113_SWRST, ADE9113_SWRST__SOFTWARE_RESET_COMMAND);
 
 	if ((waitReady(&ade, false, 1000 * 1000) < 0) && !args->ignoreErrors) {
