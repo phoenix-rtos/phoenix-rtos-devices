@@ -263,7 +263,7 @@ static void sdmaConfigure(struct sdmaCtx *ctx)
 static int sdmaInit(struct sdmaCtx *const ctx, size_t size, size_t count, const char *rxChannel, const char *txChannel)
 {
 	if ((size % _PAGE_SIZE) != 0) {
-		log_error("buffer size is not aligned to %d", _PAGE_SIZE);
+		log_error("buffer size is not aligned to %zu", (size_t)_PAGE_SIZE);
 		return -1;
 	}
 
