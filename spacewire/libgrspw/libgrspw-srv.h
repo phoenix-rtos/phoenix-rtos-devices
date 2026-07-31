@@ -22,7 +22,7 @@
 
 
 enum {
-	id_spw0 = 0u,
+	id_spw0 = 0U,
 	id_spw1,
 	id_spw2,
 	id_spw3,

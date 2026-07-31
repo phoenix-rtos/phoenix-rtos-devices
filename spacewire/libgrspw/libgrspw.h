@@ -24,27 +24,27 @@
 #define SPW_TX_MIN_BUFSZ 8
 
 /* DMA configuration */
-#define SPW_DMA_CFG_LE  (1u << 16) /* Disable TX when link error occurs */
-#define SPW_DMA_CFG_SP  (1u << 15) /* Remove 2nd (and 1st) byte (protocol id) of each packet */
-#define SPW_DMA_CFG_SA  (1u << 14) /* Remove 1st byte (address) of each packet */
-#define SPW_DMA_CFG_ENA (1u << 13) /* Enable separate node address for channel */
-#define SPW_DMA_CFG_NS  (1u << 12) /* No spill */
+#define SPW_DMA_CFG_LE  (1U << 16) /* Disable TX when link error occurs */
+#define SPW_DMA_CFG_SP  (1U << 15) /* Remove 2nd (and 1st) byte (protocol id) of each packet */
+#define SPW_DMA_CFG_SA  (1U << 14) /* Remove 1st byte (address) of each packet */
+#define SPW_DMA_CFG_ENA (1U << 13) /* Enable separate node address for channel */
+#define SPW_DMA_CFG_NS  (1U << 12) /* No spill */
 
 /* TX packet flags */
-#define SPW_TX_FLG_DCRC (1u << 17) /* Append data CRC */
-#define SPW_TX_FLG_HCRC (1u << 16) /* Append header CRC */
+#define SPW_TX_FLG_DCRC (1U << 17) /* Append data CRC */
+#define SPW_TX_FLG_HCRC (1U << 16) /* Append header CRC */
 
 /* clang-format off */
-#define SPW_TX_FLG_NON_CRC(n) (((n) & 0xfu) << 8) /* Number of bytes from start that will not be included in CRC calculation */
-#define SPW_TX_FLG_HDR_LEN(n) ((n) & 0xffu)       /* Number of bytes in header */
+#define SPW_TX_FLG_NON_CRC(n) (((n) & 0xfU) << 8) /* Number of bytes from start that will not be included in CRC calculation */
+#define SPW_TX_FLG_HDR_LEN(n) ((n) & 0xffU)       /* Number of bytes in header */
 /* clang-format on */
 
 /* RX packet flags */
-#define SPW_RX_FLG_TR   (1u << 31) /* Packet truncated */
-#define SPW_RX_FLG_DCRC (1u << 30) /* Data CRC error */
-#define SPW_RX_FLG_HCRC (1u << 29) /* Header CRC error */
-#define SPW_RX_FLG_EEP  (1u << 28) /* EEP termination */
-#define SPW_RX_LEN_MSK  0x1ffffffu /* Packet length mask */
+#define SPW_RX_FLG_TR   (1U << 31) /* Packet truncated */
+#define SPW_RX_FLG_DCRC (1U << 30) /* Data CRC error */
+#define SPW_RX_FLG_HCRC (1U << 29) /* Header CRC error */
+#define SPW_RX_FLG_EEP  (1U << 28) /* EEP termination */
+#define SPW_RX_LEN_MSK  0x1ffffffU /* Packet length mask */
 
 
 /* Default maximum value - can be overridden by board_config */
@@ -158,20 +158,20 @@ static inline size_t spw_serializeTxMsg(uint32_t flags, uint32_t dataLen, const 
 	 * |         4 B         |   4 B   | hdrLen | dataLen |
 	 */
 
-	uint8_t hdrLen = flags & 0xffu;
+	uint8_t hdrLen = flags & 0xffU;
 
 	if (SPW_TX_MIN_BUFSZ + hdrLen + dataLen > bufsz) {
 		return 0;
 	}
 
 	buf[0] = flags >> 24;
-	buf[1] = (flags >> 16) & 0xffu;
-	buf[2] = (flags >> 8) & 0xffu;
-	buf[3] = flags & 0xffu;
+	buf[1] = (flags >> 16) & 0xffU;
+	buf[2] = (flags >> 8) & 0xffU;
+	buf[3] = flags & 0xffU;
 	buf[4] = dataLen >> 24;
-	buf[5] = (dataLen >> 16) & 0xffu;
-	buf[6] = (dataLen >> 8) & 0xffu;
-	buf[7] = dataLen & 0xffu;
+	buf[5] = (dataLen >> 16) & 0xffU;
+	buf[6] = (dataLen >> 8) & 0xffU;
+	buf[7] = dataLen & 0xffU;
 
 	if (hdrLen != 0) {
 		memcpy(&buf[SPW_TX_MIN_BUFSZ], hdr, hdrLen);
