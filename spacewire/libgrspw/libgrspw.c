@@ -55,45 +55,45 @@
 #define DMA_ADDR      12
 
 /* SPW CTRL bits */
-#define SPW_CTRL_RA  (1u << 31) /* RMAP available */
-#define SPW_CTRL_RX  (1u << 30) /* RX unaligned access available */
-#define SPW_CTRL_RC  (1u << 29) /* RMAP CRC available */
-#define SPW_CTRL_NCH (3u << 27) /* Number of DMA channels */
-#define SPW_CTRL_PO  (1u << 26) /* Number of ports - 1 */
-#define SPW_CTRL_PS  (1u << 21) /* Port select */
-#define SPW_CTRL_NP  (1u << 20) /* Disable port force */
-#define SPW_CTRL_RD  (1u << 17) /* RMAP buffer disable */
-#define SPW_CTRL_RE  (1u << 16) /* RMAP enable */
-#define SPW_CTRL_TR  (1u << 11) /* Time RX enable */
-#define SPW_CTRL_TT  (1u << 10) /* Time TX enable */
-#define SPW_CTRL_LI  (1u << 9)  /* Link error IRQ */
-#define SPW_CTRL_TQ  (1u << 8)  /* Tick-out IRQ */
-#define SPW_CTRL_RS  (1u << 6)  /* Reset */
-#define SPW_CTRL_PM  (1u << 5)  /* Promiscuous mode */
-#define SPW_CTRL_TI  (1u << 4)  /* Tick in */
-#define SPW_CTRL_IE  (1u << 3)  /* Interrupt enable */
-#define SPW_CTRL_AS  (1u << 2)  /* Autostart */
-#define SPW_CTRL_LS  (1u << 1)  /* Link start */
-#define SPW_CTRL_LD  (1u << 0)  /* Link disable */
+#define SPW_CTRL_RA  (1U << 31) /* RMAP available */
+#define SPW_CTRL_RX  (1U << 30) /* RX unaligned access available */
+#define SPW_CTRL_RC  (1U << 29) /* RMAP CRC available */
+#define SPW_CTRL_NCH (3U << 27) /* Number of DMA channels */
+#define SPW_CTRL_PO  (1U << 26) /* Number of ports - 1 */
+#define SPW_CTRL_PS  (1U << 21) /* Port select */
+#define SPW_CTRL_NP  (1U << 20) /* Disable port force */
+#define SPW_CTRL_RD  (1U << 17) /* RMAP buffer disable */
+#define SPW_CTRL_RE  (1U << 16) /* RMAP enable */
+#define SPW_CTRL_TR  (1U << 11) /* Time RX enable */
+#define SPW_CTRL_TT  (1U << 10) /* Time TX enable */
+#define SPW_CTRL_LI  (1U << 9)  /* Link error IRQ */
+#define SPW_CTRL_TQ  (1U << 8)  /* Tick-out IRQ */
+#define SPW_CTRL_RS  (1U << 6)  /* Reset */
+#define SPW_CTRL_PM  (1U << 5)  /* Promiscuous mode */
+#define SPW_CTRL_TI  (1U << 4)  /* Tick in */
+#define SPW_CTRL_IE  (1U << 3)  /* Interrupt enable */
+#define SPW_CTRL_AS  (1U << 2)  /* Autostart */
+#define SPW_CTRL_LS  (1U << 1)  /* Link start */
+#define SPW_CTRL_LD  (1U << 0)  /* Link disable */
 
 /* DMA CTRL bits */
-#define DMA_CTRL_LE  (1u << 16) /* Disable TX when link error occurs */
-#define DMA_CTRL_SP  (1u << 15) /* Remove 2nd byte (protocol id) of each packet */
-#define DMA_CTRL_SA  (1u << 14) /* Remove 1st byte (address) of each packet */
-#define DMA_CTRL_ENA (1u << 13) /* Enable separate node address for channel */
-#define DMA_CTRL_NS  (1u << 12) /* No spill */
-#define DMA_CTRL_RD  (1u << 11) /* RX descriptors available */
-#define DMA_CTRL_RX  (1u << 10) /* RX active (read only) */
-#define DMA_CTRL_AT  (1u << 9)  /* Abort TX */
-#define DMA_CTRL_RA  (1u << 8)  /* RX AHB error */
-#define DMA_CTRL_TA  (1u << 7)  /* TX AHB error */
-#define DMA_CTRL_PR  (1u << 6)  /* Packet received */
-#define DMA_CTRL_PS  (1u << 5)  /* Packet sent */
-#define DMA_CTRL_AI  (1u << 4)  /* AHB error IRQ */
-#define DMA_CTRL_RI  (1u << 3)  /* RX IRQ (if set in corresponding descriptor) */
-#define DMA_CTRL_TI  (1u << 2)  /* TX IRQ (if set in corresponding descriptor) */
-#define DMA_CTRL_RE  (1u << 1)  /* Receiver enable */
-#define DMA_CTRL_TE  (1u << 0)  /* Transmitter enable */
+#define DMA_CTRL_LE  (1U << 16) /* Disable TX when link error occurs */
+#define DMA_CTRL_SP  (1U << 15) /* Remove 2nd byte (protocol id) of each packet */
+#define DMA_CTRL_SA  (1U << 14) /* Remove 1st byte (address) of each packet */
+#define DMA_CTRL_ENA (1U << 13) /* Enable separate node address for channel */
+#define DMA_CTRL_NS  (1U << 12) /* No spill */
+#define DMA_CTRL_RD  (1U << 11) /* RX descriptors available */
+#define DMA_CTRL_RX  (1U << 10) /* RX active (read only) */
+#define DMA_CTRL_AT  (1U << 9)  /* Abort TX */
+#define DMA_CTRL_RA  (1U << 8)  /* RX AHB error */
+#define DMA_CTRL_TA  (1U << 7)  /* TX AHB error */
+#define DMA_CTRL_PR  (1U << 6)  /* Packet received */
+#define DMA_CTRL_PS  (1U << 5)  /* Packet sent */
+#define DMA_CTRL_AI  (1U << 4)  /* AHB error IRQ */
+#define DMA_CTRL_RI  (1U << 3)  /* RX IRQ (if set in corresponding descriptor) */
+#define DMA_CTRL_TI  (1U << 2)  /* TX IRQ (if set in corresponding descriptor) */
+#define DMA_CTRL_RE  (1U << 1)  /* Receiver enable */
+#define DMA_CTRL_TE  (1U << 0)  /* Transmitter enable */
 
 #define DMA_CTRL_USR_MSK (DMA_CTRL_LE | DMA_CTRL_SP | DMA_CTRL_SA | DMA_CTRL_ENA | DMA_CTRL_NS)
 
@@ -115,14 +115,14 @@
  * CRC for the packet according to the RMAP standard.
  */
 
-#define RX_DESC_TRUNC   (1u << 31)
-#define RX_DESC_DCRC    (1u << 30)
-#define RX_DESC_HCRC    (1u << 29)
-#define RX_DESC_EEP     (1u << 28)
-#define RX_DESC_IE      (1u << 27)
-#define RX_DESC_WR      (1u << 26)
-#define RX_DESC_EN      (1u << 25)
-#define RX_DESC_LEN     (0x1ffffffu)
+#define RX_DESC_TRUNC   (1U << 31)
+#define RX_DESC_DCRC    (1U << 30)
+#define RX_DESC_HCRC    (1U << 29)
+#define RX_DESC_EEP     (1U << 28)
+#define RX_DESC_IE      (1U << 27)
+#define RX_DESC_WR      (1U << 26)
+#define RX_DESC_EN      (1U << 25)
+#define RX_DESC_LEN     (0x1ffffffU)
 #define RX_DESC_USR_MSK (RX_DESC_TRUNC | RX_DESC_DCRC | RX_DESC_HCRC | RX_DESC_EEP | RX_DESC_LEN)
 
 
@@ -137,14 +137,14 @@
  * 7:0 - header length in bytes
  */
 
-#define TX_DESC_DCRC    (1u << 17)
-#define TX_DESC_HCRC    (1u << 16)
-#define TX_DESC_LERR    (1u << 15)
-#define TX_DESC_IE      (1u << 14)
-#define TX_DESC_WR      (1u << 13)
-#define TX_DESC_EN      (1u << 12)
-#define TX_DESC_NON_CRC (0xfu << 8)
-#define TX_DESC_HDR_LEN (0xffu)
+#define TX_DESC_DCRC    (1U << 17)
+#define TX_DESC_HCRC    (1U << 16)
+#define TX_DESC_LERR    (1U << 15)
+#define TX_DESC_IE      (1U << 14)
+#define TX_DESC_WR      (1U << 13)
+#define TX_DESC_EN      (1U << 12)
+#define TX_DESC_NON_CRC (0xfU << 8)
+#define TX_DESC_HDR_LEN (0xffU)
 #define TX_DESC_USR_MSK (TX_DESC_DCRC | TX_DESC_HCRC | TX_DESC_NON_CRC | TX_DESC_HDR_LEN)
 
 
@@ -196,18 +196,18 @@ static size_t spw_txMsgToPacket(const uint8_t *buf, spw_txPacket_t *packet)
 	packet->dataLen = (buf[4] << 24) | (buf[5] << 16) | (buf[6] << 8) | buf[7];
 
 	packet->hdr = &buf[SPW_TX_MIN_BUFSZ];
-	packet->data = &buf[SPW_TX_MIN_BUFSZ] + (packet->flags & 0xff);
+	packet->data = &buf[SPW_TX_MIN_BUFSZ] + (packet->flags & 0xffU);
 
-	return SPW_TX_MIN_BUFSZ + (packet->flags & 0xffu) + packet->dataLen;
+	return SPW_TX_MIN_BUFSZ + (packet->flags & 0xffU) + packet->dataLen;
 }
 
 
 static size_t spw_rxPacketToMsg(const uint32_t flags, const size_t rxLen, const uint8_t *rx, uint8_t *buf)
 {
 	buf[0] = flags >> 24;
-	buf[1] = (flags >> 16) & 0xffu;
-	buf[2] = (flags >> 8) & 0xffu;
-	buf[3] = flags & 0xffu;
+	buf[1] = (flags >> 16) & 0xffU;
+	buf[2] = (flags >> 8) & 0xffU;
+	buf[3] = flags & 0xffU;
 
 	memcpy(&buf[SPW_RX_MIN_BUFSZ], rx, rxLen);
 
@@ -625,7 +625,7 @@ static int spw_createResources(spw_dev_t *dev, addr_t pbase)
 		return -1;
 	}
 
-	dev->vbase += (pbase - base) / sizeof(uintptr_t);
+	dev->vbase = (void *)((uintptr_t)dev->vbase + (pbase - base));
 
 	return 0;
 }
