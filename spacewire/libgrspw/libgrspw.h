@@ -156,8 +156,12 @@ static inline size_t spw_serializeTxMsg(uint32_t flags, uint32_t dataLen, const 
 	buf[6] = (dataLen >> 8) & 0xffu;
 	buf[7] = dataLen & 0xffu;
 
-	memcpy(&buf[SPW_TX_MIN_BUFSZ], hdr, hdrLen);
-	memcpy(&buf[SPW_TX_MIN_BUFSZ] + hdrLen, data, dataLen);
+	if (hdrLen != 0) {
+		memcpy(&buf[SPW_TX_MIN_BUFSZ], hdr, hdrLen);
+	}
+	if (dataLen != 0) {
+		memcpy(&buf[SPW_TX_MIN_BUFSZ] + hdrLen, data, dataLen);
+	}
 
 	return SPW_TX_MIN_BUFSZ + hdrLen + dataLen;
 }
