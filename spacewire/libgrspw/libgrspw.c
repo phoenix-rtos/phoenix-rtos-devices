@@ -244,26 +244,26 @@ __attribute__((section(".interrupt"))) static int spw_irqHandler(unsigned int n,
 /* Operations on device */
 
 
-int spw_transmit(spw_dev_t *dev, const uint8_t *buf, size_t bufsz, const size_t nPackets, bool async)
+int spw_transmit(spw_dev_t *dev, const uint8_t *buf, size_t bufsz, const spw_tx_t *tx)
 {
 	if ((buf == NULL) || (bufsz < SPW_TX_MIN_BUFSZ)) {
 		return -EINVAL;
 	}
 
-	if (!async && (nPackets > SPW_TX_DESC_CNT)) {
+	if (!tx->async && (tx->nPackets > SPW_TX_DESC_CNT)) {
 		return -EINVAL;
 	}
 
 	(void)mutexLock(dev->txLock);
 
-	TRACE("nPackets: %zu", nPackets);
+	TRACE("nPackets: %zu", tx->nPackets);
 
 	/* Setup descriptors */
 	size_t firstDesc = dev->lastTxDesc;
-	const size_t lastDesc = (dev->lastTxDesc + nPackets) % SPW_TX_DESC_CNT;
+	const size_t lastDesc = (dev->lastTxDesc + tx->nPackets) % SPW_TX_DESC_CNT;
 	bool wrapped = (lastDesc <= firstDesc);
 
-	for (size_t cnt = 0; cnt < nPackets; cnt++) {
+	for (size_t cnt = 0; cnt < tx->nPackets; cnt++) {
 		(void)mutexLock(dev->txIrqLock);
 		while (dev->txDescFree == 0) {
 			/* Wait for free descriptor or for packet to be acknowledged */
@@ -315,7 +315,7 @@ int spw_transmit(spw_dev_t *dev, const uint8_t *buf, size_t bufsz, const size_t 
 		dev->lastTxDesc = (dev->lastTxDesc + 1) % SPW_TX_DESC_CNT;
 	}
 
-	if (!async) {
+	if (!tx->async) {
 		/* Wait for transmission to finish */
 		while ((firstDesc <= lastDesc) || wrapped) {
 			if ((dev->txDesc[firstDesc].ctrl & TX_DESC_EN) == 0) {
@@ -337,7 +337,7 @@ int spw_transmit(spw_dev_t *dev, const uint8_t *buf, size_t bufsz, const size_t 
 
 	(void)mutexUnlock(dev->txLock);
 
-	return nPackets;
+	return tx->nPackets;
 }
 
 
@@ -499,7 +499,8 @@ ssize_t spw_xferOp(spw_dev_t *dev, const uint8_t *txbuf, size_t txbufsz, uint8_t
 		return err;
 	}
 
-	(void)spw_transmit(dev, txbuf, txbufsz, xfer->nTxPackets, true);
+	spw_tx_t tx = { .nPackets = xfer->nTxPackets, .async = true };
+	(void)spw_transmit(dev, txbuf, txbufsz, &tx);
 
 	spw_rx_t rx = {
 		.firstDesc = firstDesc,
