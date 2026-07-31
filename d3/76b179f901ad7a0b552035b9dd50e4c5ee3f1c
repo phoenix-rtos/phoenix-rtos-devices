@@ -1,0 +1,32 @@
+spacewire/libgrspw/libgrspw.c
+  h_fc26ad17182140 9,247,671,673,680,682,684-686,690-694,696-697,701,705-708,710,712,714-715
+spacewire/libgrspw/Makefile
+  h_fc26ad17182140 14-20
+spacewire/grspw2/grspw2.c
+  h_fc26ad17182140 9,37,69,126,132
+spacewire/libgrspw/libgrspw-srv.c
+  h_fc26ad17182140 1-127
+spacewire/libgrspw/libgrspw-srv.h
+  h_fc26ad17182140 1-69
+spacewire/libgrspw/libgrspw.h
+  h_fc26ad17182140 6,12-13,16,18,50-53,70-71,75-77,81-85,89-92,94-96,98,100-106,108-114,201,204,207,210-219
+spacewire/grspw2/Makefile
+  h_fc26ad17182140 6,11
+multi/grlib-multi/Makefile
+  h_fc26ad17182140 6,12
+multi/grlib-multi/grlib-multi.c
+  h_fc26ad17182140 9,41,83,286,390
+_targets/Makefile.riscv64-gr765
+  h_fc26ad17182140 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.18",
+  "base_commit_sha": "d376b179f901ad7a0b552035b9dd50e4c5ee3f1c",
+  "prompts": {},
+  "humans": {
+    "h_fc26ad17182140": {
+      "author": "Lukasz Leczkowski <lukasz.leczkowski@phoenix-rtos.com>"
+    }
+  }
+}
