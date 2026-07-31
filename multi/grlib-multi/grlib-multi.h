@@ -20,7 +20,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <phoenix/gaisler/ambapp.h>
-#include <libgrspw.h>
+#include <libgrspw-srv.h>
 #include <libgrgpio.h>
 #include <grgpio-msg.h>
 

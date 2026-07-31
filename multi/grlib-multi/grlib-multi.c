@@ -6,9 +6,7 @@
  * Copyright 2023 Phoenix Systems
  * Author: Lukasz Leczkowski
  *
- * This file is part of Phoenix-RTOS.
- *
- * %LICENSE%
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 #include <board_config.h>
@@ -40,7 +38,7 @@
 
 #include "adc.h"
 #include "gpio.h"
-#include "libgrspw.h"
+#include <libgrspw-srv.h>
 #include "spi.h"
 #include "uart.h"
 #include "grlib-multi.h"
@@ -82,7 +80,7 @@ static int multi_createDevs(void)
 		return -1;
 	}
 
-	if (spw_createDevs(&multi_common.spwOid) < 0) {
+	if (spwsrv_createDevs(&multi_common.spwOid) < 0) {
 		LOG_ERROR("Failed to create SpaceWire devices");
 		return -1;
 	}
@@ -285,7 +283,7 @@ static void spw_dispatchMsg(msg_t *msg)
 		case id_spw3:
 		case id_spw4:
 		case id_spw5:
-			spw_handleMsg(msg, id);
+			spwsrv_handleMsg(msg, id);
 			break;
 
 		default:
@@ -389,7 +387,7 @@ int main(void)
 		return EXIT_FAILURE;
 	}
 
-	if (spw_init() < 0) {
+	if (spwsrv_init() < 0) {
 		multi_cleanup("Failed to initialize SpaceWire\n");
 		return EXIT_FAILURE;
 	}

@@ -3,29 +3,21 @@
  *
  * GRLIB SpaceWire driver
  *
- * Copyright 2023 Phoenix Systems
+ * Copyright 2023, 2026 Phoenix Systems
  * Author: Lukasz Leczkowski
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#ifndef _MULTI_SPACEWIRE_H_
-#define _MULTI_SPACEWIRE_H_
+#ifndef LIBGRSPW_H_
+#define LIBGRSPW_H_
 
 
+#include <board_config.h>
 #include <sys/msg.h>
-#include <phoenix/msg.h>
+#include <sys/types.h>
 #include <string.h>
 #include <stdbool.h>
-
-enum {
-	id_spw0 = 0u,
-	id_spw1,
-	id_spw2,
-	id_spw3,
-	id_spw4,
-	id_spw5,
-};
 
 
 #define SPW_RX_MIN_BUFSZ 4
@@ -55,6 +47,12 @@ enum {
 #define SPW_RX_LEN_MSK  0x1ffffffu /* Packet length mask */
 
 
+/* Default maximum value - can be overridden by board_config */
+#ifndef SPW_MAX_PACKET_LEN
+#define SPW_MAX_PACKET_LEN 1024
+#endif
+
+
 typedef struct {
 	const uint8_t *hdr;
 	const uint8_t *data;
@@ -67,6 +65,51 @@ typedef struct {
 	uint8_t *buf;
 	uint32_t flags;
 } spw_rxPacket_t;
+
+
+#define SPW_RX_DESC_CNT 128
+#define SPW_TX_DESC_CNT 64
+
+
+typedef struct {
+	volatile uint32_t ctrl;
+	uint32_t addr; /* RX buff phy addr - must be word aligned */
+} spw_rxDesc_t;
+
+
+typedef struct {
+	volatile uint32_t ctrl;
+	uint32_t hdrAddr;   /* TX header buff phy addr - does not have to be word aligned */
+	uint32_t packetLen; /* TX packet length in bytes (without header) */
+	uint32_t dataAddr;  /* TX data buff phy addr - does not have to be word aligned */
+} spw_txDesc_t;
+
+
+typedef struct {
+	volatile uint32_t *vbase;
+	unsigned int irq;
+	uint8_t addr;
+	uint8_t txDescFree;
+
+	size_t sentDesc;
+	size_t lastTxDesc;
+	size_t nextRxDesc;
+
+	bool rxAcknowledged[SPW_RX_DESC_CNT];
+
+	handle_t ctrlLock;
+	handle_t txLock;
+	handle_t txIrqLock;
+	handle_t rxLock;
+	handle_t rxConfLock;
+	handle_t cond;
+	handle_t rxAckCond;
+
+	volatile uint8_t (*txBuff)[SPW_MAX_PACKET_LEN];
+	volatile uint8_t (*rxBuff)[SPW_MAX_PACKET_LEN];
+	volatile spw_txDesc_t *txDesc;
+	volatile spw_rxDesc_t *rxDesc;
+} spw_dev_t;
 
 
 typedef struct {
@@ -106,32 +149,6 @@ typedef struct {
 	size_t nRxPackets;
 	uint32_t rxTimeoutUs;
 } spw_xfer_t;
-
-
-typedef struct {
-	/* clang-format off */
-	enum { spw_config = 0, spw_rxConfig, spw_rx, spw_tx, spw_xfer } type;
-	/* clang-format on */
-	union {
-		spw_config_t config;
-		spw_rxConfig_t rxConfig;
-		spw_rx_t rx;
-		spw_tx_t tx;
-		spw_xfer_t xfer;
-	} task;
-
-} spw_i_t;
-
-
-_Static_assert(sizeof(spw_i_t) <= sizeof(((msg_t *)0)->i.raw), "spw_i_t exceeds size of msg.i.raw");
-
-
-typedef struct {
-	size_t val;
-} spw_o_t;
-
-
-_Static_assert(sizeof(spw_o_t) <= sizeof(((msg_t *)0)->o.raw), "spw_o_t exceeds size of msg.o.raw");
 
 
 static inline size_t spw_serializeTxMsg(uint32_t flags, uint32_t dataLen, const uint8_t *hdr, const uint8_t *data, uint8_t *buf, size_t bufsz)
@@ -181,13 +198,22 @@ static inline size_t spw_deserializeRxMsg(const uint8_t *buf, spw_rxPacket_t *pa
 }
 
 
-void spw_handleMsg(msg_t *msg, int dev);
+int spw_transmit(spw_dev_t *dev, const uint8_t *buf, size_t bufsz, const size_t nPackets, bool async);
 
 
-int spw_createDevs(oid_t *oid);
+int spw_rxConfigure(spw_dev_t *dev, size_t *firstDesc, const size_t nPackets);
 
 
-int spw_init(void);
+int spw_rxRead(spw_dev_t *dev, uint8_t *buf, size_t bufsz, size_t *readCnt, const spw_rx_t *rx);
 
 
-#endif
+int spw_configure(spw_dev_t *dev, const spw_config_t *config);
+
+
+ssize_t spw_xferOp(spw_dev_t *dev, const uint8_t *txbuf, size_t txbufsz, uint8_t *rxbuf, size_t rxbufsz, const spw_xfer_t *xfer, size_t *readCnt);
+
+
+int spw_initDev(unsigned int instance, spw_dev_t *spwdev);
+
+
+#endif /* LIBGRSPW_H_ */

@@ -6,9 +6,7 @@
  * Copyright 2025 Phoenix Systems
  * Author: Lukasz Leczkowski, Andrzej Tlomak
  *
- * This file is part of Phoenix-RTOS.
- *
- * %LICENSE%
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 
@@ -16,18 +14,12 @@
 #include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
 #include <stdbool.h>
 #include <string.h>
-#include <sys/debug.h>
-#include <sys/minmax.h>
 #include <sys/mman.h>
 #include <sys/interrupt.h>
 #include <sys/platform.h>
-#include <sys/types.h>
 #include <sys/threads.h>
-#include <posix/utils.h>
 #include <phoenix/gaisler/ambapp.h>
 #include <inttypes.h>
 
@@ -105,14 +97,6 @@
 
 #define DMA_CTRL_USR_MSK (DMA_CTRL_LE | DMA_CTRL_SP | DMA_CTRL_SA | DMA_CTRL_ENA | DMA_CTRL_NS)
 
-#define SPW_RX_DESC_CNT 128
-#define SPW_TX_DESC_CNT 64
-
-/* Sensible maximum value */
-#ifndef SPW_MAX_PACKET_LEN
-#define SPW_MAX_PACKET_LEN 1024
-#endif
-
 
 /* RX descriptor ctrl bits:
  * 31 - truncated
@@ -142,11 +126,6 @@
 #define RX_DESC_USR_MSK (RX_DESC_TRUNC | RX_DESC_DCRC | RX_DESC_HCRC | RX_DESC_EEP | RX_DESC_LEN)
 
 
-typedef struct {
-	volatile uint32_t ctrl;
-	uint32_t addr; /* RX buff phy addr - must be word aligned */
-} spw_rxDesc_t;
-
 /* TX descriptor ctrl bits:
  * 17 - append data CRC
  * 16 - append header CRC
@@ -167,59 +146,6 @@ typedef struct {
 #define TX_DESC_NON_CRC (0xfu << 8)
 #define TX_DESC_HDR_LEN (0xffu)
 #define TX_DESC_USR_MSK (TX_DESC_DCRC | TX_DESC_HCRC | TX_DESC_NON_CRC | TX_DESC_HDR_LEN)
-
-
-typedef struct {
-	volatile uint32_t ctrl;
-	uint32_t hdrAddr;   /* TX header buff phy addr - does not have to be word aligned */
-	uint32_t packetLen; /* TX packet length in bytes (without header) */
-	uint32_t dataAddr;  /* TX data buff phy addr - does not have to be word aligned */
-} spw_txDesc_t;
-
-
-typedef struct {
-	volatile uint32_t *vbase;
-	uint8_t addr;
-	uint8_t txDescFree;
-
-	size_t sentDesc;
-	size_t lastTxDesc;
-	size_t nextRxDesc;
-
-	bool rxAcknowledged[SPW_RX_DESC_CNT];
-
-	handle_t ctrlLock;
-	handle_t txLock;
-	handle_t txIrqLock;
-	handle_t rxLock;
-	handle_t rxConfLock;
-	handle_t cond;
-	handle_t rxAckCond;
-
-	volatile uint8_t (*txBuff)[SPW_MAX_PACKET_LEN];
-	volatile uint8_t (*rxBuff)[SPW_MAX_PACKET_LEN];
-	volatile spw_txDesc_t *txDesc;
-	volatile spw_rxDesc_t *rxDesc;
-} spw_dev_t;
-
-
-static struct {
-	volatile uint32_t *base;
-	unsigned int irq;
-	unsigned int active;
-} spw_info[] = {
-	{ .active = SPW0_ACTIVE },
-	{ .active = SPW1_ACTIVE },
-	{ .active = SPW2_ACTIVE },
-	{ .active = SPW3_ACTIVE },
-	{ .active = SPW4_ACTIVE },
-	{ .active = SPW5_ACTIVE },
-};
-
-
-static struct {
-	spw_dev_t dev[SPW_CNT];
-} spw_common;
 
 
 /* Auxiliary functions */
@@ -318,7 +244,7 @@ __attribute__((section(".interrupt"))) static int spw_irqHandler(unsigned int n,
 /* Operations on device */
 
 
-static int spw_transmit(spw_dev_t *dev, const uint8_t *buf, size_t bufsz, const size_t nPackets, bool async)
+int spw_transmit(spw_dev_t *dev, const uint8_t *buf, size_t bufsz, const size_t nPackets, bool async)
 {
 	if ((buf == NULL) || (bufsz < SPW_TX_MIN_BUFSZ)) {
 		return -EINVAL;
@@ -416,7 +342,7 @@ static int spw_transmit(spw_dev_t *dev, const uint8_t *buf, size_t bufsz, const 
 
 
 /* Configure RX DMA descriptors */
-static int spw_rxConfigure(spw_dev_t *dev, size_t *firstDesc, const size_t nPackets)
+int spw_rxConfigure(spw_dev_t *dev, size_t *firstDesc, const size_t nPackets)
 {
 	if (nPackets > SPW_RX_DESC_CNT) {
 		return -EINVAL;
@@ -469,7 +395,7 @@ static int spw_rxConfigure(spw_dev_t *dev, size_t *firstDesc, const size_t nPack
 
 
 /* Read from RX buffers */
-static int spw_rxRead(spw_dev_t *dev, uint8_t *buf, size_t bufsz, size_t *readCnt, const spw_rx_t *rx)
+int spw_rxRead(spw_dev_t *dev, uint8_t *buf, size_t bufsz, size_t *readCnt, const spw_rx_t *rx)
 {
 	size_t firstDesc = rx->firstDesc;
 	const size_t nPackets = rx->nPackets;
@@ -546,7 +472,7 @@ static int spw_rxRead(spw_dev_t *dev, uint8_t *buf, size_t bufsz, size_t *readCn
 }
 
 
-static int spw_configure(spw_dev_t *dev, const spw_config_t *config)
+int spw_configure(spw_dev_t *dev, const spw_config_t *config)
 {
 	(void)mutexLock(dev->ctrlLock);
 
@@ -560,7 +486,7 @@ static int spw_configure(spw_dev_t *dev, const spw_config_t *config)
 }
 
 
-static ssize_t spw_xferOp(spw_dev_t *dev, const uint8_t *txbuf, size_t txbufsz, uint8_t *rxbuf, size_t rxbufsz, const spw_xfer_t *xfer, size_t *readCnt)
+ssize_t spw_xferOp(spw_dev_t *dev, const uint8_t *txbuf, size_t txbufsz, uint8_t *rxbuf, size_t rxbufsz, const spw_xfer_t *xfer, size_t *readCnt)
 {
 	if ((xfer->nRxPackets > SPW_RX_DESC_CNT) || (txbufsz < SPW_TX_MIN_BUFSZ)) {
 		return -EINVAL;
@@ -582,87 +508,6 @@ static ssize_t spw_xferOp(spw_dev_t *dev, const uint8_t *txbuf, size_t txbufsz, 
 	};
 
 	return spw_rxRead(dev, rxbuf, rxbufsz, readCnt, &rx);
-}
-
-
-/* Message handling */
-
-
-static void spw_handleDevCtl(msg_t *msg, int dev)
-{
-	if ((dev < 0) || (dev >= (sizeof(spw_common.dev) / sizeof(spw_common.dev[0])))) {
-		msg->o.err = -ENODEV;
-		return;
-	}
-
-	const spw_i_t *ictl = (spw_i_t *)msg->i.raw;
-	spw_o_t *octl = (spw_o_t *)msg->o.raw;
-	spw_dev_t *spw = &spw_common.dev[dev];
-
-	switch (ictl->type) {
-		case spw_config:
-			msg->o.err = spw_configure(spw, &ictl->task.config);
-			break;
-
-		case spw_rxConfig:
-			msg->o.err = spw_rxConfigure(spw, &octl->val, ictl->task.rxConfig.nPackets);
-			break;
-
-		case spw_rx:
-			msg->o.err = spw_rxRead(spw, msg->o.data, msg->o.size, &octl->val, &ictl->task.rx);
-			break;
-
-		case spw_tx:
-			msg->o.err = spw_transmit(spw, msg->i.data, msg->i.size, ictl->task.tx.nPackets, ictl->task.tx.async);
-			break;
-
-		case spw_xfer:
-			msg->o.err = spw_xferOp(spw, msg->i.data, msg->i.size, msg->o.data, msg->o.size, &ictl->task.xfer, &octl->val);
-			break;
-
-		default:
-			msg->o.err = -EINVAL;
-			break;
-	}
-}
-
-
-void spw_handleMsg(msg_t *msg, int dev)
-{
-	dev -= id_spw0;
-	switch (msg->type) {
-		case mtDevCtl:
-			spw_handleDevCtl(msg, dev);
-			break;
-
-		default:
-			msg->o.err = -ENOSYS;
-			break;
-	}
-}
-
-
-/* Initialization */
-
-
-int spw_createDevs(oid_t *oid)
-{
-	for (unsigned int i = 0; i < SPW_CNT; i++) {
-		if (spw_info[i].active == 0) {
-			continue;
-		}
-
-		char buf[8];
-		if (snprintf(buf, sizeof(buf), "spw%d", i) >= sizeof(buf)) {
-			return -1;
-		}
-
-		oid->id = id_spw0 + i;
-		if (create_dev(oid, buf) < 0) {
-			return -1;
-		}
-	}
-	return 0;
 }
 
 
@@ -823,61 +668,52 @@ static void spw_cleanupResources(spw_dev_t *dev)
 }
 
 
-int spw_init(void)
+int spw_initDev(unsigned int instance, spw_dev_t *spwdev)
 {
-	for (unsigned int i = 0; i < SPW_CNT; i++) {
-		if (spw_info[i].active == 0) {
-			continue;
+	unsigned int ppInstance = instance;
+	ambapp_dev_t dev = { .devId = CORE_ID_GRSPW2 };
+	platformctl_t pctl = {
+		.action = pctl_get,
+		.type = pctl_ambapp,
+		.task.ambapp = {
+			.dev = &dev,
+			.instance = &ppInstance,
 		}
+	};
 
-		unsigned int instance = i;
-		ambapp_dev_t dev = { .devId = CORE_ID_GRSPW2 };
-		platformctl_t pctl = {
-			.action = pctl_get,
-			.type = pctl_ambapp,
-			.task.ambapp = {
-				.dev = &dev,
-				.instance = &instance,
-			}
-		};
-
-		/* try DMA core (spwrtr) */
+	/* try DMA core (spwrtr) */
+	if (platformctl(&pctl) < 0) {
+		dev.devId = CORE_ID_GRSPW2_DMA;
 		if (platformctl(&pctl) < 0) {
-			dev.devId = CORE_ID_GRSPW2_DMA;
-			if (platformctl(&pctl) < 0) {
-				return -1;
-			}
-			LOG("spw%d: grspw2_dma core found", i);
-		}
-		else {
-			LOG("spw%d: grspw2 core found", i);
-		}
-
-		if (dev.bus != BUS_AMBA_APB) {
-			/* GRSPW2/DMA should be on APB bus */
 			return -1;
 		}
+		LOG("spw%d: grspw2_dma core found", instance);
+	}
+	else {
+		LOG("spw%d: grspw2 core found", instance);
+	}
 
-		spw_info[i].base = dev.info.apb.base;
-		spw_info[i].irq = dev.irqn;
+	if (dev.bus != BUS_AMBA_APB) {
+		/* GRSPW2/DMA should be on APB bus */
+		return -1;
+	}
 
-		if (spw_cguInit(i) < 0) {
-			return -1;
-		}
+	if (spw_cguInit(instance) < 0) {
+		return -1;
+	}
 
-		if (spw_createResources(&spw_common.dev[i], (addr_t)spw_info[i].base) < 0) {
-			spw_cleanupResources(&spw_common.dev[i]);
-			return -1;
-		}
+	if (spw_createResources(spwdev, (addr_t)dev.info.apb.base) < 0) {
+		spw_cleanupResources(spwdev);
+		return -1;
+	}
 
-		spw_common.dev[i].txDescFree = SPW_TX_DESC_CNT;
+	spwdev->txDescFree = SPW_TX_DESC_CNT;
 
-		(void)interrupt(spw_info[i].irq, spw_irqHandler, &spw_common.dev[i], spw_common.dev[i].cond, NULL);
+	(void)interrupt(dev.irqn, spw_irqHandler, spwdev, spwdev->cond, NULL);
 
-		if (spw_defaultConfig(&spw_common.dev[i]) < 0) {
-			spw_cleanupResources(&spw_common.dev[i]);
-			return -1;
-		}
+	if (spw_defaultConfig(spwdev) < 0) {
+		spw_cleanupResources(spwdev);
+		return -1;
 	}
 	return 0;
 }

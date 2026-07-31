@@ -6,9 +6,7 @@
  * Copyright 2025 Phoenix Systems
  * Author: Lukasz Leczkowski, Andrzej Tlomak
  *
- * This file is part of Phoenix-RTOS.
- *
- * %LICENSE%
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 
@@ -36,7 +34,7 @@
 #include <phoenix/arch/sparcv8leon/sparcv8leon.h>
 #endif
 
-#include <libgrspw.h>
+#include <libgrspw-srv.h>
 
 /* clang-format off */
 #define TRACE(fmt, ...) do { if (0) { printf("%s:%d: " fmt "\n", __func__, __LINE__, ##__VA_ARGS__); } } while (0)
@@ -68,7 +66,7 @@ static void grspw_dispatchMsg(msg_t *msg)
 		case id_spw3:
 		case id_spw4:
 		case id_spw5:
-			spw_handleMsg(msg, id);
+			spwsrv_handleMsg(msg, id);
 			break;
 
 		default:
@@ -125,13 +123,13 @@ int main(void)
 		usleep(100000);
 	}
 
-	if (spw_init() < 0) {
+	if (spwsrv_init() < 0) {
 		portDestroy(grspw_common.oid.port);
 		LOG_ERROR("Failed to initialize SpaceWire\n");
 		return EXIT_FAILURE;
 	}
 
-	if (spw_createDevs(&grspw_common.oid) < 0) {
+	if (spwsrv_createDevs(&grspw_common.oid) < 0) {
 		portDestroy(grspw_common.oid.port);
 		LOG_ERROR("Failed to create SpaceWire devices");
 		return EXIT_FAILURE;
