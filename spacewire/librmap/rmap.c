@@ -66,6 +66,10 @@ static ssize_t buildCmd(const rmap_params_t *params, uint8_t *header, size_t hea
 	}
 
 	size_t offs = 0;
+	if (params->targetPathLen != 0) {
+		memcpy(header, params->targetPath, params->targetPathLen);
+		offs += params->targetPathLen;
+	}
 	header[offs++] = params->targetLogicalAddr;
 	header[offs++] = RMAP_PROTOCOL_ID;
 	header[offs++] = instruction;
@@ -74,8 +78,10 @@ static ssize_t buildCmd(const rmap_params_t *params, uint8_t *header, size_t hea
 	/* Reply address */
 	memset(&header[offs], 0, zeroPad);
 	offs += zeroPad;
-	memcpy(&header[offs], params->replyPath, params->replyPathLen);
-	offs += params->replyPathLen;
+	if (params->replyPathLen != 0) {
+		memcpy(&header[offs], params->replyPath, params->replyPathLen);
+		offs += params->replyPathLen;
+	}
 
 	header[offs++] = params->initiatorLogicalAddr;
 	header[offs++] = (params->transactionId >> 8) & 0xffU;

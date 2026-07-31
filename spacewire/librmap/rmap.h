@@ -45,6 +45,9 @@ typedef struct {
 	uint8_t extendedAddr;
 	uint32_t memoryAddr;
 
+	uint8_t *targetPath;
+	uint8_t targetPathLen;
+
 	uint8_t *replyPath;
 	uint8_t replyPathLen; /* Max 12 */
 
