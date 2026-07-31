@@ -1,0 +1,16 @@
+spacewire/librmap/rmap.c
+  h_fc26ad17182140 69-72,81,83-84
+spacewire/librmap/rmap.h
+  h_fc26ad17182140 48-50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.18",
+  "base_commit_sha": "7df12aaf374cec8a96d05c1c528e559a94225b23",
+  "prompts": {},
+  "humans": {
+    "h_fc26ad17182140": {
+      "author": "Lukasz Leczkowski <lukasz.leczkowski@phoenix-rtos.com>"
+    }
+  }
+}
