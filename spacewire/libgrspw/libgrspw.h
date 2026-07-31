@@ -198,7 +198,7 @@ static inline size_t spw_deserializeRxMsg(const uint8_t *buf, spw_rxPacket_t *pa
 }
 
 
-int spw_transmit(spw_dev_t *dev, const uint8_t *buf, size_t bufsz, const size_t nPackets, bool async);
+int spw_transmit(spw_dev_t *dev, const uint8_t *buf, size_t bufsz, const spw_tx_t *tx);
 
 
 int spw_rxConfigure(spw_dev_t *dev, size_t *firstDesc, const size_t nPackets);

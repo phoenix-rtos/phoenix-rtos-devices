@@ -63,7 +63,7 @@ static void handleDevCtl(msg_t *msg, int dev)
 			break;
 
 		case spw_tx:
-			msg->o.err = spw_transmit(spw, msg->i.data, msg->i.size, ictl->task.tx.nPackets, ictl->task.tx.async);
+			msg->o.err = spw_transmit(spw, msg->i.data, msg->i.size, &ictl->task.tx);
 			break;
 
 		case spw_xfer:
