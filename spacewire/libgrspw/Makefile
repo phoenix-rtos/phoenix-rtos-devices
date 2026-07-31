@@ -11,3 +11,11 @@ LOCAL_HEADERS := libgrspw.h
 LOCAL_SRCS := libgrspw.c
 
 include $(static-lib.mk)
+
+
+NAME := libgrspw-srv
+DEPS := libgrspw
+LOCAL_HEADERS := libgrspw-srv.h
+LOCAL_SRCS := libgrspw-srv.c
+
+include $(static-lib.mk)

@@ -3,11 +3,11 @@
 #
 # Copyright 2025 Phoenix Systems
 #
-# %LICENSE%
+# SPDX-License-Identifier: BSD-3-Clause
 #
 
 NAME := grspw2
 LOCAL_SRCS := grspw2.c
-DEP_LIBS := libgrspw
+DEP_LIBS := libgrspw-srv libgrspw
 
 include $(binary.mk)
