@@ -16,7 +16,14 @@
 #ifndef _DEV_UART16550_UARTHW_H_
 #define _DEV_UART16550_UARTHW_H_
 
-#include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
+
+
+typedef struct {
+	unsigned int fclk; /* UART baud rate generator base clock */
+	uint8_t fcr;       /* HW-dependent bits in FCR register */
+} uarthw_info_t;
 
 
 extern uint8_t uarthw_read(void *hwctx, unsigned int reg);
@@ -31,7 +38,7 @@ extern char *uarthw_dump(void *hwctx, char *s, size_t sz);
 extern unsigned int uarthw_irq(void *hwctx);
 
 
-extern int uarthw_init(unsigned int uartn, void *hwctx, size_t hwctxsz, unsigned int *fclk);
+extern int uarthw_init(unsigned int uartn, void *hwctx, size_t hwctxsz, uarthw_info_t *infoOut);
 
 
 #endif

@@ -22,6 +22,7 @@
 #include <phoenix/arch/armv7r/tda4vm/tda4vm_pins.h>
 
 #include "uart16550.h"
+#include "uarthw.h"
 
 /* UART extension registers */
 #define REG_EFR  2 /* Enhanced feature register */
@@ -199,7 +200,7 @@ static int uarthw_setPin(const tda4vm_uart_info_t *info, uint32_t pin)
 }
 
 
-int uarthw_init(unsigned int uartn, void *hwctx, size_t hwctxsz, unsigned int *fclk)
+int uarthw_init(unsigned int uartn, void *hwctx, size_t hwctxsz, uarthw_info_t *infoOut)
 {
 	void *base;
 	platformctl_t pctl;
@@ -250,7 +251,10 @@ int uarthw_init(unsigned int uartn, void *hwctx, size_t hwctxsz, unsigned int *f
 		return -EIO;
 	}
 
-	*fclk = (unsigned int)pctl.frequency.val / info->divisor;
+	infoOut->fclk = (unsigned int)pctl.frequency.val / info->divisor;
+	/* On TDA4VM the reserved bits in FCR set TX FIFO threshold - set it to 0 (8 spaces) */
+	infoOut->fcr = 0;
+
 	ret = uarthw_setPin(info, info->pins_selected.tx);
 	if (ret < 0) {
 		return ret;

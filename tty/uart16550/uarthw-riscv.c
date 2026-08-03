@@ -20,6 +20,7 @@
 #include <board_config.h>
 
 #include "uart16550.h"
+#include "uarthw.h"
 
 
 typedef struct {
@@ -53,7 +54,7 @@ unsigned int uarthw_irq(void *hwctx)
 }
 
 
-int uarthw_init(unsigned int uartn, void *hwctx, size_t hwctxsz, unsigned int *fclk)
+int uarthw_init(unsigned int uartn, void *hwctx, size_t hwctxsz, uarthw_info_t *infoOut)
 {
 	void *base;
 
@@ -79,7 +80,9 @@ int uarthw_init(unsigned int uartn, void *hwctx, size_t hwctxsz, unsigned int *f
 		return -ENODEV;
 	}
 
-	*fclk = 115200 * 16;
+	infoOut->fclk = 115200 * 16;
+	/* Set extended FIFO capacity (if available) */
+	infoOut->fcr = FCR_EXTFIFO;
 
 	return EOK;
 }
