@@ -249,6 +249,30 @@ static void uart_handleErrors(uart_t *uart)
 }
 
 
+static bool uart_handleTx(uart_t *uart)
+{
+	bool waitForTx = false;
+	int wake = 0;
+	while (libtty_txready(&uart->tty) != 0) {
+		if ((uart_readUpdateLineStatus(uart) & LSR_THRE) != 0) {
+			int wakeHelper;
+			uarthw_write(uart->hwctx, REG_THR, libtty_getchar(&uart->tty, &wakeHelper));
+			wake |= wakeHelper;
+		}
+		else {
+			waitForTx = true;
+			break;
+		}
+	}
+
+	if (wake != 0) {
+		libtty_wake_writer(&uart->tty);
+	}
+
+	return waitForTx;
+}
+
+
 static void uart_intthr(void *arg)
 {
 	uart_t *uart = (uart_t *)arg;
@@ -286,20 +310,11 @@ static void uart_intthr(void *arg)
 		}
 
 		/* Check for transmit */
-		while (1) {
-			if (libtty_txready(&uart->tty) != 0) {
-				if ((uart_readUpdateLineStatus(uart) & LSR_THRE) != 0) {
-					uarthw_write(uart->hwctx, REG_THR, libtty_getchar(&uart->tty, NULL));
-				}
-				else {
-					target_imr |= IMR_THRE;
-					break;
-				}
-			}
-			else {
-				target_imr &= ~IMR_THRE;
-				break;
-			}
+		if (uart_handleTx(uart)) {
+			target_imr |= IMR_THRE;
+		}
+		else {
+			target_imr &= ~IMR_THRE;
 		}
 	}
 }
