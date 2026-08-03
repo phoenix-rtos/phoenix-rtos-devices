@@ -93,6 +93,13 @@ typedef struct {
 	handle_t intcond;
 	handle_t inth;
 
+	struct {
+		handle_t mutex;
+		handle_t cond;
+		atomic_uint_fast8_t lcr;      /* Requested value for LCR register */
+		atomic_uint_fast16_t divisor; /* New value for DLL/DLM registers or 0 if no change requested */
+	} regChange;
+
 	oid_t oid;
 	libtty_common_t tty;
 
@@ -128,7 +135,6 @@ static uart_t *uart_get(oid_t *oid)
 
 static void set_baudrate(void *_uart, int baud_rate)
 {
-	uint8_t reg;
 	uart_t *uart = (uart_t *)_uart;
 
 	if (baud_rate <= 0) {
@@ -136,27 +142,24 @@ static void set_baudrate(void *_uart, int baud_rate)
 	}
 
 	/* Baud divisor */
-	baud_rate = uart->hwInfo.fclk / (16 * baud_rate);
-
-	if (baud_rate > UINT16_MAX) {
+	uint32_t newBaud = uart->hwInfo.fclk / (16 * baud_rate);
+	if ((newBaud > UINT16_MAX) || (newBaud == 0)) {
 		return;
 	}
 
-	reg = uarthw_read(uart->hwctx, REG_LCR);
-
-	/* Set baud rate */
-	uarthw_write(uart->hwctx, REG_LCR, reg | LCR_DLAB);
-	uarthw_write(uart->hwctx, REG_LSB, (uint8_t)((unsigned)baud_rate));
-	uarthw_write(uart->hwctx, REG_MSB, (uint8_t)((unsigned)baud_rate >> 8));
-	uarthw_write(uart->hwctx, REG_LCR, reg & ~LCR_DLAB);
+	mutexLock(uart->regChange.mutex);
+	atomic_store(&uart->regChange.divisor, (uint16_t)newBaud);
+	condSignal(uart->intcond);
+	condWait(uart->regChange.cond, uart->regChange.mutex, 0);
+	mutexUnlock(uart->regChange.mutex);
 }
 
 
 static void set_cflag(void *_uart, tcflag_t *cflag)
 {
 	uart_t *uart = (uart_t *)_uart;
-	uint8_t lcr = uarthw_read(uart->hwctx, REG_LCR);
-
+	mutexLock(uart->regChange.mutex);
+	uint8_t lcr = atomic_load(&uart->regChange.lcr);
 	lcr &= ~((3 << 0) | (1 << 2) | (1 << 3) | (1 << 4));
 
 	/* Character length */
@@ -174,7 +177,15 @@ static void set_cflag(void *_uart, tcflag_t *cflag)
 	/* Stop bits */
 	lcr |= ((*cflag & CSTOPB) != 0) << 2;
 
-	uarthw_write(uart->hwctx, REG_LCR, lcr);
+
+	uint8_t oldLcr = atomic_exchange(&uart->regChange.lcr, lcr);
+	/* If old value is the same as new, handler thread won't know that change was requested and won't signal regChange.cond */
+	if (oldLcr != lcr) {
+		condSignal(uart->intcond);
+		condWait(uart->regChange.cond, uart->regChange.mutex, 0);
+	}
+
+	mutexUnlock(uart->regChange.mutex);
 }
 
 
@@ -281,10 +292,41 @@ static bool _uart_handleTx(uart_t *uart)
 }
 
 
+/*
+ * Handle requests to change baud rate and transmission format.
+ * Due to peculiarities of 16550 UART changes to LCR need to be done when no other thread (incl. ISR)
+ * tries to access RHR, THR or IMR.
+ * For performance in typical use case (very rare changes) atomic variables are used to communicate changes
+ * so that no syscalls need to be performed.
+ */
+static void uart_handleLcr(uart_t *uart, uint8_t *currentLcr)
+{
+	if ((atomic_load(&uart->regChange.divisor) == 0) && (*currentLcr == atomic_load(&uart->regChange.lcr))) {
+		/* No change requested */
+		return;
+	}
+
+	/* We must take this mutex to ensure all threads that requested changes are now waiting on regChange.cond */
+	mutexLock(uart->regChange.mutex);
+	*currentLcr = atomic_load(&uart->regChange.lcr);
+	uint16_t newDiv = atomic_exchange(&uart->regChange.divisor, 0);
+	if (newDiv != 0) {
+		uarthw_write(uart->hwctx, REG_LCR, *currentLcr | LCR_DLAB);
+		uarthw_write(uart->hwctx, REG_LSB, newDiv & 0xff);
+		uarthw_write(uart->hwctx, REG_MSB, (newDiv >> 8) & 0xff);
+	}
+
+	uarthw_write(uart->hwctx, REG_LCR, *currentLcr);
+	condBroadcast(uart->regChange.cond);
+	mutexUnlock(uart->regChange.mutex);
+}
+
+
 static void uart_intthr(void *arg)
 {
 	uart_t *uart = (uart_t *)arg;
 	uint8_t target_imr = IMR_DR | IMR_LS;
+	uint8_t currentLcr = uarthw_read(uart->hwctx, REG_LCR);
 
 	mutexLock(uart->mutex);
 	for (;;) {
@@ -293,6 +335,7 @@ static void uart_intthr(void *arg)
 		condWait(uart->intcond, uart->mutex, 0);
 		/* For the following part the interrupt needs to be masked */
 		uarthw_write(uart->hwctx, REG_IMR, 0);
+		uart_handleLcr(uart, &currentLcr);
 
 		if (!lf_fifo_empty(&uart->rxSwFifo) || (uart_readUpdateLineStatus(uart) & LSR_DR) != 0) {
 			int wake = 0, wakeHelper = 0;
@@ -541,22 +584,40 @@ static int _uart_init(uart_t *uart, unsigned int uartn, unsigned int speed, int8
 		return err;
 	}
 
-	err = libtty_init(&uart->tty, &callbacks, _PAGE_SIZE, speed, &uart->mutex);
+	err = condCreate(&uart->regChange.cond);
 	if (err < 0) {
-		resourceDestroy(uart->intcond);
 		resourceDestroy(uart->mutex);
+		resourceDestroy(uart->intcond);
 		return err;
 	}
 
-	atomic_store(&uart->hwOverruns, 0);
-	atomic_store(&uart->swOverruns, 0);
-	atomic_store(&uart->lineStatus, 0);
+	err = mutexCreate(&uart->regChange.mutex);
+	if (err < 0) {
+		resourceDestroy(uart->regChange.cond);
+		resourceDestroy(uart->mutex);
+		resourceDestroy(uart->intcond);
+		return err;
+	}
+
+	err = libtty_init(&uart->tty, &callbacks, _PAGE_SIZE, speed, &uart->mutex);
+	if (err < 0) {
+		resourceDestroy(uart->regChange.mutex);
+		resourceDestroy(uart->regChange.cond);
+		resourceDestroy(uart->mutex);
+		resourceDestroy(uart->intcond);
+		return err;
+	}
+
+	atomic_init(&uart->hwOverruns, 0);
+	atomic_init(&uart->swOverruns, 0);
+	atomic_init(&uart->lineStatus, 0);
 	lf_fifo_init(&uart->rxSwFifo, uart->rxSwFifoData, sizeof(uart->rxSwFifoData));
 
 	/* Set speed (MOD) */
 	uarthw_write(uart->hwctx, REG_LCR, LCR_DLAB);
 	uarthw_write(uart->hwctx, REG_LSB, divisor);
 	uarthw_write(uart->hwctx, REG_MSB, divisor >> 8);
+	atomic_init(&uart->regChange.divisor, 0);
 
 	/* Set data format, leave DLAB on because some 16750 implementations require it to enable extended FIFO settings */
 	uarthw_write(uart->hwctx, REG_LCR, LCR_DLAB | LCR_D8N1);
@@ -574,6 +635,7 @@ static int _uart_init(uart_t *uart, unsigned int uartn, unsigned int speed, int8
 
 	/* Set LCR to its final value */
 	uarthw_write(uart->hwctx, REG_LCR, LCR_D8N1);
+	atomic_init(&uart->regChange.lcr, LCR_D8N1);
 
 	/* Enable hardware interrupts */
 	uarthw_write(uart->hwctx, REG_MCR, MCR_OUT2);
@@ -584,6 +646,8 @@ static int _uart_init(uart_t *uart, unsigned int uartn, unsigned int speed, int8
 	err = interrupt(uarthw_irq(uart->hwctx), uart_interrupt, uart, uart->intcond, &uart->inth);
 	if (err < 0) {
 		uarthw_write(uart->hwctx, REG_MCR, 0);
+		resourceDestroy(uart->regChange.mutex);
+		resourceDestroy(uart->regChange.cond);
 		resourceDestroy(uart->mutex);
 		resourceDestroy(uart->intcond);
 		libtty_destroy(&uart->tty);
@@ -594,6 +658,8 @@ static int _uart_init(uart_t *uart, unsigned int uartn, unsigned int speed, int8
 	if (err < 0) {
 		resourceDestroy(uart->inth);
 		uarthw_write(uart->hwctx, REG_MCR, 0);
+		resourceDestroy(uart->regChange.mutex);
+		resourceDestroy(uart->regChange.cond);
 		resourceDestroy(uart->mutex);
 		resourceDestroy(uart->intcond);
 		libtty_destroy(&uart->tty);
