@@ -84,7 +84,7 @@ typedef struct {
 	atomic_uint_fast8_t lineStatus;
 
 	unsigned int init;
-	unsigned int clk;
+	uarthw_info_t hwInfo;
 	volatile unsigned int hwOverruns; /* Intended to be read by debugger */
 
 	handle_t mutex;
@@ -128,7 +128,7 @@ static void set_baudrate(void *_uart, int baud_rate)
 	}
 
 	/* Baud divisor */
-	baud_rate = uart->clk / (16 * baud_rate);
+	baud_rate = uart->hwInfo.fclk / (16 * baud_rate);
 
 	if (baud_rate > UINT16_MAX) {
 		return;
@@ -460,12 +460,12 @@ static int _uart_init(uart_t *uart, unsigned int uartn, unsigned int speed, int8
 		.signal_txready = signal_txready,
 	};
 
-	int err = uarthw_init(uartn, uart->hwctx, sizeof(uart->hwctx), &uart->clk);
+	int err = uarthw_init(uartn, uart->hwctx, sizeof(uart->hwctx), &uart->hwInfo);
 	if (err < 0) {
 		return err;
 	}
 
-	divisor = uart->clk / (16 * speed);
+	divisor = uart->hwInfo.fclk / (16 * speed);
 
 	err = libtty_init(&uart->tty, &callbacks, _PAGE_SIZE, speed);
 	if (err < 0) {
@@ -503,8 +503,8 @@ static int _uart_init(uart_t *uart, unsigned int uartn, unsigned int speed, int8
 	else {
 		/* On some implementations we need to set FIFOEN separately before any other write can take effect */
 		uarthw_write(uart->hwctx, REG_FCR, FCR_FIFOEN);
-		uint8_t fifoSetting = (((uint8_t)fifo & 0x3) << 6);
-		uarthw_write(uart->hwctx, REG_FCR, fifoSetting | FCR_EXTFIFO | FCR_RESETTX | FCR_RESETRX | FCR_FIFOEN);
+		uint8_t fifoSetting = (((uint8_t)fifo & 0x3) << 6) | uart->hwInfo.fcr;
+		uarthw_write(uart->hwctx, REG_FCR, fifoSetting | FCR_RESETTX | FCR_RESETRX | FCR_FIFOEN);
 	}
 
 	/* Set LCR to its final value */
