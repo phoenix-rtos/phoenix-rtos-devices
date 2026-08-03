@@ -34,6 +34,7 @@
 #include <libklog.h>
 #include <board_config.h>
 #include <posix/utils.h>
+#include <syslog.h>
 
 #include "uarthw.h"
 #include "uart16550.h"
@@ -85,7 +86,7 @@ typedef struct {
 
 	unsigned int init;
 	uarthw_info_t hwInfo;
-	volatile unsigned int hwOverruns; /* Intended to be read by debugger */
+	atomic_uint_fast32_t hwOverruns;
 
 	handle_t mutex;
 	handle_t intcond;
@@ -96,6 +97,12 @@ typedef struct {
 
 	char stack[THREAD_STACK_SIZE] __attribute__((aligned(8)));
 } uart_t;
+
+
+typedef struct {
+	bool isConsole;
+	bool reportErrors;
+} uart_args_t;
 
 
 static struct {
@@ -244,7 +251,7 @@ static void uart_handleErrors(uart_t *uart)
 	(void)uart_readUpdateLineStatus(uart);
 	uint8_t lineStatus = atomic_exchange(&uart->lineStatus, 0);
 	if (lineStatus & LSR_OE) {
-		uart->hwOverruns++;
+		atomic_fetch_add(&uart->hwOverruns, 1);
 	}
 }
 
@@ -351,6 +358,31 @@ static void uart_ioctl(unsigned int port, msg_t *msg)
 }
 
 
+static void uart_errorThread(void *arg)
+{
+	(void)arg;
+	uint32_t overrunsLast[N_UARTS];
+	memset(&overrunsLast, 0, sizeof(overrunsLast));
+
+	for (;;) {
+		for (unsigned int i = 0; i < N_UARTS; i++) {
+			uart_t *uart = &uart_common.uarts[i];
+			if (uart->init == 0) {
+				continue;
+			}
+
+			uint32_t overrunsNow = atomic_load(&uart->hwOverruns);
+			if (overrunsNow != overrunsLast[i]) {
+				syslog(LOG_WARNING, "UART16550 %u: %u overrun(s) detected", i, overrunsNow - overrunsLast[i]);
+				overrunsLast[i] = overrunsNow;
+			}
+		}
+
+		sleep(1);
+	}
+}
+
+
 static void poolthr(void *arg)
 {
 	unsigned int port = (uintptr_t)arg;
@@ -429,7 +461,7 @@ static void uart_klogClbk(const char *data, size_t size)
 }
 
 
-static void _uart_mkDev(uint32_t port, int isconsole)
+static void _uart_mkDev(uint32_t port, bool isconsole)
 {
 	char path[12];
 	unsigned int i;
@@ -446,7 +478,7 @@ static void _uart_mkDev(uint32_t port, int isconsole)
 			}
 
 			if (i == UART16550_CONSOLE_USER) {
-				if (isconsole != 0) {
+				if (isconsole) {
 					libklog_init(uart_klogClbk);
 					if (create_dev(&uart_common.uarts[i].oid, _PATH_CONSOLE) < 0) {
 						fprintf(stderr, "uart16550: failed to register %s\n", _PATH_CONSOLE);
@@ -487,7 +519,7 @@ static int _uart_init(uart_t *uart, unsigned int uartn, unsigned int speed, int8
 		return err;
 	}
 
-	uart->hwOverruns = 0;
+	atomic_store(&uart->hwOverruns, 0);
 	atomic_store(&uart->lineStatus, 0);
 	lf_fifo_init(&uart->rxSwFifo, uart->rxSwFifoData, sizeof(uart->rxSwFifoData));
 	err = condCreate(&uart->intcond);
@@ -554,17 +586,56 @@ static int _uart_init(uart_t *uart, unsigned int uartn, unsigned int speed, int8
 }
 
 
-int main(int argc, char **argv)
+static void print_usage(const char *name)
+{
+	printf("UART16550 driver. Usage:\n");
+	printf("%s [-n] [-e]\n", name);
+	printf("\t-n - Skip creating %s device (default: no)\n", _PATH_CONSOLE);
+	printf("\t-e - Report data errors to syslog (default: no)\n");
+}
+
+
+static int parse_args(int argc, char *argv[], uart_args_t *args)
+{
+	int opt;
+	args->isConsole = true;
+	args->reportErrors = false;
+
+	while ((opt = getopt(argc, argv, "hne")) != -1) {
+		switch (opt) {
+			case 'n':
+				args->isConsole = false;
+				break;
+
+			case 'e':
+				args->reportErrors = true;
+				break;
+
+			case 'h': /* Fall-through */
+			default:
+				print_usage(argv[0]);
+				return -1;
+		}
+	}
+
+	if (optind < argc) {
+		fprintf(stderr, "%s: unrecognized argument: %s\n", argv[0], argv[optind]);
+		print_usage(argv[0]);
+		return -1;
+	}
+
+	return 0;
+}
+
+
+int main(int argc, char *argv[])
 {
 	unsigned int i;
 	uint32_t port;
 	int err;
+	uart_args_t args;
 
-	int isconsole = 1;
-	if ((argc == 2) && (strcmp(argv[1], "-n") == 0)) {
-		isconsole = 0;
-	}
-	else if (argc != 1) {
+	if (parse_args(argc, argv, &args) < 0) {
 		return EXIT_FAILURE;
 	}
 
@@ -586,13 +657,27 @@ int main(int argc, char **argv)
 		}
 	}
 
+	if (args.reportErrors) {
+		char *stack = malloc(THREAD_STACK_SIZE);
+		if (stack == NULL) {
+			fprintf(stderr, "uart16550: failed to allocate memory for error thread. Errors will not be reported.\n");
+		}
+		else {
+			err = beginthread(uart_errorThread, 5, stack, THREAD_STACK_SIZE, NULL);
+			if (err < 0) {
+				fprintf(stderr, "uart16550: failed to start error thread. Errors will not be reported.\n");
+				free(stack);
+			}
+		}
+	}
+
 	err = beginthread(poolthr, 4, uart_common.stack, sizeof(uart_common.stack), (void *)(uintptr_t)port);
 	if (err < 0) {
 		fprintf(stderr, "uart16550: failed to start thread\n");
 		return EXIT_FAILURE;
 	}
 
-	_uart_mkDev(port, isconsole);
+	_uart_mkDev(port, args.isConsole);
 	poolthr((void *)(uintptr_t)port);
 
 	return EXIT_SUCCESS;
