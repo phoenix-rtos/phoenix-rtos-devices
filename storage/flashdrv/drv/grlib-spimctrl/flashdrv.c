@@ -114,8 +114,19 @@ static int _flashdrv_mtdWrite(storage_t *strg, off_t offs, const void *buff, siz
 	while (doneBytes < len) {
 		size_t chunk = min(pagesz - (offs % pagesz), len - doneBytes);
 
-		res = spimctrl_flash_pageProgram(ctx, offs, src, chunk,
-				CFI_TIMEOUT_MAX_PROGRAM(ctx->cfi.toutTypical.bufWrite, ctx->cfi.toutMax.bufWrite));
+		#ifdef TRIPLE_REDUNDANCY_MODE
+			int memory_region = 0;
+			while ((memory_region < NUM_DATAREGIONS) && res == 0){
+				offs = offs + BLOCK_32MB * memory_region;
+				res = spimctrl_flash_pageProgram(ctx, offs, src, chunk,
+					CFI_TIMEOUT_MAX_PROGRAM(ctx->cfi.toutTypical.bufWrite, ctx->cfi.toutMax.bufWrite));
+				memory_region ++;
+			}
+
+		#else
+			res = spimctrl_flash_pageProgram(ctx, offs, src, chunk,
+					CFI_TIMEOUT_MAX_PROGRAM(ctx->cfi.toutTypical.bufWrite, ctx->cfi.toutMax.bufWrite));
+		#endif /* TRIPLE_REDUNDANCY_MODE */
 
 		if (res < 0) {
 			break;
