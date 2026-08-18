@@ -1310,26 +1310,24 @@ static int ubx_handlePvt(ubx_ctx_t *ctx)
 		magDec = ubx_readI16(p + 88);
 	}
 
-	/* fail if time or date are not valid or not resolved yet */
-	if ((valid & 0x03U) != 0x03U || year < 1900 || month < 1) {
-		return -1;
+	/* don't convert if time or date are not valid or not resolved yet */
+	ctx->ev.gps.utc = 0;
+	if ((valid & 0x03U) == 0x03U && year >= 1900 && month >= 1) {
+		struct tm tmUTC = {
+			.tm_year = year - 1900,
+			.tm_mon = month - 1,
+			.tm_mday = day,
+			.tm_hour = hour,
+			.tm_min = min,
+			.tm_sec = sec,
+			.tm_isdst = 0,
+		};
+		time_t epochSec = timegm(&tmUTC);
+		if (epochSec != (time_t)(-1) && epochSec >= 0) {
+			ctx->ev.gps.utc = (uint64_t)((int64_t)epochSec * 1000000LL + (nano / 1000LL));
+		}
 	}
 
-	struct tm tmUTC = {
-		.tm_year = year - 1900,
-		.tm_mon = month - 1,
-		.tm_mday = day,
-		.tm_hour = hour,
-		.tm_min = min,
-		.tm_sec = sec,
-		.tm_isdst = 0,
-	};
-	time_t epochSec = timegm(&tmUTC);
-	if (epochSec < 0) {
-		return -1;
-	}
-
-	ctx->ev.gps.utc = (uint64_t)((int64_t)epochSec * 1000000LL + (nano / 1000LL));
 
 	if (headMot < 0) {
 		headMot += 36000000;
@@ -1465,26 +1463,23 @@ static int ubx_handleTimeUTC(ubx_ctx_t *ctx)
 	uint8_t sec = ubx_readU8(p + 18);
 	uint8_t valid = ubx_readU8(p + 19);
 
-	/* fail if time is invalid */
-	if ((valid & 0x07U) != 0x07U || year < 1900 || month < 1) {
-		return -1;
+	/* don't convert if time is invalid */
+	ctx->ev.gps.utc = 0;
+	if ((valid & 0x07U) == 0x07U && year >= 1900 && month >= 1) {
+		struct tm tmUTC = {
+			.tm_year = year - 1900,
+			.tm_mon = month - 1,
+			.tm_mday = day,
+			.tm_hour = hour,
+			.tm_min = min,
+			.tm_sec = sec,
+			.tm_isdst = 0,
+		};
+		time_t epochSec = timegm(&tmUTC);
+		if (epochSec != (time_t)(-1) && epochSec >= 0) {
+			ctx->ev.gps.utc = (uint64_t)((int64_t)epochSec * 1000000LL + (nano / 1000LL));
+		}
 	}
-
-	struct tm tmUTC = {
-		.tm_year = year - 1900,
-		.tm_mon = month - 1,
-		.tm_mday = day,
-		.tm_hour = hour,
-		.tm_min = min,
-		.tm_sec = sec,
-		.tm_isdst = 0,
-	};
-	time_t epochSec = timegm(&tmUTC);
-	if (epochSec < 0) {
-		return -1;
-	}
-
-	ctx->ev.gps.utc = (uint64_t)((int64_t)epochSec * 1000000LL + (nano / 1000LL));
 
 	return 0;
 }
