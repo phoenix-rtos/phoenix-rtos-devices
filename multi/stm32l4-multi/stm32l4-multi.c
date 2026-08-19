@@ -456,6 +456,9 @@ int main(void)
 	exti_init();
 	tty_init();
 	gpio_init();
+	/* WIP DON'T MERGE: this configures pins for UART7 on pilot. On Nucleo they are free to use on header CN3. */
+	gpio_configPin(gpioc, 0, gpio_mode_af, 10, gpio_otype_pp, gpio_ospeed_low, gpio_pupd_nopull);
+	gpio_configPin(gpioh, 3, gpio_mode_af, 8, gpio_otype_pp, gpio_ospeed_low, gpio_pupd_nopull);
 	spi_init();
 	adc_init();
 	rtc_init();
