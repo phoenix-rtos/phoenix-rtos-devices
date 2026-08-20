@@ -18,9 +18,7 @@
 #include <unistd.h>
 #include "libmulti/libi2c.h"
 #include "../common.h"
-#if defined(__CPU_STM32N6)
 #include "../rcc.h"
-#endif
 
 
 #define TIMEOUT (100 * 1000)
@@ -31,9 +29,11 @@ static const struct libi2c_peripheralInfo {
 	int clk;
 	int irq_ev;
 	int irq_er;
-#if defined(__CPU_STM32N6)
+#if defined(__CPU_STM32N6) || defined(__CPU_STM32H5)
 	enum ipclks clksel;    /* Clock selector */
+#if defined(__CPU_STM32N6)
 	enum clock_ids clksrc; /* ID of source clock */
+#endif
 #endif
 } i2cinfo[] = {
 #if defined(__CPU_STM32L4X6)
@@ -46,6 +46,11 @@ static const struct libi2c_peripheralInfo {
 	{ I2C2_BASE, pctl_i2c2, i2c2_ev_irq, i2c2_er_irq, pctl_ipclk_i2c2sel, clkid_per },
 	{ I2C3_BASE, pctl_i2c3, i2c3_ev_irq, i2c3_er_irq, pctl_ipclk_i2c3sel, clkid_per },
 	{ I2C4_BASE, pctl_i2c4, i2c4_ev_irq, i2c4_er_irq, pctl_ipclk_i2c4sel, clkid_per },
+#elif defined(__CPU_STM32H5)
+	{ I2C1_BASE, pctl_i2c1, i2c1_ev_irq, i2c1_er_irq, pctl_ipclk_i2c1sel },
+	{ I2C2_BASE, pctl_i2c2, i2c2_ev_irq, i2c2_er_irq, pctl_ipclk_i2c2sel },
+	{ I2C3_BASE, pctl_i2c3, i2c3_ev_irq, i2c3_er_irq, pctl_ipclk_i2c3sel },
+	{ I2C4_BASE, pctl_i2c4, i2c4_ev_irq, i2c4_er_irq, pctl_ipclk_i2c4sel },
 #endif
 };
 
@@ -76,7 +81,7 @@ static int libi2c_clockSetup(const struct libi2c_peripheralInfo *info, uint32_t 
 	/* On this platform no extra information is used for clock setup */
 	(void)info;
 	*out = getCpufreq();
-	return EOK;
+	return 0;
 }
 #elif defined(__CPU_STM32N6)
 static int libi2c_clockSetup(const struct libi2c_peripheralInfo *info, uint32_t *out)
@@ -95,6 +100,25 @@ static int libi2c_clockSetup(const struct libi2c_peripheralInfo *info, uint32_t 
 
 	*out = (uint32_t)freq;
 	return ret;
+}
+#elif defined(__CPU_STM32H5)
+static int libi2c_clockSetup(const struct libi2c_peripheralInfo *info, uint32_t *out)
+{
+	enum {
+		i2c_clk_sel_pclk3 = 0,
+		i2c_clk_sel_pll3,
+		i2c_clk_sel_hsi,
+		i2c_clk_sel_csi
+	};
+
+	int ret;
+	ret = rcc_setClksel(info->clksel, i2c_clk_sel_pclk3);
+	if (ret < 0) {
+		return ret;
+	}
+
+	*out = getCpufreq();
+	return 0;
 }
 #endif
 

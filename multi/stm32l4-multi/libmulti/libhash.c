@@ -76,7 +76,7 @@ static int libhash_selectAlgorithm(libhash_algo_t algorithm, uint32_t *crValue)
 
 	return 0;
 }
-#elif defined(__CPU_STM32N6)
+#elif defined(__CPU_STM32N6) || defined(__CPU_STM32H5)
 static int libhash_selectAlgorithm(libhash_algo_t algorithm, uint32_t *crValue)
 {
 	/* MD5 not supported on this device */

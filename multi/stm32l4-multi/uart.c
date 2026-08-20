@@ -38,17 +38,24 @@
 #define UART8_POS  (UART7_POS + UART7)
 #define UART9_POS  (UART8_POS + UART8)
 #define UART10_POS (UART9_POS + UART9)
+#define UART11_POS (UART10_POS + UART10)
+#define UART12_POS (UART11_POS + UART11)
 
-#define N_ACTIVE_UART (UART1 + UART2 + UART3 + UART4 + UART5 + UART6 + UART7 + UART8 + UART9 + UART10)
+#define N_ACTIVE_UART (UART1 + UART2 + UART3 + UART4 + UART5 + UART6 + UART7 + UART8 + UART9 + UART10 + UART11 + UART12)
 
 static libuart_ctx uart_common[N_ACTIVE_UART];
 
 
 #if defined(__CPU_STM32L4X6)
-#if (UART6 || UART7 || UART8 || UART9 || UART10)
+#if (UART6 || UART7 || UART8 || UART9 || UART10 || UART11 || UART12)
+#error "Chosen UART not available on this platform"
+#elif defined(__CPU_STM32N6)
+#if (UART11 || UART12)
 #error "Chosen UART not available on this platform"
 #endif
 
+
+#if defined(__CPU_STM32L4X6)
 #define MAX_UART uart5
 static const int uartEnabled[MAX_UART + 1] = { UART1, UART2, UART3, UART4, UART5 };
 static const int uartDMA[MAX_UART + 1] = { UART1_DMA, UART2_DMA, UART3_DMA, UART4_DMA, UART5_DMA };
@@ -58,6 +65,11 @@ static const int uartPos[MAX_UART + 1] = { UART1_POS, UART2_POS, UART3_POS, UART
 static const int uartEnabled[MAX_UART + 1] = { UART1, UART2, UART3, UART4, UART5, UART6, UART7, UART8, UART9, UART10 };
 static const int uartDMA[MAX_UART + 1] = { UART1_DMA, UART2_DMA, UART3_DMA, UART4_DMA, UART5_DMA, UART6_DMA, UART7_DMA, UART8_DMA, UART9_DMA, UART10_DMA };
 static const int uartPos[MAX_UART + 1] = { UART1_POS, UART2_POS, UART3_POS, UART4_POS, UART5_POS, UART6_POS, UART7_POS, UART8_POS, UART9_POS, UART10_POS };
+#elif defined(__CPU_STM32H5)
+#define MAX_UART usart12
+static const int uartEnabled[MAX_UART + 1] = { UART1, UART2, UART3, UART4, UART5, UART6, UART7, UART8, UART9, UART10, UART11, UART12 };
+static const int uartDMA[MAX_UART + 1] = { UART1_DMA, UART2_DMA, UART3_DMA, UART4_DMA, UART5_DMA, UART6_DMA, UART7_DMA, UART8_DMA, UART9_DMA, UART10_DMA, UART11_DMA, UART12_DMA };
+static const int uartPos[MAX_UART + 1] = { UART1_POS, UART2_POS, UART3_POS, UART4_POS, UART5_POS, UART6_POS, UART7_POS, UART8_POS, UART9_POS, UART10_POS, UART11_POS, UART12_POS };
 #endif
 
 

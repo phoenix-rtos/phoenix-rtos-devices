@@ -25,6 +25,9 @@
 #elif defined(__CPU_STM32N6)
 #include "stm32n6_base.h"
 #include <phoenix/arch/armv8m/stm32/n6/stm32n6.h>
+#elif defined(__CPU_STM32H5)
+#include "stm32h5_base.h"
+#include <phoenix/arch/armv8m/stm32/n6/stm32n6.h>
 #else
 #error "Unknown platform"
 #endif

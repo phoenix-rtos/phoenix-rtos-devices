@@ -42,7 +42,12 @@
 #endif
 #define MAX_UART uart5
 #elif defined(__CPU_STM32N6)
+#if (TTY11 || TTY12)
+#error "Chosen UART not available on this platform"
+#endif
 #define MAX_UART usart10
+#elif defined(__CPU_STM32H5)
+#define MAX_UART usart12
 #endif
 
 #define TTY1_POS  0
@@ -55,8 +60,10 @@
 #define TTY8_POS  (TTY7_POS + TTY7)
 #define TTY9_POS  (TTY8_POS + TTY8)
 #define TTY10_POS (TTY9_POS + TTY9)
+#define TTY11_POS (TTY10_POS + TTY10)
+#define TTY12_POS (TTY11_POS + TTY11)
 
-#define TTY_CNT (TTY1 + TTY2 + TTY3 + TTY4 + TTY5 + TTY6 + TTY7 + TTY8 + TTY9 + TTY10)
+#define TTY_CNT (TTY1 + TTY2 + TTY3 + TTY4 + TTY5 + TTY6 + TTY7 + TTY8 + TTY9 + TTY10 + TTY11 + TTY12)
 
 #define THREAD_POOL    3
 #define THREAD_STACKSZ 768
@@ -64,7 +71,7 @@
 
 #if defined(__CPU_STM32L4X6)
 #define UART_FIFO_MODE 0
-#elif defined(__CPU_STM32N6)
+#elif defined(__CPU_STM32N6) || defined(__CPU_STM32H5)
 #define UART_FIFO_MODE 1
 #else
 #error "Unknown platform"
@@ -167,12 +174,16 @@ static const struct {
 	{ TTY3, TTY3_DMA, TTY3_DMA_RXSZ, TTY3_DMA_RXFIFOSZ, TTY3_DMA_TXSZ, TTY3_POS, TTY3_LIBTTY_BUFSZ },
 	{ TTY4, TTY4_DMA, TTY4_DMA_RXSZ, TTY4_DMA_RXFIFOSZ, TTY4_DMA_TXSZ, TTY4_POS, TTY4_LIBTTY_BUFSZ },
 	{ TTY5, TTY5_DMA, TTY5_DMA_RXSZ, TTY5_DMA_RXFIFOSZ, TTY5_DMA_TXSZ, TTY5_POS, TTY5_LIBTTY_BUFSZ },
-#if defined(__CPU_STM32N6)
+#if defined(__CPU_STM32N6) || defined(__CPU_STM32H5)
 	{ TTY6, TTY6_DMA, TTY6_DMA_RXSZ, TTY6_DMA_RXFIFOSZ, TTY6_DMA_TXSZ, TTY6_POS, TTY6_LIBTTY_BUFSZ },
 	{ TTY7, TTY7_DMA, TTY7_DMA_RXSZ, TTY7_DMA_RXFIFOSZ, TTY7_DMA_TXSZ, TTY7_POS, TTY7_LIBTTY_BUFSZ },
 	{ TTY8, TTY8_DMA, TTY8_DMA_RXSZ, TTY8_DMA_RXFIFOSZ, TTY8_DMA_TXSZ, TTY8_POS, TTY8_LIBTTY_BUFSZ },
 	{ TTY9, TTY9_DMA, TTY9_DMA_RXSZ, TTY9_DMA_RXFIFOSZ, TTY9_DMA_TXSZ, TTY9_POS, TTY9_LIBTTY_BUFSZ },
 	{ TTY10, TTY10_DMA, TTY10_DMA_RXSZ, TTY10_DMA_RXFIFOSZ, TTY10_DMA_TXSZ, TTY10_POS, TTY10_LIBTTY_BUFSZ },
+#endif
+#if defined(__CPU_STM32H5)
+	{ TTY11, TTY11_DMA, TTY11_DMA_RXSZ, TTY11_DMA_RXFIFOSZ, TTY11_DMA_TXSZ, TTY11_POS, TTY11_LIBTTY_BUFSZ },
+	{ TTY12, TTY12_DMA, TTY12_DMA_RXSZ, TTY12_DMA_RXFIFOSZ, TTY12_DMA_TXSZ, TTY12_POS, TTY12_LIBTTY_BUFSZ },
 #endif
 };
 
@@ -181,7 +192,7 @@ static const struct tty_peripheralInfo {
 	volatile uint32_t *base;
 	int dev;
 	unsigned irq;
-#if defined(__CPU_STM32N6)
+#if defined(__CPU_STM32N6) || defined(__CPU_STM32H5)
 	enum ipclks clksel;    /* Clock selector */
 	enum clock_ids clksrc; /* ID of source clock */
 #endif

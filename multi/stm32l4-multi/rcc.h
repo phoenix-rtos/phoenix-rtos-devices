@@ -19,9 +19,12 @@
 
 #if defined(__CPU_STM32N6)
 #include "clockdef_n6.h"
+#endif
 
-
+#if defined(__CPU_STM32N6)
 int rcc_setClksel(enum ipclks ipclk, enum clock_ids clkID);
+#elif defined(__CPU_STM32H5)
+int rcc_setClksel(enum ipclks ipclk, unsigned setting);
 #endif
 
 
