@@ -5,6 +5,10 @@
 #
 
 NAME := zynq-uart
-LOCAL_SRCS := zynq-uart.c
+ifneq (, $(findstring virt, $(TARGET_PROJECT)))
+  LOCAL_SRCS := zynq-uart-virt.c
+else
+  LOCAL_SRCS := zynq-uart.c
+endif
 DEP_LIBS := libtty libklog
 include $(binary.mk)
