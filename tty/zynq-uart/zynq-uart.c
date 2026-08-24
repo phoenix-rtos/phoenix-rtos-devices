@@ -511,10 +511,10 @@ static int uart_initClk(int n)
 	ctl.type = pctl_devclock;
 
 	/* Set IO PLL as source clock and set divider:
-	 * IO_PLL / 0x14 :  1000 MHz / 20 = 50 MHz     */
+	 * IO_PLL / 0x1e :  1500 MHz / 30 = 50 MHz     */
 	ctl.devclock.dev = info[n].clk;
 	ctl.devclock.src = 0;
-	ctl.devclock.div0 = 0x14;
+	ctl.devclock.div0 = 0x1e;
 	ctl.devclock.div1 = 0;
 	ctl.devclock.active = 0x1;
 
