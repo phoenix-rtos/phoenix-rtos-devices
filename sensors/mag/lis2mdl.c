@@ -60,13 +60,13 @@ typedef struct {
 
 static int32_t translateMag(uint8_t hbyte, uint8_t lbyte)
 {
-	int32_t val;
+	int16_t val;
 
-	/* MISRA incompliant - casting u32 to s32 with no regard to sign */
-	val = ((uint32_t)hbyte << 8) | (uint32_t)lbyte;
+	/* MISRA incompliant - casting u16 to s16 with no regard to sign */
+	val = (int16_t)(((uint16_t)hbyte << 8) | (uint16_t)lbyte);
 
 	/* conversion to microgauss (1e-10 T), as it is already sensor manager storage scale */
-	return val * MAG_CONV_UGAUSS;
+	return (int32_t)(val * MAG_CONV_UGAUSS);
 }
 
 
