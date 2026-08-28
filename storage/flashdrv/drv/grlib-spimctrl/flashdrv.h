@@ -17,8 +17,10 @@
 
 
 #include <cache.h>
+#include <stdbool.h>
 #include <storage/storage.h>
 #include <flashdrv/cfi.h>
+#include <flashdrv/sfdp.h>
 #include <flashdrv/flashsrv.h>
 
 
@@ -28,9 +30,13 @@ struct cache_devCtx_s {
 
 
 struct _storage_devCtx_t {
-	cfi_info_t cfi;
+	union {
+		cfi_info_t cfi;
+		const struct nor_info *sfdp;
+	} flash_data;
+	
 	const struct flash_dev *dev;
-
+	bool isCfi;
 	struct spimctrl *spimctrl;
 
 	handle_t lock;
