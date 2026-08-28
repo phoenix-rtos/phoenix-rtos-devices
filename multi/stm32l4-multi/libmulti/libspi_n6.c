@@ -18,12 +18,18 @@
 #include <errno.h>
 #include <stdint.h>
 #include <byteswap.h>
+#include <stdbool.h>
 
 #include "../common.h"
 #include "libmulti/libdma.h"
 #include "libmulti/libspi.h"
 #include "../rcc.h"
+
+#if defined(__CPU_STM32N6)
 #include "../stm32n6_regs.h"
+#elif defined(__CPU_STM32H5)
+#include "../stm32h5_regs.h"
+#endif
 
 #define MAX_SPI spi6
 
@@ -42,15 +48,26 @@ static const struct libspi_peripheralInfo {
 	uintptr_t base;
 	unsigned int dev;
 	enum ipclks clksel;    /* Clock selector */
+#if defined(__CPU_STM32N6)
 	enum clock_ids clksrc; /* ID of source clock */
+#endif
 	uint32_t fifoSize;
 } spiInfo[MAX_SPI - spi1 + 1] = {
+#if defined(__CPU_STM32N6)
 	{ (uintptr_t)SPI1_BASE, pctl_spi1, pctl_ipclk_spi1sel, clkid_per, 16 },
 	{ (uintptr_t)SPI2_BASE, pctl_spi2, pctl_ipclk_spi2sel, clkid_per, 16 },
 	{ (uintptr_t)SPI3_BASE, pctl_spi3, pctl_ipclk_spi3sel, clkid_per, 16 },
 	{ (uintptr_t)SPI4_BASE, pctl_spi4, pctl_ipclk_spi4sel, clkid_per, 8 },
 	{ (uintptr_t)SPI5_BASE, pctl_spi5, pctl_ipclk_spi5sel, clkid_per, 8 },
 	{ (uintptr_t)SPI6_BASE, pctl_spi6, pctl_ipclk_spi6sel, clkid_per, 16 },
+#elif defined(__CPU_STM32H5)
+	{ (uintptr_t)SPI1_BASE, pctl_spi1, pctl_ipclk_spi1sel, 16 },
+	{ (uintptr_t)SPI2_BASE, pctl_spi2, pctl_ipclk_spi2sel, 16 },
+	{ (uintptr_t)SPI3_BASE, pctl_spi3, pctl_ipclk_spi3sel, 16 },
+	{ (uintptr_t)SPI4_BASE, pctl_spi4, pctl_ipclk_spi4sel, 8 },
+	{ (uintptr_t)SPI5_BASE, pctl_spi5, pctl_ipclk_spi5sel, 8 },
+	{ (uintptr_t)SPI6_BASE, pctl_spi6, pctl_ipclk_spi6sel, 8 },
+#endif
 };
 
 
@@ -346,15 +363,33 @@ int libspi_configure(libspi_ctx_t *ctx, char mode, char bdiv, int enable)
 
 int libspi_init(libspi_ctx_t *ctx, unsigned int spi, int useDma)
 {
+#if defined(__CPU_STM32H5)
+	enum {
+		spi_clk_sel_pclk3 = 0,
+		spi_clk_sel_pll2,
+		spi_clk_sel_pll3,
+		spi_clk_sel_hsi,
+		spi_clk_sel_csi,
+		spi_clk_sel_hse
+	};
+#endif
+
 	if ((spi < spi1) || (spi > MAX_SPI) || (ctx == NULL)) {
 		return -1;
 	}
 
 	ctx->spiNum = spi;
 	ctx->base = (void *)spiInfo[spi - spi1].base;
+
+#if defined(__CPU_STM32N6)
 	if (rcc_setClksel(spiInfo[spi - spi1].clksel, spiInfo[spi - spi1].clksrc) < 0) {
 		return -1;
 	}
+#elif defined(__CPU_STM32H5)
+	if (rcc_setClksel(spiInfo[spi - spi1].clksel, spi_clk_sel_pclk3) < 0) {
+		return -1;
+	}
+#endif
 
 	if (useDma != 0) {
 		libdma_init();

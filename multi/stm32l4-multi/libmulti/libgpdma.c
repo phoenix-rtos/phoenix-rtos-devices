@@ -27,11 +27,17 @@
 #define DMA_CTRL_GPDMA1     0
 #define DMA_CTRL_HPDMA1     1
 #define DMA_NUM_CONTROLLERS 2
+
+#if defined(__CPU_STM32N6)
 /* Channels 12..15 are capable of 2D transfers, others can only do linear transfers */
 #define DMA_NUM_CHANNELS    16
 #define DMA_2D_CAPABLE_MASK ((1 << 16) - (1 << 12))
+#elif defined(__CPU_STM32H5)
+#define DMA_NUM_CHANNELS    8
+#define DMA_2D_CAPABLE_MASK 0
+#endif
 
-
+#if defined(__CPU_STM32N6)
 enum dma_reqs {
 	dma_req_jpeg_rx = 0,
 	dma_req_jpeg_tx = 1,
@@ -179,6 +185,148 @@ enum dma_reqs {
 	dma_req_sw_trig = 254,
 	dma_req_invalid = 255,
 };
+#elif defined(__CPU_STM32H5)
+enum dma_reqs {
+	dma_req_adc1 = 0,
+	dma_req_adc2,
+	dma_req_dac1_ch1,
+	dma_req_dac1_ch2,
+	dma_req_tim6_upd,
+	dma_req_tim7_upd,
+	dma_req_spi1_rx,
+	dma_req_spi1_tx,
+	dma_req_spi2_rx,
+	dma_req_spi2_tx,
+	dma_req_spi3_rx,
+	dma_req_spi3_tx,
+	dma_req_i2c1_rx,
+	dma_req_i2c1_tx,
+	dma_req_i2c2_rx = 15,
+	dma_req_i2c2_tx,
+	dma_req_i2c3_rx = 18,
+	dma_req_i2c3_tx,
+	dma_req_usart1_rx = 21,
+	dma_req_usart1_tx,
+	dma_req_usart2_rx,
+	dma_req_usart2_tx,
+	dma_req_usart3_rx,
+	dma_req_usart3_tx,
+	dma_req_uart4_rx,
+	dma_req_uart4_tx,
+	dma_req_uart5_rx,
+	dma_req_uart5_tx,
+	dma_req_usart6_rx,
+	dma_req_usart6_tx,
+	dma_req_uart7_rx,
+	dma_req_uart7_tx,
+	dma_req_uart8_rx,
+	dma_req_uart8_tx,
+	dma_req_uart9_rx,
+	dma_req_uart9_tx,
+	dma_req_usart10_rx,
+	dma_req_usart10_tx,
+	dma_req_usart11_rx,
+	dma_req_usart11_tx,
+	dma_req_uart12_rx,
+	dma_req_uart12_tx,
+	dma_req_lpuart1_rx,
+	dma_req_lpuart1_tx,
+	dma_req_spi4_rx,
+	dma_req_spi4_tx,
+	dma_req_spi5_rx,
+	dma_req_spi5_tx,
+	dma_req_spi6_rx,
+	dma_req_spi6_tx,
+	dma_req_sai1_a,
+	dma_req_sai1_b,
+	dma_req_sai2_a,
+	dma_req_sai2_b,
+	dma_req_ospi1,
+	dma_req_tim1_cc1,
+	dma_req_tim1_cc2,
+	dma_req_tim1_cc3,
+	dma_req_tim1_cc4,
+	dma_req_tim1_upd,
+	dma_req_tim1_trg,
+	dma_req_tim1_com,
+	dma_req_tim8_cc1,
+	dma_req_tim8_cc2,
+	dma_req_tim8_cc3,
+	dma_req_tim8_cc4,
+	dma_req_tim8_upd,
+	dma_req_tim8_trg,
+	dma_req_tim8_com,
+	dma_req_tim2_cc1,
+	dma_req_tim2_cc2,
+	dma_req_tim2_cc3,
+	dma_req_tim2_cc4,
+	dma_req_tim2_upd,
+	dma_req_tim3_cc1,
+	dma_req_tim3_cc2,
+	dma_req_tim3_cc3,
+	dma_req_tim3_cc4,
+	dma_req_tim3_upd,
+	dma_req_tim3_trg,
+	dma_req_tim4_cc1,
+	dma_req_tim4_cc2,
+	dma_req_tim4_cc3,
+	dma_req_tim4_cc4,
+	dma_req_tim4_upd,
+	dma_req_tim5_cc1,
+	dma_req_tim5_cc2,
+	dma_req_tim5_cc3,
+	dma_req_tim5_cc4,
+	dma_req_tim5_upd,
+	dma_req_tim5_trg,
+	dma_req_tim15_cc1,
+	dma_req_tim15_upd,
+	dma_req_tim15_trg,
+	dma_req_tim15_com,
+	dma_req_tim16_cc1,
+	dma_req_tim16_upd,
+	dma_req_tim17_cc1,
+	dma_req_tim17_upd,
+	dma_req_lptim1_ic1,
+	dma_req_lptim1_ic2,
+	dma_req_lptim1_ue,
+	dma_req_lptim2_ic1,
+	dma_req_lptim2_ic2,
+	dma_req_lptim2_ue,
+	dma_req_dcmi,
+	dma_req_aes_out,
+	dma_req_aes_in,
+	dma_req_hash_in,
+	dma_req_ucpd1_rx,
+	dma_req_ucpd1_tx,
+	dma_req_cordic_read,
+	dma_req_cordic_write,
+	dma_req_fmac_read,
+	dma_req_fmac_write,
+	dma_req_saes_out,
+	dma_req_saes_in,
+	dma_req_i3c1_rx,
+	dma_req_i3c1_tx,
+	dma_req_i3c1_tc,
+	dma_req_i3c1_rs,
+	dma_req_i2c4_rx,
+	dma_req_i2c4_tx,
+	dma_req_lptim3_ic1 = 127,
+	dma_req_lptim3_ic2,
+	dma_req_lptim3_ue,
+	dma_req_lptim5_ic1,
+	dma_req_lptim5_ic2,
+	dma_req_lptim5_ue,
+	dma_req_lptim6_ic1,
+	dma_req_lptim6_ic2,
+	dma_req_lptim6_ue,
+	dma_req_i3c2_rx,
+	dma_req_i3c2_tx,
+	dma_req_i3c2_tc,
+	dma_req_i3c2_rs,
+	dma_req_sw_trig = 254,
+	dma_req_invalid = 255
+};
+#endif
 
 
 enum xpdma_regs {
@@ -289,6 +437,10 @@ static const uint8_t libdma_reqsUartRx[] = {
 	[uart8] = dma_req_uart8_rx,
 	[uart9] = dma_req_uart9_rx,
 	[usart10] = dma_req_usart10_rx,
+#if defined(__CPU_STM32H5)
+	[usart11] = dma_req_usart10_rx,
+	[uart12] = dma_req_uart12_rx,
+#endif
 };
 
 
@@ -303,6 +455,10 @@ static const uint8_t libdma_reqsUartTx[] = {
 	[uart8] = dma_req_uart8_tx,
 	[uart9] = dma_req_uart9_tx,
 	[usart10] = dma_req_usart10_tx,
+#if defined(__CPU_STM32H5)
+	[usart11] = dma_req_usart10_tx,
+	[uart12] = dma_req_uart12_tx,
+#endif
 };
 
 
@@ -344,7 +500,9 @@ static const uint8_t libdma_reqsTimUpd[] = {
 	[pwm_tim15] = dma_req_tim15_upd,
 	[pwm_tim16] = dma_req_tim16_upd,
 	[pwm_tim17] = dma_req_tim17_upd,
+#if defined(__CPU_STM32N6)
 	[pwm_tim18] = dma_req_tim18_upd,
+#endif
 };
 
 
@@ -366,7 +524,9 @@ static const uint8_t libdma_reqsTimCC1[] = {
 	[pwm_tim15] = dma_req_tim15_cc1,
 	[pwm_tim16] = dma_req_tim16_cc1,
 	[pwm_tim17] = dma_req_tim17_cc1,
+#if defined(__CPU_STM32N6)
 	[pwm_tim18] = dma_req_tim18_cc1,
+#endif
 };
 
 
@@ -385,7 +545,11 @@ static const uint8_t libdma_reqsTimCC2[] = {
 	[pwm_tim12] = dma_req_invalid,
 	[pwm_tim13] = dma_req_invalid,
 	[pwm_tim14] = dma_req_invalid,
+#if defined(__CPU_STM32N6)
 	[pwm_tim15] = dma_req_tim15_cc2,
+#elif defined(__CPU_STM32H5)
+	[pwm_tim15] = dma_req_invalid,
+#endif
 };
 
 
@@ -471,6 +635,7 @@ typedef struct {
 } libdma_cacheOp_t;
 
 
+#if defined(__CPU_STM32N6)
 static const struct dma_setup {
 	volatile uint32_t *base;
 	int pctl;
@@ -487,6 +652,24 @@ static const struct dma_setup {
 		.isHPDMA = true,
 	},
 };
+#elif defined(__CPU_STM32H5)
+static const struct dma_setup {
+	volatile uint32_t *base;
+	int pctl;
+	bool isHPDMA;
+} dma_setup[DMA_NUM_CONTROLLERS] = {
+	[DMA_CTRL_GPDMA1] = {
+		.base = GPDMA_BASE,
+		.pctl = pctl_gpdma1,
+		.isHPDMA = false,
+	},
+	[DMA_CTRL_HPDMA1] = {
+		.base = HPDMA_BASE,
+		.pctl = pctl_gpdma2,
+		.isHPDMA = true,
+	},
+};
+#endif
 
 
 static struct dma_ctrl {
@@ -568,14 +751,22 @@ static bool libxpdma_isInsideDMAMemory(const void *addr, size_t sz)
 
 static inline bool libdma_irqToChannel(int irq, unsigned int *dma, unsigned int *chn)
 {
-	if ((irq >= gpdma1_ch0_irq) && (irq <= gpdma1_ch15_irq)) {
+#if defined(__CPU_STM32N6)
+	const int gpdma1_irq_min = gpdma1_ch0_irq, hpdma1_irq_min = hpdma1_ch0_irq;
+	const int gpdma1_irq_max = gpdma1_ch15_irq, hpdma1_irq_max = hpdma1_ch15_irq;
+#elif defined(__CPU_STM32H5)
+	const int gpdma1_irq_min = gpdma1_ch0_irq, hpdma1_irq_min = gpdma1_ch0_irq;
+	const int gpdma1_irq_max = gpdma1_ch7_irq, hpdma1_irq_max = gpdma2_ch7_irq;
+#endif
+
+	if ((irq >= gpdma1_irq_min) && (irq <= gpdma1_irq_max)) {
 		*dma = DMA_CTRL_GPDMA1;
-		*chn = irq - gpdma1_ch0_irq;
+		*chn = irq - gpdma1_irq_min;
 		return true;
 	}
-	else if ((irq >= hpdma1_ch0_irq) && (irq <= hpdma1_ch15_irq)) {
+	else if ((irq >= hpdma1_irq_min) && (irq <= hpdma1_irq_max)) {
 		*dma = DMA_CTRL_HPDMA1;
-		*chn = irq - hpdma1_ch0_irq;
+		*chn = irq - hpdma1_irq_min;
 		return true;
 	}
 
@@ -589,7 +780,11 @@ static inline int libdma_channelToIRQ(unsigned int dma, unsigned int chn)
 		return gpdma1_ch0_irq + chn;
 	}
 	else if (dma == DMA_CTRL_HPDMA1) {
+#if defined(__CPU_STM32N6)
 		return hpdma1_ch0_irq + chn;
+#elif defined(__CPU_STM32H5)
+		return gpdma2_ch0_irq + chn;
+#endif
 	}
 
 	return 0;
@@ -1701,6 +1896,27 @@ uint16_t libdma_leftToRx(const struct libdma_per *per)
 }
 
 
+#if defined(__CPU_STM32N6)
+static void libdma_setDmaPermissions(int dev, unsigned int chn)
+{
+	platformctl_t pctl;
+	pctl.action = pctl_set;
+	pctl.type = pctl_dmaPermissions;
+	pctl.dmaPermissions.secure = 1;
+	pctl.dmaPermissions.privileged = -1;
+	pctl.dmaPermissions.lock = 0;
+	pctl.dmaPermissions.channel = chn;
+	pctl.dmaPermissions.dev = dev;
+	(void)platformctl(&pctl);
+}
+#elif defined(__CPU_STM32H5)
+static void libdma_setDmaPermissions(int dev, unsigned int chn)
+{
+	/* Non-secure, non-privileged by default and we keep it that way */
+}
+#endif
+
+
 int libdma_init(void)
 {
 	if (dma_common.initialized) {
@@ -1723,20 +1939,11 @@ int libdma_init(void)
 	dma_common.dmaAllocPtr = dma_common.dmaMemPtr + sizeof(*dma_common.listbufs);
 	dma_common.dmaAllocSz = dma_common.dmaMemSz - sizeof(*dma_common.listbufs);
 
-	platformctl_t pctl;
-	pctl.action = pctl_set;
-	pctl.type = pctl_dmaPermissions;
-	pctl.dmaPermissions.secure = 1;
-	pctl.dmaPermissions.privileged = -1;
-	pctl.dmaPermissions.lock = 0;
-
 	for (size_t dma = 0; dma < DMA_NUM_CONTROLLERS; dma++) {
 		devClk(dma_setup[dma].pctl, 1);
 		mutexCreate(&dma_ctrl[dma].takenLock);
-		pctl.dmaPermissions.dev = dma_setup[dma].pctl;
 		for (size_t chn = 0; chn < DMA_NUM_CHANNELS; chn++) {
-			pctl.dmaPermissions.channel = chn;
-			platformctl(&pctl);
+			libdma_setDmaPermissions(dma_setup[dma].pctl, chn);
 			condCreate(&dma_ctrl[dma].chns[chn].cond);
 			mutexCreate(&dma_ctrl[dma].chns[chn].irqLock);
 			/* Set base address for channel's linked list buffer */

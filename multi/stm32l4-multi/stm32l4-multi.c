@@ -58,7 +58,7 @@
 #if (UART1 && TTY1) || (UART2 && TTY2) || (UART3 && TTY3) || \
 		(UART4 && TTY4) || (UART5 && TTY5) || (UART6 && TTY6) || \
 		(UART7 && TTY7) || (UART8 && TTY8) || (UART9 && TTY9) || \
-		(UART10 && TTY10)
+		(UART10 && TTY10) || (UART11 && TTY11) || (UART12 && TTY12)
 #error "Can't use UART as UART and TTY at the same time!"
 #endif
 
@@ -75,7 +75,9 @@
 		!(UART_CONSOLE_USER == 7 && (UART7 || TTY7)) && \
 		!(UART_CONSOLE_USER == 8 && (UART8 || TTY8)) && \
 		!(UART_CONSOLE_USER == 9 && (UART9 || TTY9)) && \
-		!(UART_CONSOLE_USER == 10 && (UART10 || TTY10))
+		!(UART_CONSOLE_USER == 10 && (UART10 || TTY10)) && \
+		!(UART_CONSOLE_USER == 11 && (UART11 || TTY11)) && \
+		!(UART_CONSOLE_USER == 12 && (UART12 || TTY12))
 #warning "Console enabled on disabled UART/TTY"
 #endif
 
@@ -88,7 +90,9 @@
 		(UART_CONSOLE_USER == 7 && TTY7) || \
 		(UART_CONSOLE_USER == 8 && TTY8) || \
 		(UART_CONSOLE_USER == 9 && TTY9) || \
-		(UART_CONSOLE_USER == 10 && TTY10))
+		(UART_CONSOLE_USER == 10 && TTY10) || \
+		(UART_CONSOLE_USER == 11 && TTY11) || \
+		(UART_CONSOLE_USER == 12 && TTY12))
 
 
 struct {

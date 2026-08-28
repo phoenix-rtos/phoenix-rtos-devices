@@ -63,6 +63,14 @@
 #define UART10 0
 #endif
 
+#ifndef UART11
+#define UART11 0
+#endif
+
+#ifndef UART12
+#define UART12 0
+#endif
+
 #ifndef UART1_DMA
 #define UART1_DMA 0
 #endif
@@ -103,10 +111,18 @@
 #define UART10_DMA 0
 #endif
 
+#ifndef UART11_DMA
+#define UART11_DMA 0
+#endif
+
+#ifndef UART12_DMA
+#define UART12_DMA 0
+#endif
+
 #if (UART1_DMA && !UART1) || (UART2_DMA && !UART2) || (UART3_DMA && !UART3) || \
 		(UART4_DMA && !UART4) || (UART5_DMA && !UART5) || (UART6_DMA && !UART6) || \
 		(UART7_DMA && !UART7) || (UART8_DMA && !UART8) || (UART9_DMA && !UART9) || \
-		(UART10_DMA && !UART10)
+		(UART10_DMA && !UART10) || (UART11_DMA && !UART11) || (UART12_DMA && !UART12)
 #error "DMA mode cannot be enabled on a disabled UART!"
 #endif
 
@@ -148,6 +164,14 @@
 
 #ifndef TTY10
 #define TTY10 0
+#endif
+
+#ifndef TTY11
+#define TTY11 0
+#endif
+
+#ifndef TTY12
+#define TTY12 0
 #endif
 
 #if defined(UART_CONSOLE)
@@ -209,6 +233,14 @@
 #define TTY10_DMA 0
 #endif
 
+#ifndef TTY11_DMA
+#define TTY11_DMA 0
+#endif
+
+#ifndef TTY12_DMA
+#define TTY12_DMA 0
+#endif
+
 #ifndef TTY1_DMA_RXSZ
 #define TTY1_DMA_RXSZ 32
 #endif
@@ -247,6 +279,14 @@
 
 #ifndef TTY10_DMA_RXSZ
 #define TTY10_DMA_RXSZ 32
+#endif
+
+#ifndef TTY11_DMA_RXSZ
+#define TTY11_DMA_RXSZ 32
+#endif
+
+#ifndef TTY12_DMA_RXSZ
+#define TTY12_DMA_RXSZ 32
 #endif
 
 #ifndef TTY1_DMA_RXFIFOSZ
@@ -289,6 +329,14 @@
 #define TTY10_DMA_RXFIFOSZ 64
 #endif
 
+#ifndef TTY11_DMA_RXFIFOSZ
+#define TTY11_DMA_RXFIFOSZ 64
+#endif
+
+#ifndef TTY12_DMA_RXFIFOSZ
+#define TTY12_DMA_RXFIFOSZ 64
+#endif
+
 #ifndef TTY1_DMA_TXSZ
 #define TTY1_DMA_TXSZ 64
 #endif
@@ -327,6 +375,14 @@
 
 #ifndef TTY10_DMA_TXSZ
 #define TTY10_DMA_TXSZ 64
+#endif
+
+#ifndef TTY11_DMA_TXSZ
+#define TTY11_DMA_TXSZ 64
+#endif
+
+#ifndef TTY12_DMA_TXSZ
+#define TTY12_DMA_TXSZ 64
 #endif
 
 #ifndef TTY1_LIBTTY_BUFSZ
@@ -369,6 +425,14 @@
 #define TTY10_LIBTTY_BUFSZ 512
 #endif
 
+#ifndef TTY11_LIBTTY_BUFSZ
+#define TTY11_LIBTTY_BUFSZ 512
+#endif
+
+#ifndef TTY12_LIBTTY_BUFSZ
+#define TTY12_LIBTTY_BUFSZ 512
+#endif
+
 #ifndef UART1_RXFIFOSZ
 #define UART1_RXFIFOSZ 64
 #endif
@@ -407,6 +471,14 @@
 
 #ifndef UART10_RXFIFOSZ
 #define UART10_RXFIFOSZ 64
+#endif
+
+#ifndef UART11_RXFIFOSZ
+#define UART11_RXFIFOSZ 64
+#endif
+
+#ifndef UART12_RXFIFOSZ
+#define UART12_RXFIFOSZ 64
 #endif
 
 

@@ -51,7 +51,7 @@ static handle_t spi_locks[N_ACTIVE_SPI];
 static const int spiConfig[MAX_SPI + 1] = { SPI1, SPI2, SPI3 };
 static const int spiPos[MAX_SPI + 1] = { SPI1_POS, SPI2_POS, SPI3_POS };
 static const int spiUseDma[MAX_SPI + 1] = { SPI1_USEDMA, SPI2_USEDMA, SPI3_USEDMA };
-#elif defined(__CPU_STM32N6)
+#elif defined(__CPU_STM32N6) || defined(__CPU_STM32H5)
 #define MAX_SPI spi6
 static const int spiConfig[MAX_SPI + 1] = { SPI1, SPI2, SPI3, SPI4, SPI5, SPI6 };
 static const int spiPos[MAX_SPI + 1] = { SPI1_POS, SPI2_POS, SPI3_POS, SPI4_POS, SPI5_POS, SPI6_POS };

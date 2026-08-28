@@ -47,7 +47,7 @@
 #endif
 #define MAX_UART usart10
 #elif defined(__CPU_STM32H5)
-#define MAX_UART usart12
+#define MAX_UART uart12
 #endif
 
 #define TTY1_POS  0
@@ -194,6 +194,8 @@ static const struct tty_peripheralInfo {
 	unsigned irq;
 #if defined(__CPU_STM32N6) || defined(__CPU_STM32H5)
 	enum ipclks clksel;    /* Clock selector */
+#endif
+#if defined(__CPU_STM32N6)
 	enum clock_ids clksrc; /* ID of source clock */
 #endif
 } ttyInfo[] = {
@@ -214,6 +216,19 @@ static const struct tty_peripheralInfo {
 	{ UART8_BASE, pctl_uart8, uart8_irq, pctl_ipclk_uart8sel, clkid_per },
 	{ UART9_BASE, pctl_uart9, uart9_irq, pctl_ipclk_uart9sel, clkid_per },
 	{ USART10_BASE, pctl_usart10, usart10_irq, pctl_ipclk_usart10sel, clkid_per },
+#elif defined(__CPU_STM32H5)
+	{ USART1_BASE, pctl_usart1, usart1_irq, pctl_ipclk_usart1sel },
+	{ USART2_BASE, pctl_usart2, usart2_irq, pctl_ipclk_usart2sel },
+	{ USART3_BASE, pctl_usart3, usart3_irq, pctl_ipclk_usart3sel },
+	{ UART4_BASE, pctl_uart4, uart4_irq, pctl_ipclk_uart4sel },
+	{ UART5_BASE, pctl_uart5, uart5_irq, pctl_ipclk_uart5sel },
+	{ USART6_BASE, pctl_usart6, usart6_irq, pctl_ipclk_usart6sel },
+	{ UART7_BASE, pctl_uart7, uart7_irq, pctl_ipclk_uart7sel },
+	{ UART8_BASE, pctl_uart8, uart8_irq, pctl_ipclk_uart8sel },
+	{ UART9_BASE, pctl_uart9, uart9_irq, pctl_ipclk_uart9sel },
+	{ USART10_BASE, pctl_usart10, usart10_irq, pctl_ipclk_usart10sel },
+	{ USART11_BASE, pctl_usart11, usart11_irq, pctl_ipclk_usart11sel },
+	{ UART12_BASE, pctl_uart12, uart12_irq, pctl_ipclk_uart12sel },
 #endif
 };
 
@@ -277,6 +292,26 @@ static int tty_clockSetup(const struct tty_peripheralInfo *info, uint32_t *out)
 
 	*out = (uint32_t)freq;
 	return ret;
+}
+#elif defined(__CPU_STM32H5)
+static int tty_clockSetup(const struct tty_peripheralInfo *info, uint32_t *out)
+{
+	enum {
+		uart_clk_sel_pclk1 = 0,
+		uart_clk_sel_pll2,
+		uart_clk_sel_pll3,
+		uart_clk_sel_hsi,
+		uart_clk_sel_csi,
+		uart_clk_sel_lse
+	};
+
+	int ret;
+	ret = rcc_setClksel(info->clksel, uart_clk_sel_pclk1);
+	if (ret < 0) {
+		return ret;
+	}
+
+	return getCpufreq();
 }
 #endif
 

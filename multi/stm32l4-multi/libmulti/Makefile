@@ -13,6 +13,8 @@ ifeq ($(TARGET_SUBFAMILY),stm32l4x6)
   LOCAL_SRCS += libaes.c libdma.c libspi_l4.c
 else ifeq ($(TARGET_SUBFAMILY),stm32n6)
   LOCAL_SRCS += libgpdma.c libspi_n6.c
+  else ifeq ($(TARGET_SUBFAMILY),stm32h5)
+  LOCAL_SRCS += libspi_n6.c libgpdma.c
 endif
 
 DEPS := libtty

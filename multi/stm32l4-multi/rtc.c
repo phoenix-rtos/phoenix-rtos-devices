@@ -29,7 +29,7 @@
 #if defined(__CPU_STM32L4X6)
 enum { tr = 0, dr, cr, isr, prer, wutr, alrmar = wutr + 2, alrmbr, wpr, ssr, shiftr, tstr, tsdr, tsssr, calr,
 	tampcr, alrmassr, alrmbssr, or, bkp0r};
-#elif defined(__CPU_STM32N6)
+#elif defined(__CPU_STM32N6) || defined(__CPU_STM32H5)
 enum { tr = 0x0, dr, ssr, icsr, prer, wutr, cr, privcfgr, seccfgr, wpr, calr, shiftr, tstr, tsdr, tsssr,
 	alrmar = 0x10, alrmassr, alrmbr, alrmbssr, sr, misr, smisr, scr, alrabinr = 0x1c, alrbbinr };
 #endif
@@ -38,7 +38,7 @@ enum { tr = 0x0, dr, ssr, icsr, prer, wutr, cr, privcfgr, seccfgr, wpr, calr, sh
 #if defined(__CPU_STM32L4X6)
 #define RTC_EXTI_LINE 18
 #define RTC_INTERRUPT rtc_alarm_irq
-#elif defined(__CPU_STM32N6)
+#elif defined(__CPU_STM32N6) || defined(__CPU_STM32H5)
 /* On STM32N6 there are two RTC interrupts - secure and non-secure */
 #define RTC_EXTI_LINE 18
 #define RTC_INTERRUPT rtc_irq
@@ -63,7 +63,7 @@ static int rtc_alarm_handler(unsigned int n, void *arg)
 {
 #if defined(__CPU_STM32L4X6)
 	exti_clear_irq(RTC_EXTI_LINE);
-#elif defined(__CPU_STM32N6)
+#elif defined(__CPU_STM32N6) || defined(__CPU_STM32H5)
 	uint32_t previous = pwr_unlockFromIRQ();
 	*(rtc_common.base + wpr) = 0xca;
 	*(rtc_common.base + wpr) = 0x53;
@@ -213,7 +213,7 @@ static void _rtc_initMode(bool enable)
 	static const uint32_t reg_offs = isr;
 	static const uint32_t bit_initf = 1 << 6;
 	static const uint32_t bit_init = 1 << 7;
-#elif defined(__CPU_STM32N6)
+#elif defined(__CPU_STM32N6) || defined(__CPU_STM32H5)
 	static const uint32_t reg_offs = icsr;
 	static const uint32_t bit_initf = 1 << 6;
 	static const uint32_t bit_init = 1 << 7;
@@ -269,7 +269,7 @@ static void _rtc_enableAlarm(bool enable)
 #if defined(__CPU_STM32L4X6)
 		while (!(*(rtc_common.base + isr) & 0x1))
 			;
-#elif defined(__CPU_STM32N6)
+#elif defined(__CPU_STM32N6) || defined(__CPU_STM32H5)
 		/* On STM32N6 the ALRAWF flag doesn't exist */
 #endif
 	}
@@ -419,7 +419,7 @@ int rtc_recallBackup(void *buff, size_t bufflen)
 
 	return retval;
 }
-#elif defined(__CPU_STM32N6)
+#elif defined(__CPU_STM32N6) || defined(__CPU_STM32H5)
 int rtc_storeBackup(const void *buff, size_t bufflen)
 {
 	/* TODO: On STM32N6 backup memory is accessed in a different manner */
@@ -449,7 +449,7 @@ int rtc_init(void)
 
 #if defined(__CPU_STM32L4X6)
 	exti_configure(RTC_EXTI_LINE, exti_irqevent, exti_rising);
-#elif defined(__CPU_STM32N6)
+#elif defined(__CPU_STM32N6) || defined(__CPU_STM32H5)
 	_rtc_unlock();
 	*(rtc_common.base + cr) &= ~(0xf << 12);            /* Disable all interrupts for now */
 	*(rtc_common.base + scr) = *(rtc_common.base + sr); /* Clear any active interrupts */

@@ -34,7 +34,7 @@ struct {
 
 int rcc_setClksel(enum ipclks ipclk, unsigned setting)
 {
-	if ((ipclk < 0) || (ipclk > pctl_ipclks_count)) {
+	if ((ipclk < 0) || (ipclk > pctl_ipclk_count)) {
 		return -EINVAL;
 	}
 
