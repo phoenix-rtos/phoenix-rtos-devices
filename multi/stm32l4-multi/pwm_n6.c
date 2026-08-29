@@ -328,6 +328,49 @@ static int dshot_decodeRxData(uint16_t bitlen, const uint16_t *counts, size_t nC
 		return -EILSEQ;
 	}
 
+	/* find minimum and maximum pulse widths */
+	uint32_t minDiff = 0xffffffffUL;
+	uint32_t maxDiff = 0;
+	for (size_t i = 1; i < nCounts; i++) {
+		if (counts[i] <= counts[i - 1]) {
+			continue;
+		}
+
+		uint32_t diff = counts[i] - counts[i - 1];
+
+		/* filter out unreasonable diffs */
+		if (diff > (bitlen / 2) && diff < (bitlen * 6)) {
+			if (diff < minDiff) {
+				minDiff = diff;
+			}
+			if (diff > maxDiff) {
+				maxDiff = diff;
+			}
+		}
+	}
+
+	/* adjust bitlen based on observed timings */
+	if (minDiff < maxDiff) {
+		/*
+		 * 3 scenarios:
+		 * - min = 1 bit, max = 3 bits (ratio = 3.0)
+		 * - min = 1 bit, max = 2 bits (ratio = 2.0)
+		 * - min = 2 bits, max = 3 bits (ratio = 1.5)
+		 * for first and second scenario, min gives us the bit length
+		 * for the third scenario min is two bit lengths
+		 */
+		if ((maxDiff * 100) > (minDiff * 175)) {
+			bitlen = minDiff; /* (min=1, max=3) or (min=1, max=2) */
+		}
+		else {
+			bitlen = minDiff / 2; /* (min=2, max=3) */
+		}
+	}
+
+	if (bitlen == 0) {
+		return -EILSEQ;
+	}
+
 	uint32_t val = 1; /* Signal always starts in high state, so starting value is 1 */
 	size_t totalBits = 0;
 	for (size_t i = 1; i <= nCounts; i++) {
