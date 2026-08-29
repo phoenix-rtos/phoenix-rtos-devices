@@ -408,10 +408,7 @@ static int uart_intr(unsigned int intr, void *data)
 				}
 			}
 			else {
-				/*
-				 * TODO: here we should increment uart.counters.sw_overrun if necessary,
-				 * but lf_fifo_ow_push doesn't return information if overflow occurred
-				 */
+				/* uart_process_rx() counts overwritten bytes */
 				lf_fifo_ow_push(&uart.rx_sw_fifo, (*(uart.base + urxd)) & 0xff);
 			}
 		}
@@ -479,6 +476,7 @@ static void uart_process_rx(void)
 		while (lf_fifo_ow_pop(&uart.rx_sw_fifo, &c) != 0) {
 			libtty_putchar(&uart.tty_common, c, NULL);
 		}
+		uart.counters.sw_overrun += lf_fifo_ow_lost(&uart.rx_sw_fifo);
 	}
 
 	if (((*(uart.base + ucr1) & UCR1_RRDYEN) == 0) && (uart.reader_busy != 0)) {
