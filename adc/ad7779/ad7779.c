@@ -76,6 +76,13 @@
 
 #define AD7779_READ_BIT		 (0x80)
 
+/* AD7779_STATUS_REG_3 */
+#define INIT_COMPLETE_BIT (1 << 4)
+
+/* AD7779_GEN_ERR_REG_2 */
+#define RESET_DETECTED_BIT (1 << 5)
+
+
 static int ad7779_read(uint8_t addr, uint8_t *data, uint8_t len)
 {
 	uint8_t buff[len + 1];
@@ -176,6 +183,27 @@ int ad7779_get_mode(ad7779_mode_t *mode)
 		*mode = ad7779_mode__high_resolution;
 	} else {
 		*mode = ad7779_mode__low_power;
+	}
+
+	return AD7779_OK;
+}
+
+int ad7779_pulse_sync(void)
+{
+	int res;
+
+	log_debug("resetting internal logic");
+	res = ad7779_gpio(start, 0);
+	if (res != 0) {
+		log_error("failed to set start GPIO to 0");
+		return AD7779_GPIO_IO_ERROR;
+	}
+
+	usleep(2);
+	res = ad7779_gpio(start, 1);
+	if (res != 0) {
+		log_error("failed to set start GPIO to 1");
+		return AD7779_GPIO_IO_ERROR;
 	}
 
 	return AD7779_OK;
@@ -309,13 +337,6 @@ int ad7779_set_sampling_rate(uint32_t fs)
 	/* Trigger ODR update (by setting SRC_LOAD_UPDATE bit) */
 	log_debug("triggering ODR update by setting SRC_LOAD_UPDATE_BIT");
 	if ((res = ad7779_set_clear_bits(AD7779_SRC_UPDATE, SRC_LOAD_UPDATE_BIT, 0)) < 0)
-		return res;
-
-	/* Reset internal logic */
-	log_debug("reseting internal logic");
-	if ((res = ad7779_set_clear_bits(AD7779_GENERAL_USER_CONFIG_2, 0, SPI_SYNC)) < 0)
-		return res;
-	if ((res = ad7779_set_clear_bits(AD7779_GENERAL_USER_CONFIG_2, SPI_SYNC, 0)) < 0)
 		return res;
 
 	return AD7779_OK;
@@ -587,25 +608,34 @@ static int ad7779_reset(int hard)
 	}
 
 	/* Software reset */
-	ad7779_gpio(start, 0);
-	usleep(10000);
 	ad7779_gpio(reset, 0);
-	usleep(200000);
-	ad7779_gpio(start, 1);
-	usleep(100000);
+	usleep(2);
 	ad7779_gpio(reset, 1);
+	usleep(300);
 
 	memset(status, 0, sizeof(status));
 
 	for (i = 0; i < 4; ++i) {
-		if (!ad7779_get_status(status)) {
-			if (status[16] & 0x10)
-				return AD7779_OK;
+		if (ad7779_get_status(status) != AD7779_OK) {
+			usleep(100 * 1000);
+			continue;
 		}
 
-		usleep(100000);
+		if ((status[16] & INIT_COMPLETE_BIT) && (status[13] & RESET_DETECTED_BIT)) {
+			return AD7779_OK;
+		}
+		else {
+			if (!(status[16] & INIT_COMPLETE_BIT)) {
+				log_error("init bit not detected");
+			}
+			if (!(status[13] & RESET_DETECTED_BIT)) {
+				log_error("reset bit not detected");
+			}
+			break;
+		}
 	}
 
+	log_error("failed to read status after the device restart");
 	return AD7779_CTRL_IO_ERROR;
 }
 
@@ -640,6 +670,10 @@ int ad7779_init(int hard)
 
 	log_debug("switching to high resolution mode");
 	if ((res = ad7779_set_mode(ad7779_mode__high_resolution)) < 0)
+		return res;
+
+	/* Toggle START (to generate SYNC_IN) after mode change */
+	if ((res = ad7779_pulse_sync()) < 0)
 		return res;
 
 	/* Use one DOUTx line; DCLK_CLK_DIV = 1 */
