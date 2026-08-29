@@ -44,7 +44,13 @@ enum { id_console = 0, id_uart1, id_uart2, id_uart3, id_uart4, id_uart5, id_uart
 
 
 typedef struct {
-	enum { gpio_set_port = 0, gpio_get_port, gpio_set_dir, gpio_get_dir } type;
+	enum { gpio_set_port = 0,
+		gpio_get_port,
+		gpio_set_dir,
+		gpio_get_dir,
+		gpio_set_irq_conf,
+		gpio_get_irq_conf,
+		gpio_wait_irq } type;
 
 	union {
 		struct {
@@ -56,9 +62,21 @@ typedef struct {
 			unsigned int mask;
 			unsigned int val;
 		} dir;
+
+		struct {
+			unsigned int pin;
+			enum { gpio_irq_active_low = 0,
+				gpio_irq_active_high,
+				gpio_irq_active_rising,
+				gpio_irq_active_falling,
+			} type;
+		} irq_conf;
+
+		struct {
+			unsigned int mask;
+		} wait_irq;
 	};
 } gpio_t;
-
 
 
 /* SPI */
