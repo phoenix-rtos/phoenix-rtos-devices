@@ -41,7 +41,7 @@
 
 #define KMSG_CTRL_ID 100
 
-#define SW_BUF_SIZE 64
+#define SW_BUF_SIZE 256
 
 #define N_UARTS 4
 
