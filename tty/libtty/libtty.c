@@ -185,7 +185,7 @@ unsigned char libtty_getchar(libtty_common_t *tty, int *wake_writer)
 	unsigned char c = libtty_popchar(tty);
 
 	if (wake_writer != NULL) {
-		*wake_writer = fifo_freespace(tty->tx_fifo) >= TX_FIFO_NOTFULL_WATERMARK;
+		*wake_writer = lf_fifo_free(&tty->tx_fifo) >= TX_FIFO_NOTFULL_WATERMARK;
 	}
 	else {
 		libtty_wake_writer(tty);
@@ -195,15 +195,18 @@ unsigned char libtty_getchar(libtty_common_t *tty, int *wake_writer)
 }
 
 
+/* has to be used after checking with e.g. libtty_txready */
 unsigned char libtty_popchar(libtty_common_t *tty)
 {
-	return fifo_pop_back(tty->tx_fifo);
+	unsigned char c;
+	assert(lf_fifo_pop(&tty->tx_fifo, &c) > 0);
+	return c;
 }
 
 
 void libtty_wake_writer(libtty_common_t *tty)
 {
-	if (fifo_freespace(tty->tx_fifo) >= TX_FIFO_NOTFULL_WATERMARK) {
+	if (lf_fifo_free(&tty->tx_fifo) >= TX_FIFO_NOTFULL_WATERMARK) {
 		condSignal(tty->tx_waitq);
 	}
 }
@@ -211,6 +214,7 @@ void libtty_wake_writer(libtty_common_t *tty)
 
 int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned int bufsize, int speed)
 {
+	uint8_t *tx_data;
 	/* bufsize must be a power of 2 */
 	if (bufsize == 0 || (bufsize & (bufsize - 1)) != 0) {
 		return -1;
@@ -223,23 +227,23 @@ int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned in
 	memset(tty, 0, sizeof(*tty));
 	tty->cb = *callbacks;
 
-	tty->tx_fifo = malloc(sizeof(fifo_t) + bufsize * sizeof(tty->tx_fifo->data[0]));
-	tty->rx_fifo = malloc(sizeof(fifo_t) + bufsize * sizeof(tty->rx_fifo->data[0]));
-	if (tty->tx_fifo == NULL || tty->rx_fifo == NULL) {
-		free(tty->tx_fifo);
+	tx_data = malloc(bufsize * sizeof(tty->tx_fifo.data[0]));
+	tty->rx_fifo = malloc(sizeof(*tty->rx_fifo) + bufsize * sizeof(tty->rx_fifo->data[0]));
+	if (tx_data == NULL || tty->rx_fifo == NULL) {
+		free(tx_data);
 		free(tty->rx_fifo);
 		return -1;
 	}
 
 	if (condCreate(&tty->tx_waitq) != EOK) {
-		free(tty->tx_fifo);
+		free(tx_data);
 		free(tty->rx_fifo);
 		return -1;
 	}
 
 	if (condCreate(&tty->rx_waitq) != EOK) {
 		resourceDestroy(tty->tx_waitq);
-		free(tty->tx_fifo);
+		free(tx_data);
 		free(tty->rx_fifo);
 		return -1;
 	}
@@ -247,7 +251,7 @@ int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned in
 	if (mutexCreate(&tty->tx_mutex) != EOK) {
 		resourceDestroy(tty->tx_waitq);
 		resourceDestroy(tty->rx_waitq);
-		free(tty->tx_fifo);
+		free(tx_data);
 		free(tty->rx_fifo);
 		return -1;
 	}
@@ -256,12 +260,12 @@ int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned in
 		resourceDestroy(tty->tx_waitq);
 		resourceDestroy(tty->rx_waitq);
 		resourceDestroy(tty->tx_mutex);
-		free(tty->tx_fifo);
+		free(tx_data);
 		free(tty->rx_fifo);
 		return -1;
 	}
 
-	fifo_init(tty->tx_fifo, bufsize);
+	lf_fifo_init(&tty->tx_fifo, tx_data, bufsize);
 	fifo_init(tty->rx_fifo, bufsize);
 
 	termios_init(&tty->term, speed);
@@ -277,7 +281,7 @@ int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned in
 
 int libtty_close(libtty_common_t *tty)
 {
-	mutexLock2(tty->tx_mutex, tty->rx_mutex);
+	mutexLock2(tty->rx_mutex, tty->tx_mutex);
 	tty->t_flags |= TF_CLOSING;
 
 	condBroadcast(tty->tx_waitq);
@@ -298,7 +302,7 @@ int libtty_destroy(libtty_common_t *tty)
 	resourceDestroy(tty->tx_mutex);
 	resourceDestroy(tty->rx_mutex);
 
-	free(tty->tx_fifo);
+	free(tty->tx_fifo.data);
 	free(tty->rx_fifo);
 
 	return 0;
@@ -313,7 +317,7 @@ ssize_t libtty_write(libtty_common_t *tty, const char *data, size_t size, unsign
 	if ((tty->t_flags & TF_CLOSING) != 0) {
 		return -EPIPE;
 	}
-	else if (fifo_is_full(tty->tx_fifo) && (mode & O_NONBLOCK) != 0) {
+	else if (lf_fifo_full(&tty->tx_fifo) && (mode & O_NONBLOCK) != 0) {
 		return -EWOULDBLOCK;
 	}
 	else if (size == 0) {
@@ -326,7 +330,7 @@ ssize_t libtty_write(libtty_common_t *tty, const char *data, size_t size, unsign
 
 	/* write contents of the buffer */
 	while (len < size) {
-		while (fifo_freespace(tty->tx_fifo) < fifo_freespace_for_single_char) {
+		while (lf_fifo_free(&tty->tx_fifo) < fifo_freespace_for_single_char) {
 			if (tty->t_flags & TF_CLOSING) {
 				goto exit;
 			}
@@ -340,10 +344,10 @@ ssize_t libtty_write(libtty_common_t *tty, const char *data, size_t size, unsign
 		}
 
 		if (CMP_FLAG(o, OPOST) && (CTL_VALID(*data))) { /* we need to process this char */
-			libttydisc_write_oproc(tty, *data);
+			_libttydisc_writeOproc(tty, *data);
 		}
 		else {
-			fifo_push(tty->tx_fifo, *data);
+			lf_fifo_push(&tty->tx_fifo, *data);
 		}
 
 		len += 1;
@@ -382,13 +386,13 @@ int libtty_txready(libtty_common_t *tty)
 		DEBUG_CHAR('F');
 #endif
 
-	return !fifo_is_empty(tty->tx_fifo);
+	return !lf_fifo_empty(&tty->tx_fifo);
 }
 
 
 int libtty_txfull(libtty_common_t *tty)
 {
-	return fifo_is_full(tty->tx_fifo);
+	return lf_fifo_full(&tty->tx_fifo);
 }
 
 
@@ -438,7 +442,7 @@ void libtty_signal_pgrp(libtty_common_t *tty, int signal)
 void libtty_drain(libtty_common_t *tty)
 {
 	mutexLock(tty->tx_mutex);
-	while (!fifo_is_empty(tty->tx_fifo)) {
+	while (!lf_fifo_empty(&tty->tx_fifo)) {
 		condWait(tty->tx_waitq, tty->tx_mutex, 0);
 	}
 	mutexUnlock(tty->tx_mutex);
@@ -457,7 +461,9 @@ void libtty_flush(libtty_common_t *tty, int type)
 		/* leaving one char in TX fifo should allow us to avoid */
 		/* undefined behaviour if writer is in the middle of operation */
 		mutexLock(tty->tx_mutex);
-		fifo_remove_all_but_one(tty->tx_fifo);
+		/* TODO: transfer to lf-fifo.h: lf_fifo_clear_leave_last */
+		unsigned int tail = atomic_load_explicit(&tty->tx_fifo.tail, memory_order_acquire);
+		atomic_store_explicit(&tty->tx_fifo.head, tail == tty->tx_fifo.mask ? 0 : tail + 1, memory_order_release);
 		mutexUnlock(tty->tx_mutex);
 	}
 
