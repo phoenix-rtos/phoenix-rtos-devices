@@ -25,6 +25,7 @@
 #define UART4_BASE  ((void *)0x50004c00U)
 #define UART5_BASE  ((void *)0x50005000U)
 
+#define ADC_BASE ((void *)0x52028000U)
 #define PWR_BASE ((void *)0x50030800U)
 #define RCC_BASE ((void *)0x50030c00U)
 #define RNG_BASE ((void *)0x520c0800U)
@@ -47,5 +48,7 @@
 #define I2C2_BASE ((void *)0x50005800U)
 #define I2C3_BASE ((void *)0x50042800U)
 #define I2C4_BASE ((void *)0x50008400U)
+
+#define VREFINT_CAL ((const uint16_t *)0x0bfa07a5U)
 
 #endif /* _STM32U3_BASE_H_ */
