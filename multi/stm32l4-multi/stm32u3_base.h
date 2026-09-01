@@ -25,6 +25,7 @@
 #define UART4_BASE  ((void *)0x50004c00U)
 #define UART5_BASE  ((void *)0x50005000U)
 
+#define ADC_BASE ((void *)0x52028000U)
 #define PWR_BASE ((void *)0x50030800U)
 #define RCC_BASE ((void *)0x50030c00U)
 #define RNG_BASE ((void *)0x520c0800U)

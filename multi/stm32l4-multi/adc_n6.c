@@ -1,10 +1,11 @@
 /*
  * Phoenix-RTOS
  *
- * STM32N6 ADC driver
+ * STM32N6/U3 ADC driver
  *
  * Copyright 2020, 2025 Phoenix Systems
- * Author: Aleksander Kaminski, Jacek Maksymowicz
+ * Copyright 2026 Apator Metrix
+ * Author: Aleksander Kaminski, Jacek Maksymowicz, Mateusz Karcz
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -22,18 +23,20 @@
 #include "common.h"
 #include "rcc.h"
 #include "stm32l4-multi.h"
+
+
+#if defined(__CPU_STM32N6)
+
 #include "stm32n6_regs.h"
 
 
+#define ADC_CLKPRE      pctl_ipclk_adcpre
 #define ADC_CLKSEL      pctl_ipclk_adc12sel
 #define ADC_DEV         pctl_adc12
 #define ADC_IRQ         adc12_irq
 #define MAX_ADC         adc2
-#define N_ADCS          (MAX_ADC - adc1 + 1)
 #define N_CHANNELS      20
-#define ADC_REGS_SIZE   64
-#define VREFINT_ADC     adc1 /* Which ADC the VREFINT is connected to */
-#define VREFINT_CHANNEL 17   /* Which channel the VREFINT is connected to */
+#define VREFINT_CHANNEL 17 /* Which channel the VREFINT is connected to */
 
 #define VREFINT_MV           800  /* Value of internal reference voltage (mV) */
 #define VREF_CAL_MV          1800 /* Value of Vref used during calibration test (mV) */
@@ -41,11 +44,35 @@
 
 /* DS14791 claims max frequency is 70 MHz, but STM32CubeIDE allows you to set 130 MHz.
  * Set a maximum of 50 MHz to be safe. */
-#define ADC_FREQUENCY      (50 * 1000 * 1000)
+#define ADC_FREQUENCY (50 * 1000 * 1000)
+
+#elif defined(__CPU_STM32U3)
+
+#include "stm32u3_regs.h"
+
+#define ADC_CLKPRE      pctl_ipclk_adcdacpre
+#define ADC_CLKSEL      pctl_ipclk_adcdacsel
+#define ADC_DEV         pctl_adc12
+#define ADC_IRQ         adc1_irq
+#define MAX_ADC         adc1
+#define N_CHANNELS      19
+#define VREFINT_CHANNEL 0 /* Which channel the VREFINT is connected to */
+
+#define VREFINT_MV           1215 /* Value of internal reference voltage (mV) */
+#define VREF_CAL_MV          3000 /* Value of Vref used during calibration test (mV) */
+#define OTP_ADDR_VREFINT_CAL 1957 /* First byte in OTP that holds the value read for Vrefint during factory calibration test */
+
+#define ADC_FREQUENCY (6 * 1000 * 1000)
+
+#endif
+
 #define RESOLUTION_BITS    12
 #define FULL_SCALE         ((1 << RESOLUTION_BITS) - 1)
 #define CALIBRATION_ROUNDS 8    /* Number taken from documentation, not sure how it was chosen */
 #define IRQ_CONVERSION     true /* Use IRQ to wait for conversion end */
+#define N_ADCS             (MAX_ADC - adc1 + 1)
+#define ADC_REGS_SIZE      64
+#define VREFINT_ADC        adc1 /* Which ADC the VREFINT is connected to */
 
 /* Definitions of bits in registers */
 #define ADC_INTR_ADRDY (1u << 0)
@@ -59,6 +86,9 @@
 #define ADC_INTR_AWD2  (1u << 8)
 #define ADC_INTR_AWD3  (1u << 9)
 #define ADC_INTR_JQOVF (1u << 10)
+#if defined(__CPU_STM32U3)
+#define ADC_INTR_LDORDY (1u << 12)
+#endif
 
 #define ADC_CR_ADEN     (1u << 0)
 #define ADC_CR_ADDIS    (1u << 1)
@@ -67,12 +97,18 @@
 #define ADC_CR_ADSTP    (1u << 4)
 #define ADC_CR_JADSTP   (1u << 5)
 #define ADC_CR_DEEPPWD  (1u << 29)
-#define ADC_CR_ADCALDIF (1u << 30)
 #define ADC_CR_ADCAL    (1u << 31)
+#if defined(__CPU_STM32N6)
+#define ADC_CR_ADCALDIF (1u << 30)
+#else
+#define ADC_CR_ADVREGEN (1u << 28)
+#endif
 
 #define ADC_CFGR1_OVRMOD (1 << 12)
 
+#if defined(__CPU_STM32N6)
 #define ADC_CALFACT_CALADDOS (1 << 31)
+#endif
 
 
 enum {
@@ -147,6 +183,16 @@ static void adc_wakeup(int adc)
 	*(base + adc_cr) &= ~ADC_CR_DEEPPWD;
 	dataBarier();
 
+#if defined(__CPU_STM32U3)
+	/* Enable ADC voltage regulator */
+	*(base + adc_cr) |= ADC_CR_ADVREGEN;
+	dataBarier();
+
+	/* Wait for regulator ready */
+	while ((*(base + adc_isr) & ADC_INTR_LDORDY) == 0) {
+	}
+#endif
+
 	uint32_t res;
 	switch (RESOLUTION_BITS) {
 		case 12: res = 0; break;
@@ -161,7 +207,9 @@ static void adc_wakeup(int adc)
 	/* Set maximum conversion time for all channels (1499.5 ADC clock cycles) */
 	*(base + adc_smpr1) = 0x3fffffff;
 	*(base + adc_smpr2) = 0x3fffffff;
+#if defined(__CPU_STM32N6)
 	*(base + adc_difsel) &= ~((1 << 20) - 1); /* Set every channel to single-ended */
+#endif
 }
 
 
@@ -175,6 +223,12 @@ static void adc_disable(int adc)
 
 	*(base + adc_cr) |= ADC_CR_DEEPPWD;
 	dataBarier();
+
+#if defined(__CPU_STM32U3)
+	/* Disable ADC voltage regulator */
+	*(base + adc_cr) &= ~ADC_CR_ADVREGEN;
+	dataBarier();
+#endif
 
 	keepidle(0);
 	mutexUnlock(adc_common.per[adc - adc1].lock);
@@ -239,6 +293,7 @@ static void adc_waitForConversion(const int *adcs, uint32_t *results, size_t n_c
 }
 
 
+#if defined(__CPU_STM32N6)
 static uint32_t adc_calibrationMeasure(int adc)
 {
 	uint32_t accumulator = 0;
@@ -279,12 +334,14 @@ static int adc_calibrateMode(int adc, bool diff)
 	*(base + adc_calfact) = v | ((meas & 0x1ff) << resultOffset);
 	return 0;
 }
+#endif
 
 
 static void adc_calibration(int adc)
 {
 	volatile unsigned int *base = adc_common.base + adc_getOffs(adc);
 
+#if defined(__CPU_STM32N6)
 	adc_enableInternal(base);
 	*(base + adc_cr) |= ADC_CR_ADCAL;
 	/* Try without additional offset */
@@ -301,10 +358,17 @@ static void adc_calibration(int adc)
 		adc_calibrateMode(adc, false);
 		adc_calibrateMode(adc, true);
 	}
+#else
+	*(base + adc_cr) |= ADC_CR_ADCAL;
+	while ((*(base + adc_cr) & ADC_CR_ADCAL) != 0) {
+	}
+#endif
 
 	adc_common.per[adc - adc1].calibration = *(base + adc_calfact);
 	dataBarier();
+#if defined(__CPU_STM32N6)
 	*(base + adc_cr) &= ~ADC_CR_ADCAL;
+#endif
 }
 
 
@@ -312,13 +376,18 @@ static void adc_enable(int adc)
 {
 	volatile unsigned int *base = adc_common.base + adc_getOffs(adc);
 	adc_enableInternal(base);
+
+#if defined(__CPU_STM32N6)
 	/* Inject calibration */
 	*(base + adc_cr) |= ADC_CR_ADCAL;
 	dataBarier();
+#endif
 	*(base + adc_calfact) = adc_common.per[adc - adc1].calibration;
 	dataBarier();
+#if defined(__CPU_STM32N6)
 	*(base + adc_cr) &= ~ADC_CR_ADCAL;
 	dataBarier();
+#endif
 }
 
 
@@ -385,11 +454,30 @@ unsigned short adc_conversion(int adc, char chan)
 }
 
 
-int adc_init(void)
+static int adc_getPrescaler(uint32_t hz, uint32_t clock)
 {
-	adc_common.base = ADC_BASE;
+#if defined(__CPU_STM32N6)
+	uint32_t prescaler = (clock + hz - 1) / hz;
+	if ((prescaler == 0) || (prescaler > 256)) {
+		return -ERANGE;
+	}
+	return (int)prescaler - 1;
+#elif defined(__CPU_STM32U3)
+	for (int shift = 0; shift <= 9; ++shift) {
+		if ((clock >> shift) <= hz) {
+			return (shift == 0) ? 0 : (6 + shift); /* RM0487 10.5.43 */
+		}
+	}
+	return -ERANGE;
+#else
+#error "Unsupported MCU"
+#endif
+}
 
-	/* On STM32N6 the ADC clocks have to be supplied from RCC */
+
+static int adc_setFrequency(uint32_t hz)
+{
+	/* ADC clocks have to be supplied from RCC */
 	if (rcc_setClksel(ADC_CLKSEL, clkid_hclk) < 0) {
 		return -1;
 	}
@@ -399,48 +487,89 @@ int adc_init(void)
 		return -1;
 	}
 
-	uint32_t freq = (uint32_t)freq_out;
-	uint32_t prescaler = (freq + ADC_FREQUENCY - 1) / ADC_FREQUENCY;
-	if ((prescaler == 0) || (prescaler > 256)) {
-		return -1;
+	int prescaler = adc_getPrescaler(hz, (uint32_t)freq_out);
+	if (prescaler < 0) {
+		return prescaler;
 	}
 
 	platformctl_t pctl = {
 		.action = pctl_set,
 		.type = pctl_ipclk,
 		.ipclk = {
-			.ipclk = pctl_ipclk_adcpre,
-			.setting = prescaler - 1,
+			.ipclk = ADC_CLKPRE,
+			.setting = (unsigned)prescaler,
 		},
 	};
 
-	if (platformctl(&pctl) < 0) {
-		return -1;
-	}
+	return platformctl(&pctl);
+}
 
-	/* Undocumented requirement - ADCs needs to be set for secure accesses only,
-	 * otherwise they will only be able to read internal channels (Vref, Vbat, Vrefint)
-	 * and any other channel will appear to be floating. */
-	pctl.action = pctl_set;
-	pctl.type = pctl_risup;
-	pctl.risup.index = pctl_risup_adc12;
-	pctl.risup.secure = 1;
-	pctl.risup.privileged = 0;
-	pctl.risup.lock = 0;
-	if (platformctl(&pctl) < 0) {
-		return -1;
-	}
+
+static int adc_getVref(void)
+{
+	unsigned val;
 
 	/* Get calibration value from OTP. We need to ask kernel to do it for us
 	 * (it requires privileged execution) */
-	pctl.action = pctl_get;
-	pctl.type = pctl_otp;
-	pctl.otp.addr = OTP_ADDR_VREFINT_CAL;
+	platformctl_t pctl = {
+		.action = pctl_get,
+		.type = pctl_otp,
+		.otp = { .addr = OTP_ADDR_VREFINT_CAL },
+	};
 	if (platformctl(&pctl) < 0) {
 		return -1;
 	}
 
-	adc_common.calcVrefValue = VREF_CAL_MV * pctl.otp.val;
+	if (sizeof(pctl.otp.val) == 1) {
+		val = pctl.otp.val;
+
+		pctl.otp.addr = OTP_ADDR_VREFINT_CAL + 1;
+		if (platformctl(&pctl) < 0) {
+			return -1;
+		}
+		val |= (unsigned)pctl.otp.val << 8;
+	}
+	else {
+		val = pctl.otp.val & FULL_SCALE;
+	}
+
+	return VREF_CAL_MV * val;
+}
+
+
+int adc_init(void)
+{
+	adc_common.base = ADC_BASE;
+
+	if (adc_setFrequency(ADC_FREQUENCY) < 0) {
+		return -1;
+	}
+
+#if defined(__CPU_STM32N6)
+	/* Undocumented requirement - ADCs needs to be set for secure accesses only,
+	 * otherwise they will only be able to read internal channels (Vref, Vbat, Vrefint)
+	 * and any other channel will appear to be floating. */
+	platformctl_t pctl = {
+		.action = pctl_set,
+		.type = pctl_risup,
+		.risup = {
+			.index = pctl_risup_adc12,
+			.secure = 1,
+			.privileged = 0,
+			.lock = 0,
+		},
+	};
+	if (platformctl(&pctl) < 0) {
+		return -1;
+	}
+#endif
+
+	int vref = adc_getVref();
+	if (vref < 0) {
+		return vref;
+	}
+
+	adc_common.calcVrefValue = (uint32_t)vref;
 	devClk(ADC_DEV, 1);
 	/* Enable VREFINT */
 	*(adc_common.base + common_ccr) = (1 << 22) | (0xf << 8);
