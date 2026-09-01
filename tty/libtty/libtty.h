@@ -27,6 +27,7 @@ typedef struct libtty_callbacks_s libtty_callbacks_t;
 typedef struct fifo_s fifo_t;
 typedef struct libtty_read_state_s libtty_read_state_t;
 
+
 struct libtty_callbacks_s {
 	void *arg; /* argument to be passed to each of the callbacks */
 
@@ -41,6 +42,7 @@ struct libtty_callbacks_s {
 	/* at least one character ready to be sent */
 	void (*signal_txready)(void *arg);
 };
+
 
 struct libtty_common_s {
 	libtty_callbacks_t cb;
@@ -67,10 +69,12 @@ struct libtty_common_s {
 	volatile uint32_t *debug;
 };
 
+
 struct libtty_read_state_s {
 	int timeout_ms;
 	int prevlen;
 };
+
 
 static inline void libtty_read_state_init(libtty_read_state_t *st)
 {
@@ -91,11 +95,13 @@ int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned in
 int libtty_destroy(libtty_common_t *tty);
 int libtty_close(libtty_common_t *tty);
 
+
 /* external (message) interface */
 ssize_t libtty_read(libtty_common_t *tty, char *data, size_t size, unsigned mode);
 ssize_t libtty_write(libtty_common_t *tty, const char *data, size_t size, unsigned mode);
 int libtty_poll_status(libtty_common_t *tty);
 int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const void *in_arg, const void **out_arg);
+
 
 /* non-blocking interface:
  *  - first invocation has to be done with initialized libtty_read_state_t st param
@@ -106,6 +112,7 @@ int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const
  *    by the caller by amout of miliseconds which passed since the last call (until st->timeout == 0, do not set negative values here)
  */
 ssize_t libtty_read_nonblock(libtty_common_t *tty, char *data, size_t size, unsigned mode, libtty_read_state_t *st);
+
 
 /* internal (HW) interface */
 int libtty_putchar(libtty_common_t *tty, unsigned char c, int *wake_reader);
@@ -119,9 +126,11 @@ unsigned char libtty_popchar(libtty_common_t *tty);
 void libtty_wake_writer(libtty_common_t *tty);
 void libtty_signal_pgrp(libtty_common_t *tty, int signal);
 
+
 int libtty_txready(libtty_common_t *tty); /* at least 1 character ready to be sent */
 int libtty_txfull(libtty_common_t *tty);  /* no more place in the TX buffer */
 int libtty_rxready(libtty_common_t *tty); /* at least 1 character ready to be read out */
+
 
 static inline void libtty_set_mode_raw(libtty_common_t *tty)
 {
@@ -129,5 +138,6 @@ static inline void libtty_set_mode_raw(libtty_common_t *tty)
 	tty->term.c_oflag &= ~OPOST;
 	tty->term.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
 }
+
 
 #endif /* _LIBTTY_H_ */

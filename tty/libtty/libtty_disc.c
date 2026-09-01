@@ -96,8 +96,8 @@
 /* Character is whitespace. */
 #define CTL_WHITE(c) ((c) == ' ' || (c) == CTAB)
 /* Character is alphanumeric. */
-#define CTL_ALNUM(c) (((c) >= '0' && (c) <= '9') || \
-	((c) >= 'a' && (c) <= 'z') || ((c) >= 'A' && (c) <= 'Z'))
+#define CTL_ALNUM(c) (((c) >= '0' && (c) <= '9') || ((c) >= 'a' && (c) <= 'z') || ((c) >= 'A' && (c) <= 'Z'))
+
 
 /* writing chars to TX buffer without any futher processing */
 static int tx_write_ifspace(libtty_common_t *tty, const char *data, size_t len)
@@ -105,12 +105,14 @@ static int tx_write_ifspace(libtty_common_t *tty, const char *data, size_t len)
 	/* WARN: no locking */
 	const char *data_end = data + len;
 
-	while ((data < data_end) && !fifo_is_full(tty->tx_fifo))
+	while ((data < data_end) && !fifo_is_full(tty->tx_fifo)) {
 		fifo_push(tty->tx_fifo, (uint8_t)*data++);
+	}
 
 	CALLBACK(signal_txready);
 	return len - (data_end - data);
 }
+
 
 static int libttydisc_echo(libtty_common_t *tty, char c)
 {
@@ -118,8 +120,9 @@ static int libttydisc_echo(libtty_common_t *tty, char c)
 	 * Only echo characters when ECHO is turned on, or ECHONL when
 	 * the character is an unquoted newline.
 	 */
-	if (!CMP_FLAG(l, ECHO) && (!CMP_FLAG(l, ECHONL) || c != CNL))
+	if (!CMP_FLAG(l, ECHO) && (!CMP_FLAG(l, ECHONL) || c != CNL)) {
 		return 0;
+	}
 
 	if (CMP_FLAG(o, OPOST) && CTL_ECHO(c)) {
 		/*
@@ -138,8 +141,9 @@ static int libttydisc_echo(libtty_common_t *tty, char c)
 		char ob[4] = "^?\b\b";
 
 		/* Print ^X notation. */
-		if (c != 0x7f)
+		if (c != 0x7f) {
 			ob[1] = c + 'A' - 1;
+		}
 
 		if (CMP_CC(VEOF, c)) {
 			return tx_write_ifspace(tty, ob, 4);
@@ -156,18 +160,21 @@ static int libttydisc_echo(libtty_common_t *tty, char c)
 	return 0;
 }
 
+
 /* remove one char from RX buffer */
 static int libttydisc_rubchar(libtty_common_t *tty)
 {
 	char c;
 
-	if (fifo_is_empty(tty->rx_fifo))
+	if (fifo_is_empty(tty->rx_fifo)) {
 		return -1;
+	}
 
 	/* begining of line */
 	c = fifo_peek_front(tty->rx_fifo);
-	if (c == CNL || CMP_CC(VEOL, c) || CMP_CC(VEOF, c))
+	if (c == CNL || CMP_CC(VEOL, c) || CMP_CC(VEOF, c)) {
 		return -1;
+	}
 
 	fifo_pop_front(tty->rx_fifo);
 
@@ -198,7 +205,7 @@ static int libttydisc_rubchar(libtty_common_t *tty)
 }
 
 
-static int libtty_putchar_helper(libtty_common_t *tty, unsigned char c, int *wake_reader, int lock)
+static int libtty_putchar_helper(libtty_common_t *tty, unsigned char c, int *wake_reader, bool lock)
 {
 	if (wake_reader != NULL) {
 		*wake_reader = 0;
@@ -263,10 +270,14 @@ static int libtty_putchar_helper(libtty_common_t *tty, unsigned char c, int *wak
 				c = CNL;
 			}
 			break;
+
 		case CNL:
 			if (CMP_FLAG(i, INLCR)) {
 				c = CCR;
 			}
+			break;
+
+		default:
 			break;
 	}
 
@@ -297,13 +308,15 @@ static int libtty_putchar_helper(libtty_common_t *tty, unsigned char c, int *wak
 
 
 processed:
-	if (lock != 0) {
+	if (lock) {
 		mutexLock(tty->rx_mutex);
 	}
+
 	if (fifo_is_full(tty->rx_fifo)) {
 		log_warn("RX OVERRUN!");
 		fifo_pop_back(tty->rx_fifo);
 	}
+
 	fifo_push(tty->rx_fifo, c);
 
 	libttydisc_echo(tty, c);
@@ -325,11 +338,13 @@ processed:
 		if (wake_reader != NULL) {
 			*wake_reader = 1;
 		}
+
 		if (lock != 0) {
 			condSignal(tty->rx_waitq);
 		}
 	}
-	if (lock != 0) {
+
+	if (lock) {
 		mutexUnlock(tty->rx_mutex);
 	}
 
@@ -406,8 +421,9 @@ int libttydisc_write_oproc(libtty_common_t *tty, char c)
 
 		case CCR:
 			/* Carriage return to newline conversion. */
-			if (CMP_FLAG(o, OCRNL))
+			if (CMP_FLAG(o, OCRNL)) {
 				c = CNL;
+			}
 #if 0
 			/* Omit carriage returns on column 0. */
 			if (CMP_FLAG(o, ONOCR) && tp->t_column == 0)
@@ -429,26 +445,28 @@ ssize_t libttydisc_read_canonical(libtty_common_t *tty, char *data, size_t size,
 	char byte = 0xff;
 	size_t len = 0;
 
-	if (st)
+	if (st != NULL) {
 		st->timeout_ms = -1; /* default (finished) */
+	}
 
 	/* check if we have break char in RX fifo */
 	mutexLock(tty->rx_mutex);
 	do {
-		if (tty->t_flags & TF_HAVEBREAK)
+		if ((tty->t_flags & TF_HAVEBREAK) != 0) {
 			break;
+		}
 
-		if (tty->t_flags & TF_CLOSING) {
+		if ((tty->t_flags & TF_CLOSING) != 0) {
 			mutexUnlock(tty->rx_mutex);
 			return -EBADF;
 		}
 
-		if (mode & O_NONBLOCK) {
+		if ((mode & O_NONBLOCK) != 0) {
 			mutexUnlock(tty->rx_mutex);
 			return -EWOULDBLOCK;
 		}
 
-		if (st) {               /* nonblocking */
+		if (st != NULL) { /* nonblocking */
 			st->timeout_ms = 0; /* wait indefinitely */
 			mutexUnlock(tty->rx_mutex);
 			return 0; /* read will resume execution at a later time */
@@ -461,22 +479,25 @@ ssize_t libttydisc_read_canonical(libtty_common_t *tty, char *data, size_t size,
 
 	while (len < size) {
 		byte = (char)fifo_pop_back(tty->rx_fifo);
-		if (CMP_CC(VEOF, byte))
+		if (CMP_CC(VEOF, byte)) {
 			break; /* EOF - dropping and exiting */
+		}
 
 		*data++ = byte;
 		len += 1;
 
-		if (libttydisc_is_breakchar(tty, byte))
+		if (libttydisc_is_breakchar(tty, byte)) {
 			break; /* EOL - exiting after the byte was added */
+		}
 	}
 
 	if (libttydisc_is_breakchar(tty, byte)) { /* loop ended due to breakchar */
 		/* check if we have another break char in the RX FIFO */
 		tty->t_flags &= ~TF_HAVEBREAK;
 		if (CMP_FLAG(l, ICANON)) {
-			if (libttydisc_rx_have_breakchar(tty))
+			if (libttydisc_rx_have_breakchar(tty)) {
 				tty->t_flags |= TF_HAVEBREAK;
+			}
 		}
 	}
 
@@ -491,11 +512,12 @@ ssize_t libttydisc_read_raw(libtty_common_t *tty, char *data, size_t size, unsig
 	time_t first_char_timeout = (vmin == 0) ? vtime : 0;
 	ssize_t len = 0;
 
-	if (st && st->timeout_ms >= 0) { /* continuing previous read */
+	if (st != NULL && st->timeout_ms >= 0) { /* continuing previous read */
 		int we_wanted_to_sleep_ms = (st->prevlen == 0) ? first_char_timeout : vtime;
 		if (fifo_is_empty(tty->rx_fifo)) {
-			if (we_wanted_to_sleep_ms == 0) /* blocking read without timeout */
+			if (we_wanted_to_sleep_ms == 0) { /* blocking read without timeout */
 				return 0;
+			}
 			else if (st->timeout_ms > 0) { /* no new data, wait some more time */
 				return 0;
 			}
@@ -512,18 +534,20 @@ ssize_t libttydisc_read_raw(libtty_common_t *tty, char *data, size_t size, unsig
 
 	while (len < size) {
 		if (fifo_is_empty(tty->rx_fifo)) {
-			if (mode & O_NONBLOCK) {
-				if (len == 0)
+			if ((mode & O_NONBLOCK) != 0) {
+				if (len == 0) {
 					return -EWOULDBLOCK;
-				else
+				}
+				else {
 					break;
+				}
 			}
 			else if (vmin == 0 && vtime == 0) { /* polling read */
 				break;
 			}
 			else { /* read until at least vmin with optional initial/interchar timeout */
 				if ((len == 0) || (len < vmin)) {
-					if (st) { /* non-blocking wait */
+					if (st != NULL) { /* non-blocking wait */
 						st->prevlen = len;
 						st->timeout_ms = (len == 0) ? first_char_timeout : vtime;
 						return 0;
@@ -545,8 +569,9 @@ ssize_t libttydisc_read_raw(libtty_common_t *tty, char *data, size_t size, unsig
 						mutexUnlock(tty->rx_mutex);
 					}
 				}
-				else
+				else {
 					break; /* at least vmin chars present */
+				}
 			}
 		}
 
