@@ -20,6 +20,8 @@
 #include <termios.h>
 #include <unistd.h>
 
+#include "lf-fifo.h"
+
 #include "ttydefaults.h"
 
 typedef struct libtty_common_s libtty_common_t;
@@ -50,7 +52,7 @@ struct libtty_common_s {
 	struct winsize ws;
 	pid_t pgrp;
 
-	fifo_t *tx_fifo;
+	lf_fifo_t tx_fifo;
 	fifo_t *rx_fifo;
 
 	handle_t tx_waitq;

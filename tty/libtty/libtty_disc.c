@@ -100,21 +100,20 @@
 
 
 /* writing chars to TX buffer without any futher processing */
-static int tx_write_ifspace(libtty_common_t *tty, const char *data, size_t len)
+static int _libttydisc_txFeedback(libtty_common_t *tty, const char *data, size_t len)
 {
 	/* WARN: no locking */
 	const char *data_end = data + len;
 
-	while ((data < data_end) && !fifo_is_full(tty->tx_fifo)) {
-		fifo_push(tty->tx_fifo, (uint8_t)*data++);
-	}
+	while ((data < data_end) && lf_fifo_push(&tty->tx_fifo, (uint8_t)*data++) > 0)
+		;
 
 	CALLBACK(signal_txready);
 	return len - (data_end - data);
 }
 
 
-static int libttydisc_echo(libtty_common_t *tty, char c)
+static int _libttydisc_echo(libtty_common_t *tty, char c)
 {
 	/*
 	 * Only echo characters when ECHO is turned on, or ECHONL when
@@ -146,15 +145,15 @@ static int libttydisc_echo(libtty_common_t *tty, char c)
 		}
 
 		if (CMP_CC(VEOF, c)) {
-			return tx_write_ifspace(tty, ob, 4);
+			return _libttydisc_txFeedback(tty, ob, 4);
 		}
 		else {
-			return tx_write_ifspace(tty, ob, 2);
+			return _libttydisc_txFeedback(tty, ob, 2);
 		}
 	}
 	else {
 		/* Can just be printed. */
-		tx_write_ifspace(tty, &c, 1);
+		_libttydisc_txFeedback(tty, &c, 1);
 	}
 
 	return 0;
@@ -183,21 +182,21 @@ static int libttydisc_rubchar(libtty_common_t *tty)
 			if (CTL_PRINT(c)) {
 				/* Remove ^X formatted chars. */
 				if (CMP_FLAG(l, ECHOCTL)) {
-					tx_write_ifspace(tty, "\b\b  \b\b", 6);
+					_libttydisc_txFeedback(tty, "\b\b  \b\b", 6);
 				}
 			}
 			else if (c == ' ') {
 				/* Space character needs no rubbing. */
-				tx_write_ifspace(tty, "\b", 1);
+				_libttydisc_txFeedback(tty, "\b", 1);
 			}
 			else {
 				/* remove a regular character by punching a space over it. */
-				tx_write_ifspace(tty, "\b \b", 3);
+				_libttydisc_txFeedback(tty, "\b \b", 3);
 			}
 		}
 		else {
 			/* Don't print spaces. */
-			libttydisc_echo(tty, tty->term.c_cc[VERASE]);
+			_libttydisc_echo(tty, tty->term.c_cc[VERASE]);
 		}
 	}
 
@@ -207,6 +206,10 @@ static int libttydisc_rubchar(libtty_common_t *tty)
 
 static int libtty_putchar_helper(libtty_common_t *tty, unsigned char c, int *wake_reader, bool lock)
 {
+	if (lock) {
+		libtty_putchar_lock(tty);
+	}
+
 	if (wake_reader != NULL) {
 		*wake_reader = 0;
 	}
@@ -231,7 +234,7 @@ static int libtty_putchar_helper(libtty_common_t *tty, unsigned char c, int *wak
 
 		if (signal != 0) {
 			/* echo the character before signalling the processes */
-			libttydisc_echo(tty, c);
+			_libttydisc_echo(tty, c);
 			libtty_signal_pgrp(tty, signal);
 			return 0;
 		}
@@ -249,10 +252,10 @@ static int libtty_putchar_helper(libtty_common_t *tty, unsigned char c, int *wak
 		if (CMP_CC(VLNEXT, c)) {
 			if (CMP_FLAG(l, ECHO)) {
 				if (CMP_FLAG(l, ECHOE)) {
-					tx_write_ifspace(tty, "^\b", 2);
+					_libttydisc_txFeedback(tty, "^\b", 2);
 				}
 				else {
-					libttydisc_echo(tty, c);
+					_libttydisc_echo(tty, c);
 				}
 			}
 			tty->t_flags |= TF_LITERAL;
@@ -308,18 +311,13 @@ static int libtty_putchar_helper(libtty_common_t *tty, unsigned char c, int *wak
 
 
 processed:
-	if (lock) {
-		mutexLock(tty->rx_mutex);
-	}
-
 	if (fifo_is_full(tty->rx_fifo)) {
 		log_warn("RX OVERRUN!");
 		fifo_pop_back(tty->rx_fifo);
 	}
-
 	fifo_push(tty->rx_fifo, c);
 
-	libttydisc_echo(tty, c);
+	_libttydisc_echo(tty, c);
 
 	if (CMP_FLAG(l, ICANON)) {
 		/* signal only when the line ends */
@@ -329,7 +327,7 @@ processed:
 			if (wake_reader != NULL) {
 				*wake_reader = 1;
 			}
-			if (lock != 0) {
+			else {
 				condSignal(tty->rx_waitq);
 			}
 		}
@@ -338,14 +336,13 @@ processed:
 		if (wake_reader != NULL) {
 			*wake_reader = 1;
 		}
-
-		if (lock != 0) {
+		else {
 			condSignal(tty->rx_waitq);
 		}
 	}
 
 	if (lock) {
-		mutexUnlock(tty->rx_mutex);
+		libtty_putchar_unlock(tty);
 	}
 
 	return 0;
@@ -354,13 +351,13 @@ processed:
 
 int libtty_putchar(libtty_common_t *tty, unsigned char c, int *wake_reader)
 {
-	return libtty_putchar_helper(tty, c, wake_reader, 1);
+	return libtty_putchar_helper(tty, c, wake_reader, true);
 }
 
 
 void libtty_putchar_lock(libtty_common_t *tty)
 {
-	mutexLock(tty->rx_mutex);
+	mutexLock2(tty->rx_mutex, tty->tx_mutex);
 }
 
 
@@ -372,13 +369,14 @@ void libtty_wake_reader(libtty_common_t *tty)
 
 void libtty_putchar_unlock(libtty_common_t *tty)
 {
+	mutexUnlock(tty->tx_mutex);
 	mutexUnlock(tty->rx_mutex);
 }
 
 
 int libtty_putchar_unlocked(libtty_common_t *tty, unsigned char c, int *wake_reader)
 {
-	return libtty_putchar_helper(tty, c, wake_reader, 0);
+	return libtty_putchar_helper(tty, c, wake_reader, false);
 }
 
 
@@ -393,7 +391,7 @@ int libttydisc_write_oproc(libtty_common_t *tty, char c)
 		log_error("%s: not a valid control char: 0x%02x", __func__, c);
 #endif
 
-#define PRINT_NORMAL() tx_write_ifspace(tty, &c, 1)
+#define PRINT_NORMAL() _libttydisc_txFeedback(tty, &c, 1)
 	switch (c) {
 		case CEOF:
 			return PRINT_NORMAL();
@@ -401,7 +399,7 @@ int libttydisc_write_oproc(libtty_common_t *tty, char c)
 		case CTAB:
 			/* Tab expansion. */
 			if (CMP_FLAG(o, TAB3)) {
-				ret = tx_write_ifspace(tty, "        ", 8);
+				ret = _libttydisc_txFeedback(tty, "        ", 8);
 			}
 			else {
 				ret = PRINT_NORMAL();
@@ -412,7 +410,7 @@ int libttydisc_write_oproc(libtty_common_t *tty, char c)
 			/* Newline conversion. */
 			if (CMP_FLAG(o, ONLCR)) {
 				/* Convert \n to \r\n. */
-				ret = tx_write_ifspace(tty, "\r\n", 2);
+				ret = _libttydisc_txFeedback(tty, "\r\n", 2);
 			}
 			else {
 				ret = PRINT_NORMAL();
@@ -512,6 +510,7 @@ ssize_t libttydisc_read_raw(libtty_common_t *tty, char *data, size_t size, unsig
 	time_t first_char_timeout = (vmin == 0) ? vtime : 0;
 	ssize_t len = 0;
 
+	mutexLock(tty->rx_mutex);
 	if (st != NULL && st->timeout_ms >= 0) { /* continuing previous read */
 		int we_wanted_to_sleep_ms = (st->prevlen == 0) ? first_char_timeout : vtime;
 		if (fifo_is_empty(tty->rx_fifo)) {
@@ -536,6 +535,7 @@ ssize_t libttydisc_read_raw(libtty_common_t *tty, char *data, size_t size, unsig
 		if (fifo_is_empty(tty->rx_fifo)) {
 			if ((mode & O_NONBLOCK) != 0) {
 				if (len == 0) {
+					mutexUnlock(tty->rx_mutex);
 					return -EWOULDBLOCK;
 				}
 				else {
@@ -550,10 +550,10 @@ ssize_t libttydisc_read_raw(libtty_common_t *tty, char *data, size_t size, unsig
 					if (st != NULL) { /* non-blocking wait */
 						st->prevlen = len;
 						st->timeout_ms = (len == 0) ? first_char_timeout : vtime;
+						mutexUnlock(tty->rx_mutex);
 						return 0;
 					}
 					else { /* blocking wait */
-						mutexLock(tty->rx_mutex);
 						while (fifo_is_empty(tty->rx_fifo)) {
 							if (tty->t_flags & TF_CLOSING) {
 								mutexUnlock(tty->rx_mutex);
@@ -566,7 +566,6 @@ ssize_t libttydisc_read_raw(libtty_common_t *tty, char *data, size_t size, unsig
 								return len; /* timer expired */
 							}
 						}
-						mutexUnlock(tty->rx_mutex);
 					}
 				}
 				else {
@@ -575,9 +574,10 @@ ssize_t libttydisc_read_raw(libtty_common_t *tty, char *data, size_t size, unsig
 			}
 		}
 
-		*data++ = fifo_pop_back(tty->rx_fifo);
+		*data++ = (char)fifo_pop_back(tty->rx_fifo);
 		len += 1;
 	}
+	mutexUnlock(tty->rx_mutex);
 
 	return len;
 }
