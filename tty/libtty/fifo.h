@@ -1,6 +1,10 @@
 #ifndef _LIBTTY_FIFO_H
 #define _LIBTTY_FIFO_H
 
+#include <stdbool.h>
+#include <stdint.h>
+
+
 typedef struct fifo_s fifo_t;
 
 struct fifo_s {
@@ -19,32 +23,38 @@ static inline void fifo_init(fifo_t *f, unsigned int size)
 	f->size_mask = size - 1;
 }
 
+
 static inline void fifo_remove_all(fifo_t *f)
 {
 	f->head = f->tail = 0;
 }
 
+
 static inline void fifo_remove_all_but_one(fifo_t *f)
 {
-	if (f->head != f->tail)
+	if (f->head != f->tail) {
 		f->head = (f->tail + 1) & f->size_mask;
+	}
 }
 
-static inline unsigned int fifo_is_full(fifo_t *f)
+
+static inline bool fifo_is_full(fifo_t *f)
 {
 	return ((f->head + 1) & f->size_mask) == f->tail;
 }
 
 
-static inline unsigned int fifo_is_empty(fifo_t *f)
+static inline bool fifo_is_empty(fifo_t *f)
 {
 	return (f->head == f->tail);
 }
+
 
 static inline unsigned int fifo_count(fifo_t *f)
 {
 	return (f->head - f->tail) & f->size_mask;
 }
+
 
 static inline unsigned int fifo_freespace(fifo_t *f)
 {
@@ -77,6 +87,7 @@ static inline uint8_t fifo_pop_front(fifo_t *f)
 	return ret;
 }
 
+
 static inline uint8_t fifo_peek_front(fifo_t *f)
 {
 	unsigned int new_head = (f->head - 1) & f->size_mask;
@@ -84,21 +95,25 @@ static inline uint8_t fifo_peek_front(fifo_t *f)
 	return ret;
 }
 
-static inline int fifo_has_char(fifo_t *f, char byte)
+
+static inline bool fifo_has_char(fifo_t *f, char byte)
 {
 	unsigned int tail = f->tail;
 
-	if (fifo_is_empty(f))
-		return 0;
+	if (fifo_is_empty(f)) {
+		return false;
+	}
 
 	while (tail != f->head) {
-		if (f->data[tail] == (uint8_t)byte)
-			return 1;
+		if (f->data[tail] == (uint8_t)byte) {
+			return true;
+		}
 
 		tail = (tail + 1) & f->size_mask;
 	}
 
-	return 0;
+	return false;
 }
+
 
 #endif /* _LIBTTY_FIFO_H */
