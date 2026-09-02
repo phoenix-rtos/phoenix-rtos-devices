@@ -26,6 +26,7 @@ struct nor_info {
 	size_t subsectorSz;
 	size_t sectorSz;
 	time_t tPP; /* Page Program Cycle time */
+	time_t tSsE; /* Subsector Erase Cycle time */
 	time_t tSE; /* Sector Erase Cycle time */
 	time_t tCE; /* Chip Erase Cycle time */
     uint8_t stacked; /* number of stacked dice */
