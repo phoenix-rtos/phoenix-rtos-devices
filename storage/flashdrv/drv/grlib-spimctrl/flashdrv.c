@@ -34,7 +34,6 @@
 
 /* MTD interface */
 
-
 static int _flashdrv_mtdRead(storage_t *strg, off_t offs, void *buff, size_t len, size_t *retlen)
 {
 	struct _storage_devCtx_t *ctx = strg->dev->ctx;
@@ -80,14 +79,28 @@ static ssize_t _flashdrv_mtdReadCb(uint64_t offs, void *buff, size_t len, cache_
 static int flashdrv_mtdRead(storage_t *strg, off_t offs, void *buff, size_t len, size_t *retlen)
 {
 	mutexLock(strg->dev->ctx->lock);
-	int ret = cache_read(strg->dev->ctx->cache, offs, buff, len);
+
+	#if (USE_CACHE)
+		int ret = cache_read(strg->dev->ctx->cache, offs, buff, len);
+	#else
+		size_t rlen;
+		int ret = _flashdrv_mtdRead(strg, offs, buff, len, &rlen);
+		printf("read \n");
+	#endif /* USE_CACHE */
+	
 	mutexUnlock(strg->dev->ctx->lock);
 
 	if (ret < 0) {
 		*retlen = 0;
 	}
 	else {
-		*retlen = len;
+
+		#if (USE_CACHE)
+			*retlen = len;
+		#else
+			*retlen = rlen;
+		#endif /* USE_CACHE */
+
 		ret = 0;
 	}
 
@@ -169,14 +182,28 @@ static ssize_t _flashdrv_mtdWriteCb(uint64_t offs, const void *buff, size_t len,
 static int flashdrv_mtdWrite(storage_t *strg, off_t offs, const void *buff, size_t len, size_t *retlen)
 {
 	mutexLock(strg->dev->ctx->lock);
-	int ret = cache_write(strg->dev->ctx->cache, offs, buff, len, LIBCACHE_POLICY);
+
+	#if (USE_CACHE)
+		int ret = cache_write(strg->dev->ctx->cache, offs, buff, len, LIBCACHE_POLICY);
+	#else
+		size_t rlen;
+		int ret = _flashdrv_mtdWrite(strg, offs, buff, len, &rlen);
+		printf("write \n");
+	#endif /* USE_CACHE */
+
 	mutexUnlock(strg->dev->ctx->lock);
 
 	if (ret < 0) {
 		*retlen = 0;
 	}
 	else {
-		*retlen = len;
+
+		#if (USE_CACHE)
+			*retlen = len;
+		#else
+			*retlen = rlen;
+		#endif /* USE_CACHE */
+
 		ret = 0;
 	}
 
@@ -192,8 +219,9 @@ static int flashdrv_mtdErase(storage_t *strg, off_t offs, size_t len)
 
 	struct _storage_devCtx_t *ctx = strg->dev->ctx;
 	size_t memsize = flash_size(ctx);
+	size_t sectorSize = flash_segmSize(ctx, sectSize);
 
-	if (!common_isValidAddress(memsize, offs, len) || (offs % ctx->sectorsz != 0) || (len % ctx->sectorsz != 0)) {
+	if (!common_isValidAddress(memsize, offs, len) || (offs % sectorSize != 0) || (len % sectorSize != 0)) {
 		return -EINVAL;
 	}
 
@@ -209,12 +237,13 @@ static int flashdrv_mtdErase(storage_t *strg, off_t offs, size_t len)
 
 	if ((offs == 0) && (len == memsize)) {
 		TRACE("erasing entire memory");
+		printf("POPRAW!!! \n");
 		time_t chipErase_timeout = flash_timeout(ctx, eraseChip);
 		res = flash_chipErase(ctx, chipErase_timeout);
 		end = memsize;
 	}
 	else {
-		end = common_getSectorOffset(ctx->sectorsz, offs + len + ctx->sectorsz - 1u);
+		end = common_getSectorOffset(sectorSize, offs + len + sectorSize - 1u);
 		TRACE("erasing sectors from 0x%jx to 0x%jx", (uintmax_t)offs, (uintmax_t)end);
 	}
 
@@ -226,12 +255,14 @@ static int flashdrv_mtdErase(storage_t *strg, off_t offs, size_t len)
 			if (res < 0) {
 				break;
 			}
-			secOffs += ctx->sectorsz;
-			LOG_ERROR("musisz to poprawic nie zapomnij !!");
+			secOffs += sectorSize;
 		}
 	}
 
-	res = cache_invalidate(ctx->cache, offs, end);
+	#if (USE_CACHE)
+		res = cache_invalidate(ctx->cache, offs, end);
+	#endif /* USE_CACHE */
+	
 	mutexUnlock(ctx->lock);
 
 	return res;
