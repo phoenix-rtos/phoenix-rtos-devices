@@ -38,12 +38,15 @@ static const char *nor_vendors[] = {
 };
 /* clang-format on */
 
+// #define CFI_TIMEOUT_MAX_PROGRAM(typical, maximum) ((1u << (typical)) * (1u << (maximum)))
+// #define CFI_TIMEOUT_MAX_ERASE(typical, maximum)   ((1u << (typical)) * (1u << (maximum)) * 1024u)
+// TO DOOOOOO !!!
 
 static const struct nor_info flashInfo[] = {
 	/* Macronix (MXIX) */
-	{ FLASH_ID(0xc2u, 0x2019u), "MX25L25635F", 32 * 1024 * 1024, 0x100, 0x1000, 0x10000, 2, 120, 150 * 1000, 1 },
+	{ FLASH_ID(0xc2u, 0x2019u), "MX25L25635F", 32 * 1024 * 1024, 0x100, 0x1000, 0x10000, 2, 120, 1000, 150 * 1000, 1 },
     /* Micron */
-    { FLASH_ID(0x20u, 0xBB21u), "MT25QU01GB", 64 * 1024 * 1024, 0x100, 0x1000, 0x10000, 1, 300, 250 * 1000, 2 }
+    { FLASH_ID(0x20u, 0xBB21u), "MT25QU01GB", 64 * 1024 * 1024, 0x100, 0x1000, 0x10000, 1, 300, 1000, 250 * 1000, 2 }
 };
 
 int activeDeviceIdx = -1;
@@ -232,6 +235,7 @@ int nor_waitBusy(struct spimctrl *spimctrl, time_t timeout)
 int nor_eraseDie(struct spimctrl *spimctrl, time_t timeout, uint8_t selDie)
 {
     int res;
+	uint8_t cmd[5];
 	struct xferOp xfer;
 
     addr_t addr = 0x00000000u;
@@ -251,7 +255,11 @@ int nor_eraseDie(struct spimctrl *spimctrl, time_t timeout, uint8_t selDie)
     }
 
     if (!spimctrl->extendedAddress) {
-        uint8_t cmd[4] = { FLASH_CMD_DE, (addr >> 16) & 0xff, (addr >> 8) & 0xff, addr & 0xff };
+
+		cmd[0] = FLASH_CMD_DE;
+        cmd[1] = (addr >> 16) & 0xff;
+        cmd[2] = (addr >> 8) & 0xff;
+        cmd[3] = addr & 0xff;
 
         res = nor_validateEar(spimctrl, addr);
         if (res < EOK) {
@@ -262,7 +270,12 @@ int nor_eraseDie(struct spimctrl *spimctrl, time_t timeout, uint8_t selDie)
 		xfer.cmdLen = 4; 
     }
     else {
-        uint8_t cmd[5] = { FLASH_CMD_DE, (addr >> 24) & 0xff, (addr >> 16) & 0xff, (addr >> 8) & 0xff, addr & 0xff };
+
+		cmd[0] = FLASH_CMD_DE;
+        cmd[1] = (addr >> 24) & 0xff;
+        cmd[2] = (addr >> 16) & 0xff;
+        cmd[3] = (addr >> 8) & 0xff;
+        cmd[4] = addr & 0xff;
 
         xfer.cmd = cmd;
 		xfer.cmdLen = 5;
@@ -355,10 +368,15 @@ int nor_eraseChip(struct spimctrl *spimctrl, time_t timeout)
 int nor_eraseSubSector(struct spimctrl *spimctrl, addr_t addr, time_t timeout)
 {
 	int res;
+	uint8_t cmd[5];
 	struct xferOp xfer;
 
     if(!spimctrl->extendedAddress) {
-        const uint8_t cmd[4] = { FLASH_CMD_SE, (addr >> 16) & 0xff, (addr >> 8) & 0xff, addr & 0xff };
+
+		cmd[0] = FLASH_CMD_SE;
+        cmd[1] = (addr >> 16) & 0xff;
+        cmd[2] = (addr >> 8) & 0xff;
+        cmd[3] = addr & 0xff;
 
         res = nor_validateEar(spimctrl, addr);
         if (res < EOK) {
@@ -369,8 +387,13 @@ int nor_eraseSubSector(struct spimctrl *spimctrl, addr_t addr, time_t timeout)
 	    xfer.cmdLen = 4;
     }
     else {
-        const uint8_t cmd[5] = { FLASH_CMD_SE, (addr >> 24) & 0xff, (addr >> 16) & 0xff, (addr >> 8) & 0xff, addr & 0xff };
-		
+
+		cmd[0] = FLASH_CMD_4B_SE;
+        cmd[1] = (addr >> 24) & 0xff;
+        cmd[2] = (addr >> 16) & 0xff;
+        cmd[3] = (addr >> 8) & 0xff;
+        cmd[4] = addr & 0xff;
+
 		xfer.cmd = cmd;
 		xfer.cmdLen = 5;
     }
@@ -397,11 +420,16 @@ int nor_eraseSubSector(struct spimctrl *spimctrl, addr_t addr, time_t timeout)
 int nor_eraseSector(struct spimctrl *spimctrl, addr_t addr, time_t timeout)
 {
 	int res;
+	uint8_t cmd[5];
 	struct xferOp xfer;
 
     if(!spimctrl->extendedAddress) {
-        const uint8_t cmd[4] = { FLASH_CMD_4B_BE, (addr >> 16) & 0xff, (addr >> 8) & 0xff, addr & 0xff };
 
+		cmd[0] = FLASH_CMD_BE;
+        cmd[1] = (addr >> 16) & 0xff;
+        cmd[2] = (addr >> 8) & 0xff;
+        cmd[3] = addr & 0xff;
+		
         res = nor_validateEar(spimctrl, addr);
         if (res < EOK) {
             return res;
@@ -411,10 +439,16 @@ int nor_eraseSector(struct spimctrl *spimctrl, addr_t addr, time_t timeout)
 	    xfer.cmdLen = 4;
     }
     else {
-        const uint8_t cmd[5] = { FLASH_CMD_4B_BE, (addr >> 24) & 0xff, (addr >> 16) & 0xff, (addr >> 8) & 0xff, addr & 0xff };
-		
+	
+		cmd[0] = FLASH_CMD_4B_BE;
+        cmd[1] = (addr >> 24) & 0xff;
+        cmd[2] = (addr >> 16) & 0xff;
+        cmd[3] = (addr >> 8) & 0xff;
+        cmd[4] = addr & 0xff;
+
 		xfer.cmd = cmd;
 		xfer.cmdLen = 5;
+		//printf("erasing \n");
     }
 	
 	res = nor_writeEnable(spimctrl, write_enable);
@@ -439,10 +473,15 @@ int nor_eraseSector(struct spimctrl *spimctrl, addr_t addr, time_t timeout)
 int nor_pageProgram(struct spimctrl *spimctrl, addr_t addr, const void *src, size_t len, time_t timeout)
 {
 	struct xferOp xfer;
+	uint8_t cmd[5];
     int res = 0;
 
     if(!spimctrl->extendedAddress) {
-		const uint8_t cmd[4] = { FLASH_CMD_PP, (addr >> 16) & 0xff, (addr >> 8) & 0xff, addr & 0xff };
+
+		cmd[0] = FLASH_CMD_PP;
+        cmd[1] = (addr >> 16) & 0xff;
+        cmd[2] = (addr >> 8) & 0xff;
+        cmd[3] = addr & 0xff;
 
 		int res = nor_validateEar(spimctrl, addr);
 		if (res < 0) {
@@ -453,8 +492,12 @@ int nor_pageProgram(struct spimctrl *spimctrl, addr_t addr, const void *src, siz
 		xfer.cmdLen = 4;
 	}
 	else {
-		const uint8_t cmd[5] = { FLASH_CMD_PP, (addr >> 24) & 0xff, (addr >> 16) & 0xff, (addr >> 8) & 0xff, addr & 0xff };
-		
+		cmd[0] = FLASH_CMD_4B_PP;
+        cmd[1] = (addr >> 24) & 0xff;
+        cmd[2] = (addr >> 16) & 0xff;
+        cmd[3] = (addr >> 8) & 0xff;
+        cmd[4] = addr & 0xff;
+
 		xfer.cmd = cmd;
 		xfer.cmdLen = 5;
 	}
@@ -481,39 +524,48 @@ int nor_pageProgram(struct spimctrl *spimctrl, addr_t addr, const void *src, siz
 
 static ssize_t nor_readCmd(struct spimctrl *spimctrl, addr_t addr, void *data, size_t size)
 {
-	struct xferOp xfer;
+    struct xferOp xfer;
+    uint8_t cmd[5]; // Zadeklarowane w zasięgu całej funkcji!
     int res = 0;
 
-    if(!spimctrl->extendedAddress) {
-        const uint8_t cmd[4] = { FLASH_CMD_READ, (addr >> 16) & 0xff, (addr >> 8) & 0xff, addr & 0xff };
-
-        int res = nor_validateEar(spimctrl, addr);
+    if (!spimctrl->extendedAddress) {
+        res = nor_validateEar(spimctrl, addr);
         if (res < 0) {
             return res;
         }
 
+        cmd[0] = FLASH_CMD_READ;
+        cmd[1] = (addr >> 16) & 0xff;
+        cmd[2] = (addr >> 8) & 0xff;
+        cmd[3] = addr & 0xff;
+
         xfer.cmd = cmd;
         xfer.cmdLen = 4;
-	}
-	else {
-		const uint8_t cmd[5] = { FLASH_CMD_READ, (addr >> 24) & 0xff, (addr >> 16) & 0xff, (addr >> 8) & 0xff, addr & 0xff };
-		
-		xfer.cmd = cmd;
-		xfer.cmdLen = 5;
-	}
+    }
+    else {
+        cmd[0] = FLASH_CMD_4B_READ;
+        cmd[1] = (addr >> 24) & 0xff;
+        cmd[2] = (addr >> 16) & 0xff;
+        cmd[3] = (addr >> 8) & 0xff;
+        cmd[4] = addr & 0xff;
 
-	xfer.type = xfer_opRead;
-	xfer.rxData = data;
-	xfer.dataLen = size;
+        xfer.cmd = cmd;
+        xfer.cmdLen = 5;
+    }
 
-	res = spimctrl_xfer(spimctrl, &xfer);
+    xfer.type = xfer_opRead;
+    xfer.rxData = data;
+    xfer.dataLen = size;
 
-	return res < EOK ? res : (ssize_t)size;
+    res = spimctrl_xfer(spimctrl, &xfer);
+
+    return res < EOK ? res : (ssize_t)size;
 }
 
 
 static ssize_t nor_readAhb(struct spimctrl *spimctrl, addr_t addr, void *data, size_t size)
 {
+
     if (!spimctrl->extendedAddress) {
         int res = nor_validateEar(spimctrl, addr);
         if (res < EOK) {
@@ -543,6 +595,7 @@ ssize_t nor_readData(struct spimctrl *spimctrl, addr_t addr, void *data, size_t 
     }
     else {
         return nor_readAhb(spimctrl, addr, data, size);
+		//return nor_readCmd(spimctrl, addr, data, size);
     }
 }
 
