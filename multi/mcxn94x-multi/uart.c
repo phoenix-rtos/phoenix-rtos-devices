@@ -182,9 +182,11 @@ static void uart_intrThread(void *arg)
 		mutexUnlock(uart->lock);
 
 		/* RX */
+		libtty_putchar_lock(&uart->tty_common);
 		while (lf_fifo_pop(&uart->rxFifoCtx, &c) != 0) {
-			libtty_putchar(&uart->tty_common, c & mask, NULL);
+			libtty_putchar_unlocked(&uart->tty_common, c & mask, NULL);
 		}
+		libtty_putchar_unlock(&uart->tty_common);
 
 		/* TX */
 		while (libtty_txready(&uart->tty_common) && uart_getTXcount(uart) < uart->txFifoSz) {

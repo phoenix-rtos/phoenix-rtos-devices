@@ -470,16 +470,18 @@ static void uart_process_rx(void)
 	uint8_t c;
 
 	/* NOTE: lock-free pop */
+	libtty_putchar_lock(&uart.tty_common);
 	if (uart.rts_cts_mode == RTS_CTS_HWFLOW) {
 		while (lf_fifo_pop(&uart.rx_sw_fifo, &c) != 0) {
-			libtty_putchar(&uart.tty_common, c, NULL);
+			libtty_putchar_unlocked(&uart.tty_common, c, NULL);
 		}
 	}
 	else {
 		while (lf_fifo_ow_pop(&uart.rx_sw_fifo, &c) != 0) {
-			libtty_putchar(&uart.tty_common, c, NULL);
+			libtty_putchar_unlocked(&uart.tty_common, c, NULL);
 		}
 	}
+	libtty_putchar_unlock(&uart.tty_common);
 
 	if (((*(uart.base + ucr1) & UCR1_RRDYEN) == 0) && (uart.reader_busy != 0)) {
 		*(uart.base + ucr1) |= UCR1_RRDYEN;

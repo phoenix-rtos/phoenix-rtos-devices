@@ -145,9 +145,11 @@ static void uart_intThread(void *arg)
 
 		/* RX */
 		uint8_t c;
+		libtty_putchar_lock(&uart->tty);
 		while (lf_fifo_pop(&uart->rxFifoCtx, &c) != 0) {
-			libtty_putchar(&uart->tty, c, NULL);
+			libtty_putchar_unlocked(&uart->tty, c, NULL);
 		}
+		libtty_putchar_unlock(&uart->tty);
 
 		/* TX */
 		bool wake = false;

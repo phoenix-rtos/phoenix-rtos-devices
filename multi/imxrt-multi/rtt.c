@@ -116,11 +116,14 @@ static void rtt_thread(void *arg)
 
 			mutexLock(uart->lock);
 			const unsigned char mask = ((uart->tty_common.term.c_cflag & CSIZE) == CS7) ? 0x7f : 0xff;
+
+			libtty_putchar_lock(&uart->tty_common);
 			while (onRx > 0) {
 				librtt_read(uart->chn, &data, 1);
-				libtty_putchar(&uart->tty_common, data & mask, NULL);
+				libtty_putchar_unlocked(&uart->tty_common, data & mask, NULL);
 				onRx = librtt_rxAvail(uart->chn);
 			}
+			libtty_putchar_unlock(&uart->tty_common);
 
 			while ((onTx > 0) && (txReady != 0)) {
 				data = libtty_getchar(&uart->tty_common, NULL);

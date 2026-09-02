@@ -513,8 +513,10 @@ static void ttypc_kbd_handle_event(ttypc_t *ttypc, unsigned char b)
 				s = "\r\n";
 		}
 
-		while (*s && !libtty_putchar(&cvt->tty, *s++, NULL))
+		libtty_putchar_lock(&cvt->tty);
+		while (*s && !libtty_putchar_unlocked(&cvt->tty, *s++, NULL))
 			;
+		libtty_putchar_unlock(&cvt->tty);
 	}
 
 	mutexUnlock(cvt->lock);
