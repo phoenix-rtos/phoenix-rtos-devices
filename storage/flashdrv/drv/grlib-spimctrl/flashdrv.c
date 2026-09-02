@@ -85,7 +85,6 @@ static int flashdrv_mtdRead(storage_t *strg, off_t offs, void *buff, size_t len,
 	#else
 		size_t rlen;
 		int ret = _flashdrv_mtdRead(strg, offs, buff, len, &rlen);
-		printf("read \n");
 	#endif /* USE_CACHE */
 	
 	mutexUnlock(strg->dev->ctx->lock);
@@ -132,18 +131,7 @@ static int _flashdrv_mtdWrite(storage_t *strg, off_t offs, const void *buff, siz
 
 	while (doneBytes < len) {
 		size_t chunk = min(pagesz - (offs % pagesz), len - doneBytes);
-
-		#ifdef TRIPLE_REDUNDANCY_MODE
-			int memory_region = 0;
-			while ((memory_region < NUM_DATAREGIONS) && res == 0){
-				offs = offs + BLOCK_32MB * memory_region;
-				res = flash_pageProgram(ctx, offs, src, chunk, timeout_program);
-				memory_region ++;
-			}
-
-		#else
-			res = flash_pageProgram(ctx, offs, src, chunk, timeout_program);
-		#endif /* TRIPLE_REDUNDANCY_MODE */
+		res = flash_pageProgram(ctx, offs, src, chunk, timeout_program);
 
 		if (res < 0) {
 			break;
@@ -188,7 +176,6 @@ static int flashdrv_mtdWrite(storage_t *strg, off_t offs, const void *buff, size
 	#else
 		size_t rlen;
 		int ret = _flashdrv_mtdWrite(strg, offs, buff, len, &rlen);
-		printf("write \n");
 	#endif /* USE_CACHE */
 
 	mutexUnlock(strg->dev->ctx->lock);
