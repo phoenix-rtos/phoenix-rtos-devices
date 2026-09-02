@@ -32,7 +32,44 @@
 #define FLASHSRV_ENABLE_LITTLEFS 0
 #endif
 
+
+enum {
+    flashsrv_devctl_eraseSector,
+    flashsrv_devctl_erasePartition
+};
+
+
+typedef struct {
+	int type;
+
+	union {
+		/* eraseSector */
+		struct {
+			size_t size;
+			uint32_t addr;
+		} erase;
+
+		/* directWrite */
+		struct {
+			uint32_t addr;
+		} write;
+
+		/* directRead */
+		struct {
+			uint32_t addr;
+		} read;
+
+		/* calcCrc32 */
+		struct {
+			/* set addr & len to 0 for full range */
+			uint32_t addr;
+			uint32_t len;
+			uint32_t base;
+		} crc32;
+	};
+} __attribute__((packed)) flash_i_devctl_t;
+
+
 void flashsrv_register(const struct flash_driver *driver);
 
-
-#endif
+#endif /* _FLASHDRV_FLASHSRV_H_ */
