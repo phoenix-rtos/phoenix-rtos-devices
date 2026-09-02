@@ -128,6 +128,13 @@ unsigned char libtty_popchar(libtty_common_t *tty);
 void libtty_wake_writer(libtty_common_t *tty);
 void libtty_signal_pgrp(libtty_common_t *tty, int signal);
 
+/*
+ * when multiple tx queue consumers (e.g. multiple message threads)
+ * are present, the usage of libtty_{getchar|popchar} needs to be
+ * performed under the consumer lock.
+ */
+void libtty_getchar_lock(libtty_common_t *tty);
+void libtty_getchar_unlock(libtty_common_t *tty);
 
 int libtty_txready(libtty_common_t *tty); /* at least 1 character ready to be sent */
 int libtty_txfull(libtty_common_t *tty);  /* no more place in the TX buffer */

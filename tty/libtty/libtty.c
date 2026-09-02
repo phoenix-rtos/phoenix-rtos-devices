@@ -212,6 +212,18 @@ void libtty_wake_writer(libtty_common_t *tty)
 }
 
 
+void libtty_getchar_lock(libtty_common_t *tty)
+{
+	mutexLock(tty->tx_mutex);
+}
+
+
+void libtty_getchar_unlock(libtty_common_t *tty)
+{
+	mutexUnlock(tty->tx_mutex);
+}
+
+
 int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned int bufsize, int speed)
 {
 	uint8_t *tx_data;
