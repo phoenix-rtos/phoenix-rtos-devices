@@ -17,10 +17,13 @@
 
 #include <storage/storage.h>
 
+#define USE_CACHE 0
 
+/* Flash driver ops vtable */
 struct flash_driver {
 	const char *name;
 	storage_t *(*init)(addr_t mctrlBase, addr_t flashBase);
+
 	void (*destroy)(storage_t *strg);
 };
 
