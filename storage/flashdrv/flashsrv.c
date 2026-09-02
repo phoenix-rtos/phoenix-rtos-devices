@@ -89,6 +89,29 @@ static ssize_t flashsrv_read(storage_t *strg, off_t offs, void *buf, size_t size
 }
 
 
+static ssize_t flashsrv_erase(storage_t *strg, off_t offs, size_t size)
+{
+	if ((strg == NULL) || (strg->dev == NULL) || (offs < 0) || ((offs + size) > strg->size)) {
+		return -EINVAL;
+	}
+
+	if (size == 0) {
+		return 0;
+	}
+
+	storage_mtd_t *mtd = strg->dev->mtd;
+	if ((mtd != NULL) && (mtd->ops != NULL) && (mtd->ops->write != NULL)) {
+		int res = mtd->ops->erase(strg, strg->start + offs, size);
+		if (res < 0) {
+			return res;
+		}
+		return res;
+	}
+
+	return -EINVAL;
+}
+
+
 static ssize_t flashsrv_write(storage_t *strg, off_t offs, const void *buf, size_t size)
 {
 	if ((strg == NULL) || (strg->dev == NULL) || (offs < 0) || ((offs + size) > strg->size)) {
@@ -148,6 +171,41 @@ static int flashsrv_getAttr(storage_t *strg, int type, long long *attr)
 }
 
 
+static void flashsrv_rawCtl(storage_t *strg, msg_t *msg)
+{
+	flash_i_devctl_t *idevctl = (flash_i_devctl_t *)msg->i.raw;
+	printf("Dodaj erase partition! \n");
+
+	switch (idevctl->type)
+	{
+		case flashsrv_devctl_eraseSector:
+			TRACE("MtDevCtl: flashsrv_devctl_eraseSector - id: %ju, size: %zu, off: %u",
+				(uintmax_t)msg->oid.id, msg->o.size, idevctl->erase.addr);		
+
+			if (idevctl->erase.addr >= strg->parts->size) {
+				msg->o.err = -EINVAL;
+				break;
+			}
+
+			flashsrv_erase(strg, idevctl->erase.addr, idevctl->erase.size);
+			msg->o.err = EOK;
+			break;
+	
+		// case flashsrv_devctl_erasePartition:
+		// 	/* code */
+		// 	break;
+
+		default:
+			break;
+	}
+
+
+
+	//return -EINVAL;
+
+}
+
+
 static void flashsrv_msgHandler(void *arg, msg_t *msg)
 {
 	storage_t *strg;
@@ -201,6 +259,11 @@ static void flashsrv_msgHandler(void *arg, msg_t *msg)
 		case mtMountPoint:
 			TRACE("mtMountPoint: id: %ju", (uintmax_t)msg->oid.id);
 			msg->o.err = storage_mountpoint(storage_get(msg->oid.id), &omnt->oid);
+			break;
+
+		case mtDevCtl:
+			strg = storage_get(msg->oid.id);
+			flashsrv_rawCtl(strg, msg);
 			break;
 
 		default:
@@ -352,6 +415,7 @@ static ptable_t *flashsrv_ptableRead(storage_t *strg)
 	off_t offs = strg->size - strg->dev->mtd->erasesz;
 	/* Read number of partitions */
 	if (flashsrv_read(strg, offs, &count, sizeof(count)) != sizeof(count)) {
+		LOG_ERROR("f1");
 		return NULL;
 	}
 	count = le32toh(count);
@@ -359,32 +423,46 @@ static ptable_t *flashsrv_ptableRead(storage_t *strg)
 	/* Verify ptable size */
 	uint32_t size = ptable_size(count);
 	if (size > strg->dev->mtd->erasesz) {
+		LOG_ERROR("f2");
 		return NULL;
 	}
 
 	/* Verify magic signature */
 	uint8_t magic[sizeof(ptable_magic)];
 	if (flashsrv_read(strg, offs + size - sizeof(magic), magic, sizeof(magic)) != sizeof(magic)) {
+		LOG_ERROR("f3");
 		return NULL;
 	}
 
 	if (memcmp(magic, ptable_magic, sizeof(magic)) != 0) {
+		LOG_ERROR("f4");
+		uint8_t raw_head[16];
+		flashsrv_read(strg, offs, raw_head, sizeof(raw_head));
+
+		(void)printf("PTABLE DIAG: offs=0x%08lx | head=[%02x %02x %02x %02x] | magic_offs=0x%08lx | magic_read=[%02x %02x %02x %02x]\n",
+					(unsigned long)offs,
+					raw_head[0], raw_head[1], raw_head[2], raw_head[3],
+					(unsigned long)(offs + size - sizeof(magic)),
+					magic[0], magic[1], magic[2], magic[3]);
 		return NULL;
 	}
 
 	ptable_t *ptable = malloc(size);
 	if (ptable == NULL) {
+		LOG_ERROR("f5");
 		return NULL;
 	}
 
 	/* Read partition table */
 	if (flashsrv_read(strg, offs, ptable, size) != size) {
 		free(ptable);
+		LOG_ERROR("f6");
 		return NULL;
 	}
 
 	if (ptable_deserialize(ptable, strg->size, strg->dev->mtd->erasesz) < 0) {
 		free(ptable);
+		LOG_ERROR("f7");
 		return NULL;
 	}
 
