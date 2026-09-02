@@ -19,6 +19,7 @@
 #include <sys/threads.h>
 #include <sys/platform.h>
 #include <sys/pwman.h>
+#include <sys/time.h>
 
 #include "common.h"
 #include "rcc.h"
@@ -45,6 +46,7 @@
 /* DS14791 claims max frequency is 70 MHz, but STM32CubeIDE allows you to set 130 MHz.
  * Set a maximum of 50 MHz to be safe. */
 #define ADC_FREQUENCY (50 * 1000 * 1000)
+#define STARTUP_TIME  5 /* DS14791 5.3.23 */
 
 #elif defined(__CPU_STM32U3)
 
@@ -63,6 +65,7 @@
 #define OTP_ADDR_VREFINT_CAL 1957 /* First byte in OTP that holds the value read for Vrefint during factory calibration test */
 
 #define ADC_FREQUENCY (6 * 1000 * 1000)
+#define STARTUP_TIME  ((1515 * 1000 * 1000) / ADC_FREQUENCY) /* DS15096 5.3.18: (3 + ts + 12 + 0.5) / fADC */
 
 #endif
 
@@ -149,15 +152,35 @@ int adc_irqHandler(unsigned int n, void *arg)
 }
 
 
-static void adc_enableInternal(volatile unsigned int *base)
+static time_t adc_setTimeout(int expectedUsec)
+{
+	time_t now;
+	gettime(&now, NULL);
+	return now + (time_t)expectedUsec * 10; /* Failure on exceeding an order of magnitude */
+}
+
+
+static bool adc_hasExpired(time_t timeout)
+{
+	time_t now;
+	gettime(&now, NULL);
+	return (now - timeout) > 0;
+}
+
+
+static int adc_enableInternal(volatile unsigned int *base)
 {
 	*(base + adc_cr) |= ADC_CR_ADEN;
 	dataBarier();
 
+	time_t timeout = adc_setTimeout(STARTUP_TIME);
 	while ((*(base + adc_isr) & ADC_INTR_ADRDY) == 0) {
-		/* Takes 5 microseconds according to datasheet, but in testing it was
-		 * a lot faster (about 10 iterations of the loop) */
+		if (adc_hasExpired(timeout)) {
+			return -EIO;
+		}
 	}
+
+	return EOK;
 }
 
 
@@ -166,13 +189,17 @@ static void adc_disableInternal(volatile unsigned int *base)
 	*(base + adc_cr) |= ADC_CR_ADDIS;
 	dataBarier();
 
+	time_t timeout = adc_setTimeout(STARTUP_TIME / 5);
 	while ((*(base + adc_cr) & ADC_CR_ADEN) != 0) {
-		/* Wait for ADC switch off, only takes about 2 iterations */
+		/* Wait for ADC switch off */
+		if (adc_hasExpired(timeout)) {
+			return;
+		}
 	}
 }
 
 
-static void adc_wakeup(int adc)
+static int adc_wakeup(int adc)
 {
 	volatile unsigned int *base = adc_common.base + adc_getOffs(adc);
 
@@ -189,7 +216,11 @@ static void adc_wakeup(int adc)
 	dataBarier();
 
 	/* Wait for regulator ready */
+	time_t timeout = adc_setTimeout(25);
 	while ((*(base + adc_isr) & ADC_INTR_LDORDY) == 0) {
+		if (adc_hasExpired(timeout)) {
+			return -ETIME;
+		}
 	}
 #endif
 
@@ -210,6 +241,8 @@ static void adc_wakeup(int adc)
 #if defined(__CPU_STM32N6)
 	*(base + adc_difsel) &= ~((1 << 20) - 1); /* Set every channel to single-ended */
 #endif
+
+	return EOK;
 }
 
 
@@ -337,12 +370,16 @@ static int adc_calibrateMode(int adc, bool diff)
 #endif
 
 
-static void adc_calibration(int adc)
+static int adc_calibration(int adc)
 {
 	volatile unsigned int *base = adc_common.base + adc_getOffs(adc);
 
 #if defined(__CPU_STM32N6)
-	adc_enableInternal(base);
+	int ret = adc_enableInternal(base);
+	if (ret < 0) {
+		return ret;
+	}
+
 	*(base + adc_cr) |= ADC_CR_ADCAL;
 	/* Try without additional offset */
 	*(base + adc_calfact) &= ~ADC_CALFACT_CALADDOS;
@@ -359,8 +396,12 @@ static void adc_calibration(int adc)
 		adc_calibrateMode(adc, true);
 	}
 #else
+	time_t timeout = adc_setTimeout(25);
 	*(base + adc_cr) |= ADC_CR_ADCAL;
 	while ((*(base + adc_cr) & ADC_CR_ADCAL) != 0) {
+		if (adc_hasExpired(timeout)) {
+			return -ETIME;
+		}
 	}
 #endif
 
@@ -369,13 +410,18 @@ static void adc_calibration(int adc)
 #if defined(__CPU_STM32N6)
 	*(base + adc_cr) &= ~ADC_CR_ADCAL;
 #endif
+
+	return EOK;
 }
 
 
-static void adc_enable(int adc)
+static int adc_enable(int adc)
 {
 	volatile unsigned int *base = adc_common.base + adc_getOffs(adc);
-	adc_enableInternal(base);
+	int ret = adc_enableInternal(base);
+	if (ret < 0) {
+		return ret;
+	}
 
 #if defined(__CPU_STM32N6)
 	/* Inject calibration */
@@ -388,21 +434,28 @@ static void adc_enable(int adc)
 	*(base + adc_cr) &= ~ADC_CR_ADCAL;
 	dataBarier();
 #endif
+
+	return EOK;
 }
 
 
-unsigned short adc_conversion(int adc, char chan)
+int adc_conversion(int adc, char chan, unsigned int *out)
 {
-	unsigned int out;
+	int ret;
 	if ((adc > MAX_ADC) || (chan >= N_CHANNELS)) {
-		return 0;
+		return -EINVAL;
 	}
 
 	volatile unsigned int *base_vrefint = adc_common.base + adc_getOffs(VREFINT_ADC);
 	volatile unsigned int *base_conv = adc_common.base + adc_getOffs(adc);
 
-	adc_wakeup(adc);
-	adc_enable(adc);
+	if ((ret = adc_wakeup(adc)) < 0) {
+		goto end;
+	}
+
+	if ((ret = adc_enable(adc)) < 0) {
+		goto end;
+	}
 
 	int adcs[2] = { VREFINT_ADC, adc };
 	uint32_t results[2];
@@ -420,8 +473,14 @@ unsigned short adc_conversion(int adc, char chan)
 		}
 	}
 	else {
-		adc_wakeup(VREFINT_ADC);
-		adc_enable(VREFINT_ADC);
+		if ((ret = adc_wakeup(VREFINT_ADC)) < 0) {
+			goto end;
+		}
+
+		if ((ret = adc_enable(VREFINT_ADC)) < 0) {
+			goto end;
+		}
+
 		*(base_vrefint + adc_pcsel) = (1 << VREFINT_CHANNEL);
 		*(base_vrefint + adc_sqr1) = (VREFINT_CHANNEL << 6);
 		*(base_conv + adc_pcsel) = (1 << chan);
@@ -434,23 +493,23 @@ unsigned short adc_conversion(int adc, char chan)
 	if (results[0] != 0) {
 		uint32_t vref = adc_common.calcVrefValue / results[0];
 		if ((adc == VREFINT_ADC) && (chan == VREFINT_CHANNEL)) {
-			out = vref;
+			*out = vref;
 		}
 		else {
-			out = (vref * results[1]) / FULL_SCALE;
+			*out = (vref * results[1]) / FULL_SCALE;
 		}
 	}
 	else {
-		/* TODO: we should probably return some error value */
-		out = 0;
+		ret = -ERANGE;
 	}
 
+end:
 	adc_disable(adc);
 	if (adc != VREFINT_ADC) {
 		adc_disable(VREFINT_ADC);
 	}
 
-	return out;
+	return ret;
 }
 
 
@@ -539,10 +598,12 @@ static int adc_getVref(void)
 
 int adc_init(void)
 {
+	int ret = EOK;
+
 	adc_common.base = ADC_BASE;
 
 	if (adc_setFrequency(ADC_FREQUENCY) < 0) {
-		return -1;
+		return -EINVAL;
 	}
 
 #if defined(__CPU_STM32N6)
@@ -582,10 +643,14 @@ int adc_init(void)
 
 	for (int i = adc1; i <= MAX_ADC; ++i) {
 		mutexCreate(&adc_common.per[i - adc1].lock);
-		adc_wakeup(i);
-		adc_calibration(i);
+	}
+
+	for (int i = adc1; (i <= MAX_ADC) && (ret == EOK); ++i) {
+		if ((ret = adc_wakeup(i)) == EOK) {
+			ret = adc_calibration(i);
+		}
 		adc_disable(i);
 	}
 
-	return EOK;
+	return ret;
 }

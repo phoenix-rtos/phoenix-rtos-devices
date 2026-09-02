@@ -179,12 +179,11 @@ static void adc_enable(int adc)
 }
 
 
-unsigned short adc_conversion(int adc, char chan)
+int adc_conversion(int adc, char chan, unsigned int *out)
 {
 	unsigned short vref, val;
-	unsigned int out;
 	if (adc > MAX_ADC) {
-		return 0;
+		return -EINVAL;
 	}
 
 	adc_wakeup(adc);
@@ -201,18 +200,18 @@ unsigned short adc_conversion(int adc, char chan)
 
 	vref = adc_probeChannel(adc1, 0);
 
-	out = (3000 * (*vrefint)) / vref;
+	*out = (3000 * (*vrefint)) / vref;
 
 	if (adc != adc1 || chan != 0) {
 		val = adc_probeChannel(adc, chan);
-		out = (out * val) / ((1 << 12) - 1);
+		*out = (*out * val) / ((1 << 12) - 1);
 	}
 
 	adc_disable(adc);
 	if (adc != adc1)
 		adc_disable(adc1);
 
-	return out;
+	return EOK;
 }
 
 
