@@ -151,9 +151,11 @@ static void uart_intThread(void *arg)
 		}
 
 		/* Receive data until RX FIFO is not empty */
+		libtty_putchar_lock(&uart->tty);
 		while (!(*(uart->base + sr) & (1 << 1))) {
-			libtty_putchar(&uart->tty, *(uart->base + fifo), NULL);
+			libtty_putchar_unlocked(&uart->tty, *(uart->base + fifo), NULL);
 		}
+		libtty_putchar_unlock(&uart->tty);
 
 		/* Transmit data until TX TTY buffer is empty or TX FIFO is full */
 		wake = 0;

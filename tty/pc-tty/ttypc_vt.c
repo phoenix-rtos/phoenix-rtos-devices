@@ -638,9 +638,11 @@ ssize_t ttypc_vt_write(ttypc_vt_t *vt, int mode, const char *buff, size_t len)
 int ttypc_vt_respond(ttypc_vt_t *vt, const char *buff)
 {
 	int err = 0;
+	libtty_putchar_lock(&vt->tty);
 	while ((*buff != '\0') && (err == 0)) {
-		err = libtty_putchar(&vt->tty, *(buff++), NULL);
+		err = libtty_putchar_unlocked(&vt->tty, *(buff++), NULL);
 	}
+	libtty_putchar_unlock(&vt->tty);
 	return err;
 }
 
