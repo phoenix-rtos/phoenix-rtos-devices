@@ -1,10 +1,11 @@
 /*
  * Phoenix-RTOS
  *
- * Multidrv-lib: STM32N6 SPI driver
+ * Multidrv-lib: STM32N6/U3 SPI driver
  *
  * Copyright 2018, 2020, 2025 Phoenix Systems
- * Author: Aleksander Kaminski, Daniel Sawka, Jacek Maksymowicz
+ * Copyright 2026 Apator Metrix
+ * Author: Aleksander Kaminski, Daniel Sawka, Jacek Maksymowicz, Mateusz Karcz
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -25,7 +26,11 @@
 #include "../rcc.h"
 #include "../stm32n6_regs.h"
 
+#if defined(__CPU_STM32N6)
 #define MAX_SPI spi6
+#elif defined(__CPU_STM32U3)
+#define MAX_SPI spi3
+#endif
 
 #define SR_TXC    (1 << 12) /* Transaction complete */
 #define SR_SUSP   (1 << 11) /* Master mode suspended */
@@ -45,12 +50,18 @@ static const struct libspi_peripheralInfo {
 	enum clock_ids clksrc; /* ID of source clock */
 	uint32_t fifoSize;
 } spiInfo[MAX_SPI - spi1 + 1] = {
+#if defined(__CPU_STM32N6)
 	{ (uintptr_t)SPI1_BASE, pctl_spi1, pctl_ipclk_spi1sel, clkid_per, 16 },
 	{ (uintptr_t)SPI2_BASE, pctl_spi2, pctl_ipclk_spi2sel, clkid_per, 16 },
 	{ (uintptr_t)SPI3_BASE, pctl_spi3, pctl_ipclk_spi3sel, clkid_per, 16 },
 	{ (uintptr_t)SPI4_BASE, pctl_spi4, pctl_ipclk_spi4sel, clkid_per, 8 },
 	{ (uintptr_t)SPI5_BASE, pctl_spi5, pctl_ipclk_spi5sel, clkid_per, 8 },
 	{ (uintptr_t)SPI6_BASE, pctl_spi6, pctl_ipclk_spi6sel, clkid_per, 16 },
+#elif defined(__CPU_STM32U3)
+	{ (uintptr_t)SPI1_BASE, pctl_spi1, pctl_ipclk_spi1sel, clkid_pclk2, 16 },
+	{ (uintptr_t)SPI2_BASE, pctl_spi2, pctl_ipclk_spi2sel, clkid_pclk1, 16 },
+	{ (uintptr_t)SPI3_BASE, pctl_spi3, pctl_ipclk_spi3sel, clkid_pclk1, 8 },
+#endif
 };
 
 

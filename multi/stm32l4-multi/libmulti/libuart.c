@@ -30,9 +30,7 @@
 
 #include "../config.h"
 #include "../common.h"
-#if defined(__CPU_STM32N6)
 #include "../rcc.h"
-#endif
 
 
 /* clang-format off */
@@ -40,7 +38,7 @@ enum { cr1 = 0, cr2, cr3, brr, gtpr, rtor, rqr, isr, icr, rdr, tdr };
 /* clang-format on */
 
 
-#if defined(__CPU_STM32L4X6)
+#if defined(__CPU_STM32L4X6) || defined(__CPU_STM32U3)
 #define MAX_UARTS 5
 #elif defined(__CPU_STM32N6)
 #define MAX_UARTS 10
@@ -50,7 +48,7 @@ enum { cr1 = 0, cr2, cr3, brr, gtpr, rtor, rqr, isr, icr, rdr, tdr };
 static struct {
 	size_t rxfifosz;
 } libuart_config[MAX_UARTS] = {
-#if defined(__CPU_STM32L4X6)
+#if defined(__CPU_STM32L4X6) || defined(__CPU_STM32U3)
 	{ UART1_RXFIFOSZ },
 	{ UART2_RXFIFOSZ },
 	{ UART3_RXFIFOSZ },
@@ -75,7 +73,7 @@ static const struct libuart_peripheralInfo {
 	volatile uint32_t *base;
 	int dev;
 	unsigned irq;
-#if defined(__CPU_STM32N6)
+#if defined(__CPU_STM32N6) || defined(__CPU_STM32U3)
 	enum ipclks clksel;    /* Clock selector */
 	enum clock_ids clksrc; /* ID of source clock */
 #endif
@@ -97,6 +95,12 @@ static const struct libuart_peripheralInfo {
 	{ UART8_BASE, pctl_uart8, uart8_irq, pctl_ipclk_uart8sel, clkid_per },
 	{ UART9_BASE, pctl_uart9, uart9_irq, pctl_ipclk_uart9sel, clkid_per },
 	{ USART10_BASE, pctl_usart10, usart10_irq, pctl_ipclk_usart10sel, clkid_per },
+#elif defined(__CPU_STM32U3)
+	{ USART1_BASE, pctl_usart1, usart1_irq, pctl_ipclk_usart1sel, clkid_pclk2 },
+	{ USART2_BASE, pctl_usart2, usart2_irq, pctl_ipclk_usart2sel, clkid_pclk1 },
+	{ USART3_BASE, pctl_usart3, usart3_irq, pctl_ipclk_usart3sel, clkid_pclk1 },
+	{ UART4_BASE, pctl_uart4, uart4_irq, pctl_ipclk_uart4sel, clkid_pclk1 },
+	{ UART5_BASE, pctl_uart5, uart5_irq, pctl_ipclk_uart5sel, clkid_pclk1 },
 #endif
 };
 
@@ -109,7 +113,7 @@ static int libuart_clockSetup(const struct libuart_peripheralInfo *info, uint32_
 	*out = getCpufreq();
 	return EOK;
 }
-#elif defined(__CPU_STM32N6)
+#elif defined(__CPU_STM32N6) || defined(__CPU_STM32U3)
 static int libuart_clockSetup(const struct libuart_peripheralInfo *info, uint32_t *out)
 {
 	int ret;

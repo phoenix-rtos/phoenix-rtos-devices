@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * Multidrv-lib: STM32L4 I2C driver
+ * Multidrv-lib: STM32L4/N6/U3 I2C driver
  *
  * Copyright 2020 Phoenix Systems
  * Author: Aleksander Kaminski
@@ -18,7 +18,7 @@
 #include <unistd.h>
 #include "libmulti/libi2c.h"
 #include "../common.h"
-#if defined(__CPU_STM32N6)
+#if defined(__CPU_STM32N6) || defined(__CPU_STM32U3)
 #include "../rcc.h"
 #endif
 
@@ -31,7 +31,7 @@ static const struct libi2c_peripheralInfo {
 	int clk;
 	int irq_ev;
 	int irq_er;
-#if defined(__CPU_STM32N6)
+#if defined(__CPU_STM32N6) || defined(__CPU_STM32U3)
 	enum ipclks clksel;    /* Clock selector */
 	enum clock_ids clksrc; /* ID of source clock */
 #endif
@@ -46,6 +46,11 @@ static const struct libi2c_peripheralInfo {
 	{ I2C2_BASE, pctl_i2c2, i2c2_ev_irq, i2c2_er_irq, pctl_ipclk_i2c2sel, clkid_per },
 	{ I2C3_BASE, pctl_i2c3, i2c3_ev_irq, i2c3_er_irq, pctl_ipclk_i2c3sel, clkid_per },
 	{ I2C4_BASE, pctl_i2c4, i2c4_ev_irq, i2c4_er_irq, pctl_ipclk_i2c4sel, clkid_per },
+#elif defined(__CPU_STM32U3)
+	{ I2C1_BASE, pctl_i2c1, i2c1_ev_irq, i2c1_er_irq, pctl_ipclk_i2c1sel, clkid_pclk1 },
+	{ I2C2_BASE, pctl_i2c2, i2c2_ev_irq, i2c2_er_irq, pctl_ipclk_i2c2sel, clkid_pclk1 },
+	{ I2C3_BASE, pctl_i2c3, i2c3_ev_irq, i2c3_er_irq, pctl_ipclk_i2c3sel, clkid_pclk3 },
+	{ I2C4_BASE, pctl_i2c4, i2c4_ev_irq, i2c4_er_irq, pctl_ipclk_i2c4sel, clkid_pclk1 },
 #endif
 };
 
@@ -78,7 +83,7 @@ static int libi2c_clockSetup(const struct libi2c_peripheralInfo *info, uint32_t 
 	*out = getCpufreq();
 	return EOK;
 }
-#elif defined(__CPU_STM32N6)
+#elif defined(__CPU_STM32N6) || defined(__CPU_STM32U3)
 static int libi2c_clockSetup(const struct libi2c_peripheralInfo *info, uint32_t *out)
 {
 	int ret;
