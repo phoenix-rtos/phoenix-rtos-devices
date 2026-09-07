@@ -27,9 +27,9 @@ struct nor_info {
 	size_t totalSz;
 	size_t pageSz;
 	size_t sectorSz;
-	time_t tPP;
-	time_t tSE;
-	time_t tCE;
+	time_t tPP; /* Page Program Cycle time */
+	time_t tSE; /* Sector Erase Cycle time */
+	time_t tCE; /* Chip Erase Cycle time */
 };
 
 
