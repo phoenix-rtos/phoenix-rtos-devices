@@ -16,6 +16,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/time.h>
+#include <board_config.h>
 
 #include "../commands/flash_cmds.h"
 #include "../grlib-spimctrl/flashdrv.h"
@@ -124,27 +125,45 @@ static int nor_writeEnable(struct spimctrl *spimctrl, int enable)
 }
 
 
-static int nor_enter4Byte(struct spimctrl *spimctrl)
+static int nor_selectAddressMode(struct spimctrl *spimctrl)
 {
-	int res;
-	struct xferOp xfer;
-	const uint8_t cmd = FLASH_CMD_ENTER_4B;
+	#if USE_4BYTE_MODE
+		int res;
+		struct xferOp xfer;
+		const uint8_t cmd = FLASH_CMD_ENTER_4B;
 
-	xfer.type = xfer_opWrite;
-	xfer.cmd = &cmd;
-	xfer.cmdLen = 1;
-	xfer.txData = NULL;
-	xfer.rxData = NULL;
-	xfer.dataLen = 0;
+		xfer.type = xfer_opWrite;
+		xfer.cmd = &cmd;
+		xfer.cmdLen = 1;
+		xfer.txData = NULL;
+		xfer.rxData = NULL;
+		xfer.dataLen = 0;
 
-	res = spimctrl_xfer(spimctrl, &xfer);
-	if (res < EOK) {
-		return res;
-	}
+		res = spimctrl_xfer(spimctrl, &xfer);
+		if (res < EOK) {
+			return res;
+		}
 
-	spimctrl->extendedAddress = 1;
+		return EOK;
+	#else
+		int res;
+		struct xferOp xfer;
+		const uint8_t cmd = FLASH_CMD_EXIT_4B;
 
-	return EOK;
+		xfer.type = xfer_opWrite;
+		xfer.cmd = &cmd;
+		xfer.cmdLen = 1;
+		xfer.txData = NULL;
+		xfer.rxData = NULL;
+		xfer.dataLen = 0;
+
+		res = spimctrl_xfer(spimctrl, &xfer);
+		if (res < EOK) {
+			return res;
+		}
+
+		return EOK;
+	#endif /* USE_4BYTE_MODE */
 }
 
 
@@ -297,37 +316,6 @@ int nor_eraseDie(struct spimctrl *spimctrl, time_t timeout, uint8_t selDie)
 
 	return nor_waitBusy(spimctrl, timeout);
 }
-
-
-// bool nor_isBlank(const struct _storage_devCtx_t *ctx, addr_t addr, size_t size)
-// {
-//     uint8_t buf[BLANK_CHECK_BUF_SIZE];
-//     size_t bytesLeft = size;
-//     addr_t currentAddr = addr;
-
-//     if (size == 0) {
-//         return false;
-//     }
-
-//     while (bytesLeft > 0) {
-//         size_t chunkSize = (bytesLeft < BLANK_CHECK_BUF_SIZE) ? bytesLeft : BLANK_CHECK_BUF_SIZE;
-
-//         /* Odczyt fragmentu pamięci przez standardową funkcję odczytu sterownika */
-//         if (flashsrv_read((storage_t *)ctx, currentAddr, buf, chunkSize) != chunkSize) {
-//             return false; /* Błąd odczytu z SPI - dla bezpieczeństwa traktujemy jako nie-czysty */
-//         }
-
-//         /* Sprawdzenie pierwszego bajtu i szybkie porównanie całego bufora */
-//         if (buf[0] != 0xFF || memcmp(buf, buf + 1, chunkSize - 1) != 0) {
-//             return false; /* Znaleziono bajt inny niż 0xFF */
-//         }
-
-//         bytesLeft -= chunkSize;
-//         currentAddr += chunkSize;
-//     }
-
-//     return true; /* Cały obszar to 0xFF */
-// }
 
 
 int nor_eraseChip(struct spimctrl *spimctrl, time_t timeout)
@@ -525,7 +513,7 @@ int nor_pageProgram(struct spimctrl *spimctrl, addr_t addr, const void *src, siz
 static ssize_t nor_readCmd(struct spimctrl *spimctrl, addr_t addr, void *data, size_t size)
 {
     struct xferOp xfer;
-    uint8_t cmd[5]; // Zadeklarowane w zasięgu całej funkcji!
+    uint8_t cmd[5];
     int res = 0;
 
     if (!spimctrl->extendedAddress) {
@@ -565,14 +553,12 @@ static ssize_t nor_readCmd(struct spimctrl *spimctrl, addr_t addr, void *data, s
 
 static ssize_t nor_readAhb(struct spimctrl *spimctrl, addr_t addr, void *data, size_t size)
 {
-
     if (!spimctrl->extendedAddress) {
         int res = nor_validateEar(spimctrl, addr);
         if (res < EOK) {
             return res;
         }
     }
-
 	(void)memcpy(data, (uint8_t *)common.base + addr, size);
 
 	return (ssize_t)size;
@@ -581,18 +567,18 @@ static ssize_t nor_readAhb(struct spimctrl *spimctrl, addr_t addr, void *data, s
 
 ssize_t nor_readData(struct spimctrl *spimctrl, addr_t addr, void *data, size_t size)
 {
-    if (!spimctrl->extendedAddress) {
-        if (((addr & 0xff000000) == 0) && (((addr + size) & 0xff000000) != 0)) {
-            /* If we'd have to change EAR register during read,
-            * read data through command (can be read without EAR change)
-            */
-            return nor_readCmd(spimctrl, addr, data, size);
-        }
-        else {
-            /* Direct copy */
-            return nor_readAhb(spimctrl, addr, data, size);
-        }
-    }
+	if (!spimctrl->extendedAddress) {
+		if (((addr & 0xff000000) == 0) && (((addr + size) & 0xff000000) != 0)) {
+			/* If we'd have to change EAR register during read,
+			* read data through command (can be read without EAR change)
+			*/
+			return nor_readCmd(spimctrl, addr, data, size);
+		}
+		else {
+			/* Direct copy */
+			return nor_readAhb(spimctrl, addr, data, size);
+		}
+	}
     else {
         return nor_readAhb(spimctrl, addr, data, size);
 		//return nor_readCmd(spimctrl, addr, data, size);
@@ -646,10 +632,11 @@ void nor_printInfo(const struct _storage_devCtx_t *ctx)
 	}
 
 	const char *pVendor = "Unknown";
+	uint8_t vendorId = (uint8_t)(jedecId & 0xffu);
 
 	for (size_t i = 0; nor_vendors[i]; ++i) {
-		if (*(uint8_t *)nor_vendors[i] == (jedecId >> 16)) {
-			pVendor = &nor_vendors[i][2];
+		if ((uint8_t)nor_vendors[i][0] == vendorId) {
+            pVendor = &nor_vendors[i][2];
 			break;
 		}
 	}
@@ -667,14 +654,13 @@ int nor_flash_init(struct _storage_devCtx_t *ctx, addr_t flashBase)
 		return res;
 	}
 
-	/* Map entire flash */
 	common.base = mmap(NULL, ((ctx->flash_data.sfdp->totalSz) * (ctx->flash_data.sfdp->stacked)), PROT_READ | PROT_WRITE, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, flashBase);
 	if (common.base == MAP_FAILED) {
 		LOG_ERROR("failed to map flash");
 		return -ENOMEM;
 	}
 
-	nor_enter4Byte(ctx->spimctrl);
+	nor_selectAddressMode(ctx->spimctrl);
 
 	return EOK;
 }
