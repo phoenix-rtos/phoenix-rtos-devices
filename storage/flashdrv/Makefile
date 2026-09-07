@@ -24,6 +24,5 @@ endif
 
 include $(binary.mk)
 
-# NOR flash test program
 
 
