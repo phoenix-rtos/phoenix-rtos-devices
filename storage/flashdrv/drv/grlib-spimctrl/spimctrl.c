@@ -22,6 +22,7 @@
 /* Configuration register */
 
 #define DCYCLES (0xFUL << 8)
+#define READ_CMD_MASK (0xFFu)
 #define DSPI (1 << 12)
 #define QSPI (1 << 13)
 #define EXTENDED_ADDRESS (1 << 14)
@@ -77,79 +78,82 @@ static int spimctrl_ready(const struct spimctrl *spimctrl)
 	return (val == INITIALIZED) ? 1 : 0;
 }
 
-static void spimctrl_addressMode(const struct spimctrl *spimctrl)
+
+static void spimctrl_addressMode(struct spimctrl *spimctrl)
 {
-	// if (spimctrl->extendedAddress) {
-	// 	*(spimctrl->base + flash_cfg) |= EXTENDED_ADDRESS;
-	// }
-	// else {
-	// 	*(spimctrl->base + flash_cfg) &= ~EXTENDED_ADDRESS;
-	// }
+    uint32_t cfg = *(spimctrl->base + flash_cfg);
 
-	*(spimctrl->base + flash_cfg) |= EXTENDED_ADDRESS;
+    #if USE_4BYTE_MODE
+		uint8_t readcmd = 0x13;
+        spimctrl->extendedAddress = 1;
+		cfg &= ~READ_CMD_MASK;
+		cfg |= readcmd;
+        cfg |= EXTENDED_ADDRESS;
+    #else
+		uint8_t readcmd = 0x03;
+		cfg &= ~READ_CMD_MASK;
+		cfg |= readcmd;
+        spimctrl->extendedAddress = 0;
+        cfg &= ~EXTENDED_ADDRESS;
+    #endif /* USE_4BYTE_MODE */
 
+    *(spimctrl->base + flash_cfg) = cfg;
 }
 
 
 int spimctrl_spiMode(const struct spimctrl *spimctrl, SPIMode_t spi_mode)
 {
-	int res = 0;
-	switch (spi_mode)
-	{
-		case MEXTENDED_SPI:
-			*(spimctrl->base + flash_cfg) &= ~(DSPI | DOUT | QOUT | QSPI | DIN | QIN);
-			break;
-		case MDUAL_OUTPUT:
-			*(spimctrl->base + flash_cfg) &= ~(DSPI | QOUT | QSPI | DIN | QIN);
-			*(spimctrl->base + flash_cfg) |= DOUT;
-			break;
-		case MDSPI:
-			*(spimctrl->base + flash_cfg) &= ~(DOUT | QOUT | QSPI | DIN | QIN);
-			*(spimctrl->base + flash_cfg) |= DSPI;
-			break;
-		case MQUAD_OUTPUT:
-			*(spimctrl->base + flash_cfg) &= ~(DSPI | DOUT | QSPI | DIN | QIN);
-			*(spimctrl->base + flash_cfg) |= QOUT;
-			break;
-		case MQSPI:
-			*(spimctrl->base + flash_cfg) &= ~(DSPI | QOUT | DOUT | DIN | QIN);
-			*(spimctrl->base + flash_cfg) |= QSPI;
-			break;
-		
-		default:
-			res = -EINVAL;
-			break;
-	}
+    uint32_t cfg = *(spimctrl->base + flash_cfg);
+    cfg &= ~(DSPI | DOUT | QOUT | QSPI | DIN | QIN);
 
-	return res;
+    switch (spi_mode) {
+        case MEXTENDED_SPI:
+            break;
+        case MDUAL_OUTPUT:
+            cfg |= DOUT;
+            break;
+        case MDSPI:
+            cfg |= DSPI;
+            break;
+        case MQUAD_OUTPUT:
+            cfg |= QOUT;
+            break;
+        case MQSPI:
+            cfg |= QSPI;
+            break;
+        default:
+            return -EINVAL;
+    }
+
+    *(spimctrl->base + flash_cfg) = cfg;
+    return 0;
 }
 
 
-void spimctrl_enableAlternateScaler(volatile uint32_t *spimctrlBase)
+static void spimctrl_alternateScaler(volatile uint32_t *spimctrlBase)
 {
-	*(spimctrlBase + flash_ctrl) |= EAS;
-}
-
-
-void spimctrl_disableAlternateScaler(volatile uint32_t *spimctrlBase)
-{
-	*(spimctrlBase + flash_ctrl) &= ~EAS;
+	#if ENABLE_ALTERNATE_SCALER
+		*(spimctrlBase + flash_ctrl) |= EAS;
+	#else
+		*(spimctrlBase + flash_ctrl) &= ~EAS;
+	#endif /* ENABLE_ALTERNATE_SCALER */
 }
 
 
 void spimctrl_setDummyByte(volatile uint32_t *spimctrlBase)
 {
-	*(spimctrlBase + flash_ctrl) |= DBYTE;
+	*(spimctrlBase + flash_cfg) |= DBYTE;
 }
 
 
 int spimctrl_setDummyCycles(volatile uint32_t *spimctrlBase, uint8_t numCycles)
 {
 	int res = 0;
-	if (numCycles < DCYCLES + 1) {
-		*(spimctrlBase + flash_ctrl) &= ~DCYCLES;
-		*(spimctrlBase + flash_ctrl) &= ~DBYTE;
-		*(spimctrlBase + flash_ctrl) |= ((numCycles & 0xFUL) << 8);
+	if (numCycles < 0xFu) {
+		uint32_t cfg = *(spimctrlBase + flash_cfg);
+		cfg &= ~(DCYCLES | DBYTE); 
+		cfg |= ((numCycles & 0xFUL) << 8); 
+		*(spimctrlBase + flash_cfg) = cfg;  
 	}
 	else {
 		res = -EINVAL;
@@ -248,6 +252,9 @@ int spimctrl_init(struct spimctrl *spimctrl, addr_t mctrlBase)
 
 	/* Set address mode */
 	spimctrl_addressMode(spimctrl);
+
+	/* Set alternate scaler policy */
+	spimctrl_alternateScaler(spimctrl->base);
 
 	return 0;
 }

@@ -75,14 +75,6 @@ void spimctrl_destroy(struct spimctrl *spimctrl);
 int spimctrl_spiMode(const struct spimctrl *spimctrl, SPIMode_t spi_mode);
 
 
-/* Enable alternate scaler */
-void spimctrl_enableAlternateScaler(volatile uint32_t *spimctrlBase);
-
-
-/* Disable alternate scaler */
-void spimctrl_disableAlternateScaler(volatile uint32_t *spimctrlBase);
-
-
 /* Set dummy byte */
 void spimctrl_setDummyByte(volatile uint32_t *spimctrlBase);
 
