@@ -17,8 +17,12 @@
 #include <stdint.h>
 #include <ptable.h>
 
-/* Path created by flashsrv.c (#define STRG_PATH "mtd0") */
-#define EXTERNAL_FLASH_PATH "/dev/mtd0"
+/* Path created by flashsrv.c*/
+#define DEFAULT_PARTITION "/dev/mtd0.part2"
+
+#define PARTITION_1 "/dev/mtd0.part1"
+#define PARTITION_2 "/dev/mtd0.part2"
+#define PARTITION_3 "/dev/mtd0.part3"
 
 
 /* Partition table verification test */
@@ -30,15 +34,11 @@ extern int test_flashsrv_getAttrSize(void);
 extern int test_flashsrv_getAttrInvalidType(void);
 extern int test_flashsrv_writeAndReadPage(void);
 extern int test_flashsrv_writeAndReadUnaligned(void);
-extern int test_flashsrv_sync(void);
+extern int test_flashsrv_eraseVerification(void);
+extern int test_flashsrv_erasePartition(void);
+extern int test_flashsrv_writeCrossPageBoundary(void);
+extern int test_flashsrv_highAddressBoundary(void);
 extern int test_flashsrv_invalidOffsetBounds(void);
 extern int test_flashsrv_unsupportedMsgType(void);
-
-/* Partition operations */
-extern int test_flashsrv_rawPartGetAttr(void);
-extern int test_flashsrv_rawPartWriteAndRead(void);
-
-/* Mount operations */
-extern int test_flashsrv_mountFs(void);
 
 #endif /* _FLASHSRV_TESTS_H_ */
