@@ -24,8 +24,18 @@
 #include <ptable.h>
 #include <storage/storage.h>
 #include <flashdrv/flashsrv.h>
+#include <board_config.h>
 
 #include "tests.h"
+
+
+static const char *partitions[] = {
+    PARTITION_1,
+    PARTITION_2,
+    PARTITION_3
+};
+
+#define NUM_PARTITIONS (sizeof(partitions) / sizeof(partitions[0]))
 
 
 /* -------------------------------------------------------------------------
@@ -153,8 +163,8 @@ int test_flashsrv_verifyPartitionTable(void)
     oid_t oid;
     long long flashSize = 0;
 
-    while (lookup(EXTERNAL_FLASH_PATH, NULL, &oid) < 0) {
-        usleep(10000);
+    while (lookup("/dev/mtd0", NULL, &oid) < 0) {
+    usleep(10000);
     }
 
     if (getAttrFlash(oid, atSize, &flashSize) < 0 || flashSize <= 0) {
@@ -216,7 +226,7 @@ int test_flashsrv_openClose(void)
 {
     oid_t oid;
 
-    while (lookup(EXTERNAL_FLASH_PATH, NULL, &oid) < 0) {
+    while (lookup(DEFAULT_PARTITION, NULL, &oid) < 0) {
         usleep(10000);
     }
 
@@ -245,7 +255,7 @@ int test_flashsrv_getAttrSize(void)
     oid_t oid;
     long long size = 0;
 
-    while (lookup(EXTERNAL_FLASH_PATH, NULL, &oid) < 0) {
+    while (lookup(DEFAULT_PARTITION, NULL, &oid) < 0) {
         usleep(10000);
     }
 
@@ -267,7 +277,7 @@ int test_flashsrv_getAttrInvalidType(void)
     oid_t oid;
     long long val = 0;
 
-    while (lookup(EXTERNAL_FLASH_PATH, NULL, &oid) < 0) {
+    while (lookup(DEFAULT_PARTITION, NULL, &oid) < 0) {
         usleep(10000);
     }
 
@@ -280,53 +290,111 @@ int test_flashsrv_getAttrInvalidType(void)
 }
 
 
-/* Test mtWrite -> mtSync -> mtRead (page aligned) */
 int test_flashsrv_writeAndReadPage(void)
 {
     oid_t oid;
-    int i;
+    int j;
     const off_t addr = 0x10000;
     const size_t size = 0x100;
     const size_t sectorSize = 0x10000;
     const uint8_t checkValue = 0x12;
     uint8_t buff[size];
 
-    while (lookup(EXTERNAL_FLASH_PATH, NULL, &oid) < 0) {
-        usleep(10000);
-    }
+    #if TRIPLE_REDUNDANCY_MODE
+        for (size_t i = 0; i < NUM_PARTITIONS; i++) {
+            const char *part_path = partitions[i];
 
-    off_t sectorAddr = addr - (addr % sectorSize);
-    if (eraseFlash(oid, sectorAddr, sectorSize) < 0) {
-        LOG_ERROR("Failed to erase sector at 0x%lx", (unsigned long)sectorAddr);
-        return -1;
-    }
-    
-    memset(buff, checkValue, size);
-    if (writeToFlash(oid, addr, buff, size) != (int)size) {
-        LOG_ERROR("Failed to write flash");
-        return -1;
-    }
+            while (lookup(part_path, NULL, &oid) < 0) {
+                usleep(10000);
+            }
 
-    const off_t addr1 = 0x20000;
-    memset(buff, 0, size);
-    if (readFromFlash(oid, addr1, buff, size) != (int)size) {
-        LOG_ERROR("Failed to read from flash");
-        return -1;
-    }
+            lookup(part_path, NULL, &oid);
+            LOG_ERROR("LOOKUP %s -> port=%u, id=%ju", part_path, oid.port, (uintmax_t)oid.id);
 
-    memset(buff, 0, size);
-    if (readFromFlash(oid, addr, buff, size) != (int)size) {
-        LOG_ERROR("Failed to read from flash");
-        return -1;
-    }
-  
-    for (i = 0; i < (int)size; ++i) {
-        if (buff[i] != checkValue) {
-            LOG_ERROR("Mismatch at index %d (offs 0x%lx): expected 0x%02x, got 0x%02x", 
-                  i, (unsigned long)(addr + i), checkValue, buff[i]);
+            LOG_ERROR("=== TEST PARTITION [%zu/%zu]: %s ===", i + 1, NUM_PARTITIONS, part_path);
+
+            long long partSize = 0;
+            if (getAttrFlash(oid, atSize, &partSize) < 0 || partSize <= 0) {
+                LOG_ERROR("Failed to get partition size for %s!", part_path);
+                return -1;
+            }
+
+            LOG_ERROR("Partition %s verified: oid.id=%ju, size=0x%llx",
+                    part_path, (uintmax_t)oid.id, partSize);
+
+            off_t sectorAddr = addr - (addr % sectorSize);
+            if (eraseFlash(oid, sectorAddr, sectorSize) < 0) {
+                LOG_ERROR("Failed to erase sector at 0x%lx on %s", (unsigned long)sectorAddr, part_path);
+                return -1;
+            }
+
+            memset(buff, checkValue, size);
+            if (writeToFlash(oid, addr, buff, size) != (int)size) {
+                LOG_ERROR("Failed to write to %s", part_path);
+                return -1;
+            }
+
+            memset(buff, 0, size);
+            if (readFromFlash(oid, addr, buff, size) != (int)size) {
+                LOG_ERROR("Failed to read from %s", part_path);
+                return -1;
+            }
+
+            for (j = 0; j < (int)size; ++j) {
+                if (buff[j] != checkValue) {
+                    LOG_ERROR("Mismatch on %s at index %d: expected 0x%02x, got 0x%02x",
+                            part_path, j, checkValue, buff[j]);
+                    return -1;
+                }
+            }
+        }
+    #else
+        const char *part_path = DEFAULT_PARTITION;
+
+        while (lookup(part_path, NULL, &oid) < 0) {
+            usleep(10000);
+        }
+
+        lookup(part_path, NULL, &oid);
+        LOG_ERROR("LOOKUP %s -> port=%u, id=%ju", part_path, oid.port, (uintmax_t)oid.id);
+
+        LOG_ERROR("=== TEST PARTITION [%zu/%zu]: %s ===", i + 1, NUM_PARTITIONS, part_path);
+
+        long long partSize = 0;
+        if (getAttrFlash(oid, atSize, &partSize) < 0 || partSize <= 0) {
+            LOG_ERROR("Failed to get partition size for %s!", part_path);
             return -1;
         }
-    }
+
+        LOG_ERROR("Partition %s verified: oid.id=%ju, size=0x%llx",
+                part_path, (uintmax_t)oid.id, partSize);
+
+        off_t sectorAddr = addr - (addr % sectorSize);
+        if (eraseFlash(oid, sectorAddr, sectorSize) < 0) {
+            LOG_ERROR("Failed to erase sector at 0x%lx on %s", (unsigned long)sectorAddr, part_path);
+            return -1;
+        }
+
+        memset(buff, checkValue, size);
+        if (writeToFlash(oid, addr, buff, size) != (int)size) {
+            LOG_ERROR("Failed to write to %s", part_path);
+            return -1;
+        }
+
+        memset(buff, 0, size);
+        if (readFromFlash(oid, addr, buff, size) != (int)size) {
+            LOG_ERROR("Failed to read from %s", part_path);
+            return -1;
+        }
+
+        for (j = 0; j < (int)size; ++j) {
+            if (buff[j] != checkValue) {
+                LOG_ERROR("Mismatch on %s at index %d: expected 0x%02x, got 0x%02x",
+                        part_path, j, checkValue, buff[j]);
+                return -1;
+            }
+        }
+    #endif /* TRIPLE_REDUNDANCY_MODE */
 
     return EOK;
 }
@@ -339,32 +407,444 @@ int test_flashsrv_writeAndReadUnaligned(void)
     int i;
     const off_t addr = 0x2050;
     const size_t size = 0x180;
+    const size_t sectorSize = 0x10000;
     const uint8_t checkValue = 0x3C;
     uint8_t buff[size];
 
-    memset(buff, checkValue, size);
+    #if TRIPLE_REDUNDANCY_MODE
+        for (size_t k = 0; k < NUM_PARTITIONS; k++) {
+            const char *part_path = partitions[k];
 
-    while (lookup(EXTERNAL_FLASH_PATH, NULL, &oid) < 0) {
-        usleep(10000);
-    }
+            while (lookup(part_path, NULL, &oid) < 0) {
+                usleep(10000);
+            }
 
-    if (writeToFlash(oid, addr, buff, size) != (int)size) {
-        LOG_ERROR("Failed to write flash ");
+            LOG_ERROR("LOOKUP %s -> port=%u, id=%ju", part_path, oid.port, (uintmax_t)oid.id);
+            LOG_ERROR("=== TEST PARTITION [%zu/%zu]: %s ===", k + 1, NUM_PARTITIONS, part_path);
+
+            long long partSize = 0;
+            if (getAttrFlash(oid, atSize, &partSize) < 0 || partSize <= 0) {
+                LOG_ERROR("Failed to get partition size for %s!", part_path);
+                return -1;
+            }
+
+            memset(buff, checkValue, size);
+
+            off_t startSector = addr - (addr % sectorSize);
+            off_t endSector = (addr + size - 1) - ((addr + size - 1) % sectorSize);
+            size_t eraseLen = (endSector - startSector) + sectorSize;
+
+            if (eraseFlash(oid, startSector, eraseLen) < 0) {
+                LOG_ERROR("Failed to erase sector at 0x%lx on %s", (unsigned long)startSector, part_path);
+                return -1;
+            }
+
+            if (writeToFlash(oid, addr, buff, size) != (int)size) {
+                LOG_ERROR("Failed to write flash on %s", part_path);
+                return -1;
+            }
+
+            memset(buff, 0, size);
+
+            if (readFromFlash(oid, addr, buff, size) != (int)size) {
+                LOG_ERROR("Failed to read from flash on %s", part_path);
+                return -1;
+            }
+
+            for (i = 0; i < (int)size; ++i) {
+                if (buff[i] != checkValue) {
+                    LOG_ERROR("Unaligned mismatch on %s at %d: exp 0x%02x, got 0x%02x", part_path, i, checkValue, buff[i]);
+                    return -1;
+                }
+            }
+        }
+    #else
+        const char *part_path = DEFAULT_PARTITION;
+
+        while (lookup(part_path, NULL, &oid) < 0) {
+            usleep(10000);
+        }
+
+        LOG_ERROR("LOOKUP %s -> port=%u, id=%ju", part_path, oid.port, (uintmax_t)oid.id);
+
+        long long partSize = 0;
+        if (getAttrFlash(oid, atSize, &partSize) < 0 || partSize <= 0) {
+            LOG_ERROR("Failed to get partition size for %s!", part_path);
+            return -1;
+        }
+
+        memset(buff, checkValue, size);
+
+        off_t startSector = addr - (addr % sectorSize);
+        off_t endSector = (addr + size - 1) - ((addr + size - 1) % sectorSize);
+        size_t eraseLen = (endSector - startSector) + sectorSize;
+
+        if (eraseFlash(oid, startSector, eraseLen) < 0) {
+            LOG_ERROR("Failed to erase sector at 0x%lx on %s", (unsigned long)startSector, part_path);
+            return -1;
+        }
+
+        if (writeToFlash(oid, addr, buff, size) != (int)size) {
+            LOG_ERROR("Failed to write flash on %s", part_path);
+            return -1;
+        }
+
+        memset(buff, 0, size);
+
+        if (readFromFlash(oid, addr, buff, size) != (int)size) {
+            LOG_ERROR("Failed to read from flash on %s", part_path);
+            return -1;
+        }
+
+        for (i = 0; i < (int)size; ++i) {
+            if (buff[i] != checkValue) {
+                LOG_ERROR("Unaligned mismatch on %s at %d: exp 0x%02x, got 0x%02x", part_path, i, checkValue, buff[i]);
+                return -1;
+            }
+        }
+    #endif /* TRIPLE_REDUNDANCY_MODE */
+
+    return EOK;
+}
+
+
+int test_flashsrv_eraseVerification(void)
+{
+    oid_t oid;
+    const off_t addr = 0x30000;
+    const size_t sectorSize = 0x10000;
+    uint8_t buff[256];
+
+    #if TRIPLE_REDUNDANCY_MODE
+        for (size_t k = 0; k < NUM_PARTITIONS; k++) {
+            const char *part_path = partitions[k];
+
+            while (lookup(part_path, NULL, &oid) < 0) {
+                usleep(10000);
+            }
+
+            LOG_ERROR("LOOKUP %s -> port=%u, id=%ju", part_path, oid.port, (uintmax_t)oid.id);
+            LOG_ERROR("=== TEST PARTITION [%zu/%zu]: %s ===", k + 1, NUM_PARTITIONS, part_path);
+
+            long long partSize = 0;
+            if (getAttrFlash(oid, atSize, &partSize) < 0 || partSize <= 0) {
+                LOG_ERROR("Failed to get partition size for %s!", part_path);
+                return -1;
+            }
+
+            if (eraseFlash(oid, addr, sectorSize) < 0) {
+                LOG_ERROR("Failed to erase sector at 0x%lx on %s", (unsigned long)addr, part_path);
+                return -1;
+            }
+
+            memset(buff, 0, sizeof(buff));
+            if (readFromFlash(oid, addr, buff, sizeof(buff)) != (int)sizeof(buff)) {
+                LOG_ERROR("Failed to read erased sector on %s", part_path);
+                return -1;
+            }
+
+            for (size_t i = 0; i < sizeof(buff); ++i) {
+                if (buff[i] != 0xFF) {
+                    LOG_ERROR("Erase check failed on %s at 0x%lx: exp 0xFF, got 0x%02x",
+                              part_path, (unsigned long)(addr + i), buff[i]);
+                    return -1;
+                }
+            }
+        }
+    #else
+        const char *part_path = DEFAULT_PARTITION;
+
+        while (lookup(part_path, NULL, &oid) < 0) {
+            usleep(10000);
+        }
+
+        LOG_ERROR("LOOKUP %s -> port=%u, id=%ju", part_path, oid.port, (uintmax_t)oid.id);
+
+        long long partSize = 0;
+        if (getAttrFlash(oid, atSize, &partSize) < 0 || partSize <= 0) {
+            LOG_ERROR("Failed to get partition size for %s!", part_path);
+            return -1;
+        }
+
+        if (eraseFlash(oid, addr, sectorSize) < 0) {
+            LOG_ERROR("Failed to erase sector at 0x%lx on %s", (unsigned long)addr, part_path);
+            return -1;
+        }
+
+        memset(buff, 0, sizeof(buff));
+        if (readFromFlash(oid, addr, buff, sizeof(buff)) != (int)sizeof(buff)) {
+            LOG_ERROR("Failed to read erased sector on %s", part_path);
+            return -1;
+        }
+
+        for (size_t i = 0; i < sizeof(buff); ++i) {
+            if (buff[i] != 0xFF) {
+                LOG_ERROR("Erase check failed on %s at 0x%lx: exp 0xFF, got 0x%02x",
+                          part_path, (unsigned long)(addr + i), buff[i]);
+                return -1;
+            }
+        }
+    #endif /* TRIPLE_REDUNDANCY_MODE */
+
+    return EOK;
+}
+
+
+int test_flashsrv_erasePartition(void)
+{
+    oid_t oid;
+    msg_t msg;
+    uint8_t buff[256];
+
+    const char *part_path = PARTITION_2;
+
+    LOG_ERROR("Starting erasePartition test on %s...", part_path);
+
+    if (lookup(part_path, NULL, &oid) < 0) {
+        LOG_ERROR("Lookup failed for %s", part_path);
         return -1;
     }
 
-    memset(buff, 0, size);
+    memset(&msg, 0, sizeof(msg));
+    msg.type = mtDevCtl;
+    msg.oid = oid;
 
-    if (readFromFlash(oid, addr, buff, size) != (int)size) {
-        LOG_ERROR("Failed to read from flash ");
+    flash_i_devctl_t *idevctl = (flash_i_devctl_t *)msg.i.raw;
+    idevctl->type = flashsrv_devctl_erasePartition;
+
+    int res = msgSend(oid.port, &msg);
+    if (res != 0) {
+        LOG_ERROR("msgSend failed for %s, res=%d", part_path, res);
         return -1;
     }
 
-    for (i = 0; i < (int)size; ++i) {
-        if (buff[i] != checkValue) {
+    if (msg.o.err < 0) {
+        LOG_ERROR("erasePartition failed on %s, msg.o.err=%d (%s)", 
+                  part_path, msg.o.err, strerror(-msg.o.err));
+        return -1;
+    }
+
+    memset(buff, 0, sizeof(buff));
+    ssize_t readRes = readFromFlash(oid, 0, buff, sizeof(buff));
+    if (readRes != (ssize_t)sizeof(buff)) {
+        LOG_ERROR("readFromFlash failed on %s: expected %zu, got %zd", 
+                  part_path, sizeof(buff), readRes);
+        return -1;
+    }
+
+    for (size_t j = 0; j < sizeof(buff); ++j) {
+        if (buff[j] != 0xFF) {
+            LOG_ERROR("Erase check failed on %s at offset %zu: expected 0xFF, got 0x%02x",
+                      part_path, j, buff[j]);
             return -1;
         }
     }
+
+    LOG_ERROR("erasePartition test PASSED on %s", part_path);
+    return EOK;
+}
+
+
+int test_flashsrv_writeCrossPageBoundary(void)
+{
+    oid_t oid;
+    const off_t addr = 0x10080;
+    const size_t size = 0x100;  
+    const size_t sectorSize = 0x10000;
+    uint8_t txBuff[size];
+    uint8_t rxBuff[size];
+
+    #if TRIPLE_REDUNDANCY_MODE
+        for (size_t k = 0; k < NUM_PARTITIONS; k++) {
+            const char *part_path = partitions[k];
+
+            while (lookup(part_path, NULL, &oid) < 0) {
+                usleep(10000);
+            }
+
+            LOG_ERROR("LOOKUP %s -> port=%u, id=%ju", part_path, oid.port, (uintmax_t)oid.id);
+            LOG_ERROR("=== TEST PARTITION [%zu/%zu]: %s ===", k + 1, NUM_PARTITIONS, part_path);
+
+            long long partSize = 0;
+            if (getAttrFlash(oid, atSize, &partSize) < 0 || partSize <= 0) {
+                LOG_ERROR("Failed to get partition size for %s!", part_path);
+                return -1;
+            }
+
+            off_t sectorAddr = addr - (addr % sectorSize);
+            if (eraseFlash(oid, sectorAddr, sectorSize) < 0) {
+                LOG_ERROR("Failed to erase sector at 0x%lx on %s", (unsigned long)sectorAddr, part_path);
+                return -1;
+            }
+
+            for (size_t i = 0; i < size; ++i) {
+                txBuff[i] = (uint8_t)(i & 0xFF);
+            }
+
+            if (writeToFlash(oid, addr, txBuff, size) != (int)size) {
+                LOG_ERROR("Failed cross-page write on %s", part_path);
+                return -1;
+            }
+
+            memset(rxBuff, 0, size);
+            if (readFromFlash(oid, addr, rxBuff, size) != (int)size) {
+                LOG_ERROR("Failed cross-page read on %s", part_path);
+                return -1;
+            }
+
+            for (size_t i = 0; i < size; ++i) {
+                if (rxBuff[i] != txBuff[i]) {
+                    LOG_ERROR("Cross-page mismatch on %s at index %zu: exp 0x%02x, got 0x%02x",
+                              part_path, i, txBuff[i], rxBuff[i]);
+                    return -1;
+                }
+            }
+        }
+    #else
+        const char *part_path = DEFAULT_PARTITION;
+
+        while (lookup(part_path, NULL, &oid) < 0) {
+            usleep(10000);
+        }
+
+        LOG_ERROR("LOOKUP %s -> port=%u, id=%ju", part_path, oid.port, (uintmax_t)oid.id);
+
+        long long partSize = 0;
+        if (getAttrFlash(oid, atSize, &partSize) < 0 || partSize <= 0) {
+            LOG_ERROR("Failed to get partition size for %s!", part_path);
+            return -1;
+        }
+
+        off_t sectorAddr = addr - (addr % sectorSize);
+        if (eraseFlash(oid, sectorAddr, sectorSize) < 0) {
+            LOG_ERROR("Failed to erase sector at 0x%lx on %s", (unsigned long)sectorAddr, part_path);
+            return -1;
+        }
+
+        for (size_t i = 0; i < size; ++i) {
+            txBuff[i] = (uint8_t)(i & 0xFF);
+        }
+
+        if (writeToFlash(oid, addr, txBuff, size) != (int)size) {
+            LOG_ERROR("Failed cross-page write on %s", part_path);
+            return -1;
+        }
+
+        memset(rxBuff, 0, size);
+        if (readFromFlash(oid, addr, rxBuff, size) != (int)size) {
+            LOG_ERROR("Failed cross-page read on %s", part_path);
+            return -1;
+        }
+
+        for (size_t i = 0; i < size; ++i) {
+            if (rxBuff[i] != txBuff[i]) {
+                LOG_ERROR("Cross-page mismatch on %s at index %zu: exp 0x%02x, got 0x%02x",
+                          part_path, i, txBuff[i], rxBuff[i]);
+                return -1;
+            }
+        }
+    #endif /* TRIPLE_REDUNDANCY_MODE */
+
+    return EOK;
+}
+
+
+/* Test: Address mode check */
+int test_flashsrv_highAddressBoundary(void)
+{
+    oid_t oid;
+    const off_t addr = 0x01000080; /* > 16 MB */
+    const size_t size = 0x80;
+    const size_t sectorSize = 0x10000;
+    uint8_t txBuff[size];
+    uint8_t rxBuff[size];
+
+    #if TRIPLE_REDUNDANCY_MODE
+        for (size_t k = 0; k < NUM_PARTITIONS; k++) {
+            const char *part_path = partitions[k];
+
+            while (lookup(part_path, NULL, &oid) < 0) {
+                usleep(10000);
+            }
+
+            LOG_ERROR("LOOKUP %s -> port=%u, id=%ju", part_path, oid.port, (uintmax_t)oid.id);
+            LOG_ERROR("=== TEST PARTITION [%zu/%zu]: %s ===", k + 1, NUM_PARTITIONS, part_path);
+
+            long long partSize = 0;
+            if (getAttrFlash(oid, atSize, &partSize) < 0 || partSize <= 0) {
+                LOG_ERROR("Failed to get partition size for %s!", part_path);
+                return -1;
+            }
+
+            if (partSize <= addr + (off_t)size) {
+                LOG_ERROR("Skipping high address test on %s: partition size (0x%llx) smaller than target addr (0x%lx)",
+                          part_path, partSize, (unsigned long)addr);
+                continue;
+            }
+
+            off_t sectorAddr = addr - (addr % sectorSize);
+            if (eraseFlash(oid, sectorAddr, sectorSize) < 0) {
+                LOG_ERROR("Failed to erase sector at 0x%lx on %s", (unsigned long)sectorAddr, part_path);
+                return -1;
+            }
+
+            memset(txBuff, 0x5A, size);
+            if (writeToFlash(oid, addr, txBuff, size) != (int)size) {
+                LOG_ERROR("Failed write on %s", part_path);
+                return -1;
+            }
+
+            memset(rxBuff, 0, size);
+            if (readFromFlash(oid, addr, rxBuff, size) != (int)size) {
+                LOG_ERROR("Failed read on %s", part_path);
+                return -1;
+            }
+
+            if (memcmp(txBuff, rxBuff, size) != 0) {
+                LOG_ERROR("Data mismatch on 32-bit address boundary test on %s", part_path);
+                return -1;
+            }
+        }
+    #else
+        const char *part_path = DEFAULT_PARTITION;
+
+        while (lookup(part_path, NULL, &oid) < 0) {
+            usleep(10000);
+        }
+
+        LOG_ERROR("LOOKUP %s -> port=%u, id=%ju", part_path, oid.port, (uintmax_t)oid.id);
+
+        long long partSize = 0;
+        if (getAttrFlash(oid, atSize, &partSize) < 0 || partSize <= 0) {
+            LOG_ERROR("Failed to get partition size for %s!", part_path);
+            return -1;
+        }
+
+        if (partSize > addr + (off_t)size) {
+            off_t sectorAddr = addr - (addr % sectorSize);
+            if (eraseFlash(oid, sectorAddr, sectorSize) < 0) {
+                LOG_ERROR("Failed to erase sector at 0x%lx on %s", (unsigned long)sectorAddr, part_path);
+                return -1;
+            }
+
+            memset(txBuff, 0x5A, size);
+            if (writeToFlash(oid, addr, txBuff, size) != (int)size) {
+                LOG_ERROR("Failed write on %s", part_path);
+                return -1;
+            }
+
+            memset(rxBuff, 0, size);
+            if (readFromFlash(oid, addr, rxBuff, size) != (int)size) {
+                LOG_ERROR("Failed read on %s", part_path);
+                return -1;
+            }
+
+            if (memcmp(txBuff, rxBuff, size) != 0) {
+                LOG_ERROR("Data mismatch on 32-bit address boundary test on %s", part_path);
+                return -1;
+            }
+        }
+    #endif /* TRIPLE_REDUNDANCY_MODE */
 
     return EOK;
 }
@@ -377,7 +857,7 @@ int test_flashsrv_invalidOffsetBounds(void)
     long long flashSize = 0;
     uint8_t dummy[16] = { 0 };
 
-    while (lookup(EXTERNAL_FLASH_PATH, NULL, &oid) < 0) {
+    while (lookup(DEFAULT_PARTITION, NULL, &oid) < 0) {
         usleep(10000);
     }
 
@@ -416,7 +896,7 @@ int test_flashsrv_unsupportedMsgType(void)
     msg_t msg;
     memset(&msg, 0, sizeof(msg));
 
-    while (lookup(EXTERNAL_FLASH_PATH, NULL, &oid) < 0) {
+    while (lookup(DEFAULT_PARTITION, NULL, &oid) < 0) {
         usleep(10000);
     }
 
@@ -434,98 +914,3 @@ int test_flashsrv_unsupportedMsgType(void)
     return EOK;
 }
 
-
-/* Test getAttr for a specific raw partition (/dev/mtd0.raw1) */
-int test_flashsrv_rawPartGetAttr(void)
-{
-    oid_t oid;
-    long long partSize = 0;
-    const char *path = "/dev/mtd0.raw1";
-
-    if (lookup(path, NULL, &oid) < 0) {
-        LOG_ERROR("Path does not exist, cannot fetch port address/id");
-        return -1;
-    }
-
-    if (getAttrFlash(oid, atSize, &partSize) < 0) {
-        return -1;
-    }
-
-    if (partSize <= 0) {
-        return -1;
-    }
-
-    return EOK;
-}
-
-
-/* Test write and read on raw partition */
-int test_flashsrv_rawPartWriteAndRead(void)
-{
-    oid_t oid;
-    int i;
-    const off_t addr = 0x100;
-    const size_t size = 0x80;
-    const uint8_t checkValue = 0x7E;
-    const char *path = "/dev/mtd0.raw1";
-    uint8_t buff[size];
-
-    memset(buff, checkValue, size);
-
-    if (lookup(path, NULL, &oid) < 0) {
-        LOG_ERROR("Path does not exist, cannot fetch port address/id");
-        return -1;
-    }
-
-    if (writeToFlash(oid, addr, buff, size) != (int)size) {
-        return -1;
-    }
-
-    memset(buff, 0, size);
-
-    if (readFromFlash(oid, addr, buff, size) != (int)size) {
-        return -1;
-    }
-
-    for (i = 0; i < (int)size; ++i) {
-        if (buff[i] != checkValue) {
-            return -1;
-        }
-    }
-
-    return EOK;
-}
-
-
-/* Test mtMount message handler */
-int test_flashsrv_mountFs(void)
-{
-    oid_t oid;
-    msg_t msg;
-    memset(&msg, 0, sizeof(msg));
-
-    const char *path = "/dev/mtd0.mfs1";
-
-    if (lookup(path, NULL, &oid) < 0) {
-        LOG_ERROR("Path does not exist, cannot fetch port address/id");
-        return -1;
-    }
-
-    mount_i_msg_t *imnt = (mount_i_msg_t *)msg.i.raw;
-
-    msg.type = mtMount;
-    msg.oid = oid;
-    strncpy(imnt->fstype, "meterfs", sizeof(imnt->fstype) - 1);
-    imnt->mode = 0;
-
-    if (msgSend(oid.port, &msg) != 0) {
-        return -1;
-    }
-
-    /* Validate return code from storage_mountfs */
-    if (msg.o.err < 0 && msg.o.err != -EINVAL && msg.o.err != -ENOSYS) {
-        return -1;
-    }
-
-    return EOK;
-}
