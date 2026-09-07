@@ -19,10 +19,8 @@
 #include "utils.h"
 
 /* Test runner module switches */
-#define TEST_PTABLE_VERIFICATION     0
+#define TEST_PTABLE_VERIFICATION     1
 #define TEST_FLASH_SERVER_OPERATIONS 1
-#define TEST_PARTITION_OPERATIONS   0
-#define TEST_MOUNT_OPERATIONS       0
 
 
 int main(int argc, char **argv)
@@ -37,25 +35,17 @@ int main(int argc, char **argv)
 
 #if TEST_FLASH_SERVER_OPERATIONS
     TEST_CATEGORY("FLASH SERVER TESTS: Core operations (mtOpen, mtRead, mtWrite, mtSync, mtGetAttr)");
-    // TEST_CASE(test_flashsrv_openClose());
-    // TEST_CASE(test_flashsrv_getAttrSize());
-    // TEST_CASE(test_flashsrv_getAttrInvalidType());
+    TEST_CASE(test_flashsrv_openClose());
+    TEST_CASE(test_flashsrv_getAttrSize());
+    TEST_CASE(test_flashsrv_getAttrInvalidType());
     TEST_CASE(test_flashsrv_writeAndReadPage());
-    // TEST_CASE(test_flashsrv_writeAndReadUnaligned());
-    // // TEST_CASE(test_flashsrv_sync());
-    // TEST_CASE(test_flashsrv_invalidOffsetBounds());
-    // TEST_CASE(test_flashsrv_unsupportedMsgType());
-#endif
-
-#if TEST_PARTITION_OPERATIONS
-    TEST_CATEGORY("FLASH SERVER TESTS: Raw partitions interface");
-    TEST_CASE(test_flashsrv_rawPartGetAttr());
-    TEST_CASE(test_flashsrv_rawPartWriteAndRead());
-#endif
-
-#if TEST_MOUNT_OPERATIONS
-    TEST_CATEGORY("FLASH SERVER TESTS: Filesystem Mount Interface");
-    TEST_CASE(test_flashsrv_mountFs());
+    TEST_CASE(test_flashsrv_writeAndReadUnaligned());
+    TEST_CASE(test_flashsrv_eraseVerification());
+    TEST_CASE(test_flashsrv_erasePartition());
+    TEST_CASE(test_flashsrv_writeCrossPageBoundary());
+    TEST_CASE(test_flashsrv_highAddressBoundary());
+    TEST_CASE(test_flashsrv_invalidOffsetBounds());
+    TEST_CASE(test_flashsrv_unsupportedMsgType());
 #endif
 
     return 0;
