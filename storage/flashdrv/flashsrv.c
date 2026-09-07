@@ -173,36 +173,34 @@ static int flashsrv_getAttr(storage_t *strg, int type, long long *attr)
 
 static void flashsrv_rawCtl(storage_t *strg, msg_t *msg)
 {
-	flash_i_devctl_t *idevctl = (flash_i_devctl_t *)msg->i.raw;
-	printf("Dodaj erase partition! \n");
+    flash_i_devctl_t *idevctl = (flash_i_devctl_t *)msg->i.raw;
 
-	switch (idevctl->type)
-	{
-		case flashsrv_devctl_eraseSector:
-			TRACE("MtDevCtl: flashsrv_devctl_eraseSector - id: %ju, size: %zu, off: %u",
-				(uintmax_t)msg->oid.id, msg->o.size, idevctl->erase.addr);		
+    switch (idevctl->type)
+    {
+        case flashsrv_devctl_eraseSector:
+            TRACE("MtDevCtl: flashsrv_devctl_eraseSector - id: %ju, size: %zu, off: %u",
+                (uintmax_t)msg->oid.id, idevctl->erase.size, idevctl->erase.addr);
 
-			if (idevctl->erase.addr >= strg->parts->size) {
-				msg->o.err = -EINVAL;
-				break;
-			}
+			// if (idevctl->erase.addr >= strg->parts->size) 
+            if (idevctl->erase.addr >= strg->size) {
+                msg->o.err = -EINVAL;
+                break;
+            }
 
-			flashsrv_erase(strg, idevctl->erase.addr, idevctl->erase.size);
-			msg->o.err = EOK;
-			break;
-	
-		// case flashsrv_devctl_erasePartition:
-		// 	/* code */
-		// 	break;
+            msg->o.err = flashsrv_erase(strg, idevctl->erase.addr, idevctl->erase.size);
+            break;
 
-		default:
-			break;
-	}
+        case flashsrv_devctl_erasePartition:
+            TRACE("flashsrv_devctl_erasePartition - id: %ju, part_size: %zu",
+                (uintmax_t)msg->oid.id, strg->size);
 
+            msg->o.err = flashsrv_erase(strg, 0, strg->size);
+            break;
 
-
-	//return -EINVAL;
-
+        default:
+            msg->o.err = -ENOSYS;
+            break;
+    }
 }
 
 
@@ -515,6 +513,7 @@ static int flashsrv_partAdd(storage_t *parent, uint32_t offset, uint32_t size, c
 	}
 
 	TRACE("initialized partition %s: offset=%u, size=%u", name, offset, size);
+	printf("remove log later %s.%s\n", STRG_PATH, name);
 
 	return 0;
 }
