@@ -720,7 +720,7 @@ void _ttypc_vt_resize(ttypc_vt_t *vt, uint8_t cols, uint8_t rows)
 {
 	vt->tty.ws.ws_col = cols;
 	vt->tty.ws.ws_row = rows;
-	libtty_signal_pgrp(&vt->tty, SIGWINCH);
+	_libtty_signal_pgrp(&vt->tty, SIGWINCH);
 
 	vt->cols = cols;
 	vt->rows = rows;
