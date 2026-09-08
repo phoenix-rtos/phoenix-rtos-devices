@@ -443,8 +443,7 @@ static void ttypc_kbd_handle_event(ttypc_t *ttypc, unsigned char b)
 	char buff[10];
 	unsigned char m;
 
-	mutexLock(ttypc->lock);
-	mutexLock(cvt->lock);
+	mutexLock2(ttypc->lock, cvt->lock);
 
 	if ((s = _ttypc_kbd_get(ttypc, b)) == NULL) {
 		mutexUnlock(cvt->lock);
@@ -513,7 +512,7 @@ static void ttypc_kbd_handle_event(ttypc_t *ttypc, unsigned char b)
 				s = "\r\n";
 		}
 
-		while (*s && !libtty_putchar(&cvt->tty, *s++, NULL))
+		while (*s && !_libtty_putchar(&cvt->tty, *s++, NULL))
 			;
 	}
 
