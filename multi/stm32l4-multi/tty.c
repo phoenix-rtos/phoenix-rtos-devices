@@ -355,7 +355,7 @@ static int tty_irqHandlerDMA(unsigned int n, void *arg)
 }
 
 
-static void tty_dmaHandleRx(tty_ctx_t *ctx)
+static void _tty_dmaHandleRx(tty_ctx_t *ctx)
 {
 	uint8_t c;
 	int wake = 0, wakeHelper;
@@ -364,28 +364,26 @@ static void tty_dmaHandleRx(tty_ctx_t *ctx)
 		return;
 	}
 
-	libtty_putchar_lock(&ctx->ttyCommon);
 	do {
-		libtty_putchar_unlocked(&ctx->ttyCommon, c, &wakeHelper);
+		_libtty_putchar(&ctx->ttyCommon, c, &wakeHelper);
 		wake |= wakeHelper;
 	} while (lf_fifo_pop(&ctx->data.dma.rxFifo, &c) != 0);
-	libtty_putchar_unlock(&ctx->ttyCommon);
 
 	if (wake != 0) {
-		libtty_wake_reader(&ctx->ttyCommon);
+		_libtty_wake_reader(&ctx->ttyCommon);
 	}
 }
 
 
-static void tty_dmaHandleTx(tty_ctx_t *ctx)
+static void _tty_dmaHandleTx(tty_ctx_t *ctx)
 {
 	unsigned int i;
 
-	if (libtty_txready(&ctx->ttyCommon) != 0) {
-		for (i = 0; (i < ctx->data.dma.txbufsz) && (libtty_txready(&ctx->ttyCommon) != 0); i++) {
-			ctx->data.dma.txbuf[i] = libtty_popchar(&ctx->ttyCommon);
+	if (_libtty_txready(&ctx->ttyCommon) != 0) {
+		for (i = 0; (i < ctx->data.dma.txbufsz) && (_libtty_txready(&ctx->ttyCommon) != 0); i++) {
+			ctx->data.dma.txbuf[i] = _libtty_popchar(&ctx->ttyCommon);
 		}
-		libtty_wake_writer(&ctx->ttyCommon);
+		_libtty_wake_writer(&ctx->ttyCommon);
 
 		*(ctx->base + icr) |= (1 << 6);
 
@@ -396,7 +394,7 @@ static void tty_dmaHandleTx(tty_ctx_t *ctx)
 
 static int tty_dmatxready(tty_ctx_t *ctx)
 {
-	return ((ctx->data.dma.txDoneFlag != 0) && (libtty_txready(&ctx->ttyCommon) != 0)) ? 1 : 0;
+	return ((ctx->data.dma.txDoneFlag != 0) && (_libtty_txready(&ctx->ttyCommon) != 0)) ? 1 : 0;
 }
 
 
@@ -419,17 +417,16 @@ static void tty_dmathread(void *arg)
 	/* Start rx routine. */
 	libdma_infiniteRxAsync(ctx->data.dma.per, ctx->data.dma.rxbuf, ctx->data.dma.rxbufsz, tty_dmaCallback, ctx);
 
+	mutexLock(ctx->irqlock);
 	for (;;) {
 		if (tty_dmarxready(ctx) == 0) {
-			mutexLock(ctx->irqlock);
 			while (((tty_dmarxready(ctx) == 0) && (tty_dmatxready(ctx) == 0)) || (tty_uartenabled(ctx) == 0)) {
 				condWait(ctx->cond, ctx->irqlock, 0);
 			}
-			mutexUnlock(ctx->irqlock);
 		}
 
-		tty_dmaHandleRx(ctx);
-		tty_dmaHandleTx(ctx);
+		_tty_dmaHandleRx(ctx);
+		_tty_dmaHandleTx(ctx);
 	}
 }
 
@@ -443,10 +440,9 @@ static void tty_irqthread(void *arg)
 
 	for (;;) {
 		mutexLock(ctx->irqlock);
-		while (((ctx->data.irq.rxready == 0) && !((tty_txready(ctx) != 0) && ((libtty_txready(&ctx->ttyCommon) != 0) || (keptidle != 0)))) || (tty_uartenabled(ctx) == 0)) {
+		while (((ctx->data.irq.rxready == 0) && !((tty_txready(ctx) != 0) && ((_libtty_txready(&ctx->ttyCommon) != 0) || (keptidle != 0)))) || (tty_uartenabled(ctx) == 0)) {
 			condWait(ctx->cond, ctx->irqlock, 0);
 		}
-		mutexUnlock(ctx->irqlock);
 
 		if ((ctx->ttyCommon.term.c_cflag & CSIZE) == CS7) {
 			mask = 0x7f;
@@ -462,19 +458,18 @@ static void tty_irqthread(void *arg)
 			int wake = 0, wakeHelper = 0;
 			ctx->data.irq.rxready = 0;
 			dataBarier();
-			libtty_putchar_lock(&ctx->ttyCommon);
+
 			while (lf_fifo_pop(&ctx->data.irq.rxFifo, &rxbyte) != 0) {
-				libtty_putchar_unlocked(&ctx->ttyCommon, rxbyte & mask, &wakeHelper);
+				_libtty_putchar(&ctx->ttyCommon, rxbyte & mask, &wakeHelper);
 				wake |= wakeHelper;
 			}
-			libtty_putchar_unlock(&ctx->ttyCommon);
 			if (wake != 0) {
-				libtty_wake_reader(&ctx->ttyCommon);
+				_libtty_wake_reader(&ctx->ttyCommon);
 			}
 		}
 
 		int txReady = 0;
-		while (libtty_txready(&ctx->ttyCommon) != 0) {
+		while (_libtty_txready(&ctx->ttyCommon) != 0) {
 			if (tty_txready(ctx) != 0) {
 				if (keptidle == 0) {
 					keptidle = 1;
@@ -482,7 +477,7 @@ static void tty_irqthread(void *arg)
 				}
 
 				/* TODO add small TX fifo that can be read directly from IRQ */
-				*(ctx->base + tdr) = libtty_getchar(&ctx->ttyCommon, NULL);
+				*(ctx->base + tdr) = _libtty_getchar(&ctx->ttyCommon, NULL);
 			}
 			else {
 #if UART_FIFO_MODE
@@ -494,7 +489,7 @@ static void tty_irqthread(void *arg)
 				break;
 			}
 		}
-
+		mutexUnlock(ctx->irqlock);
 
 		if ((txReady == 0) && (keptidle != 0)) {
 			keptidle = 0;
@@ -719,7 +714,8 @@ static void tty_thread(void *arg)
 	msg_rid_t rid;
 	tty_ctx_t *ctx;
 	unsigned long request;
-	const void *in_data, *out_data = NULL;
+	const void *in_data;
+	void *out_data = NULL;
 	pid_t pid;
 	int err;
 	id_t id;
@@ -772,14 +768,14 @@ static void tty_thread(void *arg)
 				break;
 
 			case mtDevCtl:
-				in_data = ioctl_unpack(&msg, &request, &id);
+				in_data = ioctl_unpackEx(&msg, &request, &id, &out_data);
 				ctx = tty_getCtx(id);
 				if (ctx == NULL) {
 					err = -EINVAL;
 				}
 				else {
 					pid = ioctl_getSenderPid(&msg);
-					err = libtty_ioctl(&ctx->ttyCommon, pid, request, in_data, &out_data);
+					err = libtty_ioctl(&ctx->ttyCommon, pid, request, in_data, out_data);
 				}
 				ioctl_setResponse(&msg, request, err, out_data);
 				break;
@@ -849,6 +845,9 @@ int tty_init(void)
 			return -1;
 		}
 
+		mutexCreate(&ctx->irqlock);
+		condCreate(&ctx->cond);
+
 		libtty_callbacks_t callbacks = {
 			.arg = ctx,
 			.set_baudrate = tty_setBaudrate,
@@ -858,12 +857,9 @@ int tty_init(void)
 			.set_halfduplex = tty_setHalfduplex,
 		};
 
-		if (libtty_init(&ctx->ttyCommon, &callbacks, ttySetup[tty].libttyBufSize, baudrate) < 0) {
+		if (libtty_init(&ctx->ttyCommon, &callbacks, ttySetup[tty].libttyBufSize, baudrate, &ctx->irqlock) < 0) {
 			return -1;
 		}
-
-		mutexCreate(&ctx->irqlock);
-		condCreate(&ctx->cond);
 
 		ctx->base = ttyInfo[tty].base;
 		ctx->bits = -1;

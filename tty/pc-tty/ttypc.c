@@ -43,7 +43,8 @@ ttypc_t ttypc_common;
 static void ttypc_poolthr(void *arg)
 {
 	ttypc_t *ttypc = (ttypc_t *)arg;
-	const void *idata, *odata = NULL;
+	const void *idata;
+	void *odata = NULL;
 	unsigned long req;
 	msg_rid_t rid;
 	msg_t msg;
@@ -91,7 +92,7 @@ static void ttypc_poolthr(void *arg)
 				break;
 
 			case mtDevCtl:
-				idata = ioctl_unpack(&msg, &req, &id);
+				idata = ioctl_unpackEx(&msg, &req, &id, &odata);
 				if (req == KIOEN) {
 					if (id == 0) {
 						libklog_enable((int)(intptr_t)idata);
@@ -103,7 +104,7 @@ static void ttypc_poolthr(void *arg)
 				}
 				else {
 					if (id < NVTS) {
-						err = ttypc_vt_ioctl(ttypc->vts + id, ioctl_getSenderPid(&msg), req, idata, &odata);
+						err = ttypc_vt_ioctl(ttypc->vts + id, ioctl_getSenderPid(&msg), req, idata, odata);
 					}
 					else {
 						err = -EINVAL;
@@ -177,9 +178,10 @@ int main(int argc, char **argv)
 	ttypc_common.vt = ttypc_common.vts;
 	ttypc_common.vt->vram = ttypc_common.vga;
 
+	mutexLock(ttypc_common.vt->lock);
 	if (ttypc_common.vt->fbmode == FBCON_ENABLED) {
 		/* Resize active virtual terminal to match fbcon maximum resolution */
-		ttypc_vt_resize(ttypc_common.vt, ttypc_common.fbmaxcols, ttypc_common.fbmaxrows);
+		_ttypc_vt_resize(ttypc_common.vt, ttypc_common.fbmaxcols, ttypc_common.fbmaxrows);
 	}
 
 	/* Initialize cursor */
@@ -193,6 +195,7 @@ int main(int argc, char **argv)
 
 	/* Set default cursor color */
 	_ttypc_vga_set(ttypc_common.vt, ttypc_common.vt->cpos, FG_LIGHTGREY << 8, ttypc_common.vt->rows * ttypc_common.vt->cols - ttypc_common.vt->cpos);
+	mutexUnlock(ttypc_common.vt->lock);
 
 	/* Run pool threads */
 	if ((err = beginthread(ttypc_poolthr, 1, ttypc_common.pstack, sizeof(ttypc_common.pstack), &ttypc_common)) < 0)

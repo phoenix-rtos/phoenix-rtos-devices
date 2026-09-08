@@ -285,7 +285,7 @@ void _ttypc_vtf_da(ttypc_vt_t *vt)
 {
 	/* 62 - class 2 terminal, c - end of attributes list */
 	static const char da[] = "\033[62;c";
-	ttypc_vt_respond(vt, da);
+	_ttypc_vt_respond(vt, da);
 }
 
 
@@ -755,7 +755,7 @@ void _ttypc_vtf_dsr(ttypc_vt_t *vt)
 	switch (vt->parms[0]) {
 	/* Status */
 	case 5:
-		ttypc_vt_respond(vt, stat);
+		_ttypc_vt_respond(vt, stat);
 		break;
 
 	/* Cursor position */
@@ -774,22 +774,22 @@ void _ttypc_vtf_dsr(ttypc_vt_t *vt)
 		buff[i++] = 'R';
 		buff[i++] = '\0';
 
-		ttypc_vt_respond(vt, buff);
+		_ttypc_vt_respond(vt, buff);
 		break;
 
 	/* Printer status */
 	case 15:
-		ttypc_vt_respond(vt, print);
+		_ttypc_vt_respond(vt, print);
 		break;
 
 	/* User Defined Keys status */
 	case 25:
-		ttypc_vt_respond(vt, udk);
+		_ttypc_vt_respond(vt, udk);
 		break;
 
 	/* Language status */
 	case 26:
-		ttypc_vt_respond(vt, lang);
+		_ttypc_vt_respond(vt, lang);
 		break;
 
 	default:
@@ -1047,7 +1047,7 @@ void _ttypc_vtf_resetansi(ttypc_vt_t *vt)
 void _ttypc_vtf_reqtparm(ttypc_vt_t *vt)
 {
 	static const char tparm[] = "\033[3;1;1;120;120;1;0x";
-	ttypc_vt_respond(vt, tparm);
+	_ttypc_vt_respond(vt, tparm);
 }
 
 

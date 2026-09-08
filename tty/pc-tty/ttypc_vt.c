@@ -635,11 +635,11 @@ ssize_t ttypc_vt_write(ttypc_vt_t *vt, int mode, const char *buff, size_t len)
 }
 
 
-int ttypc_vt_respond(ttypc_vt_t *vt, const char *buff)
+int _ttypc_vt_respond(ttypc_vt_t *vt, const char *buff)
 {
 	int err = 0;
 	while ((*buff != '\0') && (err == 0)) {
-		err = libtty_putchar(&vt->tty, *(buff++), NULL);
+		err = _libtty_putchar(&vt->tty, *(buff++), NULL);
 	}
 	return err;
 }
@@ -651,7 +651,7 @@ int ttypc_vt_pollstatus(ttypc_vt_t *vt)
 }
 
 
-int ttypc_vt_ioctl(ttypc_vt_t *vt, pid_t pid, unsigned int cmd, const void *idata, const void **odata)
+int ttypc_vt_ioctl(ttypc_vt_t *vt, pid_t pid, unsigned int cmd, const void *idata, void *odata)
 {
 	int mode;
 	int ret = EOK;
@@ -670,7 +670,8 @@ int ttypc_vt_ioctl(ttypc_vt_t *vt, pid_t pid, unsigned int cmd, const void *idat
 			vt->fbmode = mode;
 			break;
 		case FBCONGETMODE:
-			*odata = (const void *)&vt->fbmode;
+			mode = vt->fbmode;
+			memcpy(odata, &mode, sizeof(mode));
 			break;
 		default:
 			ret = libtty_ioctl(&vt->tty, pid, cmd, idata, odata);
@@ -708,14 +709,14 @@ static void _ttypc_vt_signaltxready(void *arg)
 {
 	ttypc_vt_t *vt = (ttypc_vt_t *)arg;
 
-	while (libtty_txready(&vt->tty))
-		_ttypc_vt_sput(vt, (char)libtty_popchar(&vt->tty));
+	while (_libtty_txready(&vt->tty))
+		_ttypc_vt_sput(vt, (char)_libtty_popchar(&vt->tty));
 
-	libtty_wake_writer(&vt->tty);
+	_libtty_wake_writer(&vt->tty);
 }
 
 
-void ttypc_vt_resize(ttypc_vt_t *vt, uint8_t cols, uint8_t rows)
+void _ttypc_vt_resize(ttypc_vt_t *vt, uint8_t cols, uint8_t rows)
 {
 	vt->tty.ws.ws_col = cols;
 	vt->tty.ws.ws_row = rows;
@@ -763,7 +764,7 @@ int ttypc_vt_init(ttypc_t *ttypc, unsigned int ttybuffsz, ttypc_vt_t *vt)
 		}
 	}
 
-	if ((err = libtty_init(&vt->tty, &cb, ttybuffsz, TTYDEF_SPEED)) < 0) {
+	if ((err = libtty_init(&vt->tty, &cb, ttybuffsz, TTYDEF_SPEED, &vt->lock)) < 0) {
 		resourceDestroy(vt->lock);
 		munmap(vt->mem, ttybuffsz);
 		if (SCRB_PAGES) {
@@ -785,10 +786,13 @@ int ttypc_vt_init(ttypc_t *ttypc, unsigned int ttybuffsz, ttypc_vt_t *vt)
 	vt->ttypc = ttypc;
 	vt->cols = 80;
 	vt->rows = 25;
+
+	mutexLock(vt->lock);
 	_ttypc_vtf_str(vt);
 
 	/* Clear screen */
 	_ttypc_vga_set(vt, 0, vt->attr | ' ', vt->cols * vt->rows);
+	mutexUnlock(vt->lock);
 
 	return EOK;
 }

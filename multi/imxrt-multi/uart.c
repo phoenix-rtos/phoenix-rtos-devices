@@ -276,12 +276,13 @@ static void uart_intrThread(void *arg)
 	uint8_t c;
 	int rxActive = 1;
 
+	mutexLock(uart->lock);
+
 	for (;;) {
 		/* wait for character or transmit data */
-		mutexLock(uart->lock);
 		while (lf_fifo_empty(&uart->rxFifoCtx) != 0) { /* nothing to RX */
 			uint32_t intrs = (1 << 27) | (1 << 26) | (1 << 25);
-			if (libtty_txready(&uart->tty_common)) {          /* something to TX */
+			if (_libtty_txready(&uart->tty_common)) {         /* something to TX */
 				if (uart_getTXcount(uart) < uart->txFifoSz) { /* TX ready */
 					break;
 				}
@@ -316,15 +317,13 @@ static void uart_intrThread(void *arg)
 			mask = 0xff;
 		}
 
-		mutexUnlock(uart->lock);
-
 		/* RX */
 		while (lf_fifo_pop(&uart->rxFifoCtx, &c) != 0) {
-			libtty_putchar(&uart->tty_common, c & mask, NULL);
+			_libtty_putchar(&uart->tty_common, c & mask, NULL);
 		}
 
 		/* TX */
-		if (libtty_txready(&uart->tty_common) && uart_getTXcount(uart) < uart->txFifoSz) {
+		if (_libtty_txready(&uart->tty_common) && uart_getTXcount(uart) < uart->txFifoSz) {
 			if ((uart->halfDuplexAction.port != 0) && (rxActive != 0)) {
 				*(uart->base + ctrlr) &= ~(1 << 18);
 				uart_performHalfDuplexAction(&uart->halfDuplexAction, 1);
@@ -332,8 +331,8 @@ static void uart_intrThread(void *arg)
 			}
 
 			do {
-				*(uart->base + datar) = libtty_getchar(&uart->tty_common, NULL);
-			} while (libtty_txready(&uart->tty_common) && uart_getTXcount(uart) < uart->txFifoSz);
+				*(uart->base + datar) = _libtty_getchar(&uart->tty_common, NULL);
+			} while (_libtty_txready(&uart->tty_common) && uart_getTXcount(uart) < uart->txFifoSz);
 		}
 	}
 }
@@ -449,7 +448,8 @@ static void set_baudrate(void *_uart, int baud)
 int uart_handleMsg(msg_t *msg, int dev)
 {
 	unsigned long request;
-	const void *in_data, *out_data = NULL;
+	const void *in_data;
+	void *out_data = NULL;
 	pid_t pid;
 	int err;
 	uart_t *uart;
@@ -480,7 +480,7 @@ int uart_handleMsg(msg_t *msg, int dev)
 			break;
 
 		case mtDevCtl:
-			in_data = ioctl_unpack(msg, &request, NULL);
+			in_data = ioctl_unpackEx(msg, &request, NULL, &out_data);
 			pid = ioctl_getSenderPid(msg);
 
 			if (request == KIOEN) {
@@ -497,7 +497,7 @@ int uart_handleMsg(msg_t *msg, int dev)
 #endif
 			}
 			else {
-				err = libtty_ioctl(&uart->tty_common, pid, request, in_data, &out_data);
+				err = libtty_ioctl(&uart->tty_common, pid, request, in_data, out_data);
 			}
 
 			ioctl_setResponse(msg, request, err, out_data);
@@ -1157,7 +1157,7 @@ int uart_init(void)
 			.signal_txready = signal_txready,
 		};
 
-		if (libtty_init(&uart->tty_common, &callbacks, tty_bufsz[dev], default_baud[dev]) < 0) {
+		if (libtty_init(&uart->tty_common, &callbacks, tty_bufsz[dev], default_baud[dev], &uart->lock) < 0) {
 			return -1;
 		}
 

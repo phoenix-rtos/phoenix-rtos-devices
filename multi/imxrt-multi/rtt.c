@@ -92,7 +92,6 @@ static void rtt_thread(void *arg)
 			unsigned char data;
 			ssize_t onRx = librtt_rxAvail(uart->chn);
 			ssize_t onTx = rtt_txAvailMode(uart->chn);
-			int txReady = libtty_txready(&uart->tty_common);
 
 			if (rttBlocking[uart->chn] == 0) {
 				/* Do nothing, in this case the remaining code is unnecessary */
@@ -109,28 +108,30 @@ static void rtt_thread(void *arg)
 				}
 			}
 
+			mutexLock(uart->lock);
+			int txReady = _libtty_txready(&uart->tty_common);
 			if ((onRx == 0) && ((txReady == 0) || (onTx == 0))) {
 				chnsIdle++;
+				mutexUnlock(uart->lock);
 				continue;
 			}
 
-			mutexLock(uart->lock);
 			const unsigned char mask = ((uart->tty_common.term.c_cflag & CSIZE) == CS7) ? 0x7f : 0xff;
 			while (onRx > 0) {
 				librtt_read(uart->chn, &data, 1);
-				libtty_putchar(&uart->tty_common, data & mask, NULL);
+				_libtty_putchar(&uart->tty_common, data & mask, NULL);
 				onRx = librtt_rxAvail(uart->chn);
 			}
 
 			while ((onTx > 0) && (txReady != 0)) {
-				data = libtty_getchar(&uart->tty_common, NULL);
+				data = _libtty_getchar(&uart->tty_common, NULL);
 				ssize_t written = librtt_write(uart->chn, &data, 1, 0);
 				if (written <= 0) {
 					uart->diag_txSkipped++;
 				}
 
 				onTx = (timeout[chn_idx] == 0) ? 1 : rtt_txAvailMode(uart->chn);
-				txReady = libtty_txready(&uart->tty_common);
+				txReady = _libtty_txready(&uart->tty_common);
 			}
 
 			mutexUnlock(uart->lock);
@@ -178,7 +179,7 @@ static int rtt_initOne(rtt_t *uart, int chn, unsigned char *buf)
 
 	ret = (ret == 0) ? mutexCreate(&uart->lock) : ret;
 	/* TODO: calculate approx. baud rate based on buffer size and polling rate */
-	ret = (ret == 0) ? libtty_init(&uart->tty_common, &callbacks, TTY_BUF_SIZE, 115200) : ret;
+	ret = (ret == 0) ? libtty_init(&uart->tty_common, &callbacks, TTY_BUF_SIZE, 115200, &uart->lock) : ret;
 
 	return ret;
 }
@@ -289,7 +290,8 @@ void rtt_klogCblk(const char *data, size_t size)
 int rtt_handleMsg(msg_t *msg, int dev)
 {
 	unsigned long request;
-	const void *in_data, *out_data = NULL;
+	const void *in_data;
+	void *out_data = NULL;
 	pid_t pid;
 	int err;
 	rtt_t *uart;
@@ -322,9 +324,9 @@ int rtt_handleMsg(msg_t *msg, int dev)
 			break;
 
 		case mtDevCtl:
-			in_data = ioctl_unpack(msg, &request, NULL);
+			in_data = ioctl_unpackEx(msg, &request, NULL, &out_data);
 			pid = ioctl_getSenderPid(msg);
-			err = libtty_ioctl(&uart->tty_common, pid, request, in_data, &out_data);
+			err = libtty_ioctl(&uart->tty_common, pid, request, in_data, out_data);
 			ioctl_setResponse(msg, request, err, out_data);
 			break;
 

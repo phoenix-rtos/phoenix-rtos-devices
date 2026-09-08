@@ -130,33 +130,32 @@ static void uart_intThread(void *arg)
 {
 	uart_t *uart = (uart_t *)arg;
 
+	mutexLock(uart->lock);
 	for (;;) {
 		while (lf_fifo_empty(&uart->rxFifoCtx) != 0) { /* nothing to RX */
-			if (libtty_txready(&uart->tty) != 0) {     /* something to TX */
+			if (_libtty_txready(&uart->tty) != 0) {    /* something to TX */
 				if ((*(uart->base + state) & TX_BUF_FULL) == 0) {
 					break;
 				}
 			}
-			mutexLock(uart->lock);
 			condWait(uart->cond, uart->lock, 0);
-			mutexUnlock(uart->lock);
 		}
 
 		/* RX */
 		uint8_t c;
 		while (lf_fifo_pop(&uart->rxFifoCtx, &c) != 0) {
-			libtty_putchar(&uart->tty, c, NULL);
+			_libtty_putchar(&uart->tty, c, NULL);
 		}
 
 		/* TX */
 		bool wake = false;
-		while ((libtty_txready(&uart->tty) != 0) && ((*(uart->base + state) & TX_BUF_FULL) == 0)) {
-			*(uart->base + data) = libtty_popchar(&uart->tty);
+		while ((_libtty_txready(&uart->tty) != 0) && ((*(uart->base + state) & TX_BUF_FULL) == 0)) {
+			*(uart->base + data) = _libtty_popchar(&uart->tty);
 			wake = true;
 		}
 
 		if (wake) {
-			libtty_wake_writer(&uart->tty);
+			_libtty_wake_writer(&uart->tty);
 		}
 	}
 
@@ -184,11 +183,11 @@ static void uart_signalTXReady(void *data)
 static void uart_ioctl(unsigned port, msg_t *msg)
 {
 	unsigned long req;
-	const void *inData = ioctl_unpack(msg, &req, NULL);
+	void *outData = NULL;
+	const void *inData = ioctl_unpackEx(msg, &req, NULL, &outData);
 	pid_t pid = ioctl_getSenderPid(msg);
 
-	const void *outData = NULL;
-	int err = libtty_ioctl(&uart_common.uart.tty, pid, req, inData, &outData);
+	int err = libtty_ioctl(&uart_common.uart.tty, pid, req, inData, outData);
 
 	ioctl_setResponse(msg, req, err, outData);
 }
@@ -288,26 +287,25 @@ static int uart_init(unsigned int n, int baud, int raw)
 	uart_t *uart = &uart_common.uart;
 	uart->base = info[n].base;
 
+	if (condCreate(&uart->cond) != 0) {
+		return -1;
+	}
+
+	if (mutexCreate(&uart->lock) != 0) {
+		resourceDestroy(uart->cond);
+		return -1;
+	}
+
 	libtty_callbacks_t callbacks = {
 		.arg = uart,
 		.set_cflag = NULL, /* Not supported */
 		.set_baudrate = uart_setBaudrate,
 		.signal_txready = uart_signalTXReady,
 	};
-	if (libtty_init(&uart->tty, &callbacks, _PAGE_SIZE, baud) < 0) {
-		return -1;
-	}
 
-	if (condCreate(&uart->cond) != 0) {
-		libtty_close(&uart->tty);
-		libtty_destroy(&uart->tty);
-		return -1;
-	}
-
-	if (mutexCreate(&uart->lock) != 0) {
-		libtty_close(&uart->tty);
-		libtty_destroy(&uart->tty);
+	if (libtty_init(&uart->tty, &callbacks, _PAGE_SIZE, baud, &uart->lock) < 0) {
 		resourceDestroy(uart->cond);
+		resourceDestroy(uart->lock);
 		return -1;
 	}
 

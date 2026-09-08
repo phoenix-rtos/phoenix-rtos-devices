@@ -256,14 +256,14 @@ static void uart_handleErrors(uart_t *uart)
 }
 
 
-static bool uart_handleTx(uart_t *uart)
+static bool _uart_handleTx(uart_t *uart)
 {
 	bool waitForTx = false;
 	int wake = 0;
-	while (libtty_txready(&uart->tty) != 0) {
+	while (_libtty_txready(&uart->tty) != 0) {
 		if ((uart_readUpdateLineStatus(uart) & LSR_THRE) != 0) {
 			int wakeHelper;
-			uarthw_write(uart->hwctx, REG_THR, libtty_getchar(&uart->tty, &wakeHelper));
+			uarthw_write(uart->hwctx, REG_THR, _libtty_getchar(&uart->tty, &wakeHelper));
 			wake |= wakeHelper;
 		}
 		else {
@@ -273,7 +273,7 @@ static bool uart_handleTx(uart_t *uart)
 	}
 
 	if (wake != 0) {
-		libtty_wake_writer(&uart->tty);
+		_libtty_wake_writer(&uart->tty);
 	}
 
 	return waitForTx;
@@ -295,29 +295,27 @@ static void uart_intthr(void *arg)
 
 		if (!lf_fifo_empty(&uart->rxSwFifo) || (uart_readUpdateLineStatus(uart) & LSR_DR) != 0) {
 			int wake = 0, wakeHelper = 0;
-			libtty_putchar_lock(&uart->tty);
 			/* Empty received buffer */
 			uint8_t c;
 			while (lf_fifo_ow_pop(&uart->rxSwFifo, &c) != 0) {
-				libtty_putchar_unlocked(&uart->tty, c, &wakeHelper);
+				_libtty_putchar(&uart->tty, c, &wakeHelper);
 				wake |= wakeHelper;
 			}
 
 			/* Depending on implementation we may have more characters in hardware FIFO */
 			while ((uart_readUpdateLineStatus(uart) & LSR_DR) != 0) {
 				c = uarthw_read(uart->hwctx, REG_RBR);
-				libtty_putchar_unlocked(&uart->tty, c, &wakeHelper);
+				_libtty_putchar(&uart->tty, c, &wakeHelper);
 				wake |= wakeHelper;
 			}
 
-			libtty_putchar_unlock(&uart->tty);
 			if (wake != 0) {
-				libtty_wake_reader(&uart->tty);
+				_libtty_wake_reader(&uart->tty);
 			}
 		}
 
 		/* Check for transmit */
-		if (uart_handleTx(uart)) {
+		if (_uart_handleTx(uart)) {
 			target_imr |= IMR_THRE;
 		}
 		else {
@@ -329,13 +327,14 @@ static void uart_intthr(void *arg)
 
 static void uart_ioctl(unsigned int port, msg_t *msg)
 {
-	const void *idata, *odata = NULL;
+	const void *idata;
+	void *odata = NULL;
 	oid_t oid = { .port = port };
 	uart_t *uart;
 	unsigned long req;
 	int err;
 
-	idata = ioctl_unpack(msg, &req, &oid.id);
+	idata = ioctl_unpackEx(msg, &req, &oid.id, &odata);
 
 	uart = uart_get(&oid);
 	if (uart == NULL) {
@@ -351,7 +350,7 @@ static void uart_ioctl(unsigned int port, msg_t *msg)
 		}
 	}
 	else {
-		err = libtty_ioctl(&uart->tty, ioctl_getSenderPid(msg), req, idata, &odata);
+		err = libtty_ioctl(&uart->tty, ioctl_getSenderPid(msg), req, idata, odata);
 	}
 
 	ioctl_setResponse(msg, req, err, odata);
@@ -514,26 +513,27 @@ static int _uart_init(uart_t *uart, unsigned int uartn, unsigned int speed, int8
 
 	divisor = uart->hwInfo.fclk / (16 * speed);
 
-	err = libtty_init(&uart->tty, &callbacks, _PAGE_SIZE, speed);
-	if (err < 0) {
-		return err;
-	}
-
-	atomic_store(&uart->hwOverruns, 0);
-	atomic_store(&uart->lineStatus, 0);
-	lf_fifo_init(&uart->rxSwFifo, uart->rxSwFifoData, sizeof(uart->rxSwFifoData));
 	err = condCreate(&uart->intcond);
 	if (err < 0) {
-		libtty_destroy(&uart->tty);
 		return err;
 	}
 
 	err = mutexCreate(&uart->mutex);
 	if (err < 0) {
 		resourceDestroy(uart->intcond);
-		libtty_destroy(&uart->tty);
 		return err;
 	}
+
+	err = libtty_init(&uart->tty, &callbacks, _PAGE_SIZE, speed, &uart->mutex);
+	if (err < 0) {
+		resourceDestroy(uart->intcond);
+		resourceDestroy(uart->mutex);
+		return err;
+	}
+
+	atomic_store(&uart->hwOverruns, 0);
+	atomic_store(&uart->lineStatus, 0);
+	lf_fifo_init(&uart->rxSwFifo, uart->rxSwFifoData, sizeof(uart->rxSwFifoData));
 
 	/* Set speed (MOD) */
 	uarthw_write(uart->hwctx, REG_LCR, LCR_DLAB);
