@@ -208,6 +208,33 @@ void libtty_wake_writer(libtty_common_t *tty)
 }
 
 
+/* WARN: non-reentrant without zeroing tty */
+static void libtty_free(libtty_common_t *tty)
+{
+	if (tty->ctl_mutex != 0) {
+		resourceDestroy(tty->ctl_mutex);
+	}
+	if (tty->rx_mutex != 0) {
+		resourceDestroy(tty->rx_mutex);
+	}
+	if (tty->tx_mutex != 0) {
+		resourceDestroy(tty->tx_mutex);
+	}
+	if (tty->tx_waitq != 0) {
+		resourceDestroy(tty->tx_waitq);
+	}
+	if (tty->rx_waitq != 0) {
+		resourceDestroy(tty->rx_waitq);
+	}
+	if (tty->rx_fifo != NULL) {
+		free(tty->rx_fifo);
+	}
+	if (tty->tx_fifo != NULL) {
+		free(tty->tx_fifo);
+	}
+}
+
+
 int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned int bufsize, int speed)
 {
 	/* bufsize must be a power of 2 */
@@ -223,24 +250,41 @@ int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned in
 	tty->cb = *callbacks;
 
 	tty->tx_fifo = malloc(sizeof(fifo_t) + bufsize * sizeof(tty->tx_fifo->data[0]));
-	tty->rx_fifo = malloc(sizeof(fifo_t) + bufsize * sizeof(tty->rx_fifo->data[0]));
-	if (tty->tx_fifo == NULL || tty->rx_fifo == NULL) {
-		free(tty->tx_fifo);
-		free(tty->rx_fifo);
+	if (tty->tx_fifo == NULL) {
+		libtty_free(tty);
 		return -1;
 	}
 
-	if (condCreate(&tty->tx_waitq) != EOK)
+	tty->rx_fifo = malloc(sizeof(fifo_t) + bufsize * sizeof(tty->rx_fifo->data[0]));
+	if (tty->rx_fifo == NULL) {
+		libtty_free(tty);
 		return -1;
+	}
 
-	if (condCreate(&tty->rx_waitq) != EOK)
+	if (condCreate(&tty->tx_waitq) != EOK) {
+		libtty_free(tty);
 		return -1;
+	}
 
-	if (mutexCreate(&tty->tx_mutex) != EOK)
+	if (condCreate(&tty->rx_waitq) != EOK) {
+		libtty_free(tty);
 		return -1;
+	}
 
-	if (mutexCreate(&tty->rx_mutex) != EOK)
+	if (mutexCreate(&tty->tx_mutex) != EOK) {
+		libtty_free(tty);
 		return -1;
+	}
+
+	if (mutexCreate(&tty->rx_mutex) != EOK) {
+		libtty_free(tty);
+		return -1;
+	}
+
+	if (mutexCreate(&tty->ctl_mutex) != EOK) {
+		libtty_free(tty);
+		return -1;
+	}
 
 	fifo_init(tty->tx_fifo, bufsize);
 	fifo_init(tty->rx_fifo, bufsize);
@@ -250,6 +294,7 @@ int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned in
 
 	tty->ws.ws_row = 25;
 	tty->ws.ws_col = 80;
+	tty->sid = -1;
 	tty->pgrp = -1;
 
 	return 0;
@@ -278,6 +323,7 @@ int libtty_destroy(libtty_common_t *tty)
 	resourceDestroy(tty->rx_waitq);
 	resourceDestroy(tty->tx_mutex);
 	resourceDestroy(tty->rx_mutex);
+	resourceDestroy(tty->ctl_mutex);
 
 	free(tty->tx_fifo);
 	free(tty->rx_fifo);
@@ -393,9 +439,16 @@ int libtty_poll_status(libtty_common_t *tty)
 
 void libtty_signal_pgrp(libtty_common_t *tty, int signal)
 {
-	if (tty->pgrp > 0) {
-		log_debug("signal(%u): %d", tty->pgrp, signal);
-		kill(-tty->pgrp, signal);
+	pid_t pgrp;
+
+	/* Snapshot, so that kill() is not called with the lock held */
+	mutexLock(tty->ctl_mutex);
+	pgrp = tty->pgrp;
+	mutexUnlock(tty->ctl_mutex);
+
+	if (pgrp > 0) {
+		log_debug("signal(%u): %d", pgrp, signal);
+		kill(-pgrp, signal);
 	}
 }
 
@@ -427,16 +480,160 @@ void libtty_flush(libtty_common_t *tty, int type)
 	termios_optimize(tty);
 }
 
+/*
+ * Claims an unclaimed terminal for the sender's session and returns 0 when the
+ * sender may operate on this terminal's controlling-terminal state.
+ *
+ * NOTE: Terminal is claimed implicitly by the first session to touch it.
+ */
+static int libtty_sessionCheck(libtty_common_t *tty, pid_t sender_pid, int claim)
+{
+	pid_t sid;
+
+	/* Internal callers pass 0, they have no session and must not be let in */
+	if (sender_pid <= 0) {
+		return -ENOTTY;
+	}
+
+	sid = getsid(sender_pid);
+	if (sid == (pid_t)-1) {
+		return -ENOTTY;
+	}
+
+	/* Keep up with the kernel and release the terminal, if the session is already gone. */
+	if ((tty->sid >= 0) && (getsid(tty->sid) != tty->sid)) {
+		tty->sid = -1;
+		tty->pgrp = -1;
+	}
+
+	if (tty->sid < 0) {
+		if (claim == 0) {
+			return -ENOTTY;
+		}
+		tty->sid = sid;
+	}
+
+	return (tty->sid == sid) ? 0 : -ENOTTY;
+}
+
+
+_Static_assert(sizeof(pid_t) <= sizeof(int), "tty->pgrp, tty->sid must fit into tty->temp");
+
+
+static int libtty_cttyIoctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const void *in_arg, const void **out_arg)
+{
+	const pid_t *pgid = (const pid_t *)in_arg;
+	int ret;
+
+	mutexLock(tty->ctl_mutex);
+
+	switch (cmd) {
+		case TIOCGPGRP:
+			ret = libtty_sessionCheck(tty, sender_pid, 0);
+			if (ret == 0) {
+				tty->temp = tty->pgrp;
+				log_ioctl("TIOCGPGRP = %u", tty->temp);
+				*out_arg = (const void *)&tty->temp;
+			}
+			break;
+
+		case TIOCSPGRP:
+			if (pgid == NULL) {
+				ret = -EINVAL;
+				break;
+			}
+
+			/* NOTE: the argument is a process group id, not a pid */
+			if (*pgid <= 0) {
+				/* Use TIOCNOTTY to give up a terminal */
+				log_ioctl("TIOCSPGRP(%d)", *pgid);
+				ret = -EINVAL;
+				break;
+			}
+
+			log_ioctl("TIOCSPGRP(%u)", *pgid);
+			if (getpgid(*pgid) != *pgid) {
+				ret = -EPERM;
+				break;
+			}
+
+			ret = libtty_sessionCheck(tty, sender_pid, 1);
+			if (ret == 0) {
+				/*
+				 * The new foreground group must exist and be in this
+				 * session. getpgid(x) == x identifies a live group leader,
+				 * which is the closest we can get without the kernel
+				 * exposing group membership
+				 *
+				 * FIXME: a group that outlived its leader is rejected,
+				 * although POSIX would allow it.
+				 */
+				if (getsid(*pgid) != tty->sid) {
+					ret = -EPERM;
+				}
+				else {
+					tty->pgrp = *pgid;
+				}
+			}
+			break;
+
+		case TIOCNOTTY:
+			log_ioctl("TIOCNOTTY");
+			ret = libtty_sessionCheck(tty, sender_pid, 0);
+			if (ret == 0) {
+				/* Release the terminal, the next session may claim it */
+				tty->sid = -1;
+				tty->pgrp = -1;
+			}
+			break;
+
+		case TIOCSCTTY:
+			log_ioctl("TIOCSCTTY: pid=%X", sender_pid);
+			ret = libtty_sessionCheck(tty, sender_pid, 1);
+			if (ret == 0) {
+				ret = getpgid(sender_pid);
+				if (ret >= 0) {
+					tty->pgrp = ret;
+				}
+			}
+			break;
+
+		case TIOCGSID:
+			ret = libtty_sessionCheck(tty, sender_pid, 0);
+			if (ret == 0) {
+				tty->temp = tty->sid;
+				log_ioctl("TIOCGSID = %u", tty->temp);
+				*out_arg = (const void *)&tty->temp;
+			}
+			break;
+
+		default:
+			ret = -EINVAL;
+			break;
+	}
+
+	mutexUnlock(tty->ctl_mutex);
+
+	return ret;
+}
+
+
 int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const void *in_arg, const void **out_arg)
 {
 	struct termios *termios_p = (struct termios *)in_arg;
 	struct winsize *ws = (struct winsize *)in_arg;
-	pid_t *pid = (pid_t *)in_arg;
 	int ret = 0;
 
 	*out_arg = NULL;
 
-	/* TODO: locking */
+	/*
+	 * FIXME: this is not multithread-safe - only the controlling terminal requests
+	 * are serialized (see libtty_cttyIoctl()), but synchronization alone is still
+	 * insufficient as the tty->temp (exposed later through out_arg) is per-tty
+	 * and not per-calling thread. Maybe store it as thread-local and if TLS is not
+	 * supported on the platform, use gettid+malloc? Another option is to break
+	 * the libtty API and extend it with some private context arg.
+	 */
 
 	switch (cmd) {
 		case TIOCGWINSZ:
@@ -498,27 +695,11 @@ int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const
 			*out_arg = (const void *)&tty->term;
 			break;
 		case TIOCGPGRP:
-			log_ioctl("TIOCGPGRP = %u", tty->pgrp);
-			*out_arg = (const void *)&tty->pgrp;
-			break;
 		case TIOCSPGRP:
-			log_ioctl("TIOCSPGRP(%u)", *pid);
-			/* FIXME: check permissions */
-			tty->pgrp = getpgid(*pid);
-			break;
 		case TIOCNOTTY:
-			log_ioctl("TIOCNOTTY");
-			tty->pgrp = -1; /* process detached from the console */
-			break;
 		case TIOCSCTTY:
-			log_ioctl("TIOCSCTTY: pid=%X", sender_pid);
-			/* FIXME: check permissions */
-			tty->pgrp = getpgid(sender_pid);
-			break;
 		case TIOCGSID:
-			/* NOTE: simulating sessions with process groups */
-			log_ioctl("TIOCGSID = %u", tty->pgrp);
-			*out_arg = (const void *)&tty->pgrp;
+			ret = libtty_cttyIoctl(tty, sender_pid, cmd, in_arg, out_arg);
 			break;
 		case TIOCGHALFD:
 			if (tty->cb.get_halfduplex == NULL) {
