@@ -192,12 +192,12 @@ void _ttypc_vga_switch(ttypc_vt_t *vt)
 	/* Set active VT, do it before writes to unlock access to the fb */
 	ttypc->vt = vt;
 
+	mutexLock(vt->lock);
 	if (vt->fbmode != FBCON_UNSUPPORTED) {
 		/* Resize the virtual terminal to match fbcon maximum resolution */
-		ttypc_vt_resize(vt, vt->ttypc->fbmaxcols, vt->ttypc->fbmaxrows);
+		_ttypc_vt_resize(vt, vt->ttypc->fbmaxcols, vt->ttypc->fbmaxrows);
 	}
 
-	mutexLock(vt->lock);
 	/* VT memory -> VGA memory */
 	vt->vram = ttypc->vga;
 	_ttypc_vga_write(vt, 0, vt->mem, vt->rows * vt->cols);
