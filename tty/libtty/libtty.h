@@ -16,7 +16,8 @@
 #ifndef _LIBTTY_H_
 #define _LIBTTY_H_
 
-#include <stdint.h>
+#include <stdbool.h>
+#include <sys/threads.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -28,6 +29,7 @@ typedef struct fifo_s fifo_t;
 typedef struct libtty_read_state_s libtty_read_state_t;
 
 
+/* NOTE: callbacks always called under the libtty_lock */
 struct libtty_callbacks_s {
 	void *arg; /* argument to be passed to each of the callbacks */
 
@@ -56,17 +58,14 @@ struct libtty_common_s {
 	handle_t tx_waitq;
 	handle_t rx_waitq;
 
-	handle_t tx_mutex;
-	handle_t rx_mutex;
+	handle_t lock;
+	bool lockCreated;
 
 	int temp; /* temporary to hold value to pass from ioctl */
 
 	/* cached optimizations */
 	char breakchars[4]; /* enough to hold \n, VEOF and VEOL. */
 	unsigned int t_flags;
-
-	/* TODO: remove */
-	volatile uint32_t *debug;
 };
 
 
@@ -90,13 +89,30 @@ static inline void libtty_read_state_init(libtty_read_state_t *st)
 #define TF_CLOSING   0x08000 /* TTY is being closed */
 
 
-/* bufsize: TX/RX buffer size - has to be power of 2 ! */
-int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned int bufsize, int speed);
+/*
+ * bufsize: TX/RX buffer size - has to be power of 2 !
+ * if lock != NULL, it will be used as the tty->lock, else new mutex will be created
+ */
+int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned int bufsize, int speed, handle_t *lock);
 int libtty_destroy(libtty_common_t *tty);
 int libtty_close(libtty_common_t *tty);
 
 
+static inline void libtty_lock(libtty_common_t *tty)
+{
+	mutexLock(tty->lock);
+}
+
+
+static inline void libtty_unlock(libtty_common_t *tty)
+{
+	mutexUnlock(tty->lock);
+}
+
+
 /* external (message) interface */
+
+
 ssize_t libtty_read(libtty_common_t *tty, char *data, size_t size, unsigned mode);
 ssize_t libtty_write(libtty_common_t *tty, const char *data, size_t size, unsigned mode);
 int libtty_poll_status(libtty_common_t *tty);
@@ -114,22 +130,27 @@ int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const
 ssize_t libtty_read_nonblock(libtty_common_t *tty, char *data, size_t size, unsigned mode, libtty_read_state_t *st);
 
 
+/* protected by libtty_lock */
+ssize_t _libtty_read_nonblock(libtty_common_t *tty, char *data, size_t size, unsigned mode, libtty_read_state_t *st);
+ssize_t _libtty_read(libtty_common_t *tty, char *data, size_t size, unsigned mode);
+ssize_t _libtty_write(libtty_common_t *tty, const char *data, size_t size, unsigned mode);
+
+
 /* internal (HW) interface */
-int libtty_putchar(libtty_common_t *tty, unsigned char c, int *wake_reader);
-void libtty_putchar_lock(libtty_common_t *tty);
-void libtty_putchar_unlock(libtty_common_t *tty);
-void libtty_wake_reader(libtty_common_t *tty);
-int libtty_putchar_unlocked(libtty_common_t *tty, unsigned char c, int *wake_reader);
-/* writer wake up is done outside of libtty if wake_writer is not NULL */
-unsigned char libtty_getchar(libtty_common_t *tty, int *wake_writer);
-unsigned char libtty_popchar(libtty_common_t *tty);
-void libtty_wake_writer(libtty_common_t *tty);
+
+
 void libtty_signal_pgrp(libtty_common_t *tty, int signal);
 
-
-int libtty_txready(libtty_common_t *tty); /* at least 1 character ready to be sent */
-int libtty_txfull(libtty_common_t *tty);  /* no more place in the TX buffer */
-int libtty_rxready(libtty_common_t *tty); /* at least 1 character ready to be read out */
+/* protected by libtty_lock */
+/* writer/reader wake up is done outside of libtty if wake_{writer|reader} is not NULL */
+int _libtty_putchar(libtty_common_t *tty, unsigned char c, int *wake_reader);
+unsigned char _libtty_popchar(libtty_common_t *tty);
+unsigned char _libtty_getchar(libtty_common_t *tty, int *wake_writer);
+void _libtty_wake_reader(libtty_common_t *tty);
+void _libtty_wake_writer(libtty_common_t *tty);
+int _libtty_txready(libtty_common_t *tty); /* at least 1 character ready to be sent */
+int _libtty_txfull(libtty_common_t *tty);  /* no more place in the TX buffer */
+int _libtty_rxready(libtty_common_t *tty); /* at least 1 character ready to be read out */
 
 
 static inline void libtty_set_mode_raw(libtty_common_t *tty)

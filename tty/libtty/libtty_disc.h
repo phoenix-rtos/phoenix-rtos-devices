@@ -36,11 +36,11 @@
 
 
 /* internal interface - line discipline */
-int libttydisc_write_oproc(libtty_common_t *tty, char c);
+int _libttydisc_writeOproc(libtty_common_t *tty, char c);
 
 
-ssize_t libttydisc_read_canonical(libtty_common_t *tty, char *data, size_t size, unsigned mode, libtty_read_state_t *st);
-ssize_t libttydisc_read_raw(libtty_common_t *tty, char *data, size_t size, unsigned mode, libtty_read_state_t *st);
+ssize_t _libttydisc_readCanon(libtty_common_t *tty, char *data, size_t size, unsigned mode, libtty_read_state_t *st);
+ssize_t _libttydisc_readRaw(libtty_common_t *tty, char *data, size_t size, unsigned mode, libtty_read_state_t *st);
 
 
 static inline bool libttydisc_is_breakchar(libtty_common_t *tty, char c)
