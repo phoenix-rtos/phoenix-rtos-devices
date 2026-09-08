@@ -50,7 +50,15 @@ struct libtty_common_s {
 	libtty_callbacks_t cb;
 	struct termios term;
 	struct winsize ws;
-	pid_t pgrp;
+
+	/*
+	 * OS-LIMITATION: the kernel records only that a session holds a controlling
+	 * terminal, not which one, and reports no exits - so both are revalidated
+	 * only on the next ctty ioctl, until then pgrp may name a group nobody is
+	 * left in.
+	 */
+	pid_t sid;  /* session owning this terminal, or -1 if unclaimed */
+	pid_t pgrp; /* foreground process group, or <= 0 if none */
 
 	fifo_t *tx_fifo;
 	fifo_t *rx_fifo;
@@ -147,8 +155,6 @@ int _libtty_close(libtty_common_t *tty);
 /* internal (HW) interface */
 
 
-void libtty_signal_pgrp(libtty_common_t *tty, int signal);
-
 /* protected by libtty_lock */
 /* writer/reader wake up is done outside of libtty if wake_{writer|reader} is not NULL */
 int _libtty_putchar(libtty_common_t *tty, unsigned char c, int *wake_reader);
@@ -159,6 +165,8 @@ void _libtty_wake_writer(libtty_common_t *tty);
 int _libtty_txready(libtty_common_t *tty); /* at least 1 character ready to be sent */
 int _libtty_txfull(libtty_common_t *tty);  /* no more place in the TX buffer */
 int _libtty_rxready(libtty_common_t *tty); /* at least 1 character ready to be read out */
+void _libtty_signal_pgrp(libtty_common_t *tty, int signal);
+void _libtty_hangup(libtty_common_t *tty); /* terminal disconnect: signal + dissociate the session */
 
 
 static inline void libtty_set_mode_raw(libtty_common_t *tty)
