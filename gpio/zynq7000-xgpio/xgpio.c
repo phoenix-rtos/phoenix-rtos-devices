@@ -382,7 +382,7 @@ int main(int argc, char *argv[])
 
 	printf("xgpio: initialized\n");
 
-	priority(prio);
+	setPriority(prio);
 	gpio_thread(NULL);
 
 	return EXIT_FAILURE;

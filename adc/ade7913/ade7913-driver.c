@@ -1116,7 +1116,7 @@ int main(int argc, char **argv)
 	oid_t tmp_oid;
 	int i, err, devnum;
 
-	priority(ADE7913_PRIO);
+	setPriority(ADE7913_PRIO);
 
 	memset(&common, 0, sizeof(common));
 

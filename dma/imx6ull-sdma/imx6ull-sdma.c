@@ -1031,7 +1031,7 @@ int main(int argc, char *argv[])
 	int res, display_usage = 0;
 	oid_t root;
 
-	priority(SDMA_MAIN_PRIO);
+	setPriority(SDMA_MAIN_PRIO);
 
 	common.use_syslog = 0;
 	common.stats_period_s = 0; /* Don't print stats by default */

@@ -419,7 +419,7 @@ int main(int argc, char **argv)
 	}
 
 	LOG("initialized");
-	priority(SPWRTR_PRIO);
+	setPriority(SPWRTR_PRIO);
 	spwrtr_msgLoop();
 
 	return 0;

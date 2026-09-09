@@ -342,7 +342,7 @@ int main(void)
 {
 	oid_t oid;
 
-	(void)priority(GRLIB_MULTI_PRIO);
+	(void)setPriority(GRLIB_MULTI_PRIO);
 
 	if (portCreate(&multi_common.uartOid.port) < 0) {
 		debug("grlib-multi: Failed to create port\n");

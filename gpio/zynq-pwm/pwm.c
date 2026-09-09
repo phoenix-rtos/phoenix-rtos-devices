@@ -277,7 +277,7 @@ int main(int argc, char *argv[])
 
 	printf("pwm: initialized\n");
 
-	priority(prio);
+	setPriority(prio);
 	pwm_thread(NULL);
 
 	return EXIT_FAILURE;

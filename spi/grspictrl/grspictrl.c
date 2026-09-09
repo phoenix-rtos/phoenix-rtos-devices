@@ -164,7 +164,7 @@ int main(int argc, char **argv)
 
 	puts("spi: initialized");
 
-	priority(SPI_PRIO);
+	setPriority(SPI_PRIO);
 
 	thread((void *)((uintptr_t)oid.port));
 

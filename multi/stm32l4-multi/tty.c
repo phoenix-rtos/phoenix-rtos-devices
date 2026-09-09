@@ -729,7 +729,7 @@ static void tty_thread(void *arg)
 			;
 		}
 
-		priority(msg.priority);
+		setPriority(msg.priority);
 
 		switch (msg.type) {
 			case mtOpen:
@@ -791,7 +791,7 @@ static void tty_thread(void *arg)
 
 		msgRespond(uart_common.port, &msg, rid);
 
-		priority(THREAD_PRIO);
+		setPriority(THREAD_PRIO);
 	}
 }
 

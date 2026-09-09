@@ -387,7 +387,7 @@ static void thread(void *arg)
 		while (msgRecv(common.port, &msg, &rid) < 0)
 			;
 
-		priority(msg.priority);
+		setPriority(msg.priority);
 
 		switch (msg.type) {
 			case mtOpen:
@@ -414,7 +414,7 @@ static void thread(void *arg)
 
 		msgRespond(common.port, &msg, rid);
 
-		priority(THREADS_PRIORITY);
+		setPriority(THREADS_PRIORITY);
 	}
 }
 
@@ -439,7 +439,7 @@ int main(void)
 {
 	int i;
 	oid_t oid;
-	priority(THREADS_PRIORITY);
+	setPriority(THREADS_PRIORITY);
 
 	portCreate(&common.port);
 

@@ -214,7 +214,7 @@ static int wdog_parseArgs(int argc, char *argv[])
 					wdog_help(argv[0]);
 					return -EINVAL;
 				}
-				priority(prio);
+				setPriority(prio);
 				break;
 
 			case 'h':

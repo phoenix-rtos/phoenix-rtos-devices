@@ -311,7 +311,7 @@ static int parse_args(int argc, char *argv[])
 					return -1;
 				}
 
-				priority(prio);
+				setPriority(prio);
 				break;
 
 			default:

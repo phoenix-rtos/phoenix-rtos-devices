@@ -1076,7 +1076,7 @@ int main(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
-	priority(IMXRT_FLASH_PRIO);
+	setPriority(IMXRT_FLASH_PRIO);
 
 	if (flashsrv_flashMemoriesInit() != EOK) {
 		LOG_ERROR("imxrt-flashsrv: flash memories were not initialized correctly.\n");
