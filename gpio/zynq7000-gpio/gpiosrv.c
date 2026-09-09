@@ -271,7 +271,7 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	priority(prio);
+	setPriority(prio);
 	gpiosrv_msgthr((void *)oid.port);
 
 	return EXIT_SUCCESS;

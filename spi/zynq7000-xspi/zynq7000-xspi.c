@@ -139,7 +139,7 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	priority(PRIORITY);
+	setPriority(PRIORITY);
 
 	err = spi_init(dev);
 	if (err < 0) {

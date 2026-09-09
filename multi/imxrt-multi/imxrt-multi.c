@@ -576,7 +576,7 @@ int main(void)
 	int i;
 	oid_t oid;
 
-	priority(IMXRT_MULTI_PRIO);
+	setPriority(IMXRT_MULTI_PRIO);
 
 	portCreate(&common.uart_port);
 	portCreate(&multi_port);

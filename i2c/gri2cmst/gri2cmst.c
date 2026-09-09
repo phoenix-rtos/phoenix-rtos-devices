@@ -138,7 +138,7 @@ int main(int argc, char **argv)
 
 	puts("i2c: initialized");
 
-	priority(I2C_PRIO);
+	setPriority(I2C_PRIO);
 
 	thread((void *)((uintptr_t)oid.port));
 

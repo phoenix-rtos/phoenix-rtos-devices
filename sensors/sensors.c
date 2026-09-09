@@ -655,7 +655,7 @@ int main(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
-	priority(THREAD_PRIORITY_MSGSRV);
+	setPriority(THREAD_PRIORITY_MSGSRV);
 
 	sensors_run();
 	sensors_msgThread();

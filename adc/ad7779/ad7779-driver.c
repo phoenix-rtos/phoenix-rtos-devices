@@ -538,7 +538,7 @@ static int parse_args(int argc, char *argv[])
 					return -1;
 				}
 
-				priority(ad7779_common.prio);
+				setPriority(ad7779_common.prio);
 				break;
 
 			default:
@@ -558,7 +558,7 @@ int main(int argc, char *argv[])
 	int i;
 	oid_t root;
 
-	priority(AD7779_PRIO);
+	setPriority(AD7779_PRIO);
 
 	if (parse_args(argc, argv) < 0)
 		return 1;

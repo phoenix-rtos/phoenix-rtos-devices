@@ -146,7 +146,7 @@ int main(int argc, char *argv[])
 	}
 
 	LOG("gpio%lu initialized", portNum);
-	priority(GRGPIO_PRIO);
+	setPriority(GRGPIO_PRIO);
 	msgHandler();
 
 	return 0;

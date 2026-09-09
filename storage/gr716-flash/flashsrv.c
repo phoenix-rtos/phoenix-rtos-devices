@@ -719,7 +719,7 @@ static int flashsrv_memoryInit(void)
 
 int main(int argc, char *argv[])
 {
-	priority(GR716_FLASH_PRIO);
+	setPriority(GR716_FLASH_PRIO);
 
 	if (flashsrv_memoryInit() != EOK) {
 		LOG_ERROR("flash memories initialization failed");

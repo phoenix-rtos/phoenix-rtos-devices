@@ -168,7 +168,7 @@ int main(void)
 
 	oledgraph_reset(0, 0, 128, 64);
 
-	priority(OLED128O064B0_PRIO);
+	setPriority(OLED128O064B0_PRIO);
 	msg_loop();
 
 	return 0;

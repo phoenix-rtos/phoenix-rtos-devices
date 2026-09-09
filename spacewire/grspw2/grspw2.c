@@ -140,7 +140,7 @@ int main(void)
 	}
 
 	LOG("initialized");
-	priority(GRSPW_PRIO);
+	setPriority(GRSPW_PRIO);
 	grspw_thread(NULL);
 
 	return 0;
