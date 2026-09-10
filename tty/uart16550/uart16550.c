@@ -141,6 +141,7 @@ static void set_baudrate(void *_uart, int baud_rate)
 		return;
 	}
 
+	mutexLock(uart->mutex);
 	reg = uarthw_read(uart->hwctx, REG_LCR);
 
 	/* Set baud rate */
@@ -148,12 +149,15 @@ static void set_baudrate(void *_uart, int baud_rate)
 	uarthw_write(uart->hwctx, REG_LSB, (uint8_t)((unsigned)baud_rate));
 	uarthw_write(uart->hwctx, REG_MSB, (uint8_t)((unsigned)baud_rate >> 8));
 	uarthw_write(uart->hwctx, REG_LCR, reg & ~LCR_DLAB);
+	mutexUnlock(uart->mutex);
 }
 
 
 static void set_cflag(void *_uart, tcflag_t *cflag)
 {
 	uart_t *uart = (uart_t *)_uart;
+
+	mutexLock(uart->mutex);
 	uint8_t lcr = uarthw_read(uart->hwctx, REG_LCR);
 
 	lcr &= ~((3 << 0) | (1 << 2) | (1 << 3) | (1 << 4));
@@ -174,6 +178,25 @@ static void set_cflag(void *_uart, tcflag_t *cflag)
 	lcr |= ((*cflag & CSTOPB) != 0) << 2;
 
 	uarthw_write(uart->hwctx, REG_LCR, lcr);
+	mutexUnlock(uart->mutex);
+}
+
+
+static void break_enable(void *_uart, bool enable)
+{
+	uart_t *uart = _uart;
+
+	if (enable) {
+		/* wait while transmitter busy */
+		while ((uarthw_read(uart->hwctx, REG_LSR) & LSR_TEM) == 0) {
+			usleep(100);
+		}
+	}
+
+	mutexLock(uart->mutex);
+	const uint8_t lcr = uarthw_read(uart->hwctx, REG_LCR);
+	uarthw_write(uart->hwctx, REG_LCR, enable ? (lcr | LCR_SBRK) : (lcr & ~LCR_SBRK));
+	mutexUnlock(uart->mutex);
 }
 
 
@@ -222,8 +245,11 @@ static int uart_interrupt(unsigned int n, void *arg)
 	 */
 	uint8_t iir = uarthw_read(uart->hwctx, REG_IIR);
 	uarthw_write(uart->hwctx, REG_IMR, 0);
+	const tcflag_t iflags = uart->tty.term.c_iflag;
+
 	do {
-		uint8_t intr_type = (iir >> 1) & 0x7;
+		const uint8_t intr_type = (iir >> 1) & 0x7;
+
 		if ((intr_type == IIR_CODE_DR) || (intr_type == IIR_CODE_RTO)) {
 			uint8_t status = uart_readUpdateLineStatus(uart);
 			while ((status & LSR_DR) != 0) {
@@ -233,6 +259,36 @@ static int uart_interrupt(unsigned int n, void *arg)
 		}
 		else if (intr_type == IIR_CODE_LS) {
 			uart_readUpdateLineStatus(uart);
+			/* LSR has to be read before RBR to reflect the character status */
+			const uint8_t lsr = uarthw_read(uart->hwctx, REG_LSR);
+			const uint8_t c = uarthw_read(uart->hwctx, REG_RBR);
+
+			if ((lsr & LSR_PE) != 0 && ((iflags & INPCK) != 0)) { /* parity error */
+				if ((iflags & IGNPAR) != 0) {
+					/* ignore characters with parity errors */
+				}
+				else {
+					if ((iflags & PARMRK) != 0) {
+						lf_fifo_ow_push(&uart->rxSwFifo, '\377');
+						lf_fifo_ow_push(&uart->rxSwFifo, '\0');
+						lf_fifo_ow_push(&uart->rxSwFifo, c);
+					}
+					else {
+						lf_fifo_ow_push(&uart->rxSwFifo, '\0');
+					}
+				}
+			}
+			else if ((lsr & LSR_BI) != 0) { /* break condition */
+				if ((iflags & IGNBRK) != 0) {
+					/* ignore break condition */
+				}
+				else {
+					lf_fifo_ow_push(&uart->rxSwFifo, '\0');
+				}
+			}
+			else {
+				lf_fifo_ow_push(&uart->rxSwFifo, c);
+			}
 		}
 		else if (intr_type == IIR_CODE_MS) {
 			uarthw_read(uart->hwctx, REG_MSR);
@@ -505,6 +561,7 @@ static int _uart_init(uart_t *uart, unsigned int uartn, unsigned int speed, int8
 		.set_baudrate = set_baudrate,
 		.set_cflag = set_cflag,
 		.signal_txready = signal_txready,
+		.break_enable = break_enable,
 	};
 
 	int err = uarthw_init(uartn, uart->hwctx, sizeof(uart->hwctx), &uart->hwInfo);
