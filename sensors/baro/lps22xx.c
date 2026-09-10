@@ -23,28 +23,57 @@
 #include <libsensors/bus.h>
 
 /* self identification register */
-#define REG_WHOAMI     0x0f
-#define REG_VAL_WHOAMI 0xb3
+#define REG_WHOAMI        0x0f
+#define REG_VAL_WHOAMI_HH 0xb3
+#define REG_VAL_WHOAMI_DF 0xb4
 
-/* control register 1 */
-#define REG_CTRL_REG1 0x10
-#define VAL_ODR_200   0x70
-#define VAL_ODR_100   0x60
-#define VAL_ODR_75    0x50
-#define VAL_ODR_50    0x40
-#define VAL_ODR_25    0x30
-#define VAL_EN_LPFP   0x08
-#define VAL_LPFP_CFG  0x04
-#define VAL_BDU       0x02
+/* control register 1 - LPS22HH */
+#define HH_REG_CTRL_REG1 0x10
+#define HH_VAL_ODR_200   0x70
+#define HH_VAL_ODR_100   0x60
+#define HH_VAL_ODR_75    0x50
+#define HH_VAL_ODR_50    0x40
+#define HH_VAL_ODR_25    0x30
+#define HH_VAL_EN_LPFP   0x08
+#define HH_VAL_LPFP_CFG  0x04
+#define HH_VAL_BDU       0x02
 
-/* control register 2 */
-#define REG_CTRL_REG2    0x11
-#define VAL_BOOT         0x80
-#define VAL_LOW_NOISE_EN 0x02
-#define IF_ADD_INC       0x10
+/* control register 2 - LPS22HH */
+#define HH_REG_CTRL_REG2    0x11
+#define HH_VAL_BOOT         0x80
+#define HH_VAL_LOW_NOISE_EN 0x02
+#define HH_IF_ADD_INC       0x10
 
-/* control register 3 */
-#define REG_CTRL_REG3 0x12
+/* control register 3 - LPS22HH */
+#define HH_REG_CTRL_REG3 0x12
+
+/* control register 1 - LPS22DF */
+#define DF_REG_CTRL_REG1 0x10
+#define DF_VAL_ODR_200   0x40
+#define DF_VAL_ODR_100   0x38
+#define DF_VAL_ODR_75    0x30
+#define DF_VAL_ODR_50    0x28
+#define DF_VAL_ODR_25    0x20
+#define DF_VAL_AVG_4     0x00
+#define DF_VAL_AVG_8     0x01
+#define DF_VAL_AVG_16    0x02
+#define DF_VAL_AVG_32    0x03
+#define DF_VAL_AVG_64    0x04
+#define DF_VAL_AVG_128   0x06
+#define DF_VAL_AVG_512   0x07
+
+
+/* control register 2 - LPS22DF */
+#define DF_REG_CTRL_REG2 0x11
+#define DF_VAL_BOOT      0x80
+#define DF_VAL_LPFP_CFG  0x20
+#define DF_VAL_EN_LPFP   0x10
+#define DF_VAL_BDU       0x08
+
+/* control register 3 - LPS22DF */
+#define DF_REG_CTRL_REG3 0x12
+#define DF_IF_ADD_INC    0x01
+
 
 /* data storage addresses */
 #define REG_DATA_OUT 0x28
@@ -66,6 +95,13 @@ typedef struct {
 	sensor_event_t evtBaro;
 	char stack[512] __attribute__((aligned(8)));
 } lps22xx_ctx_t;
+
+
+static struct {
+	int whoAmI;
+} common = {
+	.whoAmI = -1
+};
 
 
 static uint32_t translatePress(uint8_t lbyte, uint8_t mbyte, uint8_t hbyte)
@@ -116,10 +152,70 @@ static int lps22xx_whoamiCheck(sensor_bus_t *bus)
 	cmd = REG_WHOAMI | SPI_READ_BIT;
 	val = 0;
 	err = bus->ops.bus_xfer(bus, &cmd, sizeof(cmd), &val, sizeof(val), sizeof(cmd));
-	if ((err < 0) || (val != REG_VAL_WHOAMI)) {
-		fprintf(stderr, "whoami: %x\n", val);
+	if (err < 0) {
+		fprintf(stderr, "whoami xfer: %d\n", err);
 		return -1;
 	}
+
+	switch (val) {
+		case REG_VAL_WHOAMI_HH:
+		case REG_VAL_WHOAMI_DF:
+			common.whoAmI = val;
+			break;
+
+		default:
+			fprintf(stderr, "whoami: %x\n", val);
+			return -1;
+	}
+
+	return 0;
+}
+
+
+static int lps22x_setupHH(sensor_bus_t *bus)
+{
+	/* Boot process: refresh the content of the internal registers stored in the flash memory block */
+	if (spiWriteReg(bus, HH_REG_CTRL_REG2, HH_VAL_BOOT) < 0) {
+		return -1;
+	}
+	usleep(LPS22XX_BOOT_DELAY_US); /* The boot process takes 2.2 msec. Waiting more for safety */
+
+	if (spiWriteReg(bus, HH_REG_CTRL_REG1, (HH_VAL_ODR_75 | HH_VAL_BDU | HH_VAL_EN_LPFP)) < 0) {
+		return -1;
+	}
+	usleep(LPS22XX_CONFIG_DELAY_US); /* Arbitrary wait */
+
+	if (spiWriteReg(bus, HH_REG_CTRL_REG2, (HH_IF_ADD_INC | HH_VAL_LOW_NOISE_EN)) < 0) {
+		return -1;
+	}
+	usleep(LPS22XX_CONFIG_DELAY_US); /* Arbitrary wait */
+
+	return 0;
+}
+
+
+static int lps22x_setupDF(sensor_bus_t *bus)
+{
+	/* Boot process: refresh the content of the internal registers stored in the flash memory block */
+	if (spiWriteReg(bus, DF_REG_CTRL_REG2, DF_VAL_BOOT) < 0) {
+		return -1;
+	}
+	usleep(LPS22XX_BOOT_DELAY_US); /* The boot process takes 2.2 msec. Waiting more for safety */
+
+	if (spiWriteReg(bus, DF_REG_CTRL_REG1, (DF_VAL_ODR_75 | DF_VAL_AVG_128)) < 0) {
+		return -1;
+	}
+	usleep(LPS22XX_CONFIG_DELAY_US); /* Arbitrary wait */
+
+	if (spiWriteReg(bus, DF_REG_CTRL_REG2, (DF_VAL_EN_LPFP | DF_VAL_BDU)) < 0) {
+		return -1;
+	}
+	usleep(LPS22XX_CONFIG_DELAY_US); /* Arbitrary wait */
+
+	if (spiWriteReg(bus, DF_REG_CTRL_REG3, DF_IF_ADD_INC) < 0) {
+		return -1;
+	}
+	usleep(LPS22XX_CONFIG_DELAY_US); /* Arbitrary wait */
 
 	return 0;
 }
@@ -132,23 +228,18 @@ static int lps22xx_hwSetup(sensor_bus_t *bus)
 		return -1;
 	}
 
-	/* Boot process: refresh the content of the internal registers stored in the flash memory block */
-	if (spiWriteReg(bus, REG_CTRL_REG2, VAL_BOOT) < 0) {
-		return -1;
-	}
-	usleep(LPS22XX_BOOT_DELAY_US); /* The boot process takes 2.2 msec. Waiting more for safety */
+	switch (common.whoAmI) {
+		case REG_VAL_WHOAMI_HH:
+			return lps22x_setupHH(bus);
 
-	if (spiWriteReg(bus, REG_CTRL_REG1, (VAL_ODR_75 | VAL_BDU | VAL_EN_LPFP)) < 0) {
-		return -1;
-	}
-	usleep(LPS22XX_CONFIG_DELAY_US); /* Arbitrary wait */
+		case REG_VAL_WHOAMI_DF:
+			return lps22x_setupDF(bus);
 
-	if (spiWriteReg(bus, REG_CTRL_REG2, (IF_ADD_INC | VAL_LOW_NOISE_EN)) < 0) {
-		return -1;
+		default:
+			return -1;
 	}
-	usleep(LPS22XX_CONFIG_DELAY_US); /* Arbitrary wait */
 
-	return 0;
+	return -1;
 }
 
 
