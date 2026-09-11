@@ -46,7 +46,10 @@ struct libtty_common_s {
 	libtty_callbacks_t cb;
 	struct termios term;
 	struct winsize ws;
-	pid_t pgrp;
+
+	pid_t sid;          /* session this terminal belongs, or -1 if unclaimed */
+	pid_t pgrp;         /* foreground process group, or <= 0 if none */
+	handle_t ctl_mutex; /* guards sid and pgrp */
 
 	fifo_t *tx_fifo;
 	fifo_t *rx_fifo;
@@ -57,7 +60,7 @@ struct libtty_common_s {
 	handle_t tx_mutex;
 	handle_t rx_mutex;
 
-	int temp; /* temporary to hold value to pass from ioctl */
+	int temp; /* temporary to hold value to pass from ioctl through out_arg */
 
 	/* cached optimizations */
 	char breakchars[4]; /* enough to hold \n, VEOF and VEOL. */
