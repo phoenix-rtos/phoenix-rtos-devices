@@ -41,7 +41,7 @@
 
 #define KMSG_CTRL_ID 100
 
-#define SW_BUF_SIZE 64
+#define SW_BUF_SIZE 256
 
 #define N_UARTS 4
 
@@ -87,6 +87,7 @@ typedef struct {
 	unsigned int init;
 	uarthw_info_t hwInfo;
 	atomic_uint_fast32_t hwOverruns;
+	atomic_uint_fast32_t swOverruns;
 
 	handle_t mutex;
 	handle_t intcond;
@@ -303,6 +304,11 @@ static void uart_intthr(void *arg)
 				wake |= wakeHelper;
 			}
 
+			unsigned int lost = lf_fifo_ow_lost(&uart->rxSwFifo);
+			if (lost != 0) {
+				atomic_fetch_add(&uart->swOverruns, lost);
+			}
+
 			/* Depending on implementation we may have more characters in hardware FIFO */
 			while ((uart_readUpdateLineStatus(uart) & LSR_DR) != 0) {
 				c = uarthw_read(uart->hwctx, REG_RBR);
@@ -361,8 +367,10 @@ static void uart_ioctl(unsigned int port, msg_t *msg)
 static void uart_errorThread(void *arg)
 {
 	(void)arg;
-	uint32_t overrunsLast[N_UARTS];
-	memset(&overrunsLast, 0, sizeof(overrunsLast));
+	uint32_t hwOverrunsLast[N_UARTS];
+	uint32_t swOverrunsLast[N_UARTS];
+	memset(&hwOverrunsLast, 0, sizeof(hwOverrunsLast));
+	memset(&swOverrunsLast, 0, sizeof(swOverrunsLast));
 
 	for (;;) {
 		for (unsigned int i = 0; i < N_UARTS; i++) {
@@ -372,9 +380,15 @@ static void uart_errorThread(void *arg)
 			}
 
 			uint32_t overrunsNow = atomic_load(&uart->hwOverruns);
-			if (overrunsNow != overrunsLast[i]) {
-				syslog(LOG_WARNING, "UART16550 %u: %u overrun(s) detected", i, overrunsNow - overrunsLast[i]);
-				overrunsLast[i] = overrunsNow;
+			if (overrunsNow != hwOverrunsLast[i]) {
+				syslog(LOG_WARNING, "UART16550 %u: %u hardware overrun(s) detected", i, overrunsNow - hwOverrunsLast[i]);
+				hwOverrunsLast[i] = overrunsNow;
+			}
+
+			overrunsNow = atomic_load(&uart->swOverruns);
+			if (overrunsNow != swOverrunsLast[i]) {
+				syslog(LOG_WARNING, "UART16550 %u: %u software overrun(s) detected", i, overrunsNow - swOverrunsLast[i]);
+				swOverrunsLast[i] = overrunsNow;
 			}
 		}
 
@@ -520,6 +534,7 @@ static int _uart_init(uart_t *uart, unsigned int uartn, unsigned int speed, int8
 	}
 
 	atomic_store(&uart->hwOverruns, 0);
+	atomic_store(&uart->swOverruns, 0);
 	atomic_store(&uart->lineStatus, 0);
 	lf_fifo_init(&uart->rxSwFifo, uart->rxSwFifoData, sizeof(uart->rxSwFifoData));
 	err = condCreate(&uart->intcond);
