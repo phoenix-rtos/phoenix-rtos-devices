@@ -287,8 +287,7 @@ static int uart_open(int flags)
 		}
 
 		/* Flush RX FIFO that may contain stale data after being closed previously */
-		const void *out_data;
-		libtty_ioctl(&uart.tty_common, 0, TCFLSH, (void *)TCIFLUSH, &out_data);
+		libtty_ioctl(&uart.tty_common, 0, TCFLSH, (void *)TCIFLUSH, NULL);
 
 		*(uart.base + ucr1) |= UCR1_RRDYEN;
 
@@ -368,11 +367,11 @@ static void uart_thr(void *arg)
 				break;
 			case mtDevCtl: { /* ioctl */
 				unsigned long request;
-				const void *in_data = ioctl_unpack(&msg, &request, NULL);
-				const void *out_data = NULL;
+				void *out_data = NULL;
+				const void *in_data = ioctl_unpackEx(&msg, &request, NULL, &out_data);
 				pid_t pid = ioctl_getSenderPid(&msg);
 
-				int err = libtty_ioctl(&uart.tty_common, pid, request, in_data, &out_data);
+				int err = libtty_ioctl(&uart.tty_common, pid, request, in_data, out_data);
 				ioctl_setResponse(&msg, request, err, out_data);
 
 				break;
@@ -465,19 +464,19 @@ static void check_errors(void)
 }
 
 
-static void uart_process_rx(void)
+static void _uart_process_rx(void)
 {
 	uint8_t c;
 
 	/* NOTE: lock-free pop */
 	if (uart.rts_cts_mode == RTS_CTS_HWFLOW) {
 		while (lf_fifo_pop(&uart.rx_sw_fifo, &c) != 0) {
-			libtty_putchar(&uart.tty_common, c, NULL);
+			_libtty_putchar(&uart.tty_common, c, NULL);
 		}
 	}
 	else {
 		while (lf_fifo_ow_pop(&uart.rx_sw_fifo, &c) != 0) {
-			libtty_putchar(&uart.tty_common, c, NULL);
+			_libtty_putchar(&uart.tty_common, c, NULL);
 		}
 	}
 
@@ -517,12 +516,12 @@ static void uart_check_tx_end(uart_t *uart)
 }
 
 
-static void uart_process_tx(void)
+static void _uart_process_tx(void)
 {
 	int wake = 0;
 	bool first_char = true;
 
-	while (libtty_txready(&uart.tty_common) != 0) {
+	while (_libtty_txready(&uart.tty_common) != 0) {
 		if ((*(uart.base + uts) & UTS_TXFULL) != 0) {
 			*(uart.base + ucr1) |= UCR1_TRDYEN;
 			break;
@@ -533,14 +532,13 @@ static void uart_process_tx(void)
 			first_char = false;
 		}
 
-		/* FIXME: potential data race on tx_fifo (lock-free access) */
-		*(uart.base + utxd) = libtty_popchar(&uart.tty_common);
+		*(uart.base + utxd) = _libtty_popchar(&uart.tty_common);
 
 		wake = 1;
 	}
 
 	if (wake != 0) {
-		libtty_wake_writer(&uart.tty_common);
+		_libtty_wake_writer(&uart.tty_common);
 	}
 
 	uart_check_tx_end(&uart);
@@ -553,8 +551,8 @@ static void uart_intrthr(void *arg)
 
 	for (;;) {
 		check_errors();
-		uart_process_rx();
-		uart_process_tx();
+		_uart_process_rx();
+		_uart_process_tx();
 
 		condWait(uart.cond, uart.lock, 0);
 
@@ -800,7 +798,13 @@ int main(int argc, char **argv)
 		.signal_txready = &signal_txready,
 	};
 
-	if (libtty_init(&uart.tty_common, &callbacks, BUFSIZE, baud) < 0) {
+	/* FIXME: cleanup */
+
+	if (mutexCreate(&uart.lock) != EOK) {
+		return 2;
+	}
+
+	if (libtty_init(&uart.tty_common, &callbacks, BUFSIZE, baud, &uart.lock) < 0) {
 		return -1;
 	}
 
@@ -894,10 +898,6 @@ int main(int argc, char **argv)
 	/* software reset */
 	*(uart.base + ucr2) = 0;
 	while ((*(uart.base + uts) & UTS_SOFTRST) != 0) {
-	}
-
-	if (mutexCreate(&uart.lock) != EOK) {
-		return 2;
 	}
 
 	if (mutexCreate(&uart.openclose_lock) != EOK) {

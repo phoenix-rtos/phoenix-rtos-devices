@@ -32,7 +32,8 @@
 #include "ttydefaults.h"
 #undef TTYDEFCHARS
 
-/* DEBUG { */
+#define LIBTTY_DEBUG 0
+
 #include <stdio.h> /* printf */
 
 #define COL_RED    "\033[1;31m"
@@ -43,21 +44,19 @@
 #define LOG_TAG "libtty: "
 
 /* clang-format off */
-#define log_debug(fmt, ...)     do { if (0) printf(LOG_TAG fmt "\n", ##__VA_ARGS__); } while (0)
-#define log_ioctl(fmt, ...)     do { if (0) printf(COL_CYAN LOG_TAG "IOCTL: " fmt "\n" COL_NORMAL, ##__VA_ARGS__); } while (0)
-#define log_info(fmt, ...)      do { if (0) printf(COL_CYAN LOG_TAG fmt "\n" COL_NORMAL, ##__VA_ARGS__); } while (0)
-#define log_warn(fmt, ...)      do { if (1) printf(COL_YELLOW LOG_TAG fmt "\n" COL_NORMAL, ##__VA_ARGS__); } while (0)
-#define log_error(fmt, ...)     do { if (1) printf(COL_RED  LOG_TAG fmt "\n" COL_NORMAL, ##__VA_ARGS__); } while (0)
+#define log_debug(fmt, ...) do { if (0) printf(LOG_TAG fmt "\n", ##__VA_ARGS__); } while (0)
+#define log_ioctl(fmt, ...) do { if (0) printf(COL_CYAN LOG_TAG "IOCTL: " fmt "\n" COL_NORMAL, ##__VA_ARGS__); } while (0)
+#define log_info(fmt, ...)  do { if (0) printf(COL_CYAN LOG_TAG fmt "\n" COL_NORMAL, ##__VA_ARGS__); } while (0)
+#define log_warn(fmt, ...)  do { if (1) printf(COL_YELLOW LOG_TAG fmt "\n" COL_NORMAL, ##__VA_ARGS__); } while (0)
+#define log_error(fmt, ...) do { if (1) printf(COL_RED  LOG_TAG fmt "\n" COL_NORMAL, ##__VA_ARGS__); } while (0)
 /* clang-format on */
 
-/* } DEBUG */
-
-/* NOT supported: IXON|IXOFF|IXANY|PARMRK|INPCK|IGNPAR */
-#define TTYSUP_IFLAG (IGNBRK | BRKINT | ISTRIP | INLCR | IGNCR | ICRNL | IMAXBEL)
-
-#define TTYSUP_OFLAG (OPOST | ONLCR | TAB3 | OCRNL | ONOCR | ONLRET)
-/* NOT supported: TOSTOP|FLUSHO|NOFLSH|ECHOPRT */
-#define TTYSUP_LFLAG (ECHOKE | ECHOE | ECHOK | ECHO | ECHONL | ECHOCTL | ISIG | ICANON | IEXTEN)
+/* NOT supported: IGNBRK|BRKINT|IMAXBEL|IXON|IXOFF|IXANY|PARMRK|INPCK|IGNPAR */
+#define TTYSUP_IFLAG (ISTRIP | INLCR | IGNCR | ICRNL)
+/* NOT supported: ONOCR|ONLRET|NLDLY|CRDLY|TABDLY|BSDLY|VTDLY|FFDLY */
+#define TTYSUP_OFLAG (OPOST | ONLCR | TAB3 | OCRNL | ONLRET)
+/* NOT supported: ECHOKE|ECHOK|TOSTOP|FLUSHO|NOFLSH|ECHOPRT */
+#define TTYSUP_LFLAG (ECHOE | ECHO | ECHONL | ECHOCTL | ISIG | ICANON | IEXTEN)
 
 #define CALLBACK(cb_name, ...) \
 	do { \
@@ -65,57 +64,18 @@
 			tty->cb.cb_name(tty->cb.arg, ##__VA_ARGS__); \
 	} while (0)
 
-#if 0
+#define TX_FIFO_NOTFULL_WATERMARK 16 /* amount of free space in fifo before we will wake up the writer */
+
+
+#if LIBTTY_DEBUG
 #define DEBUG_CHAR(c) \
 	do { \
 		*(tty->debug + 16) = (c); \
 	} while (0)
-#endif
 
-#define TX_FIFO_NOTFULL_WATERMARK 16 /* amount of free space in fifo before we will wake up the writer */
-
-static void termios_optimize(libtty_common_t *tty)
-{
-	/* check break characters list */
-	tty->breakchars[0] = CNL;
-	int n = 1;
-
-	if (tty->term.c_cc[VEOF] != _POSIX_VDISABLE)
-		tty->breakchars[n++] = tty->term.c_cc[VEOF];
-
-	if (tty->term.c_cc[VEOL] != _POSIX_VDISABLE)
-		tty->breakchars[n++] = tty->term.c_cc[VEOL];
-
-	tty->breakchars[n] = '\0';
-
-	/* check if we have break char in the RX FIFO */
-	tty->t_flags &= ~TF_HAVEBREAK;
-	if (CMP_FLAG(l, ICANON)) {
-		if (libttydisc_rx_have_breakchar(tty))
-			tty->t_flags |= TF_HAVEBREAK;
-	}
-}
-
-static void termios_init(struct termios *term, speed_t speed)
-{
-	memset(term, 0, sizeof(*term));
-
-	term->c_iflag = TTYDEF_IFLAG & TTYSUP_IFLAG;
-	term->c_oflag = TTYDEF_OFLAG & TTYSUP_OFLAG;
-	term->c_lflag = TTYDEF_LFLAG & TTYSUP_LFLAG;
-	term->c_cflag = TTYDEF_CFLAG;
-
-	term->c_ispeed = speed;
-	term->c_ospeed = speed;
-
-	memcpy(term->c_cc, ttydefchars, sizeof(ttydefchars));
-}
 
 static void termios_print_flags(const struct termios *termios_p)
 {
-
-	return;
-
 	log_info("TERMIOS :");
 	log_info("input flags: (0x%x)", termios_p->c_iflag);
 	log_info("	INLCR  = %u // Translate NL to CR on input.", (termios_p->c_iflag & INLCR) != 0);
@@ -137,70 +97,120 @@ static void termios_print_flags(const struct termios *termios_p)
 	log_info("cc flags:");
 	log_info("	[VMIN]  = %u", termios_p->c_cc[VMIN]);
 	log_info("	[VTIME] = %u", termios_p->c_cc[VTIME]);
-
-#if 0
-	int i;
-	for (i=1; i<NCCS; ++i)
-		if (termios_p->c_cc[i])
-			log_info("	[%2u]    = %u", i, termios_p->c_cc[i]);
+}
+#else
+#define termios_print_flags(termios_p)
 #endif
+
+
+static void termios_optimize(libtty_common_t *tty)
+{
+	/* check break characters list */
+	tty->breakchars[0] = CNL;
+	int n = 1;
+
+	if (tty->term.c_cc[VEOF] != _POSIX_VDISABLE) {
+		tty->breakchars[n++] = tty->term.c_cc[VEOF];
+	}
+
+	if (tty->term.c_cc[VEOL] != _POSIX_VDISABLE) {
+		tty->breakchars[n++] = tty->term.c_cc[VEOL];
+	}
+
+	tty->breakchars[n] = '\0';
+
+	/* check if we have break char in the RX FIFO */
+	tty->t_flags &= ~TF_HAVEBREAK;
+	if (CMP_FLAG(l, ICANON)) {
+		if (libttydisc_rx_have_breakchar(tty)) {
+			tty->t_flags |= TF_HAVEBREAK;
+		}
+	}
+}
+
+
+static void termios_init(struct termios *term, speed_t speed)
+{
+	memset(term, 0, sizeof(*term));
+
+	term->c_iflag = TTYDEF_IFLAG & TTYSUP_IFLAG;
+	term->c_oflag = TTYDEF_OFLAG & TTYSUP_OFLAG;
+	term->c_lflag = TTYDEF_LFLAG & TTYSUP_LFLAG;
+	term->c_cflag = TTYDEF_CFLAG;
+
+	term->c_ispeed = speed;
+	term->c_ospeed = speed;
+
+	memcpy(term->c_cc, ttydefchars, sizeof(ttydefchars));
 }
 
 
 ssize_t libtty_read(libtty_common_t *tty, char *data, size_t size, unsigned mode)
 {
-	ssize_t ret = 0;
-
-	if (tty->t_flags & TF_CLOSING)
-		return -EBADF;
-
-	if (CMP_FLAG(l, ICANON))
-		ret = libttydisc_read_canonical(tty, data, size, mode, NULL);
-	else
-		ret = libttydisc_read_raw(tty, data, size, mode, NULL);
-
-	return ret;
+	return libtty_read_nonblock(tty, data, size, mode, NULL);
 }
+
+
+ssize_t _libtty_read(libtty_common_t *tty, char *data, size_t size, unsigned mode)
+{
+	return _libtty_read_nonblock(tty, data, size, mode, NULL);
+}
+
 
 ssize_t libtty_read_nonblock(libtty_common_t *tty, char *data, size_t size, unsigned mode, libtty_read_state_t *st)
 {
+	ssize_t res;
+
+	mutexLock(tty->lock);
+	res = _libtty_read_nonblock(tty, data, size, mode, st);
+	mutexUnlock(tty->lock);
+
+	return res;
+}
+
+
+ssize_t _libtty_read_nonblock(libtty_common_t *tty, char *data, size_t size, unsigned mode, libtty_read_state_t *st)
+{
 	ssize_t ret = 0;
 
-	if (tty->t_flags & TF_CLOSING)
+	if ((tty->t_flags & TF_CLOSING) != 0) {
 		return -EBADF;
+	}
 
-	if (CMP_FLAG(l, ICANON))
-		ret = libttydisc_read_canonical(tty, data, size, mode, st);
-	else
-		ret = libttydisc_read_raw(tty, data, size, mode, st);
+	if (CMP_FLAG(l, ICANON)) {
+		ret = _libttydisc_readCanon(tty, data, size, mode, st);
+	}
+	else {
+		ret = _libttydisc_readRaw(tty, data, size, mode, st);
+	}
 
 	return ret;
 }
 
 
 /* writer wake up is done outside of libtty if wake_writer is not NULL */
-unsigned char libtty_getchar(libtty_common_t *tty, int *wake_writer)
+unsigned char _libtty_getchar(libtty_common_t *tty, int *wake_writer)
 {
-	unsigned char c = fifo_pop_back(tty->tx_fifo);
+	unsigned char c = _libtty_popchar(tty);
 
 	if (wake_writer != NULL) {
 		*wake_writer = fifo_freespace(tty->tx_fifo) >= TX_FIFO_NOTFULL_WATERMARK;
 	}
 	else {
-		libtty_wake_writer(tty);
+		_libtty_wake_writer(tty);
 	}
 
 	return c;
 }
 
 
-unsigned char libtty_popchar(libtty_common_t *tty)
+unsigned char _libtty_popchar(libtty_common_t *tty)
 {
 	return fifo_pop_back(tty->tx_fifo);
 }
 
 
-void libtty_wake_writer(libtty_common_t *tty)
+void _libtty_wake_writer(libtty_common_t *tty)
 {
 	if (fifo_freespace(tty->tx_fifo) >= TX_FIFO_NOTFULL_WATERMARK) {
 		condSignal(tty->tx_waitq);
@@ -208,7 +218,7 @@ void libtty_wake_writer(libtty_common_t *tty)
 }
 
 
-int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned int bufsize, int speed)
+int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned int bufsize, int speed, handle_t *lock)
 {
 	/* bufsize must be a power of 2 */
 	if (bufsize == 0 || (bufsize & (bufsize - 1)) != 0) {
@@ -220,6 +230,19 @@ int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned in
 	}
 
 	memset(tty, 0, sizeof(*tty));
+
+	if (lock != NULL) {
+		tty->lock = *lock;
+		tty->lockCreated = false;
+	}
+	else {
+		/* create the mutex */
+		if (mutexCreate(&tty->lock) < 0) {
+			return -1;
+		}
+		tty->lockCreated = true;
+	}
+
 	tty->cb = *callbacks;
 
 	tty->tx_fifo = malloc(sizeof(fifo_t) + bufsize * sizeof(tty->tx_fifo->data[0]));
@@ -227,20 +250,30 @@ int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned in
 	if (tty->tx_fifo == NULL || tty->rx_fifo == NULL) {
 		free(tty->tx_fifo);
 		free(tty->rx_fifo);
+		if (tty->lockCreated) {
+			resourceDestroy(tty->lock);
+		}
 		return -1;
 	}
 
-	if (condCreate(&tty->tx_waitq) != EOK)
+	if (condCreate(&tty->tx_waitq) != EOK) {
+		free(tty->tx_fifo);
+		free(tty->rx_fifo);
+		if (tty->lockCreated) {
+			resourceDestroy(tty->lock);
+		}
 		return -1;
+	}
 
-	if (condCreate(&tty->rx_waitq) != EOK)
+	if (condCreate(&tty->rx_waitq) != EOK) {
+		resourceDestroy(tty->tx_waitq);
+		free(tty->tx_fifo);
+		free(tty->rx_fifo);
+		if (tty->lockCreated) {
+			resourceDestroy(tty->lock);
+		}
 		return -1;
-
-	if (mutexCreate(&tty->tx_mutex) != EOK)
-		return -1;
-
-	if (mutexCreate(&tty->rx_mutex) != EOK)
-		return -1;
+	}
 
 	fifo_init(tty->tx_fifo, bufsize);
 	fifo_init(tty->rx_fifo, bufsize);
@@ -256,18 +289,26 @@ int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned in
 }
 
 
-int libtty_close(libtty_common_t *tty)
+int _libtty_close(libtty_common_t *tty)
 {
-	mutexLock2(tty->tx_mutex, tty->rx_mutex);
 	tty->t_flags |= TF_CLOSING;
 
 	condBroadcast(tty->tx_waitq);
 	condBroadcast(tty->rx_waitq);
 
-	mutexUnlock(tty->tx_mutex);
-	mutexUnlock(tty->rx_mutex);
-
 	return 0;
+}
+
+
+int libtty_close(libtty_common_t *tty)
+{
+	int res;
+
+	mutexLock(tty->lock);
+	res = _libtty_close(tty);
+	mutexUnlock(tty->lock);
+
+	return res;
 }
 
 
@@ -276,8 +317,10 @@ int libtty_destroy(libtty_common_t *tty)
 {
 	resourceDestroy(tty->tx_waitq);
 	resourceDestroy(tty->rx_waitq);
-	resourceDestroy(tty->tx_mutex);
-	resourceDestroy(tty->rx_mutex);
+
+	if (tty->lockCreated) {
+		resourceDestroy(tty->lock);
+	}
 
 	free(tty->tx_fifo);
 	free(tty->rx_fifo);
@@ -286,37 +329,40 @@ int libtty_destroy(libtty_common_t *tty)
 }
 
 
-ssize_t libtty_write(libtty_common_t *tty, const char *data, size_t size, unsigned mode)
+ssize_t _libtty_write(libtty_common_t *tty, const char *data, size_t size, unsigned mode)
 {
 	ssize_t len = 0;
 
 	/* short path */
-	if (tty->t_flags & TF_CLOSING)
+	if ((tty->t_flags & TF_CLOSING) != 0) {
 		return -EPIPE;
-	else if (fifo_is_full(tty->tx_fifo) && (mode & O_NONBLOCK))
+	}
+	else if (fifo_is_full(tty->tx_fifo) && (mode & O_NONBLOCK) != 0) {
 		return -EWOULDBLOCK;
-	else if (size == 0)
+	}
+	else if (size == 0) {
 		return 0;
-
-	mutexLock(tty->tx_mutex);
+	}
 
 	int fifo_freespace_for_single_char = CMP_FLAG(o, OPOST) ? LIBTTYDISC_WRITE_OPROC_MAXLEN : 1;
 
 	/* write contents of the buffer */
 	while (len < size) {
 		while (fifo_freespace(tty->tx_fifo) < fifo_freespace_for_single_char) {
-			if (tty->t_flags & TF_CLOSING)
+			if (tty->t_flags & TF_CLOSING) {
 				goto exit;
+			}
 
-			if (mode & O_NONBLOCK)
+			if (mode & O_NONBLOCK) {
 				goto exit;
+			}
 
 			CALLBACK(signal_txready);
-			condWait(tty->tx_waitq, tty->tx_mutex, 0);
+			condWait(tty->tx_waitq, tty->lock, 0);
 		}
 
 		if (CMP_FLAG(o, OPOST) && (CTL_VALID(*data))) { /* we need to process this char */
-			libttydisc_write_oproc(tty, *data);
+			_libttydisc_writeOproc(tty, *data);
 		}
 		else {
 			fifo_push(tty->tx_fifo, *data);
@@ -328,68 +374,88 @@ ssize_t libtty_write(libtty_common_t *tty, const char *data, size_t size, unsign
 
 	/* DEBUG_CHAR('W'); */
 	CALLBACK(signal_txready);
-#if 0
-	/* TODO: test O_SYNC */
-	while ((mode & O_SYNC) && !fifo_is_empty(tty->tx_fifo) && !(tty->t_flags & TF_CLOSING))
-		condWait(tty->tx_waitq, tty->tx_mutex, 0);
-#endif
 
 exit:
-
-	if (tty->t_flags & TF_CLOSING)
+	if ((tty->t_flags & TF_CLOSING) != 0) {
 		len = -EPIPE;
-	else if ((len == 0) && (mode & O_NONBLOCK))
+	}
+	else if ((len == 0) && (mode & O_NONBLOCK) != 0) {
 		len = -EWOULDBLOCK;
-
-	mutexUnlock(tty->tx_mutex);
+	}
 
 	return len;
 }
 
-int libtty_txready(libtty_common_t *tty)
-{
-#if 0
-	/* DEBUG_CHAR('0' + fifo_count(tty->tx_fifo)); */
-	if (fifo_is_empty(tty->tx_fifo))
-		DEBUG_CHAR('E');
-	else
-		DEBUG_CHAR('F');
-#endif
 
+ssize_t libtty_write(libtty_common_t *tty, const char *data, size_t size, unsigned mode)
+{
+	ssize_t res;
+
+	mutexLock(tty->lock);
+	res = _libtty_write(tty, data, size, mode);
+	mutexUnlock(tty->lock);
+
+	return res;
+}
+
+
+int _libtty_txready(libtty_common_t *tty)
+{
 	return !fifo_is_empty(tty->tx_fifo);
 }
 
-int libtty_txfull(libtty_common_t *tty)
+
+int _libtty_txfull(libtty_common_t *tty)
 {
 	return fifo_is_full(tty->tx_fifo);
 }
 
-int libtty_rxready(libtty_common_t *tty)
+
+int _libtty_rxready(libtty_common_t *tty)
 {
 	return !fifo_is_empty(tty->rx_fifo);
 }
 
-int libtty_poll_status(libtty_common_t *tty)
+
+int _libtty_poll_status(libtty_common_t *tty)
 {
 	int revents = 0;
 
 	/* poll in ICANON mode should return POLLIN only if breakchar is present */
 	if (!CMP_FLAG(l, ICANON)) {
-		if (libtty_rxready(tty))
+		if (_libtty_rxready(tty)) {
 			revents |= POLLIN | POLLRDNORM;
+		}
 	}
 	else {
-		if (tty->t_flags & TF_HAVEBREAK)
+		if ((tty->t_flags & TF_HAVEBREAK) != 0) {
 			revents |= POLLIN | POLLRDNORM;
+		}
 	}
 
-	if (!libtty_txfull(tty))
+	if (!_libtty_txfull(tty)) {
 		revents |= POLLOUT | POLLWRNORM;
-	if (tty->t_flags & TF_CLOSING)
+	}
+
+	if ((tty->t_flags & TF_CLOSING) != 0) {
 		revents |= POLLHUP;
+	}
 
 	return revents;
 }
+
+
+int libtty_poll_status(libtty_common_t *tty)
+{
+	int res;
+
+	mutexLock(tty->lock);
+	res = _libtty_poll_status(tty);
+	mutexUnlock(tty->lock);
+
+	return res;
+}
+
 
 void libtty_signal_pgrp(libtty_common_t *tty, int signal)
 {
@@ -399,50 +465,52 @@ void libtty_signal_pgrp(libtty_common_t *tty, int signal)
 	}
 }
 
-void libtty_drain(libtty_common_t *tty)
-{
-	mutexLock(tty->tx_mutex);
-	while (!fifo_is_empty(tty->tx_fifo))
-		condWait(tty->tx_waitq, tty->tx_mutex, 0);
 
-	mutexUnlock(tty->tx_mutex);
-}
-void libtty_flush(libtty_common_t *tty, int type)
+static void _libtty_drain(libtty_common_t *tty)
 {
+	while (!fifo_is_empty(tty->tx_fifo)) {
+		condWait(tty->tx_waitq, tty->lock, 0);
+	}
+}
+
+
+static int _libtty_flush(libtty_common_t *tty, int type)
+{
+	if (type != TCIFLUSH && type != TCOFLUSH && type != TCIOFLUSH) {
+		return -EINVAL;
+	}
+
 	if (type == TCIFLUSH || type == TCIOFLUSH) {
-		mutexLock(tty->rx_mutex);
 		fifo_remove_all(tty->rx_fifo);
-		mutexUnlock(tty->rx_mutex);
 	}
 
 	if (type == TCOFLUSH || type == TCIOFLUSH) {
 		/* leaving one char in TX fifo should allow us to avoid */
 		/* undefined behaviour if writer is in the middle of operation */
-		mutexLock(tty->tx_mutex);
 		fifo_remove_all_but_one(tty->tx_fifo);
-		mutexUnlock(tty->tx_mutex);
 	}
 
 	/* check for breakchars, etc. */
 	termios_optimize(tty);
+
+	return 0;
 }
 
-int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const void *in_arg, const void **out_arg)
+
+int _libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned long cmd, const void *in_arg, void *out_arg)
 {
 	struct termios *termios_p = (struct termios *)in_arg;
 	struct winsize *ws = (struct winsize *)in_arg;
 	pid_t *pid = (pid_t *)in_arg;
 	int ret = 0;
-
-	*out_arg = NULL;
-
-	/* TODO: locking */
+	int val;
 
 	switch (cmd) {
 		case TIOCGWINSZ:
 			log_ioctl("TIOCGWINSZ");
-			*out_arg = (const void *)&tty->ws;
+			memcpy(out_arg, &tty->ws, sizeof(tty->ws));
 			break;
+
 		case TIOCSWINSZ:
 			log_ioctl("TIOCSWINSZ(col=%u, row=%u)", ws->ws_col, ws->ws_row);
 			tty->ws.ws_row = ws->ws_row;
@@ -452,13 +520,15 @@ int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const
 
 		case TCDRAIN:
 			log_ioctl("TCDRAIN");
-			libtty_drain(tty);
+			_libtty_drain(tty);
 			break;
+
 		case TCFLSH:
 			log_ioctl("TCFLSH");
 			/* WARN: passing ioctl attr by value */
-			libtty_flush(tty, (long)in_arg);
+			ret = _libtty_flush(tty, (long)in_arg);
 			break;
+
 		case TCSETS:
 		case TCSETSW:
 		case TCSETSF: {
@@ -467,21 +537,25 @@ int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const
 
 			/* need local copy to be able to change values */
 			struct termios temp_term = *termios_p;
-			if (temp_term.c_ispeed == 0) /* required by POSIX */
+
+			if (temp_term.c_ispeed == 0) { /* required by POSIX */
 				temp_term.c_ispeed = temp_term.c_ospeed;
+			}
+
 			if (temp_term.c_ispeed != temp_term.c_ospeed) {
 				log_warn("ispeed (%u) != ospeed (%u)", temp_term.c_ispeed, temp_term.c_ospeed);
-				return -EINVAL;
+				ret = -EINVAL;
+				break;
 			}
 
 			if (temp_term.c_ospeed != tty->term.c_ospeed) {
-				log_info("old baud: %u, new_baud: %u",
-						tty->term.c_ospeed, temp_term.c_ospeed);
+				log_info("old baud: %u, new_baud: %u", tty->term.c_ospeed, temp_term.c_ospeed);
 				CALLBACK(set_baudrate, temp_term.c_ospeed);
 			}
 
-			if (temp_term.c_cflag != tty->term.c_cflag)
+			if (temp_term.c_cflag != tty->term.c_cflag) {
 				CALLBACK(set_cflag, &temp_term.c_cflag);
+			}
 
 			/* all succeded, we can apply params now (only supported ones) */
 			temp_term.c_iflag &= TTYSUP_IFLAG;
@@ -493,59 +567,83 @@ int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const
 			termios_print_flags(&tty->term);
 			break;
 		}
+
 		case TCGETS:
 			log_ioctl("TCGETS (%s)", ((tty->term.c_lflag & ICANON) ? "cooked" : "raw"));
-			*out_arg = (const void *)&tty->term;
+			memcpy(out_arg, &tty->term, sizeof(tty->term));
 			break;
+
 		case TIOCGPGRP:
 			log_ioctl("TIOCGPGRP = %u", tty->pgrp);
-			*out_arg = (const void *)&tty->pgrp;
+			memcpy(out_arg, &tty->pgrp, sizeof(tty->pgrp));
 			break;
+
 		case TIOCSPGRP:
 			log_ioctl("TIOCSPGRP(%u)", *pid);
 			/* FIXME: check permissions */
 			tty->pgrp = getpgid(*pid);
 			break;
+
 		case TIOCNOTTY:
 			log_ioctl("TIOCNOTTY");
 			tty->pgrp = -1; /* process detached from the console */
 			break;
+
 		case TIOCSCTTY:
 			log_ioctl("TIOCSCTTY: pid=%X", sender_pid);
 			/* FIXME: check permissions */
 			tty->pgrp = getpgid(sender_pid);
 			break;
+
 		case TIOCGSID:
 			/* NOTE: simulating sessions with process groups */
 			log_ioctl("TIOCGSID = %u", tty->pgrp);
-			*out_arg = (const void *)&tty->pgrp;
+			memcpy(out_arg, &tty->pgrp, sizeof(tty->pgrp));
 			break;
+
 		case TIOCGHALFD:
 			if (tty->cb.get_halfduplex == NULL) {
-				return -EIO;
+				ret = -EIO;
+				break;
 			}
-			tty->temp = tty->cb.get_halfduplex(tty->cb.arg);
-			*out_arg = (const void *)&tty->temp;
-			log_ioctl("TIOCGHALFD = %d", tty->temp);
+			val = tty->cb.get_halfduplex(tty->cb.arg);
+			memcpy(out_arg, &val, sizeof(val));
+			log_ioctl("TIOCGHALFD = %d", val);
 			break;
+
 		case TIOCSHALFD:
 			if (tty->cb.set_halfduplex == NULL) {
-				return -EIO;
+				ret = -EIO;
+				break;
 			}
 			/* WARN: passing ioctl half-duplex enable by value */
 			int enable = (int)(uintptr_t)in_arg;
 			log_ioctl("TIOCSHALFD: enable = %d", enable);
 			if ((enable != 0) && (enable != 1)) {
 				log_warn("halfduplex enable (%d) != {0,1}", enable);
-				return -EINVAL;
+				ret = -EINVAL;
+				break;
 			}
-			CALLBACK(set_halfduplex, enable);
+			tty->cb.set_halfduplex(tty->cb.arg, enable);
 			break;
+
 		default:
-			log_warn("unsupported ioctl: 0x%x", cmd);
+			log_warn("unsupported ioctl: 0x%lx", cmd);
 			ret = -EINVAL;
 			break;
 	}
 
 	return ret;
+}
+
+
+int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned long cmd, const void *in_arg, void *out_arg)
+{
+	int res;
+
+	mutexLock(tty->lock);
+	res = _libtty_ioctl(tty, sender_pid, cmd, in_arg, out_arg);
+	mutexUnlock(tty->lock);
+
+	return res;
 }

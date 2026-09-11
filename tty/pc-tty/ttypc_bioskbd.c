@@ -34,11 +34,12 @@ static void ttypc_bioskbd_ctlthr(void *arg)
 		while ((head = *(volatile uint16_t *)((uintptr_t)ttypc->kbd + 0x41a)) == *(volatile uint16_t *)((uintptr_t)ttypc->kbd + 0x41c))
 			usleep(1000);
 
-		mutexLock(ttypc->lock);
-		mutexLock((cvt = ttypc->vt)->lock);
+		cvt = ttypc->vt;
+
+		mutexLock2(ttypc->lock, cvt->lock);
 
 		/* Add the keystroke and update head position */
-		libtty_putchar(&ttypc->vt->tty, *(volatile unsigned char *)((uintptr_t)ttypc->kbd + 0x400 + head), NULL);
+		_libtty_putchar(&cvt->tty, *(volatile unsigned char *)((uintptr_t)ttypc->kbd + 0x400 + head), NULL);
 		*(volatile uint16_t *)((uintptr_t)ttypc->kbd + 0x41a) = 0x1e + (head - 0x1e + 2) % 32;
 
 		mutexUnlock(cvt->lock);

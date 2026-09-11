@@ -192,34 +192,32 @@ static void uart_intThread(void *arg)
 	mutexLock(uart->lock);
 
 	for (;;) {
-		while ((libtty_txready(&uart->tty) == 0) && ((*(uart->vbase + UART_STATUS) & DATA_READY) == 0)) {
+		while ((_libtty_txready(&uart->tty) == 0) && ((*(uart->vbase + UART_STATUS) & DATA_READY) == 0)) {
 			condWait(uart->cond, uart->lock, 0);
 		}
 
 		int wake = 0;
 		if ((*(uart->vbase + UART_STATUS) & DATA_READY) != 0) {
 			int wakehelper;
-			libtty_putchar_lock(&uart->tty);
 			do {
-				libtty_putchar_unlocked(&uart->tty, (*(uart->vbase + UART_DATA) & 0xff), &wakehelper);
+				_libtty_putchar(&uart->tty, (*(uart->vbase + UART_DATA) & 0xff), &wakehelper);
 				wake |= wakehelper;
 			} while ((*(uart->vbase + UART_STATUS) & DATA_READY) != 0);
-			libtty_putchar_unlock(&uart->tty);
 
 			if (wake != 0) {
-				libtty_wake_reader(&uart->tty);
+				_libtty_wake_reader(&uart->tty);
 			}
 		}
 
 		/* Transmit data until TX TTY buffer is empty or TX FIFO is full */
 		wake = 0;
-		while ((libtty_txready(&uart->tty) != 0) && ((*(uart->vbase + UART_STATUS) & TX_FIFO_FULL) == 0)) {
-			*(uart->vbase + UART_DATA) = libtty_popchar(&uart->tty);
+		while ((_libtty_txready(&uart->tty) != 0) && ((*(uart->vbase + UART_STATUS) & TX_FIFO_FULL) == 0)) {
+			*(uart->vbase + UART_DATA) = _libtty_popchar(&uart->tty);
 			wake = 1;
 		}
 
 		if (wake != 0) {
-			libtty_wake_writer(&uart->tty);
+			_libtty_wake_writer(&uart->tty);
 		}
 
 		if ((*(uart->vbase + UART_CTRL) & RX_INT) == 0) {
@@ -239,17 +237,16 @@ static void uart_dmaThread(void *arg)
 
 	for (;;) {
 		size_t pos = uart_dmaGetPos(uart);
-		while ((libtty_txready(&uart->tty) == 0) && (uart->lastPos == pos)) {
+		while ((_libtty_txready(&uart->tty) == 0) && (uart->lastPos == pos)) {
 			(void)condWait(uart->cond, uart->lock, 50000);
 			pos = uart_dmaGetPos(uart);
 		}
 
 		int wake = 0;
 		if (uart->lastPos != pos) {
-			libtty_putchar_lock(&uart->tty);
 			do {
 				int wakeHelper;
-				libtty_putchar_unlocked(&uart->tty, uart->dmaRxBuf[uart->lastPos], &wakeHelper);
+				_libtty_putchar(&uart->tty, uart->dmaRxBuf[uart->lastPos], &wakeHelper);
 				uart->lastPos = (uart->lastPos + 1) % DMA_RECEIVE_SIZE;
 				wake |= wakeHelper;
 			} while (uart->lastPos != pos);
@@ -259,26 +256,25 @@ static void uart_dmaThread(void *arg)
 			if (uart->lastPos != pos) {
 				do {
 					int wakeHelper;
-					libtty_putchar_unlocked(&uart->tty, uart->dmaRxBuf[uart->lastPos], &wakeHelper);
+					_libtty_putchar(&uart->tty, uart->dmaRxBuf[uart->lastPos], &wakeHelper);
 					uart->lastPos = (uart->lastPos + 1) % DMA_RECEIVE_SIZE;
 					wake |= wakeHelper;
 				} while (uart->lastPos != pos);
 			}
-			libtty_putchar_unlock(&uart->tty);
 
 			if (wake != 0) {
-				libtty_wake_reader(&uart->tty);
+				_libtty_wake_reader(&uart->tty);
 			}
 		}
 
 		wake = 0;
-		while ((libtty_txready(&uart->tty) != 0) && ((*(uart->vbase + UART_STATUS) & TX_FIFO_FULL) == 0)) {
-			*(uart->vbase + UART_DATA) = libtty_popchar(&uart->tty);
+		while ((_libtty_txready(&uart->tty) != 0) && ((*(uart->vbase + UART_STATUS) & TX_FIFO_FULL) == 0)) {
+			*(uart->vbase + UART_DATA) = _libtty_popchar(&uart->tty);
 			wake = 1;
 		}
 
 		if (wake != 0) {
-			libtty_wake_writer(&uart->tty);
+			_libtty_wake_writer(&uart->tty);
 		}
 	}
 }
@@ -331,12 +327,13 @@ static void uart_ioctl(msg_t *msg, int dev)
 	int err;
 	pid_t pid;
 	unsigned long req;
-	const void *inData, *outData = NULL;
+	const void *inData;
+	void *outData = NULL;
 
-	inData = ioctl_unpack(msg, &req, NULL);
+	inData = ioctl_unpackEx(msg, &req, NULL, &outData);
 	pid = ioctl_getSenderPid(msg);
 
-	err = libtty_ioctl(&uart_common.uart[dev].tty, pid, req, inData, &outData);
+	err = libtty_ioctl(&uart_common.uart[dev].tty, pid, req, inData, outData);
 
 	ioctl_setResponse(msg, req, err, outData);
 }
@@ -506,23 +503,21 @@ static int uart_setup(unsigned int n, int baud, int raw)
 		return -1;
 	}
 
-	if (libtty_init(&uart->tty, &callbacks, _PAGE_SIZE, baud) < 0) {
-		munmap((void *)uart->vbase, _PAGE_SIZE);
-		return -1;
-	}
-
 	if (condCreate(&uart->cond) != EOK) {
 		munmap((void *)uart->vbase, _PAGE_SIZE);
-		libtty_close(&uart->tty);
-		libtty_destroy(&uart->tty);
 		return -1;
 	}
 
 	if (mutexCreate(&uart->lock) != EOK) {
 		munmap((void *)uart->vbase, _PAGE_SIZE);
-		libtty_close(&uart->tty);
-		libtty_destroy(&uart->tty);
 		resourceDestroy(uart->cond);
+		return -1;
+	}
+
+	if (libtty_init(&uart->tty, &callbacks, _PAGE_SIZE, baud, &uart->lock) < 0) {
+		munmap((void *)uart->vbase, _PAGE_SIZE);
+		resourceDestroy(uart->cond);
+		resourceDestroy(uart->lock);
 		return -1;
 	}
 

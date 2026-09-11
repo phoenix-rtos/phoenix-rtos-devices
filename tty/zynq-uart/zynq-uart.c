@@ -146,24 +146,24 @@ static void uart_intThread(void *arg)
 	mutexLock(uart->lock);
 
 	for (;;) {
-		while (!libtty_txready(&uart->tty) && (*(uart->base + sr) & (1 << 1))) {
+		while (!_libtty_txready(&uart->tty) && (*(uart->base + sr) & (1 << 1))) {
 			condWait(uart->cond, uart->lock, 0);
 		}
 
 		/* Receive data until RX FIFO is not empty */
 		while (!(*(uart->base + sr) & (1 << 1))) {
-			libtty_putchar(&uart->tty, *(uart->base + fifo), NULL);
+			_libtty_putchar(&uart->tty, *(uart->base + fifo), NULL);
 		}
 
 		/* Transmit data until TX TTY buffer is empty or TX FIFO is full */
 		wake = 0;
-		while (libtty_txready(&uart->tty) && !(*(uart->base + sr) & (1 << 4))) {
-			*(uart->base + fifo) = libtty_popchar(&uart->tty);
+		while (_libtty_txready(&uart->tty) && !(*(uart->base + sr) & (1 << 4))) {
+			*(uart->base + fifo) = _libtty_popchar(&uart->tty);
 			wake = 1;
 		}
 
 		if (wake) {
-			libtty_wake_writer(&uart->tty);
+			_libtty_wake_writer(&uart->tty);
 		}
 
 		/* RX Trigger IRQ occurred and turned off the interrupt */
@@ -280,9 +280,10 @@ static void uart_ioctl(unsigned port, msg_t *msg)
 	int err;
 	pid_t pid;
 	unsigned long req;
-	const void *inData, *outData = NULL;
+	const void *inData;
+	void *outData = NULL;
 
-	inData = ioctl_unpack(msg, &req, NULL);
+	inData = ioctl_unpackEx(msg, &req, NULL, &outData);
 	pid = ioctl_getSenderPid(msg);
 
 	if (req == KIOEN) {
@@ -299,7 +300,7 @@ static void uart_ioctl(unsigned port, msg_t *msg)
 		}
 	}
 	else {
-		err = libtty_ioctl(&uart_common.uart.tty, pid, req, inData, &outData);
+		err = libtty_ioctl(&uart_common.uart.tty, pid, req, inData, outData);
 	}
 
 	ioctl_setResponse(msg, req, err, outData);
@@ -550,23 +551,21 @@ static int uart_init(unsigned int n, int baud, int raw)
 		return -ENOMEM;
 	}
 
-	if (libtty_init(&uart->tty, &callbacks, _PAGE_SIZE, baud) < 0) {
-		munmap((void *)uart->base, _PAGE_SIZE);
-		return -ENOENT;
-	}
-
 	if (condCreate(&uart->cond) != EOK) {
 		munmap((void *)uart->base, _PAGE_SIZE);
-		libtty_close(&uart->tty);
-		libtty_destroy(&uart->tty);
 		return -ENOENT;
 	}
 
 	if (mutexCreate(&uart->lock) != EOK) {
 		munmap((void *)uart->base, _PAGE_SIZE);
-		libtty_close(&uart->tty);
-		libtty_destroy(&uart->tty);
 		resourceDestroy(uart->cond);
+		return -ENOENT;
+	}
+
+	if (libtty_init(&uart->tty, &callbacks, _PAGE_SIZE, baud, &uart->lock) < 0) {
+		munmap((void *)uart->base, _PAGE_SIZE);
+		resourceDestroy(uart->cond);
+		resourceDestroy(uart->lock);
 		return -ENOENT;
 	}
 

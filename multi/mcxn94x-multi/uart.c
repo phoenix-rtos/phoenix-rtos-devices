@@ -153,11 +153,12 @@ static void uart_intrThread(void *arg)
 	uint8_t mask;
 	uint8_t c;
 
+	mutexLock(uart->lock);
+
 	for (;;) {
 		/* wait for character or transmit data */
-		mutexLock(uart->lock);
 		while (lf_fifo_empty(&uart->rxFifoCtx) != 0) {        /* nothing to RX */
-			if (libtty_txready(&uart->tty_common)) {          /* something to TX */
+			if (_libtty_txready(&uart->tty_common)) {         /* something to TX */
 				if (uart_getTXcount(uart) < uart->txFifoSz) { /* TX ready */
 					break;
 				}
@@ -178,16 +179,14 @@ static void uart_intrThread(void *arg)
 			mask = 0xff;
 		}
 
-		mutexUnlock(uart->lock);
-
 		/* RX */
 		while (lf_fifo_pop(&uart->rxFifoCtx, &c) != 0) {
-			libtty_putchar(&uart->tty_common, c & mask, NULL);
+			_libtty_putchar(&uart->tty_common, c & mask, NULL);
 		}
 
 		/* TX */
-		while (libtty_txready(&uart->tty_common) && uart_getTXcount(uart) < uart->txFifoSz) {
-			*(uart->base + datar) = libtty_getchar(&uart->tty_common, NULL);
+		while (_libtty_txready(&uart->tty_common) && uart_getTXcount(uart) < uart->txFifoSz) {
+			*(uart->base + datar) = _libtty_getchar(&uart->tty_common, NULL);
 		}
 	}
 }
@@ -308,7 +307,8 @@ static void set_baudrate(void *_uart, int b)
 static void uart_handleMsg(msg_t *msg, msg_rid_t rid, unsigned int major, unsigned int minor)
 {
 	unsigned long request;
-	const void *in_data, *out_data = NULL;
+	const void *in_data;
+	void *out_data = NULL;
 	pid_t pid;
 	int err;
 	uart_t *uart;
@@ -345,9 +345,9 @@ static void uart_handleMsg(msg_t *msg, msg_rid_t rid, unsigned int major, unsign
 			break;
 
 		case mtDevCtl:
-			in_data = ioctl_unpack(msg, &request, NULL);
+			in_data = ioctl_unpackEx(msg, &request, NULL, &out_data);
 			pid = ioctl_getSenderPid(msg);
-			err = libtty_ioctl(&uart->tty_common, pid, request, in_data, &out_data);
+			err = libtty_ioctl(&uart->tty_common, pid, request, in_data, out_data);
 			ioctl_setResponse(msg, request, err, out_data);
 			break;
 
@@ -449,7 +449,7 @@ static int uart_init(unsigned int minor)
 		.signal_txready = signal_txready,
 	};
 
-	if (libtty_init(&uart->tty_common, &callbacks, tty_bufsz[minor], default_baud[minor]) < 0) {
+	if (libtty_init(&uart->tty_common, &callbacks, tty_bufsz[minor], default_baud[minor], &uart->lock) < 0) {
 		resourceDestroy(uart->cond);
 		resourceDestroy(uart->lock);
 		return -1;

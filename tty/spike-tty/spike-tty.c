@@ -75,27 +75,28 @@ static void signal_txready(void *arg)
 {
 	spiketty_t *spiketty = (spiketty_t *)arg;
 
-	while (libtty_txready(&spiketty->tty))
-		sbi_putchar(libtty_popchar(&spiketty->tty));
+	while (_libtty_txready(&spiketty->tty))
+		sbi_putchar(_libtty_popchar(&spiketty->tty));
 
-	libtty_wake_writer(&spiketty->tty);
+	_libtty_wake_writer(&spiketty->tty);
 }
 
 
 static void spiketty_ioctl(unsigned int port, msg_t *msg)
 {
-	const void *idata, *odata = NULL;
+	const void *idata;
+	void *odata = NULL;
 	oid_t oid = { .port = port };
 	spiketty_t *spiketty;
 	unsigned long req;
 	int err;
 
-	idata = ioctl_unpack(msg, &req, &oid.id);
+	idata = ioctl_unpackEx(msg, &req, &oid.id, &odata);
 
 	if ((spiketty = spiketty_get(&oid)) == NULL)
 		err = -EINVAL;
 	else
-		err = libtty_ioctl(&spiketty->tty, ioctl_getSenderPid(msg), req, idata, &odata);
+		err = libtty_ioctl(&spiketty->tty, ioctl_getSenderPid(msg), req, idata, odata);
 
 	ioctl_setResponse(msg, req, err, odata);
 }
@@ -178,8 +179,11 @@ static void spiketty_thr(void *arg)
 	int c;
 
 	for (;;) {
-		if ((c = sbi_getchar()) > 0)
-			libtty_putchar(&spiketty->tty, c, NULL);
+		if ((c = sbi_getchar()) > 0) {
+			libtty_lock(&spiketty->tty);
+			_libtty_putchar(&spiketty->tty, c, NULL);
+			libtty_unlock(&spiketty->tty);
+		}
 		usleep(50000);
 	}
 }
@@ -201,7 +205,7 @@ static int _spiketty_init(spiketty_t *spiketty, unsigned int port, unsigned int 
 	};
 	int err;
 
-	if ((err = libtty_init(&spiketty->tty, &callbacks, _PAGE_SIZE, TTYDEF_SPEED)) < 0)
+	if ((err = libtty_init(&spiketty->tty, &callbacks, _PAGE_SIZE, TTYDEF_SPEED, NULL)) < 0)
 		return err;
 
 	spiketty->active = 1;

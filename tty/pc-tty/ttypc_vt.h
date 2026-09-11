@@ -151,7 +151,7 @@ extern ssize_t ttypc_vt_write(ttypc_vt_t *vt, int mode, const char *buff, size_t
 
 
 /* Respond to requests for a terminal reports */
-extern int ttypc_vt_respond(ttypc_vt_t *vt, const char *buff);
+extern int _ttypc_vt_respond(ttypc_vt_t *vt, const char *buff);
 
 
 /* Polls virtual terminal status */
@@ -159,11 +159,11 @@ extern int ttypc_vt_pollstatus(ttypc_vt_t *vt);
 
 
 /* Virtual terminal ioctl */
-extern int ttypc_vt_ioctl(ttypc_vt_t *vt, pid_t pid, unsigned int cmd, const void *idata, const void **odata);
+extern int ttypc_vt_ioctl(ttypc_vt_t *vt, pid_t pid, unsigned int cmd, const void *idata, void *odata);
 
 
 /* Resizes virtual terminal */
-extern void ttypc_vt_resize(ttypc_vt_t *vt, uint8_t cols, uint8_t rows);
+extern void _ttypc_vt_resize(ttypc_vt_t *vt, uint8_t cols, uint8_t rows);
 
 
 /* Destroys virtual terminal */
