@@ -61,8 +61,6 @@ struct libtty_common_s {
 	handle_t lock;
 	bool lockCreated;
 
-	int temp; /* temporary to hold value to pass from ioctl */
-
 	/* cached optimizations */
 	char breakchars[4]; /* enough to hold \n, VEOF and VEOL. */
 	unsigned int t_flags;
@@ -116,7 +114,7 @@ static inline void libtty_unlock(libtty_common_t *tty)
 ssize_t libtty_read(libtty_common_t *tty, char *data, size_t size, unsigned mode);
 ssize_t libtty_write(libtty_common_t *tty, const char *data, size_t size, unsigned mode);
 int libtty_poll_status(libtty_common_t *tty);
-int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const void *in_arg, const void **out_arg);
+int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned long cmd, const void *in_arg, void *out_arg);
 
 
 /* non-blocking interface:
@@ -135,7 +133,7 @@ ssize_t _libtty_read_nonblock(libtty_common_t *tty, char *data, size_t size, uns
 ssize_t _libtty_read(libtty_common_t *tty, char *data, size_t size, unsigned mode);
 ssize_t _libtty_write(libtty_common_t *tty, const char *data, size_t size, unsigned mode);
 int _libtty_poll_status(libtty_common_t *tty);
-int _libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const void *in_arg, const void **out_arg);
+int _libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned long cmd, const void *in_arg, void *out_arg);
 int _libtty_close(libtty_common_t *tty);
 
 

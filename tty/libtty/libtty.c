@@ -497,19 +497,18 @@ static int _libtty_flush(libtty_common_t *tty, int type)
 }
 
 
-int _libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const void *in_arg, const void **out_arg)
+int _libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned long cmd, const void *in_arg, void *out_arg)
 {
 	struct termios *termios_p = (struct termios *)in_arg;
 	struct winsize *ws = (struct winsize *)in_arg;
 	pid_t *pid = (pid_t *)in_arg;
 	int ret = 0;
-
-	*out_arg = NULL;
+	int val;
 
 	switch (cmd) {
 		case TIOCGWINSZ:
 			log_ioctl("TIOCGWINSZ");
-			*out_arg = (const void *)&tty->ws;
+			memcpy(out_arg, &tty->ws, sizeof(tty->ws));
 			break;
 
 		case TIOCSWINSZ:
@@ -571,12 +570,12 @@ int _libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, cons
 
 		case TCGETS:
 			log_ioctl("TCGETS (%s)", ((tty->term.c_lflag & ICANON) ? "cooked" : "raw"));
-			*out_arg = (const void *)&tty->term;
+			memcpy(out_arg, &tty->term, sizeof(tty->term));
 			break;
 
 		case TIOCGPGRP:
 			log_ioctl("TIOCGPGRP = %u", tty->pgrp);
-			*out_arg = (const void *)&tty->pgrp;
+			memcpy(out_arg, &tty->pgrp, sizeof(tty->pgrp));
 			break;
 
 		case TIOCSPGRP:
@@ -599,7 +598,7 @@ int _libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, cons
 		case TIOCGSID:
 			/* NOTE: simulating sessions with process groups */
 			log_ioctl("TIOCGSID = %u", tty->pgrp);
-			*out_arg = (const void *)&tty->pgrp;
+			memcpy(out_arg, &tty->pgrp, sizeof(tty->pgrp));
 			break;
 
 		case TIOCGHALFD:
@@ -607,9 +606,9 @@ int _libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, cons
 				ret = -EIO;
 				break;
 			}
-			tty->temp = tty->cb.get_halfduplex(tty->cb.arg);
-			*out_arg = (const void *)&tty->temp;
-			log_ioctl("TIOCGHALFD = %d", tty->temp);
+			val = tty->cb.get_halfduplex(tty->cb.arg);
+			memcpy(out_arg, &val, sizeof(val));
+			log_ioctl("TIOCGHALFD = %d", val);
 			break;
 
 		case TIOCSHALFD:
@@ -629,7 +628,7 @@ int _libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, cons
 			break;
 
 		default:
-			log_warn("unsupported ioctl: 0x%x", cmd);
+			log_warn("unsupported ioctl: 0x%lx", cmd);
 			ret = -EINVAL;
 			break;
 	}
@@ -638,7 +637,7 @@ int _libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, cons
 }
 
 
-int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const void *in_arg, const void **out_arg)
+int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned long cmd, const void *in_arg, void *out_arg)
 {
 	int res;
 
