@@ -1,10 +1,11 @@
 /*
  * Phoenix-RTOS
  *
- * STM32L4 reset and clock controller driver
+ * STM32L4/N6/U3 reset and clock controller driver
  *
  * Copyright 2017, 2018 Phoenix Systems
- * Author: Aleksander Kaminski
+ * Copyright 2026 Apator Metrix
+ * Author: Aleksander Kaminski, Mateusz Karcz
  *
  * This file is part of Phoenix-RTOS.
  *
@@ -15,13 +16,17 @@
 #define RCC_H_
 
 
+#include <phoenix/types.h>
 #include <stdint.h>
 
-#if defined(__CPU_STM32N6)
-#include "clockdef_n6.h"
+#if defined(__CPU_STM32N6) || defined(__CPU_STM32U3)
+#include "rcc/clockdef.h"
 
 
 int rcc_setClksel(enum ipclks ipclk, enum clock_ids clkID);
+
+
+const enum clock_ids *rcc_getClkselOptions(enum ipclks ipclk);
 #endif
 
 
@@ -37,10 +42,18 @@ void pwr_unlock(void);
 uint32_t pwr_unlockFromIRQ(void);
 
 
-int rcc_setHsi(int state);
-
-
 int rcc_init(void);
+
+
+typedef struct {
+	volatile unsigned int *base;
+	volatile unsigned int *pwr;
+
+	handle_t lock;
+} rcc_common_t;
+
+
+extern rcc_common_t rcc_common;
 
 
 #endif

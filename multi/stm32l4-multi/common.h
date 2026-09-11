@@ -25,6 +25,9 @@
 #elif defined(__CPU_STM32N6)
 #include "stm32n6_base.h"
 #include <phoenix/arch/armv8m/stm32/n6/stm32n6.h>
+#elif defined(__CPU_STM32U3)
+#include "stm32u3_base.h"
+#include <phoenix/arch/armv8m/stm32/u3/stm32u3.h>
 #else
 #error "Unknown platform"
 #endif
@@ -55,7 +58,7 @@ static inline int devClk(int dev, int state)
 	pctl.type = pctl_devclk;
 	pctl.devclk.dev = dev;
 	pctl.devclk.state = state;
-#if defined(__CPU_STM32N6)
+#if defined(__CPU_STM32N6) || defined(__CPU_STM32U3)
 	pctl.devclk.lpState = state;
 #endif
 

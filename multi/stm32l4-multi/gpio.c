@@ -55,6 +55,18 @@ static const int gpio2pctl[GPIO_MAX + 1] = {
 	[gpiop] = pctl_gpiop,
 	[gpioq] = pctl_gpioq,
 };
+#elif defined(__CPU_STM32U3)
+#define GPIO_MAX gpioh
+static const int gpio2pctl[GPIO_MAX + 1] = {
+	[gpioa] = pctl_gpioa,
+	[gpiob] = pctl_gpiob,
+	[gpioc] = pctl_gpioc,
+	[gpiod] = pctl_gpiod,
+	[gpioe] = pctl_gpioe,
+	[gpiof] = pctl_gpiof,
+	[gpiog] = pctl_gpiog,
+	[gpioh] = pctl_gpioh,
+};
 #endif
 
 
@@ -215,6 +227,15 @@ int gpio_init(void)
 			platformctl(&pctl);
 		}
 	}
+#elif defined(__CPU_STM32U3)
+	gpio_common.base[gpioa] = GPIOA_BASE;
+	gpio_common.base[gpiob] = GPIOB_BASE;
+	gpio_common.base[gpioc] = GPIOC_BASE;
+	gpio_common.base[gpiod] = GPIOD_BASE;
+	gpio_common.base[gpioe] = GPIOE_BASE;
+	gpio_common.base[gpiof] = GPIOF_BASE;
+	gpio_common.base[gpiog] = GPIOG_BASE;
+	gpio_common.base[gpioh] = GPIOH_BASE;
 #endif
 
 	gpio_common.enableMask = 0;
