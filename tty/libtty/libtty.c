@@ -289,17 +289,26 @@ int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned in
 }
 
 
-int libtty_close(libtty_common_t *tty)
+int _libtty_close(libtty_common_t *tty)
 {
-	mutexLock(tty->lock);
 	tty->t_flags |= TF_CLOSING;
 
 	condBroadcast(tty->tx_waitq);
 	condBroadcast(tty->rx_waitq);
 
+	return 0;
+}
+
+
+int libtty_close(libtty_common_t *tty)
+{
+	int res;
+
+	mutexLock(tty->lock);
+	res = _libtty_close(tty);
 	mutexUnlock(tty->lock);
 
-	return 0;
+	return res;
 }
 
 
@@ -408,7 +417,7 @@ int _libtty_rxready(libtty_common_t *tty)
 }
 
 
-int libtty_poll_status(libtty_common_t *tty)
+int _libtty_poll_status(libtty_common_t *tty)
 {
 	int revents = 0;
 
@@ -436,6 +445,18 @@ int libtty_poll_status(libtty_common_t *tty)
 }
 
 
+int libtty_poll_status(libtty_common_t *tty)
+{
+	int res;
+
+	mutexLock(tty->lock);
+	res = _libtty_poll_status(tty);
+	mutexUnlock(tty->lock);
+
+	return res;
+}
+
+
 void libtty_signal_pgrp(libtty_common_t *tty, int signal)
 {
 	if (tty->pgrp > 0) {
@@ -445,23 +466,20 @@ void libtty_signal_pgrp(libtty_common_t *tty, int signal)
 }
 
 
-static void libtty_drain(libtty_common_t *tty)
+static void _libtty_drain(libtty_common_t *tty)
 {
-	mutexLock(tty->lock);
 	while (!fifo_is_empty(tty->tx_fifo)) {
 		condWait(tty->tx_waitq, tty->lock, 0);
 	}
-	mutexUnlock(tty->lock);
 }
 
 
-static int libtty_flush(libtty_common_t *tty, int type)
+static int _libtty_flush(libtty_common_t *tty, int type)
 {
 	if (type != TCIFLUSH && type != TCOFLUSH && type != TCIOFLUSH) {
 		return -EINVAL;
 	}
 
-	mutexLock(tty->lock);
 	if (type == TCIFLUSH || type == TCIOFLUSH) {
 		fifo_remove_all(tty->rx_fifo);
 	}
@@ -474,13 +492,12 @@ static int libtty_flush(libtty_common_t *tty, int type)
 
 	/* check for breakchars, etc. */
 	termios_optimize(tty);
-	mutexUnlock(tty->lock);
 
 	return 0;
 }
 
 
-int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const void *in_arg, const void **out_arg)
+int _libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const void *in_arg, const void **out_arg)
 {
 	struct termios *termios_p = (struct termios *)in_arg;
 	struct winsize *ws = (struct winsize *)in_arg;
@@ -488,8 +505,6 @@ int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const
 	int ret = 0;
 
 	*out_arg = NULL;
-
-	/* TODO: locking */
 
 	switch (cmd) {
 		case TIOCGWINSZ:
@@ -506,13 +521,13 @@ int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const
 
 		case TCDRAIN:
 			log_ioctl("TCDRAIN");
-			libtty_drain(tty);
+			_libtty_drain(tty);
 			break;
 
 		case TCFLSH:
 			log_ioctl("TCFLSH");
 			/* WARN: passing ioctl attr by value */
-			ret = libtty_flush(tty, (long)in_arg);
+			ret = _libtty_flush(tty, (long)in_arg);
 			break;
 
 		case TCSETS:
@@ -530,7 +545,8 @@ int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const
 
 			if (temp_term.c_ispeed != temp_term.c_ospeed) {
 				log_warn("ispeed (%u) != ospeed (%u)", temp_term.c_ispeed, temp_term.c_ospeed);
-				return -EINVAL;
+				ret = -EINVAL;
+				break;
 			}
 
 			if (temp_term.c_ospeed != tty->term.c_ospeed) {
@@ -588,7 +604,8 @@ int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const
 
 		case TIOCGHALFD:
 			if (tty->cb.get_halfduplex == NULL) {
-				return -EIO;
+				ret = -EIO;
+				break;
 			}
 			tty->temp = tty->cb.get_halfduplex(tty->cb.arg);
 			*out_arg = (const void *)&tty->temp;
@@ -597,14 +614,16 @@ int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const
 
 		case TIOCSHALFD:
 			if (tty->cb.set_halfduplex == NULL) {
-				return -EIO;
+				ret = -EIO;
+				break;
 			}
 			/* WARN: passing ioctl half-duplex enable by value */
 			int enable = (int)(uintptr_t)in_arg;
 			log_ioctl("TIOCSHALFD: enable = %d", enable);
 			if ((enable != 0) && (enable != 1)) {
 				log_warn("halfduplex enable (%d) != {0,1}", enable);
-				return -EINVAL;
+				ret = -EINVAL;
+				break;
 			}
 			tty->cb.set_halfduplex(tty->cb.arg, enable);
 			break;
@@ -616,4 +635,16 @@ int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const
 	}
 
 	return ret;
+}
+
+
+int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const void *in_arg, const void **out_arg)
+{
+	int res;
+
+	mutexLock(tty->lock);
+	res = _libtty_ioctl(tty, sender_pid, cmd, in_arg, out_arg);
+	mutexUnlock(tty->lock);
+
+	return res;
 }

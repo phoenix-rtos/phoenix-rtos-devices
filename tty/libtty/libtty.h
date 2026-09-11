@@ -134,6 +134,9 @@ ssize_t libtty_read_nonblock(libtty_common_t *tty, char *data, size_t size, unsi
 ssize_t _libtty_read_nonblock(libtty_common_t *tty, char *data, size_t size, unsigned mode, libtty_read_state_t *st);
 ssize_t _libtty_read(libtty_common_t *tty, char *data, size_t size, unsigned mode);
 ssize_t _libtty_write(libtty_common_t *tty, const char *data, size_t size, unsigned mode);
+int _libtty_poll_status(libtty_common_t *tty);
+int _libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const void *in_arg, const void **out_arg);
+int _libtty_close(libtty_common_t *tty);
 
 
 /* internal (HW) interface */
