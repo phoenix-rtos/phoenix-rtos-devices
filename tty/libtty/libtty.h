@@ -61,8 +61,6 @@ struct libtty_common_s {
 	handle_t lock;
 	bool lockCreated;
 
-	int temp; /* temporary to hold value to pass from ioctl */
-
 	/* cached optimizations */
 	char breakchars[4]; /* enough to hold \n, VEOF and VEOL. */
 	unsigned int t_flags;
@@ -116,7 +114,14 @@ static inline void libtty_unlock(libtty_common_t *tty)
 ssize_t libtty_read(libtty_common_t *tty, char *data, size_t size, unsigned mode);
 ssize_t libtty_write(libtty_common_t *tty, const char *data, size_t size, unsigned mode);
 int libtty_poll_status(libtty_common_t *tty);
-int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const void *in_arg, const void **out_arg);
+/*
+ * out_arg is assumed to point to a buffer of at least IOCPARM_LEN(cmd) size (assuming
+ * the ioctl is not IOC_NESTED - if it is, the real size should be provided, probably
+ * obtained with ((ioctl_in_t *)&msg.i.raw)->size).
+ * HINT: use ioctl_unpackEx from <sys/ioctl.h> to obtain the sender_pid, the cmd number,
+ * the in_arg buffer and the out_arg buffer from the received msg.
+ */
+int libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned long cmd, const void *in_arg, void *out_arg);
 
 
 /* non-blocking interface:
@@ -135,7 +140,7 @@ ssize_t _libtty_read_nonblock(libtty_common_t *tty, char *data, size_t size, uns
 ssize_t _libtty_read(libtty_common_t *tty, char *data, size_t size, unsigned mode);
 ssize_t _libtty_write(libtty_common_t *tty, const char *data, size_t size, unsigned mode);
 int _libtty_poll_status(libtty_common_t *tty);
-int _libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned int cmd, const void *in_arg, const void **out_arg);
+int _libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned long cmd, const void *in_arg, void *out_arg);
 int _libtty_close(libtty_common_t *tty);
 
 
