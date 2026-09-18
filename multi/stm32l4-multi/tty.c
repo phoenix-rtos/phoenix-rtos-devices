@@ -25,7 +25,8 @@
 #include <sys/threads.h>
 #include <sys/time.h>
 #include <libtty.h>
-#include <libtty-lf-fifo.h>
+
+#include "lf-fifo.h"
 
 #include "libmulti/libdma.h"
 #include "stm32l4-multi.h"
