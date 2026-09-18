@@ -82,9 +82,6 @@ void spimctrl_qoutSPI(struct spimctrl *spimctrl);
 void spimctrl_qSPI(struct spimctrl *spimctrl);
 
 
-void spimctrl_qSPIx(struct spimctrl *spimctrl);
-
-
 /* Set dummy byte */
 void spimctrl_setDummyByte(volatile uint32_t *spimctrlBase);
 
