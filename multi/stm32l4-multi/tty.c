@@ -36,7 +36,7 @@
 #include "rcc.h"
 
 
-#if defined(__CPU_STM32L4X6)
+#if defined(__CPU_STM32L4X6) || defined(__CPU_STM32U3)
 #if (TTY6 || TTY7 || TTY8 || TTY9 || TTY10)
 #error "Chosen UART not available on this platform"
 #endif
@@ -64,7 +64,7 @@
 
 #if defined(__CPU_STM32L4X6)
 #define UART_FIFO_MODE 0
-#elif defined(__CPU_STM32N6)
+#elif defined(__CPU_STM32N6) || defined(__CPU_STM32U3)
 #define UART_FIFO_MODE 1
 #else
 #error "Unknown platform"
@@ -181,7 +181,7 @@ static const struct tty_peripheralInfo {
 	volatile uint32_t *base;
 	int dev;
 	unsigned irq;
-#if defined(__CPU_STM32N6)
+#if defined(__CPU_STM32N6) || defined(__CPU_STM32U3)
 	enum ipclks clksel;    /* Clock selector */
 	enum clock_ids clksrc; /* ID of source clock */
 #endif
@@ -203,6 +203,12 @@ static const struct tty_peripheralInfo {
 	{ UART8_BASE, pctl_uart8, uart8_irq, pctl_ipclk_uart8sel, clkid_per },
 	{ UART9_BASE, pctl_uart9, uart9_irq, pctl_ipclk_uart9sel, clkid_per },
 	{ USART10_BASE, pctl_usart10, usart10_irq, pctl_ipclk_usart10sel, clkid_per },
+#elif defined(__CPU_STM32U3)
+	{ USART1_BASE, pctl_usart1, usart1_irq, pctl_ipclk_usart1sel, clkid_pclk2 },
+	{ USART2_BASE, pctl_usart2, usart2_irq, pctl_ipclk_usart2sel, clkid_pclk1 },
+	{ USART3_BASE, pctl_usart3, usart3_irq, pctl_ipclk_usart3sel, clkid_pclk1 },
+	{ UART4_BASE, pctl_uart4, uart4_irq, pctl_ipclk_uart4sel, clkid_pclk1 },
+	{ UART5_BASE, pctl_uart5, uart5_irq, pctl_ipclk_uart5sel, clkid_pclk1 },
 #endif
 };
 
@@ -249,7 +255,7 @@ static int tty_clockSetup(const struct tty_peripheralInfo *info, uint32_t *out)
 	*out = getCpufreq();
 	return EOK;
 }
-#elif defined(__CPU_STM32N6)
+#elif defined(__CPU_STM32N6) || defined(__CPU_STM32U3)
 static int tty_clockSetup(const struct tty_peripheralInfo *info, uint32_t *out)
 {
 	int ret;
