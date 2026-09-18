@@ -284,6 +284,7 @@ static void spimctrl_tx(volatile uint32_t *spimctrlBase, uint8_t cmd)
 
 static uint8_t spimctrl_rx(volatile uint32_t *spimctrlBase)
 {
+    while ((*(spimctrlBase + flash_stat) & CORE_BUSY) != 0) { } /* necessary for advanced spi modes */
     uint32_t val = *(spimctrlBase + flash_rx) & 0xff;
     *(spimctrlBase + flash_stat) |= OPER_DONE;
     return val;
