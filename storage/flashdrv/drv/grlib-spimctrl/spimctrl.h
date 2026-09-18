@@ -32,15 +32,6 @@ struct spimctrl {
 };
 
 
-typedef enum {
-	MEXTENDED_SPI,
-	MDUAL_OUTPUT,
-	MDSPI,
-	MQUAD_OUTPUT,
-	MQSPI
-}SPIMode_t;
-
-
 struct xferOp {
 	/* clang-format off */
 	enum { xfer_opRead = 0, xfer_opWrite } type;
@@ -71,16 +62,31 @@ int spimctrl_init(struct spimctrl *spimctrl, addr_t mctrlBase);
 void spimctrl_destroy(struct spimctrl *spimctrl);
 
 
-/* Select SPI mode */
-int spimctrl_spiMode(const struct spimctrl *spimctrl, SPIMode_t spi_mode);
+/* Enter default SPI mode (1-1-1) */
+void spimctrl_oneSPI(struct spimctrl *spimctrl);
+
+
+/* Enter dual output SPI mode (1-2-2) */
+void spimctrl_doutSPI(struct spimctrl *spimctrl);
+
+
+/* Enter dual SPI mode (2-2-2) */
+void spimctrl_dSPI(struct spimctrl *spimctrl);
+
+
+/* Enter quad output SPI mode (1-4-4) */
+void spimctrl_qoutSPI(struct spimctrl *spimctrl);
+
+
+/* Enter quad SPI mode (4-4-4) */
+void spimctrl_qSPI(struct spimctrl *spimctrl);
+
+
+void spimctrl_qSPIx(struct spimctrl *spimctrl);
 
 
 /* Set dummy byte */
 void spimctrl_setDummyByte(volatile uint32_t *spimctrlBase);
-
-
-/* Set dummy cyclec*/
-int spimctrl_setDummyCycles(volatile uint32_t *spimctrlBase, uint8_t numCycles);
 
 
 #endif

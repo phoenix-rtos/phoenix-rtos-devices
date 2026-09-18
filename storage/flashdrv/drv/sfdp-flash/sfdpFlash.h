@@ -15,9 +15,10 @@
 #ifndef _SFDP_FLASH_H_
 #define _SFDP_FLASH_H_
 
-
+#include <stdbool.h>
 #include <storage/storage.h>
 #include <flashdrv/sfdp.h>
+#include <flashdrv/devctl_params.h>
 #include "../grlib-spimctrl/spimctrl.h"
 
 
@@ -45,6 +46,12 @@ int nor_pageProgram(struct spimctrl *spimctrl, addr_t addr, const void *src, siz
 
 
 ssize_t nor_readData(struct spimctrl *spimctrl, addr_t addr, void *buff, size_t len);
+
+
+int nor_selSPIMode(struct spimctrl *spimctrl, SPIMode_t spiMode);
+
+
+void nor_forceRecoveryToSingleSPI(struct spimctrl *spimctrl);
 
 
 void nor_printInfo(const struct _storage_devCtx_t *ctx);
