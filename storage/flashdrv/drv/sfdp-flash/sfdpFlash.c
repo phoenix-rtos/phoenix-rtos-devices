@@ -619,8 +619,6 @@ static int nor_writeEnhancedVolatileConfReg(struct spimctrl *spimctrl, uint8_t v
     struct xferOp xfer;
     uint8_t cmd;
 
-	spimctrl_oneSPI(spimctrl);
-
     res = nor_writeEnable(spimctrl, write_enable);
     if (res < EOK) {
 		printf("didnt enable \n");
@@ -875,7 +873,7 @@ void nor_forceRecoveryToSingleSPI(struct spimctrl *spimctrl)
     memset(&xfer, 0, sizeof(xfer));
     xfer.type = xfer_opWrite;
 
-	spimctrl_qSPI(spimctrl);
+    spimctrl_qSPI(spimctrl);
 
     cmd = FLASH_CMD_RESET_QUADIO;
     xfer.cmd = &cmd;
