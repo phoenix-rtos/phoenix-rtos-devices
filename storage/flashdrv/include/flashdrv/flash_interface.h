@@ -27,7 +27,7 @@ typedef struct {
 	union {
 		/* eraseSector */
 		struct {
-			EraseType_t eraseType;
+			EraseType_t type;
 			size_t size;
 			uint32_t addr;
 		} erase;
