@@ -249,7 +249,7 @@ static int flashdrv_mtdErase(storage_t *strg, off_t offs, size_t len)
 	#if (USE_CACHE)
 		res = cache_invalidate(ctx->cache, offs, end);
 	#endif /* USE_CACHE */
-	
+
 	mutexUnlock(ctx->lock);
 
 	return res;
@@ -343,6 +343,9 @@ static int check_devtype(struct _storage_devCtx_t *ctx)
 	else {
 		ctx->isCfi = 1;
 	}
+
+	ctx->isCfi = 0;
+	// TODO
 
 	return res;
 }
@@ -450,6 +453,46 @@ static storage_t *flashdrv_init(addr_t mctrlBase, addr_t flashBase)
 	return strg;
 }
 
+static int flashdrv_rawCtl(storage_t *strg, flash_i_devctl_t *devctl)
+{
+	if ((strg == NULL) || (strg->dev == NULL) || (strg->dev->ctx == NULL)) {
+		return -EINVAL;
+	}
+
+	int res;
+    switch (devctl->type)
+    {
+        case flashdrv_devctl_eraseSector:
+            TRACE("MtDevCtl: flashdrv_devctl_eraseSector - size: %zu, off: %u",
+                devctl->erase.size, devctl->erase.addr);
+
+            if (devctl->erase.addr >= strg->size) {
+                return -EINVAL;
+            }
+
+			res = flashdrv_mtdErase(strg, (strg->start + devctl->erase.addr), devctl->erase.size);		
+            break;
+
+        case flashdrv_devctl_erasePartition:
+            TRACE("flashsrv_devctl_erasePartition - part_size: %zu", strg->size);
+
+			res = flashdrv_mtdErase(strg, strg->start, strg->size);
+            break;
+
+		case flashdrv_devctl_SPIMode:
+			mutexLock(strg->dev->ctx->lock);
+			struct _storage_devCtx_t *ctx = strg->dev->ctx;
+			res = flash_selSpiMode(ctx, devctl->spi.mode);
+			mutexUnlock(strg->dev->ctx->lock);
+			break;
+
+        default:
+            res = -EINVAL;
+            break;
+    }
+
+	return res;
+}
 
 void __attribute__((constructor)) spimctrl_register(void)
 {
@@ -457,6 +500,7 @@ void __attribute__((constructor)) spimctrl_register(void)
 		.name = "spimctrl",
 		.init = flashdrv_init,
 		.destroy = flashdrv_destroy,
+		.devCtl = flashdrv_rawCtl,
 	};
 
 	flashsrv_register(&spimctrl);
