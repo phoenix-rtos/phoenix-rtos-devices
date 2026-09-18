@@ -368,6 +368,7 @@ void _libtty_wake_reader(libtty_common_t *tty)
 int _libttydisc_writeOproc(libtty_common_t *tty, char c)
 {
 	int ret = 0;
+	size_t scnt;
 
 #define PRINT_NORMAL() _libttydisc_txFeedback(tty, &c, 1)
 	switch (c) {
@@ -376,12 +377,14 @@ int _libttydisc_writeOproc(libtty_common_t *tty, char c)
 
 		case CTAB:
 			/* Tab expansion. */
+			scnt = 8 - (tty->txcol & 0x7);
 			if (CMP_FLAG(o, TAB3)) {
-				ret = _libttydisc_txFeedback(tty, "        ", 8);
+				ret = _libttydisc_txFeedback(tty, "        ", scnt);
 			}
 			else {
 				ret = PRINT_NORMAL();
 			}
+			tty->txcol += ret;
 			return ret;
 
 		case CNL:
@@ -393,6 +396,10 @@ int _libttydisc_writeOproc(libtty_common_t *tty, char c)
 			else {
 				ret = PRINT_NORMAL();
 			}
+
+			if (CMP_FLAG(o, ONLCR | ONLRET)) {
+				tty->txcol = 0;
+			}
 			return ret;
 
 		case CCR:
@@ -400,6 +407,12 @@ int _libttydisc_writeOproc(libtty_common_t *tty, char c)
 			if (CMP_FLAG(o, OCRNL)) {
 				c = CNL;
 			}
+			/* Omit carriage return on column 0 */
+			if (CMP_FLAG(o, ONOCR) && tty->txcol == 0) {
+				return 0;
+			}
+
+			tty->txcol = 0;
 			return PRINT_NORMAL();
 	}
 

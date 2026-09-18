@@ -55,8 +55,8 @@
 
 /* NOT supported: IGNBRK|BRKINT|IMAXBEL|PARMRK|INPCK|IGNPAR */
 #define TTYSUP_IFLAG (ISTRIP | INLCR | IGNCR | ICRNL | IXON | IXOFF | IXANY)
-/* NOT supported: ONOCR|ONLRET|NLDLY|CRDLY|TABDLY|BSDLY|VTDLY|FFDLY */
-#define TTYSUP_OFLAG (OPOST | ONLCR | TAB3 | OCRNL)
+/* NOT supported: ONLRET|NLDLY|CRDLY|TABDLY|BSDLY|VTDLY|FFDLY */
+#define TTYSUP_OFLAG (OPOST | ONLCR | TAB3 | OCRNL | ONOCR)
 /* NOT supported: ECHOKE|ECHOK|TOSTOP|FLUSHO|NOFLSH|ECHOPRT */
 #define TTYSUP_LFLAG (ECHOE | ECHO | ECHONL | ECHOCTL | ISIG | ICANON | IEXTEN)
 
@@ -277,6 +277,7 @@ int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned in
 	tty->ws.ws_col = 80;
 	tty->sid = -1;
 	tty->pgrp = -1;
+	tty->txcol = 0;
 
 	return 0;
 }
@@ -363,10 +364,12 @@ ssize_t _libtty_write(libtty_common_t *tty, const char *data, size_t size, unsig
 		}
 
 		if (CMP_FLAG(o, OPOST) && (CTL_VALID(*data))) { /* we need to process this char */
+			/* tty->txcol handled in _libttydisc_writeOproc */
 			_libttydisc_writeOproc(tty, *data);
 		}
 		else {
 			fifo_push(tty->tx_fifo, *data);
+			tty->txcol++;
 		}
 
 		len += 1;
