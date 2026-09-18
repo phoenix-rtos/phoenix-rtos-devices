@@ -3,7 +3,7 @@
  *
  * Operating system loader
  *
- * Macronix MT25 flash commands
+ * General flash commands
  *
  * Copyright 2026 Phoenix Systems
  * Author: Amelia Waszkowska
@@ -63,7 +63,7 @@
 /* Program Operations with 4-Byte Address */
 
 #define FLASH_CMD_4B_PP 0x12u /* 4-Byte Page Program */
-#define FLASH_CMD_4B_QIN_FP 0x34u /* 4-Byte Extended Quad Input Fast Program */
+#define FLASH_CMD_4B_EXTENDED_QIN_FP 0x3Eu /* 4-Byte Extended Quad Input Fast Program */
 
 /* Erase Operations */
 
@@ -97,31 +97,6 @@
 #define FLASH_CMD_RSTEN  0x66u /* Reset Enable */
 #define FLASH_CMD_RST    0x99u /* Reset Memory */
 #define FLASH_CMD_RSTQIO 0xF5u /* Reset Quad I/O */
-#define FLASH_CMD_NOP    0x00u /* No Operation */
-
-
-/// MT25 ///
-
-/* Write Registers */
-
-#define FLASH_CMD_WRITE_NVCONFREG 0xB1u /* Write Nonvolatile Configuration Register */
-#define FLASH_CMD_WRITE_VCONFREG 0x81u /* Write Volatile Configuration Register */
-
-/* Program Operations */
-
-#define FLASH_CMD_DIN_FP 0xA2 /* Dual Input Fast Program */
-#define FLASH_CMD_QIN_FP 0x32u /* Quad Input Fast Program */
-
-/* Erase Operations */
-
-#define FLASH_CMD_DE 0xC4u /* Die Erase */
-
-
-/// MX25 ///
-
-/* Erase Operations */
-
-#define FLASH_CMD_CE    0x60u /* Chip Erase */
 
 
 #endif /* _FLASH_CMDS_H_ */
