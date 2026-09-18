@@ -224,7 +224,6 @@ static int flashdrv_mtdErase(storage_t *strg, off_t offs, size_t len)
 
 	if ((offs == 0) && (len == memsize)) {
 		TRACE("erasing entire memory");
-		printf("POPRAW!!! \n");
 		time_t chipErase_timeout = flash_timeout(ctx, eraseChip);
 		res = flash_chipErase(ctx, chipErase_timeout);
 		end = memsize;
@@ -334,7 +333,6 @@ static int check_devtype(struct _storage_devCtx_t *ctx)
 	LOG_ERROR("ID: %d\n", jedecId);
 
 	/* draft - tbd: FLASH_CMD_RDSFDP, 8 dummy cycles, ma zwrocic ciag znakow*/
-	/* Zamienia LSB i MSB z PID oraz przesuwa VID na najniższy bajt */
 	uint32_t micron_id = (((((0xBB21u) & 0xffu) << 16) | ((0xBB21u) & 0xff00u) | ((0x20u) & 0xffu)));
 	if (jedecId == micron_id) {
 		ctx->isCfi = 0;
@@ -453,6 +451,70 @@ static storage_t *flashdrv_init(addr_t mctrlBase, addr_t flashBase)
 	return strg;
 }
 
+
+static int flashdrv_erase(storage_t *strg, flash_i_devctl_t *devctl)
+{
+	int res;
+	struct _storage_devCtx_t *ctx = strg->dev->ctx;
+
+	switch (devctl->erase.type)
+	{
+		case flashdrv_devctl_eraseSector:
+            TRACE("MtDevCtl: flashdrv_devctl_eraseSector - size: %zu, off: %u",
+                devctl->erase.size, devctl->erase.addr);
+
+            if (devctl->erase.addr >= strg->size) {
+				LOG_ERROR("Address exceeds the storage size");
+                return -EINVAL;
+            }
+
+			res = flashdrv_mtdErase(strg, (strg->start + devctl->erase.addr), devctl->erase.size);
+			break;
+
+		case flashdrv_devctl_erasePartition:
+			size_t memsize = flash_size(ctx);		
+			if (strg->size == memsize) {
+				LOG_ERROR("This is the main partition. To erase entire chip, select *flashdrv_devctl_eraseChip*. Operation aborted.");
+				return -EINVAL;
+			}
+			
+            TRACE("MtDevCtl: flashdrv_devctl_erasePartition - part_size: %zu", strg->size);
+
+			res = flashdrv_mtdErase(strg, strg->start, strg->size);
+			break;
+
+		case flashdrv_devctl_eraseChip:
+			TRACE("MtDevCtl: erasing entire memory");
+
+			time_t chipErase_timeout = flash_timeout(ctx, eraseChip);
+			mutexLock(strg->dev->ctx->lock);
+			res = flash_chipErase(ctx, chipErase_timeout);
+			mutexUnlock(strg->dev->ctx->lock);
+			break;
+	
+		default:
+			res = -EINVAL;
+			LOG_ERROR("No such erase type. ");
+			break;
+	}
+
+	return res;
+}
+
+
+static int flashdrv_selSPIMode(storage_t *strg, flash_i_devctl_t *devctl)
+{
+	int res;
+
+	mutexLock(strg->dev->ctx->lock);
+	struct _storage_devCtx_t *ctx = strg->dev->ctx;
+	res = flash_selSpiMode(ctx, devctl->spi.mode);
+	mutexUnlock(strg->dev->ctx->lock);
+
+	return res;
+}
+
+
 static int flashdrv_rawCtl(storage_t *strg, flash_i_devctl_t *devctl)
 {
 	if ((strg == NULL) || (strg->dev == NULL) || (strg->dev->ctx == NULL)) {
@@ -462,28 +524,12 @@ static int flashdrv_rawCtl(storage_t *strg, flash_i_devctl_t *devctl)
 	int res;
     switch (devctl->type)
     {
-        case flashdrv_devctl_eraseSector:
-            TRACE("MtDevCtl: flashdrv_devctl_eraseSector - size: %zu, off: %u",
-                devctl->erase.size, devctl->erase.addr);
-
-            if (devctl->erase.addr >= strg->size) {
-                return -EINVAL;
-            }
-
-			res = flashdrv_mtdErase(strg, (strg->start + devctl->erase.addr), devctl->erase.size);		
-            break;
-
-        case flashdrv_devctl_erasePartition:
-            TRACE("flashsrv_devctl_erasePartition - part_size: %zu", strg->size);
-
-			res = flashdrv_mtdErase(strg, strg->start, strg->size);
+        case flashdrv_devctl_Erase:
+			res = flashdrv_erase(strg, devctl);
             break;
 
 		case flashdrv_devctl_SPIMode:
-			mutexLock(strg->dev->ctx->lock);
-			struct _storage_devCtx_t *ctx = strg->dev->ctx;
-			res = flash_selSpiMode(ctx, devctl->spi.mode);
-			mutexUnlock(strg->dev->ctx->lock);
+			res = flashdrv_selSPIMode(strg, devctl);
 			break;
 
         default:
@@ -493,6 +539,7 @@ static int flashdrv_rawCtl(storage_t *strg, flash_i_devctl_t *devctl)
 
 	return res;
 }
+
 
 void __attribute__((constructor)) spimctrl_register(void)
 {
