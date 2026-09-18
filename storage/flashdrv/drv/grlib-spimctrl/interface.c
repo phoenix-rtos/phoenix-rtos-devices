@@ -38,6 +38,10 @@ int flash_init(struct _storage_devCtx_t *ctx, addr_t flashBase)
     }
     else {
         res = nor_flash_init(ctx, flashBase);
+        if(res < 0) {
+            nor_forceRecoveryToSingleSPI(ctx->spimctrl);
+            res = nor_flash_init(ctx, flashBase);
+        }
     }
 
     return res;
@@ -138,6 +142,19 @@ const char* flash_name(const struct _storage_devCtx_t *ctx)
     }
     else {
         return ctx->flash_data.sfdp->name;
+    }
+}
+
+
+int flash_selSpiMode(struct _storage_devCtx_t *ctx, SPIMode_t spiMode)
+{
+    if (ctx->isCfi) {
+        LOG_ERROR("No other mode to select, stay in default mode \n");
+        return EOK;
+    }
+    else {
+        LOG_ERROR("SPI mode selection \n");
+        return nor_selSPIMode(ctx->spimctrl, spiMode);
     }
 }
 

@@ -16,15 +16,22 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/time.h>
+#include <unistd.h>
 #include <board_config.h>
 
 #include "../commands/flash_cmds.h"
 #include "../grlib-spimctrl/flashdrv.h"
 #include "sfdpFlash.h"
+#include "MT25Q_cmds.h"
+#include "MX25_cmds.h"
 
 
 /* clang-format off */
 #define FLASH_ID(vid, pid) ( (((pid) & 0xffu) << 16) | ((pid) & 0xff00u) | ((vid) & 0xffu))
+
+#define EVCR_QUAD_MASK (1u << 7) /* Quad Protocol */
+#define EVCR_DUAL_MASK (1u << 6) /* Dual Protocol */
+#define EVCR_DQ3_MASK (1u << 4) /* Hold/Reset on DQ3 */
 
 
 enum { write_disable = 0, write_enable };
@@ -56,11 +63,32 @@ static struct {
 	void *base;
 } common;
 
+uint8_t READ_CMD = FLASH_CMD_READ;
+uint8_t READ_4BYTE_CMD = FLASH_CMD_4B_READ;
+
+uint8_t PAGE_PROGRAM = FLASH_CMD_PP;
+uint8_t PAGE_PROGRAM_4BYTE = FLASH_CMD_4B_PP;
+
 
 static int nor_readId(struct spimctrl *spimctrl, uint32_t *id)
 {
 	struct xferOp xfer;
 	const uint8_t cmd = FLASH_CMD_RDID;
+
+	xfer.type = xfer_opRead;
+	xfer.cmd = &cmd;
+	xfer.cmdLen = 1;
+	xfer.rxData = (uint8_t *)id;
+	xfer.dataLen = 3;
+
+	return spimctrl_xfer(spimctrl, &xfer);
+}
+
+
+static int nor_readIdMulti(struct spimctrl *spimctrl, uint32_t *id)
+{
+	struct xferOp xfer;
+	const uint8_t cmd = 0xAFu;
 
 	xfer.type = xfer_opRead;
 	xfer.cmd = &cmd;
@@ -143,6 +171,7 @@ static int nor_selectAddressMode(struct spimctrl *spimctrl)
 		if (res < EOK) {
 			return res;
 		}
+		printf("4 byte on \n");
 
 		return EOK;
 	#else
@@ -273,7 +302,7 @@ int nor_eraseDie(struct spimctrl *spimctrl, time_t timeout, uint8_t selDie)
         addr = addr1;
     }
 
-    if (!spimctrl->extendedAddress) {
+    if ((!spimctrl->extendedAddress)) {
 
 		cmd[0] = FLASH_CMD_DE;
         cmd[1] = (addr >> 16) & 0xff;
@@ -359,7 +388,7 @@ int nor_eraseSubSector(struct spimctrl *spimctrl, addr_t addr, time_t timeout)
 	uint8_t cmd[5];
 	struct xferOp xfer;
 
-    if(!spimctrl->extendedAddress) {
+    if((!spimctrl->extendedAddress)) {
 
 		cmd[0] = FLASH_CMD_SE;
         cmd[1] = (addr >> 16) & 0xff;
@@ -411,7 +440,7 @@ int nor_eraseSector(struct spimctrl *spimctrl, addr_t addr, time_t timeout)
 	uint8_t cmd[5];
 	struct xferOp xfer;
 
-    if(!spimctrl->extendedAddress) {
+    if((!spimctrl->extendedAddress)) {
 
 		cmd[0] = FLASH_CMD_BE;
         cmd[1] = (addr >> 16) & 0xff;
@@ -436,9 +465,7 @@ int nor_eraseSector(struct spimctrl *spimctrl, addr_t addr, time_t timeout)
 
 		xfer.cmd = cmd;
 		xfer.cmdLen = 5;
-		//printf("erasing \n");
     }
-	
 	res = nor_writeEnable(spimctrl, write_enable);
 	if (res < EOK) {
 		return res;
@@ -464,9 +491,9 @@ int nor_pageProgram(struct spimctrl *spimctrl, addr_t addr, const void *src, siz
 	uint8_t cmd[5];
     int res = 0;
 
-    if(!spimctrl->extendedAddress) {
+    if((!spimctrl->extendedAddress)) {
 
-		cmd[0] = FLASH_CMD_PP;
+		cmd[0] = PAGE_PROGRAM;
         cmd[1] = (addr >> 16) & 0xff;
         cmd[2] = (addr >> 8) & 0xff;
         cmd[3] = addr & 0xff;
@@ -480,7 +507,7 @@ int nor_pageProgram(struct spimctrl *spimctrl, addr_t addr, const void *src, siz
 		xfer.cmdLen = 4;
 	}
 	else {
-		cmd[0] = FLASH_CMD_4B_PP;
+		cmd[0] = PAGE_PROGRAM_4BYTE;
         cmd[1] = (addr >> 24) & 0xff;
         cmd[2] = (addr >> 16) & 0xff;
         cmd[3] = (addr >> 8) & 0xff;
@@ -516,13 +543,13 @@ static ssize_t nor_readCmd(struct spimctrl *spimctrl, addr_t addr, void *data, s
     uint8_t cmd[5];
     int res = 0;
 
-    if (!spimctrl->extendedAddress) {
+    if ((!spimctrl->extendedAddress)) {
         res = nor_validateEar(spimctrl, addr);
         if (res < 0) {
             return res;
         }
 
-        cmd[0] = FLASH_CMD_READ;
+        cmd[0] = READ_CMD;
         cmd[1] = (addr >> 16) & 0xff;
         cmd[2] = (addr >> 8) & 0xff;
         cmd[3] = addr & 0xff;
@@ -531,7 +558,7 @@ static ssize_t nor_readCmd(struct spimctrl *spimctrl, addr_t addr, void *data, s
         xfer.cmdLen = 4;
     }
     else {
-        cmd[0] = FLASH_CMD_4B_READ;
+        cmd[0] = READ_4BYTE_CMD;
         cmd[1] = (addr >> 24) & 0xff;
         cmd[2] = (addr >> 16) & 0xff;
         cmd[3] = (addr >> 8) & 0xff;
@@ -553,7 +580,7 @@ static ssize_t nor_readCmd(struct spimctrl *spimctrl, addr_t addr, void *data, s
 
 static ssize_t nor_readAhb(struct spimctrl *spimctrl, addr_t addr, void *data, size_t size)
 {
-    if (!spimctrl->extendedAddress) {
+    if ((!spimctrl->extendedAddress)) {
         int res = nor_validateEar(spimctrl, addr);
         if (res < EOK) {
             return res;
@@ -567,7 +594,7 @@ static ssize_t nor_readAhb(struct spimctrl *spimctrl, addr_t addr, void *data, s
 
 ssize_t nor_readData(struct spimctrl *spimctrl, addr_t addr, void *data, size_t size)
 {
-	if (!spimctrl->extendedAddress) {
+	if (!(spimctrl->extendedAddress)) {
 		if (((addr & 0xff000000) == 0) && (((addr + size) & 0xff000000) != 0)) {
 			/* If we'd have to change EAR register during read,
 			* read data through command (can be read without EAR change)
@@ -583,6 +610,313 @@ ssize_t nor_readData(struct spimctrl *spimctrl, addr_t addr, void *data, size_t 
         return nor_readAhb(spimctrl, addr, data, size);
 		//return nor_readCmd(spimctrl, addr, data, size);
     }
+}
+
+
+static int nor_writeEnhancedVolatileConfReg(struct spimctrl *spimctrl, uint8_t value)
+{
+    int res;
+    struct xferOp xfer;
+    uint8_t cmd;
+
+	spimctrl_oneSPI(spimctrl);
+
+    res = nor_writeEnable(spimctrl, write_enable);
+    if (res < EOK) {
+		printf("didnt enable \n");
+        return res;
+    }
+	printf(" enabled \n");
+
+    cmd = FLASH_CMD_WRITE_EVCR;
+    xfer.type = xfer_opWrite;
+    xfer.cmd = &cmd;
+    xfer.cmdLen = 1;
+    xfer.txData = &value;
+    xfer.dataLen = 1;
+
+    res = spimctrl_xfer(spimctrl, &xfer);
+    if (res < EOK) {
+        return res;
+    }
+
+    return EOK;
+}
+
+
+static int nor_readEVCR(struct spimctrl *spimctrl, uint8_t *val)
+{
+    int res;
+    struct xferOp xfer;
+    uint8_t rx[2] = {0};
+    const uint8_t cmd = FLASH_CMD_RDEVCR; // 0x65
+
+    xfer.type = xfer_opRead;
+    xfer.cmd = &cmd;
+    xfer.cmdLen = 1;
+    xfer.rxData = rx;
+    xfer.dataLen = 2; 
+
+    res = spimctrl_xfer(spimctrl, &xfer);
+    if (res < EOK) {
+        return res;
+    }
+
+    *val = (rx[0] != 0xFF) ? rx[0] : rx[1];
+	printf("read rx %d\n", rx[0]);
+	printf("read rx %d\n", rx[1]);
+
+    return EOK;
+}
+
+
+static int nor_readSR(struct spimctrl *spimctrl, uint8_t *val)
+{
+    int res;
+    struct xferOp xfer;
+    uint8_t rx = 0;
+    const uint8_t cmd = FLASH_CMD_RDSR;
+
+    xfer.type = xfer_opRead;
+    xfer.cmd = &cmd;
+    xfer.cmdLen = 1;
+    xfer.rxData = &rx;
+    xfer.dataLen = 2; 
+
+    res = spimctrl_xfer(spimctrl, &xfer);
+    if (res < EOK) {
+        return res;
+    }
+
+    *val = rx;
+	printf("read sr %d\n", rx);
+
+    return EOK;
+}
+
+
+static int nor_validateEVCR(struct spimctrl *spimctrl, SPIMode_t spiMode)
+{
+	int res;
+	uint8_t checkEvcr = 0;
+    res = nor_readEVCR(spimctrl, &checkEvcr);
+    if (res < EOK) {
+        return res;
+    }
+
+	const uint8_t mask = 0xFFu;
+    uint8_t expectedBits = mask; 
+
+    switch (spiMode)
+    {
+        case BSPI:
+			break;
+        case DOUT:
+			break;
+        case QOUT:
+			expectedBits &= ~EVCR_DQ3_MASK;
+            break;
+        case DSPI:
+            expectedBits &= ~EVCR_DUAL_MASK;
+			expectedBits &= ~EVCR_DQ3_MASK;
+            break;
+        case QSPI:
+            expectedBits &= ~EVCR_QUAD_MASK;
+			expectedBits &= ~EVCR_DQ3_MASK;
+            break;
+        default:
+            return -EINVAL;
+    }
+
+    if (checkEvcr != expectedBits) {
+        LOG_ERROR("EVCR write mismatch! Got: 0x%02x\n", checkEvcr);
+        return -EIO;
+    }
+	else {
+		printf("(Remove later) EVCR: 0x%02x\n", checkEvcr);
+	}
+
+	return EOK;
+}
+
+
+static int nor_enterSPIMode(struct spimctrl *spimctrl, SPIMode_t spiMode)
+{
+    int res;
+    uint8_t evcr = 0xFF;
+
+    switch (spiMode)
+    {
+        case BSPI:
+			break;
+        case DOUT:
+			break;
+        case QOUT:
+			evcr &= ~EVCR_DQ3_MASK;
+            break;
+        case DSPI:
+            evcr &= ~EVCR_DUAL_MASK;
+			evcr &= ~EVCR_DQ3_MASK;
+            break;
+        case QSPI:
+            evcr &= ~EVCR_QUAD_MASK;
+			evcr &= ~EVCR_DQ3_MASK;
+            break;
+        default:
+            return -EINVAL;
+    }
+
+	printf("evcr: %d \n", evcr);
+	
+    res = nor_writeEnhancedVolatileConfReg(spimctrl, evcr);
+    if (res < EOK) {
+        return res;
+    }
+
+    return EOK;
+}
+
+
+int nor_selSPIMode(struct spimctrl *spimctrl, SPIMode_t spiMode)
+{
+	uint8_t checkEvcr = 0;
+	uint8_t checkSr = 0;
+
+	int res;
+	res = nor_enterSPIMode(spimctrl, spiMode);
+	if (res < EOK) {
+		return res;
+	}
+
+	switch (spiMode)
+	{
+		case BSPI:
+			READ_CMD = FLASH_CMD_READ; READ_4BYTE_CMD = FLASH_CMD_4B_READ;
+			PAGE_PROGRAM = FLASH_CMD_PP; PAGE_PROGRAM_4BYTE = FLASH_CMD_4B_PP;
+			spimctrl_oneSPI(spimctrl);
+
+			res = EOK;
+			break;
+
+		case DOUT:
+			READ_CMD = FLASH_CMD_DOUTPUT_FASTREAD; READ_4BYTE_CMD = FLASH_CMD_4B_DOUTPUT_FASTREAD;
+			PAGE_PROGRAM = FLASH_CMD_DIN_FP; PAGE_PROGRAM_4BYTE = FLASH_CMD_DIN_FP;	
+			LOG_ERROR("No Dual Input FastProgram in 4 Byte Address mode. May fail. \n");
+			spimctrl_doutSPI(spimctrl);
+
+			res = EOK;
+			break;
+
+		case DSPI:
+			READ_CMD = FLASH_CMD_DIO_FASTREAD; READ_4BYTE_CMD = FLASH_CMD_4B_DIO_FASTREAD;
+			PAGE_PROGRAM = FLASH_CMD_DIN_FP; PAGE_PROGRAM_4BYTE = FLASH_CMD_4B_PP;
+			spimctrl_dSPI(spimctrl);
+
+			nor_readSR(spimctrl, &checkSr);
+			nor_readEVCR(spimctrl, &checkEvcr);
+
+			printf("(Remove later) EVCR: 0x%02x\n", checkEvcr);
+			printf("(Remove later) SR: 0x%02x\n", checkSr);
+
+			uint32_t jedecId = 0;
+			nor_readIdMulti(spimctrl, &jedecId);
+			printf("id %d\n", jedecId);
+
+			res = EOK;
+			break;
+
+		case QOUT:
+			READ_CMD = FLASH_CMD_QOUTPUT_FASTREAD; READ_4BYTE_CMD = FLASH_CMD_4B_QOUTPUT_FASTREAD;
+			PAGE_PROGRAM = FLASH_CMD_QIN_FP; PAGE_PROGRAM_4BYTE = FLASH_CMD_4B_QIN_FP;
+			spimctrl_qoutSPI(spimctrl);
+
+			res = EOK;
+			break;
+
+		case QSPI:
+			READ_CMD = FLASH_CMD_QIO_FASTREAD; READ_4BYTE_CMD = FLASH_CMD_4B_QIO_FASTREAD;
+			PAGE_PROGRAM = FLASH_CMD_EXTENDED_QIN_FP; PAGE_PROGRAM_4BYTE = FLASH_CMD_4B_EXTENDED_QIN_FP;			
+			spimctrl_qSPI(spimctrl);
+
+			nor_readSR(spimctrl, &checkSr);
+			nor_readEVCR(spimctrl, &checkEvcr);
+
+			printf("(Remove later) EVCR: 0x%02x\n", checkEvcr);
+			printf("(Remove later) SR: 0x%02x\n", checkSr);
+
+
+			jedecId = 0;
+			nor_readIdMulti(spimctrl, &jedecId);
+			printf("id %d\n", jedecId);
+			res = EOK;
+			break;
+		
+		default:
+			LOG_ERROR("No such SPI mode \n");
+			res = -EINVAL;
+			break;
+	}
+
+	res = nor_validateEVCR(spimctrl, spiMode);
+	if (res < EOK) {
+		return res;
+	}
+
+	return res;
+}
+
+
+void nor_forceRecoveryToSingleSPI(struct spimctrl *spimctrl)
+{
+	struct xferOp xfer;
+    uint8_t cmd;
+    uint8_t evcr = 0xFF;
+
+    memset(&xfer, 0, sizeof(xfer));
+    xfer.type = xfer_opWrite;
+
+    spimctrl_qSPIx(spimctrl);
+
+    cmd = 0xF5; /* RSTQIO - Reset Quad I/O */
+    xfer.cmd = &cmd;
+    xfer.cmdLen = 1;
+    xfer.txData = NULL;
+    xfer.dataLen = 0;
+    spimctrl_xfer(spimctrl, &xfer); 
+
+    spimctrl_dSPI(spimctrl);
+
+    cmd = FLASH_CMD_WREN; /* 0x06 */
+    xfer.cmd = &cmd;
+    xfer.cmdLen = 1;
+    xfer.txData = NULL;
+    xfer.dataLen = 0;
+    spimctrl_xfer(spimctrl, &xfer);
+
+
+    cmd = FLASH_CMD_WRITE_EVCR; /* 0x61 */
+    xfer.cmd = &cmd;
+    xfer.cmdLen = 1;
+    xfer.txData = &evcr;
+    xfer.dataLen = 1;
+    spimctrl_xfer(spimctrl, &xfer);
+
+    spimctrl_oneSPI(spimctrl);
+
+
+    xfer.txData = NULL;
+    xfer.dataLen = 0;
+	xfer.cmdLen = 1;
+
+    cmd = 0x66; /* RESET ENABLE */
+	xfer.cmd = &cmd;
+    spimctrl_xfer(spimctrl, &xfer);
+
+    cmd = 0x99; /* RESET DEVICE */
+	xfer.cmd = &cmd;
+    spimctrl_xfer(spimctrl, &xfer);
+
+    usleep(100);
 }
 
 
@@ -649,6 +983,8 @@ int nor_flash_init(struct _storage_devCtx_t *ctx, addr_t flashBase)
 {
 	int res;
 
+	//nor_forceRecoveryToSingleSPI(ctx->spimctrl);
+
 	res = nor_probe(ctx);
 	if (res != EOK) {
 		return res;
@@ -661,6 +997,8 @@ int nor_flash_init(struct _storage_devCtx_t *ctx, addr_t flashBase)
 	}
 
 	nor_selectAddressMode(ctx->spimctrl);
+
+	nor_selSPIMode(ctx->spimctrl, BSPI);
 
 	return EOK;
 }
