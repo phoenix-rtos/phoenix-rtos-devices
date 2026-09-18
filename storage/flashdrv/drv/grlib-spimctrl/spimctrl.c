@@ -124,21 +124,6 @@ static uint32_t spimctrl_updateReadWriteCmds(struct spimctrl *spimctrl, uint32_t
 }
 
 
-// int spimctrl_setDummyCycles(volatile uint32_t *spimctrlBase, uint8_t numCycles)
-// {
-// 	int res = 0;
-// 	if (numCycles < 0xFu) {
-// 		uint32_t cfg = *(spimctrlBase + flash_cfg);
-// 		cfg &= ~(DCYCLES | DBYTE); 
-// 		cfg |= ((numCycles & 0xFUL) << 8); 
-// 		*(spimctrlBase + flash_cfg) = cfg;  
-// 	}
-// 	else {
-// 		res = -EINVAL;
-// 	}
-
-// 	return res;
-// }
 static uint32_t spimctrl_setDummyCycles(struct spimctrl *spimctrl, uint32_t cfg, uint8_t numCycles)
 {
 	if (numCycles < 0xFu) {
@@ -249,21 +234,6 @@ void spimctrl_qoutSPI(struct spimctrl *spimctrl)
 }
 
 
-void spimctrl_qSPIx(struct spimctrl *spimctrl)
-{
-    uint32_t cfg = *(spimctrl->base + flash_cfg);
-    cfg &= ~(DSPI | DOUT | QOUT | QSPI | DIN | QIN);
-	cfg |= QSPI;
-
-	// uint8_t readcmd = 0xECu;
-	// cfg &= ~READ_CMD_MASK;
-	// cfg |= readcmd;
-
-	cfg = spimctrl_setDummyCycles(spimctrl, cfg, 10);
-    *(spimctrl->base + flash_cfg) = cfg;
-}
-
-
 void spimctrl_qSPI(struct spimctrl *spimctrl)
 {
     uint32_t cfg = *(spimctrl->base + flash_cfg);
@@ -312,15 +282,8 @@ static void spimctrl_tx(volatile uint32_t *spimctrlBase, uint8_t cmd)
 }
 
 
-// static uint8_t spimctrl_rx(volatile uint32_t *spimctrlBase)
-// {
-//     return *(spimctrlBase + flash_rx) & 0xff;
-// }
-
-
 static uint8_t spimctrl_rx(volatile uint32_t *spimctrlBase)
 {
-    while ((*(spimctrlBase + flash_stat) & CORE_BUSY) != 0) { }
     uint32_t val = *(spimctrlBase + flash_rx) & 0xff;
     *(spimctrlBase + flash_stat) |= OPER_DONE;
     return val;
