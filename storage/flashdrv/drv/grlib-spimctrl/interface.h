@@ -16,6 +16,8 @@
 #include "../cfi-flash/cfiFlash.h"
 #include "../sfdp-flash/sfdpFlash.h"
 
+#include <flashdrv/flash_interface.h>
+
 
 typedef enum flashTimeout {
     pageProgram = 0,
@@ -45,6 +47,9 @@ size_t flash_segmSize(const struct _storage_devCtx_t *ctx, segmSize_t sizeWhat);
 
 
 const char* flash_name(const struct _storage_devCtx_t *ctx);
+
+
+int flash_selSpiMode(struct _storage_devCtx_t *ctx, SPIMode_t spiMode);
 
 
 int flash_pageProgram(const struct _storage_devCtx_t *ctx, addr_t addr, const void *src, size_t len, time_t timeout);
