@@ -875,9 +875,9 @@ void nor_forceRecoveryToSingleSPI(struct spimctrl *spimctrl)
     memset(&xfer, 0, sizeof(xfer));
     xfer.type = xfer_opWrite;
 
-    spimctrl_qSPIx(spimctrl);
+	spimctrl_qSPI(spimctrl);
 
-    cmd = 0xF5; /* RSTQIO - Reset Quad I/O */
+    cmd = FLASH_CMD_RESET_QUADIO;
     xfer.cmd = &cmd;
     xfer.cmdLen = 1;
     xfer.txData = NULL;
@@ -886,15 +886,14 @@ void nor_forceRecoveryToSingleSPI(struct spimctrl *spimctrl)
 
     spimctrl_dSPI(spimctrl);
 
-    cmd = FLASH_CMD_WREN; /* 0x06 */
+    cmd = FLASH_CMD_WREN;
     xfer.cmd = &cmd;
     xfer.cmdLen = 1;
     xfer.txData = NULL;
     xfer.dataLen = 0;
     spimctrl_xfer(spimctrl, &xfer);
 
-
-    cmd = FLASH_CMD_WRITE_EVCR; /* 0x61 */
+    cmd = FLASH_CMD_WRITE_EVCR;
     xfer.cmd = &cmd;
     xfer.cmdLen = 1;
     xfer.txData = &evcr;
@@ -903,16 +902,15 @@ void nor_forceRecoveryToSingleSPI(struct spimctrl *spimctrl)
 
     spimctrl_oneSPI(spimctrl);
 
-
     xfer.txData = NULL;
     xfer.dataLen = 0;
 	xfer.cmdLen = 1;
 
-    cmd = 0x66; /* RESET ENABLE */
+    cmd = FLASH_CMD_RSTEN;
 	xfer.cmd = &cmd;
     spimctrl_xfer(spimctrl, &xfer);
 
-    cmd = 0x99; /* RESET DEVICE */
+    cmd = FLASH_CMD_RST;
 	xfer.cmd = &cmd;
     spimctrl_xfer(spimctrl, &xfer);
 
