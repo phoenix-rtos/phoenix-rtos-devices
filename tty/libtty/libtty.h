@@ -71,6 +71,8 @@ struct libtty_common_s {
 	handle_t lock;
 	bool lockCreated;
 
+	int txcol;
+
 	/* cached optimizations */
 	char breakchars[4]; /* enough to hold \n, VEOF and VEOL. */
 	unsigned int t_flags;
