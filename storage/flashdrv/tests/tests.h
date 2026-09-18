@@ -40,5 +40,7 @@ extern int test_flashsrv_writeCrossPageBoundary(void);
 extern int test_flashsrv_highAddressBoundary(void);
 extern int test_flashsrv_invalidOffsetBounds(void);
 extern int test_flashsrv_unsupportedMsgType(void);
+extern int test_setSPIMode(void);
+extern int test_setSPIModeDifferentPartition(void);
 
 #endif /* _FLASHSRV_TESTS_H_ */
