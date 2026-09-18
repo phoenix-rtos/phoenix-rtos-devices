@@ -61,6 +61,7 @@ static struct {
 	size_t ndrivers;
 } common;
 
+static const struct flash_driver *f_driver = NULL;
 
 /* Flash server operations */
 
@@ -83,29 +84,6 @@ static ssize_t flashsrv_read(storage_t *strg, off_t offs, void *buf, size_t size
 			return res;
 		}
 		return retlen;
-	}
-
-	return -EINVAL;
-}
-
-
-static ssize_t flashsrv_erase(storage_t *strg, off_t offs, size_t size)
-{
-	if ((strg == NULL) || (strg->dev == NULL) || (offs < 0) || ((offs + size) > strg->size)) {
-		return -EINVAL;
-	}
-
-	if (size == 0) {
-		return 0;
-	}
-
-	storage_mtd_t *mtd = strg->dev->mtd;
-	if ((mtd != NULL) && (mtd->ops != NULL) && (mtd->ops->write != NULL)) {
-		int res = mtd->ops->erase(strg, strg->start + offs, size);
-		if (res < 0) {
-			return res;
-		}
-		return res;
 	}
 
 	return -EINVAL;
@@ -171,36 +149,16 @@ static int flashsrv_getAttr(storage_t *strg, int type, long long *attr)
 }
 
 
-static void flashsrv_rawCtl(storage_t *strg, msg_t *msg)
+static int flashsrv_devCtl(storage_t *strg, msg_t *msg)
 {
-    flash_i_devctl_t *idevctl = (flash_i_devctl_t *)msg->i.raw;
+	if ((strg == NULL) || (strg->dev == NULL)) {
+		return -EINVAL;
+	}
 
-    switch (idevctl->type)
-    {
-        case flashsrv_devctl_eraseSector:
-            TRACE("MtDevCtl: flashsrv_devctl_eraseSector - id: %ju, size: %zu, off: %u",
-                (uintmax_t)msg->oid.id, idevctl->erase.size, idevctl->erase.addr);
+	flash_i_devctl_t *idevctl = (flash_i_devctl_t *)msg->i.raw;
+	TRACE("Device ID: %ju", (uintmax_t)msg->oid.id);
 
-			// if (idevctl->erase.addr >= strg->parts->size) 
-            if (idevctl->erase.addr >= strg->size) {
-                msg->o.err = -EINVAL;
-                break;
-            }
-
-            msg->o.err = flashsrv_erase(strg, idevctl->erase.addr, idevctl->erase.size);
-            break;
-
-        case flashsrv_devctl_erasePartition:
-            TRACE("flashsrv_devctl_erasePartition - id: %ju, part_size: %zu",
-                (uintmax_t)msg->oid.id, strg->size);
-
-            msg->o.err = flashsrv_erase(strg, 0, strg->size);
-            break;
-
-        default:
-            msg->o.err = -ENOSYS;
-            break;
-    }
+	return f_driver->devCtl(strg, idevctl);
 }
 
 
@@ -260,8 +218,9 @@ static void flashsrv_msgHandler(void *arg, msg_t *msg)
 			break;
 
 		case mtDevCtl:
+			TRACE("mtDevCtl: id: %ju", (uintmax_t)msg->oid.id);
 			strg = storage_get(msg->oid.id);
-			flashsrv_rawCtl(strg, msg);
+			msg->o.err = flashsrv_devCtl(strg, msg);
 			break;
 
 		default:
@@ -623,6 +582,8 @@ int main(int argc, char **argv)
 		flashsrv_help(argv[0]);
 		exit(EXIT_FAILURE);
 	}
+
+	f_driver = opts.driver;
 
 	/* Initialize storage library with the message handler for the flash memory */
 	err = storage_init(flashsrv_msgHandler, 16);
