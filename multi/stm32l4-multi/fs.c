@@ -135,6 +135,10 @@ static void msgthr(void *ctx)
 				msg.o.err = dummyfs_readdir(ctx, &msg.oid, msg.i.readdir.offs, msg.o.data, msg.o.size);
 				break;
 
+			case mtStat:
+				msg.o.err = dummyfs_statfs(ctx, msg.o.data, msg.o.size);
+				break;
+
 			default:
 				msg.o.err = -EINVAL;
 				break;
