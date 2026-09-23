@@ -8,7 +8,7 @@
 #
 
 NAME := gr765-flash-tests
-LOCAL_SRCS := tests.c flashsrv_tests.c
+LOCAL_SRCS := tests.c flashsrv_tests.c test_helpers.c
 DEPS := flashdrv
 LIBS := libstorage libptable
 
