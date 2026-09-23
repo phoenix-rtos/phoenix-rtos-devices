@@ -39,15 +39,15 @@ int main(int argc, char **argv)
     // TEST_CASE(test_flashsrv_getAttrSize());
     // TEST_CASE(test_flashsrv_getAttrInvalidType());
     // TEST_CASE(test_flashsrv_erasePartition());
-    // TEST_CASE(test_flashsrv_writeAndReadPage());
-    // TEST_CASE(test_flashsrv_writeAndReadUnaligned());
-    // TEST_CASE(test_flashsrv_eraseVerification());
+    TEST_CASE(test_flashsrv_writeAndReadPage());
+    TEST_CASE(test_flashsrv_writeAndReadUnaligned());
+    TEST_CASE(test_flashsrv_eraseVerification());
     
-    // TEST_CASE(test_flashsrv_writeCrossPageBoundary());
-    // TEST_CASE(test_flashsrv_highAddressBoundary());
-    // TEST_CASE(test_flashsrv_invalidOffsetBounds());
-    // TEST_CASE(test_flashsrv_unsupportedMsgType());
-    // TEST_CASE(test_setSPIMode());
+    TEST_CASE(test_flashsrv_writeCrossPageBoundary());
+    TEST_CASE(test_flashsrv_highAddressBoundary());
+    TEST_CASE(test_flashsrv_invalidOffsetBounds());
+    TEST_CASE(test_flashsrv_unsupportedMsgType());
+    TEST_CASE(test_setSPIMode());
     TEST_CASE(test_setSPIModeDifferentPartition());
 #endif
 
