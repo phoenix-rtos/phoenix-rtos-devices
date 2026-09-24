@@ -44,7 +44,7 @@
 static libuart_ctx uart_common[N_ACTIVE_UART];
 
 
-#if defined(__CPU_STM32L4X6)
+#if defined(__CPU_STM32L4X6) || defined(__CPU_STM32U3)
 #if (UART6 || UART7 || UART8 || UART9 || UART10)
 #error "Chosen UART not available on this platform"
 #endif
