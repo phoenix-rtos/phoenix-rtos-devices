@@ -1,0 +1,19 @@
+storage/imx6ull-flashnor/flashnor-srv.c
+  s_981b7dc640ec7f::t_82fe57d20f4d2b 45-98,106-118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7c836c8fd17732295b4075d2b649160f79f2c7be",
+  "prompts": {},
+  "sessions": {
+    "s_981b7dc640ec7f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b65b9aa-f80e-45c4-b1a4-9d4e04aee3ed",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Marek Białowąs <marek.bialowas@phoenix-rtos.com>"
+    }
+  }
+}
