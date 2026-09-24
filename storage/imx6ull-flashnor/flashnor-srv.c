@@ -147,8 +147,8 @@ static void flashnor_help(const char *prog)
 	(void)printf("\t\tn:      QuadSPI instance number\n");
 	(void)printf("\t-p <id> <start> <size>       - register partition\n");
 	(void)printf("\t\tid:     device id starting at 0\n");
-	(void)printf("\t\tstart:  partition start in erase blocks\n");
-	(void)printf("\t\tsize:   partition size in erase blocks\n");
+	(void)printf("\t\tstart:  partition start in bytes (erase block aligned)\n");
+	(void)printf("\t\tsize:   partition size in bytes (erase block aligned)\n");
 	(void)printf("\t-r <id> <start> <size> <fs>  - mount root filesystem\n");
 	(void)printf("\t\tid:     device id starting at 0\n");
 	(void)printf("\t\tfs:     filesystem name\n");
