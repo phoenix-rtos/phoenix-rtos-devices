@@ -42,6 +42,60 @@ static char *flashnor_prefix = FLASHNOR_PREFIX;
 static unsigned int flashnor_id = FLASHNOR_ID;
 
 
+static ssize_t flashnor_read(oid_t *oid, off_t offs, void *data, size_t len)
+{
+	storage_t *strg = storage_get(oid->id);
+	size_t retlen;
+	int err;
+
+	if ((strg == NULL) || (strg->dev == NULL) || (strg->dev->mtd == NULL) || (strg->dev->mtd->ops == NULL) ||
+			(strg->dev->mtd->ops->read == NULL) || (data == NULL) || (offs < 0)) {
+		return -EINVAL;
+	}
+
+	/* Read past the end of the device is not an error, report EOF */
+	if ((size_t)offs >= strg->size) {
+		return 0;
+	}
+
+	if (len > (strg->size - (size_t)offs)) {
+		len = strg->size - (size_t)offs;
+	}
+
+	err = strg->dev->mtd->ops->read(strg, strg->start + offs, data, len, &retlen);
+	if (err < 0) {
+		return err;
+	}
+
+	return (ssize_t)retlen;
+}
+
+
+static int flashnor_getAttr(oid_t *oid, int type, long long *attr)
+{
+	storage_t *strg = storage_get(oid->id);
+
+	if (strg == NULL) {
+		return -EINVAL;
+	}
+
+	switch (type) {
+		case atSize:
+			*attr = (long long)strg->size;
+			break;
+
+		case atDev:
+			*attr = (long long)strg->start;
+			break;
+
+		default:
+			return -EINVAL;
+	}
+
+	return EOK;
+}
+
+
 static void flashnor_msgloop(void *arg, msg_t *msg)
 {
 	mount_i_msg_t *imnt;
@@ -49,6 +103,19 @@ static void flashnor_msgloop(void *arg, msg_t *msg)
 	(void)arg;
 
 	switch (msg->type) {
+		case mtOpen:
+		case mtClose:
+			msg->o.err = EOK;
+			break;
+
+		case mtRead:
+			msg->o.err = flashnor_read(&msg->oid, msg->i.io.offs, msg->o.data, msg->o.size);
+			break;
+
+		case mtGetAttr:
+			msg->o.err = flashnor_getAttr(&msg->oid, msg->i.attr.type, &msg->o.attr.val);
+			break;
+
 		case mtMount:
 			imnt = (mount_i_msg_t *)msg->i.raw;
 			omnt = (mount_o_msg_t *)msg->o.raw;
