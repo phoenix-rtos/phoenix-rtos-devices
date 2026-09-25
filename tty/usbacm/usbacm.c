@@ -598,7 +598,7 @@ static void usbacm_msgthr(void *arg)
 			case mtGetAttr:
 				if (msg.i.attr.type == atPollStatus) {
 					msg.o.attr.val = POLLOUT;
-					if (((dev->flags & O_NONBLOCK) != 0) && fifo_is_empty(dev->fifo)) {
+					if (((dev->flags & O_NONBLOCK) != 0) && !fifo_is_empty(dev->fifo)) {
 						msg.o.attr.val |= POLLIN;
 					}
 					msg.o.err = EOK;
