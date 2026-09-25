@@ -13,9 +13,44 @@
  * %LICENSE%
  */
 
+
+#include <string.h>
+#include <errno.h>
+
 #include "interface.h"
 #include "../grlib-spimctrl/flashdrv.h"
-#include <errno.h>
+
+
+static void readSFDP(struct _storage_devCtx_t *ctx)
+{
+    struct xferOp xfer;
+    uint8_t cmd[5];
+    uint8_t header[4] = {0};
+
+    cmd[0] = FLASH_CMD_RDSFDP;
+    cmd[1] = 0x00;
+    cmd[2] = 0x00;
+    cmd[3] = 0x00;
+	cmd[4] = 0x00;
+
+    xfer.type = xfer_opRead;
+    xfer.cmd = cmd;
+    xfer.cmdLen = sizeof(cmd);
+    xfer.rxData = header;
+    xfer.dataLen = sizeof(header);
+
+    spimctrl_xfer(ctx->spimctrl, &xfer);
+
+	if (memcmp(header, "SFDP", 4) == 0) {
+        ctx->isCfi = 0;
+		LOG_ERROR("Device supports SFDP!\n");
+	}
+	else {
+        ctx->isCfi = 1;
+		LOG_ERROR("Not an SFDP device (got: 0x%02X 0x%02X 0x%02X 0x%02X)\n",
+			header[0], header[1], header[2], header[3]);		
+	}
+}
 
 
 void flash_destroy(struct _storage_devCtx_t *ctx)
@@ -33,15 +68,14 @@ int flash_init(struct _storage_devCtx_t *ctx, addr_t flashBase)
 {
     int res = 0;
 
+    nor_forceRecoveryToSingleSPI(ctx->spimctrl);
+    readSFDP(ctx);
+
     if (ctx->isCfi) {
         res = spimctrl_flash_init(ctx, flashBase);
     }
     else {
         res = nor_flash_init(ctx, flashBase);
-        if(res < 0) {
-            nor_forceRecoveryToSingleSPI(ctx->spimctrl);
-            res = nor_flash_init(ctx, flashBase);
-        }
     }
 
     return res;
@@ -123,7 +157,6 @@ size_t flash_segmSize(const struct _storage_devCtx_t *ctx, segmSize_t sizeWhat)
 
             case sectSize:
                 segmSize = ctx->flash_data.sfdp->sectorSz;
-                LOG_ERROR("sectorsize: %zu\n", segmSize);
                 break;
             
             default:
