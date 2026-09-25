@@ -46,15 +46,12 @@ static const char *nor_vendors[] = {
 };
 /* clang-format on */
 
-// #define CFI_TIMEOUT_MAX_PROGRAM(typical, maximum) ((1u << (typical)) * (1u << (maximum)))
-// #define CFI_TIMEOUT_MAX_ERASE(typical, maximum)   ((1u << (typical)) * (1u << (maximum)) * 1024u)
-// TO DOOOOOO !!!
 
 static const struct nor_info flashInfo[] = {
 	/* Macronix (MXIX) */
 	{ FLASH_ID(0xc2u, 0x2019u), "MX25L25635F", 32 * 1024 * 1024, 0x100, 0x1000, 0x10000, 2, 120, 1000, 150 * 1000, 1 },
     /* Micron */
-    { FLASH_ID(0x20u, 0xBB21u), "MT25QU01GB", 64 * 1024 * 1024, 0x100, 0x1000, 0x10000, 1, 300, 1000, 250 * 1000, 2 }
+    { FLASH_ID(0x20u, 0xBB21u), "MT25QU01GB", 64 * 1024 * 1024, 0x100, 0x1000, 0x10000, 2, 400, 1000, 460 * 1000, 2 }
 };
 
 int activeDeviceIdx = -1;
