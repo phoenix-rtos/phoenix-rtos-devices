@@ -709,8 +709,6 @@ static int nor_validateEVCR(struct spimctrl *spimctrl, SPIMode_t spiMode)
     {
         case BSPI:
 			break;
-        case DOUT:
-			break;
         case QOUT:
 			expectedBits &= ~EVCR_DQ3_MASK;
             break;
@@ -747,8 +745,6 @@ static int nor_enterSPIMode(struct spimctrl *spimctrl, SPIMode_t spiMode)
     {
         case BSPI:
 			break;
-        case DOUT:
-			break;
         case QOUT:
 			evcr &= ~EVCR_DQ3_MASK;
             break;
@@ -779,6 +775,7 @@ int nor_selSPIMode(struct spimctrl *spimctrl, SPIMode_t spiMode)
 {
 	uint8_t checkEvcr = 0;
 	uint8_t checkSr = 0;
+	uint32_t jedecId = 0;
 
 	int res;
 	res = nor_enterSPIMode(spimctrl, spiMode);
@@ -796,15 +793,6 @@ int nor_selSPIMode(struct spimctrl *spimctrl, SPIMode_t spiMode)
 			res = EOK;
 			break;
 
-		case DOUT:
-			READ_CMD = FLASH_CMD_DOUTPUT_FASTREAD; READ_4BYTE_CMD = FLASH_CMD_4B_DOUTPUT_FASTREAD;
-			PAGE_PROGRAM = FLASH_CMD_DIN_FP; PAGE_PROGRAM_4BYTE = FLASH_CMD_DIN_FP;	
-			LOG_ERROR("No Dual Input FastProgram in 4 Byte Address mode. May fail. \n");
-			spimctrl_doutSPI(spimctrl);
-
-			res = EOK;
-			break;
-
 		case DSPI:
 			READ_CMD = FLASH_CMD_DIO_FASTREAD; READ_4BYTE_CMD = FLASH_CMD_4B_DIO_FASTREAD;
 			PAGE_PROGRAM = FLASH_CMD_DIN_FP; PAGE_PROGRAM_4BYTE = FLASH_CMD_4B_PP;
@@ -816,7 +804,7 @@ int nor_selSPIMode(struct spimctrl *spimctrl, SPIMode_t spiMode)
 			printf("(Remove later) EVCR: 0x%02x\n", checkEvcr);
 			printf("(Remove later) SR: 0x%02x\n", checkSr);
 
-			uint32_t jedecId = 0;
+			jedecId = 0;
 			nor_readIdMulti(spimctrl, &jedecId);
 			printf("id %d\n", jedecId);
 
@@ -827,6 +815,16 @@ int nor_selSPIMode(struct spimctrl *spimctrl, SPIMode_t spiMode)
 			READ_CMD = FLASH_CMD_QOUTPUT_FASTREAD; READ_4BYTE_CMD = FLASH_CMD_4B_QOUTPUT_FASTREAD;
 			PAGE_PROGRAM = FLASH_CMD_QIN_FP; PAGE_PROGRAM_4BYTE = FLASH_CMD_4B_QIN_FP;
 			spimctrl_qoutSPI(spimctrl);
+
+			nor_readSR(spimctrl, &checkSr);
+			nor_readEVCR(spimctrl, &checkEvcr);
+
+			printf("(Remove later) EVCR: 0x%02x\n", checkEvcr);
+			printf("(Remove later) SR: 0x%02x\n", checkSr);
+
+			jedecId = 0;
+			nor_readIdMulti(spimctrl, &jedecId);
+			printf("id %d\n", jedecId);
 
 			res = EOK;
 			break;
@@ -899,6 +897,20 @@ void nor_forceRecoveryToSingleSPI(struct spimctrl *spimctrl)
     spimctrl_xfer(spimctrl, &xfer);
 
     spimctrl_oneSPI(spimctrl);
+
+	cmd = FLASH_CMD_WREN;
+    xfer.cmd = &cmd;
+    xfer.cmdLen = 1;
+    xfer.txData = NULL;
+    xfer.dataLen = 0;
+    spimctrl_xfer(spimctrl, &xfer);
+
+    cmd = FLASH_CMD_WRITE_EVCR;
+    xfer.cmd = &cmd;
+    xfer.cmdLen = 1;
+    xfer.txData = &evcr;
+    xfer.dataLen = 1;
+    spimctrl_xfer(spimctrl, &xfer);
 
     xfer.txData = NULL;
     xfer.dataLen = 0;
@@ -978,8 +990,6 @@ void nor_printInfo(const struct _storage_devCtx_t *ctx)
 int nor_flash_init(struct _storage_devCtx_t *ctx, addr_t flashBase)
 {
 	int res;
-
-	//nor_forceRecoveryToSingleSPI(ctx->spimctrl);
 
 	res = nor_probe(ctx);
 	if (res != EOK) {
