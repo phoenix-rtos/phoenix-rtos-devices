@@ -162,30 +162,6 @@ void spimctrl_oneSPI(struct spimctrl *spimctrl)
 }
 
 
-void spimctrl_doutSPI(struct spimctrl *spimctrl)
-{
-    uint32_t cfg = *(spimctrl->base + flash_cfg);
-    cfg &= ~(DSPI | DOUT | QOUT | QSPI | DIN | QIN);
-	cfg |= DOUT;
-
-	uint8_t readCmd;
-	uint8_t writeCmd;
-
-	if (!(spimctrl->extendedAddress)) {
-		readCmd = FLASH_CMD_DOUTPUT_FASTREAD;
-		writeCmd = FLASH_CMD_DIN_FP;
-	}
-	else {
-		readCmd = FLASH_CMD_4B_DOUTPUT_FASTREAD;
-		writeCmd = FLASH_CMD_QIN_FP;
-	}
-
-	cfg = spimctrl_updateReadWriteCmds(spimctrl, cfg, readCmd, writeCmd);
-	cfg = spimctrl_setDummyCycles(spimctrl, cfg, 8);
-    *(spimctrl->base + flash_cfg) = cfg;
-}
-
-
 void spimctrl_dSPI(struct spimctrl *spimctrl)
 {
     uint32_t cfg = *(spimctrl->base + flash_cfg);
