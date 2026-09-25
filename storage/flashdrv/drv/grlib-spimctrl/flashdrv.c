@@ -319,36 +319,6 @@ static int readId(struct spimctrl *spimctrl, uint32_t *id)
 }
 
 
-static int check_devtype(struct _storage_devCtx_t *ctx)
-{
-	struct spimctrl *spimctrl = ctx->spimctrl;
-	int res;
-	uint32_t jedecId = 0;
-
-	res = readId(spimctrl, &jedecId);
-	if (res < EOK) {
-		return res;
-	}
-
-	LOG_ERROR("ID: %d\n", jedecId);
-
-	/* draft - tbd: FLASH_CMD_RDSFDP, 8 dummy cycles, ma zwrocic ciag znakow*/
-	uint32_t micron_id = (((((0xBB21u) & 0xffu) << 16) | ((0xBB21u) & 0xff00u) | ((0x20u) & 0xffu)));
-	if (jedecId == micron_id) {
-		ctx->isCfi = 0;
-		LOG_ERROR("ID: %d\n", micron_id);
-	}
-	else {
-		ctx->isCfi = 1;
-	}
-
-	ctx->isCfi = 0;
-	// TODO
-
-	return res;
-}
-
-
 static storage_t *flashdrv_init(addr_t mctrlBase, addr_t flashBase)
 {
 	struct _storage_devCtx_t *ctx = calloc(1, sizeof(struct _storage_devCtx_t));
@@ -365,11 +335,6 @@ static storage_t *flashdrv_init(addr_t mctrlBase, addr_t flashBase)
 	if (spimctrl_init(ctx->spimctrl, mctrlBase) < 0) {
 		free(ctx->spimctrl);
 		free(ctx);
-		return NULL;
-	}
-
-	int res = check_devtype(ctx);
-	if (res < EOK) {
 		return NULL;
 	}
 
