@@ -407,6 +407,9 @@ static void poolthr(void *arg)
 					msg.o.err = -EINVAL;
 					break;
 				}
+				if (msg.type == mtOpen) {
+					libtty_open(&uart->tty, msg.pid, msg.i.openclose.flags);
+				}
 				msg.o.err = EOK;
 				break;
 

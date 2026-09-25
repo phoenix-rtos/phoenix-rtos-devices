@@ -228,7 +228,7 @@ int _libtty_putchar(libtty_common_t *tty, unsigned char c, int *wake_reader)
 		if (signal != 0) {
 			/* echo the character before signalling the processes */
 			_libttydisc_echo(tty, c);
-			libtty_signal_pgrp(tty, signal);
+			_libtty_signal_pgrp(tty, signal);
 			return 0;
 		}
 	}

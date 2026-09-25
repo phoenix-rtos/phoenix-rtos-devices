@@ -62,6 +62,9 @@ static void ttypc_poolthr(void *arg)
 
 		switch (msg.type) {
 			case mtOpen:
+				if (msg.oid.id < NVTS) {
+					libtty_open(&ttypc->vts[msg.oid.id].tty, msg.pid, msg.i.openclose.flags);
+				}
 				msg.o.err = EOK;
 				break;
 

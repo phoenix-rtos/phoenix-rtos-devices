@@ -50,7 +50,15 @@ struct libtty_common_s {
 	libtty_callbacks_t cb;
 	struct termios term;
 	struct winsize ws;
-	pid_t pgrp;
+
+	/*
+	 * OS-LIMITATION: the kernel records only that a session holds a controlling
+	 * terminal, not which one, and reports no exits - so both are revalidated
+	 * only on the next ctty ioctl, until then pgrp may name a group nobody is
+	 * left in.
+	 */
+	pid_t sid;  /* session owning this terminal, or -1 if unclaimed */
+	pid_t pgrp; /* foreground process group, or <= 0 if none */
 
 	fifo_t *tx_fifo;
 	fifo_t *rx_fifo;
@@ -94,6 +102,9 @@ static inline void libtty_read_state_init(libtty_read_state_t *st)
 int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned int bufsize, int speed, handle_t *lock);
 int libtty_destroy(libtty_common_t *tty);
 int libtty_close(libtty_common_t *tty);
+
+/* Handles the controlling-terminal acquisition. To be called by the driver when a process opens the terminal. */
+void libtty_open(libtty_common_t *tty, pid_t sender_pid, unsigned int oflags);
 
 
 static inline void libtty_lock(libtty_common_t *tty)
@@ -141,13 +152,12 @@ ssize_t _libtty_read(libtty_common_t *tty, char *data, size_t size, unsigned mod
 ssize_t _libtty_write(libtty_common_t *tty, const char *data, size_t size, unsigned mode);
 int _libtty_poll_status(libtty_common_t *tty);
 int _libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned long cmd, const void *in_arg, void *out_arg);
+void _libtty_open(libtty_common_t *tty, pid_t sender_pid, unsigned int oflags);
 int _libtty_close(libtty_common_t *tty);
 
 
 /* internal (HW) interface */
 
-
-void libtty_signal_pgrp(libtty_common_t *tty, int signal);
 
 /* protected by libtty_lock */
 /* writer/reader wake up is done outside of libtty if wake_{writer|reader} is not NULL */
@@ -159,6 +169,8 @@ void _libtty_wake_writer(libtty_common_t *tty);
 int _libtty_txready(libtty_common_t *tty); /* at least 1 character ready to be sent */
 int _libtty_txfull(libtty_common_t *tty);  /* no more place in the TX buffer */
 int _libtty_rxready(libtty_common_t *tty); /* at least 1 character ready to be read out */
+void _libtty_signal_pgrp(libtty_common_t *tty, int signal);
+void _libtty_hangup(libtty_common_t *tty); /* terminal disconnect: signal + dissociate the session */
 
 
 static inline void libtty_set_mode_raw(libtty_common_t *tty)

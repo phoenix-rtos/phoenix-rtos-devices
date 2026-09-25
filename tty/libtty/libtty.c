@@ -18,6 +18,7 @@
 #include "fifo.h"
 
 #include <sys/ioctl.h>
+#include <sys/proc.h>
 #include <sys/threads.h>
 #include <termios.h>
 #include <poll.h>
@@ -243,30 +244,17 @@ int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned in
 	tty->tx_fifo = malloc(sizeof(fifo_t) + bufsize * sizeof(tty->tx_fifo->data[0]));
 	tty->rx_fifo = malloc(sizeof(fifo_t) + bufsize * sizeof(tty->rx_fifo->data[0]));
 	if (tty->tx_fifo == NULL || tty->rx_fifo == NULL) {
-		free(tty->tx_fifo);
-		free(tty->rx_fifo);
-		if (tty->lockCreated) {
-			resourceDestroy(tty->lock);
-		}
+		libtty_destroy(tty);
 		return -1;
 	}
 
 	if (condCreate(&tty->tx_waitq) != EOK) {
-		free(tty->tx_fifo);
-		free(tty->rx_fifo);
-		if (tty->lockCreated) {
-			resourceDestroy(tty->lock);
-		}
+		libtty_destroy(tty);
 		return -1;
 	}
 
 	if (condCreate(&tty->rx_waitq) != EOK) {
-		resourceDestroy(tty->tx_waitq);
-		free(tty->tx_fifo);
-		free(tty->rx_fifo);
-		if (tty->lockCreated) {
-			resourceDestroy(tty->lock);
-		}
+		libtty_destroy(tty);
 		return -1;
 	}
 
@@ -278,6 +266,7 @@ int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned in
 
 	tty->ws.ws_row = 25;
 	tty->ws.ws_col = 80;
+	tty->sid = -1;
 	tty->pgrp = -1;
 
 	return 0;
@@ -310,16 +299,22 @@ int libtty_close(libtty_common_t *tty)
 /* Note: only call after all readers/writers have finished */
 int libtty_destroy(libtty_common_t *tty)
 {
-	resourceDestroy(tty->tx_waitq);
-	resourceDestroy(tty->rx_waitq);
-
+	if (tty->tx_waitq != 0) {
+		resourceDestroy(tty->tx_waitq);
+	}
+	if (tty->rx_waitq != 0) {
+		resourceDestroy(tty->rx_waitq);
+	}
+	if (tty->rx_fifo != NULL) {
+		free(tty->rx_fifo);
+	}
+	if (tty->tx_fifo != NULL) {
+		free(tty->tx_fifo);
+	}
 	if (tty->lockCreated) {
 		resourceDestroy(tty->lock);
 	}
-
-	free(tty->tx_fifo);
-	free(tty->rx_fifo);
-
+	memset(tty, 0, sizeof(*tty));
 	return 0;
 }
 
@@ -452,12 +447,36 @@ int libtty_poll_status(libtty_common_t *tty)
 }
 
 
-void libtty_signal_pgrp(libtty_common_t *tty, int signal)
+void _libtty_signal_pgrp(libtty_common_t *tty, int signal)
 {
-	if (tty->pgrp > 0) {
-		log_debug("signal(%u): %d", tty->pgrp, signal);
-		kill(-tty->pgrp, signal);
+	pid_t pgrp = tty->pgrp;
+
+	if (pgrp > 0) {
+		log_debug("signal(%u): %d", pgrp, signal);
+		kill(-pgrp, signal);
 	}
+}
+
+
+/* Drops the session's claim on this terminal. The kernel-side release is best effort */
+static void _libtty_sessionRelease(libtty_common_t *tty)
+{
+	pid_t sid = tty->sid;
+
+	tty->sid = -1;
+	tty->pgrp = -1;
+
+	if (sid >= 0) {
+		(void)sessionCtty(sid, 0);
+	}
+}
+
+
+void _libtty_hangup(libtty_common_t *tty)
+{
+	/* POSIX: signal the foreground group and dissociate the terminal from its session */
+	_libtty_signal_pgrp(tty, SIGHUP);
+	_libtty_sessionRelease(tty);
 }
 
 
@@ -492,11 +511,201 @@ static int _libtty_flush(libtty_common_t *tty, int type)
 }
 
 
+/*
+ * Returns the sender's session id when it may operate on this terminal's
+ * controlling-terminal state, a negative error code otherwise.
+ *
+ * If claim != 0, an unclaimed terminal is also accepted, so that
+ * the sender may take it over with libtty_sessionClaim().
+ */
+static int libtty_sessionCheck(libtty_common_t *tty, pid_t sender_pid, int claim)
+{
+	pid_t sid;
+
+	/* Internal callers pass 0, they have no session and must not be let in */
+	if (sender_pid <= 0) {
+		return -ENOTTY;
+	}
+
+	sid = getsid(sender_pid);
+	if (sid == (pid_t)-1) {
+		return -ENOTTY;
+	}
+
+	/*
+	 * Keep up with the kernel and release the terminal, if the session leader
+	 * is already gone. Restrict to PROCQ_ALIVE so an unreaped leader
+	 * is not holding it.
+	 */
+	if ((tty->sid >= 0) && (procExists(tty->sid, 0, tty->sid, PROCQ_ALIVE) == 0)) {
+		tty->sid = -1;
+		tty->pgrp = -1;
+	}
+
+	if (tty->sid < 0) {
+		return (claim != 0) ? sid : -ENOTTY;
+	}
+
+	return (tty->sid == sid) ? sid : -ENOTTY;
+}
+
+
+/* Only valid after libtty_sessionCheck(tty, sender_pid, 1) succeeded */
+static void libtty_sessionClaim(libtty_common_t *tty, pid_t sid)
+{
+	if (tty->sid < 0) {
+		tty->sid = sid;
+	}
+}
+
+
+static int _libtty_sessionAcquire(libtty_common_t *tty, pid_t sender_pid)
+{
+	pid_t sid, pgrp;
+	int ret;
+
+	ret = libtty_sessionCheck(tty, sender_pid, 1);
+	if (ret < 0) {
+		return ret;
+	}
+
+	sid = ret;
+	if (sid != sender_pid) {
+		return -EPERM;
+	}
+
+	if (tty->sid == sid) {
+		return EOK;
+	}
+
+	pgrp = getpgid(sender_pid);
+	if (pgrp < 0) {
+		return -errno;
+	}
+
+	/* POSIX: a session has at most one controlling terminal */
+	if (sessionCtty(sid, 1) < 0) {
+		return -errno;
+	}
+
+	libtty_sessionClaim(tty, sid);
+	tty->pgrp = pgrp;
+
+	return EOK;
+}
+
+
+/* TODO: SIGTTIN/SIGTTOU? */
+static int _libtty_cttyIoctl(libtty_common_t *tty, pid_t sender_pid, unsigned long cmd, const void *in_arg, void *out_arg)
+{
+	const pid_t *pgid = (const pid_t *)in_arg;
+	pid_t sid;
+	int ret;
+
+	switch (cmd) {
+		case TIOCGPGRP:
+			ret = libtty_sessionCheck(tty, sender_pid, 0);
+			if (ret < 0) {
+				break;
+			}
+			log_ioctl("TIOCGPGRP = %u", tty->pgrp);
+			memcpy(out_arg, &tty->pgrp, sizeof(tty->pgrp));
+			ret = EOK;
+			break;
+
+		case TIOCSPGRP:
+			if (pgid == NULL) {
+				ret = -EINVAL;
+				break;
+			}
+
+			/* NOTE: the argument is a process group id, not a pid */
+			if (*pgid <= 0) {
+				log_ioctl("TIOCSPGRP(%d)", *pgid);
+				ret = -EINVAL;
+				break;
+			}
+
+			log_ioctl("TIOCSPGRP(%u)", *pgid);
+
+			ret = libtty_sessionCheck(tty, sender_pid, 0);
+			if (ret < 0) {
+				break;
+			}
+
+			sid = ret;
+			if (procExists(0, *pgid, sid, 0) != 1) {
+				ret = -EPERM;
+				break;
+			}
+
+			tty->pgrp = *pgid;
+			ret = EOK;
+			break;
+
+		case TIOCNOTTY:
+			log_ioctl("TIOCNOTTY");
+			ret = libtty_sessionCheck(tty, sender_pid, 0);
+			if (ret < 0) {
+				break;
+			}
+			sid = ret;
+
+			if (sid != sender_pid) {
+				ret = -EPERM;
+				break;
+			}
+
+			/* TODO: SIGHUP/SIGCONT to the foreground group */
+			_libtty_sessionRelease(tty);
+			ret = EOK;
+			break;
+
+		case TIOCSCTTY:
+			/* OS-LIMITATION: the force argument is ignored - no privilege control */
+			log_ioctl("TIOCSCTTY: pid=%X", sender_pid);
+			ret = _libtty_sessionAcquire(tty, sender_pid);
+			break;
+
+		case TIOCGSID:
+			ret = libtty_sessionCheck(tty, sender_pid, 0);
+			if (ret < 0) {
+				break;
+			}
+			log_ioctl("TIOCGSID = %u", tty->sid);
+			memcpy(out_arg, &tty->sid, sizeof(tty->sid));
+			ret = EOK;
+			break;
+
+		default:
+			ret = -EINVAL;
+			break;
+	}
+
+	return ret;
+}
+
+
+void _libtty_open(libtty_common_t *tty, pid_t sender_pid, unsigned int oflags)
+{
+	if ((oflags & (unsigned int)O_NOCTTY) == 0U) {
+		(void)_libtty_sessionAcquire(tty, sender_pid);
+	}
+}
+
+
+void libtty_open(libtty_common_t *tty, pid_t sender_pid, unsigned int oflags)
+{
+	mutexLock(tty->lock);
+	_libtty_open(tty, sender_pid, oflags);
+	mutexUnlock(tty->lock);
+}
+
+
 int _libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned long cmd, const void *in_arg, void *out_arg)
 {
 	struct termios *termios_p = (struct termios *)in_arg;
 	struct winsize *ws = (struct winsize *)in_arg;
-	pid_t *pid = (pid_t *)in_arg;
 	int ret = 0;
 	int val;
 
@@ -510,7 +719,7 @@ int _libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned long cmd, con
 			log_ioctl("TIOCSWINSZ(col=%u, row=%u)", ws->ws_col, ws->ws_row);
 			tty->ws.ws_row = ws->ws_row;
 			tty->ws.ws_col = ws->ws_col;
-			libtty_signal_pgrp(tty, SIGWINCH);
+			_libtty_signal_pgrp(tty, SIGWINCH);
 			break;
 
 		case TCDRAIN:
@@ -569,31 +778,11 @@ int _libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned long cmd, con
 			break;
 
 		case TIOCGPGRP:
-			log_ioctl("TIOCGPGRP = %u", tty->pgrp);
-			memcpy(out_arg, &tty->pgrp, sizeof(tty->pgrp));
-			break;
-
 		case TIOCSPGRP:
-			log_ioctl("TIOCSPGRP(%u)", *pid);
-			/* FIXME: check permissions */
-			tty->pgrp = getpgid(*pid);
-			break;
-
 		case TIOCNOTTY:
-			log_ioctl("TIOCNOTTY");
-			tty->pgrp = -1; /* process detached from the console */
-			break;
-
 		case TIOCSCTTY:
-			log_ioctl("TIOCSCTTY: pid=%X", sender_pid);
-			/* FIXME: check permissions */
-			tty->pgrp = getpgid(sender_pid);
-			break;
-
 		case TIOCGSID:
-			/* NOTE: simulating sessions with process groups */
-			log_ioctl("TIOCGSID = %u", tty->pgrp);
-			memcpy(out_arg, &tty->pgrp, sizeof(tty->pgrp));
+			ret = _libtty_cttyIoctl(tty, sender_pid, cmd, in_arg, out_arg);
 			break;
 
 		case TIOCGHALFD:

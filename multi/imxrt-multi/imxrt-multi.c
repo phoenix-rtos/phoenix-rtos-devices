@@ -531,6 +531,7 @@ static void uart_thread(void *arg)
 		}
 
 		switch (msg.type) {
+			case mtOpen:
 			case mtRead:
 			case mtWrite:
 			case mtGetAttr:
@@ -539,7 +540,6 @@ static void uart_thread(void *arg)
 				uart_dispatchMsg(&msg);
 				break;
 
-			case mtOpen:
 			case mtClose:
 				msg.o.err = EOK;
 				break;
