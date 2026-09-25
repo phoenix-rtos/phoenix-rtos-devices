@@ -19,6 +19,11 @@
 #include <flashdrv/flash_interface.h>
 
 
+/* SFDP parameter read */
+
+#define FLASH_CMD_RDSFDP 0x5Au 
+
+
 typedef enum flashTimeout {
     pageProgram = 0,
     eraseChip,
