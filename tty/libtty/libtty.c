@@ -516,9 +516,9 @@ static int _libtty_flush(libtty_common_t *tty, int type)
  * controlling-terminal state, a negative error code otherwise.
  *
  * If claim != 0, an unclaimed terminal is also accepted, so that
- * the sender may take it over with libtty_sessionClaim().
+ * the sender may take it over with _libtty_sessionClaim().
  */
-static int libtty_sessionCheck(libtty_common_t *tty, pid_t sender_pid, int claim)
+static int _libtty_sessionCheck(libtty_common_t *tty, pid_t sender_pid, int claim)
 {
 	pid_t sid;
 
@@ -550,8 +550,8 @@ static int libtty_sessionCheck(libtty_common_t *tty, pid_t sender_pid, int claim
 }
 
 
-/* Only valid after libtty_sessionCheck(tty, sender_pid, 1) succeeded */
-static void libtty_sessionClaim(libtty_common_t *tty, pid_t sid)
+/* Only valid after _libtty_sessionCheck(tty, sender_pid, 1) succeeded */
+static void _libtty_sessionClaim(libtty_common_t *tty, pid_t sid)
 {
 	if (tty->sid < 0) {
 		tty->sid = sid;
@@ -559,16 +559,52 @@ static void libtty_sessionClaim(libtty_common_t *tty, pid_t sid)
 }
 
 
+static int _libtty_sessionAcquire(libtty_common_t *tty, pid_t sender_pid)
+{
+	pid_t sid, pgrp;
+	int ret;
+
+	ret = _libtty_sessionCheck(tty, sender_pid, 1);
+	if (ret < 0) {
+		return ret;
+	}
+
+	sid = ret;
+	if (sid != sender_pid) {
+		return -EPERM;
+	}
+
+	if (tty->sid == sid) {
+		return EOK;
+	}
+
+	pgrp = getpgid(sender_pid);
+	if (pgrp < 0) {
+		return -errno;
+	}
+
+	/* POSIX: a session has at most one controlling terminal */
+	if (sessionCtty(sid, 1) < 0) {
+		return -errno;
+	}
+
+	_libtty_sessionClaim(tty, sid);
+	tty->pgrp = pgrp;
+
+	return EOK;
+}
+
+
 /* TODO: SIGTTIN/SIGTTOU? */
 static int _libtty_cttyIoctl(libtty_common_t *tty, pid_t sender_pid, unsigned long cmd, const void *in_arg, void *out_arg)
 {
 	const pid_t *pgid = (const pid_t *)in_arg;
-	pid_t sid, pgrp;
+	pid_t sid;
 	int ret;
 
 	switch (cmd) {
 		case TIOCGPGRP:
-			ret = libtty_sessionCheck(tty, sender_pid, 0);
+			ret = _libtty_sessionCheck(tty, sender_pid, 0);
 			if (ret < 0) {
 				break;
 			}
@@ -592,7 +628,7 @@ static int _libtty_cttyIoctl(libtty_common_t *tty, pid_t sender_pid, unsigned lo
 
 			log_ioctl("TIOCSPGRP(%u)", *pgid);
 
-			ret = libtty_sessionCheck(tty, sender_pid, 0);
+			ret = _libtty_sessionCheck(tty, sender_pid, 0);
 			if (ret < 0) {
 				break;
 			}
@@ -609,7 +645,7 @@ static int _libtty_cttyIoctl(libtty_common_t *tty, pid_t sender_pid, unsigned lo
 
 		case TIOCNOTTY:
 			log_ioctl("TIOCNOTTY");
-			ret = libtty_sessionCheck(tty, sender_pid, 0);
+			ret = _libtty_sessionCheck(tty, sender_pid, 0);
 			if (ret < 0) {
 				break;
 			}
@@ -628,39 +664,11 @@ static int _libtty_cttyIoctl(libtty_common_t *tty, pid_t sender_pid, unsigned lo
 		case TIOCSCTTY:
 			/* OS-LIMITATION: the force argument is ignored - no privilege control */
 			log_ioctl("TIOCSCTTY: pid=%X", sender_pid);
-			ret = libtty_sessionCheck(tty, sender_pid, 1);
-			if (ret < 0) {
-				break;
-			}
-
-			sid = ret;
-			if (sid != sender_pid) {
-				ret = -EPERM;
-				break;
-			}
-
-			pgrp = getpgid(sender_pid);
-			if (pgrp < 0) {
-				ret = -errno;
-				break;
-			}
-
-			if (tty->sid != sid) {
-				/* POSIX: a session has at most one controlling terminal */
-				ret = sessionCtty(sid, 1);
-				if (ret < 0) {
-					ret = -errno;
-					break;
-				}
-
-				libtty_sessionClaim(tty, sid);
-				tty->pgrp = pgrp;
-			}
-			ret = EOK;
+			ret = _libtty_sessionAcquire(tty, sender_pid);
 			break;
 
 		case TIOCGSID:
-			ret = libtty_sessionCheck(tty, sender_pid, 0);
+			ret = _libtty_sessionCheck(tty, sender_pid, 0);
 			if (ret < 0) {
 				break;
 			}
@@ -675,6 +683,22 @@ static int _libtty_cttyIoctl(libtty_common_t *tty, pid_t sender_pid, unsigned lo
 	}
 
 	return ret;
+}
+
+
+void _libtty_acquire(libtty_common_t *tty, pid_t sender_pid, unsigned int oflags)
+{
+	if ((oflags & O_NOCTTY) == 0U) {
+		(void)_libtty_sessionAcquire(tty, sender_pid);
+	}
+}
+
+
+void libtty_acquire(libtty_common_t *tty, pid_t sender_pid, unsigned int oflags)
+{
+	mutexLock(tty->lock);
+	_libtty_acquire(tty, sender_pid, oflags);
+	mutexUnlock(tty->lock);
 }
 
 
