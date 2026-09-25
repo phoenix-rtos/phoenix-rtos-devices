@@ -736,6 +736,10 @@ static void tty_thread(void *arg)
 					break;
 				}
 
+				if (msg.type == mtOpen) {
+					libtty_open(&ctx->ttyCommon, msg.pid, msg.i.openclose.flags);
+				}
+
 				msg.o.err = EOK;
 				break;
 

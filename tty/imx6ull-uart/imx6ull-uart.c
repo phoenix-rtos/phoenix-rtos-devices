@@ -253,14 +253,15 @@ static int flags_to_id(int flags)
 	}
 }
 
-static int uart_open(int flags)
+static int uart_open(pid_t pid, int flags)
 {
-	/* TODO: set PGID? */
 	int id = flags_to_id(flags);
 
 	if (id <= 0) {
 		return -EACCES;
 	}
+
+	libtty_open(&uart.tty_common, pid, (unsigned int)flags);
 
 	if ((id & READER) != 0) {
 		mutexLock(uart.openclose_lock);
@@ -346,7 +347,7 @@ static void uart_thr(void *arg)
 
 		switch (msg.type) {
 			case mtOpen:
-				msg.o.err = uart_open(msg.i.openclose.flags);
+				msg.o.err = uart_open(msg.pid, (int)msg.i.openclose.flags);
 				break;
 			case mtClose:
 				msg.o.err = uart_close(msg.oid.id);

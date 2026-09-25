@@ -299,12 +299,18 @@ int rtt_handleMsg(msg_t *msg, int dev)
 	dev -= id_rtt0;
 
 	if ((dev < 0) || (dev >= RTT_CHANNEL_CNT) || (rttConfig[dev] == 0)) {
+		msg->o.err = -EINVAL;
 		return -EINVAL;
 	}
 
 	uart = &rtt_common.uarts[rttPos[dev]];
 
 	switch (msg->type) {
+		case mtOpen:
+			libtty_open(&uart->tty_common, msg->pid, msg->i.openclose.flags);
+			msg->o.err = EOK;
+			break;
+
 		case mtWrite:
 			msg->o.err = libtty_write(&uart->tty_common, msg->i.data, msg->i.size, msg->i.io.mode);
 			break;

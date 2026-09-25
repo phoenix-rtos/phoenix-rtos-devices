@@ -571,6 +571,10 @@ void uart_handleMsg(msg_t *msg, int dev)
 
 	switch (msg->type) {
 		case mtOpen:
+			libtty_open(&uart_common.uart[dev].tty, msg->pid, msg->i.openclose.flags);
+			msg->o.err = EOK;
+			break;
+
 		case mtClose:
 			msg->o.err = EOK;
 			break;

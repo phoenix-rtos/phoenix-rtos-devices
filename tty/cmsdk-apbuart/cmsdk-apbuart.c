@@ -211,6 +211,7 @@ static void uart_dispatchMsg(void *arg)
 
 		switch (msg.type) {
 			case mtOpen:
+				libtty_open(&uart_common.uart.tty, msg.pid, msg.i.openclose.flags);
 				msg.o.err = 0;
 				break;
 

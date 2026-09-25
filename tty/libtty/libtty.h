@@ -103,6 +103,9 @@ int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned in
 int libtty_destroy(libtty_common_t *tty);
 int libtty_close(libtty_common_t *tty);
 
+/* Handles the controlling-terminal acquisition. To be called by the driver when a process opens the terminal. */
+void libtty_open(libtty_common_t *tty, pid_t sender_pid, unsigned int oflags);
+
 
 static inline void libtty_lock(libtty_common_t *tty)
 {
@@ -149,6 +152,7 @@ ssize_t _libtty_read(libtty_common_t *tty, char *data, size_t size, unsigned mod
 ssize_t _libtty_write(libtty_common_t *tty, const char *data, size_t size, unsigned mode);
 int _libtty_poll_status(libtty_common_t *tty);
 int _libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned long cmd, const void *in_arg, void *out_arg);
+void _libtty_open(libtty_common_t *tty, pid_t sender_pid, unsigned int oflags);
 int _libtty_close(libtty_common_t *tty);
 
 

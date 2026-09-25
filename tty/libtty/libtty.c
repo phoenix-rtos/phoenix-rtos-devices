@@ -559,11 +559,47 @@ static void libtty_sessionClaim(libtty_common_t *tty, pid_t sid)
 }
 
 
+static int _libtty_sessionAcquire(libtty_common_t *tty, pid_t sender_pid)
+{
+	pid_t sid, pgrp;
+	int ret;
+
+	ret = libtty_sessionCheck(tty, sender_pid, 1);
+	if (ret < 0) {
+		return ret;
+	}
+
+	sid = ret;
+	if (sid != sender_pid) {
+		return -EPERM;
+	}
+
+	if (tty->sid == sid) {
+		return EOK;
+	}
+
+	pgrp = getpgid(sender_pid);
+	if (pgrp < 0) {
+		return -errno;
+	}
+
+	/* POSIX: a session has at most one controlling terminal */
+	if (sessionCtty(sid, 1) < 0) {
+		return -errno;
+	}
+
+	libtty_sessionClaim(tty, sid);
+	tty->pgrp = pgrp;
+
+	return EOK;
+}
+
+
 /* TODO: SIGTTIN/SIGTTOU? */
 static int _libtty_cttyIoctl(libtty_common_t *tty, pid_t sender_pid, unsigned long cmd, const void *in_arg, void *out_arg)
 {
 	const pid_t *pgid = (const pid_t *)in_arg;
-	pid_t sid, pgrp;
+	pid_t sid;
 	int ret;
 
 	switch (cmd) {
@@ -628,35 +664,7 @@ static int _libtty_cttyIoctl(libtty_common_t *tty, pid_t sender_pid, unsigned lo
 		case TIOCSCTTY:
 			/* OS-LIMITATION: the force argument is ignored - no privilege control */
 			log_ioctl("TIOCSCTTY: pid=%X", sender_pid);
-			ret = libtty_sessionCheck(tty, sender_pid, 1);
-			if (ret < 0) {
-				break;
-			}
-
-			sid = ret;
-			if (sid != sender_pid) {
-				ret = -EPERM;
-				break;
-			}
-
-			pgrp = getpgid(sender_pid);
-			if (pgrp < 0) {
-				ret = -errno;
-				break;
-			}
-
-			if (tty->sid != sid) {
-				/* POSIX: a session has at most one controlling terminal */
-				ret = sessionCtty(sid, 1);
-				if (ret < 0) {
-					ret = -errno;
-					break;
-				}
-
-				libtty_sessionClaim(tty, sid);
-				tty->pgrp = pgrp;
-			}
-			ret = EOK;
+			ret = _libtty_sessionAcquire(tty, sender_pid);
 			break;
 
 		case TIOCGSID:
@@ -675,6 +683,22 @@ static int _libtty_cttyIoctl(libtty_common_t *tty, pid_t sender_pid, unsigned lo
 	}
 
 	return ret;
+}
+
+
+void _libtty_open(libtty_common_t *tty, pid_t sender_pid, unsigned int oflags)
+{
+	if ((oflags & (unsigned int)O_NOCTTY) == 0U) {
+		(void)_libtty_sessionAcquire(tty, sender_pid);
+	}
+}
+
+
+void libtty_open(libtty_common_t *tty, pid_t sender_pid, unsigned int oflags)
+{
+	mutexLock(tty->lock);
+	_libtty_open(tty, sender_pid, oflags);
+	mutexUnlock(tty->lock);
 }
 
 

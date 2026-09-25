@@ -456,12 +456,19 @@ int uart_handleMsg(msg_t *msg, int dev)
 
 	dev -= id_uart1;
 
-	if ((dev < 0) || (dev >= (sizeof(uart_preConfig) / sizeof(uart_preConfig[0]))) || (uart_preConfig[dev].active == 0))
+	if ((dev < 0) || (dev >= (sizeof(uart_preConfig) / sizeof(uart_preConfig[0]))) || (uart_preConfig[dev].active == 0)) {
+		msg->o.err = -EINVAL;
 		return -EINVAL;
+	}
 
 	uart = &uart_common.uarts[uart_preConfig[dev].pos];
 
 	switch (msg->type) {
+		case mtOpen:
+			libtty_open(&uart->tty_common, msg->pid, msg->i.openclose.flags);
+			msg->o.err = EOK;
+			break;
+
 		case mtWrite:
 			msg->o.err = libtty_write(&uart->tty_common, msg->i.data, msg->i.size, msg->i.io.mode);
 			break;

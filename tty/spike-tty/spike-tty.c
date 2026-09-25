@@ -126,6 +126,9 @@ static void poolthr(void *arg)
 					msg.o.err = -EINVAL;
 					break;
 				}
+				if (msg.type == mtOpen) {
+					libtty_open(&spiketty->tty, msg.pid, msg.i.openclose.flags);
+				}
 				msg.o.err = EOK;
 				break;
 
