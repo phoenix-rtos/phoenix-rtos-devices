@@ -244,30 +244,17 @@ int libtty_init(libtty_common_t *tty, libtty_callbacks_t *callbacks, unsigned in
 	tty->tx_fifo = malloc(sizeof(fifo_t) + bufsize * sizeof(tty->tx_fifo->data[0]));
 	tty->rx_fifo = malloc(sizeof(fifo_t) + bufsize * sizeof(tty->rx_fifo->data[0]));
 	if (tty->tx_fifo == NULL || tty->rx_fifo == NULL) {
-		free(tty->tx_fifo);
-		free(tty->rx_fifo);
-		if (tty->lockCreated) {
-			resourceDestroy(tty->lock);
-		}
+		libtty_destroy(tty);
 		return -1;
 	}
 
 	if (condCreate(&tty->tx_waitq) != EOK) {
-		free(tty->tx_fifo);
-		free(tty->rx_fifo);
-		if (tty->lockCreated) {
-			resourceDestroy(tty->lock);
-		}
+		libtty_destroy(tty);
 		return -1;
 	}
 
 	if (condCreate(&tty->rx_waitq) != EOK) {
-		resourceDestroy(tty->tx_waitq);
-		free(tty->tx_fifo);
-		free(tty->rx_fifo);
-		if (tty->lockCreated) {
-			resourceDestroy(tty->lock);
-		}
+		libtty_destroy(tty);
 		return -1;
 	}
 
@@ -312,16 +299,22 @@ int libtty_close(libtty_common_t *tty)
 /* Note: only call after all readers/writers have finished */
 int libtty_destroy(libtty_common_t *tty)
 {
-	resourceDestroy(tty->tx_waitq);
-	resourceDestroy(tty->rx_waitq);
-
+	if (tty->tx_waitq != 0) {
+		resourceDestroy(tty->tx_waitq);
+	}
+	if (tty->rx_waitq != 0) {
+		resourceDestroy(tty->rx_waitq);
+	}
+	if (tty->rx_fifo != NULL) {
+		free(tty->rx_fifo);
+	}
+	if (tty->tx_fifo != NULL) {
+		free(tty->tx_fifo);
+	}
 	if (tty->lockCreated) {
 		resourceDestroy(tty->lock);
 	}
-
-	free(tty->tx_fifo);
-	free(tty->rx_fifo);
-
+	memset(tty, 0, sizeof(*tty));
 	return 0;
 }
 
