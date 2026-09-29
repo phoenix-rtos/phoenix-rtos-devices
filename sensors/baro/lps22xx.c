@@ -23,8 +23,9 @@
 #include <libsensors/bus.h>
 
 /* self identification register */
-#define REG_WHOAMI     0x0f
-#define REG_VAL_WHOAMI 0xb3
+#define REG_WHOAMI         0x0f
+#define LPS22HB_WHOAMI_VAL 0xB1
+#define LPS22HH_WHOAMI_VAL 0xB3
 
 /* control register 1 */
 #define REG_CTRL_REG1 0x10
@@ -38,10 +39,14 @@
 #define VAL_BDU       0x02
 
 /* control register 2 */
-#define REG_CTRL_REG2    0x11
-#define VAL_BOOT         0x80
-#define VAL_LOW_NOISE_EN 0x02
-#define IF_ADD_INC       0x10
+#define REG_CTRL_REG2            0x11
+#define VAL_SWRESET              0x04
+#define VAL_BOOT                 0x80
+#define VAL_LOW_NOISE_EN         0x02
+#define IF_ADD_INC               0x10
+#define LPS22HB_REG_RES_CONF     0x1a
+#define LPS22HB_VAL_LC_EN        0x01
+#define LPS22HH_VAL_LOW_NOISE_EN 0x02
 
 /* control register 3 */
 #define REG_CTRL_REG3 0x12
@@ -60,6 +65,13 @@
 
 #define LPS22XX_BOOT_DELAY_US   (10 * 1000)
 #define LPS22XX_CONFIG_DELAY_US (100 * 1000)
+
+
+typedef enum {
+	lps22_type_unknown = 0,
+	lps22_type_hb,
+	lps22_type_hh
+} lps22_type_t;
 
 
 typedef struct {
@@ -100,6 +112,14 @@ static uint32_t translateTemp(uint8_t hbyte, uint8_t lbyte)
 }
 
 
+static int lps22xx_readReg(sensor_bus_t *bus, uint8_t regAddr, uint8_t *regVal)
+{
+	uint8_t cmd = regAddr | SPI_READ_BIT;
+
+	return bus->ops.bus_xfer(bus, &cmd, sizeof(cmd), regVal, sizeof(*regVal), sizeof(cmd));
+}
+
+
 static int spiWriteReg(sensor_bus_t *bus, uint8_t regAddr, uint8_t regVal)
 {
 	unsigned char cmd[2] = { regAddr, regVal };
@@ -108,45 +128,107 @@ static int spiWriteReg(sensor_bus_t *bus, uint8_t regAddr, uint8_t regVal)
 }
 
 
-static int lps22xx_whoamiCheck(sensor_bus_t *bus)
+static lps22_type_t lps22xx_whoamiCheck(sensor_bus_t *bus)
 {
-	uint8_t cmd, val;
+	uint8_t val = 0;
 	int err;
 
-	cmd = REG_WHOAMI | SPI_READ_BIT;
-	val = 0;
-	err = bus->ops.bus_xfer(bus, &cmd, sizeof(cmd), &val, sizeof(val), sizeof(cmd));
-	if ((err < 0) || (val != REG_VAL_WHOAMI)) {
-		fprintf(stderr, "whoami: %x\n", val);
-		return -1;
+	err = lps22xx_readReg(bus, REG_WHOAMI, &val);
+	if (err < 0) {
+		fprintf(stderr, "lps22xx: WHOAMI read failed: %d\n", err);
+		return lps22_type_unknown;
 	}
 
-	return 0;
+	switch (val) {
+		case LPS22HB_WHOAMI_VAL:
+			return lps22_type_hb;
+
+		case LPS22HH_WHOAMI_VAL:
+			return lps22_type_hh;
+
+		default:
+			fprintf(stderr, "whoami: %x\n", (unsigned int)val);
+			return lps22_type_unknown;
+	}
 }
 
 
 static int lps22xx_hwSetup(sensor_bus_t *bus)
 {
-	if (lps22xx_whoamiCheck(bus) != 0) {
-		printf("lps22xx: cannot read/wrong WHOAMI returned!\n");
+	lps22_type_t type;
+	uint8_t val;
+	int err, i;
+
+	type = lps22xx_whoamiCheck(bus);
+	if (type == lps22_type_unknown) {
+		printf("lps22xx: WHOAMI fail\n");
 		return -1;
 	}
 
-	/* Boot process: refresh the content of the internal registers stored in the flash memory block */
-	if (spiWriteReg(bus, REG_CTRL_REG2, VAL_BOOT) < 0) {
+	if (spiWriteReg(bus, REG_CTRL_REG2, VAL_SWRESET) < 0) {
 		return -1;
 	}
-	usleep(LPS22XX_BOOT_DELAY_US); /* The boot process takes 2.2 msec. Waiting more for safety */
 
-	if (spiWriteReg(bus, REG_CTRL_REG1, (VAL_ODR_75 | VAL_BDU | VAL_EN_LPFP)) < 0) {
-		return -1;
-	}
-	usleep(LPS22XX_CONFIG_DELAY_US); /* Arbitrary wait */
+	for (i = 0; i < 10; i++) {
+		usleep(LPS22XX_BOOT_DELAY_US);
+		err = lps22xx_readReg(bus, REG_CTRL_REG2, &val);
 
-	if (spiWriteReg(bus, REG_CTRL_REG2, (IF_ADD_INC | VAL_LOW_NOISE_EN)) < 0) {
+		if (err < 0) {
+			return -1;
+		}
+
+		if ((val & VAL_SWRESET) == 0) {
+			break;
+		}
+	}
+
+	if (i >= 10) {
+		printf("lps22xx: SWRESET timeout\n");
 		return -1;
 	}
-	usleep(LPS22XX_CONFIG_DELAY_US); /* Arbitrary wait */
+
+	/* Configure low-noise mode while ODR is still powered down. */
+	switch (type) {
+		case lps22_type_hb:
+			/*
+			 * HB: CTRL_REG2 bit 1 is reserved.
+			 * Enable address increment; leave FIFO disabled.
+			 */
+			if (spiWriteReg(bus, REG_CTRL_REG2, IF_ADD_INC) < 0) {
+				return -1;
+			}
+
+			/*
+			 * Low-noise mode requires LC_EN = 0.
+			 * Preserve RES_CONF bit 1, which must not be modified.
+			 */
+			err = lps22xx_readReg(bus, LPS22HB_REG_RES_CONF, &val);
+			if (err < 0) {
+				return -1;
+			}
+
+			val &= (uint8_t)~LPS22HB_VAL_LC_EN;
+			if (spiWriteReg(bus, LPS22HB_REG_RES_CONF, val) < 0) {
+				return -1;
+			}
+			break;
+
+		case lps22_type_hh:
+			if (spiWriteReg(bus, REG_CTRL_REG2, IF_ADD_INC | LPS22HH_VAL_LOW_NOISE_EN) < 0) {
+				return -1;
+			}
+			break;
+
+		default:
+			return -1;
+	}
+	usleep(LPS22XX_CONFIG_DELAY_US);
+
+	/* Both variants: 75 Hz, BDU enabled, pressure LPF at ODR/9. */
+	if (spiWriteReg(bus, REG_CTRL_REG1, VAL_ODR_75 | VAL_BDU | VAL_EN_LPFP) < 0) {
+		return -1;
+	}
+	usleep(LPS22XX_CONFIG_DELAY_US);
 
 	return 0;
 }
