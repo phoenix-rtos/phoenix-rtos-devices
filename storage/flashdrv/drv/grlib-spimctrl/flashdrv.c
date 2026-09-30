@@ -304,21 +304,6 @@ static void flashdrv_destroy(storage_t *strg)
 }
 
 
-static int readId(struct spimctrl *spimctrl, uint32_t *id)
-{
-	struct xferOp xfer;
-	const uint8_t cmd = 0x9Fu; /* RDID */
-
-	xfer.type = xfer_opRead;
-	xfer.cmd = &cmd;
-	xfer.cmdLen = 1;
-	xfer.rxData = (uint8_t *)id;
-	xfer.dataLen = 3;
-
-	return spimctrl_xfer(spimctrl, &xfer);
-}
-
-
 static storage_t *flashdrv_init(addr_t mctrlBase, addr_t flashBase)
 {
 	struct _storage_devCtx_t *ctx = calloc(1, sizeof(struct _storage_devCtx_t));
