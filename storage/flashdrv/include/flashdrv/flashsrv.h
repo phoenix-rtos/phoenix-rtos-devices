@@ -19,8 +19,42 @@
 
 /* clang-format off */
 #define LOG(fmt, ...) do { (void)fprintf(stdout, "flashsrv: " fmt "\n", ##__VA_ARGS__); } while (0)
-#define LOG_ERROR(fmt, ...) do { (void)fprintf(stdout, "flashsrv:%s:%d: " fmt "\n", __func__, __LINE__, ##__VA_ARGS__); } while (0)
-#define TRACE(fmt, ...) do { if (0) { (void)fprintf(stdout, "flashsrv:%s:%d: " fmt "\n", __func__, __LINE__, ##__VA_ARGS__); } } while (0)
+
+#define LOG_LEVEL_NONE  0
+#define LOG_LEVEL_ERROR 1
+#define LOG_LEVEL_INFO  2
+#define LOG_LEVEL_TRACE 3
+
+#ifndef LOG_MODULE
+  #define LOG_MODULE __FILE__
+#endif
+
+#ifndef LOG_LEVEL
+  #define LOG_LEVEL LOG_LEVEL_INFO
+#endif
+
+#define LOG_ERROR(fmt, ...) \
+    do { \
+        if (LOG_LEVEL >= LOG_LEVEL_ERROR) { \
+            (void)fprintf(stdout, "%s:%s:%d: [ERR] " fmt "\n", LOG_MODULE, __func__, __LINE__, ##__VA_ARGS__); \
+        } \
+    } while (0)
+
+#define LOG_INFO(fmt, ...) \
+    do { \
+        if (LOG_LEVEL >= LOG_LEVEL_INFO) { \
+            (void)fprintf(stdout, "%s:%s:%d: [INF] " fmt "\n", LOG_MODULE, __func__, __LINE__, ##__VA_ARGS__); \
+        } \
+    } while (0)
+
+#define TRACE(fmt, ...) \
+    do { \
+        if (LOG_LEVEL >= LOG_LEVEL_TRACE) { \
+            (void)fprintf(stdout, "%s:%s:%d: [TRC] " fmt "\n", LOG_MODULE, __func__, __LINE__, ##__VA_ARGS__); \
+        } \
+    } while (0)
+
+
 /* clang-format on */
 
 #ifndef FLASHSRV_ENABLE_JFFS2

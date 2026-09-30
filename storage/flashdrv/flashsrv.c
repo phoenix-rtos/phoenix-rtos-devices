@@ -13,6 +13,10 @@
  * %LICENSE%
  */
 
+
+#define LOG_MODULE "flashsrv"
+
+
 #include <errno.h>
 #include <endian.h>
 #include <signal.h>
@@ -28,7 +32,6 @@
 
 #include <ptable.h>
 #include <storage/storage.h>
-
 #include <flashdrv/flashsrv.h>
 
 #if FLASHSRV_ENABLE_JFFS2
@@ -247,7 +250,7 @@ static int flashsrv_mountRoot(const char *name, const char *fstype)
 		return res;
 	}
 
-	LOG("Mounting %s as %s root filesystem", path, fstype);
+	LOG_INFO("Mounting %s as %s root filesystem", path, fstype);
 
 	res = storage_mountfs(storage_get(oid.id), fstype, NULL, 0, NULL, &oid);
 	if (res < 0) {
@@ -372,7 +375,6 @@ static ptable_t *flashsrv_ptableRead(storage_t *strg)
 	off_t offs = strg->size - strg->dev->mtd->erasesz;
 	/* Read number of partitions */
 	if (flashsrv_read(strg, offs, &count, sizeof(count)) != sizeof(count)) {
-		LOG_ERROR("f1");
 		return NULL;
 	}
 	count = le32toh(count);
@@ -380,19 +382,16 @@ static ptable_t *flashsrv_ptableRead(storage_t *strg)
 	/* Verify ptable size */
 	uint32_t size = ptable_size(count);
 	if (size > strg->dev->mtd->erasesz) {
-		LOG_ERROR("f2");
 		return NULL;
 	}
 
 	/* Verify magic signature */
 	uint8_t magic[sizeof(ptable_magic)];
 	if (flashsrv_read(strg, offs + size - sizeof(magic), magic, sizeof(magic)) != sizeof(magic)) {
-		LOG_ERROR("f3");
 		return NULL;
 	}
 
 	if (memcmp(magic, ptable_magic, sizeof(magic)) != 0) {
-		LOG_ERROR("f4");
 		uint8_t raw_head[16];
 		flashsrv_read(strg, offs, raw_head, sizeof(raw_head));
 
@@ -406,20 +405,17 @@ static ptable_t *flashsrv_ptableRead(storage_t *strg)
 
 	ptable_t *ptable = malloc(size);
 	if (ptable == NULL) {
-		LOG_ERROR("f5");
 		return NULL;
 	}
 
 	/* Read partition table */
 	if (flashsrv_read(strg, offs, ptable, size) != size) {
 		free(ptable);
-		LOG_ERROR("f6");
 		return NULL;
 	}
 
 	if (ptable_deserialize(ptable, strg->size, strg->dev->mtd->erasesz) < 0) {
 		free(ptable);
-		LOG_ERROR("f7");
 		return NULL;
 	}
 
@@ -472,7 +468,7 @@ static int flashsrv_partAdd(storage_t *parent, uint32_t offset, uint32_t size, c
 	}
 
 	TRACE("initialized partition %s: offset=%u, size=%u", name, offset, size);
-	printf("remove log later %s.%s\n", STRG_PATH, name);
+	TRACE("%s.%s\n", STRG_PATH, name);
 
 	return 0;
 }

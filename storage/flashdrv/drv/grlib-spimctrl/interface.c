@@ -14,6 +14,9 @@
  */
 
 
+#define LOG_MODULE "interface"
+
+
 #include <string.h>
 #include <errno.h>
 
@@ -43,11 +46,11 @@ static void readSFDP(struct _storage_devCtx_t *ctx)
 
 	if (memcmp(header, "SFDP", 4) == 0) {
         ctx->isCfi = 0;
-		LOG_ERROR("Device supports SFDP!\n");
+		LOG_INFO("Device supports SFDP!\n");
 	}
 	else {
         ctx->isCfi = 1;
-		LOG_ERROR("Not an SFDP device (got: 0x%02X 0x%02X 0x%02X 0x%02X)\n",
+		LOG_INFO("Not an SFDP device (got: 0x%02X 0x%02X 0x%02X 0x%02X)\n",
 			header[0], header[1], header[2], header[3]);		
 	}
 }
@@ -182,11 +185,11 @@ const char* flash_name(const struct _storage_devCtx_t *ctx)
 int flash_selSpiMode(struct _storage_devCtx_t *ctx, SPIMode_t spiMode)
 {
     if (ctx->isCfi) {
-        LOG_ERROR("No other mode to select, stay in default mode \n");
+        LOG_INFO("No other mode to select, stay in default mode \n");
         return EOK;
     }
     else {
-        LOG_ERROR("SPI mode selection \n");
+        LOG_INFO("SPI mode selection \n");
         return nor_selSPIMode(ctx->spimctrl, spiMode);
     }
 }

@@ -12,6 +12,9 @@
  */
 
 
+#define LOG_MODULE "flashsrv_tests"
+
+
 #include "test_helpers.h"
 
 
@@ -242,7 +245,7 @@ int erase_write_read_print(oid_t oid, const off_t testAddr, const size_t testSiz
     }
 
     lookup(part_path, NULL, &oid);
-    LOG_ERROR("LOOKUP %s -> port=%u, id=%ju", part_path, oid.port, (uintmax_t)oid.id);
+    LOG_INFO("LOOKUP %s -> port=%u, id=%ju", part_path, oid.port, (uintmax_t)oid.id);
 
     long long partSize = 0;
     if (getAttrFlash(oid, atSize, &partSize) < 0 || partSize <= 0) {
@@ -250,7 +253,7 @@ int erase_write_read_print(oid_t oid, const off_t testAddr, const size_t testSiz
         return -1;
     }
 
-    LOG_ERROR("Partition %s verified: oid.id=%ju, size=0x%llx (%lld MB)",
+    LOG_INFO("Partition %s verified: oid.id=%ju, size=0x%llx (%lld MB)",
             part_path, (uintmax_t)oid.id, partSize, partSize / (1024 * 1024));
 
     off_t sectorAddr = testAddr - (testAddr % sectorSize);
@@ -265,7 +268,7 @@ int erase_write_read_print(oid_t oid, const off_t testAddr, const size_t testSiz
         return -1;
     }
 
-    printf("Read %zu bytes from address 0x%lx:\n", testSize, (unsigned long)testAddr);
+    LOG_INFO("Read %zu bytes from address 0x%lx:\n", testSize, (unsigned long)testAddr);
     for (size_t i = 0; i < testSize; i++) {
         printf("%02X ", rxBuff[i]);
         if ((i + 1) % 16 == 0) {
@@ -286,7 +289,7 @@ int erase_write_read_print(oid_t oid, const off_t testAddr, const size_t testSiz
         return -1;
     }
 
-    printf("Read %zu bytes from address 0x%lx:\n", testSize, (unsigned long)testAddr);
+    LOG_INFO("Read %zu bytes from address 0x%lx:\n", testSize, (unsigned long)testAddr);
     for (size_t i = 0; i < testSize; i++) {
         printf("%02X ", rxBuff[i]);
         if ((i + 1) % 16 == 0) {
@@ -313,7 +316,7 @@ int run_write_test_mode(oid_t oid, SPIMode_t mode, const char *modeName, const u
         return -1;
     }
 
-    LOG_ERROR("[%s] Erasing sector range at 0x%lx...", modeName, (unsigned long)testAddr);
+    LOG_INFO("[%s] Erasing sector range at 0x%lx...", modeName, (unsigned long)testAddr);
     for (off_t offset = 0; offset < BENCH_BUF_SIZE; offset += SECTOR_SIZE) {
         if (eraseSector(oid, testAddr + offset, SECTOR_SIZE) < 0) {
             LOG_ERROR("[%s] Erase failed at offset 0x%lx", modeName, (unsigned long)(testAddr + offset));
@@ -321,7 +324,7 @@ int run_write_test_mode(oid_t oid, SPIMode_t mode, const char *modeName, const u
         }
     }
 
-    LOG_ERROR("[%s] Writing %d KB...", modeName, BENCH_BUF_SIZE / 1024);
+    LOG_INFO("[%s] Writing %d KB...", modeName, BENCH_BUF_SIZE / 1000);
     uint64_t tStart = get_time_us();
 
     for (off_t offset = 0; offset < BENCH_BUF_SIZE; offset += PAGE_SIZE) {
@@ -333,9 +336,10 @@ int run_write_test_mode(oid_t oid, SPIMode_t mode, const char *modeName, const u
 
     uint64_t tEnd = get_time_us();
     uint64_t timeUs = tEnd - tStart;
-    double speedKB = (timeUs > 0) ? ((double)BENCH_BUF_SIZE / 1024.0) / (timeUs / 1000000.0) : 0.0;
+    
+    double speedKB = (timeUs > 0) ? ((double)BENCH_BUF_SIZE * 1000.0) / (double)timeUs : 0.0;
 
-    LOG_ERROR("[%s] Write Time: %6llu us | Speed: %6.2f KB/s", 
+    LOG_INFO("[%s] Write Time: %6llu us | Speed: %6.2f KB/s", 
              modeName, (unsigned long long)timeUs, speedKB);
 
     memset(rxBuff, 0, BENCH_BUF_SIZE);
@@ -359,6 +363,6 @@ int run_write_test_mode(oid_t oid, SPIMode_t mode, const char *modeName, const u
         return -1;
     }
 
-    LOG_ERROR("[%s] Data verified successfully!", modeName);
+    LOG_INFO("[%s] Data verified successfully!", modeName);
     return EOK;
 }
