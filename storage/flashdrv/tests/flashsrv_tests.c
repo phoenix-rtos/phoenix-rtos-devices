@@ -495,35 +495,93 @@ int test_flashsrv_unsupportedMsgType(void)
 int test_setSPIMode(void)
 {
     oid_t oid;
-    const off_t testAddr = 0x20000;
+    const off_t testAddr = 0x50000;
     const size_t testSize = 0x100;
     const size_t sectorSize = 0x10000;
-    const uint8_t checkPattern = 0x6C;
-
-    const char *part_path = DEFAULT_PARTITION;
+    const uint8_t checkPattern = 0x7Bu;
+    uint8_t txBuff[testSize];
+    uint8_t rxBuff[testSize];
 
     while (lookup(DEFAULT_PARTITION, NULL, &oid) < 0) {
-    usleep(10000);
+        usleep(10000);
     }
 
-    /* Switch SPI - i = 0 is default SPI, i = 1 is DOUT */
+    for (int i = 0; i < SPI_MAX; i++) {
 
-    for (int i = 2; i < SPI_MAX; i++) {
         if (setSPI(oid, i) < 0) {
-            LOG_ERROR("setSPI failed");
+            LOG_ERROR("setSPI failed \n");
             return -1;
         }
 
-        if(erase_write_read_print(oid, testAddr, testSize, sectorSize, checkPattern, part_path) < 0) {
+        LOG_ERROR("Setting SPI mode: %d\n", i);
+
+        off_t sectorAddr = testAddr - (testAddr % sectorSize);
+        
+        uint64_t tEraseStart = get_time_us();
+        if (eraseSector(oid, sectorAddr, sectorSize) < 0) {
+            LOG_ERROR("Failed to erase sector at 0x%lx after setSPI", (unsigned long)sectorAddr);
+            return -1;
+        }
+        uint64_t tEraseEnd = get_time_us();
+        LOG_ERROR("Erase time: %llu us", (unsigned long long)(tEraseEnd - tEraseStart));
+
+        memset(rxBuff, 0, testSize);
+        if (readFromFlash(oid, testAddr, rxBuff, testSize) != (int)testSize) {
+            LOG_ERROR("Failed to read flash after setSPI");
+            return -1;
+        }
+
+        printf("Read %zu bytes from address 0x%lx:\n", testSize, (unsigned long)testAddr);
+        for (size_t j = 0; j < testSize; j++) {
+            printf("%02X ", rxBuff[j]);
+            if ((j + 1) % 16 == 0) {
+                printf("\n");
+            }
+        }
+        printf("\n");
+
+        memset(txBuff, checkPattern, testSize);
+        
+        uint64_t tWriteStart = get_time_us();
+        if (writeToFlash(oid, testAddr, txBuff, testSize) != (int)testSize) {
+            LOG_ERROR("Failed to write flash after setSPI");
+            return -1;
+        }
+        uint64_t tWriteEnd = get_time_us();
+        uint64_t writeTimeUs = tWriteEnd - tWriteStart;
+        
+        double writeSpeedKb = (writeTimeUs > 0) ? ((double)testSize * 1000.0) / (double)writeTimeUs : 0.0;
+        
+        LOG_ERROR("Write time: %llu us (%.2f KB/s)", (unsigned long long)writeTimeUs, writeSpeedKb);
+
+        memset(rxBuff, 0, testSize);
+        
+        uint64_t tReadStart = get_time_us();
+        if (readFromFlash(oid, testAddr, rxBuff, testSize) != (int)testSize) {
+            LOG_ERROR("Failed to read flash after setSPI");
+            return -1;
+        }
+        uint64_t tReadEnd = get_time_us();
+        uint64_t readTimeUs = tReadEnd - tReadStart;
+        
+        double readSpeedKb = (readTimeUs > 0) ? ((double)testSize * 1000.0) / (double)readTimeUs : 0.0;
+
+        LOG_ERROR("Read time: %llu us (%.2f KB/s)", (unsigned long long)readTimeUs, readSpeedKb);
+
+        printf("Read %zu bytes from address 0x%lx:\n", testSize, (unsigned long)testAddr);
+        for (size_t j = 0; j < testSize; j++) {
+            printf("%02X ", rxBuff[j]);
+            if ((j + 1) % 16 == 0) {
+                printf("\n");
+            }
+        }
+        printf("\n");
+
+        if (memcmp(txBuff, rxBuff, testSize) != 0) {
+            LOG_ERROR("Data verification failed after setSPI");
             return -1;
         }
     }
-
-    // uint64_t t0 = get_time_us();
-    // readFromFlash(oid, 0x10000, big_buffer, 1024 * 1024); // 1 MB
-    // uint64_t t1 = get_time_us();
-
-    // LOG_INFO("Read time: %llu us, Speed: %f MB/s", (t1 - t0), (1.0 / ((t1 - t0) / 1000000.0)));
 
     return EOK;
 }
@@ -537,8 +595,10 @@ int test_setSPIModeDifferentPartition(void)
     const size_t sectorSize = 0x10000;
     const uint8_t checkPattern = 0x15;
 
-    while (lookup(PARTITION_2, NULL, &oid) < 0) {
-        usleep(10000);
+    const char *part_path = DEFAULT_PARTITION;
+
+    while (lookup(part_path, NULL, &oid) < 0) {
+    usleep(10000);
     }
 
     if (setSPI(oid, QSPI) < 0) {
@@ -546,11 +606,109 @@ int test_setSPIModeDifferentPartition(void)
         return -1;
     }
 
-    const char *part_path = PARTITION_3;
+    while (lookup(PARTITION_3, NULL, &oid) < 0) {
+        usleep(10000);
+    }
 
     if(erase_write_read_print(oid, testAddr, testSize, sectorSize, checkPattern, part_path) < 0) {
         return -1;
     }
 
+    return EOK;
+}
+
+
+int test_readBenchmark(void)
+{
+    oid_t oid;
+    const off_t testAddr = 0x20000;
+    uint8_t *benchBuff;
+
+    while (lookup(PARTITION_2, NULL, &oid) < 0) {
+        usleep(10000);
+    }
+
+    benchBuff = malloc(BENCH_BUF_SIZE);
+    if (benchBuff == NULL) {
+        LOG_ERROR("Failed to allocate 1MB buffer for benchmark");
+        return -1;
+    }
+
+    LOG_ERROR("=== START READ BENCHMARK (1 MB / %u bytes) ===", BENCH_BUF_SIZE);
+
+    if (setSPI(oid, BSPI) == EOK) {
+        uint64_t tStart = get_time_us();
+        int res = readFromFlash(oid, testAddr, benchBuff, BENCH_BUF_SIZE);
+        uint64_t tEnd = get_time_us();
+
+        if (res == BENCH_BUF_SIZE) {
+            uint64_t timeUs = tEnd - tStart;
+            double speedMBs = (timeUs > 0) ? (1.0) / (timeUs / 1000000.0) : 0.0;
+            LOG_ERROR("[BSPI  1-1-1] Time: %6llu us | Speed: %6.2f MB/s", (unsigned long long)timeUs, speedMBs);
+        } else {
+            LOG_ERROR("[BSPI  1-1-1] Read failed");
+        }
+    } else {
+        LOG_ERROR("Failed to set BSPI mode");
+    }
+
+
+    if (setSPI(oid, QSPI) == EOK) {
+        uint64_t tStart = get_time_us();
+        int res = readFromFlash(oid, testAddr, benchBuff, BENCH_BUF_SIZE);
+        uint64_t tEnd = get_time_us();
+
+        if (res == BENCH_BUF_SIZE) {
+            uint64_t timeUs = tEnd - tStart;
+            double speedMBs = (timeUs > 0) ? (1.0) / (timeUs / 1000000.0) : 0.0;
+            LOG_ERROR("[QSPI  4-4-4] Time: %6llu us | Speed: %6.2f MB/s", (unsigned long long)timeUs, speedMBs);
+        } else {
+            LOG_ERROR("[QSPI  4-4-4] Read failed");
+        }
+    } else {
+        LOG_ERROR("Failed to set QSPI mode");
+    }
+
+    LOG_ERROR("=== END READ BENCHMARK ===");
+
+    free(benchBuff);
+    return EOK;
+}
+
+
+int test_writeBenchmark(void)
+{
+    oid_t oid;
+    uint8_t *txBuff;
+    uint8_t *rxBuff;
+
+    while (lookup(PARTITION_2, NULL, &oid) < 0) {
+        usleep(10000);
+    }
+
+    txBuff = malloc(BENCH_BUF_SIZE);
+    rxBuff = malloc(BENCH_BUF_SIZE);
+
+    if (txBuff == NULL || rxBuff == NULL) {
+        LOG_ERROR("Failed to allocate buffers for write benchmark");
+        free(txBuff);
+        free(rxBuff);
+        return -1;
+    }
+
+    for (size_t i = 0; i < BENCH_BUF_SIZE; i++) {
+        txBuff[i] = (uint8_t)(i & 0xFF);
+    }
+
+    LOG_ERROR("=== START WRITE BENCHMARK (%d KB) ===", BENCH_BUF_SIZE / 1024);
+
+    run_write_test_mode(oid, BSPI, "BSPI  1-1-1", txBuff, rxBuff);
+
+    run_write_test_mode(oid, QSPI, "QSPI  4-4-4", txBuff, rxBuff);
+
+    LOG_ERROR("=== END WRITE BENCHMARK ===");
+
+    free(txBuff);
+    free(rxBuff);
     return EOK;
 }
