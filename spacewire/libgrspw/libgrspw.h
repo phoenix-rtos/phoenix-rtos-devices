@@ -18,6 +18,7 @@
 #include <sys/types.h>
 #include <string.h>
 #include <stdbool.h>
+#include <stdatomic.h>
 
 
 #define SPW_RX_MIN_BUFSZ 4
@@ -89,7 +90,7 @@ typedef struct {
 	volatile uint32_t *vbase;
 	unsigned int irq;
 	uint8_t addr;
-	uint8_t txDescFree;
+	atomic_uint_fast8_t txDescFree;
 
 	size_t sentDesc;
 	size_t lastTxDesc;
