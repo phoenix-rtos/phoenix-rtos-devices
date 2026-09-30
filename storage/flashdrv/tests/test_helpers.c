@@ -15,10 +15,14 @@
 #include "test_helpers.h"
 
 
-// uint64_t get_time_us(void)
-// {
+uint64_t get_time_us(void)
+{
+	struct timespec ts;
 
-// }
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint64_t)ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
+}
+
 
 
 /* -------------------------------------------------------------------------
@@ -297,4 +301,64 @@ int erase_write_read_print(oid_t oid, const off_t testAddr, const size_t testSiz
     }
 
     return 1;
+}
+
+
+int run_write_test_mode(oid_t oid, SPIMode_t mode, const char *modeName, const uint8_t *txBuff, uint8_t *rxBuff)
+{
+    const off_t testAddr = 0x40000;
+
+    if (setSPI(oid, mode) < 0) {
+        LOG_ERROR("Failed to set %s mode", modeName);
+        return -1;
+    }
+
+    LOG_ERROR("[%s] Erasing sector range at 0x%lx...", modeName, (unsigned long)testAddr);
+    for (off_t offset = 0; offset < BENCH_BUF_SIZE; offset += SECTOR_SIZE) {
+        if (eraseSector(oid, testAddr + offset, SECTOR_SIZE) < 0) {
+            LOG_ERROR("[%s] Erase failed at offset 0x%lx", modeName, (unsigned long)(testAddr + offset));
+            return -1;
+        }
+    }
+
+    LOG_ERROR("[%s] Writing %d KB...", modeName, BENCH_BUF_SIZE / 1024);
+    uint64_t tStart = get_time_us();
+
+    for (off_t offset = 0; offset < BENCH_BUF_SIZE; offset += PAGE_SIZE) {
+        if (writeToFlash(oid, testAddr + offset, txBuff + offset, PAGE_SIZE) != PAGE_SIZE) {
+            LOG_ERROR("[%s] Write failed at offset 0x%lx", modeName, (unsigned long)(testAddr + offset));
+            return -1;
+        }
+    }
+
+    uint64_t tEnd = get_time_us();
+    uint64_t timeUs = tEnd - tStart;
+    double speedKB = (timeUs > 0) ? ((double)BENCH_BUF_SIZE / 1024.0) / (timeUs / 1000000.0) : 0.0;
+
+    LOG_ERROR("[%s] Write Time: %6llu us | Speed: %6.2f KB/s", 
+             modeName, (unsigned long long)timeUs, speedKB);
+
+    memset(rxBuff, 0, BENCH_BUF_SIZE);
+
+    for (off_t offset = 0; offset < BENCH_BUF_SIZE; offset += PAGE_SIZE) {
+        if (readFromFlash(oid, testAddr + offset, rxBuff + offset, PAGE_SIZE) != PAGE_SIZE) {
+            LOG_ERROR("[%s] Read-back failed at offset 0x%lx", modeName, (unsigned long)(testAddr + offset));
+            return -1;
+        }
+    }
+
+    if (memcmp(txBuff, rxBuff, BENCH_BUF_SIZE) != 0) {
+        for (size_t i = 0; i < BENCH_BUF_SIZE; i++) {
+            if (txBuff[i] != rxBuff[i]) {
+                LOG_ERROR("[%s] Mismatch at offset +0x%zx: Expected 0x%02X, got 0x%02X",
+                          modeName, i, txBuff[i], rxBuff[i]);
+                break;
+            }
+        }
+        LOG_ERROR("[%s] DATA VERIFICATION FAILED (data corrupt)", modeName);
+        return -1;
+    }
+
+    LOG_ERROR("[%s] Data verified successfully!", modeName);
+    return EOK;
 }
