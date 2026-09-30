@@ -12,6 +12,9 @@
  */
 
 
+#define LOG_MODULE "flashsrv_tests"
+
+
 #include "test_helpers.h"
 
 
@@ -41,13 +44,13 @@ int test_flashsrv_verifyPartitionTable(void)
     }
 
     const char *part_path = "dev/mtd0";
-    LOG_ERROR("LOOKUP %s -> port=%u, id=%ju", part_path, oid.port, (uintmax_t)oid.id);
+    LOG_INFO("LOOKUP %s -> port=%u, id=%ju", part_path, oid.port, (uintmax_t)oid.id);
 
     if (getAttrFlash(oid, atSize, &flashSize) < 0 || flashSize <= 0) {
         LOG_ERROR("Failed to query flash size");
         return -1;
     }
-    LOG_ERROR("Flash size: 0x%llx (%lld MB)", flashSize, flashSize / (1024 * 1024));
+    LOG_INFO("Flash size: 0x%llx (%lld MB)", flashSize, flashSize / (1024 * 1024));
 
     const size_t erasesz = 0x10000;
     off_t offs = (off_t)flashSize - erasesz;
@@ -238,8 +241,8 @@ int test_flashsrv_eraseVerification(void)
                 usleep(10000);
             }
 
-            LOG_ERROR("LOOKUP %s -> port=%u, id=%ju", part_path, oid.port, (uintmax_t)oid.id);
-            LOG_ERROR("=== TEST PARTITION [%zu/%zu]: %s ===", k + 1, NUM_PARTITIONS, part_path);
+            LOG_INFO("LOOKUP %s -> port=%u, id=%ju", part_path, oid.port, (uintmax_t)oid.id);
+            LOG_INFO("=== TEST PARTITION [%zu/%zu]: %s ===", k + 1, NUM_PARTITIONS, part_path);
 
             long long partSize = 0;
             if (getAttrFlash(oid, atSize, &partSize) < 0 || partSize <= 0) {
@@ -273,7 +276,7 @@ int test_flashsrv_eraseVerification(void)
             usleep(10000);
         }
 
-        LOG_ERROR("LOOKUP %s -> port=%u, id=%ju", part_path, oid.port, (uintmax_t)oid.id);
+        LOG_INFO("LOOKUP %s -> port=%u, id=%ju", part_path, oid.port, (uintmax_t)oid.id);
 
         long long partSize = 0;
         if (getAttrFlash(oid, atSize, &partSize) < 0 || partSize <= 0) {
@@ -310,7 +313,7 @@ int test_flashsrv_erasePartition(void)
     oid_t oid;
     const char *part_path = PARTITION_2;
 
-    LOG_ERROR("Starting erasePartition test on %s...", part_path);
+    LOG_INFO("Starting erasePartition test on %s...", part_path);
 
     if (lookup(part_path, NULL, &oid) < 0) {
         LOG_ERROR("Lookup failed for %s", part_path);
@@ -365,7 +368,7 @@ int test_flashsrv_erasePartition(void)
         return -1;
     }
 
-    LOG_ERROR("erasePartition test PASSED on %s", part_path);
+    LOG_INFO("erasePartition test PASSED on %s", part_path);
     return EOK;
 }
 
@@ -513,7 +516,7 @@ int test_setSPIMode(void)
             return -1;
         }
 
-        LOG_ERROR("Setting SPI mode: %d\n", i);
+        LOG_INFO("Setting SPI mode: %d\n", i);
 
         off_t sectorAddr = testAddr - (testAddr % sectorSize);
         
@@ -523,7 +526,7 @@ int test_setSPIMode(void)
             return -1;
         }
         uint64_t tEraseEnd = get_time_us();
-        LOG_ERROR("Erase time: %llu us", (unsigned long long)(tEraseEnd - tEraseStart));
+        LOG_INFO("Erase time: %llu us", (unsigned long long)(tEraseEnd - tEraseStart));
 
         memset(rxBuff, 0, testSize);
         if (readFromFlash(oid, testAddr, rxBuff, testSize) != (int)testSize) {
@@ -531,7 +534,7 @@ int test_setSPIMode(void)
             return -1;
         }
 
-        printf("Read %zu bytes from address 0x%lx:\n", testSize, (unsigned long)testAddr);
+        LOG_INFO("Read %zu bytes from address 0x%lx:\n", testSize, (unsigned long)testAddr);
         for (size_t j = 0; j < testSize; j++) {
             printf("%02X ", rxBuff[j]);
             if ((j + 1) % 16 == 0) {
@@ -552,7 +555,7 @@ int test_setSPIMode(void)
         
         double writeSpeedKb = (writeTimeUs > 0) ? ((double)testSize * 1000.0) / (double)writeTimeUs : 0.0;
         
-        LOG_ERROR("Write time: %llu us (%.2f KB/s)", (unsigned long long)writeTimeUs, writeSpeedKb);
+        LOG_INFO("Write time: %llu us (%.2f KB/s)", (unsigned long long)writeTimeUs, writeSpeedKb);
 
         memset(rxBuff, 0, testSize);
         
@@ -566,9 +569,9 @@ int test_setSPIMode(void)
         
         double readSpeedKb = (readTimeUs > 0) ? ((double)testSize * 1000.0) / (double)readTimeUs : 0.0;
 
-        LOG_ERROR("Read time: %llu us (%.2f KB/s)", (unsigned long long)readTimeUs, readSpeedKb);
+        LOG_INFO("Read time: %llu us (%.2f KB/s)", (unsigned long long)readTimeUs, readSpeedKb);
 
-        printf("Read %zu bytes from address 0x%lx:\n", testSize, (unsigned long)testAddr);
+        LOG_INFO("Read %zu bytes from address 0x%lx:\n", testSize, (unsigned long)testAddr);
         for (size_t j = 0; j < testSize; j++) {
             printf("%02X ", rxBuff[j]);
             if ((j + 1) % 16 == 0) {
@@ -620,6 +623,7 @@ int test_setSPIModeDifferentPartition(void)
 
 int test_readBenchmark(void)
 {
+    int res;
     oid_t oid;
     const off_t testAddr = 0x20000;
     uint8_t *benchBuff;
@@ -630,46 +634,55 @@ int test_readBenchmark(void)
 
     benchBuff = malloc(BENCH_BUF_SIZE);
     if (benchBuff == NULL) {
-        LOG_ERROR("Failed to allocate 1MB buffer for benchmark");
+        LOG_ERROR("Failed to allocate buffer for benchmark");
         return -1;
     }
 
-    LOG_ERROR("=== START READ BENCHMARK (1 MB / %u bytes) ===", BENCH_BUF_SIZE);
+    LOG_INFO("=== START READ BENCHMARK (%u bytes) ===", BENCH_BUF_SIZE);
 
-    if (setSPI(oid, BSPI) == EOK) {
-        uint64_t tStart = get_time_us();
-        int res = readFromFlash(oid, testAddr, benchBuff, BENCH_BUF_SIZE);
-        uint64_t tEnd = get_time_us();
-
-        if (res == BENCH_BUF_SIZE) {
-            uint64_t timeUs = tEnd - tStart;
-            double speedMBs = (timeUs > 0) ? (1.0) / (timeUs / 1000000.0) : 0.0;
-            LOG_ERROR("[BSPI  1-1-1] Time: %6llu us | Speed: %6.2f MB/s", (unsigned long long)timeUs, speedMBs);
-        } else {
-            LOG_ERROR("[BSPI  1-1-1] Read failed");
-        }
-    } else {
+    /* Test BSPI */
+    if (setSPI(oid, BSPI) != EOK) {
         LOG_ERROR("Failed to set BSPI mode");
+        free(benchBuff);
+        return -1;
     }
 
+    uint64_t tStart = get_time_us();
+    res = readFromFlash(oid, testAddr, benchBuff, BENCH_BUF_SIZE);
+    uint64_t tEnd = get_time_us();
 
-    if (setSPI(oid, QSPI) == EOK) {
-        uint64_t tStart = get_time_us();
-        int res = readFromFlash(oid, testAddr, benchBuff, BENCH_BUF_SIZE);
-        uint64_t tEnd = get_time_us();
+    if (res != (int)BENCH_BUF_SIZE) {
+        LOG_ERROR("[BSPI  1-1-1] Read failed");
+        free(benchBuff);
+        return -1;
+    }
 
-        if (res == BENCH_BUF_SIZE) {
-            uint64_t timeUs = tEnd - tStart;
-            double speedMBs = (timeUs > 0) ? (1.0) / (timeUs / 1000000.0) : 0.0;
-            LOG_ERROR("[QSPI  4-4-4] Time: %6llu us | Speed: %6.2f MB/s", (unsigned long long)timeUs, speedMBs);
-        } else {
-            LOG_ERROR("[QSPI  4-4-4] Read failed");
-        }
-    } else {
+    uint64_t timeUs = tEnd - tStart;
+    double speedMBs = (timeUs > 0) ? (double)BENCH_BUF_SIZE / (double)timeUs : 0.0;
+    LOG_INFO("[BSPI  1-1-1] Time: %6llu us | Speed: %6.2f MB/s", (unsigned long long)timeUs, speedMBs);
+
+    /* Test QSPI */
+    if (setSPI(oid, QSPI) != EOK) {
         LOG_ERROR("Failed to set QSPI mode");
+        free(benchBuff);
+        return -1;
     }
 
-    LOG_ERROR("=== END READ BENCHMARK ===");
+    tStart = get_time_us();
+    res = readFromFlash(oid, testAddr, benchBuff, BENCH_BUF_SIZE);
+    tEnd = get_time_us();
+
+    if (res != (int)BENCH_BUF_SIZE) {
+        LOG_ERROR("[QSPI  4-4-4] Read failed");
+        free(benchBuff);
+        return -1;
+    }
+
+    timeUs = tEnd - tStart;
+    speedMBs = (timeUs > 0) ? (double)BENCH_BUF_SIZE / (double)timeUs : 0.0;
+    LOG_INFO("[QSPI  4-4-4] Time: %6llu us | Speed: %6.2f MB/s", (unsigned long long)timeUs, speedMBs);
+
+    LOG_INFO("=== END READ BENCHMARK ===");
 
     free(benchBuff);
     return EOK;
@@ -678,6 +691,7 @@ int test_readBenchmark(void)
 
 int test_writeBenchmark(void)
 {
+    int res;
     oid_t oid;
     uint8_t *txBuff;
     uint8_t *rxBuff;
@@ -700,13 +714,27 @@ int test_writeBenchmark(void)
         txBuff[i] = (uint8_t)(i & 0xFF);
     }
 
-    LOG_ERROR("=== START WRITE BENCHMARK (%d KB) ===", BENCH_BUF_SIZE / 1024);
+    LOG_INFO("=== START WRITE BENCHMARK (%d KB) ===", BENCH_BUF_SIZE / 1000);
 
-    run_write_test_mode(oid, BSPI, "BSPI  1-1-1", txBuff, rxBuff);
+    /* Test BSPI */
+    res = run_write_test_mode(oid, BSPI, "BSPI  1-1-1", txBuff, rxBuff);
+    if (res < 0) {
+        LOG_ERROR("BSPI write benchmark failed");
+        free(txBuff);
+        free(rxBuff);
+        return res;
+    }
 
-    run_write_test_mode(oid, QSPI, "QSPI  4-4-4", txBuff, rxBuff);
+    /* Test QSPI */
+    res = run_write_test_mode(oid, QSPI, "QSPI  4-4-4", txBuff, rxBuff);
+    if (res < 0) {
+        LOG_ERROR("QSPI write benchmark failed");
+        free(txBuff);
+        free(rxBuff);
+        return res;
+    }
 
-    LOG_ERROR("=== END WRITE BENCHMARK ===");
+    LOG_INFO("=== END WRITE BENCHMARK ===");
 
     free(txBuff);
     free(rxBuff);
