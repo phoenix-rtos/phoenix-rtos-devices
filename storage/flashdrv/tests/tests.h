@@ -42,5 +42,7 @@ extern int test_flashsrv_invalidOffsetBounds(void);
 extern int test_flashsrv_unsupportedMsgType(void);
 extern int test_setSPIMode(void);
 extern int test_setSPIModeDifferentPartition(void);
+extern int test_readBenchmark(void);
+extern int test_writeBenchmark(void);
 
 #endif /* _FLASHSRV_TESTS_H_ */
