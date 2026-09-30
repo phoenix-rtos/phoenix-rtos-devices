@@ -32,6 +32,7 @@ typedef enum {
 
 typedef enum {
 	BSPI, /* Basic SPI */
+	DOUT, /* Dual Output SPI */
 	DSPI, /* Dual SPI */
 	QOUT, /* Quad Output SPI */
 	QSPI, /* Quad SPI */
