@@ -66,7 +66,7 @@ void spimctrl_destroy(struct spimctrl *spimctrl);
 void spimctrl_oneSPI(struct spimctrl *spimctrl);
 
 
-/* Enter dual output SPI mode (1-2-2) */
+/* Enter dual output SPI mode (1-1-2) on read. Write page is executed in default SPI mode (1-1-1) */
 void spimctrl_doutSPI(struct spimctrl *spimctrl);
 
 
@@ -74,7 +74,7 @@ void spimctrl_doutSPI(struct spimctrl *spimctrl);
 void spimctrl_dSPI(struct spimctrl *spimctrl);
 
 
-/* Enter quad output SPI mode (1-4-4) */
+/* Enter quad output SPI mode (1-1-4) on read. Write page is executed in default SPI mode (1-1-1) */
 void spimctrl_qoutSPI(struct spimctrl *spimctrl);
 
 
