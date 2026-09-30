@@ -47,10 +47,10 @@ int main(int argc, char **argv)
     // TEST_CASE(test_flashsrv_highAddressBoundary());
     // TEST_CASE(test_flashsrv_invalidOffsetBounds());
     // TEST_CASE(test_flashsrv_unsupportedMsgType());
-    TEST_CASE(test_setSPIMode());
+    // TEST_CASE(test_setSPIMode());
     // TEST_CASE(test_setSPIModeDifferentPartition());
-    // TEST_CASE(test_readBenchmark());
-    // TEST_CASE(test_writeBenchmark());
+    TEST_CASE(test_readBenchmark());
+    TEST_CASE(test_writeBenchmark());
 #endif
 
     return 0;

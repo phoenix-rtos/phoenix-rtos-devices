@@ -12,6 +12,9 @@
  */
 
 
+#define LOG_MODULE "flashdrv"
+
+
 #include <board_config.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -24,9 +27,7 @@
 #include <flashdrv/flashsrv.h>
 
 #include "flashdrv.h"
-
 #include "interface.h"
-
 
 #define LIBCACHE_LINECNT 1024
 #define LIBCACHE_POLICY  LIBCACHE_WRITE_THROUGH

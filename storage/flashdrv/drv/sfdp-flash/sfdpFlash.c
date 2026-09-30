@@ -12,6 +12,10 @@
  * %LICENSE%
  */
 
+
+#define LOG_MODULE "sfdpFlash"
+
+
 #include <errno.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -71,21 +75,6 @@ static int nor_readId(struct spimctrl *spimctrl, uint32_t *id)
 {
 	struct xferOp xfer;
 	const uint8_t cmd = FLASH_CMD_RDID;
-
-	xfer.type = xfer_opRead;
-	xfer.cmd = &cmd;
-	xfer.cmdLen = 1;
-	xfer.rxData = (uint8_t *)id;
-	xfer.dataLen = 3;
-
-	return spimctrl_xfer(spimctrl, &xfer);
-}
-
-
-static int nor_readIdMulti(struct spimctrl *spimctrl, uint32_t *id)
-{
-	struct xferOp xfer;
-	const uint8_t cmd = 0xAFu;
 
 	xfer.type = xfer_opRead;
 	xfer.cmd = &cmd;
@@ -168,7 +157,6 @@ static int nor_selectAddressMode(struct spimctrl *spimctrl)
 		if (res < EOK) {
 			return res;
 		}
-		printf("4 byte on \n");
 
 		return EOK;
 	#else
@@ -618,10 +606,8 @@ static int nor_writeEnhancedVolatileConfReg(struct spimctrl *spimctrl, uint8_t v
 
     res = nor_writeEnable(spimctrl, write_enable);
     if (res < EOK) {
-		printf("didnt enable \n");
         return res;
     }
-	printf(" enabled \n");
 
     cmd = FLASH_CMD_WRITE_EVCR;
     xfer.type = xfer_opWrite;
@@ -643,40 +629,14 @@ static int nor_readEVCR(struct spimctrl *spimctrl, uint8_t *val)
 {
     int res;
     struct xferOp xfer;
-    uint8_t rx[2] = {0};
+    uint8_t rx = 0;
     const uint8_t cmd = FLASH_CMD_RDEVCR; // 0x65
 
     xfer.type = xfer_opRead;
     xfer.cmd = &cmd;
     xfer.cmdLen = 1;
-    xfer.rxData = rx;
-    xfer.dataLen = 2; 
-
-    res = spimctrl_xfer(spimctrl, &xfer);
-    if (res < EOK) {
-        return res;
-    }
-
-    *val = (rx[0] != 0xFF) ? rx[0] : rx[1];
-	printf("read rx %d\n", rx[0]);
-	printf("read rx %d\n", rx[1]);
-
-    return EOK;
-}
-
-
-static int nor_readSR(struct spimctrl *spimctrl, uint8_t *val)
-{
-    int res;
-    struct xferOp xfer;
-    uint8_t rx = 0;
-    const uint8_t cmd = FLASH_CMD_RDSR;
-
-    xfer.type = xfer_opRead;
-    xfer.cmd = &cmd;
-    xfer.cmdLen = 1;
     xfer.rxData = &rx;
-    xfer.dataLen = 2; 
+    xfer.dataLen = 1; 
 
     res = spimctrl_xfer(spimctrl, &xfer);
     if (res < EOK) {
@@ -684,7 +644,6 @@ static int nor_readSR(struct spimctrl *spimctrl, uint8_t *val)
     }
 
     *val = rx;
-	printf("read sr %d\n", rx);
 
     return EOK;
 }
@@ -706,11 +665,14 @@ static int nor_validateEVCR(struct spimctrl *spimctrl, SPIMode_t spiMode)
     {
         case BSPI:
 			break;
-        case QOUT:
+		case DOUT:
+			expectedBits &= ~EVCR_DQ3_MASK;
+            break;	
+		case DSPI:
+            expectedBits &= ~EVCR_DUAL_MASK;
 			expectedBits &= ~EVCR_DQ3_MASK;
             break;
-        case DSPI:
-            expectedBits &= ~EVCR_DUAL_MASK;
+        case QOUT:
 			expectedBits &= ~EVCR_DQ3_MASK;
             break;
         case QSPI:
@@ -725,9 +687,6 @@ static int nor_validateEVCR(struct spimctrl *spimctrl, SPIMode_t spiMode)
         LOG_ERROR("EVCR write mismatch! Got: 0x%02x\n", checkEvcr);
         return -EIO;
     }
-	else {
-		printf("(Remove later) EVCR: 0x%02x\n", checkEvcr);
-	}
 
 	return EOK;
 }
@@ -742,11 +701,14 @@ static int nor_enterSPIMode(struct spimctrl *spimctrl, SPIMode_t spiMode)
     {
         case BSPI:
 			break;
-        case QOUT:
+		case DOUT:
+			evcr &= ~EVCR_DQ3_MASK;
+            break;		
+		case DSPI:
+            evcr &= ~EVCR_DUAL_MASK;
 			evcr &= ~EVCR_DQ3_MASK;
             break;
-        case DSPI:
-            evcr &= ~EVCR_DUAL_MASK;
+        case QOUT:
 			evcr &= ~EVCR_DQ3_MASK;
             break;
         case QSPI:
@@ -756,8 +718,6 @@ static int nor_enterSPIMode(struct spimctrl *spimctrl, SPIMode_t spiMode)
         default:
             return -EINVAL;
     }
-
-	printf("evcr: %d \n", evcr);
 	
     res = nor_writeEnhancedVolatileConfReg(spimctrl, evcr);
     if (res < EOK) {
@@ -770,10 +730,6 @@ static int nor_enterSPIMode(struct spimctrl *spimctrl, SPIMode_t spiMode)
 
 int nor_selSPIMode(struct spimctrl *spimctrl, SPIMode_t spiMode)
 {
-	uint8_t checkEvcr = 0;
-	uint8_t checkSr = 0;
-	uint32_t jedecId = 0;
-
 	int res;
 	res = nor_enterSPIMode(spimctrl, spiMode);
 	if (res < EOK) {
@@ -787,43 +743,26 @@ int nor_selSPIMode(struct spimctrl *spimctrl, SPIMode_t spiMode)
 			PAGE_PROGRAM = FLASH_CMD_PP; PAGE_PROGRAM_4BYTE = FLASH_CMD_4B_PP;
 			spimctrl_oneSPI(spimctrl);
 
-			res = EOK;
 			break;
+		case DOUT:
+			READ_CMD = FLASH_CMD_DOUTPUT_FASTREAD; READ_4BYTE_CMD = FLASH_CMD_4B_DOUTPUT_FASTREAD;
+			PAGE_PROGRAM = FLASH_CMD_PP; PAGE_PROGRAM_4BYTE = FLASH_CMD_4B_PP;
+			spimctrl_oneSPI(spimctrl);
+
+			break;		
 
 		case DSPI:
 			READ_CMD = FLASH_CMD_DIO_FASTREAD; READ_4BYTE_CMD = FLASH_CMD_4B_DIO_FASTREAD;
 			PAGE_PROGRAM = FLASH_CMD_DIN_FP; PAGE_PROGRAM_4BYTE = FLASH_CMD_4B_PP;
 			spimctrl_dSPI(spimctrl);
 
-			nor_readSR(spimctrl, &checkSr);
-			nor_readEVCR(spimctrl, &checkEvcr);
-
-			printf("(Remove later) EVCR: 0x%02x\n", checkEvcr);
-			printf("(Remove later) SR: 0x%02x\n", checkSr);
-
-			jedecId = 0;
-			nor_readIdMulti(spimctrl, &jedecId);
-			printf("id %d\n", jedecId);
-
-			res = EOK;
 			break;
 
 		case QOUT:
 			READ_CMD = FLASH_CMD_QOUTPUT_FASTREAD; READ_4BYTE_CMD = FLASH_CMD_4B_QOUTPUT_FASTREAD;
-			PAGE_PROGRAM = FLASH_CMD_QIN_FP; PAGE_PROGRAM_4BYTE = FLASH_CMD_4B_QIN_FP;
+			PAGE_PROGRAM = FLASH_CMD_PP; PAGE_PROGRAM_4BYTE = FLASH_CMD_4B_PP;
 			spimctrl_qoutSPI(spimctrl);
 
-			nor_readSR(spimctrl, &checkSr);
-			nor_readEVCR(spimctrl, &checkEvcr);
-
-			printf("(Remove later) EVCR: 0x%02x\n", checkEvcr);
-			printf("(Remove later) SR: 0x%02x\n", checkSr);
-
-			jedecId = 0;
-			nor_readIdMulti(spimctrl, &jedecId);
-			printf("id %d\n", jedecId);
-
-			res = EOK;
 			break;
 
 		case QSPI:
@@ -831,22 +770,12 @@ int nor_selSPIMode(struct spimctrl *spimctrl, SPIMode_t spiMode)
 			PAGE_PROGRAM = FLASH_CMD_EXTENDED_QIN_FP; PAGE_PROGRAM_4BYTE = FLASH_CMD_4B_EXTENDED_QIN_FP;			
 			spimctrl_qSPI(spimctrl);
 
-			nor_readSR(spimctrl, &checkSr);
-			nor_readEVCR(spimctrl, &checkEvcr);
-
-			printf("(Remove later) EVCR: 0x%02x\n", checkEvcr);
-			printf("(Remove later) SR: 0x%02x\n", checkSr);
-
-
-			jedecId = 0;
-			nor_readIdMulti(spimctrl, &jedecId);
-			printf("id %d\n", jedecId);
-			res = EOK;
 			break;
 		
 		default:
 			LOG_ERROR("No such SPI mode \n");
 			res = -EINVAL;
+			
 			break;
 	}
 
