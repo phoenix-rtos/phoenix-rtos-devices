@@ -373,6 +373,59 @@ int test_flashsrv_erasePartition(void)
 }
 
 
+int test_flashsrv_eraseChip(void)
+{
+    oid_t oid;
+    const char *part_path = "/dev/mtd0";
+
+    LOG_INFO("Starting eraseChip test");
+
+    while (lookup(part_path, NULL, &oid) < 0) {
+        usleep(10000);
+    }
+
+    if (eraseChip(oid) < 0) {
+        LOG_ERROR("eraseChip failed on %s", part_path);
+        return -1;
+    }
+
+    long long flashSize = 0;
+    if (getAttrFlash(oid, atSize, &flashSize) < 0 || flashSize <= 0) {
+        LOG_ERROR("Failed to get flash size for %s!", part_path);
+        return -1;
+    }
+
+    LOG_INFO("Flash size: 0x%llx (%lld MB)", flashSize, flashSize / (1024 * 1024));
+
+    /* Verify selected sectors */
+    const size_t checkLen = 0x100;
+    uint8_t buff[checkLen];
+
+    const size_t numTests = 10;
+    const off_t step = (flashSize - checkLen) / (numTests - 1);
+
+    for (size_t k = 0; k < numTests; k++) {
+        off_t offs = (k == numTests - 1) ? (off_t)(flashSize - checkLen) : (off_t)(k * step);
+
+        if (readFromFlash(oid, offs, buff, checkLen) != (int)checkLen) {
+            LOG_ERROR("Failed to read flash after eraseChip at offset 0x%lx", (unsigned long)offs);
+            return -1;
+        }
+
+        for (size_t i = 0; i < checkLen; i++) {
+            if (buff[i] != 0xFF) {
+                LOG_ERROR("Erase chip check failed at 0x%lx: expected 0xFF, got 0x%02X",
+                          (unsigned long)(offs + i), buff[i]);
+                return -1;
+            }
+        }
+    }
+
+    LOG_INFO("eraseChip test PASSED");
+    return EOK;
+}
+
+
 int test_flashsrv_writeCrossPageBoundary(void)
 {
     oid_t oid;
