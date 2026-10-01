@@ -435,7 +435,7 @@ static int flashdrv_erase(storage_t *strg, flash_i_devctl_t *devctl)
 			break;
 
 		case flashdrv_devctl_eraseChip:
-			TRACE("MtDevCtl: erasing entire memory");
+			LOG_INFO("MtDevCtl: erasing entire memory");
 
 			time_t chipErase_timeout = flash_timeout(ctx, eraseChip);
 			mutexLock(strg->dev->ctx->lock);

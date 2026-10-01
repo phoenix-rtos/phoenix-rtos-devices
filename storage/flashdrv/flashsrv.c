@@ -467,8 +467,8 @@ static int flashsrv_partAdd(storage_t *parent, uint32_t offset, uint32_t size, c
 		return res;
 	}
 
-	TRACE("initialized partition %s: offset=%u, size=%u", name, offset, size);
-	TRACE("%s.%s\n", STRG_PATH, name);
+	LOG_INFO("initialized partition %s: offset=%u, size=%u", name, offset, size);
+	LOG_INFO("%s.%s\n", STRG_PATH, name);
 
 	return 0;
 }
