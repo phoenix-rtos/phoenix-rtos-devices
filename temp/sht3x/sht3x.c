@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
+#include <stdbool.h>
 
 #include <sys/msg.h>
 #include <posix/utils.h>
@@ -31,6 +32,7 @@
 
 static struct {
 	int devAddr;
+	bool isInitialized;
 } common;
 
 
@@ -178,6 +180,9 @@ static int devctl(msg_t *msg)
 			}
 
 			ret = setCmd(cmd);
+			if (ret >= 0) {
+				common.isInitialized = true;
+			}
 		} break;
 
 		case sht3x_typeCmd:
@@ -229,6 +234,12 @@ static void thread(void *arg)
 				break;
 
 			case mtRead: {
+				if (!common.isInitialized) {
+					/* With the current logic, if a sensor is connected without prior configuration, it will
+					 * return EAGAIN errors on readouts */
+					msg.o.err = -EIO;
+					break;
+				}
 				int ret = getMeasurement(&temp, &rh);
 				if (ret < 0 && ret != -EAGAIN) { /* If new measurement is not ready, then send previous value */
 					msg.o.err = ret;
@@ -300,20 +311,26 @@ int main(int argc, char **argv)
 		common.devAddr = strtoul(argv[3], NULL, 0);
 	}
 
+	/* Ignore sensor initialization failures so the device is created anyway.
+	 * If sensor is connected later, read operations will check common.isInitialized
+	 * to handle failures. */
+	common.isInitialized = false;
 	uint16_t status;
 	int ret = getStatus(&status);
 	if (ret < 0) {
 		printf("sht3x: status readout error %d\n", ret);
-		return 4;
+	}
+	else {
+		ret = setCmd(periodic2cmd(sht3x_repeatabilityLow, sht3x_freq1Hz));
+		if (ret < 0) {
+			printf("sht3x: measurement setup error %d\n", ret);
+		}
+		else {
+			printf("sht3x: initialized, status: %2x\n", status);
+			common.isInitialized = true;
+		}
 	}
 
-	ret = setCmd(periodic2cmd(sht3x_repeatabilityLow, sht3x_freq1Hz));
-	if (ret < 0) {
-		printf("sht3x: measurement setup error %d\n", ret);
-		return 5;
-	}
-
-	printf("sht3x: initialized, status: %2x\n", status);
 	thread((void *)port);
 
 	/* Should never happen */
