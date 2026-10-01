@@ -36,6 +36,7 @@ extern int test_flashsrv_writeAndReadPage(void);
 extern int test_flashsrv_writeAndReadUnaligned(void);
 extern int test_flashsrv_eraseVerification(void);
 extern int test_flashsrv_erasePartition(void);
+extern int test_flashsrv_eraseChip(void);
 extern int test_flashsrv_writeCrossPageBoundary(void);
 extern int test_flashsrv_highAddressBoundary(void);
 extern int test_flashsrv_invalidOffsetBounds(void);
