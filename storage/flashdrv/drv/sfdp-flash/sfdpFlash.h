@@ -30,10 +30,10 @@
 int nor_waitBusy(struct spimctrl *spimctrl, time_t timeout);
 
 
-int nor_eraseDie(struct spimctrl *spimctrl, time_t timeout, uint8_t selDie);
+int nor_eraseDie(const struct _storage_devCtx_t *ctx, time_t timeout, uint8_t selDie);
 
 
-int nor_eraseChip(struct spimctrl *spimctrl, time_t timeout);
+int nor_eraseChip(const struct _storage_devCtx_t *ctx, time_t timeout);
 
 
 int nor_eraseSubSector(struct spimctrl *spimctrl, addr_t addr, time_t timeout);

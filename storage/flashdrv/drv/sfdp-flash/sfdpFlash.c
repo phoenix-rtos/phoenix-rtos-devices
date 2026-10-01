@@ -265,15 +265,18 @@ int nor_waitBusy(struct spimctrl *spimctrl, time_t timeout)
 }
 
 
-int nor_eraseDie(struct spimctrl *spimctrl, time_t timeout, uint8_t selDie)
+int nor_eraseDie(const struct _storage_devCtx_t *ctx, time_t timeout, uint8_t selDie)
 {
     int res;
 	uint8_t cmd[5];
 	struct xferOp xfer;
 
+	size_t flash_size;
+	flash_size = (ctx->flash_data.sfdp->totalSz);
+
     addr_t addr = 0x00000000u;
     addr_t addr0 = 0x00000000u;
-    addr_t addr1 = 0x04000000u;
+	addr_t addr1 = flash_size / 2;
 
     if (flashInfo[activeDeviceIdx].stacked == 1) {
         res = -EINVAL;
@@ -281,20 +284,22 @@ int nor_eraseDie(struct spimctrl *spimctrl, time_t timeout, uint8_t selDie)
     }
 
     if (selDie == 0) {
+		LOG_INFO("Erasing first die \n");
         addr = addr0;
     }
     else if (selDie == 1) {
+		LOG_INFO("Erasing second die \n");
         addr = addr1;
     }
 
-    if ((!spimctrl->extendedAddress)) {
+    if ((!ctx->spimctrl->extendedAddress)) {
 
 		cmd[0] = FLASH_CMD_DE;
         cmd[1] = (addr >> 16) & 0xff;
         cmd[2] = (addr >> 8) & 0xff;
         cmd[3] = addr & 0xff;
 
-        res = nor_validateEar(spimctrl, addr);
+        res = nor_validateEar(ctx->spimctrl, addr);
         if (res < EOK) {
             return res;
         }
@@ -314,7 +319,7 @@ int nor_eraseDie(struct spimctrl *spimctrl, time_t timeout, uint8_t selDie)
 		xfer.cmdLen = 5;
     }
 
-    res = nor_writeEnable(spimctrl, write_enable);
+    res = nor_writeEnable(ctx->spimctrl, write_enable);
     if (res < EOK) {
         return res;
     }
@@ -323,24 +328,25 @@ int nor_eraseDie(struct spimctrl *spimctrl, time_t timeout, uint8_t selDie)
     xfer.txData = NULL;
     xfer.dataLen = 0;
 
-    res = spimctrl_xfer(spimctrl, &xfer);
+    res = spimctrl_xfer(ctx->spimctrl, &xfer);
 	if (res < EOK) {
 		return res;
 	}
 
-	return nor_waitBusy(spimctrl, timeout);
+	return nor_waitBusy(ctx->spimctrl, timeout);
 }
 
 
-int nor_eraseChip(struct spimctrl *spimctrl, time_t timeout)
+int nor_eraseChip(const struct _storage_devCtx_t *ctx, time_t timeout)
 {
 	int res = ENODEV;
 	struct xferOp xfer;
 
     if(flashInfo[activeDeviceIdx].stacked == 1) {
         const uint8_t cmd = FLASH_CMD_CE;
+		LOG_INFO("Erasing single chip device \n");
 
-        res = nor_writeEnable(spimctrl, write_enable);
+        res = nor_writeEnable(ctx->spimctrl, write_enable);
         if (res < EOK) {
             return res;
         }
@@ -351,16 +357,20 @@ int nor_eraseChip(struct spimctrl *spimctrl, time_t timeout)
         xfer.txData = NULL;
         xfer.dataLen = 0;
 
-        res = spimctrl_xfer(spimctrl, &xfer);
+        res = spimctrl_xfer(ctx->spimctrl, &xfer);
         if (res < EOK) {
             return res;
         }
 
-        res = nor_waitBusy(spimctrl, timeout);
+        res = nor_waitBusy(ctx->spimctrl, timeout);
     }
     else if (flashInfo[activeDeviceIdx].stacked == 2) {
-        res = nor_eraseDie(spimctrl, timeout, 0);
-        res = nor_eraseDie(spimctrl, timeout, 1);
+		LOG_INFO("Erasing stacked device \n");
+        res = nor_eraseDie(ctx, timeout, 0);
+		if (res < EOK) {
+			return res;
+		}
+        res = nor_eraseDie(ctx, timeout, 1);
     }
 
     return res;
