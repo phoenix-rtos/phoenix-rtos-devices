@@ -212,7 +212,7 @@ int flash_chipErase(const struct _storage_devCtx_t *ctx, time_t timeout)
         return spimctrl_flash_chipErase(ctx, timeout);
     }
     else {
-        return nor_eraseChip(ctx->spimctrl, timeout);
+        return nor_eraseChip(ctx, timeout);
     }
 }
 
