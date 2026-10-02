@@ -13,6 +13,10 @@
  * %LICENSE%
  */
 
+
+#define LOG_MODULE "flashsrv"
+
+
 #include <errno.h>
 #include <endian.h>
 #include <signal.h>
@@ -28,7 +32,6 @@
 
 #include <ptable.h>
 #include <storage/storage.h>
-
 #include <flashdrv/flashsrv.h>
 
 #if FLASHSRV_ENABLE_JFFS2
@@ -61,6 +64,7 @@ static struct {
 	size_t ndrivers;
 } common;
 
+static const struct flash_driver *f_driver = NULL;
 
 /* Flash server operations */
 
@@ -148,6 +152,19 @@ static int flashsrv_getAttr(storage_t *strg, int type, long long *attr)
 }
 
 
+static int flashsrv_devCtl(storage_t *strg, msg_t *msg)
+{
+	if ((strg == NULL) || (strg->dev == NULL)) {
+		return -EINVAL;
+	}
+
+	flash_i_devctl_t *idevctl = (flash_i_devctl_t *)msg->i.raw;
+	TRACE("Device ID: %ju", (uintmax_t)msg->oid.id);
+
+	return f_driver->devCtl(strg, idevctl);
+}
+
+
 static void flashsrv_msgHandler(void *arg, msg_t *msg)
 {
 	storage_t *strg;
@@ -203,6 +220,12 @@ static void flashsrv_msgHandler(void *arg, msg_t *msg)
 			msg->o.err = storage_mountpoint(storage_get(msg->oid.id), &omnt->oid);
 			break;
 
+		case mtDevCtl:
+			TRACE("mtDevCtl: id: %ju", (uintmax_t)msg->oid.id);
+			strg = storage_get(msg->oid.id);
+			msg->o.err = flashsrv_devCtl(strg, msg);
+			break;
+
 		default:
 			TRACE("unknown: %d", msg->type);
 			msg->o.err = -ENOSYS;
@@ -227,7 +250,7 @@ static int flashsrv_mountRoot(const char *name, const char *fstype)
 		return res;
 	}
 
-	LOG("Mounting %s as %s root filesystem", path, fstype);
+	LOG_INFO("Mounting %s as %s root filesystem", path, fstype);
 
 	res = storage_mountfs(storage_get(oid.id), fstype, NULL, 0, NULL, &oid);
 	if (res < 0) {
@@ -369,6 +392,14 @@ static ptable_t *flashsrv_ptableRead(storage_t *strg)
 	}
 
 	if (memcmp(magic, ptable_magic, sizeof(magic)) != 0) {
+		uint8_t raw_head[16];
+		flashsrv_read(strg, offs, raw_head, sizeof(raw_head));
+
+		(void)printf("PTABLE DIAG: offs=0x%08lx | head=[%02x %02x %02x %02x] | magic_offs=0x%08lx | magic_read=[%02x %02x %02x %02x]\n",
+				(unsigned long)offs,
+				raw_head[0], raw_head[1], raw_head[2], raw_head[3],
+				(unsigned long)(offs + size - sizeof(magic)),
+				magic[0], magic[1], magic[2], magic[3]);
 		return NULL;
 	}
 
@@ -436,7 +467,8 @@ static int flashsrv_partAdd(storage_t *parent, uint32_t offset, uint32_t size, c
 		return res;
 	}
 
-	TRACE("initialized partition %s: offset=%u, size=%u", name, offset, size);
+	LOG_INFO("initialized partition %s: offset=%u, size=%u", name, offset, size);
+	LOG_INFO("%s.%s\n", STRG_PATH, name);
 
 	return 0;
 }
@@ -546,6 +578,8 @@ int main(int argc, char **argv)
 		flashsrv_help(argv[0]);
 		exit(EXIT_FAILURE);
 	}
+
+	f_driver = opts.driver;
 
 	/* Initialize storage library with the message handler for the flash memory */
 	err = storage_init(flashsrv_msgHandler, 16);
