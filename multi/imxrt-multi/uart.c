@@ -24,8 +24,9 @@
 #include <sys/threads.h>
 
 #include <libtty.h>
-#include <libtty-lf-fifo.h>
 #include <libklog.h>
+
+#include "lf-fifo.h"
 
 #include "gpio.h"
 #include "common.h"
