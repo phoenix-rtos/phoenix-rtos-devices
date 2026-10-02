@@ -413,8 +413,8 @@ static int flashdrv_erase(storage_t *strg, flash_i_devctl_t *devctl)
 			TRACE("MtDevCtl: flashdrv_devctl_eraseSector - size: %zu, off: %u",
 					devctl->erase.size, devctl->erase.addr);
 
-			if (devctl->erase.addr >= strg->size) {
-				LOG_ERROR("Address exceeds the storage size");
+			if (!common_isValidAddress(strg->size, devctl->erase.addr, devctl->erase.size)) {
+				LOG_ERROR("Address or erase size exceeds the storage size");
 				return -EINVAL;
 			}
 
