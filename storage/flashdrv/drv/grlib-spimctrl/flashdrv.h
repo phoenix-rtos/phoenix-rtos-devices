@@ -34,7 +34,7 @@ struct _storage_devCtx_t {
 		cfi_info_t cfi;
 		const struct nor_info *sfdp;
 	} flash_data;
-	
+
 	const struct flash_dev *dev;
 	bool isCfi;
 	struct spimctrl *spimctrl;

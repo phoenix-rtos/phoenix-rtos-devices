@@ -396,10 +396,10 @@ static ptable_t *flashsrv_ptableRead(storage_t *strg)
 		flashsrv_read(strg, offs, raw_head, sizeof(raw_head));
 
 		(void)printf("PTABLE DIAG: offs=0x%08lx | head=[%02x %02x %02x %02x] | magic_offs=0x%08lx | magic_read=[%02x %02x %02x %02x]\n",
-					(unsigned long)offs,
-					raw_head[0], raw_head[1], raw_head[2], raw_head[3],
-					(unsigned long)(offs + size - sizeof(magic)),
-					magic[0], magic[1], magic[2], magic[3]);
+				(unsigned long)offs,
+				raw_head[0], raw_head[1], raw_head[2], raw_head[3],
+				(unsigned long)(offs + size - sizeof(magic)),
+				magic[0], magic[1], magic[2], magic[3]);
 		return NULL;
 	}
 

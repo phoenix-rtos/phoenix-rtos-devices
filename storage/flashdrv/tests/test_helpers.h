@@ -32,9 +32,9 @@
 
 #include "tests.h"
 
-#define BENCH_BUF_SIZE  (1024 * 1024) 
-#define PAGE_SIZE         256
-#define SECTOR_SIZE       0x10000
+#define BENCH_BUF_SIZE (1024 * 1024)
+#define PAGE_SIZE      256
+#define SECTOR_SIZE    0x10000
 
 uint64_t get_time_us(void);
 
@@ -63,10 +63,10 @@ int readFromFlash(oid_t oid, off_t offs, void *data, size_t size);
 int getAttrFlash(oid_t oid, int type, long long *val);
 
 
-int erase_write_read_print(oid_t oid, const off_t testAddr, const size_t testSize, const size_t sectorSize, 
-                        const uint8_t checkPattern, const char* part_path);
+int erase_write_read_print(oid_t oid, const off_t testAddr, const size_t testSize, const size_t sectorSize,
+		const uint8_t checkPattern, const char *part_path);
 
-int run_write_test_mode(oid_t oid, SPIMode_t mode, const char *modeName, 
-                        const uint8_t *txBuff, uint8_t *rxBuff);
+int run_write_test_mode(oid_t oid, SPIMode_t mode, const char *modeName,
+		const uint8_t *txBuff, uint8_t *rxBuff);
 
 #endif /* _TEST_HELPERS_H_ */

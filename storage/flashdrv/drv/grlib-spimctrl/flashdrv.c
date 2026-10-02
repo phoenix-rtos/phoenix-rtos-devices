@@ -81,13 +81,13 @@ static int flashdrv_mtdRead(storage_t *strg, off_t offs, void *buff, size_t len,
 {
 	mutexLock(strg->dev->ctx->lock);
 
-	#if (USE_CACHE)
-		int ret = cache_read(strg->dev->ctx->cache, offs, buff, len);
-	#else
-		size_t rlen;
-		int ret = _flashdrv_mtdRead(strg, offs, buff, len, &rlen);
-	#endif /* USE_CACHE */
-	
+#if (USE_CACHE)
+	int ret = cache_read(strg->dev->ctx->cache, offs, buff, len);
+#else
+	size_t rlen;
+	int ret = _flashdrv_mtdRead(strg, offs, buff, len, &rlen);
+#endif /* USE_CACHE */
+
 	mutexUnlock(strg->dev->ctx->lock);
 
 	if (ret < 0) {
@@ -95,11 +95,11 @@ static int flashdrv_mtdRead(storage_t *strg, off_t offs, void *buff, size_t len,
 	}
 	else {
 
-		#if (USE_CACHE)
-			*retlen = len;
-		#else
-			*retlen = rlen;
-		#endif /* USE_CACHE */
+#if (USE_CACHE)
+		*retlen = len;
+#else
+		*retlen = rlen;
+#endif /* USE_CACHE */
 
 		ret = 0;
 	}
@@ -172,12 +172,12 @@ static int flashdrv_mtdWrite(storage_t *strg, off_t offs, const void *buff, size
 {
 	mutexLock(strg->dev->ctx->lock);
 
-	#if (USE_CACHE)
-		int ret = cache_write(strg->dev->ctx->cache, offs, buff, len, LIBCACHE_POLICY);
-	#else
-		size_t rlen;
-		int ret = _flashdrv_mtdWrite(strg, offs, buff, len, &rlen);
-	#endif /* USE_CACHE */
+#if (USE_CACHE)
+	int ret = cache_write(strg->dev->ctx->cache, offs, buff, len, LIBCACHE_POLICY);
+#else
+	size_t rlen;
+	int ret = _flashdrv_mtdWrite(strg, offs, buff, len, &rlen);
+#endif /* USE_CACHE */
 
 	mutexUnlock(strg->dev->ctx->lock);
 
@@ -186,11 +186,11 @@ static int flashdrv_mtdWrite(storage_t *strg, off_t offs, const void *buff, size
 	}
 	else {
 
-		#if (USE_CACHE)
-			*retlen = len;
-		#else
-			*retlen = rlen;
-		#endif /* USE_CACHE */
+#if (USE_CACHE)
+		*retlen = len;
+#else
+		*retlen = rlen;
+#endif /* USE_CACHE */
 
 		ret = 0;
 	}
@@ -246,9 +246,9 @@ static int flashdrv_mtdErase(storage_t *strg, off_t offs, size_t len)
 		}
 	}
 
-	#if (USE_CACHE)
-		res = cache_invalidate(ctx->cache, offs, end);
-	#endif /* USE_CACHE */
+#if (USE_CACHE)
+	res = cache_invalidate(ctx->cache, offs, end);
+#endif /* USE_CACHE */
 
 	mutexUnlock(ctx->lock);
 
@@ -408,28 +408,27 @@ static int flashdrv_erase(storage_t *strg, flash_i_devctl_t *devctl)
 	int res;
 	struct _storage_devCtx_t *ctx = strg->dev->ctx;
 
-	switch (devctl->erase.type)
-	{
+	switch (devctl->erase.type) {
 		case flashdrv_devctl_eraseSector:
-            TRACE("MtDevCtl: flashdrv_devctl_eraseSector - size: %zu, off: %u",
-                devctl->erase.size, devctl->erase.addr);
+			TRACE("MtDevCtl: flashdrv_devctl_eraseSector - size: %zu, off: %u",
+					devctl->erase.size, devctl->erase.addr);
 
-            if (devctl->erase.addr >= strg->size) {
+			if (devctl->erase.addr >= strg->size) {
 				LOG_ERROR("Address exceeds the storage size");
-                return -EINVAL;
-            }
+				return -EINVAL;
+			}
 
 			res = flashdrv_mtdErase(strg, (strg->start + devctl->erase.addr), devctl->erase.size);
 			break;
 
 		case flashdrv_devctl_erasePartition:
-			size_t memsize = flash_size(ctx);		
+			size_t memsize = flash_size(ctx);
 			if (strg->size == memsize) {
 				LOG_ERROR("This is the main partition. To erase entire chip, select *flashdrv_devctl_eraseChip*. Operation aborted.");
 				return -EINVAL;
 			}
-			
-            TRACE("MtDevCtl: flashdrv_devctl_erasePartition - part_size: %zu", strg->size);
+
+			TRACE("MtDevCtl: flashdrv_devctl_erasePartition - part_size: %zu", strg->size);
 
 			res = flashdrv_mtdErase(strg, strg->start, strg->size);
 			break;
@@ -442,7 +441,7 @@ static int flashdrv_erase(storage_t *strg, flash_i_devctl_t *devctl)
 			res = flash_chipErase(ctx, chipErase_timeout);
 			mutexUnlock(strg->dev->ctx->lock);
 			break;
-	
+
 		default:
 			res = -EINVAL;
 			LOG_ERROR("No such erase type. ");
@@ -473,20 +472,19 @@ static int flashdrv_rawCtl(storage_t *strg, flash_i_devctl_t *devctl)
 	}
 
 	int res;
-    switch (devctl->type)
-    {
-        case flashdrv_devctl_Erase:
+	switch (devctl->type) {
+		case flashdrv_devctl_Erase:
 			res = flashdrv_erase(strg, devctl);
-            break;
+			break;
 
 		case flashdrv_devctl_SPIMode:
 			res = flashdrv_selSPIMode(strg, devctl);
 			break;
 
-        default:
-            res = -EINVAL;
-            break;
-    }
+		default:
+			res = -EINVAL;
+			break;
+	}
 
 	return res;
 }

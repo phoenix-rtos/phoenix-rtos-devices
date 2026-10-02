@@ -24,7 +24,7 @@ enum {
 
 typedef enum {
 	flashdrv_devctl_eraseSector,
-    flashdrv_devctl_erasePartition,
+	flashdrv_devctl_erasePartition,
 	flashdrv_devctl_eraseChip,
 	Erase_MAX
 } EraseType_t;
