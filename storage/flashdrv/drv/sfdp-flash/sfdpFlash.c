@@ -590,7 +590,7 @@ static ssize_t nor_readAhb(struct spimctrl *spimctrl, addr_t addr, void *data, s
 ssize_t nor_readData(struct spimctrl *spimctrl, addr_t addr, void *data, size_t size)
 {
 	if (!(spimctrl->extendedAddress)) {
-		if (((addr & 0xff000000) == 0) && (((addr + size) & 0xff000000) != 0)) {
+		if ((addr & 0xff000000) != ((addr + size - 1) & 0xff000000)) {
 			/* If we'd have to change EAR register during read,
 			 * read data through command (can be read without EAR change)
 			 */
