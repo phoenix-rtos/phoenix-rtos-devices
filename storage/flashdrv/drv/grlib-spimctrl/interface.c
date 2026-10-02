@@ -2,7 +2,7 @@
  * Phoenix-RTOS
  *
  * Interface wrapping around CFI and SFDP compatible flash devices.
- * 
+ *
  * TBD: if more standards are supported, a virtual table shall be implemented.
  *
  * Copyright 2026 Phoenix Systems
@@ -26,242 +26,237 @@
 
 static void readSFDP(struct _storage_devCtx_t *ctx)
 {
-    struct xferOp xfer;
-    uint8_t cmd[5];
-    uint8_t header[4] = {0};
+	struct xferOp xfer;
+	uint8_t cmd[5];
+	uint8_t header[4] = { 0 };
 
-    cmd[0] = FLASH_CMD_RDSFDP;
-    cmd[1] = 0x00;
-    cmd[2] = 0x00;
-    cmd[3] = 0x00;
+	cmd[0] = FLASH_CMD_RDSFDP;
+	cmd[1] = 0x00;
+	cmd[2] = 0x00;
+	cmd[3] = 0x00;
 	cmd[4] = 0x00;
 
-    xfer.type = xfer_opRead;
-    xfer.cmd = cmd;
-    xfer.cmdLen = sizeof(cmd);
-    xfer.rxData = header;
-    xfer.dataLen = sizeof(header);
+	xfer.type = xfer_opRead;
+	xfer.cmd = cmd;
+	xfer.cmdLen = sizeof(cmd);
+	xfer.rxData = header;
+	xfer.dataLen = sizeof(header);
 
-    spimctrl_xfer(ctx->spimctrl, &xfer);
+	spimctrl_xfer(ctx->spimctrl, &xfer);
 
 	if (memcmp(header, "SFDP", 4) == 0) {
-        ctx->isCfi = 0;
+		ctx->isCfi = 0;
 		LOG_INFO("Device supports SFDP!\n");
 	}
 	else {
-        ctx->isCfi = 1;
+		ctx->isCfi = 1;
 		LOG_INFO("Not an SFDP device (got: 0x%02X 0x%02X 0x%02X 0x%02X)\n",
-			header[0], header[1], header[2], header[3]);		
+				header[0], header[1], header[2], header[3]);
 	}
 }
 
 
 void flash_destroy(struct _storage_devCtx_t *ctx)
 {
-    if (ctx->isCfi) {
-        spimctrl_flash_destroy(ctx);
-    }
-    else {
-        nor_destroy(ctx);
-    }
+	if (ctx->isCfi) {
+		spimctrl_flash_destroy(ctx);
+	}
+	else {
+		nor_destroy(ctx);
+	}
 }
 
 
 int flash_init(struct _storage_devCtx_t *ctx, addr_t flashBase)
 {
-    int res = 0;
+	int res = 0;
 
-    nor_forceRecoveryToSingleSPI(ctx->spimctrl);
-    readSFDP(ctx);
+	nor_forceRecoveryToSingleSPI(ctx->spimctrl);
+	readSFDP(ctx);
 
-    if (ctx->isCfi) {
-        res = spimctrl_flash_init(ctx, flashBase);
-    }
-    else {
-        res = nor_flash_init(ctx, flashBase);
-    }
+	if (ctx->isCfi) {
+		res = spimctrl_flash_init(ctx, flashBase);
+	}
+	else {
+		res = nor_flash_init(ctx, flashBase);
+	}
 
-    return res;
+	return res;
 }
 
 
 time_t flash_timeout(const struct _storage_devCtx_t *ctx, flashTimeout_t timeoutWhat)
 {
-    time_t timeout = 0;
+	time_t timeout = 0;
 
-    if (ctx->isCfi) {
-        switch (timeoutWhat)
-        {
-            case pageProgram:
-                timeout = CFI_TIMEOUT_MAX_PROGRAM(ctx->flash_data.cfi.toutTypical.bufWrite, ctx->flash_data.cfi.toutMax.bufWrite);
-                break;
+	if (ctx->isCfi) {
+		switch (timeoutWhat) {
+			case pageProgram:
+				timeout = CFI_TIMEOUT_MAX_PROGRAM(ctx->flash_data.cfi.toutTypical.bufWrite, ctx->flash_data.cfi.toutMax.bufWrite);
+				break;
 
-            case eraseChip:
-                timeout = CFI_TIMEOUT_MAX_ERASE(ctx->flash_data.cfi.toutTypical.chipErase, ctx->flash_data.cfi.toutMax.chipErase);
-                break;
+			case eraseChip:
+				timeout = CFI_TIMEOUT_MAX_ERASE(ctx->flash_data.cfi.toutTypical.chipErase, ctx->flash_data.cfi.toutMax.chipErase);
+				break;
 
-            case eraseSector:
-                timeout = CFI_TIMEOUT_MAX_ERASE(ctx->flash_data.cfi.toutTypical.blkErase, ctx->flash_data.cfi.toutMax.blkErase);
-                break;
-            
-            default:
-                break;
-        }
-    }
-    else {
-        switch (timeoutWhat)
-        {
-            case pageProgram:
-                timeout = ctx->flash_data.sfdp->tPP;
-                break;
+			case eraseSector:
+				timeout = CFI_TIMEOUT_MAX_ERASE(ctx->flash_data.cfi.toutTypical.blkErase, ctx->flash_data.cfi.toutMax.blkErase);
+				break;
 
-            case eraseChip:
-                timeout = ((ctx->flash_data.sfdp->tCE) * (ctx->flash_data.sfdp->stacked));
-                break;
+			default:
+				break;
+		}
+	}
+	else {
+		switch (timeoutWhat) {
+			case pageProgram:
+				timeout = ctx->flash_data.sfdp->tPP;
+				break;
 
-            case eraseSector:
-                timeout = ctx->flash_data.sfdp->tSE;
-                break;
-            
-            default:
-                break;
-        }
-    }
+			case eraseChip:
+				timeout = ((ctx->flash_data.sfdp->tCE) * (ctx->flash_data.sfdp->stacked));
+				break;
 
-    return timeout;
+			case eraseSector:
+				timeout = ctx->flash_data.sfdp->tSE;
+				break;
+
+			default:
+				break;
+		}
+	}
+
+	return timeout;
 }
 
 
 size_t flash_segmSize(const struct _storage_devCtx_t *ctx, segmSize_t sizeWhat)
 {
-    size_t segmSize = 0;
+	size_t segmSize = 0;
 
-    if (ctx->isCfi) {
-        switch (sizeWhat)
-        {
-            case bufSize:
-                segmSize = CFI_SIZE(ctx->flash_data.cfi.bufSz);
-                break;
+	if (ctx->isCfi) {
+		switch (sizeWhat) {
+			case bufSize:
+				segmSize = CFI_SIZE(ctx->flash_data.cfi.bufSz);
+				break;
 
-            case sectSize:
-                segmSize = ctx->sectorsz;
-                break;
-            
-            default:
-                break;
-        }
-    }
-    else {
-        switch (sizeWhat)
-        {
-            case bufSize:
-                segmSize = ctx->flash_data.sfdp->pageSz;
-                break;
+			case sectSize:
+				segmSize = ctx->sectorsz;
+				break;
 
-            case sectSize:
-                segmSize = ctx->flash_data.sfdp->sectorSz;
-                break;
-            
-            default:
-                break;
-        }
-    }
+			default:
+				break;
+		}
+	}
+	else {
+		switch (sizeWhat) {
+			case bufSize:
+				segmSize = ctx->flash_data.sfdp->pageSz;
+				break;
 
-    return segmSize;
+			case sectSize:
+				segmSize = ctx->flash_data.sfdp->sectorSz;
+				break;
+
+			default:
+				break;
+		}
+	}
+
+	return segmSize;
 }
 
 
-const char* flash_name(const struct _storage_devCtx_t *ctx)
+const char *flash_name(const struct _storage_devCtx_t *ctx)
 {
-    if (ctx->isCfi) {
-        return ctx->dev->name;
-    }
-    else {
-        return ctx->flash_data.sfdp->name;
-    }
+	if (ctx->isCfi) {
+		return ctx->dev->name;
+	}
+	else {
+		return ctx->flash_data.sfdp->name;
+	}
 }
 
 
 int flash_selSpiMode(struct _storage_devCtx_t *ctx, SPIMode_t spiMode)
 {
-    if (ctx->isCfi) {
-        LOG_INFO("No other mode to select, stay in default mode \n");
-        return EOK;
-    }
-    else {
-        LOG_INFO("SPI mode selection \n");
-        return nor_selSPIMode(ctx->spimctrl, spiMode);
-    }
+	if (ctx->isCfi) {
+		LOG_INFO("No other mode to select, stay in default mode \n");
+		return EOK;
+	}
+	else {
+		LOG_INFO("SPI mode selection \n");
+		return nor_selSPIMode(ctx->spimctrl, spiMode);
+	}
 }
 
 
 int flash_pageProgram(const struct _storage_devCtx_t *ctx, addr_t addr, const void *src, size_t len, time_t timeout)
 {
-    if (ctx->isCfi) {
-        return spimctrl_flash_pageProgram(ctx, addr, src, len, timeout);
-    }
-    else {
-        return nor_pageProgram(ctx->spimctrl, addr, src, len, timeout);
-    }
+	if (ctx->isCfi) {
+		return spimctrl_flash_pageProgram(ctx, addr, src, len, timeout);
+	}
+	else {
+		return nor_pageProgram(ctx->spimctrl, addr, src, len, timeout);
+	}
 }
 
 
 int flash_chipErase(const struct _storage_devCtx_t *ctx, time_t timeout)
 {
-    if (ctx->isCfi) {
-        return spimctrl_flash_chipErase(ctx, timeout);
-    }
-    else {
-        return nor_eraseChip(ctx, timeout);
-    }
+	if (ctx->isCfi) {
+		return spimctrl_flash_chipErase(ctx, timeout);
+	}
+	else {
+		return nor_eraseChip(ctx, timeout);
+	}
 }
 
 
 int flash_sectorErase(const struct _storage_devCtx_t *ctx, addr_t addr, time_t timeout)
 {
-    if (ctx->isCfi) {
-        return spimctrl_flash_sectorErase(ctx, addr, timeout);
-    }
-    else {
-        return nor_eraseSector(ctx->spimctrl, addr, timeout);
-    }
+	if (ctx->isCfi) {
+		return spimctrl_flash_sectorErase(ctx, addr, timeout);
+	}
+	else {
+		return nor_eraseSector(ctx->spimctrl, addr, timeout);
+	}
 }
 
 
 ssize_t flash_readData(const struct _storage_devCtx_t *ctx, addr_t addr, void *data, size_t size)
 {
 
-    if (ctx->isCfi) {
-        return spimctrl_flash_readData(ctx, addr, data, size);
-    }
-    else {
-        return nor_readData(ctx->spimctrl, addr, data, size);
-    }
+	if (ctx->isCfi) {
+		return spimctrl_flash_readData(ctx, addr, data, size);
+	}
+	else {
+		return nor_readData(ctx->spimctrl, addr, data, size);
+	}
 }
 
 
 size_t flash_size(const struct _storage_devCtx_t *ctx)
 {
-    size_t fsize = 0;
+	size_t fsize = 0;
 
-    if (ctx->isCfi) {
-        fsize = CFI_SIZE(ctx->flash_data.cfi.chipSz);
-    }
-    else {
-        fsize = ((ctx->flash_data.sfdp->totalSz) * (ctx->flash_data.sfdp->stacked));
-    }  
+	if (ctx->isCfi) {
+		fsize = CFI_SIZE(ctx->flash_data.cfi.chipSz);
+	}
+	else {
+		fsize = ((ctx->flash_data.sfdp->totalSz) * (ctx->flash_data.sfdp->stacked));
+	}
 
-    return fsize;
+	return fsize;
 }
 
 
 void flash_printInfo(const struct _storage_devCtx_t *ctx)
 {
-    if (ctx->isCfi) {
-        spimctrl_flash_printInfo(ctx);
-    }
-    else {
-        nor_printInfo(ctx);
-    } 
+	if (ctx->isCfi) {
+		spimctrl_flash_printInfo(ctx);
+	}
+	else {
+		nor_printInfo(ctx);
+	}
 }
-
