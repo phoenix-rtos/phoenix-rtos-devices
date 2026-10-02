@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * Flash driver for flash devices utilizing CFI (Common Flash Interface) 
+ * Flash driver for flash devices utilizing CFI (Common Flash Interface)
  * according to JEDEC Standards JESD68 and JESD21
  *
  * Copyright 2025 Phoenix Systems

@@ -25,13 +25,13 @@
 /* Write Registers */
 
 #define FLASH_CMD_WRITE_NVCONFREG 0xB1u /* Write Nonvolatile Configuration Register */
-#define FLASH_CMD_WRITE_VCONFREG 0x81u /* Write Volatile Configuration Register */
-#define FLASH_CMD_WRITE_EVCR 0x61u /* Write Enhanced Volatile Configuration Register */
+#define FLASH_CMD_WRITE_VCONFREG  0x81u /* Write Volatile Configuration Register */
+#define FLASH_CMD_WRITE_EVCR      0x61u /* Write Enhanced Volatile Configuration Register */
 
 /* Program Operations */
 
-#define FLASH_CMD_DIN_FP 0xA2u /* Dual Input Fast Program */
-#define FLASH_CMD_QIN_FP 0x32u /* Quad Input Fast Program */
+#define FLASH_CMD_DIN_FP          0xA2u /* Dual Input Fast Program */
+#define FLASH_CMD_QIN_FP          0x32u /* Quad Input Fast Program */
 #define FLASH_CMD_EXTENDED_QIN_FP 0x38u /* Extended Quad Input Fast Program */
 
 /* Program Operations with 4-Byte Address */
@@ -41,7 +41,6 @@
 /* Erase Operations */
 
 #define FLASH_CMD_DE 0xC4u /* Die Erase */
-
 
 
 #endif /* _MICRON_FLASH_CMDS_H_ */

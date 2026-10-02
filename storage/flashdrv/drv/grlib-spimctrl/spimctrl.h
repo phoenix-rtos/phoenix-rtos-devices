@@ -27,7 +27,7 @@
 struct spimctrl {
 	volatile uint32_t *base;
 
-	uint8_t ear; /* extended address register (3-byte mode) */
+	uint8_t ear;             /* extended address register (3-byte mode) */
 	uint8_t extendedAddress; /* 4 byte mode  */
 };
 

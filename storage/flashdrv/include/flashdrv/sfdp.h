@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * SFDP compatible flash info 
+ * SFDP compatible flash info
  * TBD: leverage SFDP parser to parse data automatically
  *
  * Copyright 2026 Phoenix Systems
@@ -25,11 +25,11 @@ struct nor_info {
 	size_t pageSz;
 	size_t subsectorSz;
 	size_t sectorSz;
-	time_t tPP; /* Page Program Cycle time */
-	time_t tSsE; /* Subsector Erase Cycle time */
-	time_t tSE; /* Sector Erase Cycle time */
-	time_t tCE; /* Chip Erase Cycle time */
-    uint8_t stacked; /* number of stacked dice */
+	time_t tPP;      /* Page Program Cycle time */
+	time_t tSsE;     /* Subsector Erase Cycle time */
+	time_t tSE;      /* Sector Erase Cycle time */
+	time_t tCE;      /* Chip Erase Cycle time */
+	uint8_t stacked; /* number of stacked dice */
 };
 
 

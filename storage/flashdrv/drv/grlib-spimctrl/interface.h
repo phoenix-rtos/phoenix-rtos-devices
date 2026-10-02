@@ -2,7 +2,7 @@
  * Phoenix-RTOS
  *
  * Interface wrapping around CFI and SFDP compatible flash devices.
- * 
+ *
  * TBD: if more standards are supported, a virtual table shall be implemented.
  *
  * Copyright 2026 Phoenix Systems
@@ -21,21 +21,21 @@
 
 /* SFDP parameter read */
 
-#define FLASH_CMD_RDSFDP 0x5Au 
+#define FLASH_CMD_RDSFDP 0x5Au
 
 
 typedef enum flashTimeout {
-    pageProgram = 0,
-    eraseChip,
-    eraseSector,
-    maxTimeoutType
+	pageProgram = 0,
+	eraseChip,
+	eraseSector,
+	maxTimeoutType
 } flashTimeout_t;
 
 
 typedef enum segmSize {
-    bufSize,
-    sectSize,
-    maxSegmSize
+	bufSize,
+	sectSize,
+	maxSegmSize
 } segmSize_t;
 
 
@@ -51,7 +51,7 @@ time_t flash_timeout(const struct _storage_devCtx_t *ctx, flashTimeout_t timeout
 size_t flash_segmSize(const struct _storage_devCtx_t *ctx, segmSize_t sizeWhat);
 
 
-const char* flash_name(const struct _storage_devCtx_t *ctx);
+const char *flash_name(const struct _storage_devCtx_t *ctx);
 
 
 int flash_selSpiMode(struct _storage_devCtx_t *ctx, SPIMode_t spiMode);

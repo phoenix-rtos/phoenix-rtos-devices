@@ -17,11 +17,11 @@
 #define _MACRONIX_FLASH_CMDS_H_
 
 
-#define FLASH_CMD_NOP    0x00u /* No Operation */
+#define FLASH_CMD_NOP 0x00u /* No Operation */
 
 /* Erase Operations */
 
-#define FLASH_CMD_CE    0x60u /* Chip Erase */
+#define FLASH_CMD_CE 0x60u /* Chip Erase */
 
 
 #endif /* _MACRONIX_FLASH_CMDS_H_ */
