@@ -127,18 +127,17 @@ static void mcspi_thread(void *arg)
 	struct mcspi_dev *dev = (struct mcspi_dev *)arg;
 
 	mutexLock(dev->irqMutex);
+
 	while (dev->initialized == MCSPI_MODULE_READY) {
-		condWait(dev->irqCond, dev->irqMutex, 0);
+		condWait(dev->irqCond, dev->irqMutex, 10000);
 
 		/* wait for end of transmission event */
-		while ((*(dev->base + chstat + dev->choffs) & (1 << MCSPI_CHSTAT_EOT)) == 0U) {
-			if (dev->initialized == MCSPI_MODULE_READY) {
-				usleep(10);
-			}
-		};
+		if ((dev->xferBusy != MCSPI_DEVICE_BUSY) || (dev->xfer.cmplt != MCSPI_XFER_CMPLT)) {
+			continue;
+		}
 
 		/* disable channel */
-		*(dev->base + chctrl + dev->choffs) &= ~(1 << MCSPI_CHCTRL_EN);
+		*(dev->base + chctrl + dev->choffs) &= ~(1U << MCSPI_CHCTRL_EN);
 
 		mutexLock(dev->devMutex);
 		dev->xfer.cmplt = MCSPI_XFER_CMPLT;
@@ -159,15 +158,15 @@ static void *mcspi_receiveWord(struct mcspi_dev *dev)
 	void *dataBuff = xfer->req->rxBuff;
 
 	if (xfer->req->wordSize <= 8U) {
-		*(uint8_t *)dataBuff = (uint8_t) * (dev->base + rx + dev->choffs);
+		*(uint8_t *)dataBuff = (uint8_t)*(dev->base + rx + dev->choffs);
 		dataBuff = (void *)((uint8_t *)dataBuff + 1U);
 	}
 	else if (xfer->req->wordSize <= 16U) {
-		*(uint16_t *)dataBuff = (uint16_t) * (dev->base + rx + dev->choffs);
+		*(uint16_t *)dataBuff = (uint16_t)*(dev->base + rx + dev->choffs);
 		dataBuff = (void *)((uint16_t *)dataBuff + 1U);
 	}
 	else {
-		*(uint32_t *)dataBuff = (uint32_t) * (dev->base + rx + dev->choffs);
+		*(uint32_t *)dataBuff = (uint32_t)*(dev->base + rx + dev->choffs);
 		dataBuff = (void *)((uint32_t *)dataBuff + 1U);
 	}
 
@@ -202,6 +201,7 @@ static int mcspi_intr(unsigned int intr, void *data)
 	struct mcspi_dev *dev = (struct mcspi_dev *)data;
 	struct mcspi_xfer *xfer = &dev->xfer;
 	uint32_t irqStatus = *(dev->base + irqstatus);
+	*(dev->base + irqstatus) = irqStatus; /* clear status as soon as possible */
 	uint32_t chStatus;
 	uint8_t proceed = 1U;
 	uint32_t reg, xferByte;
@@ -245,8 +245,7 @@ static int mcspi_intr(unsigned int intr, void *data)
 	*(dev->base + xferlevel) |= reg;
 
 	/* EOW interrupt and channel disabling */
-	if (((irqStatus & (1 << MCSPI_IRQENABLE_EOW)) != 0U) ||
-			((xfer->xferCntTx == 0U) && (xfer->xferCntRx <= 1U))) {
+	if (((irqStatus & (1 << MCSPI_IRQENABLE_EOW)) != 0U) || ((xfer->xferCntTx == 0U) && (xfer->xferCntRx == 0U))) {
 		/* receive last data from FIFO */
 		chStatus = *(dev->base + chstat + dev->choffs);
 		while (((chStatus & (1 << MCSPI_CHSTAT_RXFFE)) == 0U || (chStatus & (1 << MCSPI_CHSTAT_RXS)) != 0U) && xfer->xferCntRx != 0U) {
@@ -255,6 +254,9 @@ static int mcspi_intr(unsigned int intr, void *data)
 			chStatus = *(dev->base + chstat + dev->choffs);
 		}
 
+		/* disable channel */
+		*(dev->base + chctrl + dev->choffs) &= ~(1U << MCSPI_CHCTRL_EN);
+
 		/* disable interrupts */
 		reg = MCSPI_IRQENABLE_SET(MCSPI_IRQENABLE_RX_FULL, 0) |
 				MCSPI_IRQENABLE_SET(MCSPI_IRQENABLE_TX_EMPTY, 0) |
@@ -262,6 +264,9 @@ static int mcspi_intr(unsigned int intr, void *data)
 
 		*(dev->base + irqenable) &= ~reg;
 		*(dev->base + irqstatus) = irqStatus;
+
+		/* signal completion */
+		xfer->cmplt = MCSPI_XFER_CMPLT;
 
 		return 0;
 	}
@@ -455,6 +460,9 @@ int mcspi_xferStart(struct mcspi_xferReq *xferReq)
 	dev->xferBusy = MCSPI_DEVICE_BUSY;
 	xfer->cmplt = MCSPI_XFER_ONGOING;
 
+	/* clear stale irq status */
+	*(dev->base + irqstatus) = *(dev->base + irqstatus);
+
 	/* enable EOW interrupt */
 	*(dev->base + irqenable) |= (1 << MCSPI_IRQENABLE_EOW);
 
@@ -462,15 +470,18 @@ int mcspi_xferStart(struct mcspi_xferReq *xferReq)
 	*(dev->base + chctrl + dev->choffs) |= (1 << MCSPI_CHCTRL_EN);
 
 	/* waiting for cmplt */
-	while (xfer->cmplt == MCSPI_XFER_ONGOING) {
-		condWait(dev->devCond, dev->devMutex, 0);
-		if (xfer->cmplt == MCSPI_XFER_CMPLT) {
-			dev->xferBusy = MCSPI_DEVICE_IDLE;
+	static const unsigned toutLimit = 10U;
+	unsigned toutCount = 0U;
+	while ((xfer->cmplt == MCSPI_XFER_ONGOING) && (toutCount < toutLimit)) {
+		int ret = condWait(dev->devCond, dev->devMutex, 1000);
+		if (ret == -ETIME) {
+			toutCount++;
 		}
 	}
+	dev->xferBusy = MCSPI_DEVICE_IDLE;
 	mutexUnlock(dev->devMutex);
 
-	return EOK;
+	return (toutCount >= toutLimit) ? -ETIME : EOK;
 }
 
 
