@@ -75,14 +75,22 @@ static int nor_readId(struct spimctrl *spimctrl, uint32_t *id)
 {
 	struct xferOp xfer;
 	const uint8_t cmd = FLASH_CMD_RDID;
+	uint8_t buff[3];
+	int res;
 
 	xfer.type = xfer_opRead;
 	xfer.cmd = &cmd;
 	xfer.cmdLen = 1;
-	xfer.rxData = (uint8_t *)id;
+	xfer.rxData = buff;
 	xfer.dataLen = 3;
 
-	return spimctrl_xfer(spimctrl, &xfer);
+	res = spimctrl_xfer(spimctrl, &xfer);
+	if (res < 0) {
+		return res;
+	}
+
+	*id = ((uint32_t)buff[2] << 16) | ((uint32_t)buff[1] << 8) | buff[0];
+	return res;
 }
 
 
