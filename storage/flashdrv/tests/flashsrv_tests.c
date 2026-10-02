@@ -320,7 +320,6 @@ int test_flashsrv_erasePartition(void)
         return -1;
     }
 
-    /* Użycie nowej funkcji pomocniczej do czyszczenia partycji */
     if (erasePartition(oid) < 0) {
         LOG_ERROR("erasePartition failed on %s", part_path);
         return -1;
