@@ -40,6 +40,8 @@ struct libtty_callbacks_s {
 	/* Optional: */
 	int (*get_halfduplex)(void *arg);
 	void (*set_halfduplex)(void *arg, int enable);
+	/* enable/disable break condition */
+	void (*break_enable)(void *arg, int enable);
 
 	/* at least one character ready to be sent */
 	void (*signal_txready)(void *arg);
@@ -69,6 +71,8 @@ struct libtty_common_s {
 	handle_t lock;
 	bool lockCreated;
 
+	int txcol;
+
 	/* cached optimizations */
 	char breakchars[4]; /* enough to hold \n, VEOF and VEOL. */
 	unsigned int t_flags;
@@ -93,6 +97,8 @@ static inline void libtty_read_state_init(libtty_read_state_t *st)
 #define TF_LITERAL   0x00200 /* Accept the next character literally. */
 #define TF_BYPASS    0x04000 /* Optimized input path. */
 #define TF_CLOSING   0x08000 /* TTY is being closed */
+#define TF_OOFF      0x10000 /* TTY output is stopped */
+#define TF_IOFF      0x20000 /* TTY input is stopped */
 
 
 /*
