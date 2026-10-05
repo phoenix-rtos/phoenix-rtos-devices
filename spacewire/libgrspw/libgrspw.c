@@ -76,6 +76,18 @@
 #define SPW_CTRL_LS  (1U << 1)  /* Link start */
 #define SPW_CTRL_LD  (1U << 0)  /* Link disable */
 
+/* SPW STATUS bits */
+#define SPW_STATUS_LS_SHIFT 21
+#define SPW_STATUS_LS_MASK  (7U << SPW_STATUS_LS_SHIFT) /* Link state */
+
+/* Link state values */
+#define SPW_LINK_STATE_ERROR_RESET 0
+#define SPW_LINK_STATE_ERROR_WAIT  1
+#define SPW_LINK_STATE_READY       2
+#define SPW_LINK_STATE_STARTED     3
+#define SPW_LINK_STATE_CONNECTING  4
+#define SPW_LINK_STATE_RUN         5
+
 /* DMA CTRL bits */
 #define DMA_CTRL_LE  (1U << 16) /* Disable TX when link error occurs */
 #define DMA_CTRL_SP  (1U << 15) /* Remove 2nd byte (protocol id) of each packet */
@@ -149,6 +161,16 @@
 
 
 /* Auxiliary functions */
+
+
+static void memoryBarrier(void)
+{
+#ifdef __TARGET_RISCV64
+	__asm__ volatile("fence");
+#elif defined(__TARGET_SPARCV8LEON)
+	__asm__ volatile("stbar");
+#endif
+}
 
 
 static int spw_buffersAlloc(spw_dev_t *dev)
@@ -250,7 +272,7 @@ int spw_transmit(spw_dev_t *dev, const uint8_t *buf, size_t bufsz, const spw_tx_
 		return -EINVAL;
 	}
 
-	if (!tx->async && (tx->nPackets > SPW_TX_DESC_CNT)) {
+	if ((!tx->async && (tx->nPackets > SPW_TX_DESC_CNT)) || tx->nPackets == 0) {
 		return -EINVAL;
 	}
 
@@ -260,8 +282,6 @@ int spw_transmit(spw_dev_t *dev, const uint8_t *buf, size_t bufsz, const spw_tx_
 
 	/* Setup descriptors */
 	size_t firstDesc = dev->lastTxDesc;
-	const size_t lastDesc = (dev->lastTxDesc + tx->nPackets) % SPW_TX_DESC_CNT;
-	bool wrapped = (lastDesc <= firstDesc);
 
 	for (size_t cnt = 0; cnt < tx->nPackets; cnt++) {
 		(void)mutexLock(dev->txIrqLock);
@@ -291,23 +311,19 @@ int spw_transmit(spw_dev_t *dev, const uint8_t *buf, size_t bufsz, const spw_tx_
 
 		/* on riscv64 pa can exceed 32 bits */
 		uintptr_t pa = va2pa((void *)txBuff);
-		if ((pa & ~SPW_ADDR_MASK) != 0) {
-			LOG_ERROR("DMA addr 0x%" PRIxPTR "exceeds 32-bit limit", pa);
+		if (((pa & ~SPW_ADDR_MASK) != 0) || (((pa + hdrLen) & ~SPW_ADDR_MASK) != 0)) {
+			LOG_ERROR("DMA addr 0x%" PRIxPTR " exceeds 32-bit limit", pa);
+			dev->txDescFree++;
+			(void)mutexUnlock(dev->txLock);
 			return -EINVAL;
 		}
 		desc->hdrAddr = pa;
-
-		pa += hdrLen;
-		if ((pa & ~SPW_ADDR_MASK) != 0) {
-			LOG_ERROR("DMA addr 0x%" PRIxPTR "exceeds 32-bit limit", pa);
-			return -EINVAL;
-		}
-		desc->dataAddr = pa;
+		desc->dataAddr = pa + hdrLen;
 		desc->packetLen = packet.dataLen;
 
 		/* Everything is set up, enable descriptor */
 		desc->ctrl |= TX_DESC_EN;
-
+		memoryBarrier();
 
 		/* Start transmission */
 		dev->vbase[DMA_CTRL] |= DMA_CTRL_TE;
@@ -316,21 +332,15 @@ int spw_transmit(spw_dev_t *dev, const uint8_t *buf, size_t bufsz, const spw_tx_
 	}
 
 	if (!tx->async) {
+		(void)mutexLock(dev->txIrqLock);
 		/* Wait for transmission to finish */
-		while ((firstDesc <= lastDesc) || wrapped) {
-			if ((dev->txDesc[firstDesc].ctrl & TX_DESC_EN) == 0) {
-				size_t next = (firstDesc + 1) % SPW_TX_DESC_CNT;
-				if ((next == 0) && wrapped) {
-					wrapped = false;
-				}
-				firstDesc = next;
-			}
-			else {
-				(void)mutexLock(dev->txIrqLock);
+		for (size_t i = 0; i < tx->nPackets; i++) {
+			volatile spw_txDesc_t *d = &dev->txDesc[(firstDesc + i) % SPW_TX_DESC_CNT];
+			while ((d->ctrl & TX_DESC_EN) != 0) {
 				(void)condWait(dev->cond, dev->txIrqLock, 0);
-				(void)mutexUnlock(dev->txIrqLock);
 			}
 		}
+		(void)mutexUnlock(dev->txIrqLock);
 	}
 
 	TRACE("Packets set up");
@@ -375,6 +385,8 @@ int spw_rxConfigure(spw_dev_t *dev, size_t *firstDesc, const size_t nPackets)
 			return -EINVAL;
 		}
 		desc->addr = pa;
+
+		memoryBarrier();
 
 		/* Everything is set up, enable descriptor */
 		desc->ctrl |= RX_DESC_EN;
@@ -455,8 +467,10 @@ int spw_rxRead(spw_dev_t *dev, uint8_t *buf, size_t bufsz, size_t *readCnt, cons
 				}
 
 				/* move DMA pointer to skip timeouted descriptors */
+				memoryBarrier();
 				dev->vbase[DMA_RX_DESC] = va2pa((void *)&dev->rxDesc[lastDesc]);
 				dev->vbase[DMA_CTRL] |= DMA_CTRL_RE;
+				memoryBarrier();
 
 				err = -ETIME;
 				break;
@@ -479,6 +493,7 @@ int spw_configure(spw_dev_t *dev, const spw_config_t *config)
 	dev->vbase[SPW_NODE_ADDR] = (config->node.mask << 8) | config->node.addr;
 	dev->vbase[DMA_ADDR] = (config->dma.mask << 8) | config->dma.addr;
 	dev->vbase[DMA_CTRL] = (dev->vbase[DMA_CTRL] & ~DMA_CTRL_USR_MSK) | (config->dma.flags & DMA_CTRL_USR_MSK);
+	memoryBarrier();
 
 	(void)mutexUnlock(dev->ctrlLock);
 
@@ -545,8 +560,12 @@ static int spw_cguInit(int dev)
 
 static int spw_defaultConfig(spw_dev_t *dev)
 {
+	/* Reset device */
+	dev->vbase[SPW_CTRL] = SPW_CTRL_RS;
+	while ((dev->vbase[SPW_CTRL] & SPW_CTRL_RS) != 0) { }
+
 	/* no effect on grspw2_dma core*/
-	dev->vbase[SPW_CTRL] |= SPW_CTRL_LS;
+	dev->vbase[SPW_CTRL] = SPW_CTRL_LS;
 
 	dev->vbase[DMA_CTRL] |= DMA_CTRL_RI | DMA_CTRL_TI;
 	dev->vbase[DMA_RX_LEN] = SPW_MAX_PACKET_LEN;
@@ -716,5 +735,6 @@ int spw_initDev(unsigned int instance, spw_dev_t *spwdev)
 		spw_cleanupResources(spwdev);
 		return -1;
 	}
+
 	return 0;
 }
