@@ -64,7 +64,7 @@
 
 #define UBX_DEFAULT_RATE_HZ 10U
 #define UBX_MAX_RATE_HZ     20U
-#define UBX_DYN_KEEP        0xffU /* dynModel argument value: keep module setting */
+#define UBX_DYN_DFLT        0U /* default dynamics model (portable) */
 
 /* CFG-VALSET keys */
 #define UBX_KEY_UART1_OUT_PROT_UBX   0x10740001UL
@@ -80,15 +80,18 @@
 #define UBX_KEY_SBAS_USE_RANGING     0x10360003UL
 #define UBX_KEY_SBAS_USE_DIFFCORR    0x10360004UL
 #define UBX_KEY_SBAS_USE_INTEGRITY   0x10360005UL
+#define UBX_KEY_SBAS_USE_TESTMODE    0x10360002UL
 #define UBX_KEY_SBAS_PRNSCANMASK     0x50360006UL
 #define UBX_KEY_GAL_ENABLED          0x10310021UL
 #define UBX_KEY_GAL_E1_ENABLED       0x10310007UL
 #define UBX_KEY_BDS_ENABLED          0x10310022UL
 #define UBX_KEY_BDS_B1_ENABLED       0x1031000DUL
+#define UBX_KEY_PM_OPERATEMODE       0x20D00001UL
 
 /* SBAS PRN scan masks: bit (N - 120) selects SBAS satellite PRN N */
-#define UBX_SBAS_PRNMASK_EU 0x0000000000010049ULL /* PRNs 120, 123, 126, 136 (EGNOS) */
-#define UBX_SBAS_PRNMASK_NA 0x000000000004A800ULL /* PRNs 131, 133, 135, 138 (WAAS)  */
+#define UBX_SBAS_PRNMASK_EU   0x0000000000010049ULL /* PRNs 120, 123, 126, 136 (EGNOS) */
+#define UBX_SBAS_PRNMASK_NA   0x000000000004A800ULL /* PRNs 131, 133, 135, 138 (WAAS)  */
+#define UBX_SBAS_PRNMASK_AUTO 0x0000000000000000ULL /* SBAS automatic mode  */
 
 /* CFG-GNSS: GNSS identifiers and flags (legacy M8) */
 #define UBX_GNSSID_GPS       0
@@ -128,6 +131,7 @@ typedef enum {
 	ubx_id_sbas = 0x16,    /* ubx_class_cfg */
 	ubx_id_gnss = 0x3e,    /* ubx_class_cfg */
 	ubx_id_valset = 0x8a,  /* ubx_class_cfg */
+	ubx_id_valget = 0x8b,  /* ubx_class_cfg */
 	ubx_id_ver = 0x04,     /* ubx_class_mon */
 } ubx_id_t;
 
@@ -152,6 +156,7 @@ typedef enum {
 
 typedef enum {
 	ubx_sbas_off = 0,
+	ubx_sbas_auto,
 	ubx_sbas_eu,
 	ubx_sbas_na,
 } ubx_sbas_t;
@@ -182,8 +187,9 @@ typedef struct {
 
 /* runtime options, set through driver arguments */
 typedef struct {
-	uint16_t rateMs;  /* measurement period [ms] */
-	uint8_t dynModel; /* dynamic platform model, UBX_DYN_KEEP = do not change */
+	uint16_t rateMs;             /* measurement period [ms] */
+	uint8_t dynModelAcquisition; /* dynamic platform model for acquisition time */
+	uint8_t dynModelInOperation; /* dynamic platform model for operation time (after first fix) */
 	ubx_sbas_t sbas;
 	ubx_constellationMode_t galileo;
 	ubx_constellationMode_t beidou;
@@ -204,6 +210,8 @@ typedef struct {
 	uint32_t batchTOW;        /* time-of-week for current batch */
 	uint8_t batchMask;        /* bitmask of messages received in the current batch */
 	uint8_t batchRequirement; /* bitmask of messages required for a full batch */
+
+	bool operationalModeEn;
 
 	char path[64];
 
@@ -731,7 +739,7 @@ static int ubx_sendCfgNav5(ubx_ctx_t *ctx, uint8_t dynModel)
 /* CFG-SBAS: enable SBAS augmentation with region-specific scan mask */
 static int ubx_sendCfgSbas(ubx_ctx_t *ctx, ubx_sbas_t sbas)
 {
-	uint64_t prnMask = 0ULL;
+	uint64_t prnMask = UBX_SBAS_PRNMASK_AUTO;
 
 	if (sbas == ubx_sbas_eu) {
 		prnMask = UBX_SBAS_PRNMASK_EU;
@@ -918,11 +926,9 @@ static int ubx_configureM9M10(ubx_ctx_t *ctx, uint32_t baud)
 	ubx_pushValSetItem(ctx, UBX_KEY_RATE_NAV, 1UL);
 	ubx_pushValSetItem(ctx, UBX_KEY_RATE_TIMEREF, 1UL);
 	ubx_pushValSetItem(ctx, UBX_KEY_MSGOUT_NAV_PVT_UART1, 1UL);
-	if (ctx->opts.dynModel != UBX_DYN_KEEP) {
-		ubx_pushValSetItem(ctx, UBX_KEY_NAVSPG_DYNMODEL, ctx->opts.dynModel);
-	}
+	ubx_pushValSetItem(ctx, UBX_KEY_NAVSPG_DYNMODEL, ctx->opts.dynModelAcquisition);
 	if (ctx->opts.sbas != ubx_sbas_off) {
-		uint64_t prnMask = 0ULL;
+		uint64_t prnMask = UBX_SBAS_PRNMASK_AUTO;
 		if (ctx->opts.sbas == ubx_sbas_eu) {
 			prnMask = UBX_SBAS_PRNMASK_EU;
 		}
@@ -933,9 +939,13 @@ static int ubx_configureM9M10(ubx_ctx_t *ctx, uint32_t baud)
 		ubx_pushValSetItem(ctx, UBX_KEY_SBAS_L1CA_ENA, 1UL);
 		ubx_pushValSetItem(ctx, UBX_KEY_SBAS_USE_RANGING, 1UL);
 		ubx_pushValSetItem(ctx, UBX_KEY_SBAS_USE_DIFFCORR, 1UL);
-		ubx_pushValSetItem(ctx, UBX_KEY_SBAS_USE_INTEGRITY, 1UL);
+		ubx_pushValSetItem(ctx, UBX_KEY_SBAS_USE_INTEGRITY, 0UL);
+		ubx_pushValSetItem(ctx, UBX_KEY_SBAS_USE_TESTMODE, 1UL);
 		ubx_pushValSetItemU64(ctx, UBX_KEY_SBAS_PRNSCANMASK, prnMask);
 	}
+
+	/* power mode */
+	ubx_pushValSetItem(ctx, UBX_KEY_PM_OPERATEMODE, 0UL);
 
 	/* galileo */
 	if (ctx->opts.galileo == ubx_constellationMode_on) {
@@ -1010,9 +1020,7 @@ static int ubx_configureM7M8(ubx_ctx_t *ctx, uint32_t baud)
 		return ret;
 	}
 
-	if (ctx->opts.dynModel != UBX_DYN_KEEP) {
-		ret = ubx_sendCfgNav5(ctx, ctx->opts.dynModel);
-	}
+	ret = ubx_sendCfgNav5(ctx, ctx->opts.dynModelAcquisition);
 	if (ret == 0 && ctx->opts.sbas != ubx_sbas_off) {
 		ret = ubx_sendCfgSbas(ctx, ctx->opts.sbas);
 	}
@@ -1068,9 +1076,7 @@ static int ubx_configurePrePvt(ubx_ctx_t *ctx, uint32_t baud)
 		return ret;
 	}
 
-	if (ctx->opts.dynModel != UBX_DYN_KEEP) {
-		ret = ubx_sendCfgNav5(ctx, ctx->opts.dynModel);
-	}
+	ret = ubx_sendCfgNav5(ctx, ctx->opts.dynModelAcquisition);
 
 	return ret;
 }
@@ -1552,6 +1558,31 @@ static bool ubx_handleNavMsg(ubx_ctx_t *ctx)
 }
 
 
+static int ubx_operationalModeSwitch(ubx_ctx_t *ctx, bool operationalModeEn)
+{
+	uint8_t dynModel = (operationalModeEn) ? ctx->opts.dynModelInOperation : ctx->opts.dynModelAcquisition;
+	int ret = -1;
+
+	if (ctx->opts.dynModelInOperation == ctx->opts.dynModelAcquisition) {
+		return 0;
+	}
+
+	if (ctx->gen >= ubx_gen_m9) {
+		ubx_pushU8(ctx, 0x00U); /* message version */
+		ubx_pushU8(ctx, 0x01U); /* ram layer */
+		ubx_pushU16(ctx, 0x0000U);
+		ubx_pushValSetItem(ctx, UBX_KEY_NAVSPG_DYNMODEL, dynModel);
+
+		ret = ubx_sendAndAck(ctx, ubx_class_cfg, ubx_id_valset);
+	}
+	else {
+		ret = ubx_sendCfgNav5(ctx, dynModel);
+	}
+
+	return ret;
+}
+
+
 /*
  * main thread
  */
@@ -1581,6 +1612,8 @@ static void ubx_threadPublish(void *data)
 	sensor_info_t *info = (sensor_info_t *)data;
 	struct __errno_t errnoNew;
 	ubx_ctx_t *ctx = info->ctx;
+	time_t tModeSwitchAttemptLast = 0;
+	time_t tCurr;
 
 	if (ubx_runSetup(ctx) < 0) {
 		endthread();
@@ -1600,6 +1633,16 @@ static void ubx_threadPublish(void *data)
 			continue;
 		}
 		(void)sensors_publish(info->id, &ctx->ev);
+
+		if (!ctx->operationalModeEn && (ctx->ev.gps.fix >= ubx_fix_2d)) {
+			/* switch from acquisition mode to operational after first fix */
+			ctx->operationalModeEn = true;
+			ubx_operationalModeSwitch(ctx, true);
+		}
+		else if (ctx->operationalModeEn && (ctx->ev.gps.fix < ubx_fix_2d)) {
+			ctx->operationalModeEn = false;
+			ubx_operationalModeSwitch(ctx, false);
+		}
 	}
 
 	endthread();
@@ -1634,7 +1677,7 @@ static int ubx_start(sensor_info_t *info)
  */
 
 
-static int ubx_parseDynModel(const char *str, uint8_t *dynModel)
+static int ubx_parseDynModel(char *str, uint8_t *dynModelAcquisition, uint8_t *dynModelInOperation)
 {
 	static const struct {
 		const char *str;
@@ -1651,17 +1694,30 @@ static int ubx_parseDynModel(const char *str, uint8_t *dynModel)
 		{ "wrist", 9 }, /* wrist worn watch */
 		{ "bike", 10 },
 	};
-	int ret = -1;
+	char *strModelAcquisition = str;
+	char *strModelInOperation = strchr(str, '/');
+	bool dynModeAcquisitionFound = false;
+	bool dynModeInOperationFound = false;
+
+	if (strModelInOperation == NULL) {
+		return -1;
+	}
+	*strModelInOperation = '\0';
+	strModelInOperation++;
 
 	for (size_t i = 0; i < (sizeof(models) / sizeof(models[0])); i++) {
-		if (strcmp(str, models[i].str) == 0) {
-			*dynModel = models[i].model;
-			ret = 0;
-			break;
+		if ((strlen(strModelAcquisition) == strlen(models[i].str)) && (strcmp(strModelAcquisition, models[i].str) == 0)) {
+			*dynModelAcquisition = models[i].model;
+			dynModeAcquisitionFound = true;
+		}
+
+		if ((strlen(strModelInOperation) == strlen(models[i].str)) && (strcmp(strModelInOperation, models[i].str) == 0)) {
+			*dynModelInOperation = models[i].model;
+			dynModeInOperationFound = true;
 		}
 	}
 
-	return ret;
+	return (dynModeAcquisitionFound && dynModeInOperationFound) ? 0 : -1;
 }
 
 
@@ -1671,6 +1727,7 @@ static int ubx_parseSbas(const char *str, ubx_sbas_t *sbas)
 		const char *str;
 		ubx_sbas_t sbas;
 	} regions[] = {
+		{ "auto", ubx_sbas_auto },
 		{ "eu", ubx_sbas_eu },
 		{ "na", ubx_sbas_na },
 	};
@@ -1707,7 +1764,7 @@ static int ubx_parseOpt(char *opt, ubx_opts_t *opts)
 	}
 	else if (strcmp(opt, "dyn") == 0) {
 		/* dynamic platform model */
-		ret = ubx_parseDynModel(val, &opts->dynModel);
+		ret = ubx_parseDynModel(val, &opts->dynModelAcquisition, &opts->dynModelInOperation);
 	}
 	else if (strcmp(opt, "sbas") == 0) {
 		ret = ubx_parseSbas(val, &opts->sbas);
@@ -1778,7 +1835,8 @@ static int ubx_parseArgs(const char *args, ubx_ctx_t *ctx)
 	strcpy(ctx->path, buf);
 
 	ctx->opts.rateMs = 1000U / UBX_DEFAULT_RATE_HZ;
-	ctx->opts.dynModel = UBX_DYN_KEEP;
+	ctx->opts.dynModelAcquisition = UBX_DYN_DFLT;
+	ctx->opts.dynModelInOperation = UBX_DYN_DFLT;
 	ctx->opts.sbas = ubx_sbas_off;
 	ctx->opts.galileo = ubx_constellationMode_keep;
 	ctx->opts.beidou = ubx_constellationMode_keep;
@@ -1821,8 +1879,8 @@ static int ubx_alloc(sensor_info_t *info, const char *args)
 	if (err != 0) {
 		free(ctx);
 		fprintf(stderr,
-				"%s usage: <device-path>[:rate=<1..20>][,dyn=<model>][,sbas=<eu|na>][,galileo=1][,beidou=1]\n"
-				"%s for example: /dev/uart0:rate=5,dyn=air4,sbas=eu,galileo=1\n",
+				"%s usage: <device-path>[:rate=<1..20>][,dyn=<acquisition/operational>][,sbas=<eu|na>][,galileo=1][,beidou=1]\n"
+				"%s for example: /dev/uart0:rate=5,dyn=stationary/air4,sbas=eu,galileo=1\n",
 				UBX_STR, UBX_STR);
 		return err;
 	}
