@@ -149,7 +149,7 @@ static int nor_writeEnable(struct spimctrl *spimctrl, int enable)
 
 static int nor_selectAddressMode(struct spimctrl *spimctrl)
 {
-#if USE_4BYTE_MODE
+#if defined(USE_4BYTE_MODE) && (USE_4BYTE_MODE != 0)
 	int res;
 	struct xferOp xfer;
 	const uint8_t cmd = FLASH_CMD_ENTER_4B;

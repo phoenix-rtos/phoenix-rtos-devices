@@ -22,8 +22,6 @@
 #include "../commands/flash_cmds.h"
 #include "../sfdp-flash/MT25Q_cmds.h"
 
-#include <stdio.h> /* rmv later */
-
 
 /* Configuration register */
 
@@ -92,7 +90,7 @@ static void spimctrl_addressMode(struct spimctrl *spimctrl)
 {
 	uint32_t cfg = *(spimctrl->base + flash_cfg);
 
-#if USE_4BYTE_MODE
+#if defined(USE_4BYTE_MODE) && (USE_4BYTE_MODE != 0)
 	uint8_t readcmd = FLASH_CMD_4B_READ;
 	spimctrl->extendedAddress = 1;
 	cfg &= ~READ_CMD_MASK;
@@ -126,13 +124,9 @@ static uint32_t spimctrl_updateReadWriteCmds(struct spimctrl *spimctrl, uint32_t
 
 static uint32_t spimctrl_setDummyCycles(struct spimctrl *spimctrl, uint32_t cfg, uint8_t numCycles)
 {
+	cfg &= ~(DCYCLES | DBYTE);
 	if (numCycles < 0xFu) {
-		cfg &= ~(DCYCLES | DBYTE);
 		cfg |= ((numCycles & 0xFUL) << 8);
-	}
-	else {
-		cfg &= ~(DCYCLES | DBYTE);
-		cfg |= ((0 & 0xFUL) << 8);
 	}
 
 	return cfg;
@@ -260,7 +254,7 @@ void spimctrl_qSPI(struct spimctrl *spimctrl)
 
 static void spimctrl_alternateScaler(volatile uint32_t *spimctrlBase)
 {
-#if ENABLE_ALTERNATE_SCALER
+#if defined(ENABLE_ALTERNATE_SCALER) && (ENABLE_ALTERNATE_SCALER != 0)
 	*(spimctrlBase + flash_ctrl) |= EAS;
 #else
 	*(spimctrlBase + flash_ctrl) &= ~EAS;
