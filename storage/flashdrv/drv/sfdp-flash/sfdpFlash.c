@@ -279,12 +279,12 @@ int nor_eraseDie(const struct _storage_devCtx_t *ctx, time_t timeout, uint8_t se
 	uint8_t cmd[5];
 	struct xferOp xfer;
 
-	size_t flash_size;
-	flash_size = (ctx->flash_data.sfdp->totalSz);
+	size_t flashSize;
+	flashSize = (ctx->flash_data.sfdp->totalSz);
 
 	addr_t addr = 0x00000000u;
 	addr_t addr0 = 0x00000000u;
-	addr_t addr1 = flash_size / 2;
+	addr_t addr1 = flashSize / 2;
 
 	if (flashInfo[activeDeviceIdx].stacked == 1) {
 		res = -EINVAL;
@@ -611,7 +611,6 @@ ssize_t nor_readData(struct spimctrl *spimctrl, addr_t addr, void *data, size_t 
 	}
 	else {
 		return nor_readAhb(spimctrl, addr, data, size);
-		// return nor_readCmd(spimctrl, addr, data, size);
 	}
 }
 
