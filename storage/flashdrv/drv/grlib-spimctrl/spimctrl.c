@@ -297,7 +297,6 @@ static void spimctrl_read(const struct spimctrl *spimctrl, struct xferOp *op)
 
 	/* read data */
 	for (size_t i = 0; i < op->dataLen; i++) {
-		while ((*(spimctrl->base + flash_stat) & CORE_BUSY) != 0) { }
 		if (!(cfg & (QSPI | DSPI | QOUT | DOUT)))
 			spimctrl_tx(spimctrl->base, 0x00u);
 		else
