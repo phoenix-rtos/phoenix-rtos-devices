@@ -1612,8 +1612,6 @@ static void ubx_threadPublish(void *data)
 	sensor_info_t *info = (sensor_info_t *)data;
 	struct __errno_t errnoNew;
 	ubx_ctx_t *ctx = info->ctx;
-	time_t tModeSwitchAttemptLast = 0;
-	time_t tCurr;
 
 	if (ubx_runSetup(ctx) < 0) {
 		endthread();
