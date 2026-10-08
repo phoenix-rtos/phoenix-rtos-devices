@@ -21,7 +21,6 @@
 
 #include <board_config.h>
 #include <libtty.h>
-#include <libtty-lf-fifo.h>
 #include <libklog.h>
 
 #include <sys/debug.h>
@@ -35,6 +34,8 @@
 #include <posix/utils.h>
 
 #include <phoenix/ioctl.h>
+
+#include "lf-fifo.h"
 
 
 #define UART_STACKSZ (1024)
