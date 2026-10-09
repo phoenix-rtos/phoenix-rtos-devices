@@ -21,6 +21,7 @@
 #include <sys/msg.h>
 #include <sys/threads.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <phoenix/sysinfo.h>
 
@@ -144,13 +145,21 @@ static void msgthr(void *ctx)
 }
 
 
-int fs_init(void)
+int fs_init(const char *sharedPort)
 {
 	void *ctx;
 	oid_t root = { 0 };
 
-	if (portCreate(&fs_common.port) != 0)
+	if (sharedPort != NULL) {
+		if (sys_namedResource(sharedPort, strlen(sharedPort) + 1, &fs_common.port) < 0) {
+			printf("fs_init: failed to lookup shared port '%s'\n", sharedPort);
+			return -1;
+		}
+	}
+	else if (portCreate(&fs_common.port) != 0) {
+		printf("fs_init: failed to create port\n");
 		return -1;
+	}
 
 	if (portRegister(fs_common.port, "/", &root)) {
 		portDestroy(fs_common.port);

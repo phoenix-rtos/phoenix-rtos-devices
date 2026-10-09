@@ -821,7 +821,7 @@ void tty_createDev(void)
 }
 
 
-int tty_init(void)
+int tty_init(const char *sharedPort)
 {
 	if (TTY_CNT == 0) {
 		return EOK;
@@ -834,7 +834,15 @@ int tty_init(void)
 	tty_ctx_t *ctx;
 	int err;
 
-	portCreate(&uart_common.port);
+	if (sharedPort != NULL) {
+		if (sys_namedResource(sharedPort, strlen(sharedPort) + 1, &uart_common.port) < 0) {
+			printf("fs_init: failed to lookup shared port '%s'\n", sharedPort);
+			return -1;
+		}
+	}
+	else {
+		portCreate(&uart_common.port);
+	}
 	oid.port = uart_common.port;
 
 	for (tty = 0; tty < NELEMS(ttySetup); ++tty) {

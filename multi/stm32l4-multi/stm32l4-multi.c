@@ -426,7 +426,7 @@ static void log_write(const char *buff, size_t len)
 
 
 #if BUILTIN_DUMMYFS
-extern int fs_init(void);
+extern int fs_init(const char *sharedPort);
 #endif
 
 
@@ -435,16 +435,30 @@ extern int posixsrv_start(void);
 #endif
 
 
-int main(void)
+int main(int argc, char **argv)
 {
 	int i;
 	oid_t oid;
 	setPriority(THREADS_PRIORITY);
 
-	portCreate(&common.port);
+	if (argc > 1) {
+		if (sys_namedResource(argv[1], strlen(argv[1]) + 1, &common.port) < 0) {
+			printf("fs_init: failed to lookup shared port '%s'\n", argv[1]);
+			return -1;
+		}
+	}
+	else {
+		portCreate(&common.port);
+	}
 
 #if BUILTIN_DUMMYFS
-	fs_init();
+	if (argc > 2) {
+		fs_init(argv[2]);
+	}
+	else {
+		fs_init(NULL);
+	}
+
 #else
 	/* Wait for the filesystem */
 	while (lookup("/", NULL, &oid) < 0) {
@@ -454,7 +468,12 @@ int main(void)
 
 	rcc_init();
 	exti_init();
-	tty_init();
+	if (argc > 3) {
+		tty_init(argv[3]);
+	}
+	else {
+		tty_init(NULL);
+	}
 	gpio_init();
 	spi_init();
 	adc_init();
