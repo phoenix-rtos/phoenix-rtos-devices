@@ -14,6 +14,7 @@
 
 
 #include <board_config.h>
+#include <stdint.h>
 #include <sys/msg.h>
 #include <sys/types.h>
 #include <string.h>
@@ -89,7 +90,7 @@ typedef struct {
 	volatile uint32_t *vbase;
 	unsigned int irq;
 	uint8_t addr;
-	uint8_t txDescFree;
+	_Atomic(uint8_t) txDescFree;
 
 	size_t sentDesc;
 	size_t lastTxDesc;
