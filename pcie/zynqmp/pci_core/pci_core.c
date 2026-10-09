@@ -427,7 +427,7 @@ void pci_configureEndpointBARs(uint32_t *pcie, pci_dev_t *device)
 
 		int j = is_64_bit ? i - 1 : i;
 
-		logger_log(_pcie_logger_ctx, "pcie: %d:%d.%d - Wrote BAR address 0x%lx - 0x%lx",
+		logger_log(_pcie_logger_ctx, "pcie: %d:%d.%d - Wrote BAR address 0x%lx - 0x%lx\n",
 				bus, dev, fun, bar_phys_add, size);
 
 		device->bar[j] = (uintptr_t)mmap(NULL, size, PROT_WRITE | PROT_READ,
@@ -674,15 +674,6 @@ int pci_initContext(pci_context_t *context)
 	/* Add logger */
 	pci_initLogger();
 
-	// lib_rbInit(&context->msi_rb_tree, pci_msiRbTreeComp, NULL);
-
-	context->fpga_gpio = mmap(NULL, 0x1000, PROT_WRITE | PROT_READ,
-			MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, PCI_FPGA_GPIO_ADD);
-
-	if (NULL == context->fpga_gpio) {
-		return -ENOMEM;
-	}
-
 	context->pcie = mmap(NULL, 0x10000000, PROT_WRITE | PROT_READ,
 			MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, PCI_ROOT_COMPLEX_BASE_ADD);
 
@@ -697,8 +688,7 @@ int pci_initContext(pci_context_t *context)
 
 	/* Make sure to set correct AXI state */
 	pci_resetAXIandRC(context);
-	pci_prepareAXI();
-
+	
 	phy_link_status phy_link_status = pci_checkLinkStatus(context->pcie);
 	if (phy_link_status.link_up) {
 		logger_log(_pcie_logger_ctx, "pcie: phy LINK UP, link rate: %u, link width x%u, ltssm state: %s\n",
@@ -813,46 +803,46 @@ int pci_closeContext(pci_context_t *context)
 	return 0;
 }
 
-int pci_irqCallback(unsigned int irq_no, void *arg)
+__attribute__((section(".interrupt"))) int pci_irqCallback(unsigned int irq_no, void *arg)
 {
 
 	pci_context_t *context = arg;
 	/* Disable irq pin assertion */
-	writeReg(context->pcie, 0x13c, 0u);
+	writeRegIrq(context->pcie, 0x13c, 0u);
 	/* Read status */
-	context->rc_status_reg = readReg(context->pcie, 0x138);
+	context->rc_status_reg = readRegIrq(context->pcie, 0x138);
 
-	uint32_t rc_status = readReg(context->pcie, 0x148);
+	uint32_t rc_status = readRegIrq(context->pcie, 0x148);
 
 	/* Clear error FIFO overflow if happend */
 	if ((rc_status & (1 << 17)) != 0) {
-		writeReg(context->pcie, 0x148, rc_status & (1 << 17));
+		writeRegIrq(context->pcie, 0x148, rc_status & (1 << 17));
 	}
 
 	while ((rc_status & (1 << 16))) {
 		/* Clear error reporting FIFO */
-		uint32_t error_msg = readReg(context->pcie, 0x154);
+		uint32_t error_msg = readRegIrq(context->pcie, 0x154);
 		while ((error_msg & (1 << 18)) != 0) {
 			/* !!! READS NON DESTRUCTIVE !!! */
-			writeReg(context->pcie, 0x154, error_msg);
-			error_msg = readReg(context->pcie, 0x154);
+			writeRegIrq(context->pcie, 0x154, error_msg);
+			error_msg = readRegIrq(context->pcie, 0x154);
 		}
 
 		/* Clear error FIFO overflow */
-		writeReg(context->pcie, 0x148, (1 << 17));
-		rc_status = readReg(context->pcie, 0x148);
+		writeRegIrq(context->pcie, 0x148, (1 << 17));
+		rc_status = readRegIrq(context->pcie, 0x148);
 	}
 
 	/* Clear EPs interrupt FIFO overflow if happend */
 	if ((rc_status & (1 << 19)) != 0) {
 		context->irq_fifo_overflow = true;
-		writeReg(context->pcie, 0x148, rc_status & (1 << 19));
+		writeRegIrq(context->pcie, 0x148, rc_status & (1 << 19));
 	}
 
 	/* Handle interrupts incoming from endpoints */
 	/* Clear EP irq FIFO */
-	while ((readReg(context->pcie, 0x148) & (1u << 18)) != 0) {
-		volatile uint32_t irq_status_register = readReg(context->pcie, 0x158);
+	while ((readRegIrq(context->pcie, 0x148) & (1u << 18)) != 0) {
+		volatile uint32_t irq_status_register = readRegIrq(context->pcie, 0x158);
 		pci_irq_info_t *irq_info = &context->irq_queue[context->irq_queue_wr_ptr];
 		int rd_ptr = atomic_load(&context->irq_queue_rd_ptr);
 		int wr_ptr = atomic_load(&context->irq_queue_wr_ptr);
@@ -860,7 +850,6 @@ int pci_irqCallback(unsigned int irq_no, void *arg)
 		if (rd_ptr == (wr_ptr + 1) % PCI_CONTEXT_IRQ_BUF_SIZE) {
 			/* FIFO is full allow downstream thread to process interrupts */
 			/* TODO: Complete overflow sad path */
-			__builtin_trap();
 			context->should_unmask_irq = true;
 			return 1;
 		}
@@ -871,7 +860,7 @@ int pci_irqCallback(unsigned int irq_no, void *arg)
 			/* MSI */
 			irq_info->type = PCI_MSI_IRQ;
 			irq_info->msi_address = (irq_status_register >> 16) & ((1 << 10) - 1);
-			irq_info->msi_payload = readReg(context->pcie, 0x15c);
+			irq_info->msi_payload = readRegIrq(context->pcie, 0x15c);
 		}
 		else {
 			/* INTX*/
@@ -888,16 +877,16 @@ int pci_irqCallback(unsigned int irq_no, void *arg)
 		atomic_store(&context->irq_queue_wr_ptr, (wr_ptr + 1) % PCI_CONTEXT_IRQ_BUF_SIZE);
 		/* Since reads are non-destructive we need to write to this
 		register to get next irq from FIFO */
-		writeReg(context->pcie, 0x158, 1u << 31);
+		writeRegIrq(context->pcie, 0x158, 1u << 31);
 	}
 
 	/* Clear interrupts that were handled */
 	/* TODO: handle other interrupt sources not only EPs */
-	writeReg(context->pcie, 0x138, context->rc_status_reg);
+	writeRegIrq(context->pcie, 0x138, context->rc_status_reg);
 
 	/* Enable irq pin assertion */
 	/* TODO: handle level triggered INTX interrupt */
-	writeReg(context->pcie, 0x13c, ~0u);
+	writeRegIrq(context->pcie, 0x13c, ~0u);
 	/* Interrupt retriggered but no actual interrupts to handle */
 	return context->rc_status_reg != 0;
 }
@@ -1007,147 +996,9 @@ void pci_irqHandlerThread(void *data)
 	endthread();
 }
 
-static int smmu_irq_callback(unsigned int arg, void *a)
-{
-	logger_log(_pcie_logger_ctx, "SMMU FAULT\n");
-}
-
-void pci_prepareAXI()
-{
-	/* Fix AXI configuration */
-	/* Fix slave data width */
-	volatile uint32_t *axi_slave1_width_reg = (volatile uint32_t *)mmap(NULL, 4, PROT_WRITE | PROT_READ,
-			MAP_PHYSMEM | MAP_ANONYMOUS, -1, AXI_HPM1_FPD_REG);
-	if (NULL == axi_slave1_width_reg) {
-		logger_log(_pcie_logger_ctx, "pcie: mmap failed for this AXI width register\n");
-		return;
-	}
-
-	uint32_t configuration = (*axi_slave1_width_reg & ~((1 << 10) | (1 << 11))) | (AXI_WIDTH_CFG_128B << 10);
-
-	*axi_slave1_width_reg = configuration;
-	wmb();
-
-#define AXI_AFIFM0_RDCTRL 0xFD360000
-#define AXI_AFIFM0_WRCTRL 0xFD360014
-
-	/* Manually set HPD HPC0 width */
-	volatile uint32_t *axi_afifm0_rdctrl = (volatile uint32_t *)mmap(NULL, 1024, PROT_WRITE | PROT_READ,
-			MAP_PHYSMEM | MAP_ANONYMOUS, -1, AXI_AFIFM0_RDCTRL);
-
-	if (NULL == axi_afifm0_rdctrl) {
-		logger_log(_pcie_logger_ctx, "pcie: mmap failed on AXI AFIFM RDCTRL register");
-		return;
-	}
-
-	*axi_afifm0_rdctrl = 1;
-	*((char *)axi_afifm0_rdctrl + 0x14) = 1;
-	wmb();
-
-	munmap((void *)axi_slave1_width_reg, 4);
-	munmap((void *)axi_afifm0_rdctrl, 1024);
-
-#define SMMU_SCR0 0x00FD800000
-	volatile uint32_t *smmu_scr0_reg = (volatile uint32_t *)mmap(NULL, 1024, PROT_WRITE | PROT_READ,
-			MAP_PHYSMEM | MAP_ANONYMOUS, -1, SMMU_SCR0);
-
-	configuration = *smmu_scr0_reg;
-	logger_log(_pcie_logger_ctx, "SMMU CONFIG: Current scr0 status 0x%x\n", configuration);
-	*smmu_scr0_reg = configuration | (0b111);
-	logger_log(_pcie_logger_ctx, "SMMU CONFIG: After modifiction scr0 status 0x%x\n", *smmu_scr0_reg);
-
-#define SMMU_IRQ_NO 187
-
-	if (interrupt(SMMU_IRQ_NO, smmu_irq_callback, NULL, (handle_t)(-1), NULL) < 0) {
-		logger_log(_pcie_logger_ctx, "DRIVER: Failed to register callback\n");
-	}
-
-	munmap(smmu_scr0_reg, 1024);
-
-#define RST_FPD_TOP        0x00FD1A0000
-#define RST_FPD_TOP_OFFSET 0x100
-#define FPD_SLCR_WPROT0    0x00FD610000
-	volatile uint32_t *rst_fpd_top_reg = (volatile uint32_t *)mmap(NULL, 1024, PROT_WRITE | PROT_READ,
-			MAP_PHYSMEM | MAP_ANONYMOUS, -1, RST_FPD_TOP);
-
-	/* Get all interfaces out of reset */
-	*(volatile uint32_t *)((uintptr_t)rst_fpd_top_reg + RST_FPD_TOP_OFFSET) = 0;
-
-	munmap(rst_fpd_top_reg, 1024);
-
-	volatile uint32_t *fpd_slcr_wprot0_reg = (volatile uint32_t *)mmap(NULL, 1024, PROT_WRITE | PROT_READ,
-			MAP_PHYSMEM | MAP_ANONYMOUS, -1, FPD_SLCR_WPROT0);
-
-	/* Enable writes for FPD */
-	*fpd_slcr_wprot0_reg = 0;
-
-	munmap(fpd_slcr_wprot0_reg, 1024);
-}
-
-static void deassertAxiInterconnectsReset(void)
-{
-	logger_log(_pcie_logger_ctx, "Deasserting AXI interconnect\n");
-	platformctl_t ctl3 = {
-		.action = pctl_set,
-		.type = pctl_devreset,
-		.devreset.dev = pctl_devreset_fpd_s_axi_hpc_0_fpd,
-		.devreset.state = 0,
-	};
-	int ret = platformctl(&ctl3);
-	if (ret != 0) {
-		logger_log(_pcie_logger_ctx, "pcie: fail to deassert reset\n");
-	}
-
-	ctl3.devreset.dev = pctl_devreset_fpd_s_axi_hpc_1_fpd;
-	ret = platformctl(&ctl3);
-	if (ret != 0) {
-		logger_log(_pcie_logger_ctx, "pcie: fail to deassert reset\n");
-	}
-
-	ctl3.devreset.dev = pctl_devreset_fpd_s_axi_hp_0_fpd;
-	ret = platformctl(&ctl3);
-	if (ret != 0) {
-		logger_log(_pcie_logger_ctx, "pcie: fail to deassert reset\n");
-	}
-
-	ctl3.devreset.dev = pctl_devreset_fpd_s_axi_hp_1_fpd;
-	ret = platformctl(&ctl3);
-	if (ret != 0) {
-		logger_log(_pcie_logger_ctx, "pcie: fail to deassert reset\n");
-	}
-
-	ctl3.devreset.dev = pctl_devreset_fpd_s_axi_hpc_2_fpd;
-	ret = platformctl(&ctl3);
-	if (ret != 0) {
-		logger_log(_pcie_logger_ctx, "pcie: fail to deassert reset\n");
-	}
-
-	ctl3.devreset.dev = pctl_devreset_fpd_s_axi_hpc_3_fpd;
-	ret = platformctl(&ctl3);
-	if (ret != 0) {
-		logger_log(_pcie_logger_ctx, "pcie: fail to deassert reset\n");
-	}
-}
-
 void pci_resetAXIandRC(pci_context_t *context)
 {
 	/* Deassert reset on AXI Interconnect between PS and PL */
-	deassertAxiInterconnectsReset();
-	usleep(3 * 1000);
-
-	/* Assert PCI Express pin for some time */
-	// writeReg(gpioBase, 0x08, 0x0);
-	// usleep(100 * 1000);
-
-	// /* Deassert PCI Express reset pin */
-	// writeReg(gpioBase, 0x08, 0x1);
-	// /* Let PCI Express node initialise */
-	// usleep(100 * 1000);
-
-	// /* Deassert reset on AXI PCI Express bridge IP Core */
-	// writeReg(gpioBase, 0x08, 0x3);
-	// /* Let bridge turn link up */
-	// usleep(100 * 1000);
 
 	/*
 	Currently GPIO pins are not connected to PERST in the endpoint

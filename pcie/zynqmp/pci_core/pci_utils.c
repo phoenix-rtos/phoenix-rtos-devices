@@ -27,6 +27,18 @@ uint32_t readReg(uint32_t *base, uint32_t offset)
 }
 
 
+__attribute__((section(".interrupt"))) void writeRegIrq(uint32_t *base, uint32_t offset, uint32_t value)
+{
+	*((volatile uint32_t *)((char *)base + offset)) = value;
+}
+
+
+__attribute__((section(".interrupt"))) uint32_t readRegIrq(uint32_t *base, uint32_t offset)
+{
+	return *((volatile uint32_t *)((char *)base + offset));
+}
+
+
 /* */
 void writeRegMsk(uint32_t *base, uint32_t offset, uint32_t clr, uint32_t set)
 {

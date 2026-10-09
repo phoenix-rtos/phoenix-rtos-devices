@@ -33,9 +33,8 @@ typedef irqreturn_t (*irq_handler_t)(int, void *);
 
 typedef int pci_power_t;
 
-#define PCI_FPGA_GPIO_ADD                 0xa0020000
-#define PCI_ROOT_COMPLEX_BASE_ADD         0x500000000
-#define PCI_ROOT_COMPLEX_IRQ_NO           138 /* Connected to PL-PS interrupt, for current bitstrem PL-PS irq no. 1[2] */
+#define PCI_ROOT_COMPLEX_BASE_ADD         0xB8000000
+#define PCI_ROOT_COMPLEX_IRQ_NO           23
 #define PCI_IRQ_HANDLER_THREAD_PRIO       1
 #define PCI_IRQ_HANDELR_THREAD_STACK_SIZE 8192
 
@@ -44,13 +43,6 @@ typedef int pci_power_t;
 
 #define PCI_MAX_BAR_COUNT        6
 #define PCI_CONTEXT_IRQ_BUF_SIZE 128
-
-#define PCI_BAR0_ADD 0x520000000
-#define PCI_BAR1_ADD 0x530000000
-#define PCI_BAR2_ADD 0x540000000
-#define PCI_BAR3_ADD 0x550000000
-#define PCI_BAR4_ADD 0x560000000
-#define PCI_BAR5_ADD 0x570000000
 
 /* Not implemented*/
 #define PCI_IO_BAR_BA    0
@@ -64,8 +56,8 @@ typedef int pci_power_t;
 #define PCI_32P_BAR_BA    0
 #define PCI_32P_BAR_LIMIT 0
 
-#define PCI_64P_BAR_BA    0x540000000
-#define PCI_64P_BAR_LIMIT 0x550000000
+#define PCI_64P_BAR_BA    0xA0000000
+#define PCI_64P_BAR_LIMIT (PCI_64P_BAR_BA + 0x10000000)
 
 /* Address ranges for MSI */
 /* Keep in mid that those will be intercepted by root complex */

@@ -419,16 +419,18 @@ static int uart_iomuxInit(unsigned int n)
 #endif
 }
 
-
+#define LOG_LINE() printf("grlib-uart: %s:%d\n", __FILE__, __LINE__)
 static int uart_init(unsigned int n, int baud, int raw)
 {
 	uart_t *uart = &uart_common.uart;
 
 	if (uart_iomuxInit(n) < 0) {
+		LOG_LINE();
 		return -1;
 	}
 
 	if (uart_cguInit(n) < 0) {
+		LOG_LINE();
 		return -1;
 	}
 
@@ -443,11 +445,13 @@ static int uart_init(unsigned int n, int baud, int raw)
 	};
 
 	if (platformctl(&ctl) < 0) {
+		LOG_LINE();
 		return -1;
 	}
 
 	if (dev.bus != BUS_AMBA_APB) {
 		/* APBUART should be on APB bus */
+		LOG_LINE();
 		return -1;
 	}
 	info[n].base = dev.info.apb.base;
@@ -456,17 +460,20 @@ static int uart_init(unsigned int n, int baud, int raw)
 	uintptr_t base = ((uintptr_t)info[n].base) & ~(_PAGE_SIZE - 1);
 	uart->base = mmap(NULL, _PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, (off_t)base);
 	if (uart->base == MAP_FAILED) {
+		LOG_LINE();
 		return -1;
 	}
 
 	if (condCreate(&uart->cond) != EOK) {
 		munmap((void *)uart->base, _PAGE_SIZE);
+		LOG_LINE();
 		return -1;
 	}
 
 	if (mutexCreate(&uart->lock) != EOK) {
 		munmap((void *)uart->base, _PAGE_SIZE);
 		resourceDestroy(uart->cond);
+		LOG_LINE();
 		return -1;
 	}
 
@@ -481,6 +488,7 @@ static int uart_init(unsigned int n, int baud, int raw)
 		munmap((void *)uart->base, _PAGE_SIZE);
 		resourceDestroy(uart->lock);
 		resourceDestroy(uart->cond);
+		LOG_LINE();
 		return -1;
 	}
 
@@ -567,6 +575,7 @@ int main(int argc, char **argv)
 
 	portCreate(&uart_common.uart.oid.port);
 
+	printf("Initialize: %d\n", uartn);
 	if (uart_init(uartn, baud, raw) < 0) {
 		debug("grlib-uart: cannot initialize uart\n");
 		return EXIT_FAILURE;

@@ -50,6 +50,10 @@ struct device {
 void writeReg(uint32_t *base, uint32_t offset, uint32_t value);
 /* Read 32-bit register at base + offset */
 uint32_t readReg(uint32_t *base, uint32_t offset);
+/* Write 32-bit register at base + offset */
+void writeRegIrq(uint32_t *base, uint32_t offset, uint32_t value);
+/* Read 32-bit register at base + offset */
+uint32_t readRegIrq(uint32_t *base, uint32_t offset);
 /* */
 void writeRegMsk(uint32_t *base, uint32_t offset, uint32_t clr, uint32_t set);
 /* Returns pointer to register of PCIe device */
