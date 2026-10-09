@@ -392,7 +392,7 @@ static ptable_t *flashsrv_ptableRead(storage_t *strg)
 }
 
 
-static int flashsrv_partAdd(storage_t *parent, uint32_t offset, uint32_t size, const char *name)
+static int flashsrv_partAdd(storage_t *parent, uint32_t offset, uint32_t size, const char *name, oid_t *oid)
 {
 	storage_t *part = parent->parts;
 	if (part != NULL) {
@@ -412,8 +412,7 @@ static int flashsrv_partAdd(storage_t *parent, uint32_t offset, uint32_t size, c
 	part->size = size;
 	part->dev = parent->dev;
 
-	oid_t oid;
-	int res = storage_add(part, &oid);
+	int res = storage_add(part, oid);
 	if (res < 0) {
 		LOG_ERROR("failed to add a partition");
 		free(part);
@@ -428,7 +427,7 @@ static int flashsrv_partAdd(storage_t *parent, uint32_t offset, uint32_t size, c
 		return -ENAMETOOLONG;
 	}
 
-	res = create_dev(&oid, path);
+	res = create_dev(oid, path);
 	if (res < 0) {
 		LOG_ERROR("failed to create partition device file");
 		storage_remove(part);
@@ -442,6 +441,41 @@ static int flashsrv_partAdd(storage_t *parent, uint32_t offset, uint32_t size, c
 }
 
 
+static int flash_sharedFSAdd(id_t id, const char *fs, const char *portName, unsigned int prio)
+{
+	int err;
+	oid_t oid;
+
+	err = sys_namedResource(portName, strlen(portName), &oid.port);
+	if (err < 0) {
+		fprintf(stderr, "zynq-flash: failed to find a named port %s, err: %d\n", portName, err);
+		return err;
+	}
+
+	size_t stackSize;
+#ifndef FLASHSRV_STORAGE_STACK_SIZE
+	stackSize = 2 * _PAGE_SIZE;
+#else
+	stackSize = FLASHSRV_STORAGE_STACK_SIZE;
+#endif
+
+	struct _storage_pool_t *pool = storage_createPool(4, 1, stackSize, prio);
+	if (pool == NULL) {
+		fprintf(stderr, "zynq-flash: failed to create a storage pool\n");
+		return -ENOMEM;
+	}
+
+	err = storage_mountfsShared(storage_get(id), pool, fs, NULL, 0, NULL, oid.port, prio);
+	if (err < 0) {
+		fprintf(stderr, "zynq-flash: failed to mount a filesystem - %s: %d\n", fs, err);
+		storage_poolDestroy(pool);
+		return err;
+	}
+
+	return EOK;
+}
+
+
 static int flashsrv_partsInit(storage_t *strg)
 {
 	ptable_t *ptable = flashsrv_ptableRead(strg);
@@ -451,10 +485,18 @@ static int flashsrv_partsInit(storage_t *strg)
 	}
 
 	for (size_t i = 0; i < ptable->count; i++) {
-		if (flashsrv_partAdd(strg, ptable->parts[i].offset, ptable->parts[i].size, (const char *)ptable->parts[i].name) < 0) {
+		oid_t oid;
+		if (flashsrv_partAdd(strg, ptable->parts[i].offset, ptable->parts[i].size, (const char *)ptable->parts[i].name, &oid) < 0) {
 			LOG_ERROR("failed to add partition %s", (const char *)ptable->parts[i].name);
 			free(ptable);
 			return -1;
+		}
+		if (strcmp((const char *)ptable->parts[i].name, "storage") == 0) {
+			if (flash_sharedFSAdd(oid.id, "littlefs", "storagefs", 1U) < 0) {
+				LOG_ERROR("failed to add shared port for partition %s", (const char *)ptable->parts[i].name);
+				free(ptable);
+				return -1;
+			}
 		}
 	}
 
