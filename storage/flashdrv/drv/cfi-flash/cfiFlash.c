@@ -1,7 +1,8 @@
 /*
  * Phoenix-RTOS
  *
- * GRLIB SPIMCTRL Flash driver
+ * Flash driver for flash devices utilizing CFI (Common Flash Interface)
+ * according to JEDEC Standards JESD68 and JESD21
  *
  * Copyright 2025 Phoenix Systems
  * Author: Lukasz Leczkowski
@@ -16,9 +17,8 @@
 #include <sys/mman.h>
 #include <sys/time.h>
 
-#include "flash.h"
-#include "flashdrv.h"
-
+#include "cfiFlash.h"
+#include "../grlib-spimctrl/flashdrv.h"
 
 #define FLASH_CMD_RDID 0x9fu
 
@@ -27,7 +27,8 @@
 #define FLASH_SR_WIP 0x01u /* Write in progress */
 #define FLASH_SR_WEL 0x02u /* Write enable latch */
 
-#define VID_MACRONIX 0xc2u
+/* Manufacturer ID */
+
 #define VID_SPANSION 0x01u
 
 /* clang-format off */
@@ -222,10 +223,10 @@ int spimctrl_flash_sectorErase(const struct _storage_devCtx_t *ctx, addr_t addr,
 	uint8_t cmd[4] = { ctx->dev->cmds->se, (addr >> 16) & 0xff, (addr >> 8) & 0xff, addr & 0xff };
 	size_t regionEraseSz = 0, regionEnd = 0;
 
-	for (size_t i = 0; i < ctx->cfi.regionCnt; i++) {
-		regionEnd += (ctx->cfi.regions[i].count + 1) * CFI_REGION_SIZE(ctx->cfi.regions[i].size);
+	for (size_t i = 0; i < ctx->flash_data.cfi.regionCnt; i++) {
+		regionEnd += (ctx->flash_data.cfi.regions[i].count + 1) * CFI_REGION_SIZE(ctx->flash_data.cfi.regions[i].size);
 		if (addr < regionEnd) {
-			regionEraseSz = ctx->cfi.regions[i].size;
+			regionEraseSz = ctx->flash_data.cfi.regions[i].size;
 			break;
 		}
 	}
@@ -391,7 +392,6 @@ static const struct flash_dev *flash_query(struct spimctrl *spimctrl, cfi_info_t
 			if (flash_readEAR(flash, spimctrl, &spimctrl->ear) < 0) {
 				return NULL;
 			}
-
 			return flash;
 		}
 	}
@@ -402,13 +402,13 @@ static const struct flash_dev *flash_query(struct spimctrl *spimctrl, cfi_info_t
 
 void spimctrl_flash_printInfo(const struct _storage_devCtx_t *ctx)
 {
-	LOG("configured %s %u MB flash", ctx->dev->name, CFI_SIZE(ctx->cfi.chipSz) / (1024 * 1024));
+	LOG("configured %s %u MB flash", ctx->dev->name, CFI_SIZE(ctx->flash_data.cfi.chipSz) / (1024 * 1024));
 }
 
 
 int spimctrl_flash_init(struct _storage_devCtx_t *ctx, addr_t flashBase)
 {
-	ctx->dev = flash_query(ctx->spimctrl, &ctx->cfi);
+	ctx->dev = flash_query(ctx->spimctrl, &ctx->flash_data.cfi);
 
 	if (ctx->dev == NULL) {
 		return -1;
@@ -416,14 +416,14 @@ int spimctrl_flash_init(struct _storage_devCtx_t *ctx, addr_t flashBase)
 
 	ctx->sectorsz = 0;
 
-	for (uint8_t reg = 0; reg < ctx->cfi.regionCnt; ++reg) {
-		if (ctx->sectorsz < CFI_REGION_SIZE(ctx->cfi.regions[reg].size)) {
-			ctx->sectorsz = CFI_REGION_SIZE(ctx->cfi.regions[reg].size);
+	for (uint8_t reg = 0; reg < ctx->flash_data.cfi.regionCnt; ++reg) {
+		if (ctx->sectorsz < CFI_REGION_SIZE(ctx->flash_data.cfi.regions[reg].size)) {
+			ctx->sectorsz = CFI_REGION_SIZE(ctx->flash_data.cfi.regions[reg].size);
 		}
 	}
 
 	/* Map entire flash */
-	common.base = mmap(NULL, CFI_SIZE(ctx->cfi.chipSz), PROT_READ | PROT_WRITE, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, flashBase);
+	common.base = mmap(NULL, CFI_SIZE(ctx->flash_data.cfi.chipSz), PROT_READ | PROT_WRITE, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, flashBase);
 	if (common.base == MAP_FAILED) {
 		LOG_ERROR("failed to map flash");
 		return -ENOMEM;
@@ -436,5 +436,5 @@ int spimctrl_flash_init(struct _storage_devCtx_t *ctx, addr_t flashBase)
 void spimctrl_flash_destroy(struct _storage_devCtx_t *ctx)
 {
 	spimctrl_destroy(ctx->spimctrl);
-	(void)munmap(common.base, CFI_SIZE(ctx->cfi.chipSz));
+	(void)munmap(common.base, CFI_SIZE(ctx->flash_data.cfi.chipSz));
 }
