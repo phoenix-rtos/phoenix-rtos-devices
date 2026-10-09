@@ -120,7 +120,7 @@ typedef struct {
 	} type;
 	union {
 		struct {
-			uint8_t rxFifoBuffer[16];
+			uint8_t rxFifoBuffer[256];
 			lf_fifo_t rxFifo;
 			volatile int rxready;
 		} irq;
