@@ -23,7 +23,7 @@ ssize_t tty_log(const char *str, size_t len);
 void tty_createDev(void);
 
 
-int tty_init(void);
+int tty_init(const char *sharedPort);
 
 
 #endif
