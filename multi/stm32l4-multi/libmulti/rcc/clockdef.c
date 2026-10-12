@@ -1,9 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * stm32l4-multi
- *
- * Clock tree definition and parser
+ * Multidrv-lib: Clock tree definition and parser
  *
  * Copyright 2025 Phoenix Systems
  * Copyright 2026 Apator Metrix
@@ -18,7 +16,7 @@
 #include <errno.h>
 #include <sys/platform.h>
 
-#include "../rcc.h"
+#include "libmulti/librcc.h"
 #include "clockdef.h"
 
 
@@ -56,7 +54,7 @@ static int clockdef_getNumber(const clockdef_number_t *n, uint32_t *num_out)
 }
 
 
-static int clockdef_getBase(const clockdef_base_t *n, uint32_t *num_out, clockdef_clkID_t *prev)
+static int clockdef_getBase(const clockdef_base_t *n, uint32_t *num_out, librcc_clkid_t *prev)
 {
 	switch (n->type) {
 		case clockdef_type_literal:
@@ -81,7 +79,7 @@ static int clockdef_getBase(const clockdef_base_t *n, uint32_t *num_out, clockde
 }
 
 
-int rcc_getClock(clockdef_clkID_t id, uint64_t *output)
+int librcc_getClock(librcc_clkid_t id, uint64_t *output)
 {
 	if (id == clkid_none) {
 		return -ENOENT;
@@ -91,7 +89,7 @@ int rcc_getClock(clockdef_clkID_t id, uint64_t *output)
 	uint32_t base;
 	uint64_t total_nom = 1;
 	uint64_t total_denom = 1;
-	clockdef_clkID_t prev;
+	librcc_clkid_t prev;
 
 	do {
 		uint32_t nom, denom;
@@ -135,9 +133,9 @@ int rcc_getClock(clockdef_clkID_t id, uint64_t *output)
 }
 
 
-static_assert(sizeof(clockdef_clkID_t) == sizeof(uint8_t), "clock ID size exceeds option storage size");
+static_assert(sizeof(librcc_clkid_t) == sizeof(uint8_t), "clock ID size exceeds option storage size");
 
-int rcc_setClksel(enum ipclks ipclk, enum clock_ids clkID)
+int librcc_setClksel(enum ipclks ipclk, librcc_clkid_t clkID)
 {
 	if ((ipclk < 0) || (ipclk >= pctl_ipclks_count) || (clkID == clkid_none)) {
 		return -EINVAL;
@@ -145,14 +143,14 @@ int rcc_setClksel(enum ipclks ipclk, enum clock_ids clkID)
 
 	size_t setting;
 	const uint8_t *options = clockdef_getClkselOptions(ipclk);
-	for (setting = 0; setting < RCC_MAX_CLOCK_CHOICES; setting++) {
-		clockdef_clkID_t settingID = options[setting];
+	for (setting = 0; setting < LIBRCC_MAX_CLOCK_CHOICES; setting++) {
+		librcc_clkid_t settingID = options[setting];
 		if (settingID == clkID) {
 			break;
 		}
 	}
 
-	if (setting >= RCC_MAX_CLOCK_CHOICES) {
+	if (setting >= LIBRCC_MAX_CLOCK_CHOICES) {
 		return -EINVAL;
 	}
 

@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * STM32N6 reset and clock controller driver
+ * Multidrv-lib: STM32N6 reset and clock controller driver
  *
  * Copyright 2017, 2018, 2020, 2025 Phoenix Systems
  * Copyright 2026 Apator Metrix
@@ -15,13 +15,13 @@
 
 #include <errno.h>
 
-#include "../common.h"
-#include "../rcc.h"
-#include "../stm32n6_regs.h"
+#include "../../common.h"
+#include "../../stm32n6_regs.h"
 #include "clockdef.h"
+#include "common.h"
 
 
-static const uint8_t rcc_clksels[pctl_ipclks_count][RCC_MAX_CLOCK_CHOICES] = {
+static const uint8_t rcc_clksels[pctl_ipclks_count][LIBRCC_MAX_CLOCK_CHOICES] = {
 	[pctl_ipclk_adf1sel] = { clkid_hclk, clkid_per, clkid_ic7, clkid_ic8, clkid_msi, clkid_hsi_div, clkid_i2s_in, clkid_timg },
 	[pctl_ipclk_adc12sel] = { clkid_hclk, clkid_per, clkid_ic7, clkid_ic8, clkid_msi, clkid_hsi_div, clkid_i2s_in, clkid_timg },
 	[pctl_ipclk_dcmippsel] = { clkid_pclk5, clkid_per, clkid_ic17, clkid_hsi_div },
@@ -87,11 +87,11 @@ static const uint8_t rcc_clksels[pctl_ipclks_count][RCC_MAX_CLOCK_CHOICES] = {
 	}
 
 static const clockdef_literal_t msi_base_vals[] = { 4 * 1000 * 1000, 16 * 1000 * 1000 };
-static const clockdef_clkID_t sysa_mux_vals[] = { clkid_hsi, clkid_msi, clkid_hse, clkid_ic1 };
-static const clockdef_clkID_t sysb_mux_vals[] = { clkid_hsi, clkid_msi, clkid_hse, clkid_ic2 };
-static const clockdef_clkID_t sysc_mux_vals[] = { clkid_hsi, clkid_msi, clkid_hse, clkid_ic6 };
-static const clockdef_clkID_t sysd_mux_vals[] = { clkid_hsi, clkid_msi, clkid_hse, clkid_ic11 };
-static const clockdef_clkID_t per_mux_vals[] = { clkid_hsi, clkid_msi, clkid_hse, clkid_ic19, clkid_ic5, clkid_ic10, clkid_ic15, clkid_ic20 };
+static const librcc_clkid_t sysa_mux_vals[] = { clkid_hsi, clkid_msi, clkid_hse, clkid_ic1 };
+static const librcc_clkid_t sysb_mux_vals[] = { clkid_hsi, clkid_msi, clkid_hse, clkid_ic2 };
+static const librcc_clkid_t sysc_mux_vals[] = { clkid_hsi, clkid_msi, clkid_hse, clkid_ic6 };
+static const librcc_clkid_t sysd_mux_vals[] = { clkid_hsi, clkid_msi, clkid_hse, clkid_ic11 };
+static const librcc_clkid_t per_mux_vals[] = { clkid_hsi, clkid_msi, clkid_hse, clkid_ic19, clkid_ic5, clkid_ic10, clkid_ic15, clkid_ic20 };
 
 static const clockdef_obj_t clockObjects[] = {
 	[clkid_lsi] = { .base = CLOCK_LITERAL(32000), .nom = CLOCK_LITERAL(1), .denom = CLOCK_LITERAL(1) },
@@ -344,7 +344,7 @@ static const clockdef_obj_t clockObjects[] = {
 static const size_t clockObjects_size = sizeof(clockObjects) / sizeof(clockObjects[0]);
 
 
-const clockdef_obj_t *clockdef_getObject(clockdef_clkID_t id)
+const clockdef_obj_t *clockdef_getObject(librcc_clkid_t id)
 {
 	if ((id > clkid_none) && (id < clockObjects_size)) {
 		return clockObjects + id;
@@ -367,11 +367,11 @@ const uint8_t *clockdef_getClkselOptions(enum ipclks ipclk)
 
 
 int clockdef_getClockHW(
-		clockdef_clkID_t id,
+		librcc_clkid_t id,
 		uint32_t *base_out,
 		uint64_t *nom,
 		uint64_t *denom,
-		clockdef_clkID_t *prev_out)
+		librcc_clkid_t *prev_out)
 {
 	(void)base_out;
 	if (id >= clkid_pll1 && id <= clkid_pll4) {

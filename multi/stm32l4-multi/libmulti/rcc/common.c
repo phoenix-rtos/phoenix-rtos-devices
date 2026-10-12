@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * STM32L4/N6 reset and clock controller driver common code
+ * Multidrv-lib: STM32L4/N6 reset and clock controller driver common code
  *
  * Copyright 2017, 2018, 2020, 2025 Phoenix Systems
  * Copyright 2026 Apator Metrix
@@ -15,8 +15,10 @@
 
 #include <sys/threads.h>
 
-#include "../common.h"
-#include "../rcc.h"
+#include <libmulti/librcc.h>
+
+#include "../../common.h"
+#include "common.h"
 
 
 rcc_common_t rcc_common;
@@ -38,7 +40,7 @@ void pwr_unlock(void)
 }
 
 
-int rcc_init(void)
+int librcc_init(void)
 {
 	rcc_common.base = RCC_BASE;
 	rcc_common.pwr = PWR_BASE;

@@ -28,11 +28,11 @@
 #include "common.h"
 #include "config.h"
 
+#include <libmulti/librcc.h>
 #include "adc.h"
 #include "exti.h"
 #include "gpio.h"
 #include "i2c.h"
-#include "rcc.h"
 #include "rtc.h"
 #include "spi.h"
 #include "tty.h"
@@ -452,7 +452,7 @@ int main(void)
 	}
 #endif
 
-	rcc_init();
+	librcc_init();
 	exti_init();
 	tty_init();
 	gpio_init();

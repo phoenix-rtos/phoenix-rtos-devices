@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * STM32L4/N6/U3 reset and clock controller driver
+ * Multidrv-lib: STM32L4/N6/U3 reset and clock controller driver
  *
  * Copyright 2017, 2018 Phoenix Systems
  * Copyright 2026 Apator Metrix
@@ -12,18 +12,18 @@
  * %LICENSE%
  */
 
-#ifndef RCC_H_
-#define RCC_H_
+#ifndef LIBRCC_H_
+#define LIBRCC_H_
 
 
-#include <phoenix/types.h>
 #include <stdint.h>
+
 
 #if defined(__CPU_STM32N6)
 #include <phoenix/arch/armv8m/stm32/n6/stm32n6.h>
 
-#define RCC_MAX_CLOCK_CHOICES 8
-#define RCC_HAS_CLOCKDEF      1
+#define LIBRCC_MAX_CLOCK_CHOICES 8
+#define LIBRCC_HAS_CLOCKDEF      1
 
 enum clock_ids {
 	clkid_none = 0,
@@ -78,8 +78,8 @@ enum clock_ids {
 #elif defined(__CPU_STM32U3)
 #include <phoenix/arch/armv8m/stm32/u3/stm32u3.h>
 
-#define RCC_MAX_CLOCK_CHOICES 4
-#define RCC_HAS_CLOCKDEF      1
+#define LIBRCC_MAX_CLOCK_CHOICES 4
+#define LIBRCC_HAS_CLOCKDEF      1
 
 enum clock_ids {
 	clkid_none = 0,
@@ -106,38 +106,18 @@ enum clock_ids {
 #endif
 
 
-void pwr_lock(void);
+int librcc_init(void);
 
 
-void pwr_lockFromIRQ(uint32_t previous);
+#ifdef LIBRCC_HAS_CLOCKDEF
+typedef enum clock_ids librcc_clkid_t;
 
 
-void pwr_unlock(void);
+int librcc_setClksel(enum ipclks ipclk, librcc_clkid_t clkID);
 
 
-uint32_t pwr_unlockFromIRQ(void);
-
-
-int rcc_init(void);
-
-
-#ifdef RCC_HAS_CLOCKDEF
-int rcc_setClksel(enum ipclks ipclk, enum clock_ids clkID);
-
-
-int rcc_getClock(enum clock_ids id, uint64_t *output);
+int librcc_getClock(librcc_clkid_t id, uint64_t *output);
 #endif
-
-
-typedef struct {
-	volatile unsigned int *base;
-	volatile unsigned int *pwr;
-
-	handle_t lock;
-} rcc_common_t;
-
-
-extern rcc_common_t rcc_common;
 
 
 #endif

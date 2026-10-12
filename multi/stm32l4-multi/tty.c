@@ -28,12 +28,12 @@
 #include <libtty-lf-fifo.h>
 
 #include "libmulti/libdma.h"
+#include "libmulti/librcc.h"
 #include "stm32l4-multi.h"
 #include "common.h"
 #include "config.h"
 #include "gpio.h"
 #include "tty.h"
-#include "rcc.h"
 
 
 #if defined(__CPU_STM32L4X6) || defined(__CPU_STM32U3)
@@ -259,13 +259,13 @@ static int tty_clockSetup(const struct tty_peripheralInfo *info, uint32_t *out)
 static int tty_clockSetup(const struct tty_peripheralInfo *info, uint32_t *out)
 {
 	int ret;
-	ret = rcc_setClksel(info->clksel, info->clksrc);
+	ret = librcc_setClksel(info->clksel, info->clksrc);
 	if (ret < 0) {
 		return ret;
 	}
 
 	uint64_t freq;
-	ret = rcc_getClock(info->clksrc, &freq);
+	ret = librcc_getClock(info->clksrc, &freq);
 	if (ret < 0) {
 		return ret;
 	}
