@@ -16,7 +16,7 @@
 
 extern int sensor_bus_genericSpiSetup(sensor_bus_t *bus, const char *spiDev, const char *ss, int speed, char mode)
 {
-	if (bus->bustype != bus_spi) {
+	if ((bus == NULL) || (bus->bustype != bus_spi)) {
 		return -1;
 	}
 
@@ -25,6 +25,25 @@ extern int sensor_bus_genericSpiSetup(sensor_bus_t *bus, const char *spiDev, con
 	}
 
 	if (bus->ops.bus_cfg(bus, speed, mode) < 0) {
+		bus->ops.bus_close(bus);
+		return -3;
+	}
+
+	return 0;
+}
+
+
+extern int sensor_bus_genericUartSetup(sensor_bus_t *bus, const char *uartDev, int baudrate, enum sensor_uart_mode mode)
+{
+	if ((bus == NULL) || (bus->bustype != bus_uart)) {
+		return -1;
+	}
+
+	if (bus->ops.bus_open(bus, uartDev, NULL) < 0) {
+		return -2;
+	}
+
+	if (bus->ops.bus_cfg(bus, baudrate, (char)mode) < 0) {
 		bus->ops.bus_close(bus);
 		return -3;
 	}

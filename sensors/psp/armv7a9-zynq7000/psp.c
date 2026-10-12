@@ -197,6 +197,9 @@ void bsp_busDealloc(struct _sensor_bus_t *bus)
 		case bus_i2c:
 			free(bus->ctx.i2c);
 			break;
+		case bus_uart:
+			free(bus->ctx.uart);
+			break;
 		default:
 			/* erroneous state, do nothing */
 			break;
@@ -223,6 +226,7 @@ int psp_busAlloc(sensor_bus_t *bus, enum sensor_bus_type type)
 			size = sizeof(struct sensor_busctx_spi_t);
 			break;
 		case bus_i2c:
+		case bus_uart:
 			/* #TODO: add different buses setup */
 		default:
 			return -ENODEV;
