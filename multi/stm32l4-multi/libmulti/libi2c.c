@@ -17,8 +17,8 @@
 #include <errno.h>
 #include <unistd.h>
 #include "libmulti/libi2c.h"
+#include "libmulti/librcc.h"
 #include "../common.h"
-#include "../rcc.h"
 
 
 #define TIMEOUT (100 * 1000)
@@ -85,13 +85,13 @@ static int libi2c_clockSetup(const struct libi2c_peripheralInfo *info, uint32_t 
 static int libi2c_clockSetup(const struct libi2c_peripheralInfo *info, uint32_t *out)
 {
 	int ret;
-	ret = rcc_setClksel(info->clksel, info->clksrc);
+	ret = librcc_setClksel(info->clksel, info->clksrc);
 	if (ret < 0) {
 		return ret;
 	}
 
 	uint64_t freq;
-	ret = rcc_getClock(info->clksrc, &freq);
+	ret = librcc_getClock(info->clksrc, &freq);
 	if (ret < 0) {
 		return ret;
 	}

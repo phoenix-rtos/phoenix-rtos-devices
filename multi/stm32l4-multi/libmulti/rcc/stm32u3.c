@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * STM32U3 reset and clock controller driver
+ * Multidrv-lib: STM32U3 reset and clock controller driver
  *
  * Copyright 2026 Apator Metrix
  * Author: Mateusz Karcz
@@ -14,13 +14,13 @@
 
 #include <errno.h>
 
-#include "../stm32u3_regs.h"
-#include "../common.h"
-#include "../rcc.h"
+#include "../../stm32u3_regs.h"
+#include "../../common.h"
+#include "common.h"
 #include "clockdef.h"
 
 
-static const uint8_t rcc_clksels[pctl_ipclks_count][RCC_MAX_CLOCK_CHOICES] = {
+static const uint8_t rcc_clksels[pctl_ipclks_count][LIBRCC_MAX_CLOCK_CHOICES] = {
 	[pctl_ipclk_usart1sel] = { clkid_pclk2, clkid_hsi16 },
 	[pctl_ipclk_usart3sel] = { clkid_pclk1, clkid_hsi16 },
 	[pctl_ipclk_uart4sel] = { clkid_pclk1, clkid_hsi16 },
@@ -84,9 +84,9 @@ static const uint8_t rcc_clksels[pctl_ipclks_count][RCC_MAX_CLOCK_CHOICES] = {
 static const clockdef_literal_t lsiSources[] = { KHZ(32), HZ(250) };
 static const clockdef_literal_t msiSources[] = { MHZ(96), MHZ(48), MHZ(24), MHZ(12), MHZ(24), MHZ(12), MHZ(6), MHZ(3) };
 
-static const clockdef_clkID_t sysclkSources[] = { clkid_msis, clkid_hsi16, clkid_hse };
-static const clockdef_clkID_t iclkSources[] = { clkid_hsi48, clkid_msik, clkid_hse, clkid_sysclk };
-static const clockdef_clkID_t sai1Sources[] = { clkid_msik, clkid_audioclk, clkid_hse };
+static const librcc_clkid_t sysclkSources[] = { clkid_msis, clkid_hsi16, clkid_hse };
+static const librcc_clkid_t iclkSources[] = { clkid_hsi48, clkid_msik, clkid_hse, clkid_sysclk };
+static const librcc_clkid_t sai1Sources[] = { clkid_msik, clkid_audioclk, clkid_hse };
 
 
 static const clockdef_obj_t clockObjects[] = {
@@ -258,7 +258,7 @@ static const clockdef_obj_t clockObjects[] = {
 static const size_t clockObjects_size = sizeof(clockObjects) / sizeof(clockObjects[0]);
 
 
-const clockdef_obj_t *clockdef_getObject(clockdef_clkID_t id)
+const clockdef_obj_t *clockdef_getObject(librcc_clkid_t id)
 {
 	if ((id > clkid_none) && (id < clockObjects_size)) {
 		return clockObjects + id;
@@ -281,11 +281,11 @@ const uint8_t *clockdef_getClkselOptions(enum ipclks ipclk)
 
 
 int clockdef_getClockHW(
-		clockdef_clkID_t id,
+		librcc_clkid_t id,
 		uint32_t *base_out,
 		uint64_t *nom,
 		uint64_t *denom,
-		clockdef_clkID_t *prev_out)
+		librcc_clkid_t *prev_out)
 {
 	/* clockdef_getObject() handles all valid clock IDs on this platform.
 	 * This function will only get called for invalid IDs. */

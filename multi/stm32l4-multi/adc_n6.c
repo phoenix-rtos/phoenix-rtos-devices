@@ -20,8 +20,8 @@
 #include <sys/platform.h>
 #include <sys/pwman.h>
 
+#include "libmulti/librcc.h"
 #include "common.h"
-#include "rcc.h"
 #include "stm32l4-multi.h"
 
 
@@ -478,12 +478,12 @@ static int adc_getPrescaler(uint32_t hz, uint32_t clock)
 static int adc_setFrequency(uint32_t hz)
 {
 	/* ADC clocks have to be supplied from RCC */
-	if (rcc_setClksel(ADC_CLKSEL, clkid_hclk) < 0) {
+	if (librcc_setClksel(ADC_CLKSEL, clkid_hclk) < 0) {
 		return -1;
 	}
 
 	uint64_t freq_out;
-	if (rcc_getClock(clkid_hclk, &freq_out) < 0) {
+	if (librcc_getClock(clkid_hclk, &freq_out) < 0) {
 		return -1;
 	}
 

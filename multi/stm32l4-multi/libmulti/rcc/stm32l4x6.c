@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * STM32L4 reset and clock controller driver
+ * Multidrv-lib: STM32L4 reset and clock controller driver
  *
  * Copyright 2017, 2018, 2020 Phoenix Systems
  * Copyright 2026 Apator Metrix
@@ -13,8 +13,8 @@
  */
 
 
-#include "../common.h"
-#include "../rcc.h"
+#include "../../common.h"
+#include "common.h"
 
 
 /* clang-format off */
