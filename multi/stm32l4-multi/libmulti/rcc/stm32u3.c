@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * STM32U3 reset and clock controller driver
+ * Multidrv-lib: STM32U3 reset and clock controller driver
  *
  * Copyright 2026 Apator Metrix
  * Author: Mateusz Karcz
@@ -14,9 +14,10 @@
 
 #include <errno.h>
 
-#include "../stm32u3_regs.h"
-#include "../common.h"
-#include "../rcc.h"
+#include "../../stm32u3_regs.h"
+#include "../../common.h"
+#include "common.h"
+#include "clockdef.h"
 
 
 static const uint8_t rcc_clksels[pctl_ipclks_count][RCC_MAX_CLOCK_CHOICES] = {

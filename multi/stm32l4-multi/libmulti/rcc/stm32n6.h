@@ -1,9 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * stm32l4-multi
- *
- * Clock selection for STM32N6
+ * Multidrv-lib: Clock selection for STM32N6
  *
  * Copyright 2025 Phoenix Systems
  * Copyright 2026 Apator Metrix

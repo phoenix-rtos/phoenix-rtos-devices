@@ -19,7 +19,7 @@
 #include "libmulti/libi2c.h"
 #include "../common.h"
 #if defined(__CPU_STM32N6) || defined(__CPU_STM32U3)
-#include "../rcc.h"
+#include "rcc/clockdef.h"
 #endif
 
 

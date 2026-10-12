@@ -20,8 +20,8 @@
 #include <sys/platform.h>
 
 #include "common.h"
-#include "rcc.h"
 #include "exti.h"
+#include "libmulti/rcc/common.h"
 #include "rtc.h"
 #include "stm32l4-multi.h"
 

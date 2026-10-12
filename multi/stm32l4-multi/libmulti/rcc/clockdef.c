@@ -1,9 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * stm32l4-multi
- *
- * Clock tree definition and parser
+ * Multidrv-lib: Clock tree definition and parser
  *
  * Copyright 2025 Phoenix Systems
  * Copyright 2026 Apator Metrix
@@ -17,7 +15,7 @@
 #include <errno.h>
 #include <sys/platform.h>
 
-#include "../rcc.h"
+#include "clockdef.h"
 
 
 /* Read a register, apply value offset and clamp negative results */

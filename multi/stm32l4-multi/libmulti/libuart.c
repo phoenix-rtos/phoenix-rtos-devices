@@ -30,7 +30,9 @@
 
 #include "../config.h"
 #include "../common.h"
-#include "../rcc.h"
+#if defined(__CPU_STM32N6) || defined(__CPU_STM32U3)
+#include "rcc/clockdef.h"
+#endif
 
 
 /* clang-format off */

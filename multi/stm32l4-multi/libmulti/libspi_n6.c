@@ -22,8 +22,9 @@
 
 #include "../common.h"
 #include "libmulti/libdma.h"
+#include "libmulti/librcc.h"
 #include "libmulti/libspi.h"
-#include "../rcc.h"
+#include "rcc/clockdef.h"
 #include "../stm32n6_regs.h"
 
 #if defined(__CPU_STM32N6)
