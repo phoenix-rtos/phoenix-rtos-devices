@@ -40,6 +40,8 @@
 #define GPIOG_BASE ((void *)0x52021800U)
 #define GPIOH_BASE ((void *)0x52021c00U)
 
+#define HASH_BASE ((void *)0x520c0400U)
+
 #define SPI1_BASE ((void *)0x50013000)
 #define SPI2_BASE ((void *)0x50003800)
 #define SPI3_BASE ((void *)0x50002000)

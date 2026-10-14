@@ -76,7 +76,7 @@ static int libhash_selectAlgorithm(libhash_algo_t algorithm, uint32_t *crValue)
 
 	return 0;
 }
-#elif defined(__CPU_STM32N6)
+#elif defined(__CPU_STM32N6) || defined(__CPU_STM32U3)
 static int libhash_selectAlgorithm(libhash_algo_t algorithm, uint32_t *crValue)
 {
 	/* MD5 not supported on this device */
@@ -210,7 +210,7 @@ int libhash_init(void)
 	libhash_common.base = HASH_BASE;
 #if defined(__CPU_STM32L4X6)
 	devClk(pctl_hash, 3);
-#elif defined(__CPU_STM32N6)
+#elif defined(__CPU_STM32N6) || defined(__CPU_STM32U3)
 	devClk(pctl_hash, 1);
 #endif
 
