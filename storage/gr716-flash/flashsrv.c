@@ -361,6 +361,7 @@ static void flashsrv_rawThread(void *arg)
 					mutexLock(memory->lock);
 					msg.o.err = flash_bufferedWrite(&memory->ctx, startAddr + msg.i.io.offs, msg.i.data, msg.i.size);
 					mutexUnlock(memory->lock);
+					msg.o.io.offs = msg.i.io.offs + ((msg.o.err > 0) ? msg.o.err : 0);
 					break;
 
 				case mtDevCtl:
@@ -427,6 +428,7 @@ static void flashsrv_devThread(void *arg)
 				mutexLock(memory->lock);
 				msg.o.err = flash_bufferedWrite(&memory->ctx, msg.i.io.offs, msg.i.data, msg.i.size);
 				mutexUnlock(memory->lock);
+				msg.o.io.offs = msg.i.io.offs + ((msg.o.err > 0) ? msg.o.err : 0);
 				break;
 
 			case mtDevCtl:

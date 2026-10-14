@@ -624,6 +624,7 @@ static void flashsrv_rawThread(void *arg)
 					else {
 						msg.o.err = res;
 					}
+					msg.o.io.offs = msg.i.io.offs + ((msg.o.err > 0) ? msg.o.err : 0);
 					break;
 
 				case mtDevCtl:
@@ -691,6 +692,7 @@ static void flashsrv_devThread(void *arg)
 
 			case mtWrite:
 				msg.o.err = flashsrv_bufferedWrite(memory->fOid.id, msg.i.io.offs, msg.i.data, msg.i.size);
+				msg.o.io.offs = msg.i.io.offs + ((msg.o.err > 0) ? msg.o.err : 0);
 				break;
 
 			case mtDevCtl:

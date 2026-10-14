@@ -180,6 +180,7 @@ static void sdcard_msgHandler(void *arg, msg_t *msg)
 
 		case mtWrite:
 			msg->o.err = storage_write(msg->oid.id, msg->i.io.offs, msg->i.data, msg->i.size);
+			msg->o.io.offs = msg->i.io.offs + ((msg->o.err > 0) ? msg->o.err : 0);
 			break;
 
 		case mtSync:

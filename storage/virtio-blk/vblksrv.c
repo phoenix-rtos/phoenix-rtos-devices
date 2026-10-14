@@ -140,6 +140,7 @@ static void vblk_msgHandler(void *arg, msg_t *msg)
 		case mtWrite:
 			strg = storage_get(msg->oid.id);
 			msg->o.err = vblksrv_write(strg, msg->i.io.offs, msg->i.data, msg->i.size);
+			msg->o.io.offs = msg->i.io.offs + ((msg->o.err > 0) ? msg->o.err : 0);
 			break;
 
 		case mtSync:

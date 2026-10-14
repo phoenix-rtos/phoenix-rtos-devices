@@ -578,6 +578,7 @@ static void flashsrv_msgHandler(void *arg, msg_t *msg)
 			TRACE("DEV write - id: %ju, size: %zu, off: %jd", (uintmax_t)msg->oid.id, msg->i.size, (intmax_t)msg->i.io.offs);
 			msg->o.err = (int)flashsrv_write(&msg->oid, msg->i.io.offs, msg->i.data,
 					msg->i.size ? msg->i.size : msg->i.io.len);
+			msg->o.io.offs = msg->i.io.offs + ((msg->o.err > 0) ? msg->o.err : 0);
 			break;
 
 		case mtMount:

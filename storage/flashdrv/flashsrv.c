@@ -174,6 +174,7 @@ static void flashsrv_msgHandler(void *arg, msg_t *msg)
 			strg = storage_get(msg->oid.id);
 			TRACE("mtWrite: id: %ju, size: %zu, off: %ju", (uintmax_t)msg->oid.id, msg->o.size, (uintmax_t)msg->i.io.offs);
 			msg->o.err = flashsrv_write(strg, msg->i.io.offs, msg->o.data, msg->o.size);
+			msg->o.io.offs = msg->i.io.offs + ((msg->o.err > 0) ? msg->o.err : 0);
 			break;
 
 		case mtSync:
