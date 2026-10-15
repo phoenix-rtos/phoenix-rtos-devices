@@ -394,14 +394,7 @@ static ptable_t *flashsrv_ptableRead(storage_t *strg)
 
 static int flashsrv_partAdd(storage_t *parent, uint32_t offset, uint32_t size, const char *name)
 {
-	storage_t *part = parent->parts;
-	if (part != NULL) {
-		do {
-			part = part->next;
-		} while (part != parent->parts);
-	}
-
-	part = calloc(1, sizeof(storage_t));
+	storage_t *part = calloc(1, sizeof(storage_t));
 	if (part == NULL) {
 		LOG_ERROR("failed to allocate storage_t");
 		return -ENOMEM;
