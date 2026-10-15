@@ -13,6 +13,7 @@
 
 #include <endian.h>
 #include <errno.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -351,17 +352,19 @@ static void flashsrv_rawThread(void *arg)
 					mutexUnlock(memory->lock);
 					break;
 
-				case mtWrite:
-					if (flashsrv_verifyRawIO(memory, &msg, &msg.o.size) < 0) {
+				case mtWrite: {
+					size_t size = msg.i.size;
+					if (flashsrv_verifyRawIO(memory, &msg, &size) < 0) {
 						msg.o.err = -EINVAL;
 						break;
 					}
 
 					startAddr = memory->parts[msg.oid.id].pHeader->offset;
 					mutexLock(memory->lock);
-					msg.o.err = flash_bufferedWrite(&memory->ctx, startAddr + msg.i.io.offs, msg.i.data, msg.i.size);
+					msg.o.err = flash_bufferedWrite(&memory->ctx, startAddr + msg.i.io.offs, msg.i.data, size);
 					mutexUnlock(memory->lock);
 					break;
+				}
 
 				case mtDevCtl:
 					mutexLock(memory->lock);
