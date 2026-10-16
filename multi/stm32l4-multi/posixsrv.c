@@ -28,7 +28,7 @@
 
 
 struct {
-	char stacks[2 + POSIXSRV_THREADS_NO][2 * _PAGE_SIZE] __attribute__((aligned(8)));
+	char stacks[2 + POSIXSRV_THREADS_NO][3 * _PAGE_SIZE] __attribute__((aligned(8)));
 	unsigned srvPort;
 	unsigned eventPort;
 } libposixsrv_common;
@@ -43,7 +43,7 @@ int posixsrv_start(void)
 	beginthread(posixsrv_threadRqTimeout, POSIXSRV_PRIO, libposixsrv_common.stacks[0], sizeof(libposixsrv_common.stacks[0]), NULL);
 	beginthread(posixsrv_threadMain, POSIXSRV_PRIO, libposixsrv_common.stacks[1], sizeof(libposixsrv_common.stacks[1]), (void *)libposixsrv_common.eventPort);
 
-	for (int i = 2; i < sizeof(libposixsrv_common.stacks) / sizeof(libposixsrv_common.stacks[0]); ++i) {
+	for (size_t i = 2; i < sizeof(libposixsrv_common.stacks) / sizeof(libposixsrv_common.stacks[0]); ++i) {
 		beginthread(posixsrv_threadMain, POSIXSRV_PRIO, libposixsrv_common.stacks[i], sizeof(libposixsrv_common.stacks[i]), (void *)libposixsrv_common.srvPort);
 	}
 
