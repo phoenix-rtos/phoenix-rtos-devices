@@ -19,7 +19,6 @@
 
 #include "stm32l4-multi.h"
 #include "common.h"
-#include "rcc.h"
 
 #if defined(__CPU_STM32L4X6)
 #define GPIO_MAX gpioi

@@ -18,7 +18,6 @@
 #include "stm32l4-multi.h"
 #include "common.h"
 #include "exti.h"
-#include "rcc.h"
 
 
 /*

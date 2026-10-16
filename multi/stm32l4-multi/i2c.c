@@ -25,7 +25,6 @@
 #include "config.h"
 #include "gpio.h"
 #include "i2c.h"
-#include "rcc.h"
 
 #define MAX_I2C i2c4
 
