@@ -1,0 +1,15 @@
+tty/usbacm/usbacm.c
+  h_44b30f378b8eea 700-701,708
+  h_44b30f378b8eea 617,619,681-692
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "66887d12ff4cd73676a2c94299217f97c6213518",
+  "prompts": {},
+  "humans": {
+    "h_44b30f378b8eea": {
+      "author": "Mateusz Kobak <mateusz.kobak@phoenix-rtos.com>"
+    }
+  }
+}
