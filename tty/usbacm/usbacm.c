@@ -400,27 +400,6 @@ static int usbacm_write(usbacm_dev_t *dev, const char *data, size_t len)
 }
 
 
-static usbacm_dev_t *_usbacm_devAlloc(void)
-{
-	usbacm_dev_t *dev;
-
-	dev = calloc(1, sizeof(usbacm_dev_t));
-	if (dev == NULL) {
-		fprintf(stderr, "usbacm: Not enough memory\n");
-		return NULL;
-	}
-
-	if (idtree_alloc(&usbacm_common.devices, &dev->node) < 0) {
-		free(dev);
-		return NULL;
-	}
-
-	dev->rfcnt = 1;
-
-	return dev;
-}
-
-
 static int _usbacm_urbsAlloc(usbacm_dev_t *dev)
 {
 	int i, j;
@@ -635,11 +614,9 @@ static int usbacm_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion, u
 		return usb_modeswitchHandle(drv, insertion, mode);
 	}
 
-	mutexLock(usbacm_common.lock);
-
-	dev = _usbacm_devAlloc();
+	dev = calloc(1, sizeof(usbacm_dev_t));
 	if (dev == NULL) {
-		mutexUnlock(usbacm_common.lock);
+		fprintf(stderr, "usbacm: Not enough memory\n");
 		return -ENOMEM;
 	}
 
@@ -701,26 +678,39 @@ static int usbacm_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion, u
 			/* Continue as this is optional: device may reject the setting/not support the set line cmd */
 		}
 
+		mutexLock(usbacm_common.lock);
+		err = idtree_alloc(&usbacm_common.devices, &dev->node);
+		if (err < 0) {
+			mutexUnlock(usbacm_common.lock);
+			resourceDestroy(dev->rxCond);
+			resourceDestroy(dev->rxLock);
+			err = -EINVAL;
+			break;
+		}
+
+		dev->rfcnt = 1;
+
 		oid.port = usbacm_common.msgport;
 		oid.id = idtree_id(&dev->node);
 
 		snprintf(dev->path, sizeof(dev->path), "/dev/usbacm%d", idtree_id(&dev->node));
 
+		/*
+		 * Keep the lock until create_dev() succeeds: nobody can take a reference meanwhile,
+		 * so on failure _usbacm_put() drops the last one and removes dev from the tree.
+		 */
 		err = create_dev(&oid, dev->path);
 		if (err != 0) {
+			_usbacm_put(dev);
+			mutexUnlock(usbacm_common.lock);
 			resourceDestroy(dev->rxCond);
 			resourceDestroy(dev->rxLock);
 			fprintf(stderr, "usbacm: Can't create dev: %s\n", dev->path);
 			err = -EINVAL;
 			break;
 		}
+		mutexUnlock(usbacm_common.lock);
 	} while (0);
-
-	if (err < 0) {
-		_usbacm_put(dev);
-	}
-
-	mutexUnlock(usbacm_common.lock);
 
 	if (err < 0) {
 		free(dev);
