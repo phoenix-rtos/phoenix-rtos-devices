@@ -21,7 +21,7 @@
 #include <sys/pwman.h>
 
 #include "common.h"
-#include "rcc.h"
+#include "libmulti/rcc/clockdef.h"
 #include "stm32l4-multi.h"
 
 

@@ -32,8 +32,10 @@
 #include "common.h"
 #include "config.h"
 #include "gpio.h"
+#if defined(__CPU_STM32N6) || defined(__CPU_STM32U3)
+#include "libmulti/rcc/clockdef.h"
+#endif
 #include "tty.h"
-#include "rcc.h"
 
 
 #if defined(__CPU_STM32L4X6) || defined(__CPU_STM32U3)

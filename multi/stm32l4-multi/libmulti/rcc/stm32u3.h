@@ -1,9 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * stm32l4-multi
- *
- * Clock selection for STM32U3
+ * Multidrv-lib: Clock selection for STM32U3
  *
  * Copyright 2026 Apator Metrix
  * Author: Mateusz Karcz

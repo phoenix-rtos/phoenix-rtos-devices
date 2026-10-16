@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * STM32N6 reset and clock controller driver
+ * Multidrv-lib: STM32N6 reset and clock controller driver
  *
  * Copyright 2017, 2018, 2020, 2025 Phoenix Systems
  * Copyright 2026 Apator Metrix
@@ -15,9 +15,10 @@
 
 #include <errno.h>
 
-#include "../common.h"
-#include "../rcc.h"
-#include "../stm32n6_regs.h"
+#include "../../common.h"
+#include "../../stm32n6_regs.h"
+#include "clockdef.h"
+#include "common.h"
 
 
 static const uint8_t rcc_clksels[pctl_ipclks_count][RCC_MAX_CLOCK_CHOICES] = {
