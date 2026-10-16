@@ -1,0 +1,15 @@
+storage/gr716-flash/flashsrv.c
+  h_fc26ad17182140 357
+  h_fc26ad17182140 16,355-356,364,367
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f7d6cd4b8496b3d9239594a447d7ad40a427ff34",
+  "prompts": {},
+  "humans": {
+    "h_fc26ad17182140": {
+      "author": "Lukasz Leczkowski <lukasz.leczkowski@phoenix-rtos.com>"
+    }
+  }
+}
