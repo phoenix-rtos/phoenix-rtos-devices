@@ -13,7 +13,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
-#include <stdbool.h>
 
 #include <sys/msg.h>
 #include <posix/utils.h>
@@ -32,7 +31,6 @@
 
 static struct {
 	int devAddr;
-	bool isInitialized;
 } common;
 
 
@@ -180,9 +178,6 @@ static int devctl(msg_t *msg)
 			}
 
 			ret = setCmd(cmd);
-			if (ret >= 0) {
-				common.isInitialized = true;
-			}
 		} break;
 
 		case sht3x_typeCmd:
@@ -234,12 +229,6 @@ static void thread(void *arg)
 				break;
 
 			case mtRead: {
-				if (!common.isInitialized) {
-					/* With the current logic, if a sensor is connected without prior configuration, it will
-					 * return EAGAIN errors on readouts */
-					msg.o.err = -EIO;
-					break;
-				}
 				int ret = getMeasurement(&temp, &rh);
 				if (ret < 0 && ret != -EAGAIN) { /* If new measurement is not ready, then send previous value */
 					msg.o.err = ret;
@@ -283,18 +272,37 @@ int main(int argc, char **argv)
 	}
 
 	int i2cBusNo = strtoul(argv[1], NULL, 0);
+	int devNo = strtoul(argv[2], NULL, 0);
+	common.devAddr = DEFAULT_DEV_ADDR;
+	if (argc == 4) {
+		common.devAddr = strtoul(argv[3], NULL, 0);
+	}
+
 	if (i2c_init(i2cBusNo) < 0) {
 		printf("sht3x: i2c initialization failed\n");
 		return 1;
 	}
 
-	int devNo = strtoul(argv[2], NULL, 0);
+	uint16_t status;
+	int ret = getStatus(&status);
+	if (ret < 0) {
+		printf("sht3x: status readout error %d\n", ret);
+		return 2;
+	}
+
+	ret = setCmd(periodic2cmd(sht3x_repeatabilityLow, sht3x_freq1Hz));
+	if (ret < 0) {
+		printf("sht3x: measurement setup error %d\n", ret);
+		return 3;
+	}
+
 	char devname[sizeof("sht3x-x")];
 	snprintf(devname, sizeof(devname), "sht3x-%u", devNo % 10);
 
 	uint32_t port;
 	if (portCreate(&port) != EOK) {
-		return 2;
+		printf("sht3x: could not create port\n");
+		return 4;
 	}
 
 	oid_t dev = {
@@ -303,34 +311,11 @@ int main(int argc, char **argv)
 	};
 	if (create_dev(&dev, devname) < 0) {
 		printf("sht3x: could not create device\n");
-		return 3;
+		portDestroy(port);
+		return 5;
 	}
 
-	common.devAddr = DEFAULT_DEV_ADDR;
-	if (argc == 4) {
-		common.devAddr = strtoul(argv[3], NULL, 0);
-	}
-
-	/* Ignore sensor initialization failures so the device is created anyway.
-	 * If sensor is connected later, read operations will check common.isInitialized
-	 * to handle failures. */
-	common.isInitialized = false;
-	uint16_t status;
-	int ret = getStatus(&status);
-	if (ret < 0) {
-		printf("sht3x: status readout error %d\n", ret);
-	}
-	else {
-		ret = setCmd(periodic2cmd(sht3x_repeatabilityLow, sht3x_freq1Hz));
-		if (ret < 0) {
-			printf("sht3x: measurement setup error %d\n", ret);
-		}
-		else {
-			printf("sht3x: initialized, status: %2x\n", status);
-			common.isInitialized = true;
-		}
-	}
-
+	printf("sht3x: initialized, status: %2x\n", status);
 	thread((void *)port);
 
 	/* Should never happen */
