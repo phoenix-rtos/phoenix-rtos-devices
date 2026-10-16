@@ -22,7 +22,7 @@
 #endif
 
 #ifndef USBACM_N_UMSG_THREADS
-#define USBACM_N_UMSG_THREADS 1
+#define USBACM_N_UMSG_THREADS 2
 #endif
 
 
