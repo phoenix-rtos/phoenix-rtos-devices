@@ -400,27 +400,6 @@ static int usbacm_write(usbacm_dev_t *dev, const char *data, size_t len)
 }
 
 
-static usbacm_dev_t *_usbacm_devAlloc(void)
-{
-	usbacm_dev_t *dev;
-
-	dev = calloc(1, sizeof(usbacm_dev_t));
-	if (dev == NULL) {
-		fprintf(stderr, "usbacm: Not enough memory\n");
-		return NULL;
-	}
-
-	if (idtree_alloc(&usbacm_common.devices, &dev->node) < 0) {
-		free(dev);
-		return NULL;
-	}
-
-	dev->rfcnt = 1;
-
-	return dev;
-}
-
-
 static int _usbacm_urbsAlloc(usbacm_dev_t *dev)
 {
 	int i, j;
@@ -635,71 +614,78 @@ static int usbacm_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion, u
 		return usb_modeswitchHandle(drv, insertion, mode);
 	}
 
-	mutexLock(usbacm_common.lock);
-
-	dev = _usbacm_devAlloc();
+	dev = calloc(1, sizeof(usbacm_dev_t));
 	if (dev == NULL) {
-		mutexUnlock(usbacm_common.lock);
+		fprintf(stderr, "usbacm: Not enough memory\n");
 		return -ENOMEM;
 	}
 
 	dev->instance = *insertion;
 	dev->drv = drv;
 
+	dev->pipeCtrl = usb_open(drv, insertion, usb_transfer_control, 0);
+	if (dev->pipeCtrl < 0) {
+		fprintf(stderr, "usbacm: Fail to open control pipe\n");
+		free(dev);
+		return -EINVAL;
+	}
+
+	err = usb_setConfiguration(drv, dev->pipeCtrl, 1);
+	if (err != 0) {
+		fprintf(stderr, "usbacm: Fail to set configuration\n");
+		free(dev);
+		return -EINVAL;
+	}
+
+	dev->pipeBulkIN = usb_open(drv, insertion, usb_transfer_bulk, usb_dir_in);
+	if (dev->pipeBulkIN < 0) {
+		free(dev);
+		return -EINVAL;
+	}
+
+	dev->pipeBulkOUT = usb_open(drv, insertion, usb_transfer_bulk, usb_dir_out);
+	if (dev->pipeBulkOUT < 0) {
+		free(dev);
+		return -EINVAL;
+	}
+
+	/* Interrupt pipe is optional */
+	dev->pipeIntIN = usb_open(drv, insertion, usb_transfer_interrupt, usb_dir_in);
+
+	err = mutexCreate(&dev->rxLock);
+	if (err != 0) {
+		free(dev);
+		return -ENOMEM;
+	}
+
+	err = condCreate(&dev->rxCond);
+	if (err != 0) {
+		resourceDestroy(dev->rxLock);
+		free(dev);
+		return -ENOMEM;
+	}
+
+	dev->line.dwDTERate = USBACM_SET_LINE_DEFAULT_RATE;
+	dev->line.bCharFormat = 0;
+	dev->line.bParityType = 0;
+	dev->line.bDataBits = 8;
+
+	/* Some broken devices won't function without doing the set line cmd first */
+	err = usbacm_setLine(dev);
+	if (err < 0) {
+		fprintf(stderr, "usbacm: Set line to speed %d failed/unsupported: %d\n", dev->line.dwDTERate, err);
+		/* Continue as this is optional: device may reject the setting/not support the set line cmd */
+	}
+
+	mutexLock(usbacm_common.lock);
 	do {
-		dev->pipeCtrl = usb_open(drv, insertion, usb_transfer_control, 0);
-		if (dev->pipeCtrl < 0) {
-			fprintf(stderr, "usbacm: Fail to open control pipe\n");
-			err = -EINVAL;
-			break;
-		}
-
-		err = usb_setConfiguration(drv, dev->pipeCtrl, 1);
-		if (err != 0) {
-			fprintf(stderr, "usbacm: Fail to set configuration\n");
-			err = -EINVAL;
-			break;
-		}
-
-		dev->pipeBulkIN = usb_open(drv, insertion, usb_transfer_bulk, usb_dir_in);
-		if (dev->pipeBulkIN < 0) {
-			err = -EINVAL;
-			break;
-		}
-
-		dev->pipeBulkOUT = usb_open(drv, insertion, usb_transfer_bulk, usb_dir_out);
-		if (dev->pipeBulkOUT < 0) {
-			err = -EINVAL;
-			break;
-		}
-
-		/* Interrupt pipe is optional */
-		dev->pipeIntIN = usb_open(drv, insertion, usb_transfer_interrupt, usb_dir_in);
-
-		err = mutexCreate(&dev->rxLock);
-		if (err != 0) {
-			err = -ENOMEM;
-			break;
-		}
-
-		err = condCreate(&dev->rxCond);
-		if (err != 0) {
-			resourceDestroy(dev->rxLock);
-			err = -ENOMEM;
-			break;
-		}
-
-		dev->line.dwDTERate = USBACM_SET_LINE_DEFAULT_RATE;
-		dev->line.bCharFormat = 0;
-		dev->line.bParityType = 0;
-		dev->line.bDataBits = 8;
-
-		/* Some broken devices won't function without doing the set line cmd first */
-		err = usbacm_setLine(dev);
+		err = idtree_alloc(&usbacm_common.devices, &dev->node);
 		if (err < 0) {
-			fprintf(stderr, "usbacm: Set line to speed %d failed/unsupported: %d\n", dev->line.dwDTERate, err);
-			/* Continue as this is optional: device may reject the setting/not support the set line cmd */
+			err = -EINVAL;
+			break;
 		}
+
+		dev->rfcnt = 1;
 
 		oid.port = usbacm_common.msgport;
 		oid.id = idtree_id(&dev->node);
@@ -708,21 +694,18 @@ static int usbacm_handleInsertion(usb_driver_t *drv, usb_devinfo_t *insertion, u
 
 		err = create_dev(&oid, dev->path);
 		if (err != 0) {
-			resourceDestroy(dev->rxCond);
-			resourceDestroy(dev->rxLock);
+			_usbacm_put(dev);
 			fprintf(stderr, "usbacm: Can't create dev: %s\n", dev->path);
 			err = -EINVAL;
 			break;
 		}
+
 	} while (0);
-
-	if (err < 0) {
-		_usbacm_put(dev);
-	}
-
 	mutexUnlock(usbacm_common.lock);
 
 	if (err < 0) {
+		resourceDestroy(dev->rxCond);
+		resourceDestroy(dev->rxLock);
 		free(dev);
 		return err;
 	}
