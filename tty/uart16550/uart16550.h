@@ -44,6 +44,7 @@
 #define IIR_CODE_RTO  0x06 /* Reception Timeout */
 
 #define LCR_DLAB 0x80
+#define LCR_SBRK 0x40
 #define LCR_D8N1 0x03
 #define LCR_D8N2 0x07
 
@@ -58,6 +59,7 @@
 #define LSR_FE   0x08 /* Framing error */
 #define LSR_BI   0x10 /* Break interrupt */
 #define LSR_THRE 0x20 /* Transmitter hold register empty */
+#define LSR_TEM  0x40 /* Transmitter Empty */
 
 #define FCR_FIFOEN  0x1  /* Enable FIFO */
 #define FCR_RESETRX 0x2  /* Reset RX FIFO */
