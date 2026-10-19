@@ -53,35 +53,66 @@ void sample_readerInit(struct sampleReader *reader, struct sampleCtx *ctx)
 	*reader = (struct sampleReader) {
 		.ctx = ctx,
 		.offs = 0,
-		.open = false
+		.refs = 0,
+		.state = sample_stateFree
 	};
 	mutexUnlock(ctx->lock);
 }
 
 
-void sample_readerOpen(struct sampleReader *reader)
+int sample_readerOpen(struct sampleReader *reader)
 {
 	assert(reader->ctx != NULL);
 	mutexLock(reader->ctx->lock);
-	reader->open = true;
-	reader->offs = reader->ctx->written;
-	/* align initial read offset with sample start */
-	reader->offs -= reader->offs % reader->ctx->sampleSize;
+	int ret = -1;
+	if (reader->state == sample_stateFree) {
+		ret = 0;
+		reader->state = sample_stateOpen;
+		reader->offs = reader->ctx->written;
+
+		/* align initial read offset with sample start */
+		reader->offs -= reader->offs % reader->ctx->sampleSize;
+	}
 	mutexUnlock(reader->ctx->lock);
+	return ret;
 }
 
 
-void sample_readerClose(struct sampleReader *reader)
+void sample_readerClose(struct sampleReader *reader, bool release)
 {
 	struct sampleCtx *ctx = reader->ctx;
 	assert(ctx != NULL);
 	mutexLock(ctx->lock);
-	if (reader->open) {
+	if (reader->state == sample_stateOpen) {
 		reader->offs = 0;
-		reader->open = false;
+		reader->state = sample_stateClosing;
 		condBroadcast(ctx->cond);
+
+		/* wait for all blocking operations to be aborted */
+		while (reader->refs > 0) {
+			mutexUnlock(reader->ctx->lock);
+			usleep(1000);
+			mutexLock(reader->ctx->lock);
+		}
+	}
+	if (release && (reader->state == sample_stateClosing)) {
+		reader->state = sample_stateFree;
 	}
 	mutexUnlock(ctx->lock);
+}
+
+int checkReadable(struct sampleReader *reader)
+{
+	switch (reader->state) {
+		case sample_stateFree:
+			return -EBADF;
+		case sample_stateClosing:
+			return -EBADFD;
+		case sample_stateOpen:
+			return 0;
+		default:
+			assert(false);
+	}
 }
 
 
@@ -90,18 +121,28 @@ static ssize_t sampleRead(struct sampleReader *reader, uint8_t *data, size_t siz
 	struct sampleCtx *ctx = reader->ctx;
 	mutexLock(ctx->lock);
 
+	int err = checkReadable(reader);
+	if (err < 0) {
+		mutexUnlock(ctx->lock);
+		return err;
+	}
+
 	if (block) {
 		uint64_t needed = reader->offs + size;
-		while ((ctx->written < needed) && (reader->open)) {
+		reader->refs += 1;
+		while ((ctx->written < needed) && (reader->state == sample_stateOpen)) {
 			if (ctx->nextWakeup > needed) {
 				ctx->nextWakeup = needed;
 			}
 			condWait(ctx->cond, ctx->lock, 0);
 		}
-	}
-	if (!reader->open) {
-		mutexUnlock(ctx->lock);
-		return -EBADF;
+		reader->refs -= 1;
+
+		int err = checkReadable(reader);
+		if (err < 0) {
+			mutexUnlock(ctx->lock);
+			return err;
+		}
 	}
 
 	uint64_t readySize = ctx->written - reader->offs;

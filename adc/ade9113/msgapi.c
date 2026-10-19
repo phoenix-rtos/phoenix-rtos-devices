@@ -37,6 +37,7 @@ int msgapi_init(struct msgapiCtx *ctx, struct sampleCtx *sample, const char *nam
 	};
 
 	mutexCreate(&ctx->lock);
+	condCreate(&ctx->cond);
 
 	for (unsigned ch = 0; ch < MSGAPI_READER_COUNT; ++ch) {
 		sample_readerInit(&ctx->readers[ch], sample);
@@ -55,6 +56,34 @@ int msgapi_init(struct msgapiCtx *ctx, struct sampleCtx *sample, const char *nam
 		return -1;
 	}
 
+	return 0;
+}
+
+
+int msgapi_waitOpened(struct msgapiCtx *ctx, uint16_t timeout_ms)
+{
+	if (mutexLock(ctx->lock) < 0) {
+		return -1;
+	}
+	if (ctx->opened == 0) {
+		condWait(ctx->cond, ctx->lock, timeout_ms * 1000);
+	}
+	int ret = (ctx->opened > 0) ? 0 : -1;
+	mutexUnlock(ctx->lock);
+	return ret;
+}
+
+
+int msgapi_reset(struct msgapiCtx *ctx)
+{
+	if (mutexLock(ctx->lock) < 0) {
+		return -1;
+	}
+	for (unsigned ch = 0; ch < MSGAPI_READER_COUNT; ++ch) {
+		sample_readerClose(&ctx->readers[ch], false); /* safe on already closed readers */
+	}
+	ctx->opened = 0;
+	mutexUnlock(ctx->lock);
 	return 0;
 }
 
@@ -85,16 +114,17 @@ int msgapi_serve(struct msgapiCtx *ctx)
 					break;
 				}
 				for (unsigned ch = 0; ch < MSGAPI_READER_COUNT; ++ch) {
-					if (!ctx->readers[ch].open) {
-						reader = &ctx->readers[ch];
+					reader = &ctx->readers[ch];
+					int openResult = sample_readerOpen(reader);
+					if (openResult >= 0) {
 						/*
 						 * TODO: consider adding option to read already queued samples
 						 * For now only new samples (collected after open) can be read
 						 */
-						sample_readerOpen(reader);
 						ctx->opened += 1;
 						msg.o.err = ch + 1; /* nonnegative err from open is to pass oid.id */
 						log_info("new msgapi session: ch=%d pid=%d opened=%u", ch + 1, msg.pid, ctx->opened);
+						condBroadcast(ctx->cond);
 						break;
 					}
 				}
@@ -116,9 +146,8 @@ int msgapi_serve(struct msgapiCtx *ctx)
 					msg.o.err = -EIO;
 					break;
 				}
-				sample_readerClose(reader);
+				sample_readerClose(reader, true);
 				msg.o.err = EOK;
-				ctx->opened -= 1;
 				log_info("closing msgapi session: ch=%d pid=%d opened=%u", (int)msg.oid.id, msg.pid, ctx->opened);
 				mutexUnlock(ctx->lock);
 				break;
