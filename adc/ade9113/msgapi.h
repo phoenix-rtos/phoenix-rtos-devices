@@ -20,15 +20,23 @@
 struct msgapiCtx {
 	uint32_t port;
 	handle_t lock;
+	handle_t cond;
 
 	struct sampleReader readers[MSGAPI_READER_COUNT];
-	unsigned opened;
+	unsigned opened; /* number of opens since last reset (including closed sessions) */
 };
 
 int msgapi_init(struct msgapiCtx *msgapi, struct sampleCtx *ctx, const char *name);
 
 
 int msgapi_serve(struct msgapiCtx *ctx);
+
+
+/* Blocks if there was no open since last reset */
+int msgapi_waitOpened(struct msgapiCtx *ctx, uint16_t timeout_ms);
+
+
+int msgapi_reset(struct msgapiCtx *ctx);
 
 
 #endif /* end of include guard: ADE9113_MSGAPI_H */
