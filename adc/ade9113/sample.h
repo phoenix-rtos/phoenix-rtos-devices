@@ -56,16 +56,29 @@ void sample_writeStart(struct sampleCtx *ctx);
 void sample_writeEnd(struct sampleCtx *ctx);
 
 
+enum sample_state {
+	sample_stateFree = 0,
+	sample_stateOpen,
+	sample_stateClosing,
+};
+
+
 struct sampleReader {
 	struct sampleCtx *ctx;
 	uint64_t offs;
-	bool open;
+	unsigned refs;
+	enum sample_state state;
 };
 
 /* initialize reader. First read will start with first sample received after readerInit is called */
 void sample_readerInit(struct sampleReader *reader, struct sampleCtx *ctx);
-void sample_readerOpen(struct sampleReader *reader);
-void sample_readerClose(struct sampleReader *reader);
+
+/* returns 0 on success - returns -1 if reader is busy/used */
+int sample_readerOpen(struct sampleReader *reader);
+
+/* closing with free=false marks reader as closed (reads will fail) but still requires close with free=true before it can be opened again */
+void sample_readerClose(struct sampleReader *reader, bool free);
+
 ssize_t sample_readBlock(struct sampleReader *reader, uint8_t *data, size_t size);
 ssize_t sample_read(struct sampleReader *reader, uint8_t *data, size_t size);
 ssize_t sample_readPoll(struct sampleReader *reader); /* return number of bytes ready to be read */
