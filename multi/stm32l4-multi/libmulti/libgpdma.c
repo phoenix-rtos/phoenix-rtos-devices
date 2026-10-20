@@ -662,9 +662,8 @@ static struct dma_ctrl {
 			uint8_t minc;
 		} oldAPI;
 	} chns[DMA_NUM_CHANNELS];
-	struct libdma_per pers[DMA_NUM_CHANNELS]; /* Each peripheral takes at least 1 channel, so we can have at most DMA_NUM_CHANNELS peripherals */
 	uint32_t chanFree;                        /* Bitmap of free channels */
-	handle_t takenLock;
+	handle_t chanFreeLock;
 } dma_ctrl[DMA_NUM_CONTROLLERS];
 
 static struct {
@@ -1032,29 +1031,21 @@ int libxpdma_acquirePeripheral(int per, unsigned int num, uint32_t flags, const 
 		}
 	}
 
-	struct dma_ctrl *ctrl = &dma_ctrl[dma];
-	mutexLock(ctrl->takenLock);
-
-	struct libdma_per *p = NULL;
-	/* Find a free slot for peripheral information */
-	for (int i = 0; i < sizeof(ctrl->pers) / sizeof(ctrl->pers[0]); i++) {
-		if (ctrl->pers[i].dma >= DMA_NUM_CONTROLLERS) {
-			p = &ctrl->pers[i];
-			break;
-		}
-	}
-
+	struct libdma_per *p = malloc(sizeof(struct libdma_per));
 	if (p == NULL) {
-		mutexUnlock(ctrl->takenLock);
 		return -ENOMEM;
 	}
+
+	struct dma_ctrl *ctrl = &dma_ctrl[dma];
+	mutexLock(ctrl->chanFreeLock);
 
 	/* Find enough unused channels necessary for peripheral */
 	uint32_t chanFree = ctrl->chanFree;
 	for (int dir = dma_per2mem; dir <= dma_mem2per; dir++) {
 		int acqResult = libxpdma_findChannel(requests[dir], dir, &chanFree, flags);
 		if (acqResult < 0) {
-			mutexUnlock(ctrl->takenLock);
+			mutexUnlock(ctrl->chanFreeLock);
+			free(p);
 			return acqResult;
 		}
 
@@ -1062,11 +1053,11 @@ int libxpdma_acquirePeripheral(int per, unsigned int num, uint32_t flags, const 
 	}
 
 	ctrl->chanFree = chanFree;
+	mutexUnlock(ctrl->chanFreeLock);
 	p->dma = dma;
 	p->reqs[0] = requests[0];
 	p->reqs[1] = requests[1];
 	p->portPer = portPer;
-	mutexUnlock(ctrl->takenLock);
 
 	*perP = p;
 	return EOK;
@@ -1971,7 +1962,7 @@ int libdma_init(void)
 
 	for (size_t dma = 0; dma < DMA_NUM_CONTROLLERS; dma++) {
 		devClk(dma_setup[dma].pctl, 1);
-		mutexCreate(&dma_ctrl[dma].takenLock);
+		mutexCreate(&dma_ctrl[dma].chanFreeLock);
 		pctl.dmaPermissions.dev = dma_setup[dma].pctl;
 		for (size_t chn = 0; chn < DMA_NUM_CHANNELS; chn++) {
 			pctl.dmaPermissions.channel = chn;
@@ -1981,12 +1972,6 @@ int libdma_init(void)
 			/* Set base address for channel's linked list buffer */
 			libdma_setLBAR(dma, chn, libxpdma_getListbuf(dma, chn));
 			*(libdma_channelBase(dma, chn) + xpdma_cxcr) = (1 << 1); /* Reset channel */
-		}
-
-		for (size_t per = 0; per < (sizeof(dma_ctrl[dma].pers) / sizeof(dma_ctrl[dma].pers[0])); per++) {
-			dma_ctrl[dma].pers[per].dma = DMA_NUM_CONTROLLERS;
-			dma_ctrl[dma].pers[per].chns[0] = DMA_NUM_CHANNELS;
-			dma_ctrl[dma].pers[per].chns[1] = DMA_NUM_CHANNELS;
 		}
 
 		dma_ctrl[dma].chanFree = ~0u; /* NOTE: bits after (1 << DMA_NUM_CHANNELS) must always be 1 */
