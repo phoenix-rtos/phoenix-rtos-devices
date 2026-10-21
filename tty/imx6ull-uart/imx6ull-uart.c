@@ -695,13 +695,13 @@ static void set_cflag(void *_uart, tcflag_t *cflag)
 
 	/* CSIZE ony CS7 and CS8 (default) is supported */
 	if ((*cflag & CSIZE) == CS7) {
-		*(uartptr->base + ucr2) &= ~(1 << 6);
+		*(uartptr->base + ucr2) &= ~UCR2_WS;
 	}
 	else { /* CS8 */
 		*cflag &= ~CSIZE;
 		*cflag |= CS8;
 
-		*(uartptr->base + ucr2) |= (1 << 6);
+		*(uartptr->base + ucr2) |= UCR2_WS;
 	}
 
 	/* parity */
