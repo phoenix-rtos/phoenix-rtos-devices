@@ -27,7 +27,11 @@
 #include <libtty.h>
 #include <libtty-lf-fifo.h>
 
+#if defined(__CPU_STM32L4X6)
 #include "libmulti/libdma.h"
+#elif defined(__CPU_STM32N6) || defined(__CPU_STM32U3)
+#include <libxpdma.h>
+#endif
 #include "stm32l4-multi.h"
 #include "common.h"
 #include "config.h"

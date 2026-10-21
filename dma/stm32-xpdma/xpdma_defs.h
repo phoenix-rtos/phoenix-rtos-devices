@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * STM32 GPDMA driver register and setup definitions
+ * STM32 xPDMA driver register and setup definitions
  *
  * Copyright 2020-2025 Phoenix Systems
  * Copyright 2026 Apator Metrix
@@ -11,37 +11,31 @@
  */
 
 
-#ifndef _GPDMA_DEFS_H_
-#define _GPDMA_DEFS_H_
+#ifndef _XPDMA_DEFS_H_
+#define _XPDMA_DEFS_H_
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
 #if defined(__CPU_STM32N6)
-#define LIBDMA_NUM_CONTROLLERS 2
-/* Channels 12..15 are capable of 2D transfers, others can only do linear transfers */
-#define LIBDMA_NUM_CHANNELS    16
-#define LIBDMA_2D_CAPABLE_MASK ((1 << 16) - (1 << 12))
-
-#define LIBDMA_HAS_DATA_CACHE 1
-#elif defined(__CPU_STM32U3)
-#define LIBDMA_NUM_CONTROLLERS 1
-/* Channels 10..11 are capable of 2D transfers, others can only do linear transfers */
-#define LIBDMA_NUM_CHANNELS    12
-#define LIBDMA_2D_CAPABLE_MASK ((1 << 11) | (1 << 10))
-
-#define LIBDMA_HAS_DATA_CACHE 0
-#endif
+#include <phoenix/arch/armv8m/stm32/n6/stm32n6.h>
 
 #define DMA_CTRL_GPDMA1 0
-#if defined(__CPU_STM32N6)
+#define GPDMA_BASE      ((void *)0x50021000U)
 #define DMA_CTRL_HPDMA1 1
+#define HPDMA_BASE      ((void *)0x58020000U)
 #define DMA_DEFAULT     DMA_CTRL_HPDMA1
 #define GPDMA1_MAX_IRQ  gpdma1_ch15_irq
 #elif defined(__CPU_STM32U3)
-#define DMA_DEFAULT    DMA_CTRL_GPDMA1
-#define GPDMA1_MAX_IRQ gpdma1_ch11_irq
+#include <phoenix/arch/armv8m/stm32/u3/stm32u3.h>
+
+#define DMA_CTRL_GPDMA1 0
+#define GPDMA_BASE      ((void *)0x50020000U)
+#define DMA_DEFAULT     DMA_CTRL_GPDMA1
+#define GPDMA1_MAX_IRQ  gpdma1_ch11_irq
+#else
+#error "Unknown platform"
 #endif
 
 
@@ -370,8 +364,7 @@ enum xpdma_cx_regs {
 #define XPDMA_CXLLR_UB2 (1 << 25) /* 2D DMA only */
 #define XPDMA_CXLLR_ULL (1 << 16)
 
-#define XPDMA_LISTBUF_SIZE 16 /* Maximum size of linked list in memory in words */
-
+#define XPDMA_LISTBUF_LEN 16 /* Maximum length of linked list in memory in words */
 
 static const struct dma_setup {
 	volatile uint32_t *base;
@@ -399,4 +392,4 @@ static inline volatile uint32_t *libdma_channelBase(unsigned int dma, unsigned i
 }
 
 
-#endif /* _GPDMA_DEFS_H_ */
+#endif /* _XPDMA_DEFS_H_ */

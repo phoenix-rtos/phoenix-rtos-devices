@@ -26,7 +26,11 @@
 #include <sys/time.h>
 
 #include "libmulti/libuart.h"
+#if defined(__CPU_STM32L4X6)
 #include "libmulti/libdma.h"
+#elif defined(__CPU_STM32N6) || defined(__CPU_STM32U3)
+#include <libxpdma.h>
+#endif
 
 #include "../config.h"
 #include "../common.h"

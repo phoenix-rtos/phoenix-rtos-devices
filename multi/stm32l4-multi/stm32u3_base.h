@@ -17,8 +17,6 @@
 
 #define EXTI_BASE ((void *)0x50032000U)
 
-#define GPDMA_BASE ((void *)0x50020000U)
-
 #define USART1_BASE ((void *)0x50013800U)
 #define USART2_BASE ((void *)0x50004400U)
 #define USART3_BASE ((void *)0x50004800U)

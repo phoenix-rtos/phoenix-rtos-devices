@@ -38,12 +38,16 @@
 #include "tty.h"
 #include "uart.h"
 #include "rng.h"
+#include "dmamgr.h"
 
 #if defined(__CPU_STM32L4X6)
 #include "flash.h"
 #elif defined(__CPU_STM32N6)
+#include "dmamgr.h"
 #include "ext_flash.h"
 #include "pwm_n6.h"
+#elif defined(__CPU_STM32U3)
+#include "dmamgr.h"
 #endif
 
 #if ((MULTIDRV_INTERFACE_THREADS) < 2)
@@ -303,6 +307,39 @@ static void handleMsgMulti(msg_t *msg)
 			err = pwm_setBitSequence4(imsg->pwm_bitseq4.timer, chn, val16, imsg->pwm_bitseq4.hcmp, imsg->pwm_bitseq4.lcmp, imsg->pwm_bitseq4.flags, rxOutput);
 			break;
 #endif
+
+#if defined(STM32MULTI_HANDLE_DMAMGR)
+		case stm32_dmamgr_getMemoryParams: {
+			void *dmaMemPtr;
+			size_t dmaMemSz;
+			err = dmamgr_getMemoryParams(&dmaMemPtr, &dmaMemSz);
+			if (err >= 0) {
+				omsg->dmamgr_getMemoryParams.dmaMemSz = dmaMemSz;
+				omsg->dmamgr_getMemoryParams.dmaMemPtr = dmaMemPtr;
+			}
+		} break;
+		case stm32_dmamgr_malloc:
+			omsg->dmamgr_malloc = dmamgr_malloc(imsg->dmamgr_malloc.size, imsg->dmamgr_malloc.alignment);
+			err = 0;
+			break;
+		case stm32_dmamgr_acquireChn: {
+			uint8_t requests[2], chns[2];
+			uint32_t *listbufs[2];
+			requests[0] = imsg->dmamgr_acquireChn.requests[0];
+			requests[1] = imsg->dmamgr_acquireChn.requests[1];
+			err = dmamgr_acquireChannels(imsg->dmamgr_acquireChn.dma, requests, imsg->dmamgr_acquireChn.flags, chns, listbufs);
+			if (err >= 0) {
+				omsg->dmamgr_acquireChn.chns[0] = chns[0];
+				omsg->dmamgr_acquireChn.chns[1] = chns[1];
+				omsg->dmamgr_acquireChn.listbufs[0] = listbufs[0];
+				omsg->dmamgr_acquireChn.listbufs[1] = listbufs[1];
+			}
+		} break;
+		case stm32_dmamgr_releaseChn:
+			dmamgr_releaseChannel(imsg->dmamgr_releaseChn.dma, imsg->dmamgr_releaseChn.chn);
+			err = 0;
+			break;
+#endif
 		default:
 			err = -EINVAL;
 			break;
@@ -454,6 +491,10 @@ int main(void)
 
 	rcc_init();
 	exti_init();
+#if defined(STM32MULTI_HANDLE_DMAMGR)
+	dmamgr_init();
+#endif
+
 	tty_init();
 	gpio_init();
 	spi_init();

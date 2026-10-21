@@ -20,8 +20,9 @@
 #include <stdint.h>
 #include <byteswap.h>
 
+#include <libxpdma.h>
+
 #include "../common.h"
-#include "libmulti/libdma.h"
 #include "libmulti/libspi.h"
 #include "../rcc.h"
 #include "../stm32n6_regs.h"
@@ -368,7 +369,6 @@ int libspi_init(libspi_ctx_t *ctx, unsigned int spi, int useDma)
 	}
 
 	if (useDma != 0) {
-		libdma_init();
 		int err = libxpdma_acquirePeripheral(dma_spi, spi - spi1, 0, &ctx->per);
 		err = (err < 0) ? err : libxpdma_configureChannel(ctx->per, dma_mem2per, dma_priorityMedium, NULL);
 		err = (err < 0) ? err : libxpdma_configureChannel(ctx->per, dma_per2mem, dma_priorityMedium, NULL);
