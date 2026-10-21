@@ -754,6 +754,8 @@ static void signal_txready(void *_uart)
 static char __attribute__((aligned(8))) stack[2048];
 static char __attribute__((aligned(8))) stack0[2048];
 
+
+/* clang-format off */
 static void print_usage(const char *progname)
 {
 	printf("Usage: %s [mode device speed parity rts_cts_mode [-t] [-e] [-s]]\n", progname);
@@ -762,14 +764,15 @@ static void print_usage(const char *progname)
 	printf("\tspeed: baud_rate (default 115200)\n");
 	printf("\tparity: 0 - none, 1 - odd, 2 - even (default none)\n");
 	printf("\trts_cts_mode (default 0):\n"
-		   "\t\t0 - RTS/CTS not used\n"
-		   "\t\t1 - RTS/CTS used for hardware flow control\n"
-		   "\t\t2 - half-duplex, CTS high when transmitting, RTS unused\n");
+		"\t\t0 - RTS/CTS not used\n"
+		"\t\t1 - RTS/CTS used for hardware flow control\n"
+		"\t\t2 - half-duplex, CTS high when transmitting, RTS unused\n");
 	printf("\t-t - make it a default console device, might be empty (default yes)\n");
 	printf("\t-e - report UART errors (default no)\n");
 	printf("\t-s - use syslog for logs (default no)\n");
 	printf("\t-d - DTE mode, swap RX and TX signals (default no)\n");
 }
+/* clang-format on */
 
 
 static void libklog_clbk(const char *data, size_t size)
