@@ -483,11 +483,12 @@ void _libtty_hangup(libtty_common_t *tty)
 }
 
 
-static void _libtty_drain(libtty_common_t *tty)
+static int _libtty_drain(libtty_common_t *tty)
 {
-	while (!fifo_is_empty(tty->tx_fifo)) {
+	while ((tty->t_flags & TF_CLOSING) == 0 && !fifo_is_empty(tty->tx_fifo)) {
 		condWait(tty->tx_waitq, tty->lock, 0);
 	}
+	return ((tty->t_flags & TF_CLOSING) != 0) ? -1 : 0;
 }
 
 
@@ -768,7 +769,9 @@ int _libtty_ioctl(libtty_common_t *tty, pid_t sender_pid, unsigned long cmd, con
 
 		case TCDRAIN:
 			log_ioctl("TCDRAIN");
-			_libtty_drain(tty);
+			if (_libtty_drain(tty) < 0) {
+				return -EBADF;
+			}
 			break;
 
 		case TCXONC:
