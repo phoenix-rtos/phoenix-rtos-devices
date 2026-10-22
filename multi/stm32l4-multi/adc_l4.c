@@ -19,7 +19,6 @@
 #include <sys/pwman.h>
 
 #include "common.h"
-#include "rcc.h"
 #include "stm32l4-multi.h"
 
 #define MAX_ADC adc3

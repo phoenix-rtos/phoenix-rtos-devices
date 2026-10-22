@@ -1,9 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * stm32l4-multi
- *
- * Clock tree definition and parser header file
+ * Multidrv-lib: Clock tree definition and parser header file
  *
  * Copyright 2025 Phoenix Systems
  * Copyright 2026 Apator Metrix
@@ -86,6 +84,12 @@ typedef struct {
 	clockdef_number_t nom;
 	clockdef_number_t denom;
 } clockdef_obj_t;
+
+
+int rcc_setClksel(enum ipclks ipclk, enum clock_ids clkID);
+
+
+const enum clock_ids *rcc_getClkselOptions(enum ipclks ipclk);
 
 
 extern uint32_t clockdef_getRegHW(uint32_t offset);
