@@ -7,3 +7,6 @@
 #
 
 DEFAULT_COMPONENTS := uart16550
+DEFAULT_COMPONENTS += libspi-tda4vm mcspidemo
+DEFAULT_COMPONENTS += libcan-tda4vm mcandemo
+DEFAULT_COMPONENTS += libgpio-tda4vm
