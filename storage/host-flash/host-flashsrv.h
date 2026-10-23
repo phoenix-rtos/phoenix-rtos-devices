@@ -36,4 +36,10 @@ int hostflashsrv_devctl(meterfs_i_devctl_t *i, meterfs_o_devctl_t *o);
 
 int hostflashsrv_init(size_t *flashsz, size_t *sectorsz, const char *fileName);
 
+
+#if METERFS_DEBUG_UTILS
+/* WARN: callable before hostflashsrv_init() */
+void hostflashsrv_setDebugCtx(meterfs_debugCtx_t *ctx);
+#endif
+
 #endif
