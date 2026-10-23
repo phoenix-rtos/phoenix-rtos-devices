@@ -1,0 +1,108 @@
+{
+    "gcc-base": "arm-phoenix-",
+    "reserve": 128,
+    "page-size": 512,
+    "src-base": "../../../",
+    "threads": [
+        {
+            "entry": "_start",
+            "limit": { "type": "value", "value": 3, "unit": "page" }
+        },
+        {
+            "entry": "thread",
+            "limit": { "type": "value", "value": 640 }
+        },
+        {
+            "entry": "msgthr",
+            "limit": { "type": "value", "value": 4096 }
+        },
+        {
+            "entry": "tty_thread",
+            "limit": { "type": "value", "value": 768 }
+        },
+        {
+            "entry": "tty_irqthread",
+            "limit": { "type": "value", "value": 512 }
+        },
+        {
+            "entry": "tty_dmathread",
+            "limit": { "type": "value", "value": 512 }
+        },
+        {
+            "entry": "posixsrv_threadRqTimeout",
+            "limit": { "type": "value", "value": 1024 }
+        },
+        {
+            "entry": "posixsrv_threadMain",
+            "limit": { "type": "value", "value": 1024 }
+        },
+        {
+            "entry": "pumpthr",
+            "limit": { "type": "value", "value": 2048 }
+        }
+    ],
+    "extra-calls": [
+        {
+            "comments": "operations_t handlers[] dispatch, indexed by msg type",
+            "caller": "phoenix-rtos-posixsrv/posixsrv.c/posixsrv_threadMain",
+            "callee-patterns": [".*/phoenix-rtos-posixsrv/[^/]*.c/[^/]*_op"],
+            "callees": [
+                "phoenix-rtos-posixsrv/special.c/special_link",
+                "phoenix-rtos-posixsrv/special.c/special_unlink",
+                "phoenix-rtos-posixsrv/special.c/special_devctl"
+            ]
+        },
+        {
+            "comments": "operations_t.release, called on last reference drop",
+            "caller": "phoenix-rtos-posixsrv/posixsrv.c/posixsrv_object_put",
+            "callees": [
+                "phoenix-rtos-posixsrv/pipe.c/pipe_destroy",
+                "phoenix-rtos-posixsrv/pty.c/ptm_destroy",
+                "phoenix-rtos-posixsrv/pty.c/pts_destroy",
+                "phoenix-rtos-posixsrv/event.c/queue_destroy",
+                "phoenix-rtos-posixsrv/special.c/special_release"
+            ]
+        },
+        {
+            "comments": "operations_t.timeout, called for expired requests",
+            "caller": "phoenix-rtos-posixsrv/posixsrv.c/posixsrv_threadRqTimeout",
+            "callees": [
+                "phoenix-rtos-posixsrv/event.c/queue_timeout_op",
+                "phoenix-rtos-posixsrv/pty.c/pts_timeout"
+            ]
+        },
+        {
+            "comments": "libtty_callbacks_t indirect calls (set via tty_thread's mtDevCtl handling)",
+            "caller": "phoenix-rtos-devices/tty/libtty/libtty.c/libtty_ioctl",
+            "callees": [
+                "phoenix-rtos-devices/multi/stm32l4-multi/tty.c/tty_setBaudrate",
+                "phoenix-rtos-devices/multi/stm32l4-multi/tty.c/tty_setCflag",
+                "phoenix-rtos-devices/multi/stm32l4-multi/tty.c/tty_getHalfduplex",
+                "phoenix-rtos-devices/multi/stm32l4-multi/tty.c/tty_setHalfduplex"
+            ]
+        },
+        {
+            "comments": "libtty_callbacks_t indirect call (set via tty_thread's mtWrite handling, and posixsrv pty)",
+            "caller": "phoenix-rtos-devices/tty/libtty/libtty.c/libtty_write",
+            "callees": [
+                "phoenix-rtos-devices/multi/stm32l4-multi/tty.c/tty_signalTxReady",
+                "phoenix-rtos-posixsrv/pty.c/ptm_signalReady"
+            ]
+        },
+        {
+            "comments": "feedfunc callback, varies per printf-family entry point",
+            "caller": "libphoenix/stdio/format.c/format_printBuffer",
+            "callees": [
+                "libphoenix/stdio/printf.c/printf_feed",
+                "libphoenix/stdio/fprintf.c/format_feed",
+                "libphoenix/stdio/sprintf.c/vsprintf_feed",
+                "libphoenix/stdio/sprintf.c/vsnprintf_feed"
+            ]
+        },
+        {
+            "comments": "libklog_common.ttywrite callback",
+            "caller": "phoenix-rtos-devices/libklog/libklog.c/pumpthr",
+            "callees": ["phoenix-rtos-devices/multi/stm32l4-multi/stm32l4-multi.c/log_write"]
+        }
+    ]
+}
