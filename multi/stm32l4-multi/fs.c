@@ -148,7 +148,8 @@ static void msgthr(void *ctx)
 int fs_init(const char *sharedPort)
 {
 	void *ctx;
-	oid_t root = { 0 };
+	oid_t root = { 0 }, registered;
+	int err;
 
 	if (sharedPort != NULL) {
 		if (sys_namedResource(sharedPort, strlen(sharedPort) + 1, &fs_common.port) < 0) {
@@ -161,9 +162,13 @@ int fs_init(const char *sharedPort)
 		return -1;
 	}
 
-	if (portRegister(fs_common.port, "/", &root)) {
-		portDestroy(fs_common.port);
-		return -1;
+	err = portRegister(fs_common.port, "/", &root);
+	if (err < 0) {
+		if (err != -EEXIST || lookup("/", NULL, &registered) != EOK || registered.port != fs_common.port || registered.id != root.id) {
+			printf("fs_init: failed to register / (%d)\n", err);
+			portDestroy(fs_common.port);
+			return -1;
+		}
 	}
 
 	root.port = fs_common.port;
