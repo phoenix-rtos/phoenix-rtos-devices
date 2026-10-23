@@ -44,6 +44,8 @@
 
 #define MAX_DRIVERS 4
 
+#define MAX_SHARED 4
+
 
 struct flashsrv_opts {
 	const struct flash_driver *driver;
@@ -53,6 +55,13 @@ struct flashsrv_opts {
 		char *partname;
 		char *fs;
 	} root;
+	struct {
+		char *partname;
+		char *fs;
+		char *port;
+		unsigned int prio;
+	} shared[MAX_SHARED];
+	size_t nshared;
 };
 
 
@@ -251,7 +260,11 @@ static void flashsrv_help(const char *prog)
 	printf("Usage: %s [options]\n", prog);
 	printf("\t-r <name:fs> - mount partition <name> as root\n");
 	printf("\t               use psdisk to create partitions\n");
-	printf("\t-h           - print this message\n");
+	printf("\t-s <name:fs:port[:prio]>\n");
+	printf("\t             - mount partition <name> as <fs> served on named port <port>\n");
+	printf("\t               with its own thread pool of priority <prio> (default 1)\n");
+	printf("\t               may be given up to %d times\n", MAX_SHARED);
+	printf("\t-h         - print this message\n");
 	printf("\t-c <addr>    - use <addr> as memory controller base address (required)\n");
 	printf("\t-m <addr>    - use <addr> as flash memory base address (required)\n");
 	printf("\t-d <driver>  - use <driver> for flash memory (required)\n");
@@ -267,7 +280,7 @@ static void flashsrv_help(const char *prog)
 static int flashsrv_parseInitArgs(int argc, char **argv, struct flashsrv_opts *opts)
 {
 	for (;;) {
-		int c = getopt(argc, argv, "r:d:c:m:h");
+		int c = getopt(argc, argv, "r:s:d:c:m:h");
 		if (c == -1) {
 			return 0;
 		}
@@ -301,6 +314,46 @@ static int flashsrv_parseInitArgs(int argc, char **argv, struct flashsrv_opts *o
 				}
 				*opts->root.fs = '\0';
 				opts->root.fs++;
+				break;
+			}
+
+			case 's': {
+				if (opts->nshared >= MAX_SHARED) {
+					LOG_ERROR("Too many shared partitions (max %d)", MAX_SHARED);
+					return -1;
+				}
+
+				char *fs = strchr(optarg, ':');
+				char *port = (fs != NULL) ? strchr(fs + 1, ':') : NULL;
+				if ((fs == NULL) || (port == NULL)) {
+					LOG_ERROR("Invalid argument: %s", optarg);
+					return -1;
+				}
+				*fs++ = '\0';
+				*port++ = '\0';
+
+				unsigned int prio = 1U;
+				char *prioStr = strchr(port, ':');
+				if (prioStr != NULL) {
+					*prioStr++ = '\0';
+					char *end;
+					prio = strtoul(prioStr, &end, 0);
+					if ((*prioStr == '\0') || (*end != '\0')) {
+						LOG_ERROR("Invalid priority: %s", prioStr);
+						return -1;
+					}
+				}
+
+				if ((*optarg == '\0') || (*fs == '\0') || (*port == '\0')) {
+					LOG_ERROR("Invalid argument for -s");
+					return -1;
+				}
+
+				opts->shared[opts->nshared].partname = optarg;
+				opts->shared[opts->nshared].fs = fs;
+				opts->shared[opts->nshared].port = port;
+				opts->shared[opts->nshared].prio = prio;
+				opts->nshared++;
 				break;
 			}
 
@@ -476,7 +529,7 @@ static int flash_sharedFSAdd(id_t id, const char *fs, const char *portName, unsi
 }
 
 
-static int flashsrv_partsInit(storage_t *strg)
+static int flashsrv_partsInit(storage_t *strg, const struct flashsrv_opts *opts)
 {
 	ptable_t *ptable = flashsrv_ptableRead(strg);
 	if (ptable == NULL) {
@@ -491,8 +544,11 @@ static int flashsrv_partsInit(storage_t *strg)
 			free(ptable);
 			return -1;
 		}
-		if (strcmp((const char *)ptable->parts[i].name, "storage") == 0) {
-			if (flash_sharedFSAdd(oid.id, "littlefs", "storagefs", 1U) < 0) {
+		for (size_t j = 0; j < opts->nshared; j++) {
+			if (strcmp((const char *)ptable->parts[i].name, opts->shared[j].partname) != 0) {
+				continue;
+			}
+			if (flash_sharedFSAdd(oid.id, opts->shared[j].fs, opts->shared[j].port, opts->shared[j].prio) < 0) {
 				LOG_ERROR("failed to add shared port for partition %s", (const char *)ptable->parts[i].name);
 				free(ptable);
 				return -1;
@@ -575,7 +631,8 @@ int main(int argc, char **argv)
 		.driver = NULL,
 		.mctrlBase = (addr_t)-1,
 		.flashBase = (addr_t)-1,
-		.root = { 0 }
+		.root = { 0 },
+		.nshared = 0
 	};
 
 	int err = flashsrv_parseInitArgs(argc, argv, &opts);
@@ -621,7 +678,7 @@ int main(int argc, char **argv)
 	}
 
 	/* Read partition table and initialize */
-	if (flashsrv_partsInit(strg) < 0) {
+	if (flashsrv_partsInit(strg, &opts) < 0) {
 		storage_remove(strg);
 		opts.driver->destroy(strg);
 		exit(EXIT_FAILURE);
