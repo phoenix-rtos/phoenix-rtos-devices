@@ -271,11 +271,20 @@ typedef struct {
 } flashdrv_dma_hdr_t;
 
 
+typedef struct {
+	void *buf;   /* Data buffer of a descriptor (NULL if none) */
+	size_t size; /* Data buffer size */
+} dma_buf_t;
+
+
 struct _flashdrv_dma_t {
 	flashdrv_dma_hdr_t hdr;
 	nandfctrl2_desc_t *descs;
+	addr_t descsPa; /* Physical address of descs */
 	void *scratchBuf;
+	addr_t scratchPa; /* Physical address of scratchBuf */
 	size_t scratchSz;
+	dma_buf_t bufs[DMA_MAX_DESCS]; /* Data buffers for cache maintenance */
 };
 
 
@@ -283,7 +292,8 @@ typedef struct {
 	uint32_t rowAddr;    /* 24-bit Page/Block address */
 	uint16_t colAddr;    /* 16-bit Byte offset within the page */
 	size_t transferSize; /* Number of bytes to read/write */
-	addr_t data;         /* DMA physical address (0 if no data phase) */
+	void *buf;           /* DMA buffer, physically contiguous (NULL if no data phase) */
+	addr_t pa;           /* Physical address of buf */
 } dma_xfer_t;
 
 
@@ -348,6 +358,30 @@ static int __attribute__((section(".interrupt"))) irqHandler(unsigned int n, voi
 }
 
 
+/* ============================== Memory maintenance ============================== */
+
+
+static void cacheInval(const void *va, size_t size)
+{
+	uintptr_t addr = (uintptr_t)va & ~((uintptr_t)DCACHE_BLOCK_SIZE - 1U);
+	uintptr_t end = (uintptr_t)va + size;
+
+	for (; addr < end; addr += DCACHE_BLOCK_SIZE) {
+		__asm__ volatile("cbo.inval (%0)" : : "r"(addr) : "memory");
+	}
+}
+
+
+static void memoryBarrier(void)
+{
+#ifdef __TARGET_RISCV64
+	__asm__ volatile("fence");
+#elif defined(__TARGET_SPARCV8LEON)
+	__asm__ volatile("stbar");
+#endif
+}
+
+
 /* ============================== DMA chain helpers ============================== */
 
 
@@ -359,19 +393,23 @@ static flashdrv_dma_t *dmaAlloc(size_t scratchSz)
 		return NULL;
 	}
 
-	dma->descs = mmap(NULL, DMA_DESC_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_CONTIGUOUS | MAP_ANONYMOUS, -1, 0);
+	dma->descs = mmap(NULL, DMA_DESC_SIZE, PROT_READ | PROT_WRITE, MAP_CONTIGUOUS | MAP_ANONYMOUS, -1, 0);
 	if (dma->descs == MAP_FAILED) {
 		free(dma);
 		return NULL;
 	}
 
 	dma->scratchSz = (scratchSz + _PAGE_SIZE - 1U) & ~((size_t)_PAGE_SIZE - 1U);
-	dma->scratchBuf = mmap(NULL, dma->scratchSz, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_CONTIGUOUS | MAP_ANONYMOUS, -1, 0);
+	dma->scratchBuf = mmap(NULL, dma->scratchSz, PROT_READ | PROT_WRITE, MAP_CONTIGUOUS | MAP_ANONYMOUS, -1, 0);
 	if (dma->scratchBuf == MAP_FAILED) {
 		munmap(dma->descs, DMA_DESC_SIZE);
 		free(dma);
 		return NULL;
 	}
+
+	/* Both mappings are physically contiguous - translate once */
+	dma->descsPa = va2pa(dma->descs);
+	dma->scratchPa = va2pa(dma->scratchBuf);
 
 	dma->hdr.ndesc = 0U;
 
@@ -393,9 +431,21 @@ static nandfctrl2_desc_t *dmaDescAt(const flashdrv_dma_t *dma, size_t i)
 }
 
 
+static addr_t dmaDescPa(const flashdrv_dma_t *dma, size_t i)
+{
+	return dma->descsPa + (i * sizeof(nandfctrl2_desc_t));
+}
+
+
 static void *dmaScratch(const flashdrv_dma_t *dma)
 {
 	return dma->scratchBuf;
+}
+
+
+static addr_t dmaScratchPa(const flashdrv_dma_t *dma)
+{
+	return dma->scratchPa;
 }
 
 
@@ -429,18 +479,23 @@ static void dma_appendDesc(flashdrv_dma_t *dma, unsigned int target, uint32_t dc
 	desc->dchsel = fctrl2_flashMap[target].channelMask;
 	desc->drbsel = fctrl2_flashMap[target].rbMask;
 
+	dma->bufs[idx].buf = NULL;
+	dma->bufs[idx].size = 0U;
+
 	if (xfer != NULL) {
 		desc->drow = xfer->rowAddr;
 		desc->dcolsize = (xfer->transferSize << DCOLSIZE_SIZE_SHFT) | xfer->colAddr;
-		if (xfer->data != 0U) {
-			desc->ddpl = xfer->data;
+		if (xfer->buf != NULL) {
+			desc->ddpl = (uint32_t)xfer->pa;
+			dma->bufs[idx].buf = xfer->buf;
+			dma->bufs[idx].size = xfer->transferSize;
 		}
 	}
 
 	/* Link previous descriptor to this one */
 	if (idx > 0U) {
 		nandfctrl2_desc_t *prev = dmaDescAt(dma, idx - 1U);
-		prev->dllpl = (uint32_t)va2pa(desc);
+		prev->dllpl = (uint32_t)dmaDescPa(dma, idx);
 	}
 
 	++dma->hdr.ndesc;
@@ -540,7 +595,7 @@ static void dmaAddStatusRead(flashdrv_dma_t *dma, unsigned int target)
 {
 	/* READ STATUS (0x70), no CMD2, skip address, no EDAC */
 	uint32_t dcmd = (0x70U << DCMD_CMD1_SHFT) | DCMD_SC2 | DCMD_SA | DCMD_ED | DCMD_EN;
-	dma_xfer_t xfer = { .transferSize = 1U, .data = (uint32_t)va2pa(dmaScratch(dma)) };
+	dma_xfer_t xfer = { .transferSize = 1U, .buf = dmaScratch(dma), .pa = dmaScratchPa(dma) };
 	dma_appendDesc(dma, target, dcmd, &xfer);
 }
 
@@ -562,7 +617,7 @@ static int dmaRun(flashdrv_dma_t *dma)
 	/* Append a terminating descriptor (EN bit = 0) after the last active one */
 	nandfctrl2_desc_t *term = dmaDescAt(dma, lastIdx + 1U);
 	memset(term, 0, sizeof(*term));
-	dmaDescAt(dma, lastIdx)->dllpl = (uint32_t)va2pa(term);
+	dmaDescAt(dma, lastIdx)->dllpl = (uint32_t)dmaDescPa(dma, lastIdx + 1U);
 
 	/* Control registers must not be updated while a descriptor chain is active */
 	waitIdle();
@@ -572,7 +627,8 @@ static int dmaRun(flashdrv_dma_t *dma)
 	common.sts1 = 0U;
 
 	/* Load first descriptor address and trigger */
-	common.regs->llpl = (uint32_t)va2pa(dmaDescAt(dma, 0U));
+	common.regs->llpl = (uint32_t)dmaDescPa(dma, 0U);
+	memoryBarrier();
 	common.regs->ctrl2 = CTRL2_DT;
 
 	/* Wait for interrupt - controller has HW timeout */
@@ -581,6 +637,15 @@ static int dmaRun(flashdrv_dma_t *dma)
 		condWait(common.irqCond, common.irqLock, 0);
 	}
 	mutexUnlock(common.irqLock);
+
+	/* Drop stale cache lines of descriptors (status) and data buffers written by the DMA */
+	memoryBarrier();
+	cacheInval(dma->descs, (dma->hdr.ndesc + 1U) * sizeof(nandfctrl2_desc_t));
+	for (unsigned int i = 0U; i < dma->hdr.ndesc; i++) {
+		if (dma->bufs[i].buf != NULL) {
+			cacheInval(dma->bufs[i].buf, dma->bufs[i].size);
+		}
+	}
 
 	uint32_t sts1 = common.sts1;
 
@@ -822,7 +887,8 @@ static int setupFlash(flashdrv_info_t *info, onfi_paramPage_t *page, flashdrv_dm
 
 	dma_xfer_t xfer = {
 		.transferSize = sizeof(flash_id_t),
-		.data = va2pa(dmaScratch(dma)),
+		.buf = dmaScratch(dma),
+		.pa = dmaScratchPa(dma),
 	};
 	dmaAddReadId(dma, target, &xfer);
 
@@ -856,7 +922,8 @@ static int setupFlash(flashdrv_info_t *info, onfi_paramPage_t *page, flashdrv_dm
 
 	xfer = (dma_xfer_t) {
 		.transferSize = sizeof(onfi_paramPage_t),
-		.data = va2pa(dmaScratch(dma)),
+		.buf = dmaScratch(dma),
+		.pa = dmaScratchPa(dma),
 	};
 	dmaAddReadParamPage(dma, target, &xfer);
 
@@ -905,7 +972,7 @@ static void setupTimingMode(const onfi_paramPage_t *page)
 }
 
 
-static int readRawPageUnlocked(const nand_die_t *die, uint32_t page, void *data)
+static int readRawPageUnlocked(const nand_die_t *die, uint32_t page, void *data, addr_t dataPa)
 {
 	const uint32_t writesz = die->info.writesz;
 	const uint32_t sparesz = die->info.sparesz;
@@ -913,14 +980,14 @@ static int readRawPageUnlocked(const nand_die_t *die, uint32_t page, void *data)
 	flashdrv_dma_t *dma = die->dma;
 	unsigned int target = die->target;
 
-	addr_t dataPhy = va2pa(data);
 	dmaChainReset(dma);
 
 	/* Whole Page Access for the Data Area */
 	dma_xfer_t opData = {
 		.rowAddr = page,
 		.transferSize = writesz,
-		.data = dataPhy,
+		.buf = data,
+		.pa = dataPa,
 	};
 	dmaAddRead(dma, target, &opData, DMA_NO_ECC);
 
@@ -929,7 +996,8 @@ static int readRawPageUnlocked(const nand_die_t *die, uint32_t page, void *data)
 		.rowAddr = page,
 		.colAddr = (uint16_t)writesz,
 		.transferSize = sparesz,
-		.data = dataPhy + writesz,
+		.buf = (uint8_t *)data + writesz,
+		.pa = dataPa + writesz,
 	};
 	dmaAddChangeReadColumn(dma, target, &opSpare);
 
@@ -1012,7 +1080,7 @@ static int verifyUncorrectableError(const nand_die_t *die, uint32_t page, void *
 
 	uint8_t *rawBuf = dmaScratch(die->dma);
 
-	int err = readRawPageUnlocked(die, page, rawBuf);
+	int err = readRawPageUnlocked(die, page, rawBuf, dmaScratchPa(die->dma));
 	if (err != 0) {
 		return err;
 	}
@@ -1118,6 +1186,7 @@ int flashdrv_writePage(const nand_die_t *die, uint32_t page, const void *data)
 	dmaChainReset(dma);
 
 	const uint8_t *data_ptr = (const uint8_t *)data;
+	const addr_t dataPa = va2pa((void *)data);
 
 	/* Write data area chunk by chunk */
 	for (uint32_t i = 0; i < nChunks; i++) {
@@ -1125,7 +1194,8 @@ int flashdrv_writePage(const nand_die_t *die, uint32_t page, const void *data)
 			.rowAddr = page,
 			.colAddr = (uint16_t)(i * chunksz),
 			.transferSize = chunksz,
-			.data = va2pa((void *)(data_ptr + (i * chunksz))),
+			.buf = (void *)(data_ptr + (i * chunksz)),
+			.pa = dataPa + (i * chunksz),
 		};
 
 		if (i == 0) {
@@ -1146,7 +1216,8 @@ int flashdrv_writePage(const nand_die_t *die, uint32_t page, const void *data)
 		.rowAddr = page,
 		.colAddr = (uint16_t)tagOfs,
 		.transferSize = die->info.spareavail,
-		.data = va2pa(scratch),
+		.buf = scratch,
+		.pa = dmaScratchPa(dma),
 	};
 	dmaAddChangeWriteColumn(dma, target, &xferSpare, DMA_NO_ECC | DMA_PROGRAM_COMMIT);
 	dmaAddStatusRead(dma, target);
@@ -1170,7 +1241,8 @@ int flashdrv_readPage(const nand_die_t *die, uint32_t page, void *data, flashdrv
 		.rowAddr = page,
 		.colAddr = 0U,
 		.transferSize = die->info.writesz,
-		.data = va2pa(data),
+		.buf = data,
+		.pa = va2pa(data),
 	};
 
 	mutexLock(common.hwLock);
@@ -1245,7 +1317,8 @@ int flashdrv_metaWrite(const nand_die_t *die, uint32_t page, const void *data, s
 		.rowAddr = page,
 		.colAddr = (uint16_t)tagOfs,
 		.transferSize = size,
-		.data = va2pa((void *)data),
+		.buf = (void *)data,
+		.pa = va2pa((void *)data),
 	};
 
 	mutexLock(common.hwLock);
@@ -1275,7 +1348,8 @@ int flashdrv_metaRead(const nand_die_t *die, uint32_t page, void *data, size_t s
 		.rowAddr = page,
 		.colAddr = (uint16_t)tagOfs,
 		.transferSize = size,
-		.data = va2pa(data),
+		.buf = data,
+		.pa = va2pa(data),
 	};
 
 	mutexLock(common.hwLock);
@@ -1296,13 +1370,15 @@ int flashdrv_writeRaw(const nand_die_t *die, uint32_t page, const void *data)
 
 	flashdrv_dma_t *dma = die->dma;
 	unsigned int target = die->target;
+	const addr_t dataPa = va2pa((void *)data);
 
 	/* PAGE_PROGRAM for data area, no commit, no ECC */
 	dma_xfer_t opData = {
 		.rowAddr = page,
 		.colAddr = 0U,
 		.transferSize = die->info.writesz,
-		.data = va2pa((void *)data),
+		.buf = (void *)data,
+		.pa = dataPa,
 	};
 
 	/* CHANGE_WRITE_COLUMN for spare area with commit */
@@ -1310,7 +1386,8 @@ int flashdrv_writeRaw(const nand_die_t *die, uint32_t page, const void *data)
 		.rowAddr = 0U,
 		.colAddr = (uint16_t)die->info.writesz,
 		.transferSize = die->info.sparesz,
-		.data = va2pa((void *)((const uint8_t *)data + die->info.writesz)),
+		.buf = (void *)((const uint8_t *)data + die->info.writesz),
+		.pa = dataPa + die->info.writesz,
 	};
 
 	mutexLock(common.hwLock);
@@ -1333,7 +1410,7 @@ int flashdrv_readRaw(const nand_die_t *die, uint32_t page, void *data)
 	TRACE("%s(target=%u, page=%u, data=%p)", __func__, die->target, page, data);
 
 	mutexLock(common.hwLock);
-	int err = readRawPageUnlocked(die, page, data);
+	int err = readRawPageUnlocked(die, page, data, va2pa(data));
 	mutexUnlock(common.hwLock);
 
 	return err;
@@ -1375,7 +1452,8 @@ int flashdrv_isbad(const nand_die_t *die, uint32_t block)
 		.rowAddr = block * die->info.pagesPerBlock,
 		.colAddr = (uint16_t)die->info.writesz,
 		.transferSize = 1U,
-		.data = va2pa(scratch),
+		.buf = scratch,
+		.pa = dmaScratchPa(dma),
 	};
 
 	dmaChainReset(dma);
@@ -1412,7 +1490,8 @@ int flashdrv_markbad(const nand_die_t *die, uint32_t block)
 		.rowAddr = block * die->info.pagesPerBlock,
 		.colAddr = (uint16_t)die->info.writesz,
 		.transferSize = 1U,
-		.data = va2pa(scratch),
+		.buf = scratch,
+		.pa = dmaScratchPa(dma),
 	};
 
 	dmaChainReset(dma);
