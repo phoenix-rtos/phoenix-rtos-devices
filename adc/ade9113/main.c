@@ -51,9 +51,6 @@
 #include "iomux_mux_enums.h"
 
 
-#define SAMPLE_SIZE 32
-
-
 /* value written to SCRATCH registers to verify reads (arbitrary unique value for each ADC chip) */
 static const uint8_t scratchValues[4] = { 0xa0, 0xa1, 0xa2, 0xa3 };
 
