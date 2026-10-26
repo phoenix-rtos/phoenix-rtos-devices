@@ -706,10 +706,6 @@ int main(int argc, char **argv)
 		return EX_OSERR;
 	};
 
-	if (adcConfigure(ctx, &args) < 0) {
-		log_error("failed to configure ADC's");
-		return EX_IOERR;
-	}
 
 	if (dma_init(_PAGE_SIZE * 2, 2, args.dmaRxCh, args.dmaTxCh, dmaRxCb) < 0) {
 		log_error("failed to init DMA");
@@ -722,49 +718,73 @@ int main(int argc, char **argv)
 	beginthread(msgThread, 2, msgStacks[0], _PAGE_SIZE, ctx);
 	beginthread(msgThread, 2, msgStacks[1], _PAGE_SIZE, ctx);
 
-	resetEcspi(ctx->spi);
-
-	/*
-	 * Configure eCSPI for DMA usage:
-	 * - TX burst will be triggered from DREADY pin
-	 * - DMA will write to TX FIFO when it reaches 0 words (empty)
-	 * - DMA will read from RX FIFO when it reaches 16 words (full 64 byte response from all chips)
-	 */
-	ctx->spi->CONREG = (ctx->spi->CONREG & ~(0b11 << 16)) | (0b01 << 16); /* TRIGGER by falling edge */
-	ctx->spi->CONREG = (ctx->spi->CONREG & ~(0b1 << 3)) | (0b1 << 3);     /* enable auto trigger */
-
-	/* clang-format off */
-	ctx->spi->DMAREG = (
-		0
-		| (0x01 << 23) /* RXDEN = 1 */
-		| (15 << 16)   /* RX_THRESHOLD = 15 */
-		| (0x01 << 7)  /* TEDEN = 1 */
-		| (0 << 0)     /* TX_THRESHOLD = 0 */
-	);
-	/* clang-format on */
-
-	dma_enable();
-
-	time_t now;
-	gettime(&now, NULL);
-	const time_t start = now;
-
+	bool first = true;
 	while (pendingTerm == 0) {
-		if (ctx->crcErrors || true) {
+		if (first) {
+			/* first init is always allowed */
+			first = false;
+		}
+		else if (msgapi_waitOpened(&ctx->msgapi, 5000) < 0) {
+			/* timeout - wait will continue after pendingTerm check */
+			continue;
+		}
+		else {
+			/* detected new session */
+			log_info("New sample session - will try to reinit ADC's");
+		}
+
+		if (adcConfigure(ctx, &args) < 0) {
+			log_error("failed to configure ADC's");
+			log_error("closing all msgapi sessions");
+			msgapi_reset(&ctx->msgapi);
+			continue;
+		}
+
+		resetEcspi(ctx->spi);
+
+		/*
+		 * Configure eCSPI for DMA usage:
+		 * - TX burst will be triggered from DREADY pin
+		 * - DMA will write to TX FIFO when it reaches 0 words (empty)
+		 * - DMA will read from RX FIFO when it reaches 16 words (full 64 byte response from all chips)
+		 */
+		ctx->spi->CONREG = (ctx->spi->CONREG & ~(0b11 << 16)) | (0b01 << 16); /* TRIGGER by falling edge */
+		ctx->spi->CONREG = (ctx->spi->CONREG & ~(0b1 << 3)) | (0b1 << 3);     /* enable auto trigger */
+
+		/* clang-format off */
+		ctx->spi->DMAREG = (
+			0
+			| (0x01 << 23) /* RXDEN = 1 */
+			| (15 << 16)   /* RX_THRESHOLD = 15 */
+			| (0x01 << 7)  /* TEDEN = 1 */
+			| (0 << 0)     /* TX_THRESHOLD = 0 */
+		);
+		/* clang-format on */
+
+		dma_enable();
+
+		time_t now;
+		gettime(&now, NULL);
+		const time_t start = now;
+
+		while (pendingTerm == 0) {
 			if ((ctx->crcErrors > 0) || (ctx->valueErrors > 0)) {
 				gettime(&now, NULL);
 				fprintf(stdout, LOG_TAG "[%llu] crcErrors:%u valueErrors:%u\n", (long long unsigned)((now - start) / 1000), ctx->crcErrors, ctx->valueErrors);
 				fflush(stderr);
 			}
-		}
-		sleep(60);
-	};
+			sleep(60);
+		};
 
-	fprintf(stderr, "dma_disable()\n");
-	dma_disable();
-	usleep(200000);
-	fprintf(stderr, "resetEcspi()\n");
-	resetEcspi(ctx->spi);
+		fprintf(stderr, "dma_disable()\n");
+		dma_disable();
+		usleep(200000);
+		fprintf(stderr, "resetEcspi()\n");
+		resetEcspi(ctx->spi);
+
+		log_error("closing all msgapi sessions");
+		msgapi_reset(&ctx->msgapi);
+	}
 
 	return 0;
 }
