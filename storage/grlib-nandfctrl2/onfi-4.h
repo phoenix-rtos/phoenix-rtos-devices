@@ -137,13 +137,13 @@ typedef struct {
 } __attribute__((packed)) onfi_paramPage_t;
 
 
-static inline int onfi_calcTimingMode(onfi_paramPage_t *page)
+/* Returns the fastest SDR timing mode supported by the device */
+static inline unsigned int onfi_calcTimingMode(const onfi_paramPage_t *page)
 {
-	if (page->timingMode == 0) {
-		return 0;
-	}
+	/* Only modes 0-5 are defined, mode 0 is always supported */
+	unsigned int modes = (page->timingMode & 0x3fU) | 1U;
 
-	return 31 - __builtin_clz((unsigned int)page->timingMode);
+	return 31U - (unsigned int)__builtin_clz(modes);
 }
 
 
