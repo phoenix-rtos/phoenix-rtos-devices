@@ -94,6 +94,48 @@ static ssize_t flashnor_read(oid_t *oid, off_t offs, void *data, size_t len)
 }
 
 
+static ssize_t doWrite(storage_t *storage, off_t offs, const void *src, size_t len)
+{
+	if ((src == NULL) || (offs < 0)) {
+		return -EINVAL;
+	}
+
+	const storage_mtdops_t *ops = getMtdOps(storage);
+	if ((ops == NULL) || (ops->write == NULL) || (ops->erase == NULL)) {
+		return -EINVAL;
+	}
+
+	const size_t blockSize = storage->dev->mtd->erasesz;
+	if ((len != blockSize) || (offs % blockSize != 0)) {
+		return -EOPNOTSUPP;
+	}
+
+	if (((size_t)offs >= storage->size) || (storage->size - (size_t)offs < len)) {
+		return -ENOSPC;
+	}
+
+	offs += storage->start;
+	int err = ops->erase(storage, offs, blockSize);
+	if (err < 0) {
+		return err;
+	}
+
+	size_t retlen;
+	err = ops->write(storage, offs, src, len, &retlen);
+	if (err < 0) {
+		return err;
+	}
+
+	return retlen;
+}
+
+
+static ssize_t flashnor_write(oid_t *oid, off_t offs, const void *data, size_t len)
+{
+	return doWrite(storage_get(oid->id), offs, data, len);
+}
+
+
 static int flashnor_getAttr(oid_t *oid, int type, long long *attr)
 {
 	storage_t *strg = storage_get(oid->id);
@@ -133,6 +175,10 @@ static void flashnor_msgloop(void *arg, msg_t *msg)
 
 		case mtRead:
 			msg->o.err = flashnor_read(&msg->oid, msg->i.io.offs, msg->o.data, msg->o.size);
+			break;
+
+		case mtWrite:
+			msg->o.err = flashnor_write(&msg->oid, msg->i.io.offs, msg->i.data, msg->i.size);
 			break;
 
 		case mtGetAttr:
