@@ -35,7 +35,8 @@
 
 
 /* Misc definitions */
-#define HDD_BASE "/dev/hd" /* Base name for HDD devices */
+#define HDD_BASE        "/dev/hd" /* Base name for HDD devices */
+#define RESPOND_PENDING 42        /* Pulse value: done queue has pending responses */
 
 
 /* ATA server device types */
@@ -103,6 +104,10 @@ struct _atasrv_part_t {
 	/* Filesystem data */
 	atasrv_fs_t *fs;            /* Mounted filesystem */
 	void *fdata;                /* Mounted filesystem data */
+
+	/* Done requests (ready to respond) */
+	atasrv_req_t *done; /* Done requests queue */
+	handle_t dlock;     /* Done queue lock */
 
 	/* Partition filesystem thread stack */
 	char pstack[4 * _PAGE_SIZE] __attribute__((aligned(8)));
@@ -186,28 +191,46 @@ static atasrv_fs_t *atasrv_findfs(uint8_t type)
 static void atasrv_fsthr(void *arg)
 {
 	atasrv_part_t *part = (atasrv_part_t *)arg;
-	atasrv_req_t *req;
-	int umount = 0;
+	atasrv_req_t *req, *doneReq;
+	int err, umount = 0;
 
 	for (;;) {
+		/* Drain done queue - respond to requests completed by pool threads */
+		mutexLock(part->dlock);
+		while (part->done != NULL) {
+			doneReq = part->done;
+			LIST_REMOVE(&part->done, doneReq);
+			mutexUnlock(part->dlock);
+			msgRespond(doneReq->part->port, &doneReq->msg, doneReq->rid);
+			free(doneReq);
+			mutexLock(part->dlock);
+		}
+		mutexUnlock(part->dlock);
+
+		if (umount)
+			endthread();
+
 		if ((req = (atasrv_req_t *)malloc(sizeof(atasrv_req_t))) == NULL)
 			continue;
 
 		req->part = part;
-		while (msgRecv(req->part->port, &req->msg, &req->rid) < 0);
+		err = msgRecv(part->port, &req->msg, &req->rid);
+		if (err == -EPULSE) {
+			free(req);
+			continue;
+		}
+		if (err < 0) {
+			free(req);
+			continue;
+		}
 
 		if (req->msg.type == mtUmount)
 			umount = 1;
 
 		mutexLock(atasrv_common.rlock);
-
 		LIST_ADD(&atasrv_common.rqueue, req);
-
 		mutexUnlock(atasrv_common.rlock);
 		condSignal(atasrv_common.rcond);
-
-		if (umount)
-			endthread();
 	}
 }
 
@@ -235,8 +258,11 @@ static void atasrv_poolthr(void *arg)
 			req->part->fs->handler(req->part->fdata, &req->msg);
 		}
 
-		msgRespond(req->part->port, &req->msg, req->rid);
-		free(req);
+		/* Push to done queue and pulse the receiver thread to respond */
+		mutexLock(req->part->dlock);
+		LIST_ADD(&req->part->done, req);
+		mutexUnlock(req->part->dlock);
+		msgPulse(req->part->port, RESPOND_PENDING);
 	}
 }
 
@@ -288,6 +314,14 @@ static int atasrv_initpart(atasrv_dev_t *bdev, uint8_t type, uint32_t start, uin
 		return err;
 	}
 
+	if ((err = mutexCreate(&pdev->part->dlock)) < 0) {
+		portDestroy(pdev->part->port);
+		free(pdev->part);
+		free(pdev);
+		return err;
+	}
+
+	pdev->part->done = NULL;
 	pdev->type = DEV_PART;
 	pdev->prev = NULL;
 	pdev->next = NULL;
