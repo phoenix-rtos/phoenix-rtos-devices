@@ -637,12 +637,9 @@ int main(int argc, char **argv)
 		/* GPIO */
 		{ .mux = pctl_mux_tamper2, .mode = MUX_PAD_SNVS_TAMPER2__GPIO5_IO02 }, /* ADC_RESET (connected to RESET2) */
 		{ .mux = pctl_mux_lcd_rst, .mode = MUX_PAD_LCD_RESET__GPIO3_IO04 },    /* ADC_RESET2 */
-		{ .mux = pctl_mux_lcd_hsync, .mode = MUX_PAD_LCD_HSYNC__GPIO3_IO02 },  /* ADC_IRQN */
-		{ .mux = pctl_mux_lcd_vsync, .mode = MUX_PAD_LCD_VSYNC__GPIO3_IO03 },  /* ADC_DREADY_L2 */
-		{ .mux = pctl_mux_lcd_en, .mode = MUX_PAD_LCD_ENABLE__GPIO3_IO01 },    /* ADC_IRQ1 */
-		{ .mux = pctl_mux_lcd_clk, .mode = MUX_PAD_LCD_CLK__GPIO3_IO00 },      /* ADC_IRQ2 */
-		{ .mux = pctl_mux_lcd_d0, .mode = MUX_PAD_LCD_DATA00__GPIO3_IO05 },    /* ADC_IRQ3 */
-		{ .mux = pctl_mux_lcd_d12, .mode = MUX_PAD_LCD_DATA12__ECSPI1_RDY },   /* ADC_DREADY */
+		{ .mux = pctl_mux_lcd_hsync, .mode = MUX_PAD_LCD_HSYNC__GPIO3_IO02 },  /* ADC_ZX (for future use) */
+		{ .mux = pctl_mux_lcd_en, .mode = MUX_PAD_LCD_ENABLE__GPIO3_IO01 },    /* ADC_IRQ1 (for future use) */
+		{ .mux = pctl_mux_lcd_d12, .mode = MUX_PAD_LCD_DATA12__ECSPI1_RDY },   /* ADC_DREADY_L2 */
 	};
 	for (int i = 0; i < sizeof(muxConfigs) / sizeof(*muxConfigs); ++i) {
 		const struct muxConfig *cfg = &muxConfigs[i];
@@ -690,12 +687,12 @@ int main(int argc, char **argv)
 			} });
 	}
 
-	/* IRQN pad - enable internal pullup */
+	/* IRQ1 pad - enable internal pullup */
 	platformctl(&(platformctl_t) {
 		.action = pctl_set,
 		.type = pctl_iopad,
 		.iopad = {
-			.pad = pctl_pad_lcd_hsync,
+			.pad = pctl_pad_lcd_en,
 			.hys = 1,    /* enable hysteresis */
 			.pus = 0b11, /* 22kOhm pull up */
 			.pue = 1,    /* pull on power down */
