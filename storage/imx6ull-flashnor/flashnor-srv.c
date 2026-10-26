@@ -38,9 +38,14 @@
 #define FLASHNOR_ID     0
 
 
-static char flashnor_path[32];
-static char *flashnor_prefix = FLASHNOR_PREFIX;
-static unsigned int flashnor_id = FLASHNOR_ID;
+static struct {
+	char devicePath[32];
+	char *devicePrefix;
+	unsigned int deviceId;
+} common = {
+	.devicePrefix = FLASHNOR_PREFIX,
+	.deviceId = FLASHNOR_ID,
+};
 
 
 static ssize_t flashnor_read(oid_t *oid, off_t offs, void *data, size_t len)
@@ -207,7 +212,7 @@ static storage_t *flashnor_partAdd(int parentId, off_t start, size_t size)
 		return NULL;
 	}
 
-	if (snprintf(flashnor_path, sizeof(flashnor_path), "/dev/%s%u", flashnor_prefix, flashnor_id++) >= sizeof(flashnor_path)) {
+	if (snprintf(common.devicePath, sizeof(common.devicePath), "/dev/%s%u", common.devicePrefix, common.deviceId++) >= sizeof(common.devicePath)) {
 		err = -ENAMETOOLONG;
 		(void)printf(LOG_TAG "failed to build partition file devicePath, err: %s\n", strerror(err));
 		(void)storage_remove(dev);
@@ -216,7 +221,7 @@ static storage_t *flashnor_partAdd(int parentId, off_t start, size_t size)
 		return NULL;
 	}
 
-	err = create_dev(&oid, flashnor_path);
+	err = create_dev(&oid, common.devicePath);
 	if (err < 0) {
 		(void)printf(LOG_TAG "failed to create partition file, err: %s\n", strerror(err));
 		(void)storage_remove(dev);
@@ -319,7 +324,7 @@ int main(int argc, char *argv[])
 						return EXIT_FAILURE;
 					}
 
-					if (snprintf(flashnor_path, sizeof(flashnor_path), "/dev/%s%u", flashnor_prefix, flashnor_id++) >= sizeof(flashnor_path)) {
+					if (snprintf(common.devicePath, sizeof(common.devicePath), "/dev/%s%u", common.devicePrefix, common.deviceId++) >= sizeof(common.devicePath)) {
 						err = -ENAMETOOLONG;
 						(void)printf(LOG_TAG "failed to build device file devicePath, err: %s\n", strerror(err));
 						(void)storage_remove(dev);
@@ -328,7 +333,7 @@ int main(int argc, char *argv[])
 						return EXIT_FAILURE;
 					}
 
-					err = create_dev(&oid, flashnor_path);
+					err = create_dev(&oid, common.devicePath);
 					if (err < 0) {
 						(void)printf(LOG_TAG "failed to create device file, err: %s\n", strerror(err));
 						(void)storage_remove(dev);
@@ -393,8 +398,8 @@ int main(int argc, char *argv[])
 						return EXIT_FAILURE;
 					}
 
-					flashnor_prefix = argv[arg++];
-					flashnor_id = strtoul(argv[arg++], NULL, 0);
+					common.devicePrefix = argv[arg++];
+					common.deviceId = strtoul(argv[arg++], NULL, 0);
 					optind++;
 					break;
 
