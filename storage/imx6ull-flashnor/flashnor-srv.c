@@ -48,32 +48,49 @@ static struct {
 };
 
 
-static ssize_t flashnor_read(oid_t *oid, off_t offs, void *data, size_t len)
+static const storage_mtdops_t *getMtdOps(storage_t *storage)
 {
-	storage_t *strg = storage_get(oid->id);
-	size_t retlen;
-	int err;
+	if ((storage == NULL) || (storage->dev == NULL) || (storage->dev->mtd == NULL)) {
+		return NULL;
+	}
 
-	if ((strg == NULL) || (strg->dev == NULL) || (strg->dev->mtd == NULL) || (strg->dev->mtd->ops == NULL) ||
-			(strg->dev->mtd->ops->read == NULL) || (data == NULL) || (offs < 0)) {
+	return storage->dev->mtd->ops;
+}
+
+
+static ssize_t doRead(storage_t *storage, off_t offs, void *dst, size_t len)
+{
+	if ((dst == NULL) || (offs < 0)) {
+		return -EINVAL;
+	}
+
+	const storage_mtdops_t *ops = getMtdOps(storage);
+	if ((ops == NULL) || (ops->read == NULL)) {
 		return -EINVAL;
 	}
 
 	/* Read past the end of the device is not an error, report EOF */
-	if ((size_t)offs >= strg->size) {
+	if ((size_t)offs >= storage->size) {
 		return 0;
 	}
 
-	if (len > (strg->size - (size_t)offs)) {
-		len = strg->size - (size_t)offs;
+	if (len > (storage->size - (size_t)offs)) {
+		len = storage->size - (size_t)offs;
 	}
 
-	err = strg->dev->mtd->ops->read(strg, strg->start + offs, data, len, &retlen);
+	size_t retlen;
+	const int err = ops->read(storage, storage->start + offs, dst, len, &retlen);
 	if (err < 0) {
 		return err;
 	}
 
-	return (ssize_t)retlen;
+	return retlen;
+}
+
+
+static ssize_t flashnor_read(oid_t *oid, off_t offs, void *data, size_t len)
+{
+	return doRead(storage_get(oid->id), offs, data, len);
 }
 
 
