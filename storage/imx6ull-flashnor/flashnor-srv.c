@@ -11,6 +11,7 @@
  * %LICENSE%
  */
 
+#include <endian.h>
 #include <errno.h>
 #include <getopt.h>
 #include <signal.h>
@@ -25,6 +26,7 @@
 
 #include <libjffs2.h>
 #include <meterfs_storage.h>
+#include <ptable.h>
 #include <storage/storage.h>
 
 #include "imx6ull-flashnor-ecspi.h"
@@ -218,8 +220,10 @@ static void flashnor_help(const char *prog)
 	(void)printf("\t\tid:     device id starting at 0\n");
 	(void)printf("\t\tstart:  partition start in bytes (erase block aligned)\n");
 	(void)printf("\t\tsize:   partition size in bytes (erase block aligned)\n");
-	(void)printf("\t-r <id> <start> <size> <fs>  - mount root filesystem\n");
-	(void)printf("\t\tid:     device id starting at 0\n");
+	(void)printf("\t-P <id>                      - read partition table from device\n");
+	(void)printf("\t\tid:     device id\n");
+	(void)printf("\t-r <dev> <fs>                - mount root filesystem\n");
+	(void)printf("\t\tdev:    device node\n");
 	(void)printf("\t\tfs:     filesystem name\n");
 	(void)printf("\t-n <prefix> <id>             - use given prefix and starting id for device files registration\n");
 	(void)printf("\t\tprefix: device prefix\n");
@@ -236,25 +240,23 @@ static void flashnor_exit(int sig)
 }
 
 
-static storage_t *flashnor_partAdd(int parentId, off_t start, size_t size)
+static storage_t *addPartition(storage_t *parent, ptable_part_t *part)
 {
-	storage_t *dev = calloc(1, sizeof(storage_t)), *parent;
+	storage_t *dev = calloc(1, sizeof(storage_t));
 	int err;
 	oid_t oid;
+
+	(void)printf(LOG_TAG "adding partition: name = \"%.*s\", offset = 0x%08x, size = 0x%08x, type = 0x%02x (%s)\n",
+			(int)sizeof(part->name), part->name, (unsigned int)part->offset, (unsigned int)part->size,
+			(unsigned int)part->type, ptable_typeName(part->type));
 
 	if (dev == NULL) {
 		(void)printf(LOG_TAG "failed to allocate device, err: %s\n", strerror(ENOMEM));
 		return NULL;
 	}
-	parent = storage_get(parentId);
-	if (parent == NULL) {
-		(void)printf(LOG_TAG "failed to find parent device, err: %s\n", strerror(EINVAL));
-		free(dev);
-		return NULL;
-	}
 
-	dev->start = start;
-	dev->size = size;
+	dev->start = part->offset;
+	dev->size = part->size;
 	dev->parent = parent;
 
 	/* Only storage parameter matters in case of partition. */
@@ -273,7 +275,8 @@ static storage_t *flashnor_partAdd(int parentId, off_t start, size_t size)
 		return NULL;
 	}
 
-	if (snprintf(common.devicePath, sizeof(common.devicePath), "/dev/%s%u", common.devicePrefix, common.deviceId++) >= sizeof(common.devicePath)) {
+	if (snprintf(common.devicePath, sizeof(common.devicePath), "/dev/%s%u.%.*s",
+				common.devicePrefix, common.deviceId, (int)sizeof(part->name), part->name) >= sizeof(common.devicePath)) {
 		(void)printf(LOG_TAG "failed to build partition file devicePath, err: %s\n", strerror(ENAMETOOLONG));
 		(void)storage_remove(dev);
 		flashnor_drvDone(dev);
@@ -293,6 +296,77 @@ static storage_t *flashnor_partAdd(int parentId, off_t start, size_t size)
 }
 
 
+static int flashnor_partsInit(int parentId)
+{
+	storage_t *parent = storage_get(parentId);
+	if ((parent == NULL) || (parent->dev == NULL) || (parent->dev->mtd == NULL)) {
+		(void)printf(LOG_TAG "failed to find parent device\n");
+		return -1;
+	}
+
+	const size_t blockSize = parent->dev->mtd->erasesz;
+	const off_t ptableOffset = parent->start + parent->size - blockSize;
+	uint32_t partCount;
+	if (doRead(parent, ptableOffset, &partCount, sizeof(partCount)) != sizeof(partCount)) {
+		(void)printf(LOG_TAG "PTable: unable to read header from offset %zu\n", (size_t)ptableOffset);
+		return -1;
+	}
+	partCount = le32toh(partCount);
+
+	const uint32_t ptableSize = ptable_size(partCount);
+	if (ptableSize > blockSize) {
+		(void)printf(LOG_TAG "PTable: too large (%u, max: %zu)\n", (unsigned int)ptableSize, (size_t)blockSize);
+		return -1;
+	}
+
+	{
+		uint8_t magic[sizeof(ptable_magic)];
+		const off_t magicOffset = ptableOffset + ptableSize - sizeof(magic);
+
+		if (doRead(parent, magicOffset, magic, sizeof(magic)) != sizeof(magic)) {
+			(void)printf(LOG_TAG "PTable: unable to read magic from offset %zu\n", (size_t)magicOffset);
+			return -1;
+		}
+
+		if (memcmp(magic, ptable_magic, sizeof(magic)) != 0) {
+			(void)printf(LOG_TAG "PTable: invalid magic number\n");
+			return -1;
+		}
+	}
+
+
+	ptable_t *ptable = malloc(ptableSize);
+	if (ptable == NULL) {
+		(void)printf(LOG_TAG "PTable: out of memory\n");
+		return -1;
+	}
+
+	int ret = -1;
+	if (doRead(parent, ptableOffset, ptable, ptableSize) != ptableSize) {
+		(void)printf(LOG_TAG "PTable: unable to read contents\n");
+		goto cleanup;
+	}
+
+	if (ptable_deserialize(ptable, parent->size, blockSize) < 0) {
+		(void)printf(LOG_TAG "PTable: deserialization failed\n");
+		goto cleanup;
+	}
+
+	(void)printf(LOG_TAG "detected partition table with %u entries\n", (unsigned int)partCount);
+	for (uint32_t i = 0; i < partCount; ++i) {
+		ptable_part_t *part = &ptable->parts[i];
+		if (addPartition(parent, part) == NULL) {
+			goto cleanup;
+		}
+	}
+
+	ret = 0;
+cleanup:
+	free(ptable);
+	return ret;
+}
+
+
 int main(int argc, char *argv[])
 {
 	struct option longopts[] = {
@@ -305,11 +379,9 @@ int main(int argc, char *argv[])
 	storage_t *dev;
 	pid_t pid;
 	oid_t oid;
-	off_t start;
-	size_t size;
 	flashnor_info_t info;
 	int (*init)(int ndev, flashnor_info_t *info);
-	char *fsName;
+	const char *fsName;
 
 	/* Daemonize server */
 	signal(SIGUSR1, flashnor_exit);
@@ -349,7 +421,7 @@ int main(int argc, char *argv[])
 	}
 
 	if (argc > 1) {
-		while ((c = getopt_long(argc, argv, "e:q:p:r:n:h", longopts, NULL)) != -1) {
+		while ((c = getopt_long(argc, argv, "e:q:P:r:n:h", longopts, NULL)) != -1) {
 			switch (c) {
 				case 'e':
 				case 'q':
@@ -383,7 +455,8 @@ int main(int argc, char *argv[])
 						return EXIT_FAILURE;
 					}
 
-					if (snprintf(common.devicePath, sizeof(common.devicePath), "/dev/%s%u", common.devicePrefix, common.deviceId++) >= sizeof(common.devicePath)) {
+					++common.deviceId;
+					if (snprintf(common.devicePath, sizeof(common.devicePath), "/dev/%s%u", common.devicePrefix, common.deviceId) >= sizeof(common.devicePath)) {
 						(void)printf(LOG_TAG "failed to build device file devicePath, err: %s\n", strerror(ENAMETOOLONG));
 						(void)storage_remove(dev);
 						flashnor_drvDone(dev);
@@ -401,49 +474,36 @@ int main(int argc, char *argv[])
 					}
 					break;
 
-				case 'p':
-					arg = optind - 1;
-					if ((arg + 3) > argc) {
-						(void)printf(LOG_TAG "missing arg(s) for -p option, err: %s\n", strerror(EINVAL));
+				case 'P':
+					parentId = strtoul(optarg, NULL, 0);
+					if (flashnor_partsInit(parentId) < 0) {
 						return EXIT_FAILURE;
 					}
 
-					parentId = strtoul(argv[arg], NULL, 0);
-					start = strtoull(argv[arg + 1], NULL, 0);
-					size = strtoull(argv[arg + 2], NULL, 0);
-
-					dev = flashnor_partAdd(parentId, start, size);
-					if (dev == NULL) {
-						return EXIT_FAILURE;
-					}
-					optind += 2;
 					break;
 
 				case 'r':
 					arg = optind - 1;
-					if ((arg + 4) > argc) {
+					if ((arg + 2) > argc) {
 						(void)printf(LOG_TAG "missing arg(s) for -r option, err: %s\n", strerror(EINVAL));
 						return EXIT_FAILURE;
 					}
 
-					parentId = strtoul(argv[arg], NULL, 0);
-					start = strtoull(argv[arg + 1], NULL, 0);
-					size = strtoull(argv[arg + 2], NULL, 0);
-					fsName = argv[arg + 3];
-
-					dev = flashnor_partAdd(parentId, start, size);
-					if (dev == NULL) {
+					fsName = argv[arg + 1];
+					err = lookup(optarg, NULL, &oid);
+					if (err < 0) {
+						(void)printf(LOG_TAG "lookup() failed for %s: %s\n", optarg, strerror(-err));
 						return EXIT_FAILURE;
 					}
 
-					err = storage_mountfs(dev, fsName, NULL, 0, NULL, &oid);
+					err = storage_mountfs(storage_get(oid.id), fsName, NULL, 0, NULL, &oid);
 					if (err < 0) {
-						(void)printf(LOG_TAG "failed to mount a filesystem - %s: %s\n", fsName, strerror(-err));
+						(void)printf(LOG_TAG "failed to mount root filesystem, type %s: %s\n", fsName, strerror(-err));
 						return EXIT_FAILURE;
 					}
 
 					portRegister(oid.port, "/", &oid);
-					optind += 3;
+					optind++;
 					break;
 
 				case 'n':
@@ -455,6 +515,7 @@ int main(int argc, char *argv[])
 
 					common.devicePrefix = argv[arg++];
 					common.deviceId = strtoul(argv[arg++], NULL, 0);
+					--common.deviceId;
 					optind++;
 					break;
 
