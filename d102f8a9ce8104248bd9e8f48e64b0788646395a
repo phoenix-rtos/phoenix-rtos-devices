@@ -1,0 +1,16 @@
+usb/ehci/ehci.c
+  h_44b30f378b8eea 873-874
+ehci_sleep.patch
+  h_44b30f378b8eea 1-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "d102f8a9ce8104248bd9e8f48e64b0788646395a",
+  "prompts": {},
+  "humans": {
+    "h_44b30f378b8eea": {
+      "author": "Mateusz Kobak <mateusz.kobak@phoenix-rtos.com>"
+    }
+  }
+}
