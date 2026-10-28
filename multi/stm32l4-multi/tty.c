@@ -265,7 +265,7 @@ static int tty_clockSetup(const struct tty_peripheralInfo *info, uint32_t *out)
 	}
 
 	uint64_t freq;
-	ret = clockdef_getClock(info->clksrc, &freq);
+	ret = rcc_getClock(info->clksrc, &freq);
 	if (ret < 0) {
 		return ret;
 	}

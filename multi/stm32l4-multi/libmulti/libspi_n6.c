@@ -18,6 +18,7 @@
 #include <sys/pwman.h>
 #include <errno.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <byteswap.h>
 
 #include "../common.h"

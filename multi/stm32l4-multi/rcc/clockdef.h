@@ -21,14 +21,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#if defined(__CPU_STM32N6)
-#include "stm32n6.h"
-#elif defined(__CPU_STM32U3)
-#include "stm32u3.h"
-#else
-#error "Unsupported platform!"
-#endif
-
 enum clockdef_type {
 	clockdef_type_literal,
 	clockdef_type_clkID,
@@ -88,6 +80,9 @@ typedef struct {
 } clockdef_obj_t;
 
 
+const uint8_t *clockdef_getClkselOptions(enum ipclks ipclk);
+
+
 extern uint32_t clockdef_getRegHW(uint32_t offset);
 
 
@@ -97,9 +92,6 @@ extern int clockdef_getClockHW(
 		uint64_t *nom,
 		uint64_t *denom,
 		clockdef_clkID_t *prev);
-
-
-extern int clockdef_getClock(clockdef_clkID_t id, uint64_t *output);
 
 
 extern const clockdef_obj_t *clockdef_getObject(clockdef_clkID_t id);

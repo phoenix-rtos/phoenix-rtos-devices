@@ -18,9 +18,7 @@
 #include <unistd.h>
 #include "libmulti/libi2c.h"
 #include "../common.h"
-#if defined(__CPU_STM32N6) || defined(__CPU_STM32U3)
 #include "../rcc.h"
-#endif
 
 
 #define TIMEOUT (100 * 1000)
@@ -93,7 +91,7 @@ static int libi2c_clockSetup(const struct libi2c_peripheralInfo *info, uint32_t 
 	}
 
 	uint64_t freq;
-	ret = clockdef_getClock(info->clksrc, &freq);
+	ret = rcc_getClock(info->clksrc, &freq);
 	if (ret < 0) {
 		return ret;
 	}

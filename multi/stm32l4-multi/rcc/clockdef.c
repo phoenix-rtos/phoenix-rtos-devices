@@ -14,10 +14,12 @@
  * %LICENSE%
  */
 
+#include <assert.h>
 #include <errno.h>
 #include <sys/platform.h>
 
 #include "../rcc.h"
+#include "clockdef.h"
 
 
 /* Read a register, apply value offset and clamp negative results */
@@ -79,7 +81,7 @@ static int clockdef_getBase(const clockdef_base_t *n, uint32_t *num_out, clockde
 }
 
 
-int clockdef_getClock(clockdef_clkID_t id, uint64_t *output)
+int rcc_getClock(clockdef_clkID_t id, uint64_t *output)
 {
 	if (id == clkid_none) {
 		return -ENOENT;
@@ -133,16 +135,18 @@ int clockdef_getClock(clockdef_clkID_t id, uint64_t *output)
 }
 
 
+static_assert(sizeof(clockdef_clkID_t) == sizeof(uint8_t), "clock ID size exceeds option storage size");
+
 int rcc_setClksel(enum ipclks ipclk, enum clock_ids clkID)
 {
-	if ((ipclk < 0) || (ipclk > pctl_ipclks_count) || (clkID == clkid_none)) {
+	if ((ipclk < 0) || (ipclk >= pctl_ipclks_count) || (clkID == clkid_none)) {
 		return -EINVAL;
 	}
 
 	size_t setting;
-	const enum clock_ids *options = rcc_getClkselOptions(ipclk);
+	const uint8_t *options = clockdef_getClkselOptions(ipclk);
 	for (setting = 0; setting < RCC_MAX_CLOCK_CHOICES; setting++) {
-		enum clock_ids settingID = options[setting];
+		clockdef_clkID_t settingID = options[setting];
 		if (settingID == clkID) {
 			break;
 		}
