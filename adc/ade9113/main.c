@@ -146,7 +146,7 @@ static void resetEcspi(volatile struct imx6ull_regs_ecspi *spi)
 }
 
 
-bool dmaRxCb(const uint8_t *data, size_t size)
+static bool dmaRxCb(const uint8_t *data, size_t size)
 {
 	struct adcCtx *ctx = &common_adc;
 	sample_writeStart(&ctx->samples);
@@ -377,7 +377,7 @@ static int parseArgs(struct args *parsed, int argc, char **argv)
 }
 
 
-int gpioWrite(const char *path, uint32_t value, uint32_t mask)
+static int gpioWrite(const char *path, uint32_t value, uint32_t mask)
 {
 	int fd = open(path, O_RDWR);
 	if (fd < 0) {
@@ -390,7 +390,7 @@ int gpioWrite(const char *path, uint32_t value, uint32_t mask)
 }
 
 
-int adcInit(struct adcCtx *ctx, addr_t spiBase, unsigned bufferSize, uint16_t enabledChannels)
+static int adcInit(struct adcCtx *ctx, addr_t spiBase, unsigned bufferSize, uint16_t enabledChannels)
 {
 	ctx->spi = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, spiBase);
 	if (ctx->spi == MAP_FAILED) {
@@ -437,7 +437,7 @@ static int waitReady(struct ade9113_ctx *ctx, bool all, time_t timeout)
 }
 
 
-int adcConfigure(struct adcCtx *ctx, const struct args *args)
+static int adcConfigure(struct adcCtx *ctx, const struct args *args)
 {
 	log_info("Initializing ADC using SPI1");
 	resetEcspi(ctx->spi);
