@@ -442,7 +442,9 @@ static int adcConfigure(struct adcCtx *ctx, const struct args *args)
 	log_info("Initializing ADC using SPI1");
 	resetEcspi(ctx->spi);
 
-	struct ade9113_ctx ade = { spiExchangeCb, NULL };
+	struct ade9113_ctx ade = { .spiExchange = spiExchangeCb, .userData = NULL };
+
+	ade.silent = true; /* avoid excessive logs during detection */
 
 	/*
 	 * NOTE: many commands below are executed without checking return values. There are explicit checkpoints later
@@ -457,11 +459,13 @@ static int adcConfigure(struct adcCtx *ctx, const struct args *args)
 	ade9113_writeRegs(&ade, ADE9113_SCRATCH, magic);
 	ade9113_readRegs(&ade, ADE9113_SCRATCH, readScratch, sizeof(readScratch));
 	if (readScratch[0] != magic) {
-		log_error("Initial READ/WRITE transaction failed. Analog frontend might be broken/missing");
+		log_error("Initial READ/WRITE transaction failed. Analog frontend might be broken/missing/unpowered");
 		if (!args->ignoreErrors) {
 			return -1;
 		}
 	}
+
+	ade.silent = false; /* initial detection complete - enable error logs */
 
 	ade9113_writeRegs(&ade, ADE9113_SWRST, ADE9113_SWRST__SOFTWARE_RESET_COMMAND);
 
