@@ -15,11 +15,13 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdbool.h>
 
 
 struct ade9113_ctx {
 	int (*spiExchange)(void *userData, const uint8_t *dataIn, uint8_t *dataOut, size_t len);
 	void *userData;
+	bool silent; /* suppress error logs */
 };
 
 
