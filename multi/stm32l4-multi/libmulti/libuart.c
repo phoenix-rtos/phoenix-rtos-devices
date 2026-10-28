@@ -123,7 +123,7 @@ static int libuart_clockSetup(const struct libuart_peripheralInfo *info, uint32_
 	}
 
 	uint64_t freq;
-	ret = clockdef_getClock(info->clksrc, &freq);
+	ret = rcc_getClock(info->clksrc, &freq);
 	if (ret < 0) {
 		return ret;
 	}

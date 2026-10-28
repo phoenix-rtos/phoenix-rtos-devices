@@ -18,6 +18,7 @@
 #include "../common.h"
 #include "../rcc.h"
 #include "../stm32n6_regs.h"
+#include "clockdef.h"
 
 
 static const uint8_t rcc_clksels[pctl_ipclks_count][RCC_MAX_CLOCK_CHOICES] = {
@@ -359,7 +360,7 @@ uint32_t clockdef_getRegHW(uint32_t offset)
 }
 
 
-const enum clock_ids *rcc_getClkselOptions(enum ipclks ipclk)
+const uint8_t *clockdef_getClkselOptions(enum ipclks ipclk)
 {
 	return rcc_clksels[ipclk];
 }

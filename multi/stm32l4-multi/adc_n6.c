@@ -483,7 +483,7 @@ static int adc_setFrequency(uint32_t hz)
 	}
 
 	uint64_t freq_out;
-	if (clockdef_getClock(clkid_hclk, &freq_out) < 0) {
+	if (rcc_getClock(clkid_hclk, &freq_out) < 0) {
 		return -1;
 	}
 

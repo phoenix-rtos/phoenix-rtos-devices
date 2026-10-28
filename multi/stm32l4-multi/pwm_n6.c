@@ -29,6 +29,8 @@
 #include <stdlib.h>
 #include <time.h>
 
+#include "rcc.h"
+
 #define CACHE_LINE_ALIGN(sz) (((sz) + CACHE_LINE_SIZE - 1) & ~(CACHE_LINE_SIZE - 1))
 
 /* Values below are meant to be compile-time configurable */
@@ -647,7 +649,7 @@ uint64_t pwm_getBaseFrequency(pwm_tim_id_t timer)
 		return 0;
 	}
 	uint64_t baseFreq = 0ull;
-	res = clockdef_getClock(clkid_timg, &baseFreq);
+	res = rcc_getClock(clkid_timg, &baseFreq);
 	if (res < 0) {
 		return 0;
 	}
