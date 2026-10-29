@@ -649,12 +649,18 @@ int spwrtr_init(spwrtr_dev_t *rtrDev, unsigned int n)
 	/* Set IDIV for 10 Mbit/s link initialization */
 	rtrDev->regs->idiv = SPWRTR_IDIV;
 
+	spwrtr_portStart(rtrDev, 1, 50000000);
+	spwrtr_portStart(rtrDev, 2, 50000000);
+
 	const uint32_t ver = rtrDev->regs->ver;
 	LOG("grspwrouter %u @0x%" PRIxPTR ": ver %" PRIu32 ".%" PRIu32 " id %" PRIu32 ", ports: spw %u (1..%u), amba %u (%u..%u), fifo %u%s",
 			n, pbase, (ver >> 24) & 0xffU, (ver >> 16) & 0xffU, ver & 0xffU,
 			rtrDev->nSpwPorts, rtrDev->nSpwPorts,
 			rtrDev->nAmbaPorts, rtrDev->nSpwPorts + 1U, (unsigned int)rtrDev->nSpwPorts + rtrDev->nAmbaPorts,
 			rtrDev->nFifoPorts, ((cfg & SPWRTR_RTRCFG_SR) != 0U) ? ", static routing" : "");
+
+	spwrtr_waitLinkRun(rtrDev, 1, 500);
+	spwrtr_waitLinkRun(rtrDev, 2, 500);
 
 	return 0;
 }

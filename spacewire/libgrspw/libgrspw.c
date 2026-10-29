@@ -327,7 +327,6 @@ int spw_transmit(spw_dev_t *dev, const uint8_t *buf, size_t bufsz, const spw_tx_
 
 		/* Start transmission */
 		dev->vbase[DMA_CTRL] |= DMA_CTRL_TE;
-
 		dev->lastTxDesc = (dev->lastTxDesc + 1) % SPW_TX_DESC_CNT;
 	}
 
