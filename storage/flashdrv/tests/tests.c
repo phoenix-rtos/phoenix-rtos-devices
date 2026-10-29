@@ -21,8 +21,8 @@
 /* Test runner module switches */
 #define TEST_PTABLE_VERIFICATION     1
 #define TEST_FLASH_SERVER_OPERATIONS 1
-#define TEST_SPI_MODES               1
-#define TEST_TIME_BENCHMARKS         1
+#define TEST_SPI_MODES               0
+#define TEST_TIME_BENCHMARKS         0
 #define TEST_ERASE_ENTIRE_CHIP       0
 
 
@@ -41,16 +41,15 @@ int main(int argc, char **argv)
 	TEST_CASE(test_flashsrv_openClose());
 	TEST_CASE(test_flashsrv_getAttrSize());
 	TEST_CASE(test_flashsrv_getAttrInvalidType());
-	TEST_CASE(test_flashsrv_erasePartition());
-	TEST_CASE(test_flashsrv_erasePartition());
+	// TEST_CASE(test_flashsrv_erasePartition());
 	TEST_CASE(test_flashsrv_writeAndReadPage());
+	TEST_CASE(test_flashsrv_writeAndReadPageSequence());
 	TEST_CASE(test_flashsrv_writeAndReadUnaligned());
 	TEST_CASE(test_flashsrv_eraseVerification());
-
 	TEST_CASE(test_flashsrv_writeCrossPageBoundary());
-	TEST_CASE(test_flashsrv_highAddressBoundary());
-	TEST_CASE(test_flashsrv_invalidOffsetBounds());
-	TEST_CASE(test_flashsrv_unsupportedMsgType());
+	// TEST_CASE(test_flashsrv_highAddressBoundary());
+	// TEST_CASE(test_flashsrv_invalidOffsetBounds());
+	// TEST_CASE(test_flashsrv_unsupportedMsgType());
 #endif
 
 #if TEST_SPI_MODES

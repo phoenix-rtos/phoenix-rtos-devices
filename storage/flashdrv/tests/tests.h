@@ -33,6 +33,7 @@ extern int test_flashsrv_openClose(void);
 extern int test_flashsrv_getAttrSize(void);
 extern int test_flashsrv_getAttrInvalidType(void);
 extern int test_flashsrv_writeAndReadPage(void);
+extern int test_flashsrv_writeAndReadPageSequence(void);
 extern int test_flashsrv_writeAndReadUnaligned(void);
 extern int test_flashsrv_eraseVerification(void);
 extern int test_flashsrv_erasePartition(void);

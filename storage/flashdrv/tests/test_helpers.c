@@ -239,6 +239,8 @@ int erase_write_read_print(oid_t oid, const off_t testAddr, const size_t testSiz
 	uint8_t txBuff[testSize];
 	uint8_t rxBuff[testSize];
 
+	int res = 0;
+
 	while (lookup(part_path, NULL, &oid) < 0) {
 		usleep(10000);
 	}
@@ -257,13 +259,13 @@ int erase_write_read_print(oid_t oid, const off_t testAddr, const size_t testSiz
 
 	off_t sectorAddr = testAddr - (testAddr % sectorSize);
 	if (eraseSector(oid, sectorAddr, sectorSize) < 0) {
-		LOG_ERROR("Failed to erase sector at 0x%lx after setSPI", (unsigned long)sectorAddr);
+		LOG_ERROR("Failed to erase sector at 0x%lx", (unsigned long)sectorAddr);
 		return -1;
 	}
 
 	memset(rxBuff, 0, testSize);
 	if (readFromFlash(oid, testAddr, rxBuff, testSize) != (int)testSize) {
-		LOG_ERROR("Failed to read flash after setSPI");
+		LOG_ERROR("Failed to read flash");
 		return -1;
 	}
 
@@ -278,17 +280,92 @@ int erase_write_read_print(oid_t oid, const off_t testAddr, const size_t testSiz
 
 	memset(txBuff, checkPattern, testSize);
 	if (writeToFlash(oid, testAddr, txBuff, testSize) != (int)testSize) {
-		LOG_ERROR("Failed to write flash after setSPI");
+		LOG_ERROR("Failed to write flash");
+		return -1;
+	}
+
+	int count_fail = 0;
+	int count_success = 0;
+	for (int i = 0; i < 10; i++) {
+		memset(rxBuff, 0, testSize);
+		if (readFromFlash(oid, testAddr, rxBuff, testSize) != (int)testSize) {
+			LOG_ERROR("Failed to read flash ");
+			return -1;
+		}
+
+		LOG_INFO("Read %zu bytes from address 0x%lx:\n", testSize, (unsigned long)testAddr);
+		for (size_t i = 0; i < testSize; i++) {
+			printf("%02X ", rxBuff[i]);
+			if ((i + 1) % 16 == 0) {
+				printf("\n");
+			}
+		}
+		printf("\n");
+
+		if (memcmp(txBuff, rxBuff, testSize) != 0) {
+			count_fail++;
+			printf("Data verification failed %d times\n", count_fail);
+			// return -1;
+		}
+		else {
+			count_success++;
+			printf("Data verification succeeded %d times\n", count_success);
+			// return 1;
+		}
+	}
+
+	if (count_success == 10) {
+		res = 1;
+	}
+	else {
+		res = -1;
+	}
+
+	return res;
+}
+
+
+int erase_write_read_print_seq(oid_t oid, const off_t testAddr, const size_t testSize, const size_t sectorSize,
+		const char *part_path)
+{
+	uint8_t txBuff[testSize];
+	uint8_t rxBuff[testSize];
+
+	int res = 0;
+
+	for (size_t i = 0; i < testSize; i++) {
+		txBuff[i] = (uint8_t)(i);
+	}
+
+	while (lookup(part_path, NULL, &oid) < 0) {
+		usleep(10000);
+	}
+
+	lookup(part_path, NULL, &oid);
+	LOG_INFO("LOOKUP %s -> port=%u, id=%ju", part_path, oid.port, (uintmax_t)oid.id);
+
+	long long partSize = 0;
+	if (getAttrFlash(oid, atSize, &partSize) < 0 || partSize <= 0) {
+		LOG_ERROR("Failed to get partition size for %s!", part_path);
+		return -1;
+	}
+
+	LOG_INFO("Partition %s verified: oid.id=%ju, size=0x%llx (%lld MB)",
+			part_path, (uintmax_t)oid.id, partSize, partSize / (1024 * 1024));
+
+	off_t sectorAddr = testAddr - (testAddr % sectorSize);
+	if (eraseSector(oid, sectorAddr, sectorSize) < 0) {
+		LOG_ERROR("Failed to erase sector at 0x%lx", (unsigned long)sectorAddr);
 		return -1;
 	}
 
 	memset(rxBuff, 0, testSize);
 	if (readFromFlash(oid, testAddr, rxBuff, testSize) != (int)testSize) {
-		LOG_ERROR("Failed to read flash after setSPI");
+		LOG_ERROR("Failed to read flash after erase");
 		return -1;
 	}
 
-	LOG_INFO("Read %zu bytes from address 0x%lx:\n", testSize, (unsigned long)testAddr);
+	LOG_INFO("Read %zu bytes after erase from address 0x%lx:\n", testSize, (unsigned long)testAddr);
 	for (size_t i = 0; i < testSize; i++) {
 		printf("%02X ", rxBuff[i]);
 		if ((i + 1) % 16 == 0) {
@@ -297,12 +374,48 @@ int erase_write_read_print(oid_t oid, const off_t testAddr, const size_t testSiz
 	}
 	printf("\n");
 
-	if (memcmp(txBuff, rxBuff, testSize) != 0) {
-		LOG_ERROR("Data verification failed");
+	if (writeToFlash(oid, testAddr, txBuff, testSize) != (int)testSize) {
+		LOG_ERROR("Failed to write flash");
 		return -1;
 	}
 
-	return 1;
+	int count_fail = 0;
+	int count_success = 0;
+
+	for (int loop = 0; loop < 10; loop++) {
+		memset(rxBuff, 0, testSize);
+		if (readFromFlash(oid, testAddr, rxBuff, testSize) != (int)testSize) {
+			LOG_ERROR("Failed to read flash during verify loop %d", loop);
+			return -1;
+		}
+
+		LOG_INFO("Verify loop %d: Read %zu bytes from address 0x%lx:\n", loop + 1, testSize, (unsigned long)testAddr);
+		for (size_t i = 0; i < testSize; i++) {
+			printf("%02X ", rxBuff[i]);
+			if ((i + 1) % 16 == 0) {
+				printf("\n");
+			}
+		}
+		printf("\n");
+
+		if (memcmp(txBuff, rxBuff, testSize) != 0) {
+			count_fail++;
+			printf("Data verification failed %d times\n", count_fail);
+		}
+		else {
+			count_success++;
+			printf("Data verification succeeded %d times\n", count_success);
+		}
+	}
+
+	if (count_success == 10) {
+		res = 1;
+	}
+	else {
+		res = -1;
+	}
+
+	return res;
 }
 
 
@@ -323,7 +436,7 @@ int run_write_test_mode(oid_t oid, SPIMode_t mode, const char *modeName, const u
 		}
 	}
 
-	LOG_INFO("[%s] Writing %d KB...", modeName, BENCH_BUF_SIZE / 1000);
+	LOG_INFO("[%s] Writing %d MB...", modeName, BENCH_BUF_SIZE / (1024 * 1024));
 	uint64_t tStart = get_time_us();
 
 	for (off_t offset = 0; offset < BENCH_BUF_SIZE; offset += PAGE_SIZE) {
@@ -355,6 +468,23 @@ int run_write_test_mode(oid_t oid, SPIMode_t mode, const char *modeName, const u
 			if (txBuff[i] != rxBuff[i]) {
 				LOG_ERROR("[%s] Mismatch at offset +0x%zx: Expected 0x%02X, got 0x%02X",
 						modeName, i, txBuff[i], rxBuff[i]);
+
+				off_t pageOffset = i & ~(PAGE_SIZE - 1);
+
+				if (readFromFlash(oid, testAddr + pageOffset, rxBuff + pageOffset, PAGE_SIZE) == PAGE_SIZE) {
+					if (txBuff[i] != rxBuff[i]) {
+						LOG_ERROR("[%s] Retry failed: Mismatched again at +0x%zx (Expected 0x%02X, got 0x%02X)",
+								modeName, i, txBuff[i], rxBuff[i]);
+					}
+					else {
+						LOG_INFO("[%s] Retry succeeded at +0x%zx! Second read was correct.", modeName, i);
+					}
+				}
+				else {
+					LOG_ERROR("[%s] Retry read operation failed at offset 0x%lx",
+							modeName, (unsigned long)(testAddr + pageOffset));
+				}
+
 				break;
 			}
 		}

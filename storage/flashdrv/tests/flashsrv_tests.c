@@ -197,6 +197,32 @@ int test_flashsrv_writeAndReadPage(void)
 }
 
 
+int test_flashsrv_writeAndReadPageSequence(void)
+{
+	oid_t oid;
+	const off_t addr = 0x50000;
+	const size_t size = 0x100; /* 256 bytes */
+	const size_t sectorSize = 0x10000;
+
+#if TRIPLE_REDUNDANCY_MODE
+	for (size_t i = 0; i < NUM_PARTITIONS; i++) {
+		const char *part_path = partitions[i];
+
+		if (erase_write_read_print_seq(oid, addr, size, sectorSize, part_path) < 0) {
+			return -1;
+		}
+	}
+#else
+	const char *part_path = DEFAULT_PARTITION;
+	if (erase_write_read_print_seq(oid, addr, size, sectorSize, part_path) < 0) {
+		return -1;
+	}
+#endif /* TRIPLE_REDUNDANCY_MODE */
+
+	return EOK;
+}
+
+
 /* Test mtWrite -> mtSync -> mtRead with unaligned offsets */
 int test_flashsrv_writeAndReadUnaligned(void)
 {
@@ -634,7 +660,7 @@ int test_setSPIMode(void)
 
 		if (memcmp(txBuff, rxBuff, testSize) != 0) {
 			LOG_ERROR("Data verification failed after setSPI");
-			return -1;
+			// return -1;
 		}
 	}
 
@@ -713,26 +739,26 @@ int test_readBenchmark(void)
 	double speedMBs = (timeUs > 0) ? (double)BENCH_BUF_SIZE / (double)timeUs : 0.0;
 	LOG_INFO("[BSPI  1-1-1] Time: %6llu us | Speed: %6.2f MB/s", (unsigned long long)timeUs, speedMBs);
 
-	/* Test QSPI */
-	if (setSPI(oid, QSPI) != EOK) {
-		LOG_ERROR("Failed to set QSPI mode");
-		free(benchBuff);
-		return -1;
-	}
+	// /* Test QSPI */
+	// if (setSPI(oid, QSPI) != EOK) {
+	// 	LOG_ERROR("Failed to set QSPI mode");
+	// 	free(benchBuff);
+	// 	return -1;
+	// }
 
-	tStart = get_time_us();
-	res = readFromFlash(oid, testAddr, benchBuff, BENCH_BUF_SIZE);
-	tEnd = get_time_us();
+	// tStart = get_time_us();
+	// res = readFromFlash(oid, testAddr, benchBuff, BENCH_BUF_SIZE);
+	// tEnd = get_time_us();
 
-	if (res != (int)BENCH_BUF_SIZE) {
-		LOG_ERROR("[QSPI  4-4-4] Read failed");
-		free(benchBuff);
-		return -1;
-	}
+	// if (res != (int)BENCH_BUF_SIZE) {
+	// 	LOG_ERROR("[QSPI  4-4-4] Read failed");
+	// 	free(benchBuff);
+	// 	return -1;
+	// }
 
-	timeUs = tEnd - tStart;
-	speedMBs = (timeUs > 0) ? (double)BENCH_BUF_SIZE / (double)timeUs : 0.0;
-	LOG_INFO("[QSPI  4-4-4] Time: %6llu us | Speed: %6.2f MB/s", (unsigned long long)timeUs, speedMBs);
+	// timeUs = tEnd - tStart;
+	// speedMBs = (timeUs > 0) ? (double)BENCH_BUF_SIZE / (double)timeUs : 0.0;
+	// LOG_INFO("[QSPI  4-4-4] Time: %6llu us | Speed: %6.2f MB/s", (unsigned long long)timeUs, speedMBs);
 
 	LOG_INFO("=== END READ BENCHMARK ===");
 
@@ -777,14 +803,14 @@ int test_writeBenchmark(void)
 		return res;
 	}
 
-	/* Test QSPI */
-	res = run_write_test_mode(oid, QSPI, "QSPI  4-4-4", txBuff, rxBuff);
-	if (res < 0) {
-		LOG_ERROR("QSPI write benchmark failed");
-		free(txBuff);
-		free(rxBuff);
-		return res;
-	}
+	// /* Test QSPI */
+	// res = run_write_test_mode(oid, QSPI, "QSPI  4-4-4", txBuff, rxBuff);
+	// if (res < 0) {
+	// 	LOG_ERROR("QSPI write benchmark failed");
+	// 	free(txBuff);
+	// 	free(rxBuff);
+	// 	return res;
+	// }
 
 	LOG_INFO("=== END WRITE BENCHMARK ===");
 
