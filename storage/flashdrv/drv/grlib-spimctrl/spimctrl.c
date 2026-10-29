@@ -22,6 +22,7 @@
 #include "../commands/flash_cmds.h"
 #include "../sfdp-flash/MT25Q_cmds.h"
 
+#include <stdio.h>
 
 /* Configuration register */
 
@@ -59,15 +60,40 @@ enum {
 	flash_rx,    /* Flash receive       : 0x0C */
 	flash_tx,    /* Flash transmit      : 0x10 */
 	flash_econf, /* EDAC configuration  : 0x14 */
-	flash_estat  /* EDAC status         : 0x18 */
+	flash_estat, /* EDAC status         : 0x18 */
+	flash_ctrl2, /* Flash control 2     : 0x1C */
+	flash_soff,  /*                     : 0x20 */
+	flash_doff,  /*                     : 0x24 */
+	flash_scaler /* Flash SCK scaler    : 0x28 */
 };
 
 
-static void spimctrl_userCtrl(volatile uint32_t *spimctrlBase)
+static void spimctrl_enterUserCtrl(volatile uint32_t *spimctrlBase)
 {
 	uint32_t ctrl = *(spimctrlBase + flash_ctrl);
+
+	/* assert CS high before entering user control */
+	ctrl |= CHIP_SEL;
+	*(spimctrlBase + flash_ctrl) = ctrl;
+
+	/* add a few cycles of a delay */
+	__asm__ volatile("nop");
+	__asm__ volatile("nop");
+	__asm__ volatile("nop");
+
+	/* enter user control */
 	ctrl |= USR_CTRL;
 	ctrl &= ~CHIP_SEL;
+	*(spimctrlBase + flash_ctrl) = ctrl;
+}
+
+
+static void spimctrl_exitUserCtrl(volatile uint32_t *spimctrlBase)
+{
+	uint32_t ctrl = *(spimctrlBase + flash_ctrl);
+
+	ctrl &= ~USR_CTRL;
+	ctrl |= CHIP_SEL;
 	*(spimctrlBase + flash_ctrl) = ctrl;
 }
 
@@ -105,6 +131,12 @@ static void spimctrl_addressMode(struct spimctrl *spimctrl)
 #endif /* USE_4BYTE_MODE */
 
 	*(spimctrl->base + flash_cfg) = cfg;
+}
+
+
+static void spimctrl_setScaler(struct spimctrl *spimctrl, uint32_t scaler)
+{
+	*(spimctrl->base + flash_scaler) = scaler;
 }
 
 
@@ -288,7 +320,7 @@ static uint8_t spimctrl_rx(volatile uint32_t *spimctrlBase)
 static void spimctrl_read(const struct spimctrl *spimctrl, struct xferOp *op)
 {
 	uint32_t cfg = *(spimctrl->base + flash_cfg);
-	spimctrl_userCtrl(spimctrl->base);
+	spimctrl_enterUserCtrl(spimctrl->base);
 
 	/* send command */
 	for (size_t i = 0; i < op->cmdLen; i++) {
@@ -305,13 +337,13 @@ static void spimctrl_read(const struct spimctrl *spimctrl, struct xferOp *op)
 		op->rxData[i] = spimctrl_rx(spimctrl->base);
 	}
 
-	*(spimctrl->base + flash_ctrl) &= ~USR_CTRL;
+	spimctrl_exitUserCtrl(spimctrl->base);
 }
 
 
 static void spimctrl_write(const struct spimctrl *spimctrl, struct xferOp *op)
 {
-	spimctrl_userCtrl(spimctrl->base);
+	spimctrl_enterUserCtrl(spimctrl->base);
 
 	/* Send command */
 	for (size_t i = 0; i < op->cmdLen; i++) {
@@ -323,7 +355,7 @@ static void spimctrl_write(const struct spimctrl *spimctrl, struct xferOp *op)
 		spimctrl_tx(spimctrl->base, op->txData[i]);
 	}
 
-	*(spimctrl->base + flash_ctrl) &= ~USR_CTRL;
+	spimctrl_exitUserCtrl(spimctrl->base);
 }
 
 
@@ -368,6 +400,9 @@ int spimctrl_init(struct spimctrl *spimctrl, addr_t mctrlBase)
 
 	/* Set alternate scaler policy */
 	spimctrl_alternateScaler(spimctrl->base);
+
+	/* Set regular scaler */
+	spimctrl_setScaler(spimctrl, 15);
 
 	return 0;
 }
