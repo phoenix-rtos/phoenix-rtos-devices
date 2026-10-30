@@ -11,6 +11,7 @@
  * %LICENSE%
  */
 
+#include <endian.h>
 #include <errno.h>
 #include <getopt.h>
 #include <signal.h>
@@ -25,49 +26,115 @@
 
 #include <libjffs2.h>
 #include <meterfs_storage.h>
+#include <ptable.h>
 #include <storage/storage.h>
 
 #include "imx6ull-flashnor-ecspi.h"
 #include "imx6ull-flashnor-qspi.h"
 #include "imx6ull-flashnor-drv.h"
 
+#define LOG_TAG "imx6ull-flashnor: "
 
 /* Default registered device files prefix and starting ID */
 #define FLASHNOR_PREFIX "flashnor"
 #define FLASHNOR_ID     0
 
 
-static char flashnor_path[32];
-static char *flashnor_prefix = FLASHNOR_PREFIX;
-static unsigned int flashnor_id = FLASHNOR_ID;
+static struct {
+	char devicePath[32];
+	char *devicePrefix;
+	unsigned int deviceId;
+} common = {
+	.devicePrefix = FLASHNOR_PREFIX,
+	.deviceId = FLASHNOR_ID,
+};
 
 
-static ssize_t flashnor_read(oid_t *oid, off_t offs, void *data, size_t len)
+static const storage_mtdops_t *getMtdOps(storage_t *storage)
 {
-	storage_t *strg = storage_get(oid->id);
-	size_t retlen;
-	int err;
+	if ((storage == NULL) || (storage->dev == NULL) || (storage->dev->mtd == NULL)) {
+		return NULL;
+	}
 
-	if ((strg == NULL) || (strg->dev == NULL) || (strg->dev->mtd == NULL) || (strg->dev->mtd->ops == NULL) ||
-			(strg->dev->mtd->ops->read == NULL) || (data == NULL) || (offs < 0)) {
+	return storage->dev->mtd->ops;
+}
+
+
+static ssize_t doRead(storage_t *storage, off_t offs, void *dst, size_t len)
+{
+	if ((dst == NULL) || (offs < 0)) {
+		return -EINVAL;
+	}
+
+	const storage_mtdops_t *ops = getMtdOps(storage);
+	if ((ops == NULL) || (ops->read == NULL)) {
 		return -EINVAL;
 	}
 
 	/* Read past the end of the device is not an error, report EOF */
-	if ((size_t)offs >= strg->size) {
+	if ((size_t)offs >= storage->size) {
 		return 0;
 	}
 
-	if (len > (strg->size - (size_t)offs)) {
-		len = strg->size - (size_t)offs;
+	if (len > (storage->size - (size_t)offs)) {
+		len = storage->size - (size_t)offs;
 	}
 
-	err = strg->dev->mtd->ops->read(strg, strg->start + offs, data, len, &retlen);
+	size_t retlen;
+	const int err = ops->read(storage, storage->start + offs, dst, len, &retlen);
 	if (err < 0) {
 		return err;
 	}
 
-	return (ssize_t)retlen;
+	return retlen;
+}
+
+
+static ssize_t flashnor_read(oid_t *oid, off_t offs, void *data, size_t len)
+{
+	return doRead(storage_get(oid->id), offs, data, len);
+}
+
+
+static ssize_t doWrite(storage_t *storage, off_t offs, const void *src, size_t len)
+{
+	if ((src == NULL) || (offs < 0)) {
+		return -EINVAL;
+	}
+
+	const storage_mtdops_t *ops = getMtdOps(storage);
+	if ((ops == NULL) || (ops->write == NULL) || (ops->erase == NULL)) {
+		return -EINVAL;
+	}
+
+	const size_t blockSize = storage->dev->mtd->erasesz;
+	if ((len != blockSize) || (offs % blockSize != 0)) {
+		return -EOPNOTSUPP;
+	}
+
+	if (((size_t)offs >= storage->size) || (storage->size - (size_t)offs < len)) {
+		return -ENOSPC;
+	}
+
+	offs += storage->start;
+	int err = ops->erase(storage, offs, blockSize);
+	if (err < 0) {
+		return err;
+	}
+
+	size_t retlen;
+	err = ops->write(storage, offs, src, len, &retlen);
+	if (err < 0) {
+		return err;
+	}
+
+	return retlen;
+}
+
+
+static ssize_t flashnor_write(oid_t *oid, off_t offs, const void *data, size_t len)
+{
+	return doWrite(storage_get(oid->id), offs, data, len);
 }
 
 
@@ -112,6 +179,10 @@ static void flashnor_msgloop(void *arg, msg_t *msg)
 			msg->o.err = flashnor_read(&msg->oid, msg->i.io.offs, msg->o.data, msg->o.size);
 			break;
 
+		case mtWrite:
+			msg->o.err = flashnor_write(&msg->oid, msg->i.io.offs, msg->i.data, msg->i.size);
+			break;
+
 		case mtGetAttr:
 			msg->o.err = flashnor_getAttr(&msg->oid, msg->i.attr.type, &msg->o.attr.val);
 			break;
@@ -149,8 +220,10 @@ static void flashnor_help(const char *prog)
 	(void)printf("\t\tid:     device id starting at 0\n");
 	(void)printf("\t\tstart:  partition start in bytes (erase block aligned)\n");
 	(void)printf("\t\tsize:   partition size in bytes (erase block aligned)\n");
-	(void)printf("\t-r <id> <start> <size> <fs>  - mount root filesystem\n");
-	(void)printf("\t\tid:     device id starting at 0\n");
+	(void)printf("\t-P <id>                      - read partition table from device\n");
+	(void)printf("\t\tid:     device id\n");
+	(void)printf("\t-r <dev> <fs>                - mount root filesystem\n");
+	(void)printf("\t\tdev:    device node\n");
 	(void)printf("\t\tfs:     filesystem name\n");
 	(void)printf("\t-n <prefix> <id>             - use given prefix and starting id for device files registration\n");
 	(void)printf("\t\tprefix: device prefix\n");
@@ -167,63 +240,130 @@ static void flashnor_exit(int sig)
 }
 
 
-static storage_t *flashnor_partAdd(int parentId, off_t start, size_t size)
+static storage_t *addPartition(storage_t *parent, ptable_part_t *part)
 {
-	storage_t *dev = calloc(1, sizeof(storage_t)), *parent;
+	storage_t *dev = calloc(1, sizeof(storage_t));
 	int err;
 	oid_t oid;
 
+	(void)printf(LOG_TAG "adding partition: name = \"%.*s\", offset = 0x%08x, size = 0x%08x, type = 0x%02x (%s)\n",
+			(int)sizeof(part->name), part->name, (unsigned int)part->offset, (unsigned int)part->size,
+			(unsigned int)part->type, ptable_typeName(part->type));
+
 	if (dev == NULL) {
-		err = -ENOMEM;
-		(void)printf("imx6ull-flashnor: failed to allocate device, err: %s\n", strerror(err));
-		return NULL;
-	}
-	parent = storage_get(parentId);
-	if (parent == NULL) {
-		err = -EINVAL;
-		(void)printf("imx6ull-flashnor: failed to find parent device, err: %s\n", strerror(err));
-		free(dev);
+		(void)printf(LOG_TAG "failed to allocate device, err: %s\n", strerror(ENOMEM));
 		return NULL;
 	}
 
-	dev->start = start;
-	dev->size = size;
+	dev->start = part->offset;
+	dev->size = part->size;
 	dev->parent = parent;
 
 	/* Only storage parameter matters in case of partition. */
 	err = flashnor_drvInit(NULL, dev);
 	if (err < 0) {
-		(void)printf("imx6ull-flashnor: failed to initialize device, err: %s\n", strerror(err));
+		(void)printf(LOG_TAG "failed to initialize device, err: %s\n", strerror(-err));
 		free(dev);
 		return NULL;
 	}
 
 	err = storage_add(dev, &oid);
 	if (err < 0) {
-		(void)printf("imx6ull-flashnor: failed to create partition, err: %s\n", strerror(err));
+		(void)printf(LOG_TAG "failed to create partition, err: %s\n", strerror(-err));
 		flashnor_drvDone(dev);
 		free(dev);
 		return NULL;
 	}
 
-	if (snprintf(flashnor_path, sizeof(flashnor_path), "/dev/%s%u", flashnor_prefix, flashnor_id++) >= sizeof(flashnor_path)) {
-		err = -ENAMETOOLONG;
-		(void)printf("imx6ull-flashnor: failed to build partition file flashnor_path, err: %s\n", strerror(err));
+	if (snprintf(common.devicePath, sizeof(common.devicePath), "/dev/%s%u.%.*s",
+				common.devicePrefix, common.deviceId, (int)sizeof(part->name), part->name) >= sizeof(common.devicePath)) {
+		(void)printf(LOG_TAG "failed to build partition file devicePath, err: %s\n", strerror(ENAMETOOLONG));
 		(void)storage_remove(dev);
 		flashnor_drvDone(dev);
 		free(dev);
 		return NULL;
 	}
 
-	err = create_dev(&oid, flashnor_path);
+	err = create_dev(&oid, common.devicePath);
 	if (err < 0) {
-		(void)printf("imx6ull-flashnor: failed to create partition file, err: %s\n", strerror(err));
+		(void)printf(LOG_TAG "failed to create partition file, err: %s\n", strerror(-err));
 		(void)storage_remove(dev);
 		flashnor_drvDone(dev);
 		free(dev);
 		return NULL;
 	}
 	return dev;
+}
+
+
+static int flashnor_partsInit(int parentId)
+{
+	storage_t *parent = storage_get(parentId);
+	if ((parent == NULL) || (parent->dev == NULL) || (parent->dev->mtd == NULL)) {
+		(void)printf(LOG_TAG "failed to find parent device\n");
+		return -1;
+	}
+
+	const size_t blockSize = parent->dev->mtd->erasesz;
+	const off_t ptableOffset = parent->start + parent->size - blockSize;
+	uint32_t partCount;
+	if (doRead(parent, ptableOffset, &partCount, sizeof(partCount)) != sizeof(partCount)) {
+		(void)printf(LOG_TAG "PTable: unable to read header from offset %zu\n", (size_t)ptableOffset);
+		return -1;
+	}
+	partCount = le32toh(partCount);
+
+	const uint32_t ptableSize = ptable_size(partCount);
+	if (ptableSize > blockSize) {
+		(void)printf(LOG_TAG "PTable: too large (%u, max: %zu)\n", (unsigned int)ptableSize, (size_t)blockSize);
+		return -1;
+	}
+
+	{
+		uint8_t magic[sizeof(ptable_magic)];
+		const off_t magicOffset = ptableOffset + ptableSize - sizeof(magic);
+
+		if (doRead(parent, magicOffset, magic, sizeof(magic)) != sizeof(magic)) {
+			(void)printf(LOG_TAG "PTable: unable to read magic from offset %zu\n", (size_t)magicOffset);
+			return -1;
+		}
+
+		if (memcmp(magic, ptable_magic, sizeof(magic)) != 0) {
+			(void)printf(LOG_TAG "PTable: invalid magic number\n");
+			return -1;
+		}
+	}
+
+
+	ptable_t *ptable = malloc(ptableSize);
+	if (ptable == NULL) {
+		(void)printf(LOG_TAG "PTable: out of memory\n");
+		return -1;
+	}
+
+	int ret = -1;
+	if (doRead(parent, ptableOffset, ptable, ptableSize) != ptableSize) {
+		(void)printf(LOG_TAG "PTable: unable to read contents\n");
+		goto cleanup;
+	}
+
+	if (ptable_deserialize(ptable, parent->size, blockSize) < 0) {
+		(void)printf(LOG_TAG "PTable: deserialization failed\n");
+		goto cleanup;
+	}
+
+	(void)printf(LOG_TAG "detected partition table with %u entries\n", (unsigned int)partCount);
+	for (uint32_t i = 0; i < partCount; ++i) {
+		ptable_part_t *part = &ptable->parts[i];
+		if (addPartition(parent, part) == NULL) {
+			goto cleanup;
+		}
+	}
+
+	ret = 0;
+cleanup:
+	free(ptable);
+	return ret;
 }
 
 
@@ -239,11 +379,9 @@ int main(int argc, char *argv[])
 	storage_t *dev;
 	pid_t pid;
 	oid_t oid;
-	off_t start;
-	size_t size;
 	flashnor_info_t info;
 	int (*init)(int ndev, flashnor_info_t *info);
-	char *fsName;
+	const char *fsName;
 
 	/* Daemonize server */
 	signal(SIGUSR1, flashnor_exit);
@@ -266,24 +404,24 @@ int main(int argc, char *argv[])
 
 	err = storage_init(flashnor_msgloop, 16);
 	if (err < 0) {
-		(void)printf("imx6ull-flashnor: failed to initialize server, err: %s\n", strerror(err));
+		(void)printf(LOG_TAG "failed to initialize server, err: %s\n", strerror(-err));
 		return EXIT_FAILURE;
 	}
 
 	err = storage_registerfs("meterfs", meterfs_mount, meterfs_umount);
 	if (err < 0) {
-		(void)printf("imx6ull-flashnor: failed to register meterfs, err: %s\n", strerror(err));
+		(void)printf(LOG_TAG "failed to register meterfs, err: %s\n", strerror(-err));
 		return EXIT_FAILURE;
 	}
 
 	err = storage_registerfs("jffs2", libjffs2_mount, libjffs2_umount);
 	if (err < 0) {
-		(void)printf("imx6ull-flashnor: failed to register jffs2, err: %s\n", strerror(err));
+		(void)printf(LOG_TAG "failed to register jffs2, err: %s\n", strerror(-err));
 		return EXIT_FAILURE;
 	}
 
 	if (argc > 1) {
-		while ((c = getopt_long(argc, argv, "e:q:p:r:n:h", longopts, NULL)) != -1) {
+		while ((c = getopt_long(argc, argv, "e:q:P:r:n:h", longopts, NULL)) != -1) {
 			switch (c) {
 				case 'e':
 				case 'q':
@@ -291,45 +429,44 @@ int main(int argc, char *argv[])
 					dev = calloc(1, sizeof(storage_t));
 
 					if (dev == NULL) {
-						err = -ENOMEM;
-						(void)printf("imx6ull-flashnor: failed to allocate device, err: %s\n", strerror(err));
+						(void)printf(LOG_TAG "failed to allocate device, err: %s\n", strerror(ENOMEM));
 						return EXIT_FAILURE;
 					}
 
 					err = init(strtoul(optarg, NULL, 0), &info);
 					if (err < 0) {
-						(void)printf("imx6ull-flashnor: failed to initialize spi device, err: %s\n", strerror(err));
+						(void)printf(LOG_TAG "failed to initialize spi device, err: %s\n", strerror(-err));
 						free(dev);
 						return EXIT_FAILURE;
 					}
 
 					err = flashnor_drvInit(&info, dev);
 					if (err < 0) {
-						(void)printf("imx6ull-flashnor: failed to initialize device, err: %s\n", strerror(err));
+						(void)printf(LOG_TAG "failed to initialize device, err: %s\n", strerror(-err));
 						free(dev);
 						return EXIT_FAILURE;
 					}
 
 					err = storage_add(dev, &oid);
 					if (err < 0) {
-						(void)printf("imx6ull-flashnor: failed to register device, err: %s\n", strerror(err));
+						(void)printf(LOG_TAG "failed to register device, err: %s\n", strerror(-err));
 						flashnor_drvDone(dev);
 						free(dev);
 						return EXIT_FAILURE;
 					}
 
-					if (snprintf(flashnor_path, sizeof(flashnor_path), "/dev/%s%u", flashnor_prefix, flashnor_id++) >= sizeof(flashnor_path)) {
-						err = -ENAMETOOLONG;
-						(void)printf("imx6ull-flashnor: failed to build device file flashnor_path, err: %s\n", strerror(err));
+					++common.deviceId;
+					if (snprintf(common.devicePath, sizeof(common.devicePath), "/dev/%s%u", common.devicePrefix, common.deviceId) >= sizeof(common.devicePath)) {
+						(void)printf(LOG_TAG "failed to build device file devicePath, err: %s\n", strerror(ENAMETOOLONG));
 						(void)storage_remove(dev);
 						flashnor_drvDone(dev);
 						free(dev);
 						return EXIT_FAILURE;
 					}
 
-					err = create_dev(&oid, flashnor_path);
+					err = create_dev(&oid, common.devicePath);
 					if (err < 0) {
-						(void)printf("imx6ull-flashnor: failed to create device file, err: %s\n", strerror(err));
+						(void)printf(LOG_TAG "failed to create device file, err: %s\n", strerror(-err));
 						(void)storage_remove(dev);
 						flashnor_drvDone(dev);
 						free(dev);
@@ -337,63 +474,48 @@ int main(int argc, char *argv[])
 					}
 					break;
 
-				case 'p':
-					arg = optind - 1;
-					if ((arg + 3) > argc) {
-						err = -EINVAL;
-						(void)printf("imx6ull-flashnor: missing arg(s) for -p option, err: %s\n", strerror(err));
+				case 'P':
+					parentId = strtoul(optarg, NULL, 0);
+					if (flashnor_partsInit(parentId) < 0) {
 						return EXIT_FAILURE;
 					}
 
-					parentId = strtoul(argv[arg], NULL, 0);
-					start = strtoull(argv[arg + 1], NULL, 0);
-					size = strtoull(argv[arg + 2], NULL, 0);
-
-					dev = flashnor_partAdd(parentId, start, size);
-					if (dev == NULL) {
-						return EXIT_FAILURE;
-					}
-					optind += 2;
 					break;
 
 				case 'r':
 					arg = optind - 1;
-					if ((arg + 4) > argc) {
-						err = -EINVAL;
-						(void)printf("imx6ull-flashnor: missing arg(s) for -r option, err: %s\n", strerror(err));
+					if ((arg + 2) > argc) {
+						(void)printf(LOG_TAG "missing arg(s) for -r option, err: %s\n", strerror(EINVAL));
 						return EXIT_FAILURE;
 					}
 
-					parentId = strtoul(argv[arg], NULL, 0);
-					start = strtoull(argv[arg + 1], NULL, 0);
-					size = strtoull(argv[arg + 2], NULL, 0);
-					fsName = argv[arg + 3];
-
-					dev = flashnor_partAdd(parentId, start, size);
-					if (dev == NULL) {
-						return EXIT_FAILURE;
-					}
-
-					err = storage_mountfs(dev, fsName, NULL, 0, NULL, &oid);
+					fsName = argv[arg + 1];
+					err = lookup(optarg, NULL, &oid);
 					if (err < 0) {
-						(void)printf("imx6ull-flashnor: failed to mount a filesystem - %s: %s\n", fsName, strerror(err));
+						(void)printf(LOG_TAG "lookup() failed for %s: %s\n", optarg, strerror(-err));
+						return EXIT_FAILURE;
+					}
+
+					err = storage_mountfs(storage_get(oid.id), fsName, NULL, 0, NULL, &oid);
+					if (err < 0) {
+						(void)printf(LOG_TAG "failed to mount root filesystem, type %s: %s\n", fsName, strerror(-err));
 						return EXIT_FAILURE;
 					}
 
 					portRegister(oid.port, "/", &oid);
-					optind += 3;
+					optind++;
 					break;
 
 				case 'n':
 					arg = optind - 1;
 					if ((arg + 2) > argc) {
-						err = -EINVAL;
-						(void)printf("imx6ull-flashnor: missing arg(s) for -n option, err: %s\n", strerror(err));
+						(void)printf(LOG_TAG "missing arg(s) for -n option, err: %s\n", strerror(EINVAL));
 						return EXIT_FAILURE;
 					}
 
-					flashnor_prefix = argv[arg++];
-					flashnor_id = strtoul(argv[arg++], NULL, 0);
+					common.devicePrefix = argv[arg++];
+					common.deviceId = strtoul(argv[arg++], NULL, 0);
+					--common.deviceId;
 					optind++;
 					break;
 
@@ -409,7 +531,7 @@ int main(int argc, char *argv[])
 	}
 
 	kill(getppid(), SIGUSR1);
-	(void)printf("imx6ull-flashnor: initialized\n");
+	(void)printf(LOG_TAG "initialized\n");
 
 	storage_run(1, 4 * 4096);
 
