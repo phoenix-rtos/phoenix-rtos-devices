@@ -1,9 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * stm32l4-multi
- *
- * Clock tree definition and parser header file
+ * Multidrv-lib: Clock tree definition and parser header file
  *
  * Copyright 2025 Phoenix Systems
  * Copyright 2026 Apator Metrix
@@ -21,13 +19,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#if defined(__CPU_STM32N6)
-#include "stm32n6.h"
-#elif defined(__CPU_STM32U3)
-#include "stm32u3.h"
-#else
-#error "Unsupported platform!"
-#endif
+#include <libmulti/librcc.h>
 
 enum clockdef_type {
 	clockdef_type_literal,
@@ -39,8 +31,6 @@ enum clockdef_type {
 };
 
 typedef uint32_t clockdef_literal_t;
-
-typedef enum clock_ids clockdef_clkID_t;
 
 typedef struct {
 	uint32_t offset;    /* Offset of register within the peripheral */
@@ -58,14 +48,14 @@ typedef struct {
 
 typedef struct {
 	clockdef_register_t r;
-	const clockdef_clkID_t *vals;
+	const librcc_clkid_t *vals;
 } clockdef_register_mux_t;
 
 typedef struct {
 	enum clockdef_type type;
 	union {
 		clockdef_literal_t literal;
-		clockdef_clkID_t clkID;
+		librcc_clkid_t clkID;
 		clockdef_register_lookup_t reg_lookup;
 		clockdef_register_mux_t reg_mux;
 	};
@@ -88,21 +78,21 @@ typedef struct {
 } clockdef_obj_t;
 
 
+const uint8_t *clockdef_getClkselOptions(enum ipclks ipclk);
+
+
 extern uint32_t clockdef_getRegHW(uint32_t offset);
 
 
 extern int clockdef_getClockHW(
-		clockdef_clkID_t id,
+		librcc_clkid_t id,
 		uint32_t *base_out,
 		uint64_t *nom,
 		uint64_t *denom,
-		clockdef_clkID_t *prev);
+		librcc_clkid_t *prev);
 
 
-extern int clockdef_getClock(clockdef_clkID_t id, uint64_t *output);
-
-
-extern const clockdef_obj_t *clockdef_getObject(clockdef_clkID_t id);
+extern const clockdef_obj_t *clockdef_getObject(librcc_clkid_t id);
 
 
 #endif /* _CLOCKDEF_H_ */

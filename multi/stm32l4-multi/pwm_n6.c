@@ -21,6 +21,7 @@
 #include <sys/pwman.h>
 #include "pwm_n6.h"
 #include "libmulti/libdma.h"
+#include "libmulti/librcc.h"
 
 #include "common.h"
 #include <board_config.h>
@@ -647,7 +648,7 @@ uint64_t pwm_getBaseFrequency(pwm_tim_id_t timer)
 		return 0;
 	}
 	uint64_t baseFreq = 0ull;
-	res = clockdef_getClock(clkid_timg, &baseFreq);
+	res = librcc_getClock(clkid_timg, &baseFreq);
 	if (res < 0) {
 		return 0;
 	}

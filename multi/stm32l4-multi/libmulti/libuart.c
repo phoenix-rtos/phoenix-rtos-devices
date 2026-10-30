@@ -27,10 +27,10 @@
 
 #include "libmulti/libuart.h"
 #include "libmulti/libdma.h"
+#include "libmulti/librcc.h"
 
 #include "../config.h"
 #include "../common.h"
-#include "../rcc.h"
 
 
 /* clang-format off */
@@ -117,13 +117,13 @@ static int libuart_clockSetup(const struct libuart_peripheralInfo *info, uint32_
 static int libuart_clockSetup(const struct libuart_peripheralInfo *info, uint32_t *out)
 {
 	int ret;
-	ret = rcc_setClksel(info->clksel, info->clksrc);
+	ret = librcc_setClksel(info->clksel, info->clksrc);
 	if (ret < 0) {
 		return ret;
 	}
 
 	uint64_t freq;
-	ret = clockdef_getClock(info->clksrc, &freq);
+	ret = librcc_getClock(info->clksrc, &freq);
 	if (ret < 0) {
 		return ret;
 	}

@@ -26,7 +26,6 @@
 #include "config.h"
 #include "gpio.h"
 #include "uart.h"
-#include "rcc.h"
 
 #define UART1_POS  0
 #define UART2_POS  (UART1_POS + UART1)

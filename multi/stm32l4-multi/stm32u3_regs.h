@@ -105,6 +105,23 @@ enum pwr_regs {
 	pwr_i3cpucr2,
 };
 
+enum spi_regs {
+	spi_cr1 = 0x00,
+	spi_cr2,
+	spi_cfg1,
+	spi_cfg2,
+	spi_ier,
+	spi_sr,
+	spi_ifcr,
+	spi_autocr,
+	spi_txdr = 0x8,
+	spi_rxdr = 0xc,
+	spi_crcpoly = 0x10,
+	spi_txcrc,
+	spi_rxcrc,
+	spi_udrdr,
+};
+
 enum adc_regs {
 	adc_isr = 0x0,
 	adc_ier,
