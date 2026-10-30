@@ -128,7 +128,9 @@ int ade9113_writeRegsDifferent(struct ade9113_ctx *ctx, uint8_t reg, uint8_t a, 
 	for (int i = 0; i < 4; ++i) {
 		const char *error = ade9113_checkResponse(&rsp[16 * i], 16);
 		if (error != NULL) {
-			log_error("write[%d] failed: %s", i, error);
+			if (!ctx->silent) {
+				log_error("write[%d] failed: %s", i, error);
+			}
 			ret = -1;
 		}
 	}
@@ -160,7 +162,9 @@ static int readRegs(struct ade9113_ctx *ctx, uint8_t reg, uint8_t *values, uint8
 	for (int i = 0; i < 4; ++i) {
 		const char *error = ade9113_checkResponse(&rsp[16 * i], 16);
 		if (error != NULL) {
-			log_error("read[%d] failed: %s", i, error);
+			if (!ctx->silent) {
+				log_error("read[%d] failed: %s", i, error);
+			}
 			ret = -1;
 		}
 	}
