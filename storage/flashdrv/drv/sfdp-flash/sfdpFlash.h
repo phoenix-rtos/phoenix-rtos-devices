@@ -26,6 +26,12 @@
 #define NOR_SECTORSZ_MAX 0x10000u
 #define NOR_PAGESZ_MAX   0x100u
 
+typedef enum {
+	HIGH_IMPED,   /* 90 ohms */
+	MEDIUM_IMPED, /* 45 ohms */
+	LOW_IMPED,    /* 30 ohms (default) */
+	MAX_IMPED
+} OutputDriverStrength_t;
 
 int nor_waitBusy(struct spimctrl *spimctrl, time_t timeout);
 

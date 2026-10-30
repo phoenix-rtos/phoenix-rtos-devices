@@ -31,7 +31,11 @@
 
 
 /* clang-format off */
-#define FLASH_ID(vid, pid) ( (((pid) & 0xffu) << 16) | ((pid) & 0xff00u) | ((vid) & 0xffu))
+#if defined(SPIM_LITTLE_ENDIAN) && (SPIM_LITTLE_ENDIAN != 0)
+	#define FLASH_ID(vid, pid) ( (((pid) & 0xffu) << 16) | ((pid) & 0xff00u) | ((vid) & 0xffu)) /* if little endian*/
+#else
+	#define FLASH_ID(vid, pid) ((((vid) & 0xffu) << 16) | ((pid) & 0xff00u) | ((pid) & 0xffu))
+#endif /* SPIM_LITTLE_ENDIAN */
 
 #define EVCR_QUAD_MASK (1u << 7) /* Quad Protocol */
 #define EVCR_DUAL_MASK (1u << 6) /* Dual Protocol */
@@ -280,7 +284,7 @@ int nor_eraseDie(const struct _storage_devCtx_t *ctx, time_t timeout, uint8_t se
 	struct xferOp xfer;
 
 	size_t flashSize;
-	flashSize = (ctx->flash_data.sfdp->totalSz);
+	flashSize = (ctx->flash_data.sfdp->totalSz) * 2;
 
 	addr_t addr = 0x00000000u;
 	addr_t addr0 = 0x00000000u;
@@ -494,6 +498,8 @@ int nor_pageProgram(struct spimctrl *spimctrl, addr_t addr, const void *src, siz
 	uint8_t cmd[5];
 	int res = 0;
 
+	uint8_t status = 0;
+
 	if ((!spimctrl->extendedAddress)) {
 
 		cmd[0] = PAGE_PROGRAM;
@@ -535,6 +541,8 @@ int nor_pageProgram(struct spimctrl *spimctrl, addr_t addr, const void *src, siz
 	}
 
 	res = nor_waitBusy(spimctrl, timeout);
+
+	nor_readStatus(spimctrl, &status);
 
 	return res;
 }
@@ -580,7 +588,8 @@ static ssize_t nor_readCmd(struct spimctrl *spimctrl, addr_t addr, void *data, s
 	return res < EOK ? res : (ssize_t)size;
 }
 
-
+#define memory_barrier() __asm__ volatile("fence r, rw" ::: "memory")
+#include <flashdrv/cacheManage.h>
 static ssize_t nor_readAhb(struct spimctrl *spimctrl, addr_t addr, void *data, size_t size)
 {
 	if ((!spimctrl->extendedAddress)) {
@@ -589,7 +598,12 @@ static ssize_t nor_readAhb(struct spimctrl *spimctrl, addr_t addr, void *data, s
 			return res;
 		}
 	}
+
+	void *flashPtr = (void *)(uintptr_t)(common.base + addr);
+	memory_barrier();
+	hal_cpuDCacheInval(flashPtr, size);
 	(void)memcpy(data, (uint8_t *)common.base + addr, size);
+	memory_barrier();
 
 	return (ssize_t)size;
 }
@@ -611,6 +625,7 @@ ssize_t nor_readData(struct spimctrl *spimctrl, addr_t addr, void *data, size_t 
 	}
 	else {
 		return nor_readAhb(spimctrl, addr, data, size);
+		// return nor_readCmd(spimctrl, addr, data, size);
 	}
 }
 
@@ -637,6 +652,8 @@ static int nor_writeEnhancedVolatileConfReg(struct spimctrl *spimctrl, uint8_t v
 	if (res < EOK) {
 		return res;
 	}
+
+	res = nor_waitBusy(spimctrl, 100000);
 
 	return EOK;
 }
@@ -878,6 +895,55 @@ void nor_forceRecoveryToSingleSPI(struct spimctrl *spimctrl)
 }
 
 
+static int nor_setOutputDriverStrength(struct spimctrl *spimctrl, OutputDriverStrength_t impedance)
+{
+	int res;
+	struct xferOp xfer;
+	uint8_t cmd;
+	uint8_t evcr = 0xFF;
+
+	switch (impedance) {
+		case HIGH_IMPED:
+			evcr = 0xFC;
+			break;
+
+		case MEDIUM_IMPED:
+			evcr = 0xFE;
+			break;
+
+		case LOW_IMPED:
+			evcr = 0xFF;
+			break;
+
+		default:
+			break;
+	}
+
+	memset(&xfer, 0, sizeof(xfer));
+	xfer.type = xfer_opWrite;
+
+	res = nor_writeEnable(spimctrl, write_enable);
+	if (res < EOK) {
+		return res;
+	}
+
+	cmd = FLASH_CMD_WRITE_EVCR;
+	xfer.cmd = &cmd;
+	xfer.cmdLen = 1;
+	xfer.txData = &evcr;
+	xfer.dataLen = 1;
+
+	res = spimctrl_xfer(spimctrl, &xfer);
+	if (res < EOK) {
+		return res;
+	}
+
+	res = EOK;
+
+	return res;
+}
+
+
 static int nor_probe(struct _storage_devCtx_t *ctx)
 {
 	int res;
@@ -955,6 +1021,8 @@ int nor_flash_init(struct _storage_devCtx_t *ctx, addr_t flashBase)
 	nor_selectAddressMode(ctx->spimctrl);
 
 	nor_selSPIMode(ctx->spimctrl, BSPI);
+
+	nor_setOutputDriverStrength(ctx->spimctrl, LOW_IMPED);
 
 	return EOK;
 }
