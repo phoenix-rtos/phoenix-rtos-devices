@@ -23,6 +23,8 @@
 #include <sys/minmax.h>
 #include <sys/threads.h>
 
+#include <flashdrv/cacheManage.h>
+
 #include <flashdrv/common.h>
 #include <flashdrv/flashsrv.h>
 
@@ -32,6 +34,10 @@
 #define LIBCACHE_LINECNT 1024
 #define LIBCACHE_POLICY  LIBCACHE_WRITE_THROUGH
 
+#include <unistd.h>
+
+
+addr_t baseOfFlash;
 
 /* MTD interface */
 
@@ -177,6 +183,10 @@ static int flashdrv_mtdWrite(storage_t *strg, off_t offs, const void *buff, size
 #else
 	size_t rlen;
 	int ret = _flashdrv_mtdWrite(strg, offs, buff, len, &rlen);
+
+	TRACE("Absolute offset: 0x%-8llx \n", (unsigned long long)offs);
+	// void *flashPtr = (void *)(uintptr_t)(unsigned long)(offs);
+	// hal_cpuDCacheInval(flashPtr, len);
 #endif /* USE_CACHE */
 
 	mutexUnlock(strg->dev->ctx->lock);
@@ -249,6 +259,10 @@ static int flashdrv_mtdErase(storage_t *strg, off_t offs, size_t len)
 #if (USE_CACHE)
 	res = cache_invalidate(ctx->cache, offs, end);
 #endif /* USE_CACHE */
+
+	TRACE("Absolute offset: 0x%-8llx \n", (unsigned long long)offs);
+	// void *flashPtr = (void *)(uintptr_t)(unsigned long)(offs);
+	// hal_cpuDCacheInval(flashPtr, len);
 
 	mutexUnlock(ctx->lock);
 
@@ -329,6 +343,8 @@ static storage_t *flashdrv_init(addr_t mctrlBase, addr_t flashBase)
 		free(ctx);
 		return NULL;
 	}
+
+	baseOfFlash = flashBase;
 
 	if (mutexCreate(&ctx->lock) < 0) {
 		flash_destroy(ctx);
@@ -460,7 +476,6 @@ static int flashdrv_selSPIMode(storage_t *strg, flash_i_devctl_t *devctl)
 	struct _storage_devCtx_t *ctx = strg->dev->ctx;
 	res = flash_selSpiMode(ctx, devctl->spi.mode);
 	mutexUnlock(strg->dev->ctx->lock);
-
 	return res;
 }
 

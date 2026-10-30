@@ -5,7 +5,7 @@
 #
 
 NAME := flashdrv
-LOCAL_SRCS := common.c flashsrv.c
+LOCAL_SRCS := common.c flashsrv.c cacheManage.c
 LIBS := libstorage libmtd libptable libcache
 ifneq ($(filter $(TARGET_SUBFAMILY), grfpga gr712rc gr740 gr765),)
 	DEP_LIBS := libftmctrl libspimctrl libcfiflash libsfdpflash
