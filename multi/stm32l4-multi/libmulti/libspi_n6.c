@@ -25,11 +25,12 @@
 #include "libmulti/libdma.h"
 #include "libmulti/librcc.h"
 #include "libmulti/libspi.h"
-#include "../stm32n6_regs.h"
 
 #if defined(__CPU_STM32N6)
+#include "../stm32n6_regs.h"
 #define MAX_SPI spi6
 #elif defined(__CPU_STM32U3)
+#include "../stm32u3_regs.h"
 #define MAX_SPI spi3
 #endif
 
@@ -346,7 +347,9 @@ int libspi_configure(libspi_ctx_t *ctx, char mode, char bdiv, int enable)
 			(0 << 0);   /* No SS delay */
 	*(ctx->base + spi_cfg2) = v;
 
+#if defined(__CPU_STM32N6)
 	*(ctx->base + spi_i2scfgr) &= ~1; /* Disable I2S mode */
+#endif
 
 	if (enable == 0) {
 		devClk(spiInfo[ctx->spiNum - spi1].dev, 0);
