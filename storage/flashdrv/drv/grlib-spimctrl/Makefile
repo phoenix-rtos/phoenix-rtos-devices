@@ -5,7 +5,7 @@
 #
 
 NAME := libspimctrl
-LOCAL_SRCS := flash.c flashdrv.c spimctrl.c
+LOCAL_SRCS := flashdrv.c spimctrl.c interface.c
 LOCAL_CFLAGS := -fvisibility=hidden
 
 include $(static-lib.mk)

@@ -17,11 +17,18 @@
 #include <stdint.h>
 #include <sys/types.h>
 
+#define FLASH0_AHB_ADDR 0xC0000000
+
+#ifndef SPIMCTRL0_BASE
+#define SPIMCTRL0_BASE ((void *)0xFFF00000)
+#endif
+
 
 struct spimctrl {
 	volatile uint32_t *base;
 
-	uint8_t ear;
+	uint8_t ear;             /* extended address register (3-byte mode) */
+	uint8_t extendedAddress; /* 4 byte mode  */
 };
 
 
@@ -51,7 +58,32 @@ void spimctrl_reset(const struct spimctrl *spimctrl);
 int spimctrl_init(struct spimctrl *spimctrl, addr_t mctrlBase);
 
 
+/* Destroy spimctrl instance */
 void spimctrl_destroy(struct spimctrl *spimctrl);
+
+
+/* Enter default SPI mode (1-1-1) */
+void spimctrl_oneSPI(struct spimctrl *spimctrl);
+
+
+/* Enter dual output SPI mode (1-1-2) on read. Write page is executed in default SPI mode (1-1-1) */
+void spimctrl_doutSPI(struct spimctrl *spimctrl);
+
+
+/* Enter dual SPI mode (2-2-2) */
+void spimctrl_dSPI(struct spimctrl *spimctrl);
+
+
+/* Enter quad output SPI mode (1-1-4) on read. Write page is executed in default SPI mode (1-1-1) */
+void spimctrl_qoutSPI(struct spimctrl *spimctrl);
+
+
+/* Enter quad SPI mode (4-4-4) */
+void spimctrl_qSPI(struct spimctrl *spimctrl);
+
+
+/* Set dummy byte */
+void spimctrl_setDummyByte(volatile uint32_t *spimctrlBase);
 
 
 #endif
