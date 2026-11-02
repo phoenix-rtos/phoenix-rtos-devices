@@ -72,7 +72,7 @@ static int clockdef_getBase(const clockdef_base_t *n, uint32_t *num_out, librcc_
 		case clockdef_type_register_mux:
 			*num_out = 0;
 			*prev = n->reg_mux.vals[clockdef_getReg(&n->reg_mux.r)];
-			return EOK;
+			return (*prev == clkid_none) ? -ENOENT : EOK;
 		default:
 			return -EINVAL;
 	}
