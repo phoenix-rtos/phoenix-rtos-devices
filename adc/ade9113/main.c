@@ -76,7 +76,7 @@ static int initPwm(void)
 {
 	volatile struct imx6ull_regs_pwm *pwm = mmap(NULL, _PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_DEVICE | MAP_PHYSMEM | MAP_ANONYMOUS, -1, IMX_PWM3_BASE);
 	if (pwm == MAP_FAILED) {
-		printf("Failed to map: %p\n", pwm);
+		log_error("Failed to map: %p", pwm);
 		return -1;
 	}
 
@@ -250,7 +250,7 @@ static int parseStrEnum(char opt, const char *value, const struct strEnumDef *de
 	}
 	log_error("value for option `-%c` is not recognised. Allowed options:", opt);
 	for (const struct strEnumDef *def = defs; def->name != NULL; ++def) {
-		fprintf(stderr, "* \"%s\"", def->name);
+		log_error("* \"%s\"", def->name);
 	}
 	return -1;
 }
@@ -774,16 +774,15 @@ int main(int argc, char **argv)
 		while (pendingTerm == 0) {
 			if ((ctx->crcErrors > 0) || (ctx->valueErrors > 0)) {
 				gettime(&now, NULL);
-				fprintf(stdout, LOG_TAG "[%llu] crcErrors:%u valueErrors:%u\n", (long long unsigned)((now - start) / 1000), ctx->crcErrors, ctx->valueErrors);
-				fflush(stderr);
+				log_error("[%llu] crcErrors:%u valueErrors:%u", (long long unsigned)((now - start) / 1000), ctx->crcErrors, ctx->valueErrors);
 			}
 			sleep(60);
 		};
 
-		fprintf(stderr, "dma_disable()\n");
+		log_info("disabling DMA");
 		dma_disable();
 		usleep(200000);
-		fprintf(stderr, "resetEcspi()\n");
+		log_info("resetting SPI");
 		resetEcspi(ctx->spi);
 
 		log_error("closing all msgapi sessions");
