@@ -21,7 +21,7 @@
 #include <sys/interrupt.h>
 #include <sys/threads.h>
 
-#include <libtty-lf-fifo.h>
+#include "lf-fifo.h"
 
 #include "common.h"
 #include "cm4.h"
