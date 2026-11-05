@@ -51,7 +51,7 @@ typedef struct {
 	uint32_t erasesz;       /* Erase block size in bytes */
 	uint32_t pagesPerBlock; /* Pages per erase block */
 	uint32_t eccChunksz;    /* ECC chunk size in bytes */
-	uint32_t eccsz;         /* ECC bytes per chunk */
+	uint32_t eccsz;         /* ECC bytes per page (all chunks) */
 	uint32_t eccCap;        /* ECC correction capability in bits */
 } flashdrv_info_t;
 
