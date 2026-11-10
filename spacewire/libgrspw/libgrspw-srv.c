@@ -116,6 +116,18 @@ int spwsrv_createDevs(oid_t *oid)
 }
 
 
+/* Get Device */
+spw_dev_t *spwsrv_getDev(int devId)
+{
+    int idx = devId - id_spw0;
+    if ((idx < 0) || (idx >= SPW_CNT)) {
+		printf("No dev \n");
+        return NULL;
+    }
+    return &common.dev[idx];
+}
+
+
 int spwsrv_init(void)
 {
 	for (unsigned int i = 0; i < SPW_CNT; i++) {

@@ -63,6 +63,9 @@ void spwsrv_handleMsg(msg_t *msg, int dev);
 int spwsrv_createDevs(oid_t *oid);
 
 
+spw_dev_t *spwsrv_getDev(int devId);
+
+
 int spwsrv_init(void);
 
 

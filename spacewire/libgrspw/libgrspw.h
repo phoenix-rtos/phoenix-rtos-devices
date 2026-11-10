@@ -107,9 +107,13 @@ typedef struct {
 	handle_t rxAckCond;
 
 	volatile uint8_t (*txBuff)[SPW_MAX_PACKET_LEN];
+
 	volatile uint8_t (*rxBuff)[SPW_MAX_PACKET_LEN];
 	volatile spw_txDesc_t *txDesc;
 	volatile spw_rxDesc_t *rxDesc;
+
+	/* array of physical addresses for the DMA */
+	uintptr_t txBuffPa[SPW_TX_DESC_CNT];
 } spw_dev_t;
 
 
@@ -197,6 +201,9 @@ static inline size_t spw_deserializeRxMsg(const uint8_t *buf, spw_rxPacket_t *pa
 
 	return SPW_RX_MIN_BUFSZ + ((packet->flags) & SPW_RX_LEN_MSK);
 }
+
+
+void spw_getDiagTimers(uint64_t *memcpyUs, uint64_t *wait1);
 
 
 int spw_transmit(spw_dev_t *dev, const uint8_t *buf, size_t bufsz, const spw_tx_t *tx);

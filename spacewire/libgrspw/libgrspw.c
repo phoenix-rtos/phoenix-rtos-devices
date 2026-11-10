@@ -31,6 +31,20 @@
 
 #include "libgrspw.h"
 
+#include <time.h>
+#include <sys/time.h>
+
+
+static inline uint64_t get_time_us(void)
+{
+	struct timespec ts;
+
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint64_t)ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
+}
+
+
+
 /* clang-format off */
 #define TRACE(fmt, ...) do { if (0) { printf("%s:%d: " fmt "\n", __func__, __LINE__, ##__VA_ARGS__); } } while (0)
 #define LOG(fmt, ...)       printf("spacewire: " fmt "\n", ##__VA_ARGS__)
@@ -183,12 +197,14 @@ static int spw_buffersAlloc(spw_dev_t *dev)
 
 	dev->rxDesc = (void *)((addr_t)dev->txDesc + sizeof(spw_txDesc_t) * SPW_TX_DESC_CNT);
 
-	dev->rxBuff = mmap(NULL, SPW_MAX_PACKET_LEN * SPW_RX_DESC_CNT, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_ANONYMOUS | MAP_CONTIGUOUS, -1, 0);
+	size_t rxBuffSz = PAGE_ALIGN(SPW_MAX_PACKET_LEN * SPW_RX_DESC_CNT);
+	dev->rxBuff = mmap(NULL, rxBuffSz, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_ANONYMOUS | MAP_CONTIGUOUS, -1, 0);
 	if (dev->rxBuff == MAP_FAILED) {
 		return -ENOMEM;
 	}
 
-	dev->txBuff = mmap(NULL, SPW_MAX_PACKET_LEN * SPW_TX_DESC_CNT, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_ANONYMOUS | MAP_CONTIGUOUS, -1, 0);
+	size_t txBuffSz = PAGE_ALIGN(SPW_MAX_PACKET_LEN * SPW_TX_DESC_CNT);
+	dev->txBuff = mmap(NULL, txBuffSz, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_ANONYMOUS | MAP_CONTIGUOUS, -1, 0);
 	if (dev->txBuff == MAP_FAILED) {
 		return -ENOMEM;
 	}
@@ -212,7 +228,7 @@ static void spw_buffersFree(spw_dev_t *dev)
 }
 
 
-static size_t spw_txMsgToPacket(const uint8_t *buf, spw_txPacket_t *packet)
+static inline size_t spw_txMsgToPacket(const uint8_t *buf, spw_txPacket_t *packet)
 {
 	packet->flags = (buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3];
 	packet->dataLen = (buf[4] << 24) | (buf[5] << 16) | (buf[6] << 8) | buf[7];
@@ -266,87 +282,148 @@ __attribute__((section(".interrupt"))) static int spw_irqHandler(unsigned int n,
 /* Operations on device */
 
 
+uint64_t diag_memcpyUs;
+uint64_t diag_wait1;
+
 int spw_transmit(spw_dev_t *dev, const uint8_t *buf, size_t bufsz, const spw_tx_t *tx)
 {
-	if ((buf == NULL) || (bufsz < SPW_TX_MIN_BUFSZ)) {
-		return -EINVAL;
-	}
+    if ((buf == NULL) || (bufsz < SPW_TX_MIN_BUFSZ)) {
+        return -EINVAL;
+    }
 
-	if ((!tx->async && (tx->nPackets > SPW_TX_DESC_CNT)) || tx->nPackets == 0) {
-		return -EINVAL;
-	}
+    if ((!tx->async && (tx->nPackets > SPW_TX_DESC_CNT)) || tx->nPackets == 0) {
+        return -EINVAL;
+    }
 
-	(void)mutexLock(dev->txLock);
+    (void)mutexLock(dev->txLock);
 
-	TRACE("nPackets: %zu", tx->nPackets);
+    TRACE("nPackets: %zu", tx->nPackets);
 
-	/* Setup descriptors */
-	size_t firstDesc = dev->lastTxDesc;
+    /* Setup descriptors */
+    size_t firstDesc = dev->lastTxDesc;
 
-	for (size_t cnt = 0; cnt < tx->nPackets; cnt++) {
-		(void)mutexLock(dev->txIrqLock);
-		while (dev->txDescFree == 0) {
-			/* Wait for free descriptor or for packet to be acknowledged */
-			(void)condWait(dev->cond, dev->txIrqLock, 0);
-		}
-		dev->txDescFree--;
-		(void)mutexUnlock(dev->txIrqLock);
-
-		volatile spw_txDesc_t *desc = &dev->txDesc[dev->lastTxDesc];
-
-		spw_txPacket_t packet;
-		buf += spw_txMsgToPacket(buf, &packet);
-		/* Interrupt after each packet transmitted */
-		desc->ctrl = (packet.flags & TX_DESC_USR_MSK) | TX_DESC_IE;
-		if (dev->lastTxDesc == SPW_TX_DESC_CNT - 1) {
-			/* Wrap around */
-			desc->ctrl |= TX_DESC_WR;
-		}
-
-		uint8_t hdrLen = packet.flags & TX_DESC_HDR_LEN;
-		volatile void *txBuff = dev->txBuff[dev->lastTxDesc];
-
-		memcpy((char *)txBuff, packet.hdr, hdrLen);
-		memcpy((char *)txBuff + hdrLen, packet.data, packet.dataLen);
-
-		/* on riscv64 pa can exceed 32 bits */
-		uintptr_t pa = va2pa((void *)txBuff);
-		if (((pa & ~SPW_ADDR_MASK) != 0) || (((pa + hdrLen) & ~SPW_ADDR_MASK) != 0)) {
-			LOG_ERROR("DMA addr 0x%" PRIxPTR " exceeds 32-bit limit", pa);
-			dev->txDescFree++;
-			(void)mutexUnlock(dev->txLock);
-			return -EINVAL;
-		}
-		desc->hdrAddr = pa;
-		desc->dataAddr = pa + hdrLen;
-		desc->packetLen = packet.dataLen;
-
-		/* Everything is set up, enable descriptor */
-		desc->ctrl |= TX_DESC_EN;
-		memoryBarrier();
-
-		/* Start transmission */
-		dev->vbase[DMA_CTRL] |= DMA_CTRL_TE;
-		dev->lastTxDesc = (dev->lastTxDesc + 1) % SPW_TX_DESC_CNT;
-	}
-
-	if (!tx->async) {
-		(void)mutexLock(dev->txIrqLock);
-		/* Wait for transmission to finish */
-		for (size_t i = 0; i < tx->nPackets; i++) {
-			volatile spw_txDesc_t *d = &dev->txDesc[(firstDesc + i) % SPW_TX_DESC_CNT];
-			while ((d->ctrl & TX_DESC_EN) != 0) {
-				(void)condWait(dev->cond, dev->txIrqLock, 0);
+    for (size_t cnt = 0; cnt < tx->nPackets; cnt++) {
+		size_t spins = 0;
+		for (;;) {
+			size_t free = __atomic_load_n(&dev->txDescFree, __ATOMIC_ACQUIRE);
+			if (free > 0) {
+				if (__atomic_compare_exchange_n(&dev->txDescFree, &free, free - 1, 
+												0, __ATOMIC_RELEASE, __ATOMIC_RELAXED)) {
+					break;
+				}
+				continue;
 			}
+			
+			if (++spins > 1000) {
+				(void)mutexLock(dev->txIrqLock);
+				while (dev->txDescFree == 0) {
+					condWait(dev->cond, dev->txIrqLock, 0);
+				}
+				dev->txDescFree--;
+				(void)mutexUnlock(dev->txIrqLock);
+				break;
+			}
+			memoryBarrier();
 		}
-		(void)mutexUnlock(dev->txIrqLock);
-	}
+	
+		// (void)mutexLock(dev->txIrqLock);
 
-	TRACE("Packets set up");
+        // while (dev->txDescFree == 0) {
+        //     (void)condWait(dev->cond, dev->txIrqLock, 0);
+        // }
+        // dev->txDescFree--;
+		
+        // (void)mutexUnlock(dev->txIrqLock);
 
-	(void)mutexUnlock(dev->txLock);
+        volatile spw_txDesc_t *desc = &dev->txDesc[dev->lastTxDesc];
+		
+        spw_txPacket_t packet;
+        buf += spw_txMsgToPacket(buf, &packet);
 
-	return tx->nPackets;
+
+        
+
+        uint32_t ie = (cnt == tx->nPackets - 1) ? TX_DESC_IE : 0;
+        desc->ctrl = (packet.flags & TX_DESC_USR_MSK) | ie;
+
+        if (dev->lastTxDesc == SPW_TX_DESC_CNT - 1) {
+            desc->ctrl |= TX_DESC_WR;
+        }
+
+		
+        /* Interrupt after each packet transmitted */
+        // desc->ctrl = (packet.flags & TX_DESC_USR_MSK) | TX_DESC_IE;
+        // if (dev->lastTxDesc == SPW_TX_DESC_CNT - 1) {
+        //     /* Wrap around */
+        //     desc->ctrl |= TX_DESC_WR;
+        // }
+
+
+        uint8_t hdrLen = packet.flags & TX_DESC_HDR_LEN;
+        // volatile void *txBuff = dev->txBuff[dev->lastTxDesc];
+		// void *txBuff = dev->txBuff[dev->lastTxDesc];
+		void *txBuff = (void *)dev->txBuff[dev->lastTxDesc];
+
+        memcpy((char *)txBuff, packet.hdr, hdrLen);
+        memcpy((char *)txBuff + hdrLen, packet.data, packet.dataLen);
+
+        // uintptr_t pa = va2pa((void *)txBuff);
+
+        uintptr_t pa = dev->txBuffPa[dev->lastTxDesc];
+		
+        if (((pa & ~SPW_ADDR_MASK) != 0) || (((pa + hdrLen) & ~SPW_ADDR_MASK) != 0)) {
+            LOG_ERROR("DMA addr 0x%" PRIxPTR " exceeds 32-bit limit", pa);
+            dev->txDescFree++;
+            (void)mutexUnlock(dev->txLock);
+            return -EINVAL;
+        }
+        desc->hdrAddr = pa;
+        desc->dataAddr = pa + hdrLen;
+        desc->packetLen = packet.dataLen;
+
+        /* Everything is set up, enable descriptor */
+        desc->ctrl |= TX_DESC_EN;
+
+		//uint64_t tWait1Start = get_time_us();
+        /* Start transmission */
+        // dev->vbase[DMA_CTRL] |= DMA_CTRL_TE;
+        dev->lastTxDesc = (dev->lastTxDesc + 1) % SPW_TX_DESC_CNT;
+
+		//diag_wait1 += (get_time_us() - tWait1Start);
+    }
+	memoryBarrier();
+
+	/* Start transmission */
+    dev->vbase[DMA_CTRL] |= DMA_CTRL_TE;
+
+    if (!tx->async) {
+        (void)mutexLock(dev->txIrqLock);
+        /* Wait for transmission to finish */
+        for (size_t i = 0; i < tx->nPackets; i++) {
+            volatile spw_txDesc_t *d = &dev->txDesc[(firstDesc + i) % SPW_TX_DESC_CNT];
+            while ((d->ctrl & TX_DESC_EN) != 0) {
+                (void)condWait(dev->cond, dev->txIrqLock, 0);
+            }
+        }
+        (void)mutexUnlock(dev->txIrqLock);
+    }
+
+    TRACE("Packets set up");
+
+    (void)mutexUnlock(dev->txLock);
+
+    return tx->nPackets;
+}
+
+
+void spw_getDiagTimers(uint64_t *memcpyUs, uint64_t *wait1)
+{
+    if (memcpyUs != NULL) {
+        *memcpyUs = diag_memcpyUs;
+    }
+    if (wait1 != NULL) {
+        *wait1 = diag_wait1;
+    }
 }
 
 
@@ -687,6 +764,22 @@ static void spw_cleanupResources(spw_dev_t *dev)
 }
 
 
+static int mapToPhysicalAdd(spw_dev_t *dev)
+{
+	for (size_t i = 0; i < SPW_TX_DESC_CNT; i++) {
+		dev->txBuffPa[i] = va2pa((void *)dev->txBuff[i]);
+
+		if ((dev->txBuffPa[i] & ~SPW_ADDR_MASK) != 0) {
+			LOG_ERROR("DMA addr exceeds 32-bit limit at init: %" PRIxPTR, dev->txBuffPa[i]);
+			return -EINVAL;
+		}
+	}
+
+	return 0;
+}
+
+
+
 int spw_initDev(unsigned int instance, spw_dev_t *spwdev)
 {
 	unsigned int ppInstance = instance;
@@ -712,6 +805,8 @@ int spw_initDev(unsigned int instance, spw_dev_t *spwdev)
 		LOG("spw%d: grspw2 core found", instance);
 	}
 
+	LOG("Instancja SPW %u zarejestrowala IRQ: %u", instance, dev.irqn);
+
 	if (dev.bus != BUS_AMBA_APB) {
 		/* GRSPW2/DMA should be on APB bus */
 		return -1;
@@ -729,6 +824,8 @@ int spw_initDev(unsigned int instance, spw_dev_t *spwdev)
 	spwdev->txDescFree = SPW_TX_DESC_CNT;
 
 	(void)interrupt(dev.irqn, spw_irqHandler, spwdev, spwdev->cond, NULL);
+
+	mapToPhysicalAdd(spwdev);
 
 	if (spw_defaultConfig(spwdev) < 0) {
 		spw_cleanupResources(spwdev);
