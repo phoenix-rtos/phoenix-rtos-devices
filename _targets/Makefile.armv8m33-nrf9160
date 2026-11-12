@@ -1,0 +1,9 @@
+#
+# Makefile for Phoenix-RTOS 3 device drivers
+#
+# NRF9160 drivers
+#
+# Copyright 2022 Phoenix Systems
+#
+
+DEFAULT_COMPONENTS := nrf91-multi
