@@ -435,6 +435,11 @@ extern int posixsrv_start(void);
 #endif
 
 
+#if BUILTIN_COREDUMPSRV
+extern int coredumpsrv_start(void);
+#endif
+
+
 int main(void)
 {
 	int i;
@@ -477,6 +482,10 @@ int main(void)
 
 #if defined(STM32MULTI_HANDLE_EXTFLASH)
 	extFlash_fn_init();
+#endif
+
+#if BUILTIN_COREDUMPSRV
+	coredumpsrv_start();
 #endif
 
 	/* Do this after klog init to keep shell from overtaking klog */
