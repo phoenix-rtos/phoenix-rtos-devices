@@ -105,6 +105,15 @@ static void desc_strInit(usb_desc_list_t *desList, size_t *localOffset, int strO
 }
 
 
+static void desc_devAdjust(usb_device_desc_t *desc)
+{
+	/* Microsoft Windows requires these classes to identify the device as a
+	 * virtual COM port */
+	desc->bDeviceClass = USB_CLASS_CDC;
+	desc->bDeviceSubClass = USB_SUBCLASS_ACM;
+}
+
+
 int desc_init(usb_desc_list_t *desList, usb_common_data_t *usbDataIn, usb_dc_t *dcIn)
 {
 	size_t localOffset = 0;
@@ -129,6 +138,7 @@ int desc_init(usb_desc_list_t *desList, usb_common_data_t *usbDataIn, usb_dc_t *
 			case USB_DESC_DEVICE:
 				desc_common.dev = (uint8_t *)vrtAddr;
 				memcpy(vrtAddr, desList->descriptor, sizeof(usb_device_desc_t));
+				desc_devAdjust((usb_device_desc_t *)vrtAddr);
 				localOffset += len;
 
 				break;
