@@ -20,6 +20,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <phoenix/arch/armv8m/stm32/n6/stm32n6.h>
+#include <cdc.h>
 
 #include "client.h"
 
@@ -114,6 +115,13 @@ static void desc_devAdjust(usb_device_desc_t *desc)
 }
 
 
+static void desc_epAdjust(usb_endpoint_desc_t *desc)
+{
+	/* Full-Speed handles max packet size of at most 64 bytes */
+	desc->wMaxPacketSize = (desc->wMaxPacketSize > 64U) ? 64U : desc->wMaxPacketSize;
+}
+
+
 int desc_init(usb_desc_list_t *desList, usb_common_data_t *usbDataIn, usb_dc_t *dcIn)
 {
 	size_t localOffset = 0;
@@ -155,6 +163,7 @@ int desc_init(usb_desc_list_t *desList, usb_common_data_t *usbDataIn, usb_dc_t *
 				break;
 
 			case USB_DESC_ENDPOINT:
+				desc_epAdjust((usb_endpoint_desc_t *)(desList->descriptor));
 				memcpy(vrtAddr, desList->descriptor, len);
 				localOffset += len;
 				desc_endptInit((usb_endpoint_desc_t *)desList->descriptor);
