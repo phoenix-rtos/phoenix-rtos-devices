@@ -492,7 +492,7 @@ static int flashmtd_blockMaxBitflips(struct _storage_t *strg, off_t offs)
 	flashdrv_meta_t *meta = (flashdrv_meta_t *)ctx->metabuf;
 	size_t tempsz = 0;
 	uint32_t paddr;
-	int err;
+	int err = 0;
 	int maxBitFlips = 0;
 
 	if ((offs % mtd->erasesz) != 0) {
