@@ -56,6 +56,7 @@
 #define UBX_RETRY_US     (1000LL * 1000LL)
 #define UBX_OPEN_RETRIES 10000
 #define UBX_MAX_TOUT_US  (2LL * 1000LL * 1000LL)
+#define UBX_DYN_RETRY_US (3LL * 1000LL * 1000LL)
 
 /* default configuration */
 #ifndef UBX_DEFAULT_BAUDRATE
@@ -104,6 +105,9 @@
 #define UBX_GNSS_HDRLEN      4U
 #define UBX_GNSS_BLKLEN      8U
 #define UBX_GNSS_MAXBLK      7U
+
+#define UBX_NAV_FLAGS_FIXOK (0x01U) /* NAV-PVT and NAV-SOL flag bit 0 (gnssFixOK/GPSfixOK): fix is valid, */
+
 
 /* fix values used by ubx protocol */
 
@@ -211,7 +215,11 @@ typedef struct {
 	uint8_t batchMask;        /* bitmask of messages received in the current batch */
 	uint8_t batchRequirement; /* bitmask of messages required for a full batch */
 
-	bool operationalModeEn;
+	bool primeFix;          /* set upon first valid fix, never cleared */
+	bool dynModelSync;      /* module dynModel matches ubx_dynModelTarget(). Updated on setup and resetup */
+	bool dynModelChecked;   /* dynModelInOperation support has been verified on the first setup */
+	bool fixOk;             /* raw-domain validity of fix from last samples */
+	time_t dynModelRetryUs; /* deadline for the next dynModel apply attempt after a failure */
 
 	char path[64];
 
@@ -222,6 +230,11 @@ typedef struct {
 /*
  * utilities
  */
+
+static uint8_t ubx_dynModelTarget(const ubx_ctx_t *ctx)
+{
+	return ctx->primeFix ? ctx->opts.dynModelInOperation : ctx->opts.dynModelAcquisition;
+}
 
 
 static bool ubx_isDeadlineDue(time_t deadlineUs)
@@ -1259,6 +1272,49 @@ static uint8_t ubx_getRequiredBatchMask(ubx_gen_t gen)
 }
 
 
+static int ubx_dynModelApply(ubx_ctx_t *ctx, uint8_t dynModel)
+{
+	int ret = -1;
+
+	if (ctx->opts.dynModelInOperation == ctx->opts.dynModelAcquisition) {
+		return 0;
+	}
+
+	if (ctx->gen >= ubx_gen_m9) {
+		ubx_pushU8(ctx, 0x00U); /* message version */
+		ubx_pushU8(ctx, 0x01U); /* ram layer */
+		ubx_pushU16(ctx, 0x0000U);
+		ubx_pushValSetItem(ctx, UBX_KEY_NAVSPG_DYNMODEL, dynModel);
+
+		ret = ubx_sendAndAck(ctx, ubx_class_cfg, ubx_id_valset);
+	}
+	else {
+		ret = ubx_sendCfgNav5(ctx, dynModel);
+	}
+
+	return ret;
+}
+
+
+/* verify, only once, that the module accepts dynModelInOperation. Fall back to dynModelAcquisition if not accepted */
+static int ubx_dynModelCheck(ubx_ctx_t *ctx)
+{
+	if (ctx->dynModelChecked) {
+		return 0;
+	}
+	ctx->dynModelChecked = true;
+
+	if (ubx_dynModelApply(ctx, ctx->opts.dynModelInOperation) < 0) {
+		fprintf(stderr, "%s dynModel %u for operation not accepted - using acquisition dynModel %u\n", UBX_STR, ctx->opts.dynModelInOperation, ctx->opts.dynModelAcquisition);
+		ctx->opts.dynModelInOperation = ctx->opts.dynModelAcquisition;
+		return 0;
+	}
+
+	/* restore the acquisition model applied by ubx_configure() */
+	return ubx_dynModelApply(ctx, ctx->opts.dynModelAcquisition);
+}
+
+
 static int ubx_setup(ubx_ctx_t *ctx)
 {
 	int ret = ubx_detect(ctx);
@@ -1270,7 +1326,22 @@ static int ubx_setup(ubx_ctx_t *ctx)
 	/* set batch requirement */
 	ctx->batchRequirement = ubx_getRequiredBatchMask(ctx->gen);
 
-	return ubx_configure(ctx, UBX_DEFAULT_BAUDRATE);
+	ret = ubx_configure(ctx, UBX_DEFAULT_BAUDRATE);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = ubx_dynModelCheck(ctx);
+	if (ret < 0) {
+		return ret;
+	}
+
+	/* ubx_configure() always applies dynModelAcquisition */
+	ctx->fixOk = false;
+	ctx->dynModelSync = (ubx_dynModelTarget(ctx) == ctx->opts.dynModelAcquisition);
+	ctx->dynModelRetryUs = 0;
+
+	return 0;
 }
 
 
@@ -1296,6 +1367,7 @@ static int ubx_handlePvt(ubx_ctx_t *ctx)
 	uint8_t valid = ubx_readU8(p + 11);     /* validity flags */
 	int32_t nano = ubx_readI32(p + 16);     /* fraction of second [-1e9; +1e9] */
 	uint8_t fix = ubx_readU8(p + 20);       /* gnss fix type */
+	uint8_t flags = ubx_readU8(p + 21);     /* gnss flags */
 	uint8_t numSV = ubx_readU8(p + 23);     /* number of satellites used */
 	int32_t lon = ubx_readI32(p + 24);      /* longitude [deg * 1e-7] */
 	int32_t lat = ubx_readI32(p + 28);      /* latitude [deg * 1e-7] */
@@ -1338,6 +1410,9 @@ static int ubx_handlePvt(ubx_ctx_t *ctx)
 	if (headMot < 0) {
 		headMot += 36000000;
 	}
+
+	/* fixType can already show 2D or 3D while gnssFixOK is still 0 */
+	ctx->fixOk = ((fix == ubx_fix_2d) || (fix == ubx_fix_3d) || (fix == ubx_fix_gnssDr)) && ((flags & UBX_NAV_FLAGS_FIXOK) != 0U);
 
 	ctx->ev.gps.fix = ubx_fixToGgaFix(fix);
 	ctx->ev.gps.satsNb = numSV;
@@ -1445,9 +1520,13 @@ static int ubx_handleSol(ubx_ctx_t *ctx)
 	uint8_t *p = ctx->msg.pld;
 	uint8_t fix = ubx_readU8(p + 10);   /* gnss fix type */
 	uint8_t numSV = ubx_readU8(p + 47); /* number of satellites used */
+	uint8_t flags = ubx_readU8(p + 11);
 
 	ctx->ev.gps.fix = ubx_fixToGgaFix(fix);
 	ctx->ev.gps.satsNb = numSV;
+
+	/* fixType can already show 2D or 3D while gnssFixOK is still 0 */
+	ctx->fixOk = ((fix == ubx_fix_2d) || (fix == ubx_fix_3d) || (fix == ubx_fix_gnssDr)) && ((flags & UBX_NAV_FLAGS_FIXOK) != 0U);
 
 	return 0;
 }
@@ -1558,31 +1637,6 @@ static bool ubx_handleNavMsg(ubx_ctx_t *ctx)
 }
 
 
-static int ubx_operationalModeSwitch(ubx_ctx_t *ctx, bool operationalModeEn)
-{
-	uint8_t dynModel = (operationalModeEn) ? ctx->opts.dynModelInOperation : ctx->opts.dynModelAcquisition;
-	int ret = -1;
-
-	if (ctx->opts.dynModelInOperation == ctx->opts.dynModelAcquisition) {
-		return 0;
-	}
-
-	if (ctx->gen >= ubx_gen_m9) {
-		ubx_pushU8(ctx, 0x00U); /* message version */
-		ubx_pushU8(ctx, 0x01U); /* ram layer */
-		ubx_pushU16(ctx, 0x0000U);
-		ubx_pushValSetItem(ctx, UBX_KEY_NAVSPG_DYNMODEL, dynModel);
-
-		ret = ubx_sendAndAck(ctx, ubx_class_cfg, ubx_id_valset);
-	}
-	else {
-		ret = ubx_sendCfgNav5(ctx, dynModel);
-	}
-
-	return ret;
-}
-
-
 /*
  * main thread
  */
@@ -1632,14 +1686,20 @@ static void ubx_threadPublish(void *data)
 		}
 		(void)sensors_publish(info->id, &ctx->ev);
 
-		if (!ctx->operationalModeEn && (ctx->ev.gps.fix >= ubx_fix_2d)) {
-			/* switch from acquisition mode to operational after first fix */
-			ctx->operationalModeEn = true;
-			ubx_operationalModeSwitch(ctx, true);
+		if (!ctx->primeFix && ctx->fixOk) {
+			ctx->primeFix = true;
+			ctx->dynModelSync = false;
 		}
-		else if (ctx->operationalModeEn && (ctx->ev.gps.fix < ubx_fix_2d)) {
-			ctx->operationalModeEn = false;
-			ubx_operationalModeSwitch(ctx, false);
+
+		if (!ctx->dynModelSync && ubx_isDeadlineDue(ctx->dynModelRetryUs)) {
+			uint8_t dynModel = ubx_dynModelTarget(ctx);
+			if (ubx_dynModelApply(ctx, dynModel) == 0) {
+				ctx->dynModelSync = true;
+			}
+			else {
+				fprintf(stderr, "%s dynModel fail %u - retrying in %llds\n", UBX_STR, dynModel, ((long long)UBX_DYN_RETRY_US / 1000000LL));
+				ctx->dynModelRetryUs = ubx_getDeadline(UBX_DYN_RETRY_US);
+			}
 		}
 	}
 
