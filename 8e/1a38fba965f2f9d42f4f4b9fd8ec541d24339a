@@ -1,0 +1,19 @@
+storage/imx6ull-flash/imx6ull-flashsrv.h
+  s_aefb43ae6c4ab5::t_daf76e6d17260c 22-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8e1a38fba965f2f9d42f4f4b9fd8ec541d24339a",
+  "prompts": {},
+  "sessions": {
+    "s_aefb43ae6c4ab5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "47024dd1-9607-45d7-a8d8-bac9bdaa5945",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Marek Białowąs <marek.bialowas@phoenix-rtos.com>"
+    }
+  }
+}
