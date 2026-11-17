@@ -143,6 +143,19 @@ static void desc_cfgAdjust(usb_configuration_desc_t *desc)
 }
 
 
+static void desc_callAdjust(usb_desc_cdc_call_t *desc)
+{
+	/*
+	 * bmCapabilities:
+	 * bits 2 to 7 - reserved (must be 0)
+	 * bit 1 - device can send/receive call management information over a
+	 *         data class interface.
+	 * bit 0 - device handles call management itself
+	 */
+	desc->bmCapabilities = 0x00U;
+}
+
+
 int desc_init(usb_desc_list_t *desList, usb_common_data_t *usbDataIn, usb_dc_t *dcIn)
 {
 	size_t localOffset = 0;
@@ -200,6 +213,9 @@ int desc_init(usb_desc_list_t *desList, usb_common_data_t *usbDataIn, usb_dc_t *
 				memcpy(vrtAddr, desList->descriptor, len);
 				if (desList->descriptor->bDescriptorSubtype == 0x02) {
 					desc_acmAdjust((usb_desc_cdc_acm_t *)vrtAddr);
+				}
+				else if (desList->descriptor->bDescriptorSubtype == 0x01) {
+					desc_callAdjust((usb_desc_cdc_call_t *)desList->descriptor);
 				}
 				localOffset += len;
 				break;
