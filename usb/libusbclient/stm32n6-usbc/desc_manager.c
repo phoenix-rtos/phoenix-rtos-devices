@@ -329,6 +329,7 @@ static void desc_ReqGetDescriptor(const usb_setup_packet_t *setup)
 
 int desc_setup(const usb_setup_packet_t *setup)
 {
+	static uint8_t getStatusResp[] = { 0x00, 0x00 };
 	int res = EOK;
 
 	if (EXTRACT_REQ_TYPE(setup->bmRequestType) == REQUEST_TYPE_STANDARD) {
@@ -348,8 +349,11 @@ int desc_setup(const usb_setup_packet_t *setup)
 				desc_ReqGetDescriptor(setup);
 				break;
 
-			case REQ_CLEAR_FEATURE:
 			case REQ_GET_STATUS:
+				clbc_epTransmit(0, getStatusResp, sizeof(getStatusResp));
+				break;
+
+			case REQ_CLEAR_FEATURE:
 			case REQ_GET_INTERFACE:
 			case REQ_SET_INTERFACE:
 			case REQ_SET_FEATURE:
