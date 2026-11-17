@@ -1,0 +1,21 @@
+storage/grlib-nandfctrl2/flashdrv.c
+  s_7fbaeb96c5a8c1::t_0e545ab8efb556 283,285,296,400-403,424-429,436-438,479,488,588,610,623,883,918,967,982,992,1075,1181,1190,1212,1237,1313,1344,1365,1373,1382,1405,1448,1486
+  s_7fbaeb96c5a8c1::t_b269e8c0b34dfe 274-279,287,295,361-374,439,472-474,478,480-481,619-621,633-641,882,917,981,991,1189,1211,1236,1312,1343,1372,1381,1447,1485
+  s_7fbaeb96c5a8c1::t_5bbf5926f695db 261-262,386,393,440-441
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c972fbfb0bb1c476bc35f12ea7cde777fb29d167",
+  "prompts": {},
+  "sessions": {
+    "s_7fbaeb96c5a8c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4b336324-11c2-4137-a59e-07e6701d6870",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Lukasz Leczkowski <lukasz.leczkowski@phoenix-rtos.com>"
+    }
+  }
+}

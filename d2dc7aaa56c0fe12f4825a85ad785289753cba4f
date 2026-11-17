@@ -1,0 +1,17 @@
+spacewire/libgrspw/libgrspw.c
+  h_fc26ad17182140 79-90,275,315-316,323-324,341,343,569
+  h_fc26ad17182140 166-175,332,344-345,349,395-396,478,501,568,570-571,573,743
+spacewire/libgrspw/libgrspw.h
+  h_fc26ad17182140 17,93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d2dc7aaa56c0fe12f4825a85ad785289753cba4f",
+  "prompts": {},
+  "humans": {
+    "h_fc26ad17182140": {
+      "author": "Lukasz Leczkowski <lukasz.leczkowski@phoenix-rtos.com>"
+    }
+  }
+}

@@ -1,0 +1,33 @@
+tty/imx6ull-uart/imx6ull-uart.c
+  s_4050bb172e3189::t_52ad7709950c39 796
+  s_4050bb172e3189::t_174bdec30a5e4b 83
+  s_4050bb172e3189::t_a9c527df362eb1 761
+  s_4050bb172e3189::t_260fa82f1ec56f 819
+  s_4050bb172e3189::t_9859a317832625 774
+  s_4050bb172e3189::t_ac7f97948a413c 89
+  s_4050bb172e3189::t_08a7514a697598 839-841
+  h_44b30f378b8eea 929,935
+  s_4050bb172e3189::t_3767995539d293 932-934
+  h_44b30f378b8eea 936
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "243e57827403154ca1af2b9138a32f61d013574c",
+  "prompts": {},
+  "humans": {
+    "h_44b30f378b8eea": {
+      "author": "Mateusz Kobak <mateusz.kobak@phoenix-rtos.com>"
+    }
+  },
+  "sessions": {
+    "s_4050bb172e3189": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5aab4a38-d063-4b26-864e-f690be1189c5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Mateusz Kobak <mateusz.kobak@phoenix-rtos.com>"
+    }
+  }
+}

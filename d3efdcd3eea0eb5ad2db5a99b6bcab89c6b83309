@@ -1,0 +1,28 @@
+storage/grlib-nandfctrl2/flashdrv.c
+  s_7fbaeb96c5a8c1::t_0e545ab8efb556 283,285,296,380,403,410-413,434-438,488-491,498,598,620,989,1413
+  s_7fbaeb96c5a8c1::t_b269e8c0b34dfe 274-279,287,295,361-374,384,439,446,483,630-631,890,925
+  s_7fbaeb96c5a8c1::t_75b3324c64e408 375-379
+  s_7fbaeb96c5a8c1::t_e026bf667c41c2 381-383
+  s_7fbaeb96c5a8c1::t_f97b509e042855 447-449
+  s_7fbaeb96c5a8c1::t_300c96b7fa6962 482
+  s_7fbaeb96c5a8c1::t_79b3d1b72b463a 484
+  s_7fbaeb96c5a8c1::t_aab62f2040cff0 891
+  s_7fbaeb96c5a8c1::t_099e741854d659 926
+  s_7fbaeb96c5a8c1::t_d30eb8583eee34 990
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d3efdcd3eea0eb5ad2db5a99b6bcab89c6b83309",
+  "prompts": {},
+  "sessions": {
+    "s_7fbaeb96c5a8c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4b336324-11c2-4137-a59e-07e6701d6870",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Lukasz Leczkowski <lukasz.leczkowski@phoenix-rtos.com>"
+    }
+  }
+}

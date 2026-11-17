@@ -1,0 +1,24 @@
+tty/imx6ull-uart/imx6ull-uart.c
+  s_b7b412d731d652::t_aaf101a6867c03 698,704
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5c70ab2c3e41f03ba500247202e14bb5ec3f7cd2",
+  "prompts": {},
+  "humans": {
+    "h_44b30f378b8eea": {
+      "author": "Mateusz Kobak <mateusz.kobak@phoenix-rtos.com>"
+    }
+  },
+  "sessions": {
+    "s_b7b412d731d652": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6f030048-6434-4964-8d11-8d83193016a6",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Mateusz Kobak <mateusz.kobak@phoenix-rtos.com>"
+    }
+  }
+}

@@ -1,0 +1,33 @@
+_targets/Makefile.riscv64-gr765
+  h_fc26ad17182140 9
+spacewire/librmap/rmap.h
+  h_fc26ad17182140 1-82
+spacewire/librmap/rmap.c
+  h_fc26ad17182140 1-17,19-156,162-173
+spacewire/librmap/Makefile
+  h_fc26ad17182140 1-13
+spacewire/librmap/README.md
+  s_3e4d2e10672179::t_ee34dd8da2acb3 1-61,63-77,79-89,91-103,105-153
+  h_fc26ad17182140 62,78,90,104
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "9de1af5112071e170a8a2c6ff69d40f63573f02f",
+  "prompts": {},
+  "humans": {
+    "h_fc26ad17182140": {
+      "author": "Lukasz Leczkowski <lukasz.leczkowski@phoenix-rtos.com>"
+    }
+  },
+  "sessions": {
+    "s_3e4d2e10672179": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "598636bc-2b23-458f-b7ea-de0cbe1c74e7",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "Lukasz Leczkowski <lukasz.leczkowski@phoenix-rtos.com>"
+    }
+  }
+}

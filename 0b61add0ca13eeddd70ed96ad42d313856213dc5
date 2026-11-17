@@ -1,0 +1,34 @@
+tty/imx6ull-uart/imx6ull-uart.c
+  s_4050bb172e3189::t_174bdec30a5e4b 83
+  s_4050bb172e3189::t_ac7f97948a413c 89
+  s_4050bb172e3189::t_3fae22ee6f9db1 95-97
+  h_44b30f378b8eea 777-781,803,847-848,880,943,952-953
+  s_4050bb172e3189::t_b4641320dfaf56 764
+  s_4050bb172e3189::t_e04017372320c2 881-885
+  s_4050bb172e3189::t_3767995539d293 947
+  s_4050bb172e3189::t_9ca399f7ebe8ad 846
+  s_4050bb172e3189::t_522360210e54a8 946,948-951
+  s_4050bb172e3189::t_0ca17022a15386 826
+  s_4050bb172e3189::t_08a7514a697598 849
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0b61add0ca13eeddd70ed96ad42d313856213dc5",
+  "prompts": {},
+  "humans": {
+    "h_44b30f378b8eea": {
+      "author": "Mateusz Kobak <mateusz.kobak@phoenix-rtos.com>"
+    }
+  },
+  "sessions": {
+    "s_4050bb172e3189": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5aab4a38-d063-4b26-864e-f690be1189c5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}

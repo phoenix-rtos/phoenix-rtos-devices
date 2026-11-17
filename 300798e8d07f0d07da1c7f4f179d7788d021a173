@@ -1,0 +1,16 @@
+multi/grlib-multi/grlib-multi.h
+  h_fc26ad17182140 122
+spacewire/libgrspw/libgrspw.c
+  h_fc26ad17182140 472,573
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.13",
+  "base_commit_sha": "300798e8d07f0d07da1c7f4f179d7788d021a173",
+  "prompts": {},
+  "humans": {
+    "h_fc26ad17182140": {
+      "author": "Lukasz Leczkowski <lukasz.leczkowski@phoenix-rtos.com>"
+    }
+  }
+}
