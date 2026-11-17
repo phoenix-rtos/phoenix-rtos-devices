@@ -122,6 +122,13 @@ static void desc_epAdjust(usb_endpoint_desc_t *desc)
 }
 
 
+static void desc_acmAdjust(usb_desc_cdc_acm_t *desc)
+{
+	/* only advertise SET_LINE_CODING, GET_LINE_CODING, and SET_CONTROL_LINE_STATE */
+	desc->bmCapabilities = 0x2U;
+}
+
+
 int desc_init(usb_desc_list_t *desList, usb_common_data_t *usbDataIn, usb_dc_t *dcIn)
 {
 	size_t localOffset = 0;
@@ -176,6 +183,9 @@ int desc_init(usb_desc_list_t *desList, usb_common_data_t *usbDataIn, usb_dc_t *
 
 			case USB_DESC_TYPE_CDC_CS_INTERFACE:
 				memcpy(vrtAddr, desList->descriptor, len);
+				if (desList->descriptor->bDescriptorSubtype == 0x02) {
+					desc_acmAdjust((usb_desc_cdc_acm_t *)vrtAddr);
+				}
 				localOffset += len;
 				break;
 
