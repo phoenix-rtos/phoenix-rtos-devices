@@ -2,10 +2,12 @@ storage/imx6ull-flash/flashdev.c
   s_aefb43ae6c4ab5::t_4a71e4b16ffcaf 24-25,295-296,301-332,334-349,353-358,360-369,371,379,381,383-385,395,398-404,472-473,587
   s_aefb43ae6c4ab5::t_78e6bc6fb987b8 285
   s_aefb43ae6c4ab5::t_dcf4fda8ec2554 588
+  s_aefb43ae6c4ab5::t_ee8463c247eae8 333,350-352,359,370,372-378,380,382,393-394,396-397
 storage/imx6ull-flash/imx6ull-flashsrv.h
   s_aefb43ae6c4ab5::t_332fe23052a2e6 44-45,49-50,93
   s_aefb43ae6c4ab5::t_b0c2864a22983c 91-92,94
   s_aefb43ae6c4ab5::t_78e6bc6fb987b8 46-48
+  s_aefb43ae6c4ab5::t_ee8463c247eae8 32-33
 storage/imx6ull-flash/imx6ull-flashdev.h
   s_aefb43ae6c4ab5::t_78e6bc6fb987b8 30-46
 storage/imx6ull-flash/Makefile
