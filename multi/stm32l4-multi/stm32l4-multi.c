@@ -155,7 +155,9 @@ static void handleMsgMulti(msg_t *msg)
 			break;
 
 		case adc_get:
-			omsg->adc_valmv = adc_conversion(imsg->adc_get.adcno, imsg->adc_get.channel);
+			t = 0;
+			err = adc_conversion(imsg->adc_get.adcno, imsg->adc_get.channel, &t);
+			omsg->adc_valmv = (unsigned short)t;
 			break;
 
 		case spi_get:
@@ -457,7 +459,12 @@ int main(void)
 	tty_init();
 	gpio_init();
 	spi_init();
-	adc_init();
+
+	int ret = adc_init();
+	if (ret < 0) {
+		printf("multi: Cannot initialize ADC, status %d\n", ret);
+	}
+
 	rtc_init();
 #if defined(STM32MULTI_HANDLE_FLASH)
 	flash_init();
