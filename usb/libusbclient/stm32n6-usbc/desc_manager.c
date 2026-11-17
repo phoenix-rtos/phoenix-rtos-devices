@@ -313,7 +313,7 @@ static void desc_ReqGetDescriptor(const usb_setup_packet_t *setup)
 		else if ((setup->wValue & 0xff) == 1U) {
 			clbc_epTransmit(0, (uint8_t *)desc_common.strMan.vmStruct, MIN(desc_common.strMan.vmStruct->bLength, setup->wLength));
 		}
-		else if ((setup->wValue & 0xff) == 2U) {
+		else if (((setup->wValue & 0xff) == 2U) || ((setup->wValue & 0xffU) == 4U)) {
 			clbc_epTransmit(0, (uint8_t *)desc_common.strProd.vmStruct, MIN(desc_common.strProd.vmStruct->bLength, setup->wLength));
 		}
 		else {
