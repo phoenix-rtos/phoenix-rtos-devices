@@ -29,7 +29,8 @@ enum { flashsrv_devctl_info = 0,
 	flashsrv_devctl_markbad,
 	flashsrv_devctl_maxbitflips,
 	flashsrv_devctl_readptable,
-	flashsrv_devctl_writeptable };
+	flashsrv_devctl_writeptable,
+	flashsrv_devctl_cache };
 
 /* information about NAND flash configuration */
 typedef struct {
@@ -39,6 +40,13 @@ typedef struct {
 	uint32_t oobsz;   /* OOB size in bytes */
 	uint32_t erasesz; /* erase block size in bytes (multiply of writesize) */
 } flashsrv_info_t;
+
+/* page read cache statistics */
+typedef struct {
+	uint32_t npages; /* cache size */
+	uint32_t reads;  /* pages requested through the cache */
+	uint32_t misses; /* pages read from the flash to fill the cache */
+} flashsrv_cachestats_t;
 
 /* message to /dev/flashX   - chip operation - absolute address
  * message to /dev/flashXpY - partition operation - address relative to the beginning of the partition
@@ -80,7 +88,10 @@ typedef struct {
 
 
 typedef struct {
-	flashsrv_info_t info; /* valid only for flashsrv_devctl_info */
+	union {
+		flashsrv_info_t info;        /* valid only for flashsrv_devctl_info */
+		flashsrv_cachestats_t cache; /* valid only for flashsrv_devctl_cache */
+	};
 } __attribute__((packed)) flash_o_devctl_t;
 
 #endif

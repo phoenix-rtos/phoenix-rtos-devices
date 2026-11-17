@@ -354,6 +354,9 @@ static ssize_t flashsrv_devWriteRaw(id_t id, flash_i_devctl_t *idevctl, const ch
 	}
 	mutexUnlock(strg->dev->ctx->lock);
 
+	/* rawoffs points at the first page not written successfully, it may have been changed too */
+	flashdev_cacheInvalidate((off_t)(rawoffs - tempsz) / rawPagesz * strg->dev->mtd->writesz, (tempsz / rawPagesz + 1) * strg->dev->mtd->writesz);
+
 	return tempsz > 0 ? tempsz : res;
 }
 
@@ -557,6 +560,7 @@ static void flashsrv_devCtrl(msg_t *msg)
 {
 	flash_i_devctl_t *idevctl = (flash_i_devctl_t *)msg->i.raw;
 	flash_o_devctl_t *odevctl = (flash_o_devctl_t *)msg->o.raw;
+	flashdev_cachestats_t cstats;
 
 	switch (idevctl->type) {
 		case flashsrv_devctl_info:
@@ -601,6 +605,14 @@ static void flashsrv_devCtrl(msg_t *msg)
 
 		case flashsrv_devctl_writeptable:
 			msg->o.err = flashsrv_devPtableWrite(msg->oid.id, idevctl, msg->i.data);
+			break;
+
+		case flashsrv_devctl_cache:
+			flashdev_cacheStats(&cstats);
+			odevctl->cache.npages = cstats.npages;
+			odevctl->cache.reads = cstats.reads;
+			odevctl->cache.misses = cstats.misses;
+			msg->o.err = EOK;
 			break;
 
 		default:
@@ -839,14 +851,22 @@ static int flashsrv_partAdd(blkcnt_t start, blkcnt_t size, const char *name)
 }
 
 
+/* Page read cache size (pages), -c option */
+static unsigned int flashsrv_cachePages = 64;
+
+
 static int flashsrv_parseOpts(int argc, char **argv, const char **fs, int *rootfs1, int *rootfs2)
 {
 	blkcnt_t partStart, partSize; /* start and size of the partition in erase blocks */
 	char *p, *partName;
 	int err, c;
 
-	while ((c = getopt(argc, argv, "r:p:")) != -1) {
+	while ((c = getopt(argc, argv, "r:p:c:")) != -1) {
 		switch (c) {
+			case 'c': /* page read cache size in pages, 0 disables it */
+				flashsrv_cachePages = strtoul(optarg, NULL, 10);
+				break;
+
 			case 'r': /* fs_name:rootfs_part_id[:secondary_rootfs_part_id] */
 
 				*fs = optarg;
@@ -1021,6 +1041,10 @@ int main(int argc, char **argv)
 	/* Based on args, create new partitions and get rootfs index */
 	if (flashsrv_parseOpts(argc, argv, &fs, &rootfs1, &rootfs2) < 0) {
 		return EXIT_FAILURE;
+	}
+
+	if (flashdev_cacheInit(strg, flashsrv_cachePages) < 0) {
+		LOG_ERROR("failed to create the page read cache (%u pages)", flashsrv_cachePages);
 	}
 
 	/* No partitions defined in args, check for partition table */
