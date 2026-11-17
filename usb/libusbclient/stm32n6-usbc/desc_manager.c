@@ -129,6 +129,20 @@ static void desc_acmAdjust(usb_desc_cdc_acm_t *desc)
 }
 
 
+static void desc_cfgAdjust(usb_configuration_desc_t *desc)
+{
+	/*
+	 * bmAttributes:
+	 *   bit 7 - reserved, must be 1 (usb 1.0 bus powered)
+	 *   bit 6 - self powered
+	 *   bit 5 - remote wakeup
+	 *   bits 0 to 4 - reserved, must be 0
+	 * advertise as bus powered without remote wakeup
+	 */
+	desc->bmAttributes = (1U << 7U);
+}
+
+
 int desc_init(usb_desc_list_t *desList, usb_common_data_t *usbDataIn, usb_dc_t *dcIn)
 {
 	size_t localOffset = 0;
@@ -161,6 +175,7 @@ int desc_init(usb_desc_list_t *desList, usb_common_data_t *usbDataIn, usb_dc_t *
 			case USB_DESC_CONFIG:
 				desc_common.cfg = (uint8_t *)vrtAddr;
 				memcpy(vrtAddr, desList->descriptor, sizeof(usb_configuration_desc_t));
+				desc_cfgAdjust((usb_configuration_desc_t *)(desList->descriptor));
 				localOffset += len;
 				break;
 
