@@ -358,8 +358,18 @@ int desc_setup(const usb_setup_packet_t *setup)
 				clbc_epTransmit(0, getIfaceResp, sizeof(getIfaceResp));
 				break;
 
-			case REQ_CLEAR_FEATURE:
 			case REQ_SET_INTERFACE:
+				if (setup->wValue == 0U) {
+					/* send ZLP to ack */
+					clbc_epTransmit(0U, NULL, 0U);
+				}
+				else {
+					/* stall unknown interfaces */
+					clbc_epStall(&desc_common.data->endpts[0]);
+				}
+				break;
+
+			case REQ_CLEAR_FEATURE:
 			case REQ_SET_FEATURE:
 			case REQ_SET_DESCRIPTOR:
 			case REQ_SYNCH_FRAME:
