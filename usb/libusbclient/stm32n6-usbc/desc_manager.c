@@ -463,7 +463,7 @@ void desc_epActivation(stm32n6_endpt_data_t *ep)
 		mask |= (0x7FFUL & ep->maxpacket);
 		mask |= (1UL << DOEPCTL_SD0PID);
 		mask |= ((0x3U & ep->type) << DOEPCTL_EPTYP);
-		mask |= (1UL << DIEPCTL_USBAEP);
+		mask |= (1UL << DOEPCTL_USBAEP);
 
 		USB_REG(otg_doepctl0 + ep->epNum * EP_STRIDE) = mask;
 
