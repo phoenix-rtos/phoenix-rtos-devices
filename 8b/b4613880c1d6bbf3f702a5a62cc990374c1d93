@@ -1,0 +1,29 @@
+storage/imx6ull-flash/flashdrv.c
+  s_aefb43ae6c4ab5::t_6c9bc11e2516ff 221-233,247-310,314-317,346,356,363,415,432,467-468,491,514-515,563,853-854,926-927,944-945,1004-1005,1044-1045,1058-1059,1247-1249
+  s_aefb43ae6c4ab5::t_7b712ef3595838 311-313
+  s_aefb43ae6c4ab5::t_a7cdbb9a6ad3ea 234-246,573
+storage/imx6ull-flash/imx6ull-flashdrv.h
+  s_aefb43ae6c4ab5::t_6c9bc11e2516ff 67-70
+  s_aefb43ae6c4ab5::t_a7cdbb9a6ad3ea 71-74
+storage/imx6ull-flash/flashdev.c
+  s_aefb43ae6c4ab5::t_6c9bc11e2516ff 703-704
+  s_aefb43ae6c4ab5::t_a7cdbb9a6ad3ea 654-655
+  s_aefb43ae6c4ab5::t_bb912b69105155 755-757
+  s_aefb43ae6c4ab5::t_caad849c576635 758
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8bb4613880c1d6bbf3f702a5a62cc990374c1d93",
+  "prompts": {},
+  "sessions": {
+    "s_aefb43ae6c4ab5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "47024dd1-9607-45d7-a8d8-bac9bdaa5945",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Marek Białowąs <marek.bialowas@phoenix-rtos.com>"
+    }
+  }
+}
