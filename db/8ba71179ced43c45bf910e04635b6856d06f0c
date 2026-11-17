@@ -1,0 +1,19 @@
+storage/imx6ull-flash/flashdev.c
+  s_aefb43ae6c4ab5::t_d05ae6389d8da6 310,313,317,364,368,376-388,413-419
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "db8ba71179ced43c45bf910e04635b6856d06f0c",
+  "prompts": {},
+  "sessions": {
+    "s_aefb43ae6c4ab5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "47024dd1-9607-45d7-a8d8-bac9bdaa5945",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Marek Białowąs <marek.bialowas@phoenix-rtos.com>"
+    }
+  }
+}
