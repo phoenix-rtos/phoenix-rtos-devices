@@ -307,7 +307,7 @@ static int lsm9dsxx_alloc(sensor_info_t *info, const char *args)
 		*(ss++) = '\0';
 	}
 
-	err = sensor_bus_genericSpiSetup(&info->bus, args, ss, (int)10e7, SPI_MODE3);
+	err = sensor_bus_genericSpiSetup(&info->bus, args, ss, (int)1e7, SPI_MODE3);
 	if (err < 0) {
 		printf("lsm9dsxx: failed spi setup: %d\n", err);
 	}
