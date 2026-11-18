@@ -1,7 +1,8 @@
 /*
  * Phoenix-RTOS
  *
- * GRLIB SPIMCTRL Flash driver
+ * Flash driver for flash devices utilizing CFI (Common Flash Interface)
+ * according to JEDEC Standards JESD68 and JESD21
  *
  * Copyright 2025 Phoenix Systems
  * Author: Lukasz Leczkowski
@@ -19,7 +20,7 @@
 
 #include <flashdrv/cfi.h>
 
-#include "spimctrl.h"
+#include "../grlib-spimctrl/spimctrl.h"
 
 #define NOR_ERASED_STATE 0xffu
 #define NOR_SECTORSZ_MAX 0x10000u

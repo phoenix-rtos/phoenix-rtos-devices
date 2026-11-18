@@ -5,10 +5,10 @@
 #
 
 NAME := flashdrv
-LOCAL_SRCS := common.c flashsrv.c
+LOCAL_SRCS := common.c flashsrv.c cacheManage.c
 LIBS := libstorage libmtd libptable libcache
-ifneq ($(filter $(TARGET_SUBFAMILY), grfpga gr712rc gr740),)
-	DEP_LIBS := libftmctrl libspimctrl
+ifneq ($(filter $(TARGET_SUBFAMILY), grfpga gr712rc gr740 gr765),)
+	DEP_LIBS := libftmctrl libspimctrl libcfiflash libsfdpflash
 	LOCAL_CFLAGS += -DFLASHSRV_ENABLE_JFFS2=1
 	LIBS += libjffs2
 else ifneq ($(filter $(TARGET_SUBFAMILY), stm32n6),)
@@ -23,3 +23,6 @@ else ifneq ($(filter $(TARGET_SUBFAMILY), stm32n6),)
 endif
 
 include $(binary.mk)
+
+
+
