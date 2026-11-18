@@ -1632,12 +1632,12 @@ static void ubx_threadPublish(void *data)
 		}
 		(void)sensors_publish(info->id, &ctx->ev);
 
-		if (!ctx->operationalModeEn && (ctx->ev.gps.fix >= ubx_fix_2d)) {
+		if (!ctx->operationalModeEn && (ctx->ev.gps.fix != gga_fix_invalid)) {
 			/* switch from acquisition mode to operational after first fix */
 			ctx->operationalModeEn = true;
 			ubx_operationalModeSwitch(ctx, true);
 		}
-		else if (ctx->operationalModeEn && (ctx->ev.gps.fix < ubx_fix_2d)) {
+		else if (ctx->operationalModeEn && (ctx->ev.gps.fix == gga_fix_invalid)) {
 			ctx->operationalModeEn = false;
 			ubx_operationalModeSwitch(ctx, false);
 		}
