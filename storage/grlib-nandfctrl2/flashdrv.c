@@ -16,8 +16,8 @@
 #include <errno.h>
 #include <inttypes.h>
 #include <limits.h>
-#include <stdbool.h>
 #include <stdatomic.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -121,6 +121,7 @@ typedef struct {
 #define CTRL0_EE        (1U << 13) /* EDAC enable */
 #define CTRL0_LLM       (1U << 10) /* Linked list mode */
 #define CTRL0_BBM       (1U << 9)  /* Preserve bad block marking */
+#define CTRL0_EDO       (1U << 7)  /* Extended data output */
 #define CTRL0_MSEL_SHFT 3          /* Memory select shift */
 #define CTRL0_MSEL_MSK  (3U << 3)  /* Memory select mask */
 
@@ -156,12 +157,14 @@ typedef struct {
 /* Core status 1 register */
 #define STS1_UCERRDL (1U << 11) /* Uncorrectable error, downlink syncrams */
 #define STS1_UCERRUL (1U << 10) /* Uncorrectable error, uplink syncrams */
+#define STS1_STOPLL  (1U << 9)  /* Stop linked list complete */
 #define STS1_ABORT   (1U << 8)  /* Abort complete */
 #define STS1_TMOUT   (1U << 6)  /* Timeout */
+#define STS1_CMD     (1U << 5)  /* Invalid command */
 #define STS1_DL      (1U << 4)  /* DMA read (uplink write) error */
 #define STS1_UL      (1U << 3)  /* DMA write (downlink read) error */
 
-#define STS1_FATAL_MSK (STS1_UCERRDL | STS1_UCERRUL | STS1_TMOUT | STS1_DL | STS1_UL)
+#define STS1_FATAL_MSK (STS1_UCERRDL | STS1_UCERRUL | STS1_ABORT | STS1_TMOUT | STS1_CMD | STS1_DL | STS1_UL)
 
 /* Descriptor command register */
 #define DCMD_CMD2_SHFT   24
@@ -255,9 +258,8 @@ typedef struct {
 /* ============================== DMA chain management ============================== */
 
 
-#define DMA_SCRATCH_SIZE _PAGE_SIZE
-#define DMA_DESC_SIZE    _PAGE_SIZE
-#define DMA_MAX_DESCS    (DMA_DESC_SIZE / sizeof(nandfctrl2_desc_t))
+#define DMA_DESC_SIZE _PAGE_SIZE
+#define DMA_MAX_DESCS (DMA_DESC_SIZE / sizeof(nandfctrl2_desc_t))
 
 #define DMA_NO_ECC            0U
 #define DMA_PROGRAM_NO_COMMIT 0U
@@ -269,10 +271,20 @@ typedef struct {
 } flashdrv_dma_hdr_t;
 
 
+typedef struct {
+	void *buf;   /* Data buffer of a descriptor (NULL if none) */
+	size_t size; /* Data buffer size */
+} dma_buf_t;
+
+
 struct _flashdrv_dma_t {
 	flashdrv_dma_hdr_t hdr;
 	nandfctrl2_desc_t *descs;
+	addr_t descsPa; /* Physical address of descs */
 	void *scratchBuf;
+	addr_t scratchPa; /* Physical address of scratchBuf */
+	size_t scratchSz;
+	dma_buf_t bufs[DMA_MAX_DESCS]; /* Data buffers for cache maintenance */
 };
 
 
@@ -280,7 +292,8 @@ typedef struct {
 	uint32_t rowAddr;    /* 24-bit Page/Block address */
 	uint16_t colAddr;    /* 16-bit Byte offset within the page */
 	size_t transferSize; /* Number of bytes to read/write */
-	addr_t data;         /* DMA physical address (0 if no data phase) */
+	void *buf;           /* DMA buffer, physically contiguous (NULL if no data phase) */
+	addr_t pa;           /* Physical address of buf */
 } dma_xfer_t;
 
 
@@ -312,14 +325,17 @@ static struct {
 	handle_t irqCond;
 	handle_t irqHandle;
 
-	_Atomic(uint32_t) sts1; /* Last STS1 value set by ISR */
+	_Atomic(uint32_t) sts1; /* STS1 bits accumulated by ISR */
 	_Atomic(int) irqDone;   /* Set to 1 by ISR to mark a real interrupt */
 
 	flashdrv_info_t info; /* Probed from die 0; shared by all dies */
+
+	onfi_paramPage_t paramPage; /* ONFI parameter page of die 0 */
 } common;
 
 
 static void abortOp(void);
+static void waitIdle(void);
 
 
 /* ============================== Interrupt handler ============================== */
@@ -334,36 +350,66 @@ static int __attribute__((section(".interrupt"))) irqHandler(unsigned int n, voi
 	uint32_t sts = common.regs->sts1;
 	common.regs->sts1 = sts;
 
-	/* Store for main thread inspection */
-	common.sts1 = sts;
+	/* Accumulate for main thread inspection */
+	atomic_fetch_or(&common.sts1, sts);
 	common.irqDone = 1;
 
 	return 1;
 }
 
 
+/* ============================== Memory maintenance ============================== */
+
+
+static void cacheInval(const void *va, size_t size)
+{
+	uintptr_t addr = (uintptr_t)va & ~((uintptr_t)DCACHE_BLOCK_SIZE - 1U);
+	uintptr_t end = (uintptr_t)va + size;
+
+	for (; addr < end; addr += DCACHE_BLOCK_SIZE) {
+		__asm__ volatile("cbo.inval (%0)" : : "r"(addr) : "memory");
+	}
+}
+
+
+static void memoryBarrier(void)
+{
+#ifdef __TARGET_RISCV64
+	__asm__ volatile("fence");
+#elif defined(__TARGET_SPARCV8LEON)
+	__asm__ volatile("stbar");
+#endif
+}
+
+
 /* ============================== DMA chain helpers ============================== */
 
 
-static flashdrv_dma_t *dmaAlloc(void)
+/* scratchSz must be large enough for a raw page (data + spare) read */
+static flashdrv_dma_t *dmaAlloc(size_t scratchSz)
 {
 	flashdrv_dma_t *dma = malloc(sizeof(*dma));
 	if (dma == NULL) {
 		return NULL;
 	}
 
-	dma->descs = mmap(NULL, DMA_DESC_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_CONTIGUOUS | MAP_ANONYMOUS, -1, 0);
+	dma->descs = mmap(NULL, DMA_DESC_SIZE, PROT_READ | PROT_WRITE, MAP_CONTIGUOUS | MAP_ANONYMOUS, -1, 0);
 	if (dma->descs == MAP_FAILED) {
 		free(dma);
 		return NULL;
 	}
 
-	dma->scratchBuf = mmap(NULL, DMA_SCRATCH_SIZE, PROT_READ | PROT_WRITE, MAP_UNCACHED | MAP_CONTIGUOUS | MAP_ANONYMOUS, -1, 0);
+	dma->scratchSz = (scratchSz + _PAGE_SIZE - 1U) & ~((size_t)_PAGE_SIZE - 1U);
+	dma->scratchBuf = mmap(NULL, dma->scratchSz, PROT_READ | PROT_WRITE, MAP_CONTIGUOUS | MAP_ANONYMOUS, -1, 0);
 	if (dma->scratchBuf == MAP_FAILED) {
-		munmap(dma->descs, _PAGE_SIZE);
+		munmap(dma->descs, DMA_DESC_SIZE);
 		free(dma);
 		return NULL;
 	}
+
+	/* Both mappings are physically contiguous - translate once */
+	dma->descsPa = va2pa(dma->descs);
+	dma->scratchPa = va2pa(dma->scratchBuf);
 
 	dma->hdr.ndesc = 0U;
 
@@ -374,7 +420,7 @@ static flashdrv_dma_t *dmaAlloc(void)
 static void dmaFree(flashdrv_dma_t *dma)
 {
 	(void)munmap(dma->descs, DMA_DESC_SIZE);
-	(void)munmap(dma->scratchBuf, DMA_SCRATCH_SIZE);
+	(void)munmap(dma->scratchBuf, dma->scratchSz);
 	free(dma);
 }
 
@@ -385,9 +431,21 @@ static nandfctrl2_desc_t *dmaDescAt(const flashdrv_dma_t *dma, size_t i)
 }
 
 
+static addr_t dmaDescPa(const flashdrv_dma_t *dma, size_t i)
+{
+	return dma->descsPa + (i * sizeof(nandfctrl2_desc_t));
+}
+
+
 static void *dmaScratch(const flashdrv_dma_t *dma)
 {
 	return dma->scratchBuf;
+}
+
+
+static addr_t dmaScratchPa(const flashdrv_dma_t *dma)
+{
+	return dma->scratchPa;
 }
 
 
@@ -421,18 +479,23 @@ static void dma_appendDesc(flashdrv_dma_t *dma, unsigned int target, uint32_t dc
 	desc->dchsel = fctrl2_flashMap[target].channelMask;
 	desc->drbsel = fctrl2_flashMap[target].rbMask;
 
+	dma->bufs[idx].buf = NULL;
+	dma->bufs[idx].size = 0U;
+
 	if (xfer != NULL) {
 		desc->drow = xfer->rowAddr;
 		desc->dcolsize = (xfer->transferSize << DCOLSIZE_SIZE_SHFT) | xfer->colAddr;
-		if (xfer->data != 0U) {
-			desc->ddpl = xfer->data;
+		if (xfer->buf != NULL) {
+			desc->ddpl = (uint32_t)xfer->pa;
+			dma->bufs[idx].buf = xfer->buf;
+			dma->bufs[idx].size = xfer->transferSize;
 		}
 	}
 
 	/* Link previous descriptor to this one */
 	if (idx > 0U) {
 		nandfctrl2_desc_t *prev = dmaDescAt(dma, idx - 1U);
-		prev->dllpl = (uint32_t)va2pa(desc);
+		prev->dllpl = (uint32_t)dmaDescPa(dma, idx);
 	}
 
 	++dma->hdr.ndesc;
@@ -532,7 +595,7 @@ static void dmaAddStatusRead(flashdrv_dma_t *dma, unsigned int target)
 {
 	/* READ STATUS (0x70), no CMD2, skip address, no EDAC */
 	uint32_t dcmd = (0x70U << DCMD_CMD1_SHFT) | DCMD_SC2 | DCMD_SA | DCMD_ED | DCMD_EN;
-	dma_xfer_t xfer = { .transferSize = 1U, .data = (uint32_t)va2pa(dmaScratch(dma)) };
+	dma_xfer_t xfer = { .transferSize = 1U, .buf = dmaScratch(dma), .pa = dmaScratchPa(dma) };
 	dma_appendDesc(dma, target, dcmd, &xfer);
 }
 
@@ -554,14 +617,18 @@ static int dmaRun(flashdrv_dma_t *dma)
 	/* Append a terminating descriptor (EN bit = 0) after the last active one */
 	nandfctrl2_desc_t *term = dmaDescAt(dma, lastIdx + 1U);
 	memset(term, 0, sizeof(*term));
-	dmaDescAt(dma, lastIdx)->dllpl = (uint32_t)va2pa(term);
+	dmaDescAt(dma, lastIdx)->dllpl = (uint32_t)dmaDescPa(dma, lastIdx + 1U);
+
+	/* Control registers must not be updated while a descriptor chain is active */
+	waitIdle();
 
 	/* Prepare for interrupt */
 	common.irqDone = 0;
 	common.sts1 = 0U;
 
 	/* Load first descriptor address and trigger */
-	common.regs->llpl = (uint32_t)va2pa(dmaDescAt(dma, 0U));
+	common.regs->llpl = (uint32_t)dmaDescPa(dma, 0U);
+	memoryBarrier();
 	common.regs->ctrl2 = CTRL2_DT;
 
 	/* Wait for interrupt - controller has HW timeout */
@@ -570,6 +637,15 @@ static int dmaRun(flashdrv_dma_t *dma)
 		condWait(common.irqCond, common.irqLock, 0);
 	}
 	mutexUnlock(common.irqLock);
+
+	/* Drop stale cache lines of descriptors (status) and data buffers written by the DMA */
+	memoryBarrier();
+	cacheInval(dma->descs, (dma->hdr.ndesc + 1U) * sizeof(nandfctrl2_desc_t));
+	for (unsigned int i = 0U; i < dma->hdr.ndesc; i++) {
+		if (dma->bufs[i].buf != NULL) {
+			cacheInval(dma->bufs[i].buf, dma->bufs[i].size);
+		}
+	}
 
 	uint32_t sts1 = common.sts1;
 
@@ -580,10 +656,13 @@ static int dmaRun(flashdrv_dma_t *dma)
 			return -ETIME;
 		}
 
-		if ((sts1 & (STS1_UCERRDL | STS1_UCERRUL | STS1_DL | STS1_UL)) != 0U) {
-			LOG_ERROR("sts1 error: 0x%x", sts1);
-			return -EIO;
+		LOG_ERROR("sts1 error: 0x%x", sts1);
+
+		if ((sts1 & STS1_CMD) != 0U) {
+			return -EINVAL;
 		}
+
+		return -EIO;
 	}
 
 	return 0;
@@ -621,12 +700,17 @@ static uint32_t ns2cycles(uint32_t ns, uint32_t coreClk)
 }
 
 
-static void setOnfiTimingMode(unsigned int mode, const onfi_paramPage_t *paramPage, uint32_t coreClk, bool edoEn)
+/* Configures controller SDR timing. EDO is used for timing modes 4 and 5 (tRC < 30 ns). */
+static void setOnfiTimingMode(unsigned int mode, const onfi_paramPage_t *paramPage, uint32_t coreClk)
 {
 	const onfi_timingMode_t *t = onfi_getTimingModeSDR(mode);
+	const bool edoEn = (mode >= 4U);
 	uint32_t tCS, tWW, tRR, tWB, tRHW, tWHR, tCCS, tADL, tREH, tRP, tRC, tWH, tWP, tWC, tVDLY;
 
 	assert(t != NULL);
+
+	/* Control registers must not be updated while a descriptor chain is active */
+	waitIdle();
 
 	tCS = (ns2cycles(t->tCS3, coreClk) - 1U) & 0xffffU;
 	tWW = (ns2cycles(t->tWW, coreClk) - 1U) & 0xffffU;
@@ -651,7 +735,12 @@ static void setOnfiTimingMode(unsigned int mode, const onfi_paramPage_t *paramPa
 	common.regs->tme3 = (tADL << 16) | tCCS;
 
 	tREH = ns2cycles(t->tREH, coreClk) & 0xffffU;
-	tRP = edoEn ? (ns2cycles(t->tRP, coreClk) & 0xffffU) : (ns2cycles(t->tREA, coreClk) & 0xffffU);
+	/* With EDO disabled tRP needs to be higher than tREA */
+	tRP = ns2cycles(t->tRP, coreClk);
+	if (!edoEn && (tRP <= ns2cycles(t->tREA, coreClk))) {
+		tRP = ns2cycles(t->tREA, coreClk) + 1U;
+	}
+	tRP &= 0xffffU;
 	tRC = ns2cycles(t->tRC, coreClk);
 	if ((tREH + tRP) < tRC) {
 		tREH += tRC - (tREH + tRP);
@@ -674,18 +763,33 @@ static void setOnfiTimingMode(unsigned int mode, const onfi_paramPage_t *paramPa
 
 	tVDLY = (ns2cycles(ONFI_TVDLY, coreClk) - 1U) & 0xffffU;
 	common.regs->tme11 = (tCS << 16) | tVDLY;
+
+	if (edoEn) {
+		common.regs->ctrl0 |= CTRL0_EDO;
+	}
+	else {
+		common.regs->ctrl0 &= ~CTRL0_EDO;
+	}
 }
 
 
 /* ============================== Controller initialisation ============================== */
 
 
+static void waitIdle(void)
+{
+	while ((common.regs->sts0 & (STS0_DA | STS0_RDY)) != STS0_RDY) { }
+}
+
+
 static void abortOp(void)
 {
+	(void)atomic_fetch_and(&common.sts1, ~STS1_ABORT);
+
 	common.regs->ctrl2 = CTRL2_ABORT;
 
-	/* Wait for abort + ready */
-	while (((common.regs->sts1 & STS1_ABORT) == 0U) || ((common.regs->sts0 & STS0_RDY) == 0U)) { }
+	/* Wait for abort + ready. STS1 may be cleared by the ISR if the abort interrupt is enabled. */
+	while ((((common.regs->sts1 | common.sts1) & STS1_ABORT) == 0U) || ((common.regs->sts0 & STS0_RDY) == 0U)) { }
 }
 
 
@@ -707,7 +811,7 @@ static void resetNandfctrl2(void)
 	common.regs->ctrl4 = 0U;
 
 	/* Timing mode 0 until ONFI page is read */
-	setOnfiTimingMode(0U, NULL, SYSCLK_FREQ, 0);
+	setOnfiTimingMode(0U, NULL, SYSCLK_FREQ);
 
 	common.regs->tout0 = 0xffffffffU; /* Max timeout */
 }
@@ -774,7 +878,7 @@ static int setMemorySelect(uint32_t pageSz, uint16_t spareSz)
 
 
 /* Probe die via ONFI, configure shared timing registers, fill the info struct. */
-static int setupFlash(flashdrv_info_t *info, flashdrv_dma_t *dma, unsigned int target)
+static int setupFlash(flashdrv_info_t *info, onfi_paramPage_t *page, flashdrv_dma_t *dma, unsigned int target)
 {
 	/* Reset die */
 	dmaChainReset(dma);
@@ -783,7 +887,8 @@ static int setupFlash(flashdrv_info_t *info, flashdrv_dma_t *dma, unsigned int t
 
 	dma_xfer_t xfer = {
 		.transferSize = sizeof(flash_id_t),
-		.data = va2pa(dmaScratch(dma)),
+		.buf = dmaScratch(dma),
+		.pa = dmaScratchPa(dma),
 	};
 	dmaAddReadId(dma, target, &xfer);
 
@@ -817,7 +922,8 @@ static int setupFlash(flashdrv_info_t *info, flashdrv_dma_t *dma, unsigned int t
 
 	xfer = (dma_xfer_t) {
 		.transferSize = sizeof(onfi_paramPage_t),
-		.data = va2pa(dmaScratch(dma)),
+		.buf = dmaScratch(dma),
+		.pa = dmaScratchPa(dma),
 	};
 	dmaAddReadParamPage(dma, target, &xfer);
 
@@ -826,28 +932,25 @@ static int setupFlash(flashdrv_info_t *info, flashdrv_dma_t *dma, unsigned int t
 		return err;
 	}
 
-	onfi_paramPage_t page;
-	onfi_deserializeParamPage(&page, dmaScratch(dma));
+	onfi_deserializeParamPage(page, dmaScratch(dma));
 
-	if ((page.signature[0] != 'O') || (page.signature[1] != 'N') || (page.signature[2] != 'F') || (page.signature[3] != 'I')) {
+	if ((page->signature[0] != 'O') || (page->signature[1] != 'N') || (page->signature[2] != 'F') || (page->signature[3] != 'I')) {
 		LOG_ERROR("no ONFI signature on die %u", target);
 		return -EIO;
 	}
 
-	unsigned int timingMode = onfi_calcTimingMode(&page);
-	bool edoEn = timingMode > 3;
+	/* Timing mode 0 with device tCCS/tADL - faster mode is set up once all dies are reset */
+	setOnfiTimingMode(0U, page, SYSCLK_FREQ);
 
-	setOnfiTimingMode(timingMode, &page, SYSCLK_FREQ, edoEn);
-
-	err = setMemorySelect(page.bytesPerPage, page.spareBytesPerPage);
+	err = setMemorySelect(page->bytesPerPage, page->spareBytesPerPage);
 	if (err < 0) {
 		return err;
 	}
 
-	info->writesz = page.bytesPerPage;
-	info->pagesPerBlock = page.pagesPerBlock;
-	info->erasesz = page.bytesPerPage * page.pagesPerBlock;
-	info->size = (uint64_t)info->erasesz * page.blocksPerLun * page.numLuns;
+	info->writesz = page->bytesPerPage;
+	info->pagesPerBlock = page->pagesPerBlock;
+	info->erasesz = page->bytesPerPage * page->pagesPerBlock;
+	info->size = (uint64_t)info->erasesz * page->blocksPerLun * page->numLuns;
 	fillSpareLayout(info);
 
 	TRACE("layout: page=%u spare=%u block=%u total=%" PRIu64, info->writesz, info->sparesz, info->erasesz, info->size);
@@ -856,7 +959,20 @@ static int setupFlash(flashdrv_info_t *info, flashdrv_dma_t *dma, unsigned int t
 }
 
 
-static int readRawPageUnlocked(const nand_die_t *die, uint32_t page, void *data)
+/* Switch the controller to the fastest timing mode supported by the flash */
+static void setupTimingMode(const onfi_paramPage_t *page)
+{
+	unsigned int mode = onfi_calcTimingMode(page);
+
+	if (mode != 0U) {
+		setOnfiTimingMode(mode, page, SYSCLK_FREQ);
+	}
+
+	LOG("using timing mode %u", mode);
+}
+
+
+static int readRawPageUnlocked(const nand_die_t *die, uint32_t page, void *data, addr_t dataPa)
 {
 	const uint32_t writesz = die->info.writesz;
 	const uint32_t sparesz = die->info.sparesz;
@@ -864,14 +980,14 @@ static int readRawPageUnlocked(const nand_die_t *die, uint32_t page, void *data)
 	flashdrv_dma_t *dma = die->dma;
 	unsigned int target = die->target;
 
-	addr_t dataPhy = va2pa(data);
 	dmaChainReset(dma);
 
 	/* Whole Page Access for the Data Area */
 	dma_xfer_t opData = {
 		.rowAddr = page,
 		.transferSize = writesz,
-		.data = dataPhy,
+		.buf = data,
+		.pa = dataPa,
 	};
 	dmaAddRead(dma, target, &opData, DMA_NO_ECC);
 
@@ -880,7 +996,8 @@ static int readRawPageUnlocked(const nand_die_t *die, uint32_t page, void *data)
 		.rowAddr = page,
 		.colAddr = (uint16_t)writesz,
 		.transferSize = sparesz,
-		.data = dataPhy + writesz,
+		.buf = (uint8_t *)data + writesz,
+		.pa = dataPa + writesz,
 	};
 	dmaAddChangeReadColumn(dma, target, &opSpare);
 
@@ -963,7 +1080,7 @@ static int verifyUncorrectableError(const nand_die_t *die, uint32_t page, void *
 
 	uint8_t *rawBuf = dmaScratch(die->dma);
 
-	int err = readRawPageUnlocked(die, page, rawBuf);
+	int err = readRawPageUnlocked(die, page, rawBuf, dmaScratchPa(die->dma));
 	if (err != 0) {
 		return err;
 	}
@@ -974,9 +1091,10 @@ static int verifyUncorrectableError(const nand_die_t *die, uint32_t page, void *
 		uint32_t dataOffs = i * chunksz;
 		uint32_t eccOffs = die->info.writesz + NAND_BBM_SIZE + (i * chunkEccsz);
 
-		uint32_t flips = checkErased(rawBuf + dataOffs, 0, chunksz);
+		/* checkErased() takes the length in bits */
+		uint32_t flips = checkErased(rawBuf + dataOffs, 0, chunksz * CHAR_BIT);
 
-		flips += checkErased(rawBuf + eccOffs, 0, chunkEccsz);
+		flips += checkErased(rawBuf + eccOffs, 0, chunkEccsz * CHAR_BIT);
 
 		if (flips > eccCap) {
 			/* A single chunk exceeded the capability. Truly uncorrectable. */
@@ -1016,7 +1134,7 @@ nand_die_t *flashdrv_dieAlloc(unsigned int target)
 	die->target = target;
 	die->info = common.info;
 
-	die->dma = dmaAlloc();
+	die->dma = dmaAlloc((size_t)die->info.writesz + die->info.sparesz);
 	if (die->dma == NULL) {
 		free(die);
 		return NULL;
@@ -1068,6 +1186,7 @@ int flashdrv_writePage(const nand_die_t *die, uint32_t page, const void *data)
 	dmaChainReset(dma);
 
 	const uint8_t *data_ptr = (const uint8_t *)data;
+	const addr_t dataPa = va2pa((void *)data);
 
 	/* Write data area chunk by chunk */
 	for (uint32_t i = 0; i < nChunks; i++) {
@@ -1075,7 +1194,8 @@ int flashdrv_writePage(const nand_die_t *die, uint32_t page, const void *data)
 			.rowAddr = page,
 			.colAddr = (uint16_t)(i * chunksz),
 			.transferSize = chunksz,
-			.data = va2pa((void *)(data_ptr + (i * chunksz))),
+			.buf = (void *)(data_ptr + (i * chunksz)),
+			.pa = dataPa + (i * chunksz),
 		};
 
 		if (i == 0) {
@@ -1096,7 +1216,8 @@ int flashdrv_writePage(const nand_die_t *die, uint32_t page, const void *data)
 		.rowAddr = page,
 		.colAddr = (uint16_t)tagOfs,
 		.transferSize = die->info.spareavail,
-		.data = va2pa(scratch),
+		.buf = scratch,
+		.pa = dmaScratchPa(dma),
 	};
 	dmaAddChangeWriteColumn(dma, target, &xferSpare, DMA_NO_ECC | DMA_PROGRAM_COMMIT);
 	dmaAddStatusRead(dma, target);
@@ -1120,7 +1241,8 @@ int flashdrv_readPage(const nand_die_t *die, uint32_t page, void *data, flashdrv
 		.rowAddr = page,
 		.colAddr = 0U,
 		.transferSize = die->info.writesz,
-		.data = va2pa(data),
+		.buf = data,
+		.pa = va2pa(data),
 	};
 
 	mutexLock(common.hwLock);
@@ -1195,7 +1317,8 @@ int flashdrv_metaWrite(const nand_die_t *die, uint32_t page, const void *data, s
 		.rowAddr = page,
 		.colAddr = (uint16_t)tagOfs,
 		.transferSize = size,
-		.data = va2pa((void *)data),
+		.buf = (void *)data,
+		.pa = va2pa((void *)data),
 	};
 
 	mutexLock(common.hwLock);
@@ -1225,7 +1348,8 @@ int flashdrv_metaRead(const nand_die_t *die, uint32_t page, void *data, size_t s
 		.rowAddr = page,
 		.colAddr = (uint16_t)tagOfs,
 		.transferSize = size,
-		.data = va2pa(data),
+		.buf = data,
+		.pa = va2pa(data),
 	};
 
 	mutexLock(common.hwLock);
@@ -1246,13 +1370,15 @@ int flashdrv_writeRaw(const nand_die_t *die, uint32_t page, const void *data)
 
 	flashdrv_dma_t *dma = die->dma;
 	unsigned int target = die->target;
+	const addr_t dataPa = va2pa((void *)data);
 
 	/* PAGE_PROGRAM for data area, no commit, no ECC */
 	dma_xfer_t opData = {
 		.rowAddr = page,
 		.colAddr = 0U,
 		.transferSize = die->info.writesz,
-		.data = va2pa((void *)data),
+		.buf = (void *)data,
+		.pa = dataPa,
 	};
 
 	/* CHANGE_WRITE_COLUMN for spare area with commit */
@@ -1260,7 +1386,8 @@ int flashdrv_writeRaw(const nand_die_t *die, uint32_t page, const void *data)
 		.rowAddr = 0U,
 		.colAddr = (uint16_t)die->info.writesz,
 		.transferSize = die->info.sparesz,
-		.data = va2pa((void *)((const uint8_t *)data + die->info.writesz)),
+		.buf = (void *)((const uint8_t *)data + die->info.writesz),
+		.pa = dataPa + die->info.writesz,
 	};
 
 	mutexLock(common.hwLock);
@@ -1283,7 +1410,7 @@ int flashdrv_readRaw(const nand_die_t *die, uint32_t page, void *data)
 	TRACE("%s(target=%u, page=%u, data=%p)", __func__, die->target, page, data);
 
 	mutexLock(common.hwLock);
-	int err = readRawPageUnlocked(die, page, data);
+	int err = readRawPageUnlocked(die, page, data, va2pa(data));
 	mutexUnlock(common.hwLock);
 
 	return err;
@@ -1325,7 +1452,8 @@ int flashdrv_isbad(const nand_die_t *die, uint32_t block)
 		.rowAddr = block * die->info.pagesPerBlock,
 		.colAddr = (uint16_t)die->info.writesz,
 		.transferSize = 1U,
-		.data = va2pa(scratch),
+		.buf = scratch,
+		.pa = dmaScratchPa(dma),
 	};
 
 	dmaChainReset(dma);
@@ -1362,7 +1490,8 @@ int flashdrv_markbad(const nand_die_t *die, uint32_t block)
 		.rowAddr = block * die->info.pagesPerBlock,
 		.colAddr = (uint16_t)die->info.writesz,
 		.transferSize = 1U,
-		.data = va2pa(scratch),
+		.buf = scratch,
+		.pa = dmaScratchPa(dma),
 	};
 
 	dmaChainReset(dma);
@@ -1450,14 +1579,14 @@ int flashdrv_init(void)
 	common.regs->ctrl1 = CTRL1_OPS_IRQ_MASK;
 
 	/* Allocate a temporary DMA buffer for die probing */
-	flashdrv_dma_t *dma = dmaAlloc();
+	flashdrv_dma_t *dma = dmaAlloc(_PAGE_SIZE);
 	if (dma == NULL) {
 		LOG_ERROR("failed to allocate init DMA buffer");
 		return -ENOMEM;
 	}
 
 	/* Probe die 0 for ONFI geometry and configure timing registers */
-	err = setupFlash(&common.info, dma, 0U);
+	err = setupFlash(&common.info, &common.paramPage, dma, 0U);
 	if (err < 0) {
 		dmaFree(dma);
 		resourceDestroy(common.irqCond);
@@ -1474,6 +1603,9 @@ int flashdrv_init(void)
 		dmaAddReset(dma, target);
 		(void)dmaRun(dma);
 	}
+
+	/* All dies are in a known state - switch to the fastest supported timing mode */
+	setupTimingMode(&common.paramPage);
 
 	dmaFree(dma);
 
