@@ -410,17 +410,17 @@ int desc_setup(const usb_setup_packet_t *setup)
 				}
 				break;
 
-			case REQ_CLEAR_FEATURE:
-			case REQ_SET_FEATURE:
-			case REQ_SET_DESCRIPTOR:
-			case REQ_SYNCH_FRAME:
-				break;
-
 			case REQ_GET_CONFIGURATION:
 				desc_common.dc->ep0State = USBD_EP0_DATA_IN;
 				desc_ReqGetConfig(setup);
 				break;
+
+			case REQ_CLEAR_FEATURE:
+			case REQ_SET_FEATURE:
+			case REQ_SET_DESCRIPTOR:
+			case REQ_SYNCH_FRAME:
 			default:
+				res = -1;
 				break;
 		}
 	}
@@ -431,12 +431,20 @@ int desc_setup(const usb_setup_packet_t *setup)
 			case CLASS_REQ_SET_CONTROL_LINE_STATE:
 				(void)desc_classSetup(setup);
 				break;
+
 			default:
+				res = -1;
 				break;
 		}
 	}
 	else {
 		res = -1;
+	}
+
+	/* stall on failures */
+	if (res < 0) {
+		desc_common.dc->ep0State = USBD_EP0_STALL;
+		clbc_epStall(&desc_common.data->endpts[0]);
 	}
 
 	return res;
