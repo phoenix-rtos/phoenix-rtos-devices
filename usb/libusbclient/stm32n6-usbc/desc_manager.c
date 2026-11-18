@@ -365,6 +365,10 @@ static void desc_ReqGetDescriptor(const usb_setup_packet_t *setup)
 	else if ((setup->wValue >> 8) == USB_DESC_TYPE_HID_REPORT) {
 		clbc_epTransmit(0, (uint8_t *)desc_common.hidReports, 76);
 	}
+	else {
+		clbc_epStall(&desc_common.data->endpts[0U]);
+		desc_common.dc->ep0State = USBD_EP0_STALL;
+	}
 }
 
 
