@@ -21,11 +21,17 @@
 #include <sys/types.h>
 #include <phoenix/arch/armv8m/stm32/n6/stm32n6.h>
 #include <cdc.h>
+#include <sys/platform.h>
 
 #include "client.h"
 
 #define USB_REG(x)             *(desc_common.dc->base + x)
 #define CONF_DESC_LENGTH(addr) (((usb_configuration_desc_t *)(addr))->wTotalLength)
+
+#define SN_OTP_BASE   (0x5U)
+#define SN_WORD_COUNT (3U)
+#define SN_SIZE       (SN_WORD_COUNT * sizeof(uint32_t))
+#define SN_STR_ID     (0x03U)
 
 
 typedef struct {
@@ -40,10 +46,53 @@ static struct {
 	addr_string_desc_t str0;
 	addr_string_desc_t strMan;
 	addr_string_desc_t strProd;
+	usb_string_desc_t strSn; /* serial number */
 	addr_t hidReports;
 	usb_dc_t *dc;
 	usb_common_data_t *data;
 } __attribute__((aligned(4))) desc_common;
+
+
+static void desc_snInit(void)
+{
+	memset(&desc_common.strSn, 0, sizeof(desc_common.strSn));
+	desc_common.strSn.bDescriptorType = USB_DESC_STRING;
+	uint8_t pos = 0U;
+	for (uint8_t i = 0U; i < SN_WORD_COUNT; i++) {
+		/* get the otp word from platformctl */
+		platformctl_t pctl;
+		pctl.action = pctl_get;
+		pctl.type = pctl_otp;
+		pctl.otp.addr = (SN_OTP_BASE) + i;
+		int ret = platformctl(&pctl);
+		if (ret != 0) {
+			return;
+		}
+		uint32_t w = pctl.otp.val;
+
+		/* iterate over bytes in LE order */
+		for (int8_t bytePos = 24; bytePos >= 0; bytePos -= 8) {
+			uint8_t b = (w >> bytePos) & 0xffU;
+
+			/* get low and high nibble */
+			uint8_t lo = b & 0xfU;
+			uint8_t hi = (b >> 4U) & 0xfU;
+
+			/* convert to hex digits */
+			lo = (lo < 10) ? (lo + (uint8_t)'0') : (lo - 10U + (uint8_t)'a');
+			hi = (hi < 10) ? (hi + (uint8_t)'0') : (hi - 10U + (uint8_t)'a');
+
+			/* emit the digits in UTF-16LE format */
+			desc_common.strSn.wData[pos++] = hi;
+			desc_common.strSn.wData[pos++] = 0x00U;
+			desc_common.strSn.wData[pos++] = lo;
+			desc_common.strSn.wData[pos++] = 0x00U;
+		}
+	}
+
+	static const uint8_t hdrsz = sizeof(desc_common.strSn.bDescriptorType) + sizeof(desc_common.strSn.bLength);
+	desc_common.strSn.bLength = pos + hdrsz;
+}
 
 
 static void desc_endptInit(usb_endpoint_desc_t *endpt)
@@ -112,6 +161,11 @@ static void desc_devAdjust(usb_device_desc_t *desc)
 	 * virtual COM port */
 	desc->bDeviceClass = USB_CLASS_CDC;
 	desc->bDeviceSubClass = USB_SUBCLASS_ACM;
+
+	/* report serial number if it's available */
+	if (desc_common.strSn.bLength != 0U) {
+		desc->iSerialNumber = SN_STR_ID;
+	}
 }
 
 
@@ -166,6 +220,9 @@ int desc_init(usb_desc_list_t *desList, usb_common_data_t *usbDataIn, usb_dc_t *
 	desc_common.data = usbDataIn;
 
 	memset(desc_common.data->setupMem, 0, USB_BUFFER_SIZE);
+
+	/* initialize the serial number string descriptor */
+	desc_snInit();
 
 	/* Extract mandatory descriptors to mapped memory */
 	for (; desList != NULL; desList = desList->next) {
@@ -356,6 +413,9 @@ static void desc_ReqGetDescriptor(const usb_setup_packet_t *setup)
 		}
 		else if (((setup->wValue & 0xff) == 2U) || ((setup->wValue & 0xffU) == 4U)) {
 			clbc_epTransmit(0, (uint8_t *)desc_common.strProd.vmStruct, MIN(desc_common.strProd.vmStruct->bLength, setup->wLength));
+		}
+		else if ((setup->wValue & 0xffU) == SN_STR_ID) {
+			clbc_epTransmit(0, (uint8_t *)&desc_common.strSn, MIN(desc_common.strSn.bLength, setup->wLength));
 		}
 		else {
 			clbc_epStall(&desc_common.data->endpts[0]);
