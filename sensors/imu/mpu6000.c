@@ -338,7 +338,7 @@ int mpu6000_alloc(sensor_info_t *info, const char *args)
 	 * TODO: SPI speed bottleneck: MPU6000 SPI accepts <1MHz CLK writes, but <20MHz CLK reads;
 	 * If this fails, only print warning as sensor will work ok
 	 */
-	if (info->bus.ops.bus_cfg(&info->bus, (int)10e7, SPI_MODE3) < 0) {
+	if (info->bus.ops.bus_cfg(&info->bus, (int)1e7, SPI_MODE3) < 0) {
 		printf("mpu6000: clk not at high speed\n");
 	}
 
