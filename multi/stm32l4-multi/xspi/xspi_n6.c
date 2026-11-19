@@ -22,7 +22,7 @@
 #include <sys/interrupt.h>
 #include <sys/mman.h>
 #include <sys/time.h>
-#include <libmulti/libdma.h>
+#include <libxpdma.h>
 
 #include "../common.h"
 #include "../stm32l4-multi.h"
@@ -763,7 +763,7 @@ static int xspi_initOne(unsigned int idx)
 	}
 
 	const struct libdma_per *per;
-	ret = libxpdma_acquirePeripheral(dma_memTransfer, memTransfer_perIsDst, LIBXPDMA_ACQUIRE_2D_MEM2PER, &per);
+	ret = libxpdma_acquirePeripheral(dma_memTransfer, libxpdma_memTransfer_perIsDst, LIBXPDMA_ACQUIRE_2D_MEM2PER, &per);
 	if (ret < 0) {
 		TRACE("DMA acquire %d", ret);
 		return ret;

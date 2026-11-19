@@ -18,7 +18,6 @@
 
 #include <stddef.h>
 #include <sys/threads.h>
-#include "libmulti/libdma.h"
 
 
 typedef struct {
