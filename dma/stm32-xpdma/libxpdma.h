@@ -96,10 +96,10 @@ typedef void libdma_callback_t(void *arg, int type);
 #define LIBXPDMA_TRANSFORM_ALIGNRS (1 << 1) /* Right-align data, sign-extend if necessary */
 #define LIBXPDMA_TRANSFORM_PACK    (2 << 1) /* Treat data as packed and output at destination width */
 #define LIBXPDMA_TRANSFORM_ALIGNL  (3 << 1) /* Left-align data */
-#define LIBXPDMA_TRANSFORM_SSWAPB  (1 << 3) /* Swap middle bytes in word in source (e.g. 0xAABBCCDD => 0xAACCBBDD) */
-#define LIBXPDMA_TRANSFORM_SWAPB   (1 << 4) /* Swap bytes in destination (e.g. 0xAABBCCDD => 0xDDCCBBAA) */
-#define LIBXPDMA_TRANSFORM_SWAPH   (1 << 5) /* Swap half-words in destination (e.g. 0xAABBCCDD => 0xCCDDBBAA)*/
-#define LIBXPDMA_TRANSFORM_SWAPW   (1 << 6) /* Swap words in destination (for 64-bit destinations only) */
+#define LIBXPDMA_TRANSFORM_SSWAPB  (1 << 3) /* Swap middle bytes in src. word (e.g. 0xAABBCCDD => 0xAACCBBDD) */
+#define LIBXPDMA_TRANSFORM_SWAPB   (1 << 4) /* Swap bytes in dest. half-word (e.g. 0xAABBCCDD => 0xBBAADDCC) */
+#define LIBXPDMA_TRANSFORM_SWAPH   (1 << 5) /* Swap half-words in dest. word (e.g. 0xAABBCCDD => 0xCCDDBBAA)*/
+#define LIBXPDMA_TRANSFORM_SWAPW   (1 << 6) /* Swap words in dest. double-word (for 64-bit destinations only) */
 
 #define LIBXPDMA_MALLOC_FASTMEM (1U << 0) /* Allocate in high-performance DMA memory (if applicable, per-platform) */
 
