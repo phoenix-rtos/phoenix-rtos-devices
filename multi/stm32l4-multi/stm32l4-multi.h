@@ -35,6 +35,7 @@ enum {
 	exti_map, otp_get, otp_set, rtc_setBackup, rtc_getBackup, flash_setRaw, flash_erase,
 	rng_get, pwm_def, pwm_setm, pwm_getm, pwm_getfreq, pwm_distim, pwm_dischn, pwm_bitseq, pwm_bitseq4,
 	extFlash_def, extFlash_read, extFlash_write, extFlash_erase, extFlash_chipErase, extFlash_sync,
+	stm32_dmamgr_getMemoryParams, stm32_dmamgr_malloc, stm32_dmamgr_acquireChn, stm32_dmamgr_releaseChn,
 };
 /* clang-format on */
 
@@ -341,6 +342,46 @@ typedef struct {
 } otprw_t;
 
 
+/* DMAMGR */
+
+
+typedef struct {
+	void *dmaMemPtr;   /* Start of DMA-capable memory. NULL if all memory is DMA-capable. */
+	uint32_t dmaMemSz; /* Size of DMA-capable memory. 0 if all memory is DMA-capable. */
+} __attribute__((packed)) stm32_dmamgr_getMemoryParams_out_t;
+
+
+typedef struct {
+	uint32_t size;
+	uint32_t alignment;
+	uint32_t flags; /* Bitfield of LIBXPDMA_MALLOC_* */
+} __attribute__((packed)) stm32_dmamgr_malloc_in_t;
+
+
+typedef struct {
+	unsigned int perType; /* Peripheral type */
+	unsigned int num;     /* Peripheral number */
+	uint32_t flags;       /* Bitfield of LIBXPDMA_ACQUIRE_* */
+} __attribute__((packed)) stm32_dmamgr_acquireChn_in_t;
+
+
+typedef struct {
+	struct {
+		uint8_t dma;
+		uint8_t idx;
+		uint8_t portPer;   /* Port to use for peripheral side of the transfer */
+		uint8_t request;   /* Hardware request for the channel */
+		uint32_t *listbuf; /* Allocated list buffer */
+	} chns[2];
+} __attribute__((packed)) stm32_dmamgr_acquireChn_out_t;
+
+
+typedef struct {
+	uint8_t dma; /* Index of DMA controller */
+	uint8_t idx; /* Channel to be released */
+} __attribute__((packed)) stm32_dmamgr_releaseChn_in_t;
+
+
 /* MULTI */
 
 
@@ -373,6 +414,9 @@ typedef struct {
 		pwmbitseq_t pwm_bitseq;
 		pwmbitseq4_t pwm_bitseq4;
 		extFlashOp_t extFlash_op;
+		stm32_dmamgr_malloc_in_t dmamgr_malloc;
+		stm32_dmamgr_acquireChn_in_t dmamgr_acquireChn;
+		stm32_dmamgr_releaseChn_in_t dmamgr_releaseChn;
 	};
 } __attribute__((packed)) multi_i_t;
 
@@ -386,6 +430,9 @@ typedef struct {
 		uint64_t pwm_basefreq;
 		pwmgeto_t pwm_get;
 		extFlashDef_t extFlash_def;
+		stm32_dmamgr_getMemoryParams_out_t dmamgr_getMemoryParams;
+		stm32_dmamgr_acquireChn_out_t dmamgr_acquireChn;
+		void *dmamgr_malloc; /* Pointer to allocated memory */
 	};
 } __attribute__((packed)) multi_o_t;
 

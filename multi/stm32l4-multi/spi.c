@@ -20,7 +20,6 @@
 #include <errno.h>
 #include <stdint.h>
 
-#include "libmulti/libdma.h"
 #include "libmulti/libspi.h"
 
 #include "stm32l4-multi.h"

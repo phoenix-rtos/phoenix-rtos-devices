@@ -22,7 +22,7 @@
 #include <byteswap.h>
 
 #include "../common.h"
-#include "libmulti/libdma.h"
+#include <libxpdma.h>
 #include "libmulti/librcc.h"
 #include "libmulti/libspi.h"
 
@@ -371,8 +371,8 @@ int libspi_init(libspi_ctx_t *ctx, unsigned int spi, int useDma)
 		return -1;
 	}
 
+	ctx->per = NULL;
 	if (useDma != 0) {
-		libdma_init();
 		int err = libxpdma_acquirePeripheral(dma_spi, spi - spi1, 0, &ctx->per);
 		err = (err < 0) ? err : libxpdma_configureChannel(ctx->per, dma_mem2per, dma_priorityMedium, NULL);
 		err = (err < 0) ? err : libxpdma_configureChannel(ctx->per, dma_per2mem, dma_priorityMedium, NULL);
@@ -386,11 +386,10 @@ int libspi_init(libspi_ctx_t *ctx, unsigned int spi, int useDma)
 		cfg.addr = (void *)(ctx->base + spi_rxdr);
 		err = (err < 0) ? err : libxpdma_configurePeripheral(ctx->per, dma_per2mem, &cfg);
 		if (err < 0) {
+			libxpdma_releasePeripheral(ctx->per);
+			ctx->per = NULL;
 			return err;
 		}
-	}
-	else {
-		ctx->per = NULL;
 	}
 
 	return libspi_configure(ctx, 0, 0, 1);

@@ -42,8 +42,11 @@
 #if defined(__CPU_STM32L4X6)
 #include "flash.h"
 #elif defined(__CPU_STM32N6)
+#include "dmamgr.h"
 #include "ext_flash.h"
 #include "pwm_n6.h"
+#elif defined(__CPU_STM32U3)
+#include "dmamgr.h"
 #endif
 
 #if ((MULTIDRV_INTERFACE_THREADS) < 2)
@@ -303,6 +306,39 @@ static void handleMsgMulti(msg_t *msg)
 			err = pwm_setBitSequence4(imsg->pwm_bitseq4.timer, chn, val16, imsg->pwm_bitseq4.hcmp, imsg->pwm_bitseq4.lcmp, imsg->pwm_bitseq4.flags, rxOutput);
 			break;
 #endif
+
+#if defined(STM32MULTI_HANDLE_DMAMGR)
+		case stm32_dmamgr_getMemoryParams: {
+			void *dmaMemPtr;
+			size_t dmaMemSz;
+			err = libxpdma_mgr_getMemoryParams(&dmaMemPtr, &dmaMemSz);
+			if (err >= 0) {
+				omsg->dmamgr_getMemoryParams.dmaMemSz = dmaMemSz;
+				omsg->dmamgr_getMemoryParams.dmaMemPtr = dmaMemPtr;
+			}
+		} break;
+		case stm32_dmamgr_malloc:
+			omsg->dmamgr_malloc = libxpdma_mgr_malloc(imsg->dmamgr_malloc.size, imsg->dmamgr_malloc.alignment, imsg->dmamgr_malloc.flags);
+			err = 0;
+			break;
+		case stm32_dmamgr_acquireChn: {
+			libdma_chnAlloc_t chns[2];
+			err = libxpdma_mgr_acquireChannels(imsg->dmamgr_acquireChn.perType, imsg->dmamgr_acquireChn.num, imsg->dmamgr_acquireChn.flags, chns);
+			if (err >= 0) {
+				for (size_t i = 0; i < 2; i++) {
+					omsg->dmamgr_acquireChn.chns[i].dma = chns[i].dma;
+					omsg->dmamgr_acquireChn.chns[i].idx = chns[i].idx;
+					omsg->dmamgr_acquireChn.chns[i].portPer = chns[i].portPer;
+					omsg->dmamgr_acquireChn.chns[i].request = chns[i].request;
+					omsg->dmamgr_acquireChn.chns[i].listbuf = chns[i].listbuf;
+				}
+			}
+		} break;
+		case stm32_dmamgr_releaseChn:
+			libxpdma_mgr_releaseChannel(imsg->dmamgr_releaseChn.dma, imsg->dmamgr_releaseChn.idx);
+			err = 0;
+			break;
+#endif
 		default:
 			err = -EINVAL;
 			break;
@@ -454,6 +490,13 @@ int main(void)
 
 	librcc_init();
 	exti_init();
+#if defined(STM32MULTI_HANDLE_DMAMGR)
+	libxpdma_mgr_init();
+	const libxpdma_mgrFunctions_t *dmaMgrFunctions;
+	libxpdma_mgr_getLocal(&dmaMgrFunctions);
+	libxpdma_init(dmaMgrFunctions);
+#endif
+
 	tty_init();
 	gpio_init();
 	spi_init();
