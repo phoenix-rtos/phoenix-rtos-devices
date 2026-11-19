@@ -16,8 +16,6 @@
 
 #include <sys/threads.h>
 
-#include "libmulti/libdma.h"
-
 typedef struct {
 	volatile unsigned int *base;
 	unsigned int port;
