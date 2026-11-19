@@ -622,6 +622,11 @@ static void libxpdma_freeChannel(libxpdma_channel_t *chn)
 		return;
 	}
 
+	if (chn->idx < LIBDMA_NUM_CHANNELS) {
+		libdma_cleanupTransfer(chn);
+		libdma_common.mgrFunctions->releaseChannel(chn->dma, chn->idx);
+	}
+
 	if (chn->intr != 0) {
 		resourceDestroy(chn->intr);
 	}
@@ -639,6 +644,10 @@ int libxpdma_acquirePeripheral(int per, unsigned int num, uint32_t flags, const 
 	uint32_t *listbufs[LIBDMA_DIRECTIONS];
 	uint8_t dma;
 	uint8_t portPer;
+
+	if (libdma_common.mgrFunctions == NULL) {
+		return -ENOTCONN;
+	}
 
 	int ret = libxpdma_lookupPeripheral(per, num, requests, &dma, &portPer);
 	if (ret < 0) {
@@ -680,17 +689,27 @@ int libxpdma_acquirePeripheral(int per, unsigned int num, uint32_t flags, const 
 	}
 
 	if (ret < 0) {
-		for (size_t dir = 0; dir < LIBDMA_DIRECTIONS; dir++) {
-			libxpdma_freeChannel(p->chns[dir]);
-			libdma_common.mgrFunctions->releaseChannel(dma, chns[dir]);
-		}
-
-		free(p);
+		libxpdma_releasePeripheral(p);
 		return ret;
 	}
 
 	*perP = p;
 	return EOK;
+}
+
+
+void libxpdma_releasePeripheral(const struct libdma_per *per)
+{
+	if ((libdma_common.mgrFunctions == NULL) || (per == NULL)) {
+		return;
+	}
+
+	for (size_t dir = 0; dir < LIBDMA_DIRECTIONS; dir++) {
+		libxpdma_freeChannel(per->chns[dir]);
+	}
+
+	/* Cast is needed because for backwards compatibility with libdma `per` is defined as const */
+	free((void *)per);
 }
 
 

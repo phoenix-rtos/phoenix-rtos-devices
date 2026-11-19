@@ -204,6 +204,12 @@ void *libdma_malloc(size_t size, size_t alignment);
 int libxpdma_acquirePeripheral(int per, unsigned int num, uint32_t flags, const struct libdma_per **perP);
 
 
+/* Release the selected DMA channels and free memory.
+ * Function may be called with per == NULL or before libxpdma_init, in which cases it is a no-op.
+ */
+void libxpdma_releasePeripheral(const struct libdma_per *per);
+
+
 /* Configure DMA channel for use
  * * per - peripheral's handle
  * * dir - direction of transfer
