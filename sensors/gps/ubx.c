@@ -1632,12 +1632,12 @@ static void ubx_threadPublish(void *data)
 		}
 		(void)sensors_publish(info->id, &ctx->ev);
 
-		if (!ctx->operationalModeEn && (ctx->ev.gps.fix >= ubx_fix_2d)) {
+		if (!ctx->operationalModeEn && (ctx->ev.gps.fix != gga_fix_invalid)) {
 			/* switch from acquisition mode to operational after first fix */
 			ctx->operationalModeEn = true;
 			ubx_operationalModeSwitch(ctx, true);
 		}
-		else if (ctx->operationalModeEn && (ctx->ev.gps.fix < ubx_fix_2d)) {
+		else if (ctx->operationalModeEn && (ctx->ev.gps.fix == gga_fix_invalid)) {
 			ctx->operationalModeEn = false;
 			ubx_operationalModeSwitch(ctx, false);
 		}
@@ -1697,25 +1697,37 @@ static int ubx_parseDynModel(char *str, uint8_t *dynModelAcquisition, uint8_t *d
 	bool dynModeAcquisitionFound = false;
 	bool dynModeInOperationFound = false;
 
-	if (strModelInOperation == NULL) {
-		return -1;
+	if (strModelInOperation != NULL) {
+		*strModelInOperation = '\0';
+		strModelInOperation++;
 	}
-	*strModelInOperation = '\0';
-	strModelInOperation++;
 
+	/* parse acquisition model */
 	for (size_t i = 0; i < (sizeof(models) / sizeof(models[0])); i++) {
 		if ((strlen(strModelAcquisition) == strlen(models[i].str)) && (strcmp(strModelAcquisition, models[i].str) == 0)) {
 			*dynModelAcquisition = models[i].model;
 			dynModeAcquisitionFound = true;
 		}
+	}
 
+	if (dynModeAcquisitionFound == false) {
+		return -1;
+	}
+
+	if (strModelInOperation == NULL) {
+		*dynModelInOperation = *dynModelAcquisition;
+		return 0;
+	}
+
+	/* parse operation-time model */
+	for (size_t i = 0; i < (sizeof(models) / sizeof(models[0])); i++) {
 		if ((strlen(strModelInOperation) == strlen(models[i].str)) && (strcmp(strModelInOperation, models[i].str) == 0)) {
 			*dynModelInOperation = models[i].model;
 			dynModeInOperationFound = true;
 		}
 	}
 
-	return (dynModeAcquisitionFound && dynModeInOperationFound) ? 0 : -1;
+	return (dynModeInOperationFound == true) ? 0 : -1;
 }
 
 
