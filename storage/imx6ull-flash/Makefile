@@ -14,7 +14,7 @@ NAME := imx6ull-flash
 LOCAL_SRCS := flashsrv.c flashdev.c
 LOCAL_HEADERS := imx6ull-flashsrv.h imx6ull-flashdev.h
 DEP_LIBS := libflashdrv-imx6ull
-LIBS := libjffs2 libstorage libmtd libptable
+LIBS := libjffs2 libstorage libmtd libptable libcache
 
 include $(binary.mk)
 

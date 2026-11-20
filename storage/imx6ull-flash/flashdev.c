@@ -21,6 +21,8 @@
 #include <sys/threads.h>
 #include <sys/minmax.h>
 
+#include <cache.h>
+
 #include "imx6ull-flashdev.h"
 #include "imx6ull-flashdrv.h"
 
@@ -280,6 +282,7 @@ static int flashmtd_erase(struct _storage_t *strg, off_t offs, size_t size)
 			res = flashdrv_markbad(strg->dev->ctx->dma, pageID);
 			if (res < 0) {
 				mutexUnlock(strg->dev->ctx->lock);
+				flashdev_cacheInvalidate(offs, size);
 				return res; /* can't mark as badblock, urecoverable error */
 			}
 		}
@@ -289,7 +292,94 @@ static int flashmtd_erase(struct _storage_t *strg, off_t offs, size_t size)
 	}
 	mutexUnlock(strg->dev->ctx->lock);
 
+	flashdev_cacheInvalidate(offs, size);
+
 	return erased;
+}
+
+
+/* Read cache of ECC-clean pages (libcache), shared by all partitions and keyed by the offset on the chip */
+static struct {
+	cachectx_t *cache;
+	storage_t *strg; /* Device used to fill the cache */
+	flashdev_cachestats_t stats;
+} flashdev_cache;
+
+
+static ssize_t flashdev_cacheReadCb(uint64_t offs, void *buff, size_t count, cache_devCtx_t *ctx)
+{
+	storage_t *strg = flashdev_cache.strg;
+	struct _storage_devCtx_t *devCtx = strg->dev->ctx;
+	flashdrv_meta_t *meta = devCtx->metabuf;
+	const int nchunks = sizeof(meta->errors) / sizeof(meta->errors[0]);
+	uint32_t paddr = (uint32_t)(offs / strg->dev->mtd->writesz);
+	int err;
+
+	if ((count != strg->dev->mtd->writesz) || ((offs % strg->dev->mtd->writesz) != 0)) {
+		return -EINVAL;
+	}
+
+	mutexLock(devCtx->lock);
+	err = flashdrv_read(devCtx->dma, paddr, devCtx->databuf, meta);
+	if (err >= 0) {
+		/* Pages with any ECC issue are not cached, the uncached path handles and reports them */
+		err = _flashmtd_checkECC(strg, paddr, nchunks);
+	}
+	if (err == 0) {
+		memcpy(buff, devCtx->databuf, count);
+	}
+	mutexUnlock(devCtx->lock);
+
+	(void)__atomic_fetch_add(&flashdev_cache.stats.misses, 1, __ATOMIC_RELAXED);
+
+	return (err == 0) ? (ssize_t)count : -EIO;
+}
+
+
+/* Has to be called after the flash content has changed, without the device context lock held */
+void flashdev_cacheInvalidate(off_t offs, size_t size)
+{
+	if (flashdev_cache.cache != NULL) {
+		(void)cache_invalidate(flashdev_cache.cache, (uint64_t)offs, (uint64_t)offs + size);
+	}
+}
+
+
+void flashdev_cacheStats(flashdev_cachestats_t *stats)
+{
+	stats->npages = flashdev_cache.stats.npages;
+	stats->reads = __atomic_load_n(&flashdev_cache.stats.reads, __ATOMIC_RELAXED);
+	stats->misses = __atomic_load_n(&flashdev_cache.stats.misses, __ATOMIC_RELAXED);
+}
+
+
+int flashdev_cacheInit(storage_t *strg, size_t npages)
+{
+	static const cache_ops_t ops = { .readCb = flashdev_cacheReadCb, .writeCb = NULL, .ctx = NULL };
+	cachectx_t *cache;
+	size_t nsets = 1;
+
+	/* libcache: 4 lines per set, power of two number of sets */
+	if (npages < 4) {
+		return EOK;
+	}
+	while (nsets * 2 <= npages / 4) {
+		nsets *= 2;
+	}
+
+	/* The read callback needs the device, it is not called before the cache is published below */
+	flashdev_cache.strg = strg;
+
+	cache = cache_init(strg->size, strg->dev->mtd->writesz, nsets * 4, &ops);
+	if (cache == NULL) {
+		flashdev_cache.strg = NULL;
+		return -ENOMEM;
+	}
+
+	flashdev_cache.stats.npages = nsets * 4;
+	flashdev_cache.cache = cache;
+
+	return EOK;
 }
 
 
@@ -297,9 +387,33 @@ static int flashmtd_read(struct _storage_t *strg, off_t offs, void *data, size_t
 {
 	uint32_t paddr;
 	int err, ret = EOK;
-	size_t tempsz = 0, chunksz;
+	size_t tempsz = 0, done = 0, chunksz;
 	flashdrv_meta_t *meta = strg->dev->ctx->metabuf;
 	const int nchunks = sizeof(meta->errors) / sizeof(meta->errors[0]);
+	unsigned int npages;
+
+	if (flashdev_cache.cache != NULL) {
+		npages = (offs % strg->dev->mtd->writesz + len + strg->dev->mtd->writesz - 1) / strg->dev->mtd->writesz;
+		(void)__atomic_fetch_add(&flashdev_cache.stats.reads, npages, __ATOMIC_RELAXED);
+		/* Page by page: the cache lock is held across the flash read, a long request must not keep the others out */
+		while (tempsz < len) {
+			chunksz = min(len - tempsz, strg->dev->mtd->writesz - (size_t)((offs + tempsz) % strg->dev->mtd->writesz));
+			if (cache_read(flashdev_cache.cache, (uint64_t)offs + tempsz, (unsigned char *)data + tempsz, chunksz) != (ssize_t)chunksz) {
+				break;
+			}
+			tempsz += chunksz;
+		}
+		if (tempsz == len) {
+			*retlen = len;
+			return EOK;
+		}
+		/* Read error or a page with bitflips: read the rest without the cache to report the exact status */
+		offs += tempsz;
+		data = (unsigned char *)data + tempsz;
+		len -= tempsz;
+		done = tempsz;
+		tempsz = 0;
+	}
 
 	paddr = offs / strg->dev->mtd->writesz;
 	offs %= strg->dev->mtd->writesz;
@@ -333,7 +447,7 @@ static int flashmtd_read(struct _storage_t *strg, off_t offs, void *data, size_t
 		tempsz += chunksz;
 		paddr++;
 	}
-	*retlen = tempsz;
+	*retlen = done + tempsz;
 	mutexUnlock(strg->dev->ctx->lock);
 
 	return ret;
@@ -367,6 +481,8 @@ static int flashmtd_write(struct _storage_t *strg, off_t offs, const void *data,
 	}
 	*retlen = tempsz;
 	mutexUnlock(strg->dev->ctx->lock);
+
+	flashdev_cacheInvalidate(offs - tempsz, tempsz + ((res < 0) ? strg->dev->mtd->writesz : 0));
 
 	return res < 0 ? res : EOK;
 }
@@ -480,6 +596,8 @@ static int flashmtd_blockMarkBad(struct _storage_t *strg, off_t offs)
 	/* address in pages, divide by pagesize */
 	ret = flashdrv_markbad(strg->dev->ctx->dma, (offs / strg->dev->mtd->writesz));
 	mutexUnlock(strg->dev->ctx->lock);
+
+	flashdev_cacheInvalidate(offs, strg->dev->mtd->erasesz);
 
 	return ret;
 }
