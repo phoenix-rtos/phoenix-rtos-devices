@@ -1371,6 +1371,13 @@ int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t
 
 	mutexLock(pwm_common.timer[timer].mutex);
 #if USE_DSHOT_DMA
+	volatile uint32_t *base = pwm_setup.timer[timer].base;
+	pwm_bitSequenceSwitchArg_t arg = {
+		.timer = timer,
+		.done = 0,
+		.dier = 0,
+	};
+
 	res = (res < 0) ? res : pwm_initDMA(timer, chn, pwm_dmaUpd);
 
 	const struct libdma_per *per = pwm_common.timer[timer].dma_per[chn];
@@ -1407,14 +1414,20 @@ int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t
 	res = (res < 0) ? res : libxpdma_configureMemory(per, dma_mem2per, 0, bufs, 2);
 	/* Start the PWM channel. Set first duty cycle to 0 - idle state. It will be output until DMA takes over. */
 	res = (res < 0) ? res : pwm_setInternal(timer, chn, pwm_idleValue, activeLow, false);
-	volatile int done = 0;
 	/* Request is disabled before DMA start and enabled after to prevent a possible race condition
 	 * between DMA start and timer update request. */
-	*(pwm_setup.timer[timer].base + tim_dier) &= ~TIM_DIER_UDE;
-	res = (res < 0) ? res : libxpdma_startTransferWithFlag(per, dma_mem2per, &done);
-	*(pwm_setup.timer[timer].base + tim_dier) |= TIM_DIER_UDE;
+	*(base + tim_dier) &= ~TIM_DIER_UDE;
+	res = (res < 0) ? res : libxpdma_startTransferWithCallback(per, dma_mem2per, dma_tc, pwm_bitSequenceSwitchISR, &arg);
+	if (res < 0) {
+		pwm_bitSequenceCleanup(timer, 0);
+		return res;
+	}
+	*(base + tim_dier) |= TIM_DIER_UDE;
+
 	/* TODO: we can calculate a timeout here */
-	res = (res < 0) ? res : libxpdma_waitForTransaction(per, &done, NULL, 0);
+	res = libxpdma_waitForTransaction(per, &arg.done, NULL, 0);
+	pwm_bitSequenceCleanup(timer, 0);
+	return res;
 #else
 	(void)pwm_idleValue;
 	uint16_t firstCompare;
