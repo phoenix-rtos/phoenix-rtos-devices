@@ -624,59 +624,6 @@ static void pwm_disableChannelInternal(pwm_tim_id_t timer, pwm_ch_id_t chn)
 }
 
 
-int pwm_disableChannel(pwm_tim_id_t timer, pwm_ch_id_t chn)
-{
-	int res = pwm_validateTimer(timer, true, 0);
-	if (res < 0) {
-		return res;
-	}
-	res = pwm_validateChannel(timer, chn);
-	if (res < 0) {
-		return res;
-	}
-
-	mutexLock(pwm_common.timer[timer].mutex);
-	pwm_disableChannelInternal(timer, chn);
-	mutexUnlock(pwm_common.timer[timer].mutex);
-	return 0;
-}
-
-
-int pwm_disableTimer(pwm_tim_id_t timer)
-{
-	int res = pwm_validateTimer(timer, true, 0);
-	if (res < 0) {
-		return res;
-	}
-
-	mutexLock(pwm_common.timer[timer].mutex);
-	/* Disable all enabled channels */
-	for (pwm_ch_id_t chn = 0; chn < PWM_CHN_NUM; chn++) {
-		pwm_disableChannelInternal(timer, chn);
-	}
-
-	/* Clear CEN in CR1 */
-	*(pwm_setup.timer[timer].base + tim_cr1) &= ~1u;
-	mutexUnlock(pwm_common.timer[timer].mutex);
-	return EOK;
-}
-
-
-uint64_t pwm_getBaseFrequency(pwm_tim_id_t timer)
-{
-	int res = pwm_validateTimer(timer, false, 0);
-	if (res < 0) {
-		return 0;
-	}
-	uint64_t baseFreq = 0ull;
-	res = librcc_getClock(clkid_timg, &baseFreq);
-	if (res < 0) {
-		return 0;
-	}
-	pwm_common.baseFreq = (uint32_t)baseFreq; /* Update stored base frequency */
-	return baseFreq;
-}
-
 /* Generate update event (UG bit in EGR) to update prescaler, autoreload value and clear counters */
 static void pwm_forceUpdateEvent(pwm_tim_id_t timer)
 {
@@ -689,111 +636,6 @@ static void pwm_forceUpdateEvent(pwm_tim_id_t timer)
 	}
 
 	*(base + tim_sr) = ~TIM_SR_UIF; /* Clear update event flag */
-}
-
-
-int pwm_configure(pwm_tim_id_t timer, uint16_t prescaler, uint32_t top)
-{
-	/* Although some of the registers are 16-bit, all of them are 4-byte aligned.
-	 * Access registers via (uint32_t *). */
-
-	uint16_t t16;
-	volatile uint32_t *base;
-	pwm_irq_t *irq;
-	int res = pwm_validateTimer(timer, false, 0);
-
-	if (res < 0) {
-		return res;
-	}
-	if ((((PWM_TIM_32BIT >> timer) & 1) == 0) && ((top & 0xFFFF0000) != 0)) {
-		return -EINVAL;
-	}
-	base = pwm_setup.timer[timer].base;
-	irq = &pwm_common.timer[timer].irq;
-	uint8_t timer_inited = atomic_fetch_or(&pwm_common.timer[timer].initialized, TIMER_INIT_IN_PROGRESS);
-	if (timer_inited == TIMER_INIT_NONE) {
-		devClk(pwm_setup.timer[timer].pctl, 1);
-		if (mutexCreate(&pwm_common.timer[timer].mutex) < 0) {
-			atomic_store(&pwm_common.timer[timer].initialized, TIMER_INIT_NONE);
-			return -ENOMEM;
-		}
-
-		if (mutexCreate(&irq->uevlock) < 0) {
-			resourceDestroy(pwm_common.timer[timer].mutex);
-			atomic_store(&pwm_common.timer[timer].initialized, TIMER_INIT_NONE);
-			return -ENOMEM;
-		}
-
-		if (condCreate(&irq->uevcond) < 0) {
-			resourceDestroy(pwm_common.timer[timer].mutex);
-			resourceDestroy(irq->uevlock);
-			atomic_store(&pwm_common.timer[timer].initialized, TIMER_INIT_NONE);
-			return -ENOMEM;
-		}
-
-		interrupt(pwm_setup.timer[timer].uevirq, pwm_updateEventIrq, (void *)timer, irq->uevcond, NULL);
-		atomic_fetch_or(&pwm_common.timer[timer].initialized, TIMER_INIT_DONE);
-	}
-	else if ((timer_inited & TIMER_INIT_DONE) == 0) {
-		return -EBUSY;
-	}
-
-	/* Fail if one of the channels hasn't been disabled */
-	if (atomic_load(&pwm_common.timer[timer].channelOn) != 0) {
-		return -EPERM;
-	}
-
-	mutexLock(pwm_common.timer[timer].mutex);
-
-	/* In CR1 set prescaler, countermode, autoreload, clockdivision, repetition counter */
-	t16 = *((base + tim_cr1));
-
-	/* Set counter mode UP in CR1 => clear DIR and CMS */
-	if (((PWM_TIM_CNT_MODE_SELECT >> timer) & 1) != 0) {
-		t16 &= ~((0x3 << 5) | (1 << 4));
-	}
-	/* Set clock division 1 in CR1 => clear CKD */
-	t16 &= ~(0x3 << 8);
-	/* Disable counter */
-	t16 &= ~1u;
-
-	*(base + tim_cr1) = t16;
-
-	/* In AF1/2 disable break input */
-	if (((PWM_TIM_BREAK1_MODE >> timer) & 1) != 0) {
-		*(base + tim_af1) &= ~1u;
-	}
-	if (((PWM_TIM_BREAK2_MODE >> timer) & 1) != 0) {
-		*(base + tim_af2) &= ~1u;
-	}
-
-	/* Set autoreload in ARR */
-	pwm_common.timer[timer].arr = top;
-	*(base + tim_arr) = top;
-
-	/* Set prescaler in PSC */
-	*(base + tim_psc) = prescaler;
-
-	/* Set repetition counter to 0 in RCR */
-	if (((PWM_TIM_REP_CNT >> timer) & 1) != 0) {
-		*(base + tim_rcr) = 0;
-	}
-
-	/* Enable autoreload buffering in CR1 ARPE */
-	*(base + tim_cr1) |= (1 << 7);
-
-	pwm_disableMasterSlave(timer);
-
-	/* Initialize BDTR register. Dead time feature is unnecessary. Disable breaks */
-	if ((((PWM_TIM_BREAK1_MODE | PWM_TIM_BREAK2_MODE) >> timer) & 1) != 0) {
-		/* Enable main output (MOE) */
-		*(base + tim_bdtr) = (1 << 15);
-	}
-
-	pwm_forceUpdateEvent(timer);
-
-	mutexUnlock(pwm_common.timer[timer].mutex);
-	return EOK;
 }
 
 
@@ -889,48 +731,6 @@ static int pwm_setInternal(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t compare
 }
 
 
-int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t compare, uint8_t activeLow)
-{
-	int res = pwm_validateTimer(timer, true, 0);
-	if (res < 0) {
-		return res;
-	}
-	res = pwm_validateChannel(timer, chn);
-	if (res < 0) {
-		return res;
-	}
-	if ((((PWM_TIM_32BIT >> timer) & 1) == 0) && ((compare & 0xFFFF0000) != 0)) {
-		return -EINVAL;
-	}
-	if (compare > pwm_common.timer[timer].arr) {
-		return -EINVAL;
-	}
-	return pwm_setInternal(timer, chn, compare, activeLow, true);
-}
-
-
-int pwm_get(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t *top, uint32_t *compare)
-{
-	int res = pwm_validateTimer(timer, true, 0);
-	if (res < 0) {
-		return res;
-	}
-	res = pwm_validateChannel(timer, chn);
-	if (res < 0) {
-		return res;
-	}
-
-	/* If channel is off, we don't allow reading of current timer settings */
-	if (((atomic_load(&pwm_common.timer[timer].channelOn) >> chn) & 1) == 0) {
-		return -EPERM;
-	}
-
-	/* Load top and compare. Return compare/top */
-	*top = *(pwm_setup.timer[timer].base + tim_arr);
-	*compare = *(pwm_setup.timer[timer].base + PWM_CCR_REG(chn));
-	return EOK;
-}
-
 #if USE_DSHOT_DMA
 static int pwm_initDMA(pwm_tim_id_t timer, pwm_ch_id_t chn, enum pwm_dmaAllocType type)
 {
@@ -976,116 +776,6 @@ static int pwm_initDMA(pwm_tim_id_t timer, pwm_ch_id_t chn, enum pwm_dmaAllocTyp
 	res = (res < 0) ? res : libxpdma_configurePeripheral(*target, dir, &cfg);
 	return res;
 }
-#endif
-
-
-int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t nbits, uint8_t datasize, int flags)
-{
-	int res;
-	res = pwm_validateTimer(timer, true, DMA_CAP_UPD);
-	if (res < 0) {
-		return res;
-	}
-	res = pwm_validateChannel(timer, chn);
-	if (res < 0) {
-		return res;
-	}
-	if (data == NULL) {
-		return -EINVAL;
-	}
-	if (datasize != 1 && datasize != 2 && datasize != 4) {
-		return -EINVAL;
-	}
-	if ((datasize == 4) && (((PWM_TIM_32BIT >> timer) & 1) == 0)) {
-		return -EINVAL;
-	}
-	if (nbits == 0) {
-		/* Treat as no-op */
-		return 0;
-	}
-
-	mutexLock(pwm_common.timer[timer].mutex);
-#if USE_DSHOT_DMA
-	res = (res < 0) ? res : pwm_initDMA(timer, chn, pwm_dmaUpd);
-
-	const struct libdma_per *per = pwm_common.timer[timer].dma_per[chn];
-	libdma_transfer_buffer_t bufs[2] = {
-		{
-			.buf = data,
-			.bufSize = nbits * datasize,
-			.elSize_log = sizeLog(datasize),
-			.burstSize = 1,
-			.increment = 1,
-			.isCached = 1,
-			.transform = LIBXPDMA_TRANSFORM_ALIGNR0,
-		},
-		/* Add two "idle" values at the end of the DMA buffer.
-		 * One value is necessary because after DMA writes the last compare value, `libdma_tx` exits and user may
-		 * disable the timer immediately without waiting for the final cycle to finish.
-		 * Another value is added because compare values are "delayed" - a write to the CCR register after an update event
-		 * will not take effect immediately, but during the next cycle.
-		 * Without those two "idle" values, the last value would not be transmitted and second-to-last value
-		 * would not be transmitted completely.
-		 * TODO: this could be fixed by waiting two timer cycles after DMA finishes - but this may not be enough depending
-		 * on how fast `libdma_tx` returns after DMA is finished.
-		 */
-		{
-			.buf = (void *)&pwm_idleValue,
-			.bufSize = 2 * sizeof(pwm_idleValue),
-			.elSize_log = sizeLog(sizeof(pwm_idleValue)),
-			.burstSize = 1,
-			.increment = 0,
-			.isCached = 0,
-			.transform = LIBXPDMA_TRANSFORM_ALIGNR0,
-		},
-	};
-	res = (res < 0) ? res : libxpdma_configureMemory(per, dma_mem2per, 0, bufs, 2);
-	/* Start the PWM channel. Set first duty cycle to 0 - idle state. It will be output until DMA takes over. */
-	res = (res < 0) ? res : pwm_setInternal(timer, chn, pwm_idleValue, 0, false);
-	volatile int done = 0;
-	/* Request is disabled before DMA start and enabled after to prevent a possible race condition
-	 * between DMA start and timer update request. */
-	*(pwm_setup.timer[timer].base + tim_dier) &= ~TIM_DIER_UDE;
-	res = (res < 0) ? res : libxpdma_startTransferWithFlag(per, dma_mem2per, &done);
-	*(pwm_setup.timer[timer].base + tim_dier) |= TIM_DIER_UDE;
-	/* TODO: we can calculate a timeout here */
-	res = (res < 0) ? res : libxpdma_waitForTransaction(per, &done, NULL, 0);
-#else
-	(void)pwm_idleValue;
-	uint16_t firstCompare;
-	pwm_irq_t *irq = &pwm_common.timer[timer].irq;
-	pwm_dshot_ctx_t *dshot = &irq->dshot;
-	*dshot = (pwm_dshot_ctx_t) {
-		.chn = chn,
-		.bitPos = 1, /* The first compare value is passed via pwm_set parameter */
-		.bitSize = nbits,
-		.data = data,
-		.dataSize = datasize
-	};
-	irq->flag_dshot_uev = DSHOT_UEV_IRQ_DRIVEN;
-	irq->flag_dshot_end = 0;
-
-	dataBarier();
-
-	firstCompare = pwm_getUserCompareVal(data, 0, datasize);
-	pwm_setInternal(timer, chn, firstCompare, 0, false);
-
-	/* Wait for the DSHOT sequence to end */
-	mutexLock(irq->uevlock);
-	while (!irq->flag_dshot_end) {
-		condWait(irq->uevcond, irq->uevlock, 0);
-	}
-	irq->flag_dshot_uev = DSHOT_UEV_NONE;
-	irq->flag_dshot_end = 0;
-	mutexUnlock(irq->uevlock);
-#endif
-	mutexUnlock(pwm_common.timer[timer].mutex);
-
-	return res;
-}
-
-
-#if USE_DSHOT_DMA
 /* Render data given in `val16` into an array of timer compare values.
  * * `output` - array of timer values.
  *   Array must have (`n_bits * n_channels`) elements.
@@ -1415,8 +1105,318 @@ static void pwm_bitSequenceFinalizeRx(pwm_tim_id_t timer, uint32_t gcrBitTime, u
 		rxOutput[outIdx] = (res < 0) ? res : (int)val;
 	}
 }
+#endif
 
 
+int pwm_disableChannel(pwm_tim_id_t timer, pwm_ch_id_t chn)
+{
+	int res = pwm_validateTimer(timer, true, 0);
+	if (res < 0) {
+		return res;
+	}
+	res = pwm_validateChannel(timer, chn);
+	if (res < 0) {
+		return res;
+	}
+
+	mutexLock(pwm_common.timer[timer].mutex);
+	pwm_disableChannelInternal(timer, chn);
+	mutexUnlock(pwm_common.timer[timer].mutex);
+	return 0;
+}
+
+
+int pwm_disableTimer(pwm_tim_id_t timer)
+{
+	int res = pwm_validateTimer(timer, true, 0);
+	if (res < 0) {
+		return res;
+	}
+
+	mutexLock(pwm_common.timer[timer].mutex);
+	/* Disable all enabled channels */
+	for (pwm_ch_id_t chn = 0; chn < PWM_CHN_NUM; chn++) {
+		pwm_disableChannelInternal(timer, chn);
+	}
+
+	/* Clear CEN in CR1 */
+	*(pwm_setup.timer[timer].base + tim_cr1) &= ~1u;
+	mutexUnlock(pwm_common.timer[timer].mutex);
+	return EOK;
+}
+
+
+uint64_t pwm_getBaseFrequency(pwm_tim_id_t timer)
+{
+	int res = pwm_validateTimer(timer, false, 0);
+	if (res < 0) {
+		return 0;
+	}
+	uint64_t baseFreq = 0ull;
+	res = librcc_getClock(clkid_timg, &baseFreq);
+	if (res < 0) {
+		return 0;
+	}
+	pwm_common.baseFreq = (uint32_t)baseFreq; /* Update stored base frequency */
+	return baseFreq;
+}
+
+
+int pwm_configure(pwm_tim_id_t timer, uint16_t prescaler, uint32_t top)
+{
+	/* Although some of the registers are 16-bit, all of them are 4-byte aligned.
+	 * Access registers via (uint32_t *). */
+
+	uint16_t t16;
+	volatile uint32_t *base;
+	pwm_irq_t *irq;
+	int res = pwm_validateTimer(timer, false, 0);
+
+	if (res < 0) {
+		return res;
+	}
+	if ((((PWM_TIM_32BIT >> timer) & 1) == 0) && ((top & 0xFFFF0000) != 0)) {
+		return -EINVAL;
+	}
+	base = pwm_setup.timer[timer].base;
+	irq = &pwm_common.timer[timer].irq;
+	uint8_t timer_inited = atomic_fetch_or(&pwm_common.timer[timer].initialized, TIMER_INIT_IN_PROGRESS);
+	if (timer_inited == TIMER_INIT_NONE) {
+		devClk(pwm_setup.timer[timer].pctl, 1);
+		if (mutexCreate(&pwm_common.timer[timer].mutex) < 0) {
+			atomic_store(&pwm_common.timer[timer].initialized, TIMER_INIT_NONE);
+			return -ENOMEM;
+		}
+
+		if (mutexCreate(&irq->uevlock) < 0) {
+			resourceDestroy(pwm_common.timer[timer].mutex);
+			atomic_store(&pwm_common.timer[timer].initialized, TIMER_INIT_NONE);
+			return -ENOMEM;
+		}
+
+		if (condCreate(&irq->uevcond) < 0) {
+			resourceDestroy(pwm_common.timer[timer].mutex);
+			resourceDestroy(irq->uevlock);
+			atomic_store(&pwm_common.timer[timer].initialized, TIMER_INIT_NONE);
+			return -ENOMEM;
+		}
+
+		interrupt(pwm_setup.timer[timer].uevirq, pwm_updateEventIrq, (void *)timer, irq->uevcond, NULL);
+		atomic_fetch_or(&pwm_common.timer[timer].initialized, TIMER_INIT_DONE);
+	}
+	else if ((timer_inited & TIMER_INIT_DONE) == 0) {
+		return -EBUSY;
+	}
+
+	/* Fail if one of the channels hasn't been disabled */
+	if (atomic_load(&pwm_common.timer[timer].channelOn) != 0) {
+		return -EPERM;
+	}
+
+	mutexLock(pwm_common.timer[timer].mutex);
+
+	/* In CR1 set prescaler, countermode, autoreload, clockdivision, repetition counter */
+	t16 = *((base + tim_cr1));
+
+	/* Set counter mode UP in CR1 => clear DIR and CMS */
+	if (((PWM_TIM_CNT_MODE_SELECT >> timer) & 1) != 0) {
+		t16 &= ~((0x3 << 5) | (1 << 4));
+	}
+	/* Set clock division 1 in CR1 => clear CKD */
+	t16 &= ~(0x3 << 8);
+	/* Disable counter */
+	t16 &= ~1u;
+
+	*(base + tim_cr1) = t16;
+
+	/* In AF1/2 disable break input */
+	if (((PWM_TIM_BREAK1_MODE >> timer) & 1) != 0) {
+		*(base + tim_af1) &= ~1u;
+	}
+	if (((PWM_TIM_BREAK2_MODE >> timer) & 1) != 0) {
+		*(base + tim_af2) &= ~1u;
+	}
+
+	/* Set autoreload in ARR */
+	pwm_common.timer[timer].arr = top;
+	*(base + tim_arr) = top;
+
+	/* Set prescaler in PSC */
+	*(base + tim_psc) = prescaler;
+
+	/* Set repetition counter to 0 in RCR */
+	if (((PWM_TIM_REP_CNT >> timer) & 1) != 0) {
+		*(base + tim_rcr) = 0;
+	}
+
+	/* Enable autoreload buffering in CR1 ARPE */
+	*(base + tim_cr1) |= (1 << 7);
+
+	pwm_disableMasterSlave(timer);
+
+	/* Initialize BDTR register. Dead time feature is unnecessary. Disable breaks */
+	if ((((PWM_TIM_BREAK1_MODE | PWM_TIM_BREAK2_MODE) >> timer) & 1) != 0) {
+		/* Enable main output (MOE) */
+		*(base + tim_bdtr) = (1 << 15);
+	}
+
+	pwm_forceUpdateEvent(timer);
+
+	mutexUnlock(pwm_common.timer[timer].mutex);
+	return EOK;
+}
+
+
+int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t compare, uint8_t activeLow)
+{
+	int res = pwm_validateTimer(timer, true, 0);
+	if (res < 0) {
+		return res;
+	}
+	res = pwm_validateChannel(timer, chn);
+	if (res < 0) {
+		return res;
+	}
+	if ((((PWM_TIM_32BIT >> timer) & 1) == 0) && ((compare & 0xFFFF0000) != 0)) {
+		return -EINVAL;
+	}
+	if (compare > pwm_common.timer[timer].arr) {
+		return -EINVAL;
+	}
+	return pwm_setInternal(timer, chn, compare, activeLow, true);
+}
+
+
+int pwm_get(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t *top, uint32_t *compare)
+{
+	int res = pwm_validateTimer(timer, true, 0);
+	if (res < 0) {
+		return res;
+	}
+	res = pwm_validateChannel(timer, chn);
+	if (res < 0) {
+		return res;
+	}
+
+	/* If channel is off, we don't allow reading of current timer settings */
+	if (((atomic_load(&pwm_common.timer[timer].channelOn) >> chn) & 1) == 0) {
+		return -EPERM;
+	}
+
+	/* Load top and compare. Return compare/top */
+	*top = *(pwm_setup.timer[timer].base + tim_arr);
+	*compare = *(pwm_setup.timer[timer].base + PWM_CCR_REG(chn));
+	return EOK;
+}
+
+
+int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t nbits, uint8_t datasize, int flags)
+{
+	int res;
+	res = pwm_validateTimer(timer, true, DMA_CAP_UPD);
+	if (res < 0) {
+		return res;
+	}
+	res = pwm_validateChannel(timer, chn);
+	if (res < 0) {
+		return res;
+	}
+	if (data == NULL) {
+		return -EINVAL;
+	}
+	if (datasize != 1 && datasize != 2 && datasize != 4) {
+		return -EINVAL;
+	}
+	if ((datasize == 4) && (((PWM_TIM_32BIT >> timer) & 1) == 0)) {
+		return -EINVAL;
+	}
+	if (nbits == 0) {
+		/* Treat as no-op */
+		return 0;
+	}
+
+	mutexLock(pwm_common.timer[timer].mutex);
+#if USE_DSHOT_DMA
+	res = (res < 0) ? res : pwm_initDMA(timer, chn, pwm_dmaUpd);
+
+	const struct libdma_per *per = pwm_common.timer[timer].dma_per[chn];
+	libdma_transfer_buffer_t bufs[2] = {
+		{
+			.buf = data,
+			.bufSize = nbits * datasize,
+			.elSize_log = sizeLog(datasize),
+			.burstSize = 1,
+			.increment = 1,
+			.isCached = 1,
+			.transform = LIBXPDMA_TRANSFORM_ALIGNR0,
+		},
+		/* Add two "idle" values at the end of the DMA buffer.
+		 * One value is necessary because after DMA writes the last compare value, `libdma_tx` exits and user may
+		 * disable the timer immediately without waiting for the final cycle to finish.
+		 * Another value is added because compare values are "delayed" - a write to the CCR register after an update event
+		 * will not take effect immediately, but during the next cycle.
+		 * Without those two "idle" values, the last value would not be transmitted and second-to-last value
+		 * would not be transmitted completely.
+		 * TODO: this could be fixed by waiting two timer cycles after DMA finishes - but this may not be enough depending
+		 * on how fast `libdma_tx` returns after DMA is finished.
+		 */
+		{
+			.buf = (void *)&pwm_idleValue,
+			.bufSize = 2 * sizeof(pwm_idleValue),
+			.elSize_log = sizeLog(sizeof(pwm_idleValue)),
+			.burstSize = 1,
+			.increment = 0,
+			.isCached = 0,
+			.transform = LIBXPDMA_TRANSFORM_ALIGNR0,
+		},
+	};
+	res = (res < 0) ? res : libxpdma_configureMemory(per, dma_mem2per, 0, bufs, 2);
+	/* Start the PWM channel. Set first duty cycle to 0 - idle state. It will be output until DMA takes over. */
+	res = (res < 0) ? res : pwm_setInternal(timer, chn, pwm_idleValue, 0, false);
+	volatile int done = 0;
+	/* Request is disabled before DMA start and enabled after to prevent a possible race condition
+	 * between DMA start and timer update request. */
+	*(pwm_setup.timer[timer].base + tim_dier) &= ~TIM_DIER_UDE;
+	res = (res < 0) ? res : libxpdma_startTransferWithFlag(per, dma_mem2per, &done);
+	*(pwm_setup.timer[timer].base + tim_dier) |= TIM_DIER_UDE;
+	/* TODO: we can calculate a timeout here */
+	res = (res < 0) ? res : libxpdma_waitForTransaction(per, &done, NULL, 0);
+#else
+	(void)pwm_idleValue;
+	uint16_t firstCompare;
+	pwm_irq_t *irq = &pwm_common.timer[timer].irq;
+	pwm_dshot_ctx_t *dshot = &irq->dshot;
+	*dshot = (pwm_dshot_ctx_t) {
+		.chn = chn,
+		.bitPos = 1, /* The first compare value is passed via pwm_set parameter */
+		.bitSize = nbits,
+		.data = data,
+		.dataSize = datasize
+	};
+	irq->flag_dshot_uev = DSHOT_UEV_IRQ_DRIVEN;
+	irq->flag_dshot_end = 0;
+
+	dataBarier();
+
+	firstCompare = pwm_getUserCompareVal(data, 0, datasize);
+	pwm_setInternal(timer, chn, firstCompare, 0, false);
+
+	/* Wait for the DSHOT sequence to end */
+	mutexLock(irq->uevlock);
+	while (!irq->flag_dshot_end) {
+		condWait(irq->uevcond, irq->uevlock, 0);
+	}
+	irq->flag_dshot_uev = DSHOT_UEV_NONE;
+	irq->flag_dshot_end = 0;
+	mutexUnlock(irq->uevlock);
+#endif
+	mutexUnlock(pwm_common.timer[timer].mutex);
+
+	return res;
+}
+
+
+#if USE_DSHOT_DMA
 int pwm_setBitSequence4(pwm_tim_id_t timer, const uint16_t chnRaw[4], const uint16_t val16[4], uint16_t hcmp, uint16_t lcmp, int flags, int rxOutput[4])
 {
 	(void)flags;
