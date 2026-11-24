@@ -156,6 +156,27 @@ typedef struct {
 #endif
 } pwm_tim_data_t;
 
+enum pwm_dmaAllocType {
+	pwm_dmaUpd,
+	pwm_dmaUpdMultiChannel,
+	pwm_dmaCapture,
+};
+
+
+typedef struct {
+	pwm_tim_id_t timer;
+	volatile int done; /* TX complete flag */
+	uint32_t dier;     /* Bits to set in DIER register to enable reception. If == 0, reception disabled. */
+	struct {
+		uint32_t ccerOff; /* CCER value which switches selected channels off */
+		uint32_t ccmr[2]; /* CCMRx values for receiving */
+		uint32_t ccer;    /* CCER value which enables receiving on selected channels */
+		uint32_t srClear; /* Bits to clear in SR register before reception can start */
+		uint32_t arrRx;   /* ARR value for RX timeout */
+		uint32_t arrPrev; /* ARR value to restore after RX timeout */
+	} regs;               /* Pre-rendered register values. May be uninitialized when TX only. */
+} pwm_bitSequenceSwitchArg_t;
+
 /* Idle value made available as a static const, so that it can be read by DMA */
 static const uint16_t pwm_idleValue = 0;
 
@@ -911,13 +932,6 @@ int pwm_get(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t *top, uint32_t *compar
 }
 
 #if USE_DSHOT_DMA
-enum pwm_dmaAllocType {
-	pwm_dmaUpd,
-	pwm_dmaUpdMultiChannel,
-	pwm_dmaCapture,
-};
-
-
 static int pwm_initDMA(pwm_tim_id_t timer, pwm_ch_id_t chn, enum pwm_dmaAllocType type)
 {
 	const struct libdma_per **target;
@@ -1276,22 +1290,6 @@ static void pwm_bitSequenceCleanup(pwm_tim_id_t timer, uint32_t doRx)
 	*(base + tim_dier) &= ~(TIM_DIER_UDE | TIM_DIER_CC1DE | TIM_DIER_CC2DE | TIM_DIER_CC3DE | TIM_DIER_CC4DE);
 	mutexUnlock(t->mutex);
 }
-
-
-typedef struct
-{
-	pwm_tim_id_t timer;
-	volatile int done; /* TX complete flag */
-	uint32_t dier;     /* Bits to set in DIER register to enable reception. If == 0, reception disabled. */
-	struct {
-		uint32_t ccerOff; /* CCER value which switches selected channels off */
-		uint32_t ccmr[2]; /* CCMRx values for receiving */
-		uint32_t ccer;    /* CCER value which enables receiving on selected channels */
-		uint32_t srClear; /* Bits to clear in SR register before reception can start */
-		uint32_t arrRx;   /* ARR value for RX timeout */
-		uint32_t arrPrev; /* ARR value to restore after RX timeout */
-	} regs;               /* Pre-rendered register values. May be uninitialized when TX only. */
-} pwm_bitSequenceSwitchArg_t;
 
 
 /* Render timer configuration data that will be written to registers during ISR */
