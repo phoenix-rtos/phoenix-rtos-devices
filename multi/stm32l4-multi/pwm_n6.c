@@ -983,17 +983,15 @@ static void pwm_bitSequenceCleanup(pwm_tim_id_t timer, uint32_t doRx)
 
 
 /* Render timer configuration data that will be written to registers during ISR */
-static int pwm_bitSequenceTimerReconfig(pwm_tim_id_t timer, uint32_t doRx, uint32_t gcrBitTime, pwm_bitSequenceSwitchArg_t *arg)
+static int pwm_bitSequenceTimerReconfig(pwm_tim_id_t timer, uint32_t doRx, uint32_t arrRx, pwm_bitSequenceSwitchArg_t *arg)
 {
 	volatile uint32_t *base = pwm_setup.timer[timer].base;
 	const uint32_t timerMax = (((PWM_TIM_32BIT >> timer) & 1) != 0) ? 0xFFFFFFFF : 0xFFFF;
-	/* Calculate RX timeout. We will always wait at least this time, so it should be more or less optimal. */
-	uint32_t timerFreq = pwm_common.baseFreq / (*(base + tim_psc) + 1);
-	arg->regs.arrRx = (((DSHOT_SWITCHOVER_US + DSHOT_RX_MARGIN_US) * (timerFreq / 1000000)) + (DSHOT_GCR_N_BITS * gcrBitTime)) - 1;
-	if (arg->regs.arrRx > timerMax) {
+	if (arrRx > timerMax) {
 		return -EINVAL;
 	}
 
+	arg->regs.arrRx = arrRx;
 	arg->regs.arrPrev = pwm_common.timer[timer].arr;
 	arg->regs.srClear = 0;
 	arg->regs.ccerOff = *(base + tim_ccer);
@@ -1479,7 +1477,10 @@ int pwm_setBitSequence4(pwm_tim_id_t timer, const uint16_t chnRaw[4], const uint
 	}
 
 	if (doRx != 0) {
-		res = pwm_bitSequenceTimerReconfig(timer, doRx, gcrBitTime, &arg);
+		/* Calculate RX timeout. We will always wait at least this time, so it should be more or less optimal. */
+		const uint32_t timerFreq = pwm_common.baseFreq / (*(base + tim_psc) + 1);
+		const uint32_t arrRx = (((DSHOT_SWITCHOVER_US + DSHOT_RX_MARGIN_US) * (timerFreq / 1000000)) + (DSHOT_GCR_N_BITS * gcrBitTime)) - 1;
+		res = pwm_bitSequenceTimerReconfig(timer, doRx, arrRx, &arg);
 		if (res < 0) {
 			mutexUnlock(t->mutex);
 			return res;
