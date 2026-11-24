@@ -325,6 +325,20 @@ static inline uint8_t sizeLog(size_t size)
 }
 
 
+static inline int pwm_cleanInvalDCache(void *addr, uint32_t size)
+{
+	platformctl_t pctl = {
+		.action = pctl_set,
+		.type = pctl_cleanInvalDCache,
+		.opDCache = {
+			.addr = addr,
+			.sz = size,
+		},
+	};
+	return platformctl(&pctl);
+}
+
+
 /* Decode timer counts into eRPM value.
  * First it turns timer counts into a stream of bits, then it undoes the modified GCR encoding to get the raw value.
  * * bitlen - expected time per bit (unit: timer tick)
@@ -1519,12 +1533,7 @@ int pwm_setBitSequence4(pwm_tim_id_t timer, const uint16_t chnRaw[4], const uint
 
 	pwm_renderBitSequence(t->dshotData, DSHOT_TX_N_BITS, valIdx, PWM_CHN_NUM, val16, hcmp, lcmp);
 
-	platformctl_t pctl;
-	pctl.action = pctl_set;
-	pctl.type = pctl_cleanInvalDCache;
-	pctl.opDCache.addr = t->dshotData;
-	pctl.opDCache.sz = DSHOT_BUF_SIZE;
-	res = platformctl(&pctl);
+	res = pwm_cleanInvalDCache(t->dshotData, DSHOT_BUF_SIZE);
 	if (res < 0) {
 		pwm_bitSequenceCleanup(timer, doRx);
 		return res;
