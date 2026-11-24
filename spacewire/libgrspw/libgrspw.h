@@ -20,6 +20,8 @@
 #include <string.h>
 #include <stdbool.h>
 
+#include "spw-trace.h"
+
 
 #define SPW_RX_MIN_BUFSZ 4
 #define SPW_TX_MIN_BUFSZ 8
@@ -114,6 +116,9 @@ typedef struct {
 
 	/* array of physical addresses for the DMA */
 	uintptr_t txBuffPa[SPW_TX_DESC_CNT];
+	uintptr_t rxBuffPa[SPW_RX_DESC_CNT];
+
+	uintptr_t rxDescPa; /* stores physical base address of rx descriptor's ring in RAM */
 } spw_dev_t;
 
 
