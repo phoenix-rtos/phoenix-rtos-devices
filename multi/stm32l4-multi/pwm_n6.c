@@ -20,7 +20,7 @@
 #include <sys/interrupt.h>
 #include <sys/pwman.h>
 #include "pwm_n6.h"
-#include "libmulti/libdma.h"
+#include <libxpdma.h>
 #include "libmulti/librcc.h"
 
 #include "common.h"
@@ -960,6 +960,11 @@ static int pwm_initDMA(pwm_tim_id_t timer, pwm_ch_id_t chn, enum pwm_dmaAllocTyp
 	};
 
 	res = (res < 0) ? res : libxpdma_configurePeripheral(*target, dir, &cfg);
+	if (res < 0) {
+		libxpdma_releasePeripheral(*target);
+		*target = NULL;
+	}
+
 	return res;
 }
 #endif
@@ -1579,10 +1584,6 @@ int pwm_setBitSequence4(pwm_tim_id_t timer, const uint16_t chn[PWM_CHN_NUM], con
 
 int pwm_init(void)
 {
-#if USE_DSHOT_DMA
-	libdma_init();
-#endif
-
 	/* All timers have the same base frequency on this platform */
 	pwm_getBaseFrequency(pwm_tim1);
 	return 0;

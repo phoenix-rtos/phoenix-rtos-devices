@@ -1,7 +1,7 @@
 /*
  * Phoenix-RTOS
  *
- * STM32N6/U3 DMA driver
+ * STM32 xPDMA driver
  *
  * Copyright 2020-2025 Phoenix Systems
  * Copyright 2026 Apator Metrix
@@ -15,385 +15,71 @@
 #include <sys/interrupt.h>
 #include <sys/time.h>
 #include <sys/mman.h>
+#include <sys/platform.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "../common.h"
-#include "../stm32l4-multi.h"
-#include "libmulti/libdma.h"
+#include <stm32l4-multi.h>
+#include "libxpdma.h"
+#include "xpdma_defs.h"
 
-#define DMA_SYSPAGE_MAP_NAME "dmamem"
-
-#define DMA_CTRL_GPDMA1 0
-#if defined(__CPU_STM32N6)
-#define DMA_CTRL_HPDMA1     1
-#define DMA_NUM_CONTROLLERS 2
-#define DMA_DEFAULT         DMA_CTRL_HPDMA1
-#define GPDMA1_MAX_IRQ      gpdma1_ch15_irq
-#elif defined(__CPU_STM32U3)
-#define DMA_NUM_CONTROLLERS 1
-#define DMA_DEFAULT         DMA_CTRL_GPDMA1
-#define GPDMA1_MAX_IRQ      gpdma1_ch11_irq
-#endif
-
-#if defined(__CPU_STM32N6)
-/* Channels 12..15 are capable of 2D transfers, others can only do linear transfers */
-#define DMA_NUM_CHANNELS    16
-#define DMA_2D_CAPABLE_MASK ((1 << 16) - (1 << 12))
-
-#define LIBDMA_HAS_DATA_CACHE 1
-#elif defined(__CPU_STM32U3)
-/* Channels 10..11 are capable of 2D transfers, others can only do linear transfers */
-#define DMA_NUM_CHANNELS    12
-#define DMA_2D_CAPABLE_MASK ((1 << 11) | (1 << 10))
-
-#define LIBDMA_HAS_DATA_CACHE 0
-#endif
-
-
-enum dma_reqs {
-#if defined(__CPU_STM32N6)
-	dma_req_jpeg_rx = 0,
-	dma_req_jpeg_tx = 1,
-	dma_req_xspi1 = 2,
-	dma_req_xspi2 = 3,
-	dma_req_xspi3 = 4,
-	dma_req_fmc_txrx = 5,
-	dma_req_fmc_bch = 6,
-	dma_req_adc1 = 7,
-	dma_req_adc2 = 8,
-	dma_req_cryp_in = 9,
-	dma_req_cryp_out = 10,
-	dma_req_saes_out = 11,
-	dma_req_saes_in = 12,
-	dma_req_hash_in = 13,
-	dma_req_tim1_cc1 = 14,
-	dma_req_tim1_cc2 = 15,
-	dma_req_tim1_cc3 = 16,
-	dma_req_tim1_cc4 = 17,
-	dma_req_tim1_upd = 18,
-	dma_req_tim1_trg = 19,
-	dma_req_tim1_com = 20,
-	dma_req_tim2_cc1 = 21,
-	dma_req_tim2_cc2 = 22,
-	dma_req_tim2_cc3 = 23,
-	dma_req_tim2_cc4 = 24,
-	dma_req_tim2_upd = 25,
-	dma_req_tim2_trg = 26,
-	dma_req_tim3_cc1 = 27,
-	dma_req_tim3_cc2 = 28,
-	dma_req_tim3_cc3 = 29,
-	dma_req_tim3_cc4 = 30,
-	dma_req_tim3_upd = 31,
-	dma_req_tim3_trg = 32,
-	dma_req_tim4_cc1 = 33,
-	dma_req_tim4_cc2 = 34,
-	dma_req_tim4_cc3 = 35,
-	dma_req_tim4_cc4 = 36,
-	dma_req_tim4_upd = 37,
-	dma_req_tim4_trg = 38,
-	dma_req_tim5_cc1 = 39,
-	dma_req_tim5_cc2 = 40,
-	dma_req_tim5_cc3 = 41,
-	dma_req_tim5_cc4 = 42,
-	dma_req_tim5_upd = 43,
-	dma_req_tim5_trg = 44,
-	dma_req_tim6_upd = 45,
-	dma_req_tim7_upd = 46,
-	dma_req_tim8_cc1 = 47,
-	dma_req_tim8_cc2 = 48,
-	dma_req_tim8_cc3 = 49,
-	dma_req_tim8_cc4 = 50,
-	dma_req_tim8_upd = 51,
-	dma_req_tim8_trg = 52,
-	dma_req_tim8_com = 53,
-	dma_req_tim15_cc1 = 56,
-	dma_req_tim15_cc2 = 57,
-	dma_req_tim15_upd = 58,
-	dma_req_tim15_trg = 59,
-	dma_req_tim15_com = 60,
-	dma_req_tim16_cc1 = 61,
-	dma_req_tim16_upd = 62,
-	dma_req_tim16_com = 63,
-	dma_req_tim17_cc1 = 64,
-	dma_req_tim17_upd = 65,
-	dma_req_tim17_com = 66,
-	dma_req_tim18_cc1 = 67,
-	dma_req_tim18_upd = 68,
-	dma_req_tim18_com = 69,
-	dma_req_lptim1_ic1 = 70,
-	dma_req_lptim1_ic2 = 71,
-	dma_req_lptim1_ue = 72,
-	dma_req_lptim2_ic1 = 73,
-	dma_req_lptim2_ic2 = 74,
-	dma_req_lptim2_ue = 75,
-	dma_req_lptim3_ic1 = 76,
-	dma_req_lptim3_ic2 = 77,
-	dma_req_lptim3_ue = 78,
-	dma_req_spi1_rx = 79,
-	dma_req_spi1_tx = 80,
-	dma_req_spi2_rx = 81,
-	dma_req_spi2_tx = 82,
-	dma_req_spi3_rx = 83,
-	dma_req_spi3_tx = 84,
-	dma_req_spi4_rx = 85,
-	dma_req_spi4_tx = 86,
-	dma_req_spi5_rx = 87,
-	dma_req_spi5_tx = 88,
-	dma_req_spi6_rx = 89,
-	dma_req_spi6_tx = 90,
-	dma_req_sai1_a = 91,
-	dma_req_sai1_b = 92,
-	dma_req_sai2_a = 93,
-	dma_req_sai2_b = 94,
-	dma_req_i2c1_rx = 95,
-	dma_req_i2c1_tx = 96,
-	dma_req_i2c2_rx = 97,
-	dma_req_i2c2_tx = 98,
-	dma_req_i2c3_rx = 99,
-	dma_req_i2c3_tx = 100,
-	dma_req_i2c4_rx = 101,
-	dma_req_i2c4_tx = 102,
-	dma_req_i3c1_rx = 103,
-	dma_req_i3c1_tx = 104,
-	dma_req_i3c2_rx = 105,
-	dma_req_i3c2_tx = 106,
-	dma_req_usart1_rx = 107,
-	dma_req_usart1_tx = 108,
-	dma_req_usart2_rx = 109,
-	dma_req_usart2_tx = 110,
-	dma_req_usart3_rx = 111,
-	dma_req_usart3_tx = 112,
-	dma_req_uart4_rx = 113,
-	dma_req_uart4_tx = 114,
-	dma_req_uart5_rx = 115,
-	dma_req_uart5_tx = 116,
-	dma_req_usart6_rx = 117,
-	dma_req_usart6_tx = 118,
-	dma_req_uart7_rx = 119,
-	dma_req_uart7_tx = 120,
-	dma_req_uart8_rx = 121,
-	dma_req_uart8_tx = 122,
-	dma_req_uart9_rx = 123,
-	dma_req_uart9_tx = 124,
-	dma_req_usart10_rx = 125,
-	dma_req_usart10_tx = 126,
-	dma_req_lpuart1_rx = 127,
-	dma_req_lpuart1_tx = 128,
-	dma_req_spdifrx_cs = 129,
-	dma_req_spdifrx_dt = 130,
-	dma_req_adf1_flt0 = 131,
-	dma_req_mdf1_flt0 = 132,
-	dma_req_mdf1_flt1 = 133,
-	dma_req_mdf1_flt2 = 134,
-	dma_req_mdf1_flt3 = 135,
-	dma_req_mdf1_flt4 = 136,
-	dma_req_mdf1_flt5 = 137,
-	dma_req_ucpd1_tx = 138,
-	dma_req_ucpd1_rx = 139,
-	dma_req_dcmi = 140,
-	dma_req_i3c1_tc = 141,
-	dma_req_i3c1_rs = 142,
-	dma_req_i3c2_tc = 143,
-	dma_req_i3c2_rs = 144,
-#elif defined(__CPU_STM32U3)
-	dma_req_adc1 = 0,
-	dma_req_adc2,
-	dma_req_dac1,
-	dma_req_dac2,
-	dma_req_tim6_upd,
-	dma_req_tim7_upd,
-	dma_req_spi1_rx,
-	dma_req_spi1_tx,
-	dma_req_spi2_rx,
-	dma_req_spi2_tx,
-	dma_req_spi3_rx,
-	dma_req_spi3_tx,
-	dma_req_i2c1_rx,
-	dma_req_i2c1_tx,
-	dma_req_i2c1_evc,
-	dma_req_i2c2_rx,
-	dma_req_i2c2_tx,
-	dma_req_i2c2_evc,
-	dma_req_i2c3_rx,
-	dma_req_i2c3_tx,
-	dma_req_i2c3_evc,
-	dma_req_i2c4_rx,
-	dma_req_i2c4_tx,
-	dma_req_i2c4_evc,
-	dma_req_usart1_rx,
-	dma_req_usart1_tx,
-	dma_req_usart2_rx,
-	dma_req_usart2_tx,
-	dma_req_usart3_rx,
-	dma_req_usart3_tx,
-	dma_req_uart4_rx,
-	dma_req_uart4_tx,
-	dma_req_uart5_rx,
-	dma_req_uart5_tx,
-	dma_req_lpuart1_rx,
-	dma_req_lpuart1_tx,
-	dma_req_sai1_a,
-	dma_req_sai1_b,
-	dma_req_octospi1 = 40,
-	dma_req_tim1_cc1 = 42,
-	dma_req_tim1_cc2,
-	dma_req_tim1_cc3,
-	dma_req_tim1_cc4,
-	dma_req_tim1_upd,
-	dma_req_tim1_trig,
-	dma_req_tim1_com,
-	dma_req_i3c1_rx,
-	dma_req_i3c1_tx,
-	dma_req_i3c1_tc,
-	dma_req_i3c1_rs,
-	dma_req_tim2_cc1 = 56,
-	dma_req_tim2_cc2,
-	dma_req_tim2_cc3,
-	dma_req_tim2_cc4,
-	dma_req_tim2_upd,
-	dma_req_tim3_cc1,
-	dma_req_tim3_cc2,
-	dma_req_tim3_cc3,
-	dma_req_tim3_cc4,
-	dma_req_tim3_upd,
-	dma_req_tim3_trig,
-	dma_req_tim4_cc1,
-	dma_req_tim4_cc2,
-	dma_req_tim4_cc3,
-	dma_req_tim4_cc4,
-	dma_req_tim4_upd,
-	dma_req_i3c2_rx,
-	dma_req_i3c2_tx,
-	dma_req_i3c2_tc,
-	dma_req_i3c2_rs,
-	dma_req_spi4_rx,
-	dma_req_spi4_tx,
-	dma_req_tim15_cc1,
-	dma_req_tim15_upd,
-	dma_req_tim15_trig,
-	dma_req_tim15_com,
-	dma_req_tim16_cc1,
-	dma_req_tim16_upd,
-	dma_req_tim17_cc1,
-	dma_req_tim17_upd,
-	dma_req_aes_in = 87,
-	dma_req_aes_out,
-	dma_req_hash_in,
-	dma_req_tim8_cc1 = 91,
-	dma_req_tim8_cc2,
-	dma_req_tim8_cc3,
-	dma_req_tim8_cc4,
-	dma_req_tim8_upd,
-	dma_req_tim8_trig,
-	dma_req_tim8_com,
-	dma_req_adf1_flt0,
-	dma_req_saes_in = 103,
-	dma_req_saes_out,
-	dma_req_lptim1_ic1,
-	dma_req_lptim1_ic2,
-	dma_req_lptim1_ue,
-	dma_req_lptim2_ic1,
-	dma_req_lptim2_ic2,
-	dma_req_lptim2_ue,
-	dma_req_lptim3_ic1,
-	dma_req_lptim3_ic2,
-	dma_req_lptim3_ue,
-#endif
-	dma_req_sw_trig = 254,
-	dma_req_invalid = 255,
-};
-
-
-enum xpdma_regs {
-	xpdma_seccfgr = 0x0,
-	xpdma_privcfgr,
-	xpdma_rcfglockr,
-	xpdma_misr,
-	xpdma_smisr,
-};
-
-
-#define CHAN_OFFS(chan) (0x14 + ((chan) * 0x20))
-enum xpdma_cx_regs {
-	xpdma_cxlbar = 0x0,
-	hpdma_cxcidcfgr, /* HPDMA instances only */
-	hpdma_cxsemcr,   /* HPDMA instances only */
-	xpdma_cxfcr,
-	xpdma_cxsr,
-	xpdma_cxcr,
-	xpdma_cxtr1 = 0x10,
-	xpdma_cxtr2,
-	xpdma_cxbr1,
-	xpdma_cxsar,
-	xpdma_cxdar,
-	xpdma_cxtr3, /* 2D DMA only */
-	xpdma_cxbr2, /* 2D DMA only */
-	xpdma_cxllr = 0x1f,
-};
-
-
-/* CxTR1 register is slightly weird - the upper 16 bits mostly refer to the destination and lower 16 bits mostly refer to the source.
- * However, bits 29:26 and 13:10 refer to the transfer as a whole (byte exchange, padding and alignment). */
-#define XPDMA_CXTR1_INDIVIDUAL_BITS 0xc3ffUL
-#define XPDMA_CXTR1_COMMON_BITS     0x3c003c00UL
-#define XPDMA_CXTR1_PAM_MASK        (3 << 11)           /* Mask for padding/alignment mode */
-#define XPDMA_CXTR1_PAM_PACK        (2 << 11)           /* Padding/alignment set to FIFO queued packing */
-#define XPDMA_CXTR1_SRC_EL_SIZE(x)  (((x) >> 0) & 0x3)  /* Log2 of element size for source */
-#define XPDMA_CXTR1_DST_EL_SIZE(x)  (((x) >> 16) & 0x3) /* Log2 of element size for destination */
-
-#define XPDMA_CXTR2_TCEM_BLOCK   (0 << 30) /* Generate TC event on block completion, HT on half block */
-#define XPDMA_CXTR2_TCEM_RBLOCK  (1 << 30) /* Generate TC event on repeated block completion, HT on half repeated block */
-#define XPDMA_CXTR2_TCEM_EACH_LL (2 << 30) /* Generate TC event on each linked-list item completion, HT on half of each list item */
-#define XPDMA_CXTR2_TCEM_LAST_LL (3 << 30) /* Generate TC event on last linked-list item completion, HT on half of last list item */
-#define XPDMA_CXTR2_TCEM_MASK    (3 << 30)
-
-#define XPDMA_CXTR2_PF_NORMAL (0 << 12) /* XPDMA_CxBR1.BNDT[15:0] controls block size */
-#define XPDMA_CXTR2_PF_CTRL   (1 << 12) /* Peripheral controls block size and can complete transfer early */
-#define XPDMA_CXTR2_PER_BURST (0 << 11) /* Hardware requests one burst to be transferred */
-#define XPDMA_CXTR2_PER_BLOCK (1 << 11) /* Hardware requests one block to be transferred */
-#define XPDMA_CXTR2_PER2MEM   (0 << 10) /* Hardware request signals that data is available from source port */
-#define XPDMA_CXTR2_MEM2PER   (1 << 10) /* Hardware request signals that data can be written to destination port */
-#define XPDMA_CXTR2_MEM2MEM   (1 << 9)  /* Channel is software requested, ignore hardware requests */
-
-#define XPDMA_TOF      (1 << 14) /* Trigger overflow */
-#define XPDMA_SUSPF    (1 << 13) /* Channel suspended */
-#define XPDMA_USEF     (1 << 12) /* User setting error */
-#define XPDMA_ULEF     (1 << 11) /* Bus error when updating from linked-list */
-#define XPDMA_DTEF     (1 << 10) /* Bus error when transferring data */
-#define XPDMA_HTF      (1 << 9)  /* Half-transfer complete */
-#define XPDMA_TCF      (1 << 8)  /* Transfer complete */
-#define XPDMA_ALLFLAGS ((XPDMA_TOF << 1) - XPDMA_TCF)
-#define XPDMA_ERRFLAGS (XPDMA_USEF | XPDMA_ULEF | XPDMA_DTEF)
-#define XPDMA_IDLEF    (1 << 0) /* Channel idle */
-
-#define XPDMA_CXLLR_UT1 (1 << 31)
-#define XPDMA_CXLLR_UT2 (1 << 30)
-#define XPDMA_CXLLR_UB1 (1 << 29)
-#define XPDMA_CXLLR_USA (1 << 28)
-#define XPDMA_CXLLR_UDA (1 << 27)
-#define XPDMA_CXLLR_UT3 (1 << 26) /* 2D DMA only */
-#define XPDMA_CXLLR_UB2 (1 << 25) /* 2D DMA only */
-#define XPDMA_CXLLR_ULL (1 << 16)
-
-#define XPDMA_LISTBUF_SIZE 16 /* Maximum size of linked list in memory in words */
+#define NELEMS(x) (sizeof(x) / sizeof(*(x)))
 
 
 struct libdma_perSetup {
-	uint8_t defDMA;                    /* One of DMA_CTRL_* */
-	uint8_t requests[dma_mem2per + 1]; /* One of dma_req_* */
-	uint8_t portPer;                   /* DMA controller port to use for peripheral communication */
-	uint8_t portMem;                   /* DMA controller port to use for memory communication */
+	uint8_t defDMA;                      /* One of DMA_CTRL_* */
+	uint8_t requests[LIBDMA_DIRECTIONS]; /* One of dma_req_* */
+	uint8_t portPer;                     /* DMA controller port to use for peripheral communication */
+	uint8_t portMem;                     /* DMA controller port to use for memory communication */
 	uint8_t valid;
 };
 
+#if LIBDMA_HAS_DATA_CACHE
+#define MAX_BUFS_PER_TRANSACTION 8
+
+typedef struct {
+	const void *buf;
+	ssize_t dirSize; /* 0 => don't perform operation (end of list), < 0 => perform per2mem, > 0 => perform mem2per */
+} libdma_cacheOp_t;
+#endif
+
+typedef struct {
+	uint32_t tr1;
+	uint32_t tr2;
+	uint32_t br1;
+	uint32_t sar;
+	uint32_t dar;
+	uint32_t llr;
+} libdma_chn_setup_t;
+
+typedef struct {
+	handle_t irqLock;
+	handle_t cond;
+	handle_t intr;
+	libdma_chn_setup_t cx;
+	libdma_callback_t *cb;
+	void *cb_arg;
+#if LIBDMA_HAS_DATA_CACHE
+	libdma_cacheOp_t cacheOps[MAX_BUFS_PER_TRANSACTION];
+#endif
+	uint32_t *listbuf; /* Memory for storing linked-list buffer */
+	uint8_t dma;       /* Index of parent DMA controller */
+	uint8_t idx;       /* Index of hardware DMA channel */
+	uint8_t portPer;   /* Port used for peripheral side of the transfer */
+	uint8_t request;   /* One of dma_req_* */
+	uint8_t priority;
+	/* libxpdma_* API functions configure the memory data size and increment at a different point than
+	 * older libdma_* functions, so we need to store them in the driver */
+	struct {
+		uint8_t msize;
+		uint8_t minc;
+	} oldAPI;
+} libxpdma_channel_t;
+
 
 struct libdma_per {
-	uint8_t dma;                   /* Controller selected for the given peripheral. DMA_NUM_CONTROLLERS signifies slot is not in use. */
-	uint8_t chns[dma_mem2per + 1]; /* Channel used for a given direction. Value of DMA_NUM_CHANNELS signifies channel is not in use. */
-	uint8_t reqs[dma_mem2per + 1];
-	uint8_t portPer;
+	libxpdma_channel_t *chns[LIBDMA_DIRECTIONS]; /* May be NULL if no channel allocated for selected direction */
 };
 
 
@@ -563,14 +249,14 @@ static const uint8_t libdma_reqsTimCC4[] = {
 
 
 static const uint8_t libdma_memTransferP2M[] = {
-	[memTransfer_perIsDst] = dma_req_invalid,
-	[memTransfer_perIsSrc] = dma_req_sw_trig,
+	[libxpdma_memTransfer_perIsDst] = dma_req_invalid,
+	[libxpdma_memTransfer_perIsSrc] = dma_req_sw_trig,
 };
 
 
 static const uint8_t libdma_memTransferM2P[] = {
-	[memTransfer_perIsDst] = dma_req_sw_trig,
-	[memTransfer_perIsSrc] = dma_req_invalid,
+	[libxpdma_memTransfer_perIsDst] = dma_req_sw_trig,
+	[libxpdma_memTransfer_perIsSrc] = dma_req_invalid,
 };
 
 typedef struct {
@@ -599,88 +285,24 @@ static const libdma_perReqLookup_t libdma_reqsLookup[] = {
 };
 
 
-typedef struct {
-	uint32_t tr1;
-	uint32_t tr2;
-	uint32_t br1;
-	uint32_t sar;
-	uint32_t dar;
-	uint32_t llr;
-} libdma_chn_setup_t;
-
-
-/* Type of buffer used for making linked lists, will be allocated in non-cached memory */
-typedef uint32_t libdma_listbufs_t[DMA_NUM_CONTROLLERS][DMA_NUM_CHANNELS][XPDMA_LISTBUF_SIZE];
-
-
-#define MAX_BUFS_PER_TRANSACTION 8
-
+static struct {
+	const libxpdma_mgrFunctions_t *mgrFunctions;
 #if LIBDMA_HAS_DATA_CACHE
-typedef struct {
-	const void *buf;
-	ssize_t dirSize; /* 0 => don't perform operation (end of list), < 0 => perform per2mem, > 0 => perform mem2per */
-} libdma_cacheOp_t;
+	void *dmaMemPtr;
+	size_t dmaMemSz;
 #endif
-
-
-static const struct dma_setup {
-	volatile uint32_t *base;
-	int pctl;
-	bool isHPDMA;
-} dma_setup[DMA_NUM_CONTROLLERS] = {
-	[DMA_CTRL_GPDMA1] = {
-		.base = GPDMA_BASE,
-		.pctl = pctl_gpdma1,
-		.isHPDMA = false,
-	},
-#if defined(DMA_CTRL_HPDMA1)
-	[DMA_CTRL_HPDMA1] = {
-		.base = HPDMA_BASE,
-		.pctl = pctl_hpdma1,
-		.isHPDMA = true,
-	},
-#endif
+} libdma_common = {
+	.mgrFunctions = NULL,
 };
 
 
-static struct dma_ctrl {
-	struct dma_channel {
-		handle_t irqLock;
-		handle_t cond;
-		handle_t intr;
-		libdma_chn_setup_t cx;
-		libdma_callback_t *cb;
-		void *cb_arg;
-#if LIBDMA_HAS_DATA_CACHE
-		libdma_cacheOp_t cacheOps[MAX_BUFS_PER_TRANSACTION];
-#endif
-		uint8_t priority;
-		/* libxpdma_* API functions configure the memory data size and increment at a different point than
-		 * older libdma_* functions, so we need to store them in the driver */
-		struct {
-			uint8_t msize;
-			uint8_t minc;
-		} oldAPI;
-	} chns[DMA_NUM_CHANNELS];
-	struct libdma_per pers[DMA_NUM_CHANNELS]; /* Each peripheral takes at least 1 channel, so we can have at most DMA_NUM_CHANNELS peripherals */
-	uint32_t chanFree;                        /* Bitmap of free channels */
-	handle_t takenLock;
-} dma_ctrl[DMA_NUM_CONTROLLERS];
-
-static struct {
-	bool initialized;
-	libdma_listbufs_t *listbufs;
-	void *dmaMemPtr;
-	size_t dmaMemSz;
-#if LIBDMA_HAS_DATA_CACHE
-	handle_t dmaAllocMutex;
-	void *dmaAllocPtr;
-	size_t dmaAllocSz;
-#endif
-} dma_common;
+static inline void dataBarrier(void)
+{
+	__asm__ volatile("dmb" ::: "memory");
+}
 
 
-static void libdma_cleanupTransfer(int dma, int chn);
+static void libdma_cleanupTransfer(libxpdma_channel_t *chn);
 
 
 static inline bool libdma_hasChannelFinished(volatile uint32_t *chnBase)
@@ -689,38 +311,17 @@ static inline bool libdma_hasChannelFinished(volatile uint32_t *chnBase)
 }
 
 
-/* Utility function for verifying arguments and getting the DMA channel */
-static bool libxpdma_getDmaAndChannel(const struct libdma_per *per, int dir, int *dma_out, int *chn_out)
+static libxpdma_channel_t *libxpdma_getVerifyChannel(const struct libdma_per *per, int dir)
 {
 	if (per == NULL) {
-		return false;
+		return NULL;
 	}
 
 	if ((dir != dma_per2mem) && (dir != dma_mem2per)) {
-		return false;
+		return NULL;
 	}
 
-	*dma_out = per->dma;
-	*chn_out = per->chns[dir];
-
-	if (*chn_out == DMA_NUM_CHANNELS) {
-		/* Channel for this direction not allocated */
-		return false;
-	}
-
-	return true;
-}
-
-
-/* Check if a buffer is inside the DMA-capable memory range */
-static bool libxpdma_isInsideDMAMemory(const void *addr, size_t sz)
-{
-	uintptr_t addr_start = (uintptr_t)addr;
-	uintptr_t addr_end = (uintptr_t)addr + sz;
-	bool lowerBound = addr_start >= (uintptr_t)dma_common.dmaMemPtr;
-	bool noOverflow = addr_end >= addr_start;
-	bool upperBound = addr_end <= ((uintptr_t)dma_common.dmaMemPtr + dma_common.dmaMemSz);
-	return lowerBound && noOverflow && upperBound;
+	return per->chns[dir];
 }
 
 
@@ -791,13 +392,19 @@ static inline int libdma_channelToIRQ(unsigned int dma, unsigned int chn)
 #endif
 
 
-static inline volatile uint32_t *libdma_channelBase(int dma, unsigned int chn)
+#if LIBDMA_HAS_DATA_CACHE
+/* Check if a buffer is inside the DMA-capable memory range */
+static bool libxpdma_isInsideDMAMemory(const void *addr, size_t sz)
 {
-	return dma_setup[dma].base + CHAN_OFFS(chn);
+	uintptr_t addr_start = (uintptr_t)addr;
+	uintptr_t addr_end = (uintptr_t)addr + sz;
+	bool lowerBound = addr_start >= (uintptr_t)libdma_common.dmaMemPtr;
+	bool noOverflow = addr_end >= addr_start;
+	bool upperBound = addr_end <= ((uintptr_t)libdma_common.dmaMemPtr + libdma_common.dmaMemSz);
+	return lowerBound && noOverflow && upperBound;
 }
 
 
-#if LIBDMA_HAS_DATA_CACHE
 static void libdma_cacheOpMem2Per(const void *addr, size_t sz)
 {
 	platformctl_t pctl;
@@ -820,9 +427,9 @@ static void libdma_cacheOpPer2Mem(const void *addr, size_t sz)
 }
 
 
-static void libxpdma_performCacheOps(int dma, int chn)
+static void libxpdma_performCacheOps(libxpdma_channel_t *chn)
 {
-	libdma_cacheOp_t *ops = dma_ctrl[dma].chns[chn].cacheOps;
+	libdma_cacheOp_t *ops = chn->cacheOps;
 	for (size_t i = 0; i < MAX_BUFS_PER_TRANSACTION; i++) {
 		if (ops[i].dirSize < 0) {
 			libdma_cacheOpPer2Mem(ops[i].buf, -ops[i].dirSize);
@@ -837,13 +444,13 @@ static void libxpdma_performCacheOps(int dma, int chn)
 }
 
 
-static int libxpdma_addCacheOp(int dma, int chn, const void *buf, size_t size, int dir)
+static int libxpdma_addCacheOp(libxpdma_channel_t *chn, const void *buf, size_t size, int dir)
 {
 	if (size > INT32_MAX) {
 		return -EINVAL;
 	}
 
-	libdma_cacheOp_t *ops = dma_ctrl[dma].chns[chn].cacheOps;
+	libdma_cacheOp_t *ops = chn->cacheOps;
 	ssize_t dirSize = (dir == dma_per2mem) ? -((ssize_t)size) : size;
 	for (size_t i = 0; i < MAX_BUFS_PER_TRANSACTION; i++) {
 		if (ops[i].buf == buf && ops[i].dirSize == dirSize) {
@@ -865,37 +472,32 @@ static int libxpdma_addCacheOp(int dma, int chn, const void *buf, size_t size, i
 }
 
 
-static void libxpdma_clearCacheOps(int dma, int chn)
+static void libxpdma_clearCacheOps(libxpdma_channel_t *chn)
 {
-	dma_ctrl[dma].chns[chn].cacheOps[0].dirSize = 0;
+	chn->cacheOps[0].dirSize = 0;
+}
+#else
+static bool libxpdma_isInsideDMAMemory(const void *addr, size_t sz)
+{
+	(void)addr;
+	(void)sz;
+	return true;
 }
 #endif
 
 
-static void libdma_setLBAR(int dma, int chn, void *addr)
-{
-	platformctl_t pctl;
-	pctl.action = pctl_set;
-	pctl.type = pctl_dmaLinkBaseAddr;
-	pctl.dmaLinkBaseAddr.dev = dma_setup[dma].pctl;
-	pctl.dmaLinkBaseAddr.channel = chn;
-	pctl.dmaLinkBaseAddr.addr = ((uint32_t)addr) & 0xffff0000;
-	platformctl(&pctl);
-}
-
-
 static int libdma_irqHandler(unsigned int n, void *arg)
 {
-	unsigned int dma, chn;
-	if (!libdma_irqToChannel(n, &dma, &chn)) {
+	unsigned int dma, idx;
+	if (!libdma_irqToChannel(n, &dma, &idx)) {
 		return -1;
 	}
 
-	volatile uint32_t *chnBase = libdma_channelBase(dma, chn);
-	struct dma_channel *sChn = &dma_ctrl[dma].chns[chn];
+	libxpdma_channel_t *chn = (libxpdma_channel_t *)arg;
+	volatile uint32_t *chnBase = libdma_channelBase(dma, idx);
 	uint32_t flags = *(chnBase + xpdma_cxsr) & XPDMA_ALLFLAGS;
 	*(chnBase + xpdma_cxfcr) = flags;
-	uint8_t handlerFlags = 0;
+	int handlerFlags = 0;
 	if ((flags & XPDMA_HTF) != 0) {
 		handlerFlags |= dma_ht;
 	}
@@ -904,8 +506,8 @@ static int libdma_irqHandler(unsigned int n, void *arg)
 		handlerFlags |= dma_tc;
 	}
 
-	if (sChn->cb != NULL) {
-		sChn->cb(sChn->cb_arg, handlerFlags);
+	if (chn->cb != NULL) {
+		chn->cb(chn->cb_arg, handlerFlags);
 	}
 
 	/* Check the channel enabled flag to determine if transfer is finished and needs to be cleaned up.
@@ -914,7 +516,7 @@ static int libdma_irqHandler(unsigned int n, void *arg)
 	 * For single transfers, once the transfer is finished TCF will be raised and channel enabled flag
 	 * will be cleared by hardware. */
 	if ((*(chnBase + xpdma_cxcr) & 1) == 0) {
-		libdma_cleanupTransfer(dma, chn);
+		libdma_cleanupTransfer(chn);
 	}
 
 	return 1;
@@ -931,66 +533,37 @@ static void libdma_transferOnceCallback(void *cb_arg, int type)
 
 
 /* Cancel transfer if a transfer is in progress and reset interrupt-related variables */
-static void libdma_cleanupTransfer(int dma, int chn)
+static void libdma_cleanupTransfer(libxpdma_channel_t *chn)
 {
-	volatile uint32_t *chnBase = libdma_channelBase(dma, chn);
+	volatile uint32_t *chnBase = libdma_channelBase(chn->dma, chn->idx);
 
-	dataBarier();
+	dataBarrier();
 	/* Disable DMA interrupts */
 	*(chnBase + xpdma_cxcr) &= ~XPDMA_ALLFLAGS;
-	dataBarier();
+	dataBarrier();
 	if (*(chnBase + xpdma_cxcr) & 1) {
 		/* Channel is still enabled; need to suspend and reset it before it can be used again */
 		*(chnBase + xpdma_cxcr) |= (1 << 2); /* Set SUSP flag */
-		dataBarier();
+		dataBarrier();
 		while ((*(chnBase + xpdma_cxcr) & (1 << 2)) == 0) {
 			/* Wait for hardware to suspend the channel */
 		}
 
 		*(chnBase + xpdma_cxcr) |= (1 << 1); /* Set RESET flag */
-		dataBarier();
+		dataBarrier();
 	}
 
-	dma_ctrl[dma].chns[chn].cb = NULL;
+	chn->cb = NULL;
 }
 
 
-static int libxpdma_findChannel(uint8_t request, int dir, uint32_t *chanFreePtr, uint32_t flags)
+int libxpdma_lookupPeripheral(int perType, unsigned int num, uint8_t requests[2], uint8_t *defaultDMA, uint8_t *portPer)
 {
-	if (request == dma_req_invalid) {
-		return DMA_NUM_CHANNELS;
-	}
-
-	uint32_t chanFreeMasked = *chanFreePtr;
-	bool mask2D = false;
-	if ((dir == dma_per2mem) && ((flags & LIBXPDMA_ACQUIRE_2D_PER2MEM) != 0)) {
-		mask2D = true;
-	}
-	else if ((dir == dma_mem2per) && ((flags & LIBXPDMA_ACQUIRE_2D_MEM2PER) != 0)) {
-		mask2D = true;
-	}
-
-	if (mask2D) {
-		chanFreeMasked &= DMA_2D_CAPABLE_MASK | (~((1u << DMA_NUM_CHANNELS) - 1));
-	}
-
-	int chn = __builtin_ctz(chanFreeMasked);
-	if (chn >= DMA_NUM_CHANNELS) {
-		return -EBUSY;
-	}
-
-	*chanFreePtr &= ~(1u << chn);
-	return chn;
-}
-
-
-static int libxpdma_lookupPeripheral(int per, unsigned int num, uint8_t requests[2], uint8_t *defaultDMA, uint8_t *portPer)
-{
-	if (per >= NELEMS(libdma_reqsLookup)) {
+	if ((perType < 0) || (perType >= NELEMS(libdma_reqsLookup))) {
 		return -EINVAL;
 	}
 
-	const libdma_perReqLookup_t *l = &libdma_reqsLookup[per];
+	const libdma_perReqLookup_t *l = &libdma_reqsLookup[perType];
 	if (num >= l->num) {
 		return -EINVAL;
 	}
@@ -1008,86 +581,135 @@ static int libxpdma_lookupPeripheral(int per, unsigned int num, uint8_t requests
 }
 
 
-int libxpdma_acquirePeripheral(int per, unsigned int num, uint32_t flags, const struct libdma_per **perP)
+static int libxpdma_initChannel(libdma_chnAlloc_t alloc, libxpdma_channel_t **sChn_out)
 {
-	uint8_t requests[2];
-	uint8_t dma;
-	uint8_t portPer;
-
-	int ret = libxpdma_lookupPeripheral(per, num, requests, &dma, &portPer);
-	if (ret < 0) {
-		return ret;
+	if ((alloc.dma >= LIBDMA_NUM_CONTROLLERS) || (alloc.idx >= LIBDMA_NUM_CHANNELS)) {
+		*sChn_out = NULL;
+		return 0;
 	}
 
-	if ((flags & (LIBXPDMA_ACQUIRE_FORCE_HPDMA | LIBXPDMA_ACQUIRE_FORCE_GPDMA)) != 0) {
-		bool findHPDMA = (flags & LIBXPDMA_ACQUIRE_FORCE_HPDMA) != 0;
-		for (dma = 0; dma < DMA_NUM_CONTROLLERS; dma++) {
-			if (dma_setup[dma].isHPDMA == findHPDMA) {
-				break;
-			}
-		}
-
-		if (dma >= DMA_NUM_CONTROLLERS) {
-			return -EINVAL;
-		}
-	}
-
-	struct dma_ctrl *ctrl = &dma_ctrl[dma];
-	mutexLock(ctrl->takenLock);
-
-	struct libdma_per *p = NULL;
-	/* Find a free slot for peripheral information */
-	for (int i = 0; i < sizeof(ctrl->pers) / sizeof(ctrl->pers[0]); i++) {
-		if (ctrl->pers[i].dma >= DMA_NUM_CONTROLLERS) {
-			p = &ctrl->pers[i];
-			break;
-		}
-	}
-
-	if (p == NULL) {
-		mutexUnlock(ctrl->takenLock);
+	int ret;
+	libxpdma_channel_t *chn = calloc(1, sizeof(libxpdma_channel_t));
+	if (chn == NULL) {
+		libdma_common.mgrFunctions->releaseChannel(alloc.dma, alloc.idx);
 		return -ENOMEM;
 	}
 
-	/* Find enough unused channels necessary for peripheral */
-	uint32_t chanFree = ctrl->chanFree;
-	for (int dir = dma_per2mem; dir <= dma_mem2per; dir++) {
-		int acqResult = libxpdma_findChannel(requests[dir], dir, &chanFree, flags);
-		if (acqResult < 0) {
-			mutexUnlock(ctrl->takenLock);
-			return acqResult;
-		}
-
-		p->chns[dir] = acqResult;
+	chn->dma = alloc.dma;
+	chn->idx = alloc.idx;
+	chn->portPer = alloc.portPer;
+	chn->request = alloc.request;
+	chn->listbuf = alloc.listbuf;
+	ret = condCreate(&chn->cond);
+	if (ret < 0) {
+		free(chn);
+		libdma_common.mgrFunctions->releaseChannel(alloc.dma, alloc.idx);
+		return ret;
 	}
 
-	ctrl->chanFree = chanFree;
-	p->dma = dma;
-	p->reqs[0] = requests[0];
-	p->reqs[1] = requests[1];
-	p->portPer = portPer;
-	mutexUnlock(ctrl->takenLock);
+	ret = mutexCreate(&chn->irqLock);
+	if (ret < 0) {
+		resourceDestroy(chn->cond);
+		free(chn);
+		libdma_common.mgrFunctions->releaseChannel(alloc.dma, alloc.idx);
+		return ret;
+	}
+
+	/* Remaining items initialized to 0 by calloc */
+	*sChn_out = chn;
+	return 0;
+}
+
+
+static void libxpdma_freeChannel(libxpdma_channel_t *chn)
+{
+	if (chn == NULL) {
+		return;
+	}
+
+	if (chn->idx < LIBDMA_NUM_CHANNELS) {
+		libdma_cleanupTransfer(chn);
+		libdma_common.mgrFunctions->releaseChannel(chn->dma, chn->idx);
+	}
+
+	if (chn->intr != 0) {
+		resourceDestroy(chn->intr);
+	}
+
+	resourceDestroy(chn->cond);
+	resourceDestroy(chn->irqLock);
+	free(chn);
+}
+
+
+int libxpdma_acquirePeripheral(int per, unsigned int num, uint32_t flags, const struct libdma_per **perP)
+{
+	if (libdma_common.mgrFunctions == NULL) {
+		return -ENOTCONN;
+	}
+
+	struct libdma_per *p = malloc(sizeof(struct libdma_per));
+	if (p == NULL) {
+		return -ENOMEM;
+	}
+
+	libdma_chnAlloc_t alloc[LIBDMA_DIRECTIONS];
+	int ret = libdma_common.mgrFunctions->acquireChannels(per, num, flags, alloc);
+	if (ret < 0) {
+		free(p);
+		return ret;
+	}
+
+	for (size_t dir = 0; dir < LIBDMA_DIRECTIONS; dir++) {
+		ret = (ret < 0) ? ret : libxpdma_initChannel(alloc[dir], &p->chns[dir]);
+		if (ret < 0) {
+			/* If ret < 0, run through the loop and init all pointers to 0 - resources will be freed later */
+			p->chns[dir] = NULL;
+		}
+	}
+
+	if (ret < 0) {
+		libxpdma_releasePeripheral(p);
+		return ret;
+	}
 
 	*perP = p;
 	return EOK;
 }
 
 
+void libxpdma_releasePeripheral(const struct libdma_per *per)
+{
+	if ((libdma_common.mgrFunctions == NULL) || (per == NULL)) {
+		return;
+	}
+
+	for (size_t dir = 0; dir < LIBDMA_DIRECTIONS; dir++) {
+		libxpdma_freeChannel(per->chns[dir]);
+	}
+
+	/* Cast is needed because for backwards compatibility with libdma `per` is defined as const */
+	free((void *)per);
+}
+
+
 int libxpdma_configureChannel(const struct libdma_per *per, int dir, int priority, handle_t *cond)
 {
-	int dma, chn;
-	if (!libxpdma_getDmaAndChannel(per, dir, &dma, &chn)) {
+	libxpdma_channel_t *chn = libxpdma_getVerifyChannel(per, dir);
+	if (chn == NULL) {
 		return -EINVAL;
 	}
 
-	struct dma_channel *sChn = &dma_ctrl[dma].chns[chn];
-	sChn->priority = priority;
-	if (sChn->intr == 0) {
-		handle_t interruptCond = (cond == NULL) ? sChn->cond : *cond;
-		interrupt(libdma_channelToIRQ(dma, chn), libdma_irqHandler, NULL, interruptCond, &sChn->intr);
+	chn->priority = priority;
+	if (chn->intr == 0) {
+		handle_t interruptCond = (cond == NULL) ? chn->cond : *cond;
+		int ret = interrupt(libdma_channelToIRQ(chn->dma, chn->idx), libdma_irqHandler, (void *)chn, interruptCond, &chn->intr);
+		if (ret < 0) {
+			return ret;
+		}
 	}
 
-	sChn->cx.br1 &= 0xffff; /* Zero out upper bits of CxBR1 */
+	chn->cx.br1 &= 0xffff; /* Zero out upper bits of CxBR1 */
 
 	return EOK;
 }
@@ -1095,12 +717,12 @@ int libxpdma_configureChannel(const struct libdma_per *per, int dir, int priorit
 
 int libxpdma_configurePeripheral(const struct libdma_per *per, int dir, const libdma_peripheral_config_t *cfg)
 {
-	int dma, chn;
-	if (!libxpdma_getDmaAndChannel(per, dir, &dma, &chn)) {
+	libxpdma_channel_t *chn = libxpdma_getVerifyChannel(per, dir);
+	if ((chn == NULL) || (cfg == NULL)) {
 		return -EINVAL;
 	}
 
-	const uint8_t max_elSize_log = dma_setup[dma].isHPDMA ? 3 : 2;
+	const uint8_t max_elSize_log = dma_setup[chn->dma].isHPDMA ? 3 : 2;
 	if (cfg->elSize_log > max_elSize_log) {
 		return -EINVAL;
 	}
@@ -1110,36 +732,35 @@ int libxpdma_configurePeripheral(const struct libdma_per *per, int dir, const li
 	}
 
 	uint32_t shift = (dir == dma_mem2per) ? 16 : 0;
-	struct dma_channel *sChn = &dma_ctrl[dma].chns[chn];
 	/* The other half of the register will be configured by libxpdma_configureMemory */
-	sChn->cx.tr1 &= ~(XPDMA_CXTR1_INDIVIDUAL_BITS << shift);
+	chn->cx.tr1 &= ~(XPDMA_CXTR1_INDIVIDUAL_BITS << shift);
 	uint32_t cxtr1_temp =
 			(1u << 15) | /* secure transfer */
-			((per->portPer & 1) << 14) |
+			((chn->portPer & 1) << 14) |
 			(((cfg->burstSize - 1) & 0x3f) << 4) |
 			((cfg->increment != 0) ? (1 << 3) : 0) |
 			((cfg->elSize_log & 0x3) << 0);
-	sChn->cx.tr1 |= cxtr1_temp << shift;
+	chn->cx.tr1 |= cxtr1_temp << shift;
 
 	/* TCEM bits will be configured by libxpdma_configureMemory */
-	sChn->cx.tr2 &= XPDMA_CXTR2_TCEM_MASK;
-	if (per->reqs[dir] == dma_req_sw_trig) {
-		sChn->cx.tr2 |= XPDMA_CXTR2_MEM2MEM;
+	chn->cx.tr2 &= XPDMA_CXTR2_TCEM_MASK;
+	if (chn->request == dma_req_sw_trig) {
+		chn->cx.tr2 |= XPDMA_CXTR2_MEM2MEM;
 	}
 	else {
 		uint32_t dir_bit = (dir == dma_mem2per) ? XPDMA_CXTR2_MEM2PER : XPDMA_CXTR2_PER2MEM;
-		sChn->cx.tr2 |=
+		chn->cx.tr2 |=
 				XPDMA_CXTR2_PF_NORMAL |
 				XPDMA_CXTR2_PER_BURST |
 				dir_bit |
-				(per->reqs[dir] & 0xff);
+				(chn->request & 0xff);
 	}
 
 	if (dir == dma_mem2per) {
-		sChn->cx.dar = (uint32_t)cfg->addr;
+		chn->cx.dar = (uint32_t)cfg->addr;
 	}
 	else {
-		sChn->cx.sar = (uint32_t)cfg->addr;
+		chn->cx.sar = (uint32_t)cfg->addr;
 	}
 
 	return EOK;
@@ -1180,15 +801,14 @@ static bool libxpdma_setTransform(uint16_t flags, uint32_t *val)
 
 
 static ssize_t libxpdma_configureBuffer(
-		int dma,
-		int chn,
+		libxpdma_channel_t *chn,
 		const struct libdma_per *per,
 		const libdma_transfer_buffer_t *buf,
 		int dir,
 		libdma_chn_setup_t *setup,
 		uint32_t *changeMask_out)
 {
-	const uint8_t max_elSize_log = dma_setup[dma].isHPDMA ? 3 : 2;
+	const uint8_t max_elSize_log = dma_setup[chn->dma].isHPDMA ? 3 : 2;
 	if ((buf->bufSize == 0) || ((buf->bufSize & ((1 << buf->elSize_log) - 1)) != 0)) {
 		return -EINVAL;
 	}
@@ -1261,7 +881,7 @@ static ssize_t libxpdma_configureBuffer(
 	*changeMask_out = changeMask;
 #if LIBDMA_HAS_DATA_CACHE
 	if (buf->isCached != 0) {
-		int ret = libxpdma_addCacheOp(dma, chn, buf->buf, buf->bufSize, dir);
+		int ret = libxpdma_addCacheOp(chn, buf->buf, buf->bufSize, dir);
 		if (ret < 0) {
 			return ret;
 		}
@@ -1272,13 +892,7 @@ static ssize_t libxpdma_configureBuffer(
 }
 
 
-static inline uint32_t *libxpdma_getListbuf(int dma, int chn)
-{
-	return (*dma_common.listbufs)[dma][chn];
-}
-
-
-static int libxpdma_updateLL(int dma, int chn, libdma_chn_setup_t *setup, ssize_t n_changes, uint32_t changeMask, uint32_t **this_ll, size_t *listbuf_offset)
+static int libxpdma_updateLL(libxpdma_channel_t *chn, libdma_chn_setup_t *setup, ssize_t n_changes, uint32_t changeMask, uint32_t **this_ll, size_t *listbuf_offset)
 {
 	if (n_changes < 0) {
 		return n_changes;
@@ -1287,11 +901,11 @@ static int libxpdma_updateLL(int dma, int chn, libdma_chn_setup_t *setup, ssize_
 	changeMask |= XPDMA_CXLLR_ULL;
 	n_changes++;
 	size_t i = *listbuf_offset;
-	if ((i + (size_t)n_changes) > XPDMA_LISTBUF_SIZE) {
+	if ((i + (size_t)n_changes) > XPDMA_LISTBUF_LEN) {
 		return -ENOMEM;
 	}
 
-	uint32_t *listbuf = libxpdma_getListbuf(dma, chn);
+	uint32_t *listbuf = chn->listbuf;
 	**this_ll = changeMask | (((uint32_t)&listbuf[i]) & 0xffff);
 	if ((changeMask & XPDMA_CXLLR_UT1) != 0) {
 		listbuf[i] = setup->tr1;
@@ -1328,9 +942,9 @@ static int libxpdma_updateLL(int dma, int chn, libdma_chn_setup_t *setup, ssize_
 
 int libxpdma_configureMemory(const struct libdma_per *per, int dir, int isCircular, const libdma_transfer_buffer_t *buffers, size_t n_buffers)
 {
-	int dma, chn;
 	ssize_t ret;
-	if (!libxpdma_getDmaAndChannel(per, dir, &dma, &chn)) {
+	libxpdma_channel_t *chn = libxpdma_getVerifyChannel(per, dir);
+	if (chn == NULL) {
 		return -EINVAL;
 	}
 
@@ -1338,45 +952,50 @@ int libxpdma_configureMemory(const struct libdma_per *per, int dir, int isCircul
 		return -EINVAL;
 	}
 
-	libdma_chn_setup_t lastSetup = dma_ctrl[dma].chns[chn].cx;
+	if (((n_buffers > 1) || (isCircular != 0)) && (chn->listbuf == NULL)) {
+		/* Parameters require the use of a linked-list, but this channel doesn't have memory allocated for it */
+		return -ENOMEM;
+	}
+
+	libdma_chn_setup_t lastSetup = chn->cx;
 	lastSetup.tr2 &= ~XPDMA_CXTR2_TCEM_MASK;
 	lastSetup.tr2 |= (isCircular != 0) ? XPDMA_CXTR2_TCEM_EACH_LL : XPDMA_CXTR2_TCEM_LAST_LL;
 
 #if LIBDMA_HAS_DATA_CACHE
-	libxpdma_clearCacheOps(dma, chn);
+	libxpdma_clearCacheOps(chn);
 #endif
 	uint32_t unused;
-	ret = libxpdma_configureBuffer(dma, chn, per, &buffers[0], dir, &lastSetup, &unused);
+	ret = libxpdma_configureBuffer(chn, per, &buffers[0], dir, &lastSetup, &unused);
 	if (ret < 0) {
 		return ret;
 	}
 
 	lastSetup.llr = 0;
-	dma_ctrl[dma].chns[chn].cx = lastSetup;
+	chn->cx = lastSetup;
 
-	uint32_t *this_ll = &dma_ctrl[dma].chns[chn].cx.llr;
+	uint32_t *this_ll = &chn->cx.llr;
 	size_t listbuf_offset = 0;
 	uint32_t changeMask;
 	for (size_t i = 1; i < n_buffers; i++) {
 		/* Add linked list element */
-		ret = libxpdma_configureBuffer(dma, chn, per, &buffers[i], dir, &lastSetup, &changeMask);
-		ret = libxpdma_updateLL(dma, chn, &lastSetup, ret, changeMask, &this_ll, &listbuf_offset);
+		ret = libxpdma_configureBuffer(chn, per, &buffers[i], dir, &lastSetup, &changeMask);
+		ret = libxpdma_updateLL(chn, &lastSetup, ret, changeMask, &this_ll, &listbuf_offset);
 		if (ret < 0) {
 			return ret;
 		}
 	}
 
 	if (isCircular != 0) {
-		ret = libxpdma_configureBuffer(dma, chn, per, &buffers[0], dir, &lastSetup, &changeMask);
-		ret = libxpdma_updateLL(dma, chn, &lastSetup, ret, changeMask, &this_ll, &listbuf_offset);
+		ret = libxpdma_configureBuffer(chn, per, &buffers[0], dir, &lastSetup, &changeMask);
+		ret = libxpdma_updateLL(chn, &lastSetup, ret, changeMask, &this_ll, &listbuf_offset);
 		if (n_buffers > 1) {
 			/* Loop back to first element in memory */
-			*this_ll = dma_ctrl[dma].chns[chn].cx.llr;
+			*this_ll = chn->cx.llr;
 		}
 		else {
 			/* Optimization - if there is only one buffer, we can skip updating LLR -
 			 * updating it would only set it to the same value it had before. */
-			dma_ctrl[dma].chns[chn].cx.llr &= ~XPDMA_CXLLR_ULL;
+			chn->cx.llr &= ~XPDMA_CXLLR_ULL;
 		}
 
 		if (ret < 0) {
@@ -1390,8 +1009,8 @@ int libxpdma_configureMemory(const struct libdma_per *per, int dir, int isCircul
 
 static int libxpdma_startTransaction(const struct libdma_per *per, int dir, int intrFlags, libdma_callback_t *cb, void *cb_arg)
 {
-	int dma, chn;
-	if (!libxpdma_getDmaAndChannel(per, dir, &dma, &chn)) {
+	libxpdma_channel_t *chn = libxpdma_getVerifyChannel(per, dir);
+	if (chn == NULL) {
 		return -EINVAL;
 	}
 
@@ -1400,38 +1019,37 @@ static int libxpdma_startTransaction(const struct libdma_per *per, int dir, int 
 		return -EINVAL;
 	}
 
-	volatile uint32_t *chn_base = libdma_channelBase(dma, chn);
+	volatile uint32_t *chn_base = libdma_channelBase(chn->dma, chn->idx);
 	/* Channel is currently enabled, cannot reconfigure it now */
 	if ((*(chn_base + xpdma_cxcr) & 1) != 0) {
 		return -EBUSY;
 	}
 
 #if LIBDMA_HAS_DATA_CACHE
-	libxpdma_performCacheOps(dma, chn);
+	libxpdma_performCacheOps(chn);
 #endif
-	struct dma_channel *sChn = &dma_ctrl[dma].chns[chn];
-	sChn->cb = cb;
-	sChn->cb_arg = cb_arg;
+	chn->cb = cb;
+	chn->cb_arg = cb_arg;
 
-	*(chn_base + xpdma_cxtr1) = dma_ctrl[dma].chns[chn].cx.tr1;
-	*(chn_base + xpdma_cxtr2) = dma_ctrl[dma].chns[chn].cx.tr2;
-	*(chn_base + xpdma_cxbr1) = dma_ctrl[dma].chns[chn].cx.br1;
-	*(chn_base + xpdma_cxsar) = dma_ctrl[dma].chns[chn].cx.sar;
-	*(chn_base + xpdma_cxdar) = dma_ctrl[dma].chns[chn].cx.dar;
-	*(chn_base + xpdma_cxllr) = dma_ctrl[dma].chns[chn].cx.llr;
+	*(chn_base + xpdma_cxtr1) = chn->cx.tr1;
+	*(chn_base + xpdma_cxtr2) = chn->cx.tr2;
+	*(chn_base + xpdma_cxbr1) = chn->cx.br1;
+	*(chn_base + xpdma_cxsar) = chn->cx.sar;
+	*(chn_base + xpdma_cxdar) = chn->cx.dar;
+	*(chn_base + xpdma_cxllr) = chn->cx.llr;
 
 	uint32_t v = *(chn_base + xpdma_cxcr);
 	v &= ~(0x3 << 22);
-	v |= (sChn->priority & 0x3) << 22;
+	v |= (chn->priority & 0x3) << 22;
 	v &= ~(XPDMA_TCF | XPDMA_HTF);
 	v |= ((intrFlags & dma_tc) != 0) ? XPDMA_TCF : 0;
 	v |= ((intrFlags & dma_ht) != 0) ? XPDMA_HTF : 0;
 	/* Use port 1 to access linked lists (AHB on both HPDMA and GPDMA instances) */
 	v |= 1 << 17;
 	*(chn_base + xpdma_cxcr) = v;
-	dataBarier();
+	dataBarrier();
 	*(chn_base + xpdma_cxcr) = v | 1;
-	dataBarier();
+	dataBarrier();
 	return EOK;
 }
 
@@ -1455,14 +1073,17 @@ int libxpdma_startTransferPollingOnly(const struct libdma_per *per, int dir)
 }
 
 
-static int libxpdma_waitForChannelIntr(int dma, int chn, volatile int *doneFlag, time_t timeout, time_t end)
+static int libxpdma_waitForChannelIntr(libxpdma_channel_t *chn, volatile int *doneFlag, time_t timeout, time_t end)
 {
 	int ret = EOK;
-	struct dma_channel *sChn = &dma_ctrl[dma].chns[chn];
 	time_t condTimeout = timeout;
-	mutexLock(sChn->irqLock);
+	mutexLock(chn->irqLock);
 	while (*doneFlag == 0) {
-		condWait(sChn->cond, sChn->irqLock, condTimeout);
+		ret = condWait(chn->cond, chn->irqLock, condTimeout);
+		if (ret < 0) {
+			break;
+		}
+
 		if (timeout != 0) {
 			time_t now;
 			gettime(&now, NULL);
@@ -1475,10 +1096,10 @@ static int libxpdma_waitForChannelIntr(int dma, int chn, volatile int *doneFlag,
 		}
 	}
 
-	mutexUnlock(sChn->irqLock);
+	mutexUnlock(chn->irqLock);
 
 	/* Channel may have been cleaned up by interrupt, in which case this function call won't do anything */
-	libdma_cleanupTransfer(dma, chn);
+	libdma_cleanupTransfer(chn);
 	return ret;
 }
 
@@ -1494,12 +1115,13 @@ int libxpdma_waitForTransaction(const struct libdma_per *per, volatile int *flag
 	bool doP2M = flagPer2Mem != NULL;
 
 	volatile int *flags[2];
-	int dmas[2], chns[2];
+	libxpdma_channel_t *chns[2];
 	if (doM2P != doP2M) {
 		/* Waiting on 1 channel */
 		int dir = doM2P ? dma_mem2per : dma_per2mem;
 		flags[0] = doM2P ? flagMem2Per : flagPer2Mem;
-		if (!libxpdma_getDmaAndChannel(per, dir, &dmas[0], &chns[0])) {
+		chns[0] = libxpdma_getVerifyChannel(per, dir);
+		if (chns[0] == NULL) {
 			return -EINVAL;
 		}
 
@@ -1508,12 +1130,14 @@ int libxpdma_waitForTransaction(const struct libdma_per *per, volatile int *flag
 	else if (doP2M) {
 		/* Waiting on 2 channels */
 		flags[0] = flagPer2Mem;
-		if (!libxpdma_getDmaAndChannel(per, dma_per2mem, &dmas[0], &chns[0])) {
+		chns[0] = libxpdma_getVerifyChannel(per, dma_per2mem);
+		if (chns[0] == NULL) {
 			return -EINVAL;
 		}
 
 		flags[1] = flagMem2Per;
-		if (!libxpdma_getDmaAndChannel(per, dma_mem2per, &dmas[1], &chns[1])) {
+		chns[1] = libxpdma_getVerifyChannel(per, dma_mem2per);
+		if (chns[1] == NULL) {
 			return -EINVAL;
 		}
 	}
@@ -1528,10 +1152,10 @@ int libxpdma_waitForTransaction(const struct libdma_per *per, volatile int *flag
 		end = now + timeout;
 	}
 
-	int ret = libxpdma_waitForChannelIntr(dmas[0], chns[0], flags[0], timeout, end);
+	int ret = libxpdma_waitForChannelIntr(chns[0], flags[0], timeout, end);
 	if ((ret == EOK) && (flags[1] != NULL)) {
 		/* Both RX and TX channels given - we already waited for RX, now wait for TX */
-		volatile uint32_t *chnBase = libdma_channelBase(dmas[1], chns[1]);
+		volatile uint32_t *chnBase = libdma_channelBase(chns[1]->dma, chns[1]->idx);
 		while (!libdma_hasChannelFinished(chnBase)) {
 			/* Wait for the other channel to finish */
 			if (timeout != 0) {
@@ -1539,7 +1163,7 @@ int libxpdma_waitForTransaction(const struct libdma_per *per, volatile int *flag
 				gettime(&now, NULL);
 				if (end <= now) {
 					ret = -ETIME;
-					libdma_cleanupTransfer(dmas[1], chns[1]);
+					libdma_cleanupTransfer(chns[1]);
 					break;
 				}
 			}
@@ -1552,8 +1176,8 @@ int libxpdma_waitForTransaction(const struct libdma_per *per, volatile int *flag
 
 int libxpdma_waitPoll(const struct libdma_per *per, int dir, time_t timeout)
 {
-	int dma, chn;
-	if (!libxpdma_getDmaAndChannel(per, dir, &dma, &chn)) {
+	libxpdma_channel_t *chn = libxpdma_getVerifyChannel(per, dir);
+	if (chn == NULL) {
 		return -EINVAL;
 	}
 
@@ -1565,7 +1189,7 @@ int libxpdma_waitPoll(const struct libdma_per *per, int dir, time_t timeout)
 	}
 
 	int ret = EOK;
-	volatile uint32_t *chnBase = libdma_channelBase(dma, chn);
+	volatile uint32_t *chnBase = libdma_channelBase(chn->dma, chn->idx);
 	while (!libdma_hasChannelFinished(chnBase)) {
 		/* Wait for the channel to finish */
 		if (timeout != 0) {
@@ -1573,7 +1197,7 @@ int libxpdma_waitPoll(const struct libdma_per *per, int dir, time_t timeout)
 			gettime(&now, NULL);
 			if (end <= now) {
 				ret = -ETIME;
-				libdma_cleanupTransfer(dma, chn);
+				libdma_cleanupTransfer(chn);
 				break;
 			}
 		}
@@ -1585,24 +1209,24 @@ int libxpdma_waitPoll(const struct libdma_per *per, int dir, time_t timeout)
 
 int libxpdma_cancelTransfer(const struct libdma_per *per, int dir)
 {
-	int dma, chn;
-	if (!libxpdma_getDmaAndChannel(per, dir, &dma, &chn)) {
+	libxpdma_channel_t *chn = libxpdma_getVerifyChannel(per, dir);
+	if (chn == NULL) {
 		return -EINVAL;
 	}
 
-	libdma_cleanupTransfer(dma, chn);
+	libdma_cleanupTransfer(chn);
 	return EOK;
 }
 
 
 ssize_t libxpdma_bufferRemaining(const struct libdma_per *per, int dir)
 {
-	int dma, chn;
-	if (!libxpdma_getDmaAndChannel(per, dir, &dma, &chn)) {
+	libxpdma_channel_t *chn = libxpdma_getVerifyChannel(per, dir);
+	if (chn == NULL) {
 		return -EINVAL;
 	}
 
-	volatile uint32_t *chnBase = libdma_channelBase(dma, chn);
+	volatile uint32_t *chnBase = libdma_channelBase(chn->dma, chn->idx);
 	/* Only bottom 16 bits contain data. */
 	uint32_t nBytesSrc = *(chnBase + xpdma_cxbr1) & 0xffff;
 	/* Block size stored in BR1 register is always counted at *source* element size.
@@ -1622,54 +1246,6 @@ ssize_t libxpdma_bufferRemaining(const struct libdma_per *per, int dir)
 }
 
 
-static int libdma_getDmaMemory(void)
-{
-	void *dmaMemPtr = NULL;
-	size_t dmaMemSz = 0;
-
-#if LIBDMA_HAS_DATA_CACHE
-	/* Get memory that is DMA capable (non-cached).
-	 * We can't do this using mmap(), because this is a NOMMU target so the MAP_UNCACHED flag does nothing.
-	 * Instead, we check the system's memory maps if there's a map with a pre-defined name (`DMA_SYSPAGE_MAP_NAME`).
-	 */
-	meminfo_t mi;
-	mi.page.mapsz = -1;
-	mi.entry.kmapsz = -1;
-	mi.entry.mapsz = -1;
-	mi.maps.mapsz = 0;
-	mi.maps.map = NULL;
-	meminfo(&mi);
-
-	mi.maps.map = malloc(mi.maps.mapsz * sizeof(mapinfo_t));
-	if (mi.maps.map == NULL) {
-		return -ENOMEM;
-	}
-
-	meminfo(&mi);
-	for (int i = 0; i < mi.maps.mapsz; i++) {
-		if (strcmp(mi.maps.map[i].name, DMA_SYSPAGE_MAP_NAME) == 0) {
-			dmaMemPtr = (void *)mi.maps.map[i].vstart;
-			dmaMemSz = mi.maps.map[i].vend - mi.maps.map[i].vstart;
-			break;
-		}
-	}
-
-	free(mi.maps.map);
-#else
-	dmaMemSz = sizeof(*dma_common.listbufs);
-	dmaMemPtr = malloc(dmaMemSz);
-#endif
-
-	if (dmaMemPtr == NULL) {
-		return -ENODEV;
-	}
-
-	dma_common.dmaMemPtr = dmaMemPtr;
-	dma_common.dmaMemSz = dmaMemSz;
-	return EOK;
-}
-
-
 void *libdma_malloc(size_t size, size_t alignment)
 {
 	/* Alignment must be a power of 2 */
@@ -1677,23 +1253,11 @@ void *libdma_malloc(size_t size, size_t alignment)
 		return NULL;
 	}
 
-#if LIBDMA_HAS_DATA_CACHE
-	mutexLock(dma_common.dmaAllocMutex);
-	size_t misalign = (alignment == 0) ? 0 : ((uintptr_t)dma_common.dmaAllocPtr & (alignment - 1));
-	misalign = (misalign != 0) ? (alignment - misalign) : 0;
 
-	if ((dma_common.dmaAllocSz < misalign) || (size > (dma_common.dmaAllocSz - misalign))) {
-		mutexUnlock(dma_common.dmaAllocMutex);
-		return NULL;
+	if (libdma_common.mgrFunctions->malloc != NULL) {
+		return libdma_common.mgrFunctions->malloc(size, alignment, 0); /* For now flags are not supported */
 	}
 
-	dma_common.dmaAllocSz -= misalign;
-	dma_common.dmaAllocPtr += misalign;
-	void *ret = dma_common.dmaAllocPtr;
-	dma_common.dmaAllocSz -= size;
-	dma_common.dmaAllocPtr += size;
-	mutexUnlock(dma_common.dmaAllocMutex);
-#else
 	void *ret = malloc(size);
 	if (ret == NULL) {
 		return NULL;
@@ -1717,7 +1281,6 @@ void *libdma_malloc(size_t size, size_t alignment)
 	 * Note: because `ret` could be offset from the malloc'ed chunk of memory, it can't be passed directly to free().
 	 * Remember this for the future when implementing libdma_free().
 	 */
-#endif
 	return ret;
 }
 
@@ -1742,8 +1305,8 @@ int libdma_configurePeripheral(
 		int pinc,
 		handle_t *cond)
 {
-	int dma, chn;
-	if (!libxpdma_getDmaAndChannel(per, dir, &dma, &chn)) {
+	libxpdma_channel_t *chn = libxpdma_getVerifyChannel(per, dir);
+	if (chn == NULL) {
 		return -EINVAL;
 	}
 
@@ -1763,8 +1326,8 @@ int libdma_configurePeripheral(
 		return ret;
 	}
 
-	dma_ctrl[dma].chns[chn].oldAPI.minc = minc;
-	dma_ctrl[dma].chns[chn].oldAPI.msize = msize;
+	chn->oldAPI.minc = minc;
+	chn->oldAPI.msize = msize;
 
 	return EOK;
 }
@@ -1773,20 +1336,20 @@ int libdma_configurePeripheral(
 static int libdma_transferInternal(const struct libdma_per *per, int dir, void *addr, size_t len, int mode, time_t timeout, volatile int *doneFlagPtr)
 {
 	int ret;
-	int dma, chn;
-	if (!libxpdma_getDmaAndChannel(per, dir, &dma, &chn)) {
+	libxpdma_channel_t *chn = libxpdma_getVerifyChannel(per, dir);
+	if (chn == NULL) {
 		return -EINVAL;
 	}
 
 	libdma_transfer_buffer_t buf = {
 		.buf = addr,
 		.bufSize = len,
-		.elSize_log = dma_ctrl[dma].chns[chn].oldAPI.msize,
+		.elSize_log = chn->oldAPI.msize,
 		.burstSize = 1,
-		.increment = dma_ctrl[dma].chns[chn].oldAPI.minc,
+		.increment = chn->oldAPI.minc,
 		/* Because the older APIs don't have a way to state if the buffer is cacheable,
 		 * use a heuristic - if it's not in DMA memory, treat it as cacheable. */
-		.isCached = (LIBDMA_HAS_DATA_CACHE && libxpdma_isInsideDMAMemory(addr, len)) ? 0 : 1,
+		.isCached = libxpdma_isInsideDMAMemory(addr, len) ? 0 : 1,
 
 	};
 	ret = libxpdma_configureMemory(per, dir, 0, &buf, 1);
@@ -1822,7 +1385,7 @@ static int libdma_transferInternal(const struct libdma_per *per, int dir, void *
 			return len;
 		}
 
-		return len - (*(libdma_channelBase(dma, chn) + xpdma_cxbr1) & 0xffff);
+		return len - (*(libdma_channelBase(chn->dma, chn->idx) + xpdma_cxbr1) & 0xffff);
 	}
 
 	return (ret < 0) ? ret : len;
@@ -1832,8 +1395,8 @@ static int libdma_transferInternal(const struct libdma_per *per, int dir, void *
 int libdma_transfer(const struct libdma_per *per, void *rxMAddr, const void *txMAddr, size_t len)
 {
 	int ret;
-	int txDma, txChn;
-	if (!libxpdma_getDmaAndChannel(per, dma_mem2per, &txDma, &txChn)) {
+	libxpdma_channel_t *txChn = libxpdma_getVerifyChannel(per, dma_mem2per);
+	if (txChn == NULL) {
 		return -EINVAL;
 	}
 
@@ -1850,10 +1413,10 @@ int libdma_transfer(const struct libdma_per *per, void *rxMAddr, const void *txM
 	else {
 		buf.buf = (void *)txMAddr;
 		buf.bufSize = len;
-		buf.elSize_log = dma_ctrl[txDma].chns[txChn].oldAPI.msize;
+		buf.elSize_log = txChn->oldAPI.msize;
 		buf.burstSize = 1;
-		buf.increment = dma_ctrl[txDma].chns[txChn].oldAPI.minc;
-		buf.isCached = (LIBDMA_HAS_DATA_CACHE && libxpdma_isInsideDMAMemory(txMAddr, len)) ? 0 : 1;
+		buf.increment = txChn->oldAPI.minc;
+		buf.isCached = libxpdma_isInsideDMAMemory(txMAddr, len) ? 0 : 1;
 	}
 
 	ret = libxpdma_configureMemory(per, dma_mem2per, 0, &buf, 1);
@@ -1908,18 +1471,18 @@ int libdma_infiniteRxAsync(const struct libdma_per *per, void *rxMAddr, size_t l
 		return libxpdma_cancelTransfer(per, dma_per2mem);
 	}
 
-	int dma, chn;
-	if (!libxpdma_getDmaAndChannel(per, dma_per2mem, &dma, &chn)) {
+	libxpdma_channel_t *chn = libxpdma_getVerifyChannel(per, dma_per2mem);
+	if (chn == NULL) {
 		return -EINVAL;
 	}
 
 	libdma_transfer_buffer_t buf = {
 		.buf = rxMAddr,
 		.bufSize = len,
-		.elSize_log = dma_ctrl[dma].chns[chn].oldAPI.msize,
+		.elSize_log = chn->oldAPI.msize,
 		.burstSize = 1,
-		.increment = dma_ctrl[dma].chns[chn].oldAPI.minc,
-		.isCached = (LIBDMA_HAS_DATA_CACHE && libxpdma_isInsideDMAMemory(rxMAddr, len)) ? 0 : 1,
+		.increment = chn->oldAPI.minc,
+		.isCached = libxpdma_isInsideDMAMemory(rxMAddr, len) ? 0 : 1,
 	};
 
 	int ret = libxpdma_configureMemory(per, dma_per2mem, 1, &buf, 1);
@@ -1940,58 +1503,37 @@ uint16_t libdma_leftToRx(const struct libdma_per *per)
 
 int libdma_init(void)
 {
-	if (dma_common.initialized) {
-		return EOK;
+	return (libdma_common.mgrFunctions == NULL) ? -ENXIO : 0;
+}
+
+
+int libxpdma_init(const libxpdma_mgrFunctions_t *mgrFunctions)
+{
+	if (mgrFunctions == NULL) {
+		return -EINVAL;
 	}
 
-	int ret;
-	ret = libdma_getDmaMemory();
+	if (mgrFunctions->getMemoryParams == NULL ||
+			mgrFunctions->acquireChannels == NULL ||
+			mgrFunctions->releaseChannel == NULL) {
+		return -EINVAL;
+	}
+
+	void *dmaMemPtr;
+	size_t dmaMemSz;
+	int ret = mgrFunctions->getMemoryParams(&dmaMemPtr, &dmaMemSz);
 	if (ret < 0) {
 		return ret;
 	}
 
-	if (dma_common.dmaMemSz < sizeof(*dma_common.listbufs)) {
-		return -ENOMEM;
-	}
-
-	dma_common.listbufs = dma_common.dmaMemPtr;
-
 #if LIBDMA_HAS_DATA_CACHE
-	mutexCreate(&dma_common.dmaAllocMutex);
-	dma_common.dmaAllocPtr = dma_common.dmaMemPtr + sizeof(*dma_common.listbufs);
-	dma_common.dmaAllocSz = dma_common.dmaMemSz - sizeof(*dma_common.listbufs);
+	libdma_common.dmaMemPtr = dmaMemPtr;
+	libdma_common.dmaMemSz = dmaMemSz;
+#else
+	(void)dmaMemPtr;
+	(void)dmaMemSz;
 #endif
 
-	platformctl_t pctl;
-	pctl.action = pctl_set;
-	pctl.type = pctl_dmaPermissions;
-	pctl.dmaPermissions.secure = 1;
-	pctl.dmaPermissions.privileged = -1;
-	pctl.dmaPermissions.lock = 0;
-
-	for (size_t dma = 0; dma < DMA_NUM_CONTROLLERS; dma++) {
-		devClk(dma_setup[dma].pctl, 1);
-		mutexCreate(&dma_ctrl[dma].takenLock);
-		pctl.dmaPermissions.dev = dma_setup[dma].pctl;
-		for (size_t chn = 0; chn < DMA_NUM_CHANNELS; chn++) {
-			pctl.dmaPermissions.channel = chn;
-			platformctl(&pctl);
-			condCreate(&dma_ctrl[dma].chns[chn].cond);
-			mutexCreate(&dma_ctrl[dma].chns[chn].irqLock);
-			/* Set base address for channel's linked list buffer */
-			libdma_setLBAR(dma, chn, libxpdma_getListbuf(dma, chn));
-			*(libdma_channelBase(dma, chn) + xpdma_cxcr) = (1 << 1); /* Reset channel */
-		}
-
-		for (size_t per = 0; per < (sizeof(dma_ctrl[dma].pers) / sizeof(dma_ctrl[dma].pers[0])); per++) {
-			dma_ctrl[dma].pers[per].dma = DMA_NUM_CONTROLLERS;
-			dma_ctrl[dma].pers[per].chns[0] = DMA_NUM_CHANNELS;
-			dma_ctrl[dma].pers[per].chns[1] = DMA_NUM_CHANNELS;
-		}
-
-		dma_ctrl[dma].chanFree = ~0u; /* NOTE: bits after (1 << DMA_NUM_CHANNELS) must always be 1 */
-	}
-
-	dma_common.initialized = true;
-	return EOK;
+	libdma_common.mgrFunctions = mgrFunctions;
+	return 0;
 }
