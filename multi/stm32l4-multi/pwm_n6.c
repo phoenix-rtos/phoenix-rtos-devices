@@ -1340,7 +1340,7 @@ int pwm_get(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t *top, uint32_t *compar
 }
 
 
-int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t nbits, uint8_t datasize, int flags)
+int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t nbits, uint8_t datasize, int flags, uint16_t *rxBuf, uint32_t rxCnt, uint32_t rxTicks)
 {
 	int res;
 	res = pwm_validateTimer(timer, true, DMA_CAP_UPD);
@@ -1369,8 +1369,29 @@ int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t
 	 * high and compare values express the time the line is held low */
 	const uint8_t activeLow = ((flags & PWM_BITSEQ_IDLE_HIGH) != 0) ? 1U : 0U;
 
+	const uint32_t doRx = ((flags & PWM_BITSEQ_RX) != 0) ? (1U << chn) : 0U;
+	if (doRx != 0) {
+#if USE_DSHOT_DMA
+		res = pwm_validateTimer(timer, true, DMA_CAP_CC1 << chn);
+		if (res < 0) {
+			return res;
+		}
+		/* XPDMA block size is 16-bit (in bytes), timestamps are 16-bit */
+		if ((rxBuf == NULL) || (rxCnt == 0) || (rxCnt > (0xffffU / sizeof(uint16_t))) || (rxTicks == 0) || (rxTicks > 0x10000U)) {
+			return -EINVAL;
+		}
+		/* rxBuf is written by DMA and invalidated afterwards - it must not share cache lines with other data */
+		if ((((uintptr_t)rxBuf % CACHE_LINE_SIZE) != 0) || (((rxCnt * sizeof(uint16_t)) % CACHE_LINE_SIZE) != 0)) {
+			return -EINVAL;
+		}
+#else
+		return -ENOSYS;
+#endif
+	}
+
 	mutexLock(pwm_common.timer[timer].mutex);
 #if USE_DSHOT_DMA
+	pwm_tim_data_t *t = &pwm_common.timer[timer];
 	volatile uint32_t *base = pwm_setup.timer[timer].base;
 	pwm_bitSequenceSwitchArg_t arg = {
 		.timer = timer,
@@ -1379,6 +1400,21 @@ int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t
 	};
 
 	res = (res < 0) ? res : pwm_initDMA(timer, chn, pwm_dmaUpd);
+	if ((res >= 0) && (doRx != 0)) {
+		res = pwm_initDMA(timer, chn, pwm_dmaCapture);
+		libdma_transfer_buffer_t rxDesc = {
+			.buf = rxBuf,
+			.bufSize = rxCnt * sizeof(uint16_t),
+			.elSize_log = sizeLog(sizeof(uint16_t)),
+			.burstSize = 1,
+			.increment = 1,
+			.isCached = 1,
+			.transform = LIBXPDMA_TRANSFORM_ALIGNR0,
+		};
+		/* Capture channel memory setup is shared with pwm_setBitSequence4() - make it redo its setup next time */
+		t->dma_skipSetup &= ~(1U << (SKIPSETUP_DMA_CAPTURE_SHIFT + chn));
+		res = (res < 0) ? res : libxpdma_configureMemory(t->dma_capture[chn], dma_per2mem, 0, &rxDesc, 1);
+	}
 
 	const struct libdma_per *per = pwm_common.timer[timer].dma_per[chn];
 	libdma_transfer_buffer_t bufs[2] = {
@@ -1414,21 +1450,51 @@ int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t
 	res = (res < 0) ? res : libxpdma_configureMemory(per, dma_mem2per, 0, bufs, 2);
 	/* Start the PWM channel. Set first duty cycle to 0 - idle state. It will be output until DMA takes over. */
 	res = (res < 0) ? res : pwm_setInternal(timer, chn, pwm_idleValue, activeLow, false);
+	if ((res >= 0) && (doRx != 0)) {
+		res = pwm_bitSequenceTimerReconfig(timer, doRx, rxTicks - 1U, &arg);
+		res = (res < 0) ? res : libxpdma_startTransferPollingOnly(t->dma_capture[chn], dma_per2mem);
+		t->irq.flag_dshot_uev = (res < 0) ? DSHOT_UEV_NONE : DSHOT_UEV_DMA_RX_END;
+	}
 	/* Request is disabled before DMA start and enabled after to prevent a possible race condition
 	 * between DMA start and timer update request. */
 	*(base + tim_dier) &= ~TIM_DIER_UDE;
 	res = (res < 0) ? res : libxpdma_startTransferWithCallback(per, dma_mem2per, dma_tc, pwm_bitSequenceSwitchISR, &arg);
 	if (res < 0) {
-		pwm_bitSequenceCleanup(timer, 0);
+		t->irq.flag_dshot_uev = DSHOT_UEV_NONE;
+		pwm_bitSequenceCleanup(timer, doRx);
 		return res;
 	}
 	*(base + tim_dier) |= TIM_DIER_UDE;
 
-	/* TODO: we can calculate a timeout here */
-	res = libxpdma_waitForTransaction(per, &arg.done, NULL, 0);
-	pwm_bitSequenceCleanup(timer, 0);
-	return res;
+	if (doRx == 0) {
+		/* TODO: we can calculate a timeout here */
+		res = libxpdma_waitForTransaction(per, &arg.done, NULL, 0);
+		pwm_bitSequenceCleanup(timer, doRx);
+		return res;
+	}
+
+	pwm_bitSequenceWaitRxEnd(timer);
+	if (arg.done == 0) {
+		/* TX DMA hasn't finished - way past timeout */
+		libxpdma_cancelTransfer(per, dma_mem2per);
+		pwm_bitSequenceCleanup(timer, doRx);
+		return -ETIME;
+	}
+
+	ssize_t remaining = libxpdma_bufferRemaining(t->dma_capture[chn], dma_per2mem);
+	pwm_bitSequenceCleanup(timer, doRx);
+
+	(void)pwm_cleanInvalDCache(rxBuf, rxCnt * sizeof(uint16_t));
+
+	if (remaining < 0) {
+		return (int)remaining;
+	}
+
+	return (int)(rxCnt - ((size_t)remaining / sizeof(uint16_t)));
 #else
+	(void)rxBuf;
+	(void)rxCnt;
+	(void)rxTicks;
 	(void)pwm_idleValue;
 	uint16_t firstCompare;
 	pwm_irq_t *irq = &pwm_common.timer[timer].irq;

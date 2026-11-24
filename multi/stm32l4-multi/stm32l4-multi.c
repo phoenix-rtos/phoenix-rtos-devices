@@ -294,7 +294,8 @@ static void handleMsgMulti(msg_t *msg)
 			break;
 		case pwm_bitseq:
 			err = pwm_setBitSequence(imsg->pwm_bitseq.timer, imsg->pwm_bitseq.chn, imsg->pwm_bitseq.data,
-					imsg->pwm_bitseq.nbits, imsg->pwm_bitseq.datasize, imsg->pwm_bitseq.flags);
+					imsg->pwm_bitseq.nbits, imsg->pwm_bitseq.datasize, imsg->pwm_bitseq.flags,
+					imsg->pwm_bitseq.rxBuf, imsg->pwm_bitseq.rxCnt, imsg->pwm_bitseq.rxTicks);
 			break;
 		case pwm_bitseq4:
 			const uint16_t chn[] = { imsg->pwm_bitseq4.chn[0], imsg->pwm_bitseq4.chn[1], imsg->pwm_bitseq4.chn[2], imsg->pwm_bitseq4.chn[3] };

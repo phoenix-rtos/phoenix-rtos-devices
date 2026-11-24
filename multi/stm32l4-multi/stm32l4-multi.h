@@ -232,6 +232,7 @@ typedef struct {
 
 /* pwm_bitseq flags */
 #define PWM_BITSEQ_IDLE_HIGH (1 << 0) /* Inverted polarity: line idles high, compare value = time the line is LOW */
+#define PWM_BITSEQ_RX        (1 << 1) /* After transmission capture edges on the same channel (rx* fields), DMA only */
 
 
 typedef struct {
@@ -241,6 +242,10 @@ typedef struct {
 	uint32_t nbits;
 	uint8_t datasize;
 	int flags;
+	/* Used only with PWM_BITSEQ_RX: */
+	uint16_t *rxBuf;  /* Edge timestamps in timer ticks since the start of reception (cache line aligned) */
+	uint32_t rxCnt;   /* Capacity of rxBuf (in elements), rxCnt * 2 must be a multiple of the cache line size */
+	uint32_t rxTicks; /* Reception window in timer ticks (1..65536) */
 } __attribute__((packed)) pwmbitseq_t;
 
 
