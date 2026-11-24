@@ -230,6 +230,10 @@ typedef struct {
 #define PWM_BITSEQ4_CHN_MASK      0xFFUL      /* Mask for channel number */
 
 
+/* pwm_bitseq flags */
+#define PWM_BITSEQ_IDLE_HIGH (1 << 0) /* Inverted polarity: line idles high, compare value = time the line is LOW */
+
+
 typedef struct {
 	pwm_tim_id_t timer;
 	pwm_ch_id_t chn;

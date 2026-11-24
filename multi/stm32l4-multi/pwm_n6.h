@@ -82,6 +82,7 @@ int pwm_get(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t *top, uint32_t *compar
  * data - buffer of compare values, each n bytes wide, where n=datasize
  * nbits - number of bits to transmit
  * datasize - number of bytes per compare value in data (1,2,4)
+ * flags - PWM_BITSEQ_IDLE_HIGH: inverted polarity - line idles high, compare value is the time the line is held low
  */
 int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t nbits, uint8_t datasize, int flags);
 

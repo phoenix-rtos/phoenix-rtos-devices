@@ -1337,6 +1337,10 @@ int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t
 		return 0;
 	}
 
+	/* PWM_BITSEQ_IDLE_HIGH inverts the output polarity (as in bidirectional DShot): the idle compare value keeps the line
+	 * high and compare values express the time the line is held low */
+	const uint8_t activeLow = ((flags & PWM_BITSEQ_IDLE_HIGH) != 0) ? 1U : 0U;
+
 	mutexLock(pwm_common.timer[timer].mutex);
 #if USE_DSHOT_DMA
 	res = (res < 0) ? res : pwm_initDMA(timer, chn, pwm_dmaUpd);
@@ -1374,7 +1378,7 @@ int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t
 	};
 	res = (res < 0) ? res : libxpdma_configureMemory(per, dma_mem2per, 0, bufs, 2);
 	/* Start the PWM channel. Set first duty cycle to 0 - idle state. It will be output until DMA takes over. */
-	res = (res < 0) ? res : pwm_setInternal(timer, chn, pwm_idleValue, 0, false);
+	res = (res < 0) ? res : pwm_setInternal(timer, chn, pwm_idleValue, activeLow, false);
 	volatile int done = 0;
 	/* Request is disabled before DMA start and enabled after to prevent a possible race condition
 	 * between DMA start and timer update request. */
@@ -1401,7 +1405,7 @@ int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t
 	dataBarier();
 
 	firstCompare = pwm_getUserCompareVal(data, 0, datasize);
-	pwm_setInternal(timer, chn, firstCompare, 0, false);
+	pwm_setInternal(timer, chn, firstCompare, activeLow, false);
 
 	/* Wait for the DSHOT sequence to end */
 	mutexLock(irq->uevlock);
