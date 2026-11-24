@@ -7,8 +7,8 @@
 #
 
 NAME := libgrspw
-LOCAL_HEADERS := libgrspw.h
-LOCAL_SRCS := libgrspw.c
+LOCAL_HEADERS := libgrspw.h spw-trace.h
+LOCAL_SRCS := libgrspw.c spw-trace.c
 
 include $(static-lib.mk)
 
