@@ -1064,6 +1064,20 @@ static void pwm_bitSequenceSwitchISR(void *cbArg, int type)
 }
 
 
+/* Wait for update event that signals end of RX */
+static void pwm_bitSequenceWaitRxEnd(pwm_tim_id_t timer)
+{
+	pwm_irq_t *irq = &pwm_common.timer[timer].irq;
+	mutexLock(irq->uevlock);
+	while (!irq->flag_uevreceived) {
+		condWait(irq->uevcond, irq->uevlock, 0);
+	}
+
+	irq->flag_uevreceived = 0;
+	mutexUnlock(irq->uevlock);
+}
+
+
 static void pwm_bitSequenceFinalizeRx(pwm_tim_id_t timer, uint32_t gcrBitTime, uint32_t doRx, int valIdx[PWM_CHN_NUM], int rxOutput[4])
 {
 	pwm_tim_data_t *t = &pwm_common.timer[timer];
@@ -1553,15 +1567,7 @@ int pwm_setBitSequence4(pwm_tim_id_t timer, const uint16_t chnRaw[4], const uint
 		return res;
 	}
 	else {
-		pwm_irq_t *irq = &pwm_common.timer[timer].irq;
-		/* Wait for update event that signals end of RX */
-		mutexLock(irq->uevlock);
-		while (!irq->flag_uevreceived) {
-			condWait(irq->uevcond, irq->uevlock, 0);
-		}
-
-		irq->flag_uevreceived = 0;
-		mutexUnlock(irq->uevlock);
+		pwm_bitSequenceWaitRxEnd(timer);
 
 		/* If TX DMA hasn't finished yet, it's way past timeout - cleanup and bail out */
 		if (arg.done == 0) {
