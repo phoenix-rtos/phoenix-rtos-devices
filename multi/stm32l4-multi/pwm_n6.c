@@ -643,9 +643,10 @@ static int pwm_setInternal(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t compare
 {
 	volatile uint32_t *base = pwm_setup.timer[timer].base;
 
-	/* If channel is on, then only reconfigure compare value */
+	/* If channel is on with the requested polarity, then only reconfigure compare value */
 	uint8_t prevChannelOn = atomic_fetch_or(&pwm_common.timer[timer].channelOn, (1 << chn));
-	if (((prevChannelOn >> chn) & 1) != 0) {
+	uint8_t prevActiveLow = (*(base + tim_ccer) >> PWM_CCER_CCP_OFF(chn)) & 1U;
+	if ((((prevChannelOn >> chn) & 1) != 0) && ((activeLow != 0) == (prevActiveLow != 0))) {
 		*(base + PWM_CCR_REG(chn)) = compare;
 		return EOK;
 	}
