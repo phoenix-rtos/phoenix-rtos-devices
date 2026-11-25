@@ -1484,6 +1484,11 @@
 #error "BUILTIN_POSIXSRV must have a value of 0, 1, or be undefined"
 #endif
 
+/* libcoredumpsrv */
+#ifndef BUILTIN_COREDUMPSRV
+#define BUILTIN_COREDUMPSRV 1
+#endif
+
 
 /* Pseudodev */
 
