@@ -77,13 +77,18 @@ int pwm_set(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t compare, uint8_t activ
 int pwm_get(pwm_tim_id_t timer, pwm_ch_id_t chn, uint32_t *top, uint32_t *compare);
 
 
-/* Transmits a bit sequence according to a list of compare values. Configure a timer first.
+/* Transmits a bit sequence according to a list of compare values, optionally followed by reception. Configure a timer first.
  * NOTE: For now only one DSHOT bit sequence per timer at once (both IRQ and DMA modes)
  * data - buffer of compare values, each n bytes wide, where n=datasize
  * nbits - number of bits to transmit
  * datasize - number of bytes per compare value in data (1,2,4)
+ * flags - PWM_BITSEQ_IDLE_HIGH: inverted polarity - line idles high, compare value is the time the line is held low
+ *         PWM_BITSEQ_RX: after the sequence, switch the channel to input capture on both edges for rxTicks timer ticks
+ *         and store the edge timestamps (ticks since the switch) in rxBuf (DMA only). rxBuf and its size in bytes
+ *         must be multiples of the cache line size.
+ * Returns 0 (or number of captured edges with PWM_BITSEQ_RX) on success, negative error code otherwise.
  */
-int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t nbits, uint8_t datasize, int flags);
+int pwm_setBitSequence(pwm_tim_id_t timer, pwm_ch_id_t chn, void *data, uint32_t nbits, uint8_t datasize, int flags, uint16_t *rxBuf, uint32_t rxCnt, uint32_t rxTicks);
 
 
 int pwm_setBitSequence4(pwm_tim_id_t timer, const uint16_t chn[PWM_CHN_NUM], const uint16_t val16[PWM_CHN_NUM], uint16_t hcmp, uint16_t lcmp, int flags, int rxOutput[PWM_CHN_NUM]);
