@@ -96,8 +96,7 @@
 #define CTL_ALNUM(c) (((c) >= '0' && (c) <= '9') || ((c) >= 'a' && (c) <= 'z') || ((c) >= 'A' && (c) <= 'Z'))
 
 
-/* writing chars to TX buffer without any futher processing */
-static int _libttydisc_txFeedback(libtty_common_t *tty, const char *data, size_t len)
+int _libttydisc_txFeedback(libtty_common_t *tty, const char *data, size_t len)
 {
 	const char *data_end = data + len;
 
@@ -205,6 +204,39 @@ int _libtty_putchar(libtty_common_t *tty, unsigned char c, int *wake_reader)
 {
 	if (wake_reader != NULL) {
 		*wake_reader = 0;
+	}
+
+	/* IXON: VSTOP suspends output, VSTART resumes it. */
+	if (CMP_FLAG(i, IXON)) {
+		if (CMP_CC(VSTOP, c)) {
+			tty->t_flags |= TF_OOFF;
+			/* don't write the start/stop character */
+			return 0;
+		}
+		else if (CMP_CC(VSTART, c)) {
+			if ((tty->t_flags & TF_OOFF) != 0) {
+				tty->t_flags &= ~TF_OOFF;
+				CALLBACK(signal_txready);
+			}
+			/* don't write the start/stop character */
+			return 0;
+		}
+
+		/* IXANY: any incoming character can "wake us up" from TF_OOFF */
+		if (CMP_FLAG(i, IXANY)) {
+			if ((tty->t_flags & TF_OOFF) != 0) {
+				tty->t_flags &= ~TF_OOFF;
+				CALLBACK(signal_txready);
+			}
+		}
+	}
+
+	/* IXOFF: send VSTOP if RX queue is nearly full (VSTART sent in libtty_read) */
+	if (CMP_FLAG(i, IXOFF) && fifo_freespace(tty->rx_fifo) < LIBTTYDISC_INPUT_OFF_THRESHOLD && (tty->t_flags & TF_IOFF) == 0) {
+		const char cstop = tty->term.c_cc[VSTOP];
+		if (cstop != _POSIX_VDISABLE && _libttydisc_txFeedback(tty, &cstop, 1) == 1) {
+			tty->t_flags |= TF_IOFF;
+		}
 	}
 
 	/* ISTRIP: removing the top bit */
@@ -339,6 +371,7 @@ void _libtty_wake_reader(libtty_common_t *tty)
 int _libttydisc_writeOproc(libtty_common_t *tty, char c)
 {
 	int ret = 0;
+	size_t scnt;
 
 #define PRINT_NORMAL() _libttydisc_txFeedback(tty, &c, 1)
 	switch (c) {
@@ -347,12 +380,14 @@ int _libttydisc_writeOproc(libtty_common_t *tty, char c)
 
 		case CTAB:
 			/* Tab expansion. */
+			scnt = 8 - (tty->txcol & 0x7);
 			if (CMP_FLAG(o, TAB3)) {
-				ret = _libttydisc_txFeedback(tty, "        ", 8);
+				ret = _libttydisc_txFeedback(tty, "        ", scnt);
 			}
 			else {
 				ret = PRINT_NORMAL();
 			}
+			tty->txcol += ret;
 			return ret;
 
 		case CNL:
@@ -364,6 +399,10 @@ int _libttydisc_writeOproc(libtty_common_t *tty, char c)
 			else {
 				ret = PRINT_NORMAL();
 			}
+
+			if (CMP_FLAG(o, ONLCR | ONLRET)) {
+				tty->txcol = 0;
+			}
 			return ret;
 
 		case CCR:
@@ -371,6 +410,12 @@ int _libttydisc_writeOproc(libtty_common_t *tty, char c)
 			if (CMP_FLAG(o, OCRNL)) {
 				c = CNL;
 			}
+			/* Omit carriage return on column 0 */
+			if (CMP_FLAG(o, ONOCR) && tty->txcol == 0) {
+				return 0;
+			}
+
+			tty->txcol = 0;
 			return PRINT_NORMAL();
 	}
 
