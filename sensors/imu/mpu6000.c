@@ -33,6 +33,21 @@
 /* Sample rate divider accepts all values 0-255. Providing only div=1 macro */
 #define REG_SMPRT_DIV   0x19
 #define VAL_SMPRT_DIV_1 0x00 /* sample rate divider = 1 */
+#define VAL_SMPRT_DIV_2 0x01 /* sample rate divider = 2 */
+#define VAL_SMPRT_DIV_4 0x03 /* sample rate divider = 4 */
+#define VAL_SMPRT_DIV_8 0x07 /* sample rate divider = 8 */
+
+/* interrupt configuration registers */
+#define REG_INT_PIN_CFG              0x37
+#define MASK_INT_PIN_CFG_LEVEL       (1 << 7) /* when set the INT pin is active low */
+#define MASK_INT_PIN_CFG_OPEN        (1 << 6) /* INT pin is: 0 - push-pull, 1 - open drain */
+#define MASK_INT_PIN_CFG_LATCH_EN    (1 << 5) /* when set to 1 INT pin is held high till cleared, otherwise 50us pulse is generated */
+#define MASK_INT_PIN_CFG_RD_CLEAR    (1 << 4) /* when set to 1 INT status is cleared on any read operation, otherwise INT_STATUS needs to be read */
+#define MASK_INT_PIN_CFG_FSYNC_LEVEL (1 << 3) /* when set the FSYNC pin is active low */
+#define MASK_INT_PIN_CFG_FSYNC_EN    (1 << 2) /* when set FSYNC is used as interrupt pin */
+
+#define REG_INT_ENABLE              0x38
+#define MASK_INT_ENABLE_DATA_RDY_EN (1 << 0) /* enable data ready interrupt */
 
 #define REG_CONFIG                0x1a
 #define VAL_CONFIG_DLPF_CFG_NONE  0x07 /* no LPF, 8KHz gyro sampling */
@@ -122,14 +137,20 @@ static int spiWriteReg(sensor_bus_t *bus, uint8_t regAddr, uint8_t regVal)
 }
 
 
+static int spiReadReg(sensor_bus_t *bus, uint8_t regAddr, uint8_t *regVal)
+{
+	uint8_t cmd = regAddr | SPI_READ_BIT;
+
+	return bus->ops.bus_xfer(bus, &cmd, sizeof(cmd), regVal, sizeof(*regVal), sizeof(cmd));
+}
+
+
 static int mpu6000_whoamiCheck(sensor_bus_t *bus)
 {
-	uint8_t cmd, val;
+	uint8_t val;
 	int err;
 
-	cmd = REG_WHOAMI | SPI_READ_BIT;
-	val = 0;
-	err = bus->ops.bus_xfer(bus, &cmd, sizeof(cmd), &val, sizeof(val), sizeof(cmd));
+	err = spiReadReg(bus, REG_WHOAMI, &val);
 	if ((err < 0) || (val != VAL_WHOAMI)) {
 		return -1;
 	}
@@ -180,6 +201,16 @@ static int mpu6000_hwSetup(sensor_bus_t *bus, mpu6000_ctx_t *ctx)
 	}
 
 	if (spiWriteReg(bus, REG_ACCEL_CONFIG, VAL_ACCEL_CONFIG_AFS_SEL_8G) < 0) {
+		return -1;
+	}
+
+	/* enable update interrupts - enable clear on any read (status will not be read) */
+	if (spiWriteReg(bus, REG_INT_PIN_CFG, MASK_INT_PIN_CFG_RD_CLEAR) < 0) {
+		return -1;
+	}
+
+	/* enable data ready interrupt */
+	if (spiWriteReg(bus, REG_INT_ENABLE, MASK_INT_ENABLE_DATA_RDY_EN) < 0) {
 		return -1;
 	}
 
