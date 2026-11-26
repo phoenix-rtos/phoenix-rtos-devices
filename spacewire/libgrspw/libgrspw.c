@@ -174,7 +174,7 @@ static inline uint64_t get_time_us(void)
 #define TX_DESC_HDR_LEN (0xffU)
 #define TX_DESC_USR_MSK (TX_DESC_DCRC | TX_DESC_HCRC | TX_DESC_NON_CRC | TX_DESC_HDR_LEN)
 
-#define TX_IRQ_EACH_PACKET 1
+#define TX_IRQ_EACH_PACKET 0
 
 
 /* Auxiliary functions */
@@ -368,9 +368,9 @@ int spw_transmit(spw_dev_t *dev, const uint8_t *buf, size_t bufsz, const spw_tx_
         desc->packetLen = packet.dataLen;
 
         /* Everything is set up, enable descriptor */
+		memoryBarrier();
         desc->ctrl |= TX_DESC_EN;
 
-		
         /* Start transmission */
         dev->lastTxDesc = (dev->lastTxDesc + 1) % SPW_TX_DESC_CNT;
 
@@ -447,6 +447,7 @@ int spw_rxConfigure(spw_dev_t *dev, size_t *firstDesc, const size_t nPackets)
 
 	*firstDesc = (dev->nextRxDesc + SPW_RX_DESC_CNT - nPackets) % SPW_RX_DESC_CNT;
 
+	memoryBarrier();
 	/* Enable receiver */
 	dev->vbase[DMA_CTRL] |= (DMA_CTRL_RE | DMA_CTRL_RD);
 
@@ -509,7 +510,12 @@ int spw_rxRead(spw_dev_t *dev, uint8_t *buf, size_t bufsz, size_t *readCnt, cons
             (void)mutexLock(dev->rxLock);
 
             if (waitErr == -ETIME) {
-				LOG("packet: %zu timeout: %uus", firstDesc, timeoutUs);
+				LOG("packet: %zu timeout: %uus | DMA_CTRL=0x%08x DMA_RX_DESC=0x%08x (pa=0x%08x) SPW_STATUS=0x%08x",
+				firstDesc, timeoutUs,
+				dev->vbase[DMA_CTRL],
+				dev->vbase[DMA_RX_DESC],
+				(uint32_t)(dev->rxDescPa + firstDesc * sizeof(spw_rxDesc_t)),
+				dev->vbase[SPW_STATUS]);
                 if ((dev->rxDesc[firstDesc].ctrl & RX_DESC_EN) == 0) {
                     continue;
                 }
